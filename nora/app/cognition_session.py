@@ -459,6 +459,9 @@ class _RunState:
     #: a `memory_search`/`memory_read` result emitted: the only targets a
     #: correction may name (the `shown_keys` rule, one axis over).
     shown_relations: set[str] = field(default_factory=set)
+    #: `(kind, name)` pairs a returned `possible_existing` refusal named this
+    #: session: the only `{new: …}` endpoints `new.distinct` may confirm.
+    possible_existing: set[tuple[str, str]] = field(default_factory=set)
     #: Person ids the session's emitted rows were authored by — the only
     #: `@person:` handles a statement may name (the `shown_keys` rule, one
     #: axis over). The agenda's rendered rows are read back at `propose`;

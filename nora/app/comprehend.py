@@ -83,8 +83,9 @@ class NewEntity(Shape):
     attributes: dict[str, CitedValue] = Field(default_factory=dict)
     distinct: str | None = Field(default=None, description=(
         "Why this entity is not one of the candidates a `possible_existing` "
-        "refusal listed, or null; set it only to re-propose a refused new "
-        "entity, never on a first proposal."))
+        "refusal listed, or null; honoured only to re-propose an endpoint "
+        "the session already refused possible_existing for the same name "
+        "and kind — it never skips the lookup."))
 
 
 class NewEndpoint(Shape):
@@ -327,39 +328,45 @@ class MemoryProposalAdmission:
 
     async def _possible_existing(
         self, new: NewEntity, work: WorkItem, fetched: GraphFetched,
-        proposed: Entity,
-    ) -> tuple[list[dict[str, Any]], set[Key]] | None:
+        proposed: Entity, confirmed: Any,
+    ) -> tuple[str, list[dict[str, Any]], set[Key], set[str]] | None:
         """The resolution candidates (27 §7a) for a `{new: …}` endpoint's
-        name/kind in this unit, or None when there are none or the model
-        confirmed the entity distinct (`new.distinct`). Candidates carry
-        their `@kind:id` handle, name, aliases and three strongest relations,
-        so the refusal can be repaired by naming the existing handle; their
-        keys join the session's shown keys via the caller's `aux`, which is
-        what lets the handle re-propose instead of `unshown`.
+        name/kind in this unit. Returns `(reason, cards, keys, relation_ids)`
+        — the refusal reason, the candidate cards that go back to the model,
+        and exactly the handles and relation ids THOSE cards emit (shown
+        custody is registered from what is returned, never from what the
+        walk touched) — or None when the endpoint may proceed.
+
+        The lookup always runs: `new.distinct` never skips it, and a lookup
+        that fails is `unavailable` (R-27), never an admission. `distinct`
+        is honoured only to re-propose an endpoint this session already
+        refused `possible_existing` for the same name and kind (`confirmed`).
         Two hard-refusal paths stay exactly as they were: the candidate that
         IS `proposed` (same deterministic id — a retry of a statement this
-        session already admitted) is not a «possible» existing but the
-        duplicate-recovery path's business, and an exact name/alias match is
-        the store's own `duplicate_entity`, whatever `distinct` says."""
-        if (new.distinct or "").strip():
-            return None
-        candidates = await named_candidates(
-            self.graph, unit=work.unit, kind=new.kind, name=new.name,
-            persons=frozenset(
-                p for s in fetched.sources.values() for p in s.persons),
-            near=work.source, as_of=work.as_of, historical=work.historical,
-            drop=lambda e: e.key == proposed.key
-                           or new.name in (e.name, *e.aliases))
+        session already admitted) is the duplicate-recovery path's business,
+        and an exact name/alias match is the store's own `duplicate_entity`."""
+        try:
+            candidates = await named_candidates(
+                self.graph, unit=work.unit, kind=new.kind, name=new.name,
+                persons=frozenset(
+                    p for s in fetched.sources.values() for p in s.persons),
+                near=work.source, as_of=work.as_of, historical=work.historical,
+                drop=lambda e: e.key == proposed.key
+                               or new.name in (e.name, *e.aliases))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("resolution candidates failed (%s)", type(exc).__name__)
+            return "unavailable", [], set(), set()
         if not candidates:
+            return None
+        if (new.distinct or "").strip() and (
+                new.kind, new.name.casefold()) in confirmed:
             return None
         cards: list[dict[str, Any]] = []
         keys: set[Key] = set()
+        relation_ids: set[str] = set()
         for candidate in candidates:
             node = next((n for n in candidate.nodes if n.entity is not None), None)
             entity = node.entity if node is not None else None
-            keys.update(n.key for n in candidate.nodes)
-            keys.update(
-                k for e in candidate.relations for k in (e.relation.src, e.relation.dst))
             cards.append({
                 "handle": (f"@{entity.key[0]}:{entity.key[1]}" if entity else None),
                 "name": entity.name if entity else None,
@@ -372,19 +379,30 @@ class MemoryProposalAdmission:
                      "asserted_at": e.relation.asserted_at.isoformat()}
                     for e in candidate.relations],
             })
-        return cards, keys
+            if entity is not None:
+                keys.add(entity.key)
+            for e in candidate.relations:
+                keys.update((e.relation.src, e.relation.dst))
+                relation_ids.add(e.relation.id)
+        return "possible_existing", cards, keys, relation_ids
 
     async def _admit(
         self, work: WorkItem, output: Proposal, fetched: GraphFetched,
         session: int, scope: Scope, indices: list[int] | None = None,
+        confirmed: Any = frozenset(),
     ) -> tuple[Admission, list[dict[str, str]], dict[str, Any]]:
         """Flatten the statements into the existing domain objects, admit them,
         and report one outcome per statement. `indices` maps each valid
         statement's position back to its index in the original call, so a
-        schema-refused sibling neither shifts results nor withholds admission."""
+        schema-refused sibling neither shifts results nor withholds admission.
+        `confirmed` is the session's `(kind, name)` pairs a `possible_existing`
+        refusal was already returned for — the only endpoints `new.distinct`
+        may confirm."""
         local_refusals: list[dict[str, str]] = []
         report: dict[int, dict[str, Any]] = {}
         candidate_keys: set[Key] = set()
+        candidate_relations: set[str] = set()
+        possible_existing: set[tuple[str, str]] = set()
 
         async def refuse(part: str, reason: str) -> None:
             local_refusals.append({"kind": part, "reason": reason})
@@ -439,15 +457,21 @@ class MemoryProposalAdmission:
                     return None
                 keys[slot] = key
                 if entity is not None and isinstance(endpoint, NewEndpoint):
-                    candidates = await self._possible_existing(
-                        endpoint.new, work, fetched, entity)
-                    if candidates is not None:
-                        cards, keys_found = candidates
-                        candidate_keys.update(keys_found)
+                    outcome = await self._possible_existing(
+                        endpoint.new, work, fetched, entity, confirmed)
+                    if outcome is not None:
+                        reason, cards, keys_found, rel_ids = outcome
                         report[index] = {
-                            "status": "refused", "reason": "possible_existing",
-                            "kind": "relation", "candidates": cards}
-                        await refuse("entity", "possible_existing")
+                            "status": "refused", "reason": reason,
+                            "kind": "relation",
+                            **({"candidates": cards} if cards else {})}
+                        await refuse("entity", reason)
+                        if reason == "possible_existing":
+                            candidate_keys.update(keys_found)
+                            candidate_relations.update(rel_ids)
+                            possible_existing.add(
+                                (endpoint.new.kind,
+                                 endpoint.new.name.casefold()))
                         return None
                     entities.append(entity)
                     entity_stmt[entity.id] = index
@@ -699,6 +723,8 @@ class MemoryProposalAdmission:
             "report": report, "claims": claims,
             "refused_by_stmt": refused_by_stmt,
             "candidate_keys": candidate_keys,
+            "candidate_relations": candidate_relations,
+            "possible_existing": possible_existing,
         }
 
 

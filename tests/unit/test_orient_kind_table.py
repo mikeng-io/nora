@@ -974,3 +974,109 @@ async def test_a_replacement_on_a_retire_refuses_with_its_reason():
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unexpected_replacement"
     assert memory.graph.relations[old_id].status == "current"
+
+
+async def test_possible_existing_registers_only_what_the_returned_cards_emit():
+    """A `possible_existing` refusal registers shown custody for exactly the
+    handles and relation ids its cards emit — a node the walk touched but
+    the card trimmed out never becomes usable state — plus the `(kind,
+    name)` refusal `new.distinct` may confirm on re-proposal."""
+    from dataclasses import replace as _replace
+
+    from nora.app.cognition_memory import WakeMemory
+    from nora.obs.metrics import Metrics
+    from nora.testing.comprehend import InMemoryComprehendRecords
+    from nora.testing.memory_graph import FakeMemoryGraph
+
+    class _WideWalk(FakeMemoryGraph):
+        """A store whose walk returns every incident edge, past fan_out."""
+        async def walk(self, seeds, query):
+            return await self._walk(seeds, _replace(query, fan_out=99, nodes=99))
+
+    memory = WakeMemory(graph=_WideWalk(), records=InMemoryComprehendRecords(),
+                        metrics=Metrics())
+    state = _state(memory)
+    at = AT + timedelta(hours=1)
+    memory.graph.entities["e1"] = Entity("e1", "event", "unit-1", "generated gala ball")
+    for i in range(4):
+        memory.graph.relations[f"r{i}"] = Relation(
+            f"r{i}", ("event", "e1"), "at", ("place", f"p{i}"),
+            "notebook", "unit-1", (), asserted_at=at - timedelta(hours=i))
+
+    def stmt(new_fields):
+        return {"type": "relation", "rel": "at",
+                "subject": {"new": {"kind": "event", **new_fields}},
+                "object": {"new": {"kind": "place", "name": "some venue"}},
+                "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
+
+    refused = await memory.propose(state, items=[0],
+                                   statements=[stmt({"name": "generated gala"})])
+    entry = refused["statements"][0]
+    assert entry["status"] == "refused" and entry["reason"] == "possible_existing"
+    emitted = entry["candidates"][0]["relations"]
+    assert len(emitted) == 3
+    emitted_ids = {r["id"] for r in emitted}
+    assert state.shown_relations == emitted_ids == {"r0", "r1", "r2"}
+    # Only what the card named is shown: the candidate handle and the
+    # endpoints of the three retained relations — never `p3`.
+    assert state.shown_keys == {
+        ("event", "e1"), ("place", "p0"), ("place", "p1"), ("place", "p2")}
+    assert state.possible_existing == {("event", "generated gala")}
+
+    saved = await memory.propose(state, items=[0], statements=[stmt({
+        "name": "generated gala", "distinct": "a different gala entirely"})])
+    assert saved["statements"][0]["status"] == "saved"
+
+
+async def test_possible_existing_grants_nothing_when_the_call_fails_after_lookup():
+    """A propose call that raises after the candidate lookup returns no cards,
+    so it registers no custody, no relation ids and no `distinct` confirmation:
+    a later `distinct` retry is still refused `possible_existing`."""
+    from dataclasses import replace as _replace
+
+    import pytest
+
+    from nora.app.cognition_memory import WakeMemory
+    from nora.domain.memory_graph import Subgraph
+    from nora.obs.metrics import Metrics
+    from nora.testing.comprehend import InMemoryComprehendRecords
+    from nora.testing.memory_graph import FakeMemoryGraph
+
+    class _ConnectedWalkFails(FakeMemoryGraph):
+        """Candidate walks answer; the post-admission connected walk (no
+        admitted seeds) is unavailable while `failing` is set."""
+        failing = True
+
+        async def walk(self, seeds, query):
+            if self.failing and not tuple(seeds):
+                return Subgraph("unavailable")
+            return await self._walk(seeds, _replace(query, fan_out=99, nodes=99))
+
+    graph = _ConnectedWalkFails()
+    memory = WakeMemory(graph=graph, records=InMemoryComprehendRecords(),
+                        metrics=Metrics())
+    state = _state(memory)
+    at = AT + timedelta(hours=1)
+    graph.entities["e1"] = Entity("e1", "event", "unit-1", "generated gala ball")
+    graph.relations["r0"] = Relation(
+        "r0", ("event", "e1"), "at", ("place", "p0"), "notebook", "unit-1", (),
+        asserted_at=at)
+    before_keys = set(state.shown_keys)
+
+    def stmt(new_fields):
+        return {"type": "relation", "rel": "at",
+                "subject": {"new": {"kind": "event", **new_fields}},
+                "object": {"new": {"kind": "place", "name": "some venue"}},
+                "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
+
+    with pytest.raises(RuntimeError, match="connected graph unavailable"):
+        await memory.propose(state, items=[0],
+                             statements=[stmt({"name": "generated gala"})])
+    assert set(state.shown_keys) == before_keys
+    assert not getattr(state, "shown_relations", None)
+    assert not getattr(state, "possible_existing", None)
+
+    graph.failing = False
+    retried = await memory.propose(state, items=[0], statements=[stmt({
+        "name": "generated gala", "distinct": "a different gala entirely"})])
+    assert retried["statements"][0]["reason"] == "possible_existing"

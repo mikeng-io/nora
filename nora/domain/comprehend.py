@@ -233,6 +233,7 @@ ExtraRefusal = Literal[
     "schema", "identity_pointer", "private_web_evidence", "ungrounded",
     "already_staged", "unshown", "endpoint_not_a_handle", "unparseable_time",
     "invalid_relation", "unexpected_replacement", "possible_existing",
+    "unavailable",
 ]
 ITEM_OUTCOMES = get_args(ItemOutcome)
 LANES = get_args(Lane)
@@ -416,6 +417,11 @@ REFUSAL_REPAIR: dict[str, dict[str, str]] = {
         "repair": "Name the matching candidate's @kind:id handle as the "
                   "endpoint instead of `new`, or set `new.distinct` saying "
                   "why this entity is a different one.",
+    },
+    "unavailable": {
+        "field": "new",
+        "repair": "The memory lookup could not finish; retry the statement "
+                  "unchanged.",
     },
 }
 

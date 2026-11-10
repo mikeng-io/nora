@@ -1438,12 +1438,23 @@ async def test_new_endpoint_matching_a_candidate_is_refused_possible_existing():
     assert entry["status"] == "refused" and entry["reason"] == "possible_existing"
     assert entry["candidates"][0]["handle"] == "@event:e1"
     assert ("event", "e1") in aux["candidate_keys"]
+    assert aux["possible_existing"] == {("event", "generated gala")}
 
+    # `distinct` is honoured only to confirm a refusal the session already
+    # returned for the same name/kind — a first proposal still refuses.
     result, _, aux = await admission._admit(
         work, Proposal(statements=[stmt({
             "name": "generated gala",
             "distinct": "a different gala entirely"})]),
         fetched, 7, scope)
+    assert aux["report"][0]["reason"] == "possible_existing"
+
+    result, _, aux = await admission._admit(
+        work, Proposal(statements=[stmt({
+            "name": "generated gala",
+            "distinct": "a different gala entirely"})]),
+        fetched, 7, scope,
+        confirmed={("event", "generated gala")})
     assert aux["report"][0]["status"] == "saved"
     assert not result.refused
 
@@ -1493,3 +1504,105 @@ async def test_historical_completion_is_the_session_outcome(stop):
         with pytest.raises(RuntimeError if stop == "error" else SessionLimitError):
             await runner.replay(view=view, now_ms=NOW, historical=True)
         assert memory.records.receipts == []
+
+
+def _admission_setup(graph=None):
+    """The shared `{new:…}` admission fixture: a graph, an admission, one
+    cited shown source, and a `stmt` builder for an `at` relation."""
+    from nora.agent.fetch_watch import GraphFetched
+    from nora.app.comprehend import (
+        Citation,
+        MemoryProposalAdmission,
+        NewEndpoint,
+        NewEntity,
+        Proposal,
+        RelationStatement,
+        Scope,
+    )
+    from nora.domain.memory_graph import Source, WorkItem
+    from nora.obs.metrics import Metrics
+    from nora.testing.comprehend import InMemoryComprehendRecords
+    from nora.testing.memory_graph import FakeMemoryGraph
+
+    graph = graph or FakeMemoryGraph()
+    admission = MemoryProposalAdmission(
+        graph=graph, records=InMemoryComprehendRecords(), metrics=Metrics())
+    work = WorkItem("w1", ("stimulus", "1"), "u", "h",
+                    datetime.fromtimestamp(NOW / 1000, UTC))
+    fetched = GraphFetched()
+    fetched.show(Source(("message", "1"), "record", "u", (), "going to the gala"))
+    scope = Scope(catalogue={1: ("message", "1")})
+
+    def stmt(new_fields: dict, place: dict | None = None) -> RelationStatement:
+        return RelationStatement(
+            type="relation", rel="at",
+            subject=NewEndpoint(new=NewEntity(kind="event", **new_fields)),
+            object=NewEndpoint(new=NewEntity(kind="place", **(place or {"name": "Nowhere"}))),
+            cite=[Citation(source=1)])
+
+    def mk(*statements: RelationStatement) -> Proposal:
+        return Proposal(statements=list(statements))
+    return graph, admission, work, fetched, scope, stmt, mk
+
+
+async def test_a_failed_candidate_lookup_is_unavailable_never_admission():
+    """`new.distinct` never skips the lookup, and a lookup that raises is
+    `unavailable` (R-27), never an admission — with or without `distinct`."""
+    from nora.testing.memory_graph import FakeMemoryGraph
+
+    class _RaisingGraph(FakeMemoryGraph):
+        async def candidates(self, **kw: Any) -> tuple:
+            raise RuntimeError("index down")
+
+    _graph, admission, work, fetched, scope, stmt, mk = _admission_setup(
+        _RaisingGraph())
+    for distinct in (None, "a different gala entirely"):
+        result, _, aux = await admission._admit(
+            work, mk(stmt({
+                "name": "generated gala", "distinct": distinct})),
+            fetched, 7, scope,
+            confirmed={("event", "generated gala")})
+        assert aux["report"][0]["status"] == "refused"
+        assert aux["report"][0]["reason"] == "unavailable"
+        assert not result.relations
+
+
+async def test_candidate_custody_is_exactly_what_the_cards_emit():
+    """A walk can touch more than the three strongest relations the card
+    emits: shown custody is only the returned handle and the endpoints of
+    the retained relations — never the trimmed-out ones."""
+    from dataclasses import replace as _replace
+
+    from nora.domain.memory_graph import Entity, Relation
+    from nora.testing.memory_graph import FakeMemoryGraph
+
+    class _WideWalk(FakeMemoryGraph):
+        """A store whose walk returns every incident edge, past fan_out."""
+        async def walk(self, seeds: Any, query: Any) -> Any:
+            return await self._walk(
+                seeds, _replace(query, fan_out=99, nodes=99))
+
+    graph, admission, work, fetched, scope, stmt, mk = _admission_setup(
+        _WideWalk())
+    at = datetime.fromtimestamp(NOW / 1000, UTC)
+    graph.entities["e1"] = Entity("e1", "event", "u", "generated gala ball")
+    for i in range(4):
+        graph.relations[f"r{i}"] = Relation(
+            f"r{i}", ("event", "e1"), "at", ("place", f"p{i}"),
+            "notebook", "u", (), asserted_at=at)
+        at = at.replace(hour=at.hour - 1)
+
+    _result, _, aux = await admission._admit(
+        work, mk(stmt({"name": "generated gala"})),
+        fetched, 7, scope)
+    entry = aux["report"][0]
+    assert entry["reason"] == "possible_existing"
+    emitted = {
+        ("event", "e1"),
+        *[k for r in entry["candidates"][0]["relations"]
+          for k in (tuple(r["src"][1:].rsplit(":", 1)), tuple(r["dst"][1:].rsplit(":", 1)))]}
+    # The card emits three relations; the fourth's endpoint never showed.
+    assert aux["candidate_keys"] == emitted
+    assert ("place", "p3") not in aux["candidate_keys"]
+    assert aux["candidate_relations"] == {
+        r["id"] for r in entry["candidates"][0]["relations"]}
