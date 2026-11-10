@@ -40,6 +40,7 @@ from nora.domain.memory_graph import (
     Walk,
     WorkItem,
 )
+from nora.domain.prompt import contains_source_span
 
 log = logging.getLogger(__name__)
 
@@ -473,9 +474,9 @@ class MemoryProposalAdmission:
                     continue
                 bad_quote = next(
                     (c for c in st.cite
-                     if c.quote is not None and c.quote not in sources[
+                     if c.quote is not None and not contains_source_span(c.quote, sources[
                          scope.catalogue.get(c.source)
-                         or ("message", str(c.source))].text),
+                         or ("message", str(c.source))].text)),
                     None,
                 )
                 if bad_quote is not None:

@@ -728,3 +728,13 @@ def test_a_cognition_objective_with_no_prelude_stops_the_runner_at_startup(tmp_p
     assert "one bounded reflection" in served.text, "the loader falls back, silently"
     with pytest.raises(PreludeMissingError, match="cognition-prelude"):
         _build_with(instructions, production_skills())
+
+
+def test_batched_item_completion_requires_all_conveyed_content():
+    from nora.language.comprehend_render import render_session_system
+
+    system = " ".join(render_session_system("", "", memory=True).split())
+    assert "Preserve all substantive information conveyed by each item before closing it" in system
+    assert "one saved statement does not cover the rest of a batched item" in system
+    assert "Combined readings may cover several facts; do not duplicate coverage" in system
+    assert "incidental poses, clothing or backgrounds need not be inventoried" in system

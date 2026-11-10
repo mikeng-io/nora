@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import Literal, Protocol, get_args
 
 from nora.domain.memory_index import IndexedNode, MemoryScope
+from nora.domain.prompt import contains_source_span
 
 EntityKind = Literal[
     "person", "room", "unit", "nora", "place", "event", "work", "organisation", "topic"
@@ -352,7 +353,7 @@ def validate_relation(
             return "unseen_source"
         if source.layer == "notebook" or source.key[0] not in (*RECORD, *ROLLUP):
             return "notebook_evidence"
-        if item.span is not None and item.span not in source.text:
+        if item.span is not None and not contains_source_span(item.span, source.text):
             return "span_not_in_source"
         if source.unit != relation.unit or not set(source.persons) <= set(relation.persons):
             return "scope_wider_than_evidence"

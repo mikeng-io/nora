@@ -228,6 +228,11 @@ These include context assembly evidence (empty/unavailable/cuts when supplied),
 admitted/deferred tools with schema availability, raw responses and served
 identity headers, retries, errors and transport latency. Missing readings remain
 unavailable, never zero. Deferred tools with no schema expose `unavailable`.
+Tool error records identify a pre-callback argument rejection only when the
+pinned SDK's validation-origin traceback proves that stage. The serialized
+`argument_validation` marker carries no traceback text or arguments beyond the
+existing private capture. Handler failures and unavailable stage evidence keep
+their error outcome; model recovery does not erase the earlier error record.
 The existing collector strips agent aggregate usage from model totals and
 normalizes cache usage; evaluation introduces no second model span or charge.
 

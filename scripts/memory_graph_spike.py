@@ -682,9 +682,13 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     values.append(json.loads(part["text"]))
                 except ValueError:
                     values.append(part["text"])
-        exchanges.append({"name": use["name"], "input": use["input"],
-                          "result": values[0] if len(values) == 1 else values,
-                          "source_rows": source_rows})
+        exchange = {"name": use["name"], "input": use["input"],
+                    "result": values[0] if len(values) == 1 else values,
+                    "source_rows": source_rows}
+        if (result.get("status") == "error"
+                and event.get("argument_validation") == "rejected_before_dispatch"):
+            exchange["argument_validation"] = "rejected_before_dispatch"
+        exchanges.append(exchange)
     return exchanges
 
 
@@ -762,8 +766,10 @@ for every supplied required_units id, and no other ids. Each entry has a string
 id, verdict covered/missed/unsure, and a nonempty string reason. A covered entry
 also has covered_by containing exactly the two keys statements and reads, with
 no other keys. Both values are arrays of zero-based integer indices into
-saved_statements and session_input.reads respectively; at least
-one index must be present. A cited read must have result.status ok and must
+saved_statements and session_input.reads respectively. Each supplied statement
+and read carries its explicit evidence_index; cite that value, not an agenda
+item number, source id or a recounted position. At least one index must be present.
+A cited read must have result.status ok and must
 not be load_tools. A catalogue or unavailable read is not coverage evidence.
 Example shape (use the actual supplied ids and evidence, not this example):
 {"coverage":[{"id":"example","verdict":"covered","reason":"explanation","covered_by":{"statements":[0],"reads":[]}}],"diagnostic_misses":[]}
@@ -916,8 +922,15 @@ async def smoke_fact_support(
                     model,
                     coverage_instruction,
                     {
-                        "session_input": evidence,
-                        "saved_statements": [s for s, _ in saved],
+                        "session_input": ({**evidence, "reads": [
+                            {**read, "evidence_index": index}
+                            for index, read in enumerate(evidence["reads"])
+                        ]} if reference is not None else evidence),
+                        "saved_statements": [
+                            {**statement, "evidence_index": index}
+                            if reference is not None else statement
+                            for index, (statement, _) in enumerate(saved)
+                        ],
                         **({"required_units": reference["units"]} if reference is not None else {}),
                     },
                     **({"response_format": fact_response_format("coverage")}
@@ -1378,6 +1391,11 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                                 output, len(results), wake, inspection, session_events
                             )
                             proposals = [e for e in exchanges if e["name"] == "memory_propose"]
+                            measured["proposal_argument_errors"] = sum(
+                                e.get("argument_validation") == "rejected_before_dispatch"
+                                for e in proposals)
+                            proposals = [e for e in proposals if e.get("argument_validation")
+                                         != "rejected_before_dispatch"]
                             if any(not isinstance(e["result"], dict) for e in proposals):
                                 raise ValueError("unreadable admission result")
                             admitted = {

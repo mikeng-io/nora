@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from opentelemetry import context, trace
+from pydantic import ValidationError
 from strands.hooks import (
     AfterInvocationEvent,
     AfterModelCallEvent,
@@ -22,6 +23,7 @@ from strands.hooks import (
     HookProvider,
     HookRegistry,
 )
+from strands.tools.decorator import DecoratedFunctionTool, FunctionToolMetadata
 
 from nora.obs.tracing import EVAL_EVIDENCE_KEY, eval_capture_enabled
 
@@ -59,6 +61,20 @@ def record(kind: str, **payload: Any) -> None:
             if headers.get("x-omniroute-provider"):
                 span.set_attribute("nora.model.provider", headers["x-omniroute-provider"])
         sink(kind, invocation_id=_INVOCATION.get(), attempt_id=_ATTEMPT.get(), **payload)
+
+
+def _argument_validation_failure(error: BaseException | None) -> bool:
+    """Recognize the SDK's pre-callback validation, never a handler failure."""
+    if not isinstance(error, ValueError) or not isinstance(error.__cause__, ValidationError):
+        return False
+    frames = []
+    tb = error.__traceback__
+    while tb is not None:
+        frames.append(tb.tb_frame.f_code)
+        tb = tb.tb_next
+    # ponytail: pinned SDK boundary; an SDK path change stays unknown until re-proved.
+    return frames[-2:] == [DecoratedFunctionTool.stream.__code__,
+                           FunctionToolMetadata.validate_input.__code__]
 
 
 class ReplayHooks(HookProvider):
@@ -112,6 +128,8 @@ class ReplayHooks(HookProvider):
                 result=event.result,
                 retry=event.retry,
                 error_type=type(event.exception).__name__ if event.exception else None,
+                **({"argument_validation": "rejected_before_dispatch"}
+                   if _argument_validation_failure(event.exception) else {}),
             )
         elif isinstance(event, AfterInvocationEvent):
             record(

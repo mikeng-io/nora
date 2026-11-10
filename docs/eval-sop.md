@@ -152,6 +152,20 @@ consumer. It verifies refusal, per-judge attribution, stop behavior and capture.
 Generated valid responses prove wiring only; they cannot prove that a live judge
 understands either the interface or the normative policy.
 
+Fixed-reference coverage inputs label every saved statement and shown read with a
+code-derived `evidence_index`. Proofs use those explicit zero-based indices;
+agenda item numbers and source-row ids belong to different namespaces. Invalid
+or out-of-range proofs remain ERROR, never remapped into another statement.
+
+A tool's pre-callback parameter rejection is distinct from a handler failure.
+The private SDK capture marks a proven rejection with
+`argument_validation="rejected_before_dispatch"`; replay counts these separately
+as `proposal_argument_errors` and evaluates subsequent valid admission receipts.
+The original failed call remains in the trace. An unmarked or legacy unreadable
+receipt, a returned opaque error, or an exception after callback entry remains
+ERROR: argument-schema mismatch or error prose alone cannot prove that nothing
+ran. Recovered calls do not excuse unsupported or incomplete final content.
+
 Judge output should emit each field once. The shared reply, memory and coverage
 parsers accept repeated fields only when their canonical JSON values agree,
 including nested value types. Equivalent repeats preserve the same value;

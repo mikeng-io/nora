@@ -501,3 +501,51 @@ async def test_a_person_never_shown_is_still_unshown():
         }])
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unshown"
+
+
+@pytest.mark.parametrize("kind", ["reading", "relation", "correction"])
+@pytest.mark.parametrize("invented_tail", [False, True])
+async def test_api_punctuation_quotes_keep_custody_at_every_admission_gate(
+        monkeypatch, kind, invented_tail):
+    from nora.agent.structured import build_structured_model
+    from nora.language.cognition_render import parse_rendered_agenda
+
+    raw = "Generated A likes Generated work — spare copy available. 準備——可以。"
+    monkeypatch.setitem(globals(), "NOTICE", raw)
+    state, prompt = await wake(seed=lambda m: _seed_key_shaped_label(m, blocked=False))
+    model = build_structured_model(base_url="http://127.0.0.1:1", api_key="generated-key",
+                                   model_id="generated-model", max_tokens=10, temperature=0)
+    request = model.format_request([{"role": "user", "content": [{"text": prompt}]}])
+    api = request["messages"][0]["content"]
+    if isinstance(api, list):
+        api = "".join(part.get("text", "") for part in api)
+    n, quote = next((row.attributes["n"], row.text)
+                    for item in parse_rendered_agenda(request) for row in item.rows
+                    if "spare copy available" in row.text)
+    assert quote != raw and "—" not in quote and "，" in quote
+    citation = {"source": int(n),
+                "quote": quote + (" invented hidden tail" if invented_tail else "")}
+    if kind == "reading":
+        statement = {"type": "reading", "what": "The notice offers a spare copy",
+                     "how": "reported", "happened_at": {"source": int(n), "expression": None},
+                     "cite": [citation]}
+    elif kind == "relation":
+        statement = {"type": "relation", "rel": "likes", "subject": "@person:generated-a",
+                     "object": {"new": {"kind": "work", "name": "Generated handbook"}},
+                     "cite": [citation]}
+    else:
+        statement = {**_correction(), "cite": [citation]}
+    result = await state.memory.propose(state, items=[0], statements=[statement])
+    assert result["statements"][0]["status"] == ("refused" if invented_tail else "saved"), result
+    if invented_tail:
+        assert result["statements"][0]["reason"] == (
+            "evidence_absent" if kind == "reading" else "span_not_in_source")
+    elif kind == "reading":
+        assert any(claim["evidence"][0]["quote"] == quote
+                   for claims in state.memory.records.claims.values() for claim in claims)
+    elif kind == "correction":
+        assert state.memory.graph.relations["generated-edge"].status == "retired"
+    else:
+        assert any(entity.name == "Generated handbook"
+                   for entity in state.memory.graph.entities.values())
+    assert state.graph_fetched.sources[("media", "101:generated-image")].text == raw

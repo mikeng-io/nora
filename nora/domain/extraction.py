@@ -8,6 +8,8 @@ from html import unescape
 from typing import Any, Literal, get_args
 from zoneinfo import ZoneInfo
 
+from nora.domain.prompt import contains_source_span
+
 ClaimDropReason = Literal[
     "citation_outside_batch", "duplicate_citation", "evidence_not_covering_citations",
     "evidence_absent", "unknown_subject", "event_reference_outside_citations",
@@ -85,7 +87,7 @@ def event_time(expression: str | None, assertion_ms: int) -> dict[str, str | Non
 
 def _exact_span(span: str, body: str) -> bool:
     """Accept a verbatim source span or its HTML-decoded form."""
-    return span in body or unescape(span) in body
+    return contains_source_span(span, body) or contains_source_span(unescape(span), body)
 
 
 def validate_claims(output: dict[str, Any], snapshot: dict[str, Any]) -> list[dict[str, Any]]:

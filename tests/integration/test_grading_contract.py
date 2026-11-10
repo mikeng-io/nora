@@ -539,3 +539,166 @@ def test_replay_cli_explains_missing_contract_before_any_dispatch(tmp_path, monk
     assert spike.main() == 2
     result = json.loads(capsys.readouterr().out)
     assert result["status"] == "ERROR" and "requires --grading-contract" in result["reason"]
+
+
+@pytest.mark.parametrize("outside_proof", [False, True])
+async def test_fixed_coverage_wire_labels_sparse_saved_and_read_indices(
+        tmp_path, monkeypatch, outside_proof):
+    from xml.etree import ElementTree
+
+    from nora.agent import structured
+
+    things = ("book", "cup", "headset", "map", "controller")
+    inspection = {"new_sources": {
+        str(i + 1): {"text": f"I offer a spare {thing}"}
+        for i, thing in enumerate(things)}}
+    reference = memory_reference(inspection)
+    reference["units"][0]["sources"] = [5]
+    contract = load_generated(tmp_path, cases={"wake": reference})
+    statements = [{"what": f"Offers a spare {thing}", "cite": [{"source": i + 1}]}
+                  for i, thing in enumerate(things)]
+    exchanges = [
+        {"name": "memory_read", "input": {}, "result": {"status": "unavailable"}},
+        {"name": "memory_read", "input": {},
+         "result": {"status": "ok", "content": "Generated shown record"}},
+        {"name": "memory_propose", "input": {"statements": statements},
+         "source_rows": inspection["new_sources"], "result": {"statements": [
+             {"index": i, "status": "refused" if i == 1 else "saved"}
+             for i in range(5)]}},
+    ]
+    original_exchanges = json.loads(json.dumps(exchanges))
+    coverage_seen = []
+
+    def respond(request):
+        body = json.loads(request.content)
+        content = body["messages"][1]["content"]
+        if not isinstance(content, str):
+            content = "".join(part["text"] for part in content)
+        payload = json.loads("".join(
+            ElementTree.fromstring(content).itertext()))  # noqa: S314 - own generated block
+        if "statement" in payload:
+            claim = payload["statement"]["what"]
+            assert claim in {s["what"] for i, s in enumerate(statements) if i != 1}
+            assert payload["cited_rows"]
+            return completion(request, {
+                "verdict": "supported", "reason": claim,
+                "eligibility": "eligible", "eligibility_reason": "An offered object",
+            })
+        supplied = payload["saved_statements"]
+        assert [s["evidence_index"] for s in supplied] == [0, 1, 2, 3]
+        assert [{k: v for k, v in s.items() if k != "evidence_index"} for s in supplied] == [
+            statements[i] for i in (0, 2, 3, 4)]
+        assert [r["evidence_index"] for r in payload["session_input"]["reads"]] == [0, 1]
+        assert "evidence_index" in body["messages"][0]["content"]
+        coverage_seen.append(body["model"])
+        controller = next(s for s in supplied if s["what"] == "Offers a spare controller")
+        return completion(request, {"coverage": [{
+            "id": "offer", "verdict": "covered", "reason": "Saved controller offer",
+            "covered_by": {"statements": [4 if outside_proof else controller["evidence_index"]],
+                           "reads": []}}], "diagnostic_misses": []})
+
+    monkeypatch.setattr(spike.Judges, "_endpoint", lambda _, model: (
+        "https://generated.invalid/v1", "generated-key", model))
+    original = structured.build_structured_model
+    monkeypatch.setattr(spike, "build_structured_model", lambda **kwargs: original(
+        **kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond))))
+    judges = spike.Judges(SimpleNamespace(llm=SimpleNamespace(timeout_seconds=5)),
+                          ["generated-a", "generated-b"], Path("generated.toml"))
+    result = await spike.smoke_fact_support(
+        judges, inspection, exchanges, contract=contract, reference_key="wake")
+    assert coverage_seen == ["generated-a", "generated-b"]
+    assert result["facts_saved"] == result["facts_supported"] == 4
+    assert result["facts_judge_errors"] == (2 if outside_proof else 0)
+    assert spike.fact_quality(result) == {"status": "ERROR" if outside_proof else "PASS"}
+    assert exchanges == original_exchanges
+
+
+@pytest.mark.parametrize("failure", ["arguments", "legacy", "coerced_runtime", "returned_error"])
+async def test_replay_recovers_only_proven_predispatch_argument_failures(
+        tmp_path, monkeypatch, failure):
+    import contextvars
+
+    from opentelemetry import context
+    from pydantic import TypeAdapter, ValidationError
+    from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent
+
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.agent.replay_capture import ReplayHooks
+    from nora.agent.structured import build_structured_model
+    from nora.obs.tracing import EVAL_EVIDENCE_KEY
+    from nora.subject.eval_evidence import current
+    from tests.unit.test_memory_graph_spike import generated_replay_environment
+
+    env = generated_replay_environment(tmp_path, monkeypatch)
+    monkeypatch.setattr(spike, "evaluation_export_for", lambda _: None)
+    env.args.config.write_text("# generated configuration\n")
+    attach_replay_contract(env.args, tmp_path, env.runner.inspect.return_value, wakes=[
+        {"id": 1, "at_ms": 1, "strata": ["text"]},
+        {"id": 2, "at_ms": 2, "strata": ["attachment"]}])
+    effects = []
+
+    async def memory_propose(items: list[int], statements: list[dict[str, str]]) -> dict:
+        effects.append(items)
+        mode = statements[0]["what"]
+        if mode == "coerced_runtime":
+            try:
+                TypeAdapter(int).validate_python("generated-invalid-integer")
+            except ValidationError as error:
+                raise ValueError("generated handler failed after effect") from error
+        if mode == "returned_error":
+            return {"status": "error", "content": [{"text": "Generated opaque failure"}]}
+        return {"status": "ok", "admitted": items, "refused": [],
+                "statements": [{"index": 0, "status": "saved"}]}
+
+    tool = adapt(ToolSpec(name="memory_propose", description="", schema={}, call=memory_propose))
+    model = build_structured_model(base_url="http://127.0.0.1:1", api_key="generated-key",
+                                   model_id="generated-model", max_tokens=10, temperature=0)
+
+    async def replay(**kwargs):
+        evidence = current()
+        evidence.record("event", name="nora.session.started", attributes={"body": "{}"})
+        model.format_request([{"role": "user", "content": [{"text": "generated"}]}],
+                             [tool.tool_spec], "generated")
+        evidence.record("transport_started")
+        evidence.record("transport_finished", reasoning_availability="absent")
+        hook = ReplayHooks()
+        bad = {"items": "not-a-list", "statements": [{"what": "generated"}]}
+        if failure in {"coerced_runtime", "returned_error"}:
+            bad = {"items": ["0"] if failure == "coerced_runtime" else [0],
+                   "statements": [{"what": failure}]}
+        good = {"items": [0], "statements": [{"what": "generated"}]}
+        for index, args in enumerate((bad, good)):
+            use = {"toolUseId": f"generated-{index}", "name": "memory_propose", "input": args}
+            contextvars.copy_context().run(hook.capture, BeforeToolCallEvent(
+                agent=SimpleNamespace(), selected_tool=tool, tool_use=use, invocation_state={}))
+            events = [event async for event in tool.stream(use, {})]
+            terminal = events[-1]
+            after = AfterToolCallEvent(
+                agent=SimpleNamespace(), selected_tool=tool, tool_use=use, invocation_state={},
+                result=terminal.tool_result, exception=terminal.exception)
+            if failure == "legacy" and index == 0:
+                def legacy_record(kind, **payload):
+                    payload.pop("argument_validation", None)
+                    evidence.record(kind, **payload)
+                token = context.attach(context.set_value(EVAL_EVIDENCE_KEY, legacy_record))
+                try:
+                    contextvars.copy_context().run(hook.capture, after)
+                finally:
+                    context.detach(token)
+            else:
+                contextvars.copy_context().run(hook.capture, after)
+        evidence.record("event", name="nora.session.terminal", attributes={"body": "{}"})
+        return SimpleNamespace(session_id="generated-session", closed=[])
+
+    env.runner.replay.side_effect = replay
+    report = await spike.run(env.args)
+    batches = list(report["cost_per_batch"]["batches"].values())
+    assert len(batches) == 2
+    assert len(effects) == (2 if failure in {"arguments", "legacy"} else 4)
+    assert all(items == [0] for items in effects)  # SDK coercion can precede a handler error.
+    if failure == "arguments":
+        assert all(b["status"] == "PASS" and b["proposal_argument_errors"] == 1 for b in batches)
+        assert spike.smoke_fact_support.await_count == 2
+    else:
+        assert all(b["status"] == "ERROR" and b["proposal_argument_errors"] == 0 for b in batches)
+        assert spike.smoke_fact_support.await_count == 0

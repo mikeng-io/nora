@@ -211,8 +211,10 @@ cites its rows in `cite`. The tool checks citations and handles and tells you
 what it refused — repair each refused statement that still states a grounded
 fact, even when another statement covered its item: keep its
 what/how/citations and change only the rejected field. A refusal is not
-`nothing_here`; propose again until every item is covered by a saved
-statement or named nothing_here.
+`nothing_here`. Preserve all substantive information conveyed by each item
+before closing it: one saved statement does not cover the rest of a batched
+item. Combined readings may cover several facts; do not duplicate coverage.
+Use nothing_here only for items that state no substantive content.
 2. Then ask what the item needs of the notebook: a note for what is still
 open (note_create, note_revise, note_set_status, note_merge), an event for a
 dated thing people will attend (event_propose, event_revise, event_set_status),
