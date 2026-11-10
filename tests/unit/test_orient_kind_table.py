@@ -1207,3 +1207,57 @@ async def test_possible_existing_registers_only_what_the_returned_cards_emit():
     saved = await memory.propose(state, items=[0], statements=[stmt({
         "name": "generated gala", "distinct": "a different gala entirely"})])
     assert saved["statements"][0]["status"] == "saved"
+
+
+async def test_possible_existing_grants_nothing_when_the_call_fails_after_lookup():
+    """A propose call that raises after the candidate lookup returns no cards,
+    so it registers no custody, no relation ids and no `distinct` confirmation:
+    a later `distinct` retry is still refused `possible_existing`."""
+    from dataclasses import replace as _replace
+
+    import pytest
+
+    from nora.app.cognition_memory import WakeMemory
+    from nora.domain.memory_graph import Subgraph
+    from nora.obs.metrics import Metrics
+    from nora.testing.comprehend import InMemoryComprehendRecords
+    from nora.testing.memory_graph import FakeMemoryGraph
+
+    class _ConnectedWalkFails(FakeMemoryGraph):
+        """Candidate walks answer; the post-admission connected walk (no
+        admitted seeds) is unavailable while `failing` is set."""
+        failing = True
+
+        async def walk(self, seeds, query):
+            if self.failing and not tuple(seeds):
+                return Subgraph("unavailable")
+            return await self._walk(seeds, _replace(query, fan_out=99, nodes=99))
+
+    graph = _ConnectedWalkFails()
+    memory = WakeMemory(graph=graph, records=InMemoryComprehendRecords(),
+                        metrics=Metrics())
+    state = _state(memory)
+    at = AT + timedelta(hours=1)
+    graph.entities["e1"] = Entity("e1", "event", "unit-1", "generated gala ball")
+    graph.relations["r0"] = Relation(
+        "r0", ("event", "e1"), "at", ("place", "p0"), "notebook", "unit-1", (),
+        asserted_at=at)
+    before_keys = set(state.shown_keys)
+
+    def stmt(new_fields):
+        return {"type": "relation", "rel": "at",
+                "subject": {"new": {"kind": "event", **new_fields}},
+                "object": {"new": {"kind": "place", "name": "some venue"}},
+                "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
+
+    with pytest.raises(RuntimeError, match="connected graph unavailable"):
+        await memory.propose(state, items=[0],
+                             statements=[stmt({"name": "generated gala"})])
+    assert set(state.shown_keys) == before_keys
+    assert not getattr(state, "shown_relations", None)
+    assert not getattr(state, "possible_existing", None)
+
+    graph.failing = False
+    retried = await memory.propose(state, items=[0], statements=[stmt({
+        "name": "generated gala", "distinct": "a different gala entirely"})])
+    assert retried["statements"][0]["reason"] == "possible_existing"

@@ -377,18 +377,6 @@ class WakeMemory:
         result, local_refusals, aux = await self.admission._admit(
             combined.work, output, state.graph_fetched, state.session_id, scope,
             indices, confirmed=getattr(state, "possible_existing", frozenset()))
-        # What a returned `possible_existing` card showed is shown state —
-        # the ONLY keys and relation ids registered are the ones the cards
-        # emit; the refusal itself is what `new.distinct` may later confirm.
-        state.shown_keys.update(aux.get("candidate_keys", ()))
-        if aux.get("candidate_relations"):
-            if getattr(state, "shown_relations", None) is None:
-                state.shown_relations = set()
-            state.shown_relations.update(aux["candidate_relations"])
-        prior = getattr(state, "possible_existing", None)
-        if prior is None:
-            state.possible_existing = prior = set()
-        prior.update(aux.get("possible_existing", ()))
         report: dict[int, dict[str, Any]] = aux["report"]
         cited_items: dict[int, set[int]] = aux["cited_items"]
         claims: list[dict[str, Any]] = []
@@ -525,6 +513,20 @@ class WakeMemory:
         note = "Read the connected state before deciding whether to act."
         if refused and committed:
             note = "Valid statements were saved (see committed). " + note
+        # What a returned `possible_existing` card showed is shown state —
+        # the ONLY keys and relation ids registered are the ones the cards
+        # emit; the refusal itself is what `new.distinct` may later confirm.
+        # Registered here, after every fallible step, so a call that raises
+        # returns no cards and grants nothing.
+        state.shown_keys.update(aux.get("candidate_keys", ()))
+        if aux.get("candidate_relations"):
+            if getattr(state, "shown_relations", None) is None:
+                state.shown_relations = set()
+            state.shown_relations.update(aux["candidate_relations"])
+        prior = getattr(state, "possible_existing", None)
+        if prior is None:
+            state.possible_existing = prior = set()
+        prior.update(aux.get("possible_existing", ()))
         return {"status": "ok" if admitted else "refused",
                 "admitted": admitted,
                 "open": [i for i in items if i not in covered],
