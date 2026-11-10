@@ -564,7 +564,7 @@
         "design/self-reference/04-tests-and-files.md (explicit path reference)",
         "design/self-reference/06-implementation-plan.md (explicit path reference)",
         "design/self-reference/_index.yaml (explicit path reference)",
-        "design/video-generation/00-design.md (explicit path reference)",
+        "design/video-generation/README.md (explicit path reference)",
         "docs-site/src/pages/index.astro (direct import)",
         "docs-site/src/pages/index.astro (explicit path reference)",
         "scripts/ingest_self_asset.py (explicit path reference)",

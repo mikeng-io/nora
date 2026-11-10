@@ -2052,14 +2052,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/video-generation/00-design.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/video-generation/01-prompting.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
  "design/voice-channel/00-overview.md": [
   "numbered-or-dated-name",
   "date",
