@@ -2203,8 +2203,10 @@ class SearchProvider(Protocol):
     an exception into the loop (R-5). A PORT so another backend plugs in with no
     tool change: `TavilySearchProvider` and `ExaSearchProvider` both implement
     it (DEC-157), selected by `[search] provider`, and the branch lives at the
-    composition root alone. `search` returns ranked results, `fetch` returns one
-    page's content; both `untrusted`-wrapped and clamped, and both backends pass
+    composition root alone. `search` returns ranked results `untrusted`-wrapped
+    and clamped; `fetch` returns one page's RAW text at `max_chars` (the tool
+    wraps each served slice itself, so one materialization feeds every
+    `offset`/`about` read); both backends pass
     the shared contract suite (`tests/contract/test_search_provider_contract.py`)
     — including the `unavailable` note, which is model-facing instruction and
     must not differ with the operator's billing preference. **No SSRF surface**
@@ -2217,7 +2219,7 @@ class SearchProvider(Protocol):
 
     async def search(self, *, query: str) -> dict[str, Any]: ...
 
-    async def fetch(self, *, url: str) -> dict[str, Any]: ...
+    async def fetch(self, *, url: str, max_chars: int | None = None) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)

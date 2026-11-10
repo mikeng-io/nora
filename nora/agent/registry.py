@@ -245,6 +245,12 @@ class ToolRegistry:
         descriptions: MediaDescriptionStore | None = None,
         video_readings: VideoReadingStore | None = None,
         search: SearchProvider | None = None,
+        # `web_fetch`'s OWN backend ([search] fetch_provider): None means the
+        # `search` provider serves both verbs, the pre-split shape.
+        fetch: SearchProvider | None = None,
+        # `web_fetch`'s page index (fetched_pages): None leaves every call
+        # serving straight from the provider's text with no persistence.
+        fetched_pages: Any = None,
         social: SocialProvider | None = None,
         linkedin: SocialProvider | None = None,
         weather: WeatherProvider | None = None,
@@ -511,6 +517,12 @@ class ToolRegistry:
         # is needed for either verb: Tavily fetches from its own servers, never
         # Nora's, whether it is handed a query or a url.
         self._search = search
+        # `fetch` is `web_fetch`'s own backend when `[search] fetch_provider`
+        # splits it (None: `search` serves both verbs); `fetched_pages` is the
+        # page index its `offset`/`about` reads answer from (None: no
+        # persistence, the pre-split shape).
+        self._fetch = fetch
+        self._fetched_pages = fetched_pages
         # `social` (OpenCLI bridge, DEC-151) is NOT default-constructed either:
         # `x_read`/`x_search` ship INERT behind `[social] enabled` (keyless; the
         # bridge is loopback-only and holds the read-only allowlist host-side),
@@ -1179,6 +1191,7 @@ class ToolRegistry:
             video_max_chunks=self._video_max_chunks,
             media_join=self._media_join,
             search_source=self._search, weather_source=self._weather,
+            fetch_source=self._fetch, fetched_pages=self._fetched_pages,
             parking_source=self._parking,
             street_parking_source=self._street_parking,
             social_source=self._social,

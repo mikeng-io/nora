@@ -184,21 +184,24 @@ class ExaSearchProvider:
             return {"status": "nothing_found", "results": []}
         return {"status": "ok", "results": wrapped}
 
-    async def fetch(self, *, url: str) -> dict[str, Any]:
-        """One page's content, capped and wrapped. NEVER raises. Three states
-        (R-27): `ok` with `text`, `nothing_found` when Exa could not crawl the
-        page (an error entry in `statuses`, not a transport failure of the
-        CALL), `unavailable` for any transport/auth failure of the call itself —
+    async def fetch(self, *, url: str, max_chars: int | None = None) -> dict[str, Any]:
+        """One page's content, capped at `max_chars` (default
+        `extract_max_chars`) and NOT wrapped — `web_fetch` stores the raw text
+        and wraps each slice it serves (R-13), so the wrapper lives in the
+        tool, not here. NEVER raises. Three states (R-27): `ok` with `text`,
+        `nothing_found` when Exa could not crawl the page (an error entry in
+        `statuses`, not a transport failure of the CALL), `unavailable` for any
+        transport/auth failure of the call itself —
         «I could not check», never «nothing found»."""
         try:
-            return await self._fetch(url)
+            return await self._fetch(url, max_chars)
         except Exception:
             # The never-raises backstop: a contract violation degrades to
             # unavailable, never propagates into the loop (R-5).
             log.exception("exa contents failed")
             return dict(UNAVAILABLE_FETCH)
 
-    async def _fetch(self, url: str) -> dict[str, Any]:
+    async def _fetch(self, url: str, max_chars: int | None) -> dict[str, Any]:
         """Read the page no older than `fetch_max_age_hours`, and fall back to
         Exa's saved copy only when that read fails.
 
@@ -214,10 +217,10 @@ class ExaSearchProvider:
 
         A page the site says is GONE (404, 410) is not retried: its saved copy
         would describe something that no longer exists."""
-        fresh, gone = await self._contents(url, self._fetch_max_age_hours)
+        fresh, gone = await self._contents(url, self._fetch_max_age_hours, max_chars)
         if fresh.get("status") != "nothing_found" or gone or self._fetch_max_age_hours < 0:
             return fresh
-        saved, _ = await self._contents(url, -1)
+        saved, _ = await self._contents(url, -1, max_chars)
         if saved.get("status") != "ok":
             return fresh
         # `note` right after `status`, before the page text it is about, the
@@ -226,14 +229,15 @@ class ExaSearchProvider:
                 **{k: v for k, v in saved.items() if k != "status"}}
 
     async def _contents(
-        self, url: str, max_age_hours: int
+        self, url: str, max_age_hours: int, max_chars: int | None
     ) -> tuple[dict[str, Any], bool]:
         """One `/contents` read, and whether the site answered that the page is
         gone. The second value only decides `_fetch`'s retry; it never reaches
         the model."""
         body: dict[str, Any] = {
             "urls": [url],
-            "text": {"maxCharacters": self._request_chars(self._extract_max_chars)},
+            "text": {"maxCharacters": self._request_chars(
+                max_chars if max_chars is not None else self._extract_max_chars)},
             "extras": {"imageLinks": MAX_IMAGE_LINKS},   # links only, for `media_fetch`
             "maxAgeHours": max_age_hours,
         }
@@ -244,7 +248,7 @@ class ExaSearchProvider:
             # slow page would lose the saved copy the retry exists to give.
             body["livecrawlTimeout"] = self._livecrawl_timeout_ms()
         payload = await self._post(self._contents_url, body, "exa contents")
-        return self._read_contents(url, payload), self._says_gone(payload)
+        return self._read_contents(url, payload, max_chars), self._says_gone(payload)
 
     def _livecrawl_timeout_ms(self) -> int:
         """Four seconds under the client timeout, within Exa's accepted range."""
@@ -262,7 +266,7 @@ class ExaSearchProvider:
                 return True
         return False
 
-    def _read_contents(self, url: str, payload: Any) -> dict[str, Any]:
+    def _read_contents(self, url: str, payload: Any, max_chars: int | None) -> dict[str, Any]:
         if payload is None:
             return dict(UNAVAILABLE_FETCH)
         if not isinstance(payload, dict):
@@ -293,18 +297,19 @@ class ExaSearchProvider:
         text = str(item.get("text") or "")
         if not text:
             return {"status": "nothing_found"}
-        clamped, truncated = clamp_chars(text, self._extract_max_chars)
-        truncated = truncated or self._exa_cut(text, self._extract_max_chars)
-        # Page-controlled → wrapped `fetched_page` with the source URL as
-        # provenance, the same discipline as a search snippet (R-13). The key is
-        # `text`, NOT `content` — Strands passes a dict carrying both `status`
-        # and `content` through unchanged, so a bare-string `content` reaches
-        # the model outside the standard text-block envelope and reads as
-        # "empty" (the Tavily adapter's identical note).
+        cap = max_chars if max_chars is not None else self._extract_max_chars
+        clamped, truncated = clamp_chars(text, cap)
+        truncated = truncated or self._exa_cut(text, cap)
+        # RAW text, not `fetched_page`-wrapped: `web_fetch` seals this into the
+        # page store and wraps each slice it serves (R-13). The key is `text`,
+        # NOT `content` — Strands passes a dict carrying both `status` and
+        # `content` through unchanged, so a bare-string `content` reaches the
+        # model outside the standard text-block envelope and reads as "empty"
+        # (the Tavily adapter's identical note).
         out: dict[str, Any] = {
             "status": "ok",
             "url": url,
-            "text": wrap("fetched_page", url, clamped),
+            "text": clamped,
             "truncated": truncated,
         }
         extras = item.get("extras")

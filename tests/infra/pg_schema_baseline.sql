@@ -194,6 +194,7 @@ $_$;
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -263,6 +264,7 @@ ADD CONSTRAINT fact_premise_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public
 ADD CONSTRAINT fact_premise_pkey PRIMARY KEY (fact_id, premise_fact_id);
 ADD CONSTRAINT fact_premise_premise_fact_id_fkey FOREIGN KEY (premise_fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
 ADD CONSTRAINT fact_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.fact(id);
+ADD CONSTRAINT fetched_pages_pkey PRIMARY KEY (conversation_id, url);
 ADD CONSTRAINT fk_cognition_session_close_session_id FOREIGN KEY (session_id) REFERENCES public.cognition_session(id);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT graph_arrival_pkey PRIMARY KEY (unit, message_id, revision);
@@ -468,6 +470,7 @@ ALTER TABLE ONLY public.fact_entity
 ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fact_premise
+ALTER TABLE ONLY public.fetched_pages
 ALTER TABLE ONLY public.geocode_cache
 ALTER TABLE ONLY public.graph_arrival
 ALTER TABLE ONLY public.graph_refusal
@@ -1207,6 +1210,7 @@ CREATE TABLE public.fact_asserter (
 CREATE TABLE public.fact_candidate (
 CREATE TABLE public.fact_entity (
 CREATE TABLE public.fact_premise (
+CREATE TABLE public.fetched_pages (
 CREATE TABLE public.geocode_cache (
 CREATE TABLE public.graph_arrival (
 CREATE TABLE public.graph_refusal (
@@ -1863,6 +1867,7 @@ backend_job_id text NOT NULL,
 base_revision_id text,
 batched boolean DEFAULT false NOT NULL
 battery double precision,
+blob_key text NOT NULL,
 blob_key text,
 body text NOT NULL,
 body text NOT NULL,
@@ -1973,6 +1978,7 @@ context_ids integer[] NOT NULL,
 context_sha256 text DEFAULT ''::text NOT NULL,
 continuation_calls integer NOT NULL,
 contract integer NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
@@ -2172,6 +2178,7 @@ expired_at timestamp with time zone,
 expired_reason text,
 expires_at bigint
 expires_at timestamp with time zone NOT NULL,
+expires_at timestamp with time zone NOT NULL,
 expires_at timestamp with time zone,
 external_files_json text,
 extraction_id bigint NOT NULL,
@@ -2186,6 +2193,7 @@ fact_value jsonb,
 failure_reason text,
 failure_stage text,
 fetch_token text NOT NULL,
+fetched_at timestamp with time zone NOT NULL,
 fetched_at timestamp with time zone NOT NULL,
 fidelity text DEFAULT 'tentative'::text NOT NULL,
 field_meta jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -2761,6 +2769,7 @@ profile_key text NOT NULL,
 profile_key text NOT NULL,
 projected_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 projection_rev integer DEFAULT 1 NOT NULL,
+provenance jsonb DEFAULT '{}'::jsonb NOT NULL
 provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
 provenance text NOT NULL,
 provider text NOT NULL,
@@ -3286,6 +3295,7 @@ updated_ms bigint NOT NULL,
 updated_ts bigint NOT NULL,
 updated_ts bigint NOT NULL,
 updated_ts bigint NOT NULL,
+url text NOT NULL,
 url text NOT NULL,
 url text NOT NULL,
 url text,

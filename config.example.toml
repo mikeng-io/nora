@@ -454,6 +454,10 @@ api_key_env = "GOOGLE_MAPS_API_KEY"
 [search]
 enabled = false
 provider = "tavily"              # "tavily" | "exa"
+# fetch_provider = "tavily"       # "" = same as provider; the backend web_fetch
+                                # extracts through. Tavily returns full pages
+                                # (materialized into fetched_pages); Exa caps
+                                # at 10k chars and reads as truncated.
 # max_results = 5                 # at most 20
 # content_max_chars = 1500        # per-result snippet clamp
 # extract_max_chars = 3000        # fetched-page clamp

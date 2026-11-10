@@ -189,6 +189,7 @@ from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
+from nora.infra.sql.fetched_pages import SqlFetchedPageStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.lessons import SqlLessonStore
@@ -404,6 +405,60 @@ def search_provider(cfg: Config) -> SearchProvider | None:
                 cfg.search.api_key_env,
             )
     return search_client
+
+
+def fetch_provider(cfg: Config) -> SearchProvider | None:
+    """The backend `web_fetch` extracts through, or `None` to reuse `provider`.
+
+    `None` is the un-configured state (`fetch_provider` unset or equal to
+    `provider`): the composition then hands the ONE search client to both
+    verbs, exactly as before. A keyless configured backend warns and falls
+    back the same way, so a wiring gap degrades to the search backend's own
+    ceiling rather than to `unavailable`.
+    """
+    name = cfg.search.fetch_provider
+    if not cfg.search.enabled or not name or name == cfg.search.provider:
+        return None
+    if name == "exa":
+        key_env = cfg.search.exa.api_key_env
+        key = cfg.credentials.get(key_env, "")
+        if not key:
+            log.warning(
+                "fetch_provider exa configured but its key env is unset — "
+                "falling back to the search backend")
+            return None
+        from nora.infra.search import ExaSearchProvider
+        return ExaSearchProvider(
+            api_key=key,
+            url=cfg.search.exa.url,
+            contents_url=cfg.search.exa.contents_url,
+            search_type=cfg.search.exa.type,
+            max_results=cfg.search.max_results,
+            content_max_chars=cfg.search.content_max_chars,
+            extract_max_chars=cfg.search.extract_max_chars,
+            fetch_max_age_hours=cfg.search.exa.fetch_max_age_hours,
+            timeout_seconds=cfg.search.timeout_seconds,
+        )
+    key_env = cfg.search.tavily.api_key_env
+    key = cfg.credentials.get(key_env, "")
+    if not key:
+        log.warning(
+            "fetch_provider tavily configured but its key env is unset — "
+            "falling back to the search backend")
+        return None
+    from nora.infra.search import TavilySearchProvider
+    return TavilySearchProvider(
+        api_key=key,
+        url=cfg.search.tavily.url,
+        max_results=cfg.search.max_results,
+        search_depth=cfg.search.tavily.search_depth,
+        content_max_chars=cfg.search.content_max_chars,
+        timeout_seconds=cfg.search.timeout_seconds,
+        extract_url=cfg.search.tavily.extract_url,
+        extract_depth=cfg.search.tavily.extract_depth,
+        extract_max_chars=cfg.search.extract_max_chars,
+        min_score=cfg.search.tavily.min_score,
+    )
 
 
 def _room_claims(allowlist: Policy) -> dict[str, frozenset[tuple[str, str]]]:
@@ -3134,6 +3189,9 @@ async def build_dependencies(
     # needs an SSRF gate: each crawls from its OWN servers, never Nora's,
     # whether it is handed a query or a url.
     search_client = search_provider(cfg)
+    # `web_fetch`'s OWN backend (`[search] fetch_provider`): None means the
+    # one search client serves both verbs, the pre-split shape.
+    fetch_client = fetch_provider(cfg)
     # `x_read`, `x_search` (DEC-201), `instagram_read` and `instagram_search`
     # get ONE `SocialProvider` — `SocialRouter`
     # — and the registry stays unaware that there are two backends under it.
@@ -3587,6 +3645,10 @@ async def build_dependencies(
         describe_max_bytes=_describe_max_bytes(cfg),
         blobs=blobs, descriptions=media_descriptions,
         video_readings=SqlVideoReadingStore(engine), search=search_client,
+        # `web_fetch`'s own backend ([search] fetch_provider) and the page
+        # index its offset/about reads answer from; the store is unconditional
+        # like `tool_call_log_store` (one pool, one lifecycle).
+        fetch=fetch_client, fetched_pages=SqlFetchedPageStore(engine),
         social=social_client,
         # The same router, for the two LinkedIn tools, only when LinkedIn is
         # switched on. The config

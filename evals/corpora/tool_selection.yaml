@@ -315,7 +315,7 @@ cases:
     entry: tag
     expect: reply
     mention: true
-    input: 去 https://example.com 睇下個標題係乜，話俾我知
+    input: 去 https://example.com 撳入「More information」條連結，話我知跳咗去邊一頁
     metadata: {tools: [computer_browse], not_tools: [web_fetch, computer_run]}
     snapshot: *room_a
   - name: route_computer_capture_the_page

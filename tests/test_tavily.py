@@ -180,7 +180,7 @@ async def test_fetch_returns_wrapped_text_for_the_requested_url(tavily):
     out = await provider.fetch(url="https://hko.gov.hk/x")
     assert out["status"] == "ok"
     assert out["url"] == "https://hko.gov.hk/x"             # url rides PLAIN
-    assert out["text"].startswith("<fetched_page ")             # page wrapped
+    assert "<fetched_page" not in out["text"]            # raw text; the tool wraps
     assert fake.extract_requests[0]["urls"] == ["https://hko.gov.hk/x"]
     # Strands-envelope invariant: no bare-string `content` key. A dict with
     # BOTH `status` and `content` passes through `_wrap_tool_result` unwrapped
@@ -202,7 +202,7 @@ async def test_long_fetched_text_is_clamped_and_flagged(tavily):
     # times however many results come back. It buys a model that can read what
     # the block is without loading a doctrine file defining `untrusted` — which
     # most of the audiences receiving that word never loaded.
-    body = out["text"].split(">\n", 1)[1].rsplit("\n<", 1)[0]
+    body = out["text"]  # raw text; the bound is on the page text itself
     assert len(body) <= 3000
 
 
