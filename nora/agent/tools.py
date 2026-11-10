@@ -3923,6 +3923,10 @@ _PAGE_SLICE_CHARS = 3000
 #: markdown) cannot fill the store.
 _PAGE_MATERIALIZE_CHARS = 250_000
 
+#: `BlobStore.delete` keeps bytes put within this many seconds, so a page
+#: fetched again right now is never deleted under its new row.
+_PAGE_BLOB_PUT_GRACE_SECONDS = 3600.0
+
 #: One `about` chunk target size. Paragraph-shaped, so a hit reads as the
 #: page's own words, not a window cut mid-sentence.
 _ABOUT_CHUNK_CHARS = 1200
@@ -3949,13 +3953,18 @@ def _page_chunks(text: str, size: int = _ABOUT_CHUNK_CHARS) -> list[str]:
     return chunks
 
 
+def _about_terms(about: str) -> set[str]:
+    """The words `about` can look for: two letters or more."""
+    return {t for t in re.findall(r"\w+", about.lower()) if len(t) >= 2}
+
+
 def _rank_chunks(chunks: list[str], about: str, k: int = _ABOUT_TOP_K) -> list[str]:
     """The `k` chunks with the most `about` term hits, verbatim and in page
     order of relevance. Lexical only — a page is small enough that ranking by
     term frequency is decidable, and the result carries the page's own words
     either way. # ponytail: term-frequency ranking; embeddings if `about`
     misses are observed in traces."""
-    terms = {t for t in re.findall(r"\w+", about.lower()) if len(t) >= 2}
+    terms = _about_terms(about)
     if not terms:
         return []
     scored = sorted(
@@ -3981,12 +3990,19 @@ def _serve_page(
     if about:
         hits = _rank_chunks(_page_chunks(text), about)
         if not hits:
-            return {
-                "status": "nothing_found",
-                "url": url,
-                "note": "I read the page I have and it doesn't mention that. "
-                        "Say you couldn't find it on the page.",
-            }
+            note = (
+                "None of the page I have matches those words; it may say it "
+                "differently. Say you couldn't find it there."
+                if _about_terms(about) else
+                "That has no word of two letters or more to look for. Ask for "
+                "a word or phrase from the page."
+            )
+            if truncated:
+                note += " What I have is cut short, so it may be further on."
+            miss: dict[str, Any] = {"status": "nothing_found", "url": url, "note": note}
+            if truncated:
+                miss["truncated"] = True
+            return miss
         out["about"] = about
         out["total"] = len(text)
         out["parts"] = [wrap_outside_text("fetched_page", url, h) for h in hits]
@@ -12205,6 +12221,16 @@ Returns `status`: ok (`members`, `scope`) or unavailable (`note`)."""
                 # text rewrites only the index row. Store failures degrade to
                 # no persistence, never to a lost answer (the text is in hand).
                 key = await blob_store.put(data=text.encode("utf-8"))
+                # The rows past their 24 h and the bytes nothing else names:
+                # purged here, on the next materialization (# ponytail: no
+                # periodic sweeper; rows wait for the next fetch). After this
+                # `put`, so a key re-fetched now is inside the delete's grace.
+                for stale in await fetched_pages.purge_expired(now=now_fn()):
+                    try:
+                        await blob_store.delete(
+                            key=stale, idle_seconds=_PAGE_BLOB_PUT_GRACE_SECONDS)
+                    except Exception:
+                        log.exception("web_fetch: the blob store refused a deletion")
                 await fetched_pages.put(page=FetchedPage(
                     conversation_id=conversation_id, url=url,
                     blob_key=key, fetched_at=now_fn(),

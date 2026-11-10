@@ -18,6 +18,7 @@ from nora.agent.room import Room
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
 from nora.testing import FakeMemoryStore
+from nora.testing.fakes import FakeBlobStore
 from tests.fakes import SinkSender
 
 MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
@@ -90,20 +91,11 @@ class _FakePages:
     async def put(self, *, page):
         self.rows[(page.conversation_id, page.url)] = page
 
-
-class _FakeBlobs:
-    """`BlobStore` double: bytes in, key out."""
-
-    def __init__(self) -> None:
-        self.objs: dict = {}
-
-    async def put(self, *, data):
-        key = f"k{len(self.objs)}"
-        self.objs[key] = data
-        return key
-
-    async def get(self, *, key):
-        return self.objs.get(key)
+    async def purge_expired(self, *, now, limit=20):
+        gone = [k for k, r in self.rows.items() if r.expires_at <= now][:limit]
+        keys = [self.rows.pop(k).blob_key for k in gone]
+        held = {r.blob_key for r in self.rows.values()}
+        return [k for k in dict.fromkeys(keys) if k not in held]
 
 
 def _tools(*, search=None, metrics: Metrics | None = None,
@@ -465,7 +457,7 @@ async def test_a_link_built_around_a_handles_code_points_at_its_code():
 
 async def test_a_second_call_reads_the_stored_page_without_fetching_again():
     fake = _FakeSearchProvider()
-    tools = _tools(search=fake, blobs=_FakeBlobs(), pages=_FakePages())
+    tools = _tools(search=fake, blobs=FakeBlobStore(), pages=_FakePages())
     await tools["web_fetch"](url="https://a.example")
     out = await tools["web_fetch"](url="https://a.example")
     assert fake.fetch_calls == ["https://a.example"]
@@ -476,7 +468,7 @@ async def test_offset_reads_the_next_slice_of_the_same_stored_page():
     long_page = "a paragraph of prose here\n\n" * 400   # ~10k chars, > one slice
     fake = _FakeSearchProvider(
         fetch={"status": "ok", "url": "https://a.example", "text": long_page})
-    tools = _tools(search=fake, blobs=_FakeBlobs(), pages=_FakePages())
+    tools = _tools(search=fake, blobs=FakeBlobStore(), pages=_FakePages())
     first = await tools["web_fetch"](url="https://a.example")
     assert first["total"] == len(long_page)
     assert first["next_offset"] == 3000
@@ -494,7 +486,7 @@ async def test_about_returns_the_matching_parts_verbatim():
             "more evaluation detail in the appendix")
     fake = _FakeSearchProvider(
         fetch={"status": "ok", "url": "https://a.example", "text": text})
-    tools = _tools(search=fake, blobs=_FakeBlobs(), pages=_FakePages())
+    tools = _tools(search=fake, blobs=FakeBlobStore(), pages=_FakePages())
     out = await tools["web_fetch"](url="https://a.example", about="evaluation")
     assert out["status"] == "ok" and out["total"] == len(text)
     # A short page is one chunk, so one part, holding the page's own words.
@@ -509,7 +501,7 @@ async def test_about_ranks_separate_chunks_by_term_hits():
             "filler " * 400)
     fake = _FakeSearchProvider(
         fetch={"status": "ok", "url": "https://a.example", "text": text})
-    tools = _tools(search=fake, blobs=_FakeBlobs(), pages=_FakePages())
+    tools = _tools(search=fake, blobs=FakeBlobStore(), pages=_FakePages())
     out = await tools["web_fetch"](url="https://a.example", about="evaluation")
     assert "evaluation section" in out["parts"][0]
 
@@ -517,7 +509,7 @@ async def test_about_ranks_separate_chunks_by_term_hits():
 async def test_about_a_missing_topic_answers_nothing_found_with_a_note():
     fake = _FakeSearchProvider(
         fetch={"status": "ok", "url": "https://a.example", "text": "only this"})
-    tools = _tools(search=fake, blobs=_FakeBlobs(), pages=_FakePages())
+    tools = _tools(search=fake, blobs=FakeBlobStore(), pages=_FakePages())
     out = await tools["web_fetch"](url="https://a.example", about="evaluation")
     assert out["status"] == "nothing_found" and out["note"]
 
@@ -526,3 +518,43 @@ async def test_without_a_page_store_the_tool_still_serves_the_fresh_text():
     tools = _tools(search=_FakeSearchProvider())
     out = await tools["web_fetch"](url="https://a.example")
     assert out["status"] == "ok" and "the page" in out["text"]
+
+
+async def test_an_about_miss_does_not_claim_the_page_lacks_the_topic():
+    fake = _FakeSearchProvider(fetch={
+        "status": "ok", "url": "https://a.example", "text": "only this",
+        "truncated": True})
+    tools = _tools(search=fake, blobs=FakeBlobStore(), pages=_FakePages())
+    out = await tools["web_fetch"](url="https://a.example", about="evaluation")
+    assert out["status"] == "nothing_found" and out["truncated"] is True
+    assert "doesn't mention" not in out["note"] and "cut short" in out["note"]
+
+
+async def test_an_about_with_nothing_to_look_for_says_so():
+    tools = _tools(search=_FakeSearchProvider(), blobs=FakeBlobStore(), pages=_FakePages())
+    out = await tools["web_fetch"](url="https://a.example", about="a")
+    assert out["status"] == "nothing_found" and "two letters" in out["note"]
+
+
+async def test_a_new_fetch_purges_expired_pages_and_their_unheld_bytes():
+    from datetime import UTC, datetime, timedelta
+
+    from nora.domain.fetched_page import FetchedPage
+    clock = [0.0]
+    blobs, pages = FakeBlobStore(clock=lambda: clock[0]), _FakePages()
+    old_key = await blobs.put(data=b"expired text")
+    shared_key = await blobs.put(data=b"live text")
+    clock[0] = 7200.0  # past the delete's put grace
+    past = datetime.now(UTC) - timedelta(days=2)
+    pages.rows[("g1", "https://old.example")] = FetchedPage(
+        "g1", "https://old.example", old_key, past, past + timedelta(hours=24), {})
+    pages.rows[("g1", "https://gone.example")] = FetchedPage(
+        "g1", "https://gone.example", shared_key, past, past + timedelta(hours=24), {})
+    pages.rows[("g2", "https://live.example")] = FetchedPage(
+        "g2", "https://live.example", shared_key, past,
+        datetime.now(UTC) + timedelta(hours=1), {})
+    tools = _tools(search=_FakeSearchProvider(), blobs=blobs, pages=pages)
+    out = await tools["web_fetch"](url="https://a.example")
+    assert out["status"] == "ok"
+    assert old_key not in blobs.blobs and shared_key in blobs.blobs
+    assert ("g1", "https://old.example") not in pages.rows

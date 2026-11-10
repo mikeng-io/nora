@@ -10,10 +10,10 @@ The row lives in its own namespace on purpose: a page's words are a
 stranger's (R-13), so fetched text never indexes into memory or documents —
 the two stores stay disjoint by construction.
 
-A row expires after `FETCHED_PAGE_TTL`; an expired row reads as a miss and
-the next fetch replaces it. Orphaned blobs (an expired row's bytes, or a
-replaced fetch's) are content-addressed garbage the blob layer owns — see
-`BlobDeletion`.
+A row expires after `FETCHED_PAGE_TTL`; an expired row reads as a miss. Every
+materialization purges the rows past their expiry and hands back the blob keys
+nothing else names, which `web_fetch` then deletes through the blob store
+(`BlobStore.delete`, which keeps bytes put within its grace window).
 """
 
 from __future__ import annotations
@@ -55,4 +55,10 @@ class FetchedPageStore(Protocol):
 
     async def put(self, *, page: FetchedPage) -> None:
         """Insert or replace the row for `(conversation_id, url)`."""
+        ...
+
+    async def purge_expired(self, *, now: datetime, limit: int = 20) -> list[str]:
+        """Delete up to `limit` rows past their expiry and return the blob keys
+        of those rows that no other row names any more — the bytes the caller
+        may delete. A key still named elsewhere is not returned."""
         ...

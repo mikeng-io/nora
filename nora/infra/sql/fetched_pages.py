@@ -19,6 +19,7 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.fetched_page import FetchedPage
+from nora.infra.sql.blob_refs import held_elsewhere
 from nora.infra.sql.schema import FETCHED_PAGES
 
 log = logging.getLogger("nora.infra.sql.fetched_pages")
@@ -74,3 +75,19 @@ class SqlFetchedPageStore:
                 await conn.execute(stmt)
         except Exception:
             log.exception("fetched_pages put failed")
+
+    async def purge_expired(self, *, now: datetime, limit: int = 20) -> list[str]:
+        try:
+            due = sa.select(FETCHED_PAGES.c.conversation_id, FETCHED_PAGES.c.url).where(
+                FETCHED_PAGES.c.expires_at <= now).limit(limit)
+            stmt = sa.delete(FETCHED_PAGES).where(
+                sa.tuple_(FETCHED_PAGES.c.conversation_id, FETCHED_PAGES.c.url).in_(due),
+            ).returning(FETCHED_PAGES.c.blob_key)
+            async with self._engine.begin() as conn:
+                keys = list(dict.fromkeys(
+                    row[0] for row in await conn.execute(stmt)))
+                held = await held_elsewhere(conn, keys)
+        except Exception:
+            log.exception("fetched_pages purge failed")
+            return []
+        return [k for k in keys if k not in held]
