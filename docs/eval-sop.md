@@ -164,8 +164,11 @@ validation does not require a provider-native `response_format` capability and
 does not add a second model call or an SDK tool loop.
 Validation and scoring use the same fact parser: a leading complete JSON document
 or fence is read, with trailing explanation ignored; duplicate fields are rejected.
-Coverage rows carry nullable `covered_by` for missed/unsure and string diagnostic
-entries; scored meanings, reason/proof validation and reference labels are unchanged.
+Evidence is mandatory for `covered` rows. For `missed`/`unsure`, `covered_by`
+may be absent or null. `diagnostic_misses` is an optional array whose entries are
+retained unscored. Local schema checks follow these same consumer rules; an unused
+null placeholder or diagnostic annotation must not decide a verdict. Scored meanings,
+reason/proof validation and reference labels are unchanged.
 Check the actual route's structured-output support before claiming enforcement;
 plain JSON mode, a mock request or a requested field alone is not proof that a
 schema is enforced. Provider-native enforcement is separate from local validation;

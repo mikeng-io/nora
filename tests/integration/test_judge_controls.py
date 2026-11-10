@@ -155,6 +155,16 @@ def model_wire(monkeypatch):
                         "error": {"message": "Generated gateway error"}})
             if mode.get("alias_error") and body["model"] == "generated-b":
                 answer["diagnostic_misses"] = None
+        if body["model"] == "generated-b" and len(body["messages"]) > 1 and (
+                body["messages"][0]["content"].startswith("FROZEN_COVERAGE")):
+            if mode.get("omit_missed_proof") or mode.get("omit_covered_proof"):
+                for row in answer["coverage"]:
+                    if row["verdict"] == ("missed" if mode.get("omit_missed_proof") else "covered"):
+                        row.pop("covered_by", None)
+            if mode.get("omit_diagnostics"):
+                answer.pop("diagnostic_misses", None)
+            if mode.get("structured_diagnostics"):
+                answer["diagnostic_misses"] = [{"detail": "Generated unscored annotation"}]
         if mode.get("schema_extra") and body["model"] == "generated-b" and (
                 body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
             answer["unexpected"] = "Generated field outside the requested schema"
@@ -207,6 +217,8 @@ def model_wire(monkeypatch):
     ("cutoff", "ERROR", 1), ("alias_error", "ERROR", 4),
     ("schema_rejected", "ERROR", 1), ("schema_extra", "ERROR", 4),
     ("trailing_prose", "PASS", 8), ("fenced_trailing", "PASS", 8),
+    ("omit_missed_proof", "PASS", 8), ("omit_covered_proof", "ERROR", 4),
+    ("omit_diagnostics", "PASS", 8), ("structured_diagnostics", "PASS", 8),
 ])
 async def test_frozen_controls_use_real_consumers_capture_and_shared_budget(
         tmp_path, job_files, model_wire, mode, expected, count):
@@ -242,6 +254,9 @@ async def test_frozen_controls_use_real_consumers_capture_and_shared_budget(
                    and r["status"] == "PASS" for r in rows)
     else:
         assert any(r["kind"] == "run_budget_final" for r in rows)
+    if mode == "omit_covered_proof":
+        assert [r["validation"] for r in rows if r["kind"] == "judge_error"] == [
+            "coverage_support_missing"]
     if mode == "schema_extra":
         assert [r["validation"] for r in rows if r["kind"] == "judge_error"] == [
             "judge_schema_mismatch"]

@@ -767,9 +767,9 @@ one index must be present. A cited read must have result.status ok and must
 not be load_tools. A catalogue or unavailable read is not coverage evidence.
 Example shape (use the actual supplied ids and evidence, not this example):
 {"coverage":[{"id":"example","verdict":"covered","reason":"explanation","covered_by":{"statements":[0],"reads":[]}}],"diagnostic_misses":[]}
-For missed/unsure entries, set covered_by to null.
+For missed/unsure entries, covered_by may be omitted or null.
 When required_units is empty, return {"coverage":[],"diagnostic_misses":[]}.
-diagnostic_misses must be an array of strings; it is unscored.
+diagnostic_misses is optional; when present it must be an array. Its entries are retained unscored.
 """
 
 

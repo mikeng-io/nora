@@ -31,14 +31,15 @@ def response_format(role: Literal["support", "coverage"]) -> dict:
                     "reason": {"type": "string"},
                     "covered_by": {"anyOf": [proof, {"type": "null"}]},
                 },
-                "required": ["id", "verdict", "reason", "covered_by"],
+                "required": ["id", "verdict", "reason"],
                 "additionalProperties": False,
             }},
-            "diagnostic_misses": {"type": "array", "items": {"type": "string"}},
+            "diagnostic_misses": {"type": "array"},
         }
     return {"type": "json_schema", "json_schema": {
         "name": "memory_" + role,
         "strict": True,
         "schema": {"type": "object", "properties": properties,
-                   "required": list(properties), "additionalProperties": False},
+                   "required": list(properties) if role == "support" else ["coverage"],
+                   "additionalProperties": False},
     }}
