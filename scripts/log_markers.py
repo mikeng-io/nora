@@ -1,7 +1,7 @@
 """Count the markers of a log in Python comments and docstrings, per file.
 
 A comment or docstring describes what the code is; the commit and the issue
-are the log (AGENTS.md «Comments and maintained documentation»). The
+are the log (AGENTS.md «Design, documents and comments»). The
 unambiguous markers of a log are a calendar date, an issue or PR number, and
 a decision citation (`DEC-n`, `R-n`, `ADR n`): the decision index maps each
 rule to its test, so a copy in the code only drifts.

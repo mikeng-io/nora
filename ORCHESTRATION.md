@@ -134,8 +134,8 @@ only what the upstream change touches.
   soften an obligation to get a pass.
 - Close the slice when every required obligation is evidenced and no BLOCKER
   remains; then stop adding work, checks or reviews. Record remaining
-  limitations without claiming them delivered. Update the design's delivery
-  coverage and the issue's remaining scope when present. Only a whole-issue
+  limitations without claiming them delivered. Update the issue's remaining
+  scope when present; an architecture change has already updated its bundle. Only a whole-issue
   outcome closes the issue. Reopen a settled result only on new evidence or a
   changed requirement.
 
@@ -184,7 +184,7 @@ most six into the PR, most severe first.
 |---|---|
 | BLOCKER: this diff causes reachable wrong output, data loss, disclosure, crash or a weakened gate | Fix and verify; only this verdict buys another round |
 | FIX-IF-CHEAP: a real in-diff defect with bounded harm | Fix if it takes minutes within the slice; otherwise record a limitation; no new round |
-| ISSUE: real but pre-existing or out of scope | Use the existing design or issue; file only actionable work with no home (`nora-decision`); never blocks |
+| ISSUE: real but pre-existing or out of scope | Use the existing issue; file only actionable work with no home (`nora-decision`); never blocks |
 | DROP: hypothetical, contrived, style or unrelated | One-line disposition |
 
 - Severity follows reachable consequence, not recurrence, confidence or repair
@@ -208,13 +208,14 @@ most six into the PR, most severe first.
 | Artifact | Owns |
 |---|---|
 | This policy | Assignment, capability, review and ownership rules |
-| Design / ADR | Architecture, rationale, requirements, acceptance and delivery coverage |
-| Issue | One bounded outcome: scope, non-goals, acceptance delta, dependencies |
+| Design bundle | The high-level architecture and its rationale (`nora-design`); never plan or status |
+| ADR | One decision, its alternatives and what it cost |
+| Issue | One bounded outcome: scope, non-goals, acceptance, dependencies |
 | Roadmap card | A capability outcome and its horizon; never an execution queue |
 | Run / review receipt | Actual provider, model, toolset, options, fit reason, run reference, input revision and evidence |
 
-- An issue points to revisioned design acceptance and states only its delta;
-  never copy the spec. A Project card is a view of its issue, not another body.
+- An issue links the design bundle it builds and owns its own scope and
+  acceptance; never copy the design into it. A Project card is a view of its issue, not another body.
 - Keep assignees, milestones, relationships and Development links native in
   GitHub. Tiers are recorded with the issue's readiness and run brief.
 - Receipts live in the run/evidence system, never as committed run files or a

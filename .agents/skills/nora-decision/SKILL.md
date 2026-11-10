@@ -1,15 +1,14 @@
 ---
 name: nora-decision
-description: Records Nora decisions, ADRs, issues and roadmap directions. Allocates DEC/R/ADR numbers from origin/master at merge time and checks duplicates. Load for filing, planning, citing or reversing them; nora-land owns landing and nora-tool owns tool text.
+description: Records Nora decisions, ADRs, issues and roadmap directions. Allocates DEC/R/ADR numbers from git history at merge time and checks duplicates. Load for filing, planning, citing or reversing them; nora-design owns design bundles, nora-land owns landing and nora-tool owns tool text.
 ---
 
 # Recording a decision
 
-The reasons live in `docs/maintainers/conventions.md` (sections «Issues», «Issue → ADR → decision
-row», «Numbering discipline»), `docs/adr/README.md`, the header of
-`design/09-decision-index.md`, and `AGENTS.md` («Decisions change on EVIDENCE, not
-on argument», and the «Never take a DEC or R number from a chat agreement» rule).
-This skill is the order of the steps and the check after each. Run from the
+Git and GitHub are the log. The ADR is the one decision record kept as history;
+the decision index lists the decisions that hold now; the design bundle states
+the design (`nora-design`). Conventions: `docs/maintainers/conventions.md`
+(«Issues», «Issue → ADR → decision row»), `docs/adr/README.md`. Run from the
 branch's worktree.
 
 ## 0. Pick the artifact
@@ -17,101 +16,73 @@ branch's worktree.
 | what you have | what to write |
 |---|---|
 | a defect you can fix in this session | nothing new: fix it; the PR is the record |
-| work a merged design bundle, an ADR or an open issue already names | an edit to THAT (the bundle's sequence, its `_index.yaml` open questions, the issue body) |
-| actionable deferred work with no existing home | an issue, filed in the same turn you decided, saying why |
+| a change to the system's design | the bundle, rewritten in place (`nora-design`) |
+| work, a plan, an open question or a roadmap item | an issue (or an edit to the open issue that owns it) |
 | a decision that will look wrong to someone who does not know what it replaced | an ADR |
-| a landed decision and the test that enforces it | a decision-index row |
+| a landed rule and the test that enforces it | a decision-index row |
 
 ## 1. Filing an issue
 
-1. **Can you fix it now within the agreed slice?** Then implement it directly, validate by impact (`nora-land`), and use `nora-prove-fix` for code fixes. Operator agreement means continue; an issue is not delivery. File only
-   what you have decided not to fix. A residue too small to act on goes in the
-   PR body's limitations, not a new issue.
+1. **Can you fix it now within the agreed slice?** Then fix it (`nora-land`,
+   `nora-prove-fix`). Operator agreement means continue; an issue is not
+   delivery. A residue too small to act on goes in the PR's limitations.
 2. **Look for a home first.**
    ```bash
    gh issue list --state all --search "<two or three words>" --limit 20
-   git fetch origin master
-   git grep -n -i "<the same words>" origin/master -- design docs/adr
    ```
-   Check: any hit in a bundle's sequence, an ADR or an open issue means you edit
-   that and file nothing; an issue that repeats an existing design sequence is
-   closed as a duplicate.
-3. **Select and read the existing form** in `.github/ISSUE_TEMPLATE/`, following
-   `docs/maintainers/conventions.md` «Issues». Bug report: its five fields;
-   Feature request: Problem and Proposed solution. Both use descriptive titles.
-   For internal work, keep design-anchored (building a specified design) or
-   freeform (proposing a decision), with title `<Area>: <the gap>`.
-   **Write the body to a file**, using the selected form's fields.
-4. **Scrub the draft.** Issues, comments and PR bodies are outside the history
-   scrub, which rewrites git objects only. Describe what a room did; never quote
-   a message or name a member; cite `file:line`, row ids, tag ids, metric names.
-   Check: read the file once for quoted chat, a member's name, a phone number or
-   a platform id before sending. (three issues rewritten for this.)
+   Check: an open issue on the subject means you edit it and file nothing.
+3. **Select the form** in `.github/ISSUE_TEMPLATE/` («Issues» in the
+   conventions). For work a bundle designs, the body starts
+   `**Design:** design/<topic>/<file>.md`. Write the body to a file.
+4. **Scrub the draft.** Issues and PR bodies are outside the history scrub.
+   Describe what a room did; never quote a message or name a member; cite
+   `file:line`, row ids, metric names. Check: read the file once for quoted
+   chat, a member's name, a phone number or a platform id.
 5. **File and read back.**
    ```bash
-   gh issue create --title "<selected form title>" --body-file <draft file>
+   gh issue create --title "<form title>" --body-file <draft file>
    gh issue view <N> --json title,body,labels
    ```
-   Apply the selected form's shape label: `bug`, `enhancement`, `design-anchored`
-   or `freeform`. When reformatting, remove conflicting shape labels and preserve
-   every other label. Check the read-back body and labels match the selected form.
+   Check: the form's shape label is set and the body matches the form.
 
 ## Roadmap planning
 
-For capability/business-direction planning, follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap).
-Read the current design and later amendments; check existing issues and merged
-receipts before calling work unbuilt. Reuse the outcome's issue, or create one
-through step 1 with benefit, design pointers, delivered/remaining scope and the
-next decision/evidence. Add the SAME issue to Universal Roadmap's Nora view as
-Level=Outcome; set lifecycle/horizon with a reason (new unscheduled directions:
-Proposed/Later). Keep delivery children native, and use milestones only for an
-agreed checkpoint. Read back membership/fields/relations. Planning grants no
-implementation, spending or deployment authority. Ordinary issue filing does not
-require a roadmap card. `nora-land` reconciles progress at completion.
+Follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap).
+Read the bundle and the code before calling work unbuilt. Reuse the outcome's
+issue or create one through step 1, add it to Universal Roadmap's Nora view as
+Level=Outcome, and set lifecycle/horizon with a reason. Read back membership and
+fields. Planning grants no implementation, spending or deployment authority.
 
 ## 2. Writing an ADR
 
-1. **Search before you design.** Look for the published convention (vendor docs,
-   the spec, papers) and cite it, including sources that argue against you:
-   0015's Context is the pattern. A good measurement says where the cost is, not
-   whether the problem is already solved.
-2. **Next number, from all three places:**
+1. **Search before you design.** Cite the published convention (vendor docs,
+   the spec, papers), including sources that argue against you.
+2. **Next number:**
    ```bash
    git fetch origin master
    git ls-tree --name-only origin/master docs/adr/ | grep -oE '/[0-9]{4}-' | tr -d '/-' | sort -n | uniq -c
-   ls docs/adr/ | grep -oE '^[0-9]{4}' | sort -n | uniq -c
    gh pr list --state open --limit 100 --json number,files \
      --jq '.[] | select(any(.files[]; .path | startswith("docs/adr/"))) | .number'
    ```
-   Take one above the highest number any of them shows. Check: a count above 1
-   on any line is a collision, not a pattern to follow (two ADRs once landed with
-   the same number). Re-run at merge time; step 4 applies to ADRs too.
-3. **Shape.** `NNNN-kebab-title.md` in `docs/adr/`. Copy the header of 0015 or 0016:
-   title line `# NNNN` plus the title; bullets **Status** (`proposed`), **Date**,
-   optional **Supersedes / Extends / Reverses, in part**, and **Index** (the DEC
-   or R row, `none` with a reason, or the placeholder «a DEC number is taken at
-   merge»). Sections: Context (the measurement and the sources), Decision,
-   Consequences with a **Worse** list (required: `docs/adr/README.md`), Rejected.
-4. **Status moves, text does not.** `proposed` → `accepted` (the operator's call)
-   → `superseded by NNNN`. An accepted ADR is changed by a new ADR; the only edit
-   to the old file is its Status line (0015's accepting commit edited 0007's).
-   Check: `git diff origin/master -- docs/adr/` touches no accepted ADR beyond
-   its Status line.
+   One above the highest. Check: a count above 1 is a collision. Re-run at
+   merge time (§4).
+3. **Shape.** `NNNN-kebab-title.md` in `docs/adr/`, header as in 0015: **Status**
+   (`proposed`), **Date**, optional **Supersedes**, **Index** (the row, or
+   `none` with a reason). Sections: Context, Decision, Consequences with a
+   **Worse** list, Rejected.
+4. **Status moves, text does not.** `proposed` → `accepted` (the operator's
+   call) → `superseded by NNNN`. Check: `git diff origin/master -- docs/adr/`
+   touches no accepted ADR beyond its Status line.
 
 ## 3. Writing a decision-index row
 
-1. **Where.** Append to the last table of `design/09-decision-index.md`: R and
-   DEC rows share it in landing order (R-95 to R-98 sit among DEC rows). Columns
-   `| ID | Statement | Enforcing test |`. A row is for a LANDED decision; a
-   proposed ADR that ships no behaviour keeps its Index placeholder (0016 merged
-   that way).
-2. **Statement.** The decision in bold first, then provenance (operator and
-   date, the design section), what it supersedes or reverses, what is not in
-   scope, and the reading that would reopen it («This holds unless ...», as
-   DEC-201 and DEC-202 write it).
-3. **Enforcing test.** Backticked test paths (with `::test_name`) that exist, or
-   the row says `NOT ENFORCED`, `DEPRECATED` or `REVERSED`. A new behavioural
-   rule (R-N) also registers its test in `RULE_TESTS` in
+1. **Where.** The last table of `design/09-decision-index.md`,
+   `| ID | Statement | Enforcing test |`. A row is for a LANDED decision.
+2. **Statement.** The rule in bold, then the reading that would reopen it
+   («This holds unless ...»). No provenance, dates or history: the commit and
+   the ADR hold those.
+3. **Enforcing test.** Backticked test paths that exist, or `NOT ENFORCED`. A
+   behavioural rule (R-N) registers its test in `RULE_TESTS` in
    `tests/test_acceptance_rules.py`.
 4. **Check:**
    ```bash
@@ -121,83 +92,52 @@ require a roadmap card. `nora-land` reconciles progress at completion.
      tests/architecture/test_doc_references_resolve.py > "${TMPDIR:-/tmp}/decision-tests.log" 2>&1; RC=$?
    echo "RC=$RC"; grep -E 'passed|failed|error' "${TMPDIR:-/tmp}/decision-tests.log"
    ```
-   PASS is `RC=0` and a passed count; anything else is FAIL or ERROR.
-5. **Retiring a row.** Mark it `DEPRECATED` (or `DEPRECATED IN PART`, `REVERSED`);
-   never renumber it and never delete it: other documents cite the number.
+   PASS is `RC=0` and a passed count.
+5. **A decision that no longer holds is deleted** from the index, with its
+   test or its `RULE_TESTS` entry. A changed decision is a rewritten row. Its
+   number is never reused (§4 reads history).
 
 ## 4. Taking the number, at merge time
 
-The number is chosen when the PR merges, from origin/master, never when you start:
-two branches can take the same number and git merges both rows without a conflict.
-`nora-land` owns the merge; do this immediately before it.
+Two branches can take the same number and git merges both rows without a
+conflict, so the number is chosen immediately before merge (`nora-land` §8).
 
-1. **Bring master in** the way `nora-land` does it (an authored `merge:` subject;
-   the commit hook refuses a bare `git merge origin/master`).
-2. **Highest on origin/master.** Bundles mint and reserve DEC numbers in their own
-   decisions files (`design/ambient-loop/03-decisions.md` reserves DEC-163 to 175,
-   `design/culture-tier/03-decisions.md` defines DEC-181 to 185, none of them in the
-   index), so read both the index and the tree:
+1. **Bring master in** with an authored `merge:` subject.
+2. **Highest number ever used**, including deleted rows:
    ```bash
    for ns in DEC R; do
-     idx=$(git show origin/master:design/09-decision-index.md | grep -oE "^\| $ns-[0-9]+[a-z]? \|" | grep -oE '[0-9]+' | sort -n | tail -n 1)
-     any=$(git grep -ohE "(^|[^A-Za-z])$ns-[0-9]+" origin/master -- design docs | grep -oE '[0-9]+' | sort -n | tail -n 1)
-     echo "$ns  index=${idx:-EMPTY}  design+docs=${any:-EMPTY}"
+     n=$(git log -p origin/master -- design docs | grep -ohE "(^|[^A-Za-z])$ns-[0-9]+" | grep -oE '[0-9]+' | sort -n | tail -n 1)
+     echo "$ns highest=${n:-EMPTY}"
    done
    ```
-   Check: both columns print a number. `EMPTY` is an ERROR (fetch or path),
-   never «nothing taken». Your number is one above the larger.
+   Check: both print a number; `EMPTY` is an ERROR (fetch or path). Yours is
+   one above.
 3. **Rows open PRs are adding:**
    ```bash
    for n in $(gh pr list --state open --limit 100 --json number --jq '.[].number'); do
      gh pr diff "$n" | grep -oE '^\+\| (DEC|R)-[0-9]+[a-z]? \|' | sed "s/^/#$n /"
    done
    ```
-4. **Duplicates.** On the merged tree, `tests/architecture/test_decision_index_ids_are_unique.py`
-   passes (`scripts/affected_tests.py` maps `design/09-decision-index.md` into
-   `make gate` whenever a diff touches it, and to the whole suite otherwise —
-   run `make full-gate` to always include it regardless of what changed) and
-   `make decision-numbers` prints nothing under either heading. On
-   origin/master itself:
-   ```bash
-   for ns in DEC R; do
-     d=$(git show origin/master:design/09-decision-index.md | grep -oE "^\| $ns-[0-9]+[a-z]? \|" | tr -d '| ' | sort | uniq -d)
-     echo "$ns duplicates: [${d}]"
-   done
-   ```
-   `uniq -d` exits 0 with or without duplicates, so read the string: `[]` is
-   clean. The trailing `\|` in the pattern is what keeps `R-6b` from reading as a
-   second `R-6`; without it the check reports false duplicates.
-5. **If your number is taken,** renumber YOUR row and every reference to it, never
-   the other one: `git grep -nE 'DEC-<n>([^0-9]|$)'` on the branch, the ADR's
-   Index line, the commit bodies, and the PR title (`gh pr edit <N> --title`).
-   Check: the same grep afterwards finds only your decision, including in PR
-   titles, which drift from the row's final number.
+4. **Duplicates.** `tests/architecture/test_decision_index_ids_are_unique.py`
+   passes on the merged tree, and `make decision-numbers` prints nothing under
+   either heading.
+5. **If your number is taken,** renumber YOUR row and every reference to it
+   (`git grep -nE 'DEC-<n>([^0-9]|$)'`, the ADR's Index line, the PR title).
 
-## 5. Citing, or reversing, a decision
+## 5. Citing or reversing a decision
 
-1. **Read the row on origin/master**, not a chat summary or memory:
+1. **Read the row on origin/master**, not a summary or memory:
    `git grep -nE 'DEC-<n>([^0-9]|$)' origin/master -- design/09-decision-index.md`.
-   Check the row and every later row naming it for `DEPRECATED`, `REVERSED`,
-   «Amended» or «supersedes».
-2. **A document is not uniformly current.** Before citing a summary table or
-   overview, look for a later dated section on the same subject, then blame it:
-   ```bash
-   git blame -L <start>,<end> -- <file>
-   git log -1 --format='%h %cs %s' <sha from the blame>
-   ```
-   A section older than the decision it contradicts is dead text, not a finding
-   (stale overview prose nearly got a correctly built tier deleted).
-3. **Reverse only on new evidence** (a measurement, a read-back, a probe). State
-   it in one line and write the new reopen condition. A better-argued restatement
-   is not evidence.
-4. **Sweep every quoting file.** A reversal lands in the deciding file and misses
-   the files that quoted the old answer. Grep the withdrawn answer's own words
-   (the endpoint, the number, the deleted verb):
-   `git grep -n -i '<old vocabulary>' -- design docs nora AGENTS.md CONTRIBUTING.md`.
-   Check: every hit is changed or carries a marker (mark, do not delete).
+   No row means the decision no longer holds; `git log -S 'DEC-<n>'` finds why.
+2. **Reverse only on new evidence** (a measurement, a read-back, a probe).
+   State it in one line and write the new reopen condition.
+3. **Rewrite every place that states the old answer**: the row (§3.5), the
+   bundle (`nora-design`), the root guides. Grep the withdrawn answer's own
+   words: `git grep -n -i '<old vocabulary>' -- design docs nora *.md .agents`.
+   Check: every hit is rewritten or deleted; none is marked.
 
 ## Tool notes
 
-- **Claude Code with the rtk hook:** output of `git` and `ls` can come back
-  condensed («filtered»). For any number you parse, run the command through
-  `rtk proxy <command>` so the output is raw.
+- **Claude Code with the rtk hook:** `git` and `ls` output can come back
+  condensed. For any number you parse, run the command through
+  `rtk proxy <command>`.

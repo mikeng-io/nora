@@ -275,7 +275,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
 
 ## Reaching the deployment — the detail
 
-The terse rule is in `AGENTS.md` («Reaching the deployment»); this is the why.
+The terse rule is in `AGENTS.md` («Deployment and releases»); this is the why.
 
 **Checkout-era history:** the following explains the earlier checkout deployment
 model. The installed Komodo release stack now owns application deployment;
