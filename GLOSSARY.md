@@ -118,7 +118,7 @@ is why `nora/infra`'s two clients have opposite error contracts.
   the Character · Nora entry). It holds mostly *events* rather than *traits*,
   so it is framed as a record she may contradict rather than a description.
 - **self block** — the `<self>` block: her Character · Nora entry for the
-  turn's unit (design/self-growth/20), capped in lines, first in the tag, fire
+  turn's unit (design/self-growth/character.md), capped in lines, first in the tag, fire
   and Cognition prompts, directly after the doctrine. No block while the unit
   has no entry.
 - **peer card** — a Honcho endpoint (`HonchoClient.peer_card`), Honcho's own
@@ -342,7 +342,7 @@ no entry.
   The target is **one `profile-*` adaptor family** (person, room, unit,
   nora, verdict) writing typed facts/traits/guesses lines; the prose
   adaptors retire at the switch. The live prose implementation below is
-  DEC-290 (design/self-growth/10): one Dreamer session per
+  DEC-290 (design/self-growth/character.md): one Dreamer session per
   (unit, entity), stored in the `culture` chain under four key shapes:
   a room's `primary_id`, `{unit}#character:{person_id}`, `{unit}#unit` and
   `{unit}#nora`.

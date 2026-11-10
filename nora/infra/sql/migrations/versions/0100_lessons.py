@@ -1,6 +1,6 @@
 """lesson, lesson_revision — practice induced from the outcomes of her acts, per unit.
 
-Design/self-growth/40-lessons.md, step L1. Two APPEND-ONLY tables: a `lesson` is an
+Design/self-growth/lessons.md, step L1. Two APPEND-ONLY tables: a `lesson` is an
 identity in one unit, and every change to what it says or whether it is in force is
 one more `lesson_revision` (reinforce, reword, retire, an operator's rollback), so
 the head is the highest `seq`. Nothing is updated, so no `nora_row_history` trigger:

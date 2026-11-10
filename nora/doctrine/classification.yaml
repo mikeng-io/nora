@@ -1,11 +1,11 @@
-# The doctrine sorted into law, practice, character and seed (design/self-growth/30-doctrine-sort.md).
+# The doctrine sorted into law, practice, character and seed (design/self-growth/doctrine.md).
 #
 # This file is the SIDE TABLE the loader reads. It is not a doctrine file: the loader
 # only scans `**/*.md`, so nothing here reaches a prompt, and no `.md` file under
 # this folder carries a marker, which is how the assembled doctrine stays
-# byte-identical. The operator-facing form is design/self-growth/31-doctrine-audit.md.
+# byte-identical. The operator-facing form is design/self-growth/doctrine.md.
 #
-# The test, from 30 §1:
+# The buckets are defined in design/self-growth/doctrine.md:
 #   law        breaking it lies, harms someone, crosses a trust boundary, or claims a
 #              capability she lacks, in ANY unit
 #   practice   a unit could reasonably want it otherwise; learnable from outcomes

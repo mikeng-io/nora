@@ -4,7 +4,7 @@ kind: objective
 version: 3
 applies_to: [character_unit_adaptor]
 description: >-
-  A unit's own Character (design/self-growth/10-character.md §3, C3a): what a
+  A unit's own Character (design/self-growth/character.md §3, C3a): what a
   group is across all of its rooms. Reads the account written last
   time and each room's current culture with the messages that culture cites,
   and writes one short account of the group through `character_revise`,

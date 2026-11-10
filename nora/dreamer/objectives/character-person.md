@@ -4,7 +4,7 @@ kind: objective
 version: 6
 applies_to: [character_person_adaptor]
 description: >-
-  One person's Character in one unit (design/self-growth/10-character.md §3,
+  One person's Character in one unit (design/self-growth/character.md §3,
   C2b). Reads the account written last time, the person's own messages across
   the unit's rooms since then, what they published on a social network since
   then, and the current culture of each of those rooms, and writes one short

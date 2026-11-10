@@ -16,7 +16,7 @@ prefix, and nothing in this bundle edits it.
 `self_card` was not this layer either. It was episodic memory, Honcho's
 conclusions about what she had said and done, *"not a description of who she
 is"*. It left the tag and fire prompts when the `<self>` block (her Character ·
-Nora account, `design/self-growth/20-self-block.md`) landed.
+Nora account, `design/self-growth/character.md`) landed.
 
 ## Where: generated from the room table and adapter health
 

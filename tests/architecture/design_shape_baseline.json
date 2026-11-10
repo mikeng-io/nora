@@ -655,43 +655,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/self-growth/00-intent.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-growth/10-character.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-growth/20-self-block.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-growth/30-doctrine-sort.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-growth/31-doctrine-audit.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/self-growth/40-lessons.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-growth/50-readback-and-sizing.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-growth/60-synthesis.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-growth/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/self-reference/00-overview.md": [
   "numbered-or-dated-name",
   "date"

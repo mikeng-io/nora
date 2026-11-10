@@ -231,9 +231,9 @@ design/room-topology/_index.yaml
 design/self-awareness/00-overview.md
 design/self-awareness/01-three-layers.md
 design/self-awareness/07-room-tools-plan.md
-design/self-growth/10-character.md
-design/self-growth/20-self-block.md
-design/self-growth/40-lessons.md
+design/self-growth/character.md
+design/self-growth/character.md
+design/self-growth/lessons.md
 design/self-reference/01-appearance-doctrine.md
 design/self-reference/02-canonical-assets.md
 design/self-reference/05-visual-identity-spec.md

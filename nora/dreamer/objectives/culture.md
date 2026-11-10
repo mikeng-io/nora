@@ -10,11 +10,11 @@ description: >-
   call themselves. Deliberately NOT a list of
   what happened: the memory system already produces that shape and it is the
   shape this tier exists to not be. Version 6 re-synthesises a few lasting
-  patterns instead of continuing the account (design/self-growth/60, DEC-302).
+  patterns instead of continuing the account (design/self-growth/character.md, DEC-302).
   Version 5 writes the room alone: people
   have their own sessions (`character-person`). Version 4 writes through the
   `character_revise` verb with citations instead of a JSON envelope
-  (design/self-growth/10 §3); version 3 asks only about the people who wrote in the batch (DEC-280); version 2 added one account per listed person (DEC-278); version 1 was design/culture-tier, DEC-182.
+  (design/self-growth/character.md §3); version 3 asks only about the people who wrote in the batch (DEC-280); version 2 added one account per listed person (DEC-278); version 1 was design/culture-tier, DEC-182.
 change_policy: operator-only
 ---
 You are writing one short paragraph about **what a group is like** — a

@@ -89,7 +89,7 @@ _NOT_A_BUILDER = {
 #: it starts joining (limitation closed — delete it).
 _UNJOINED_BY_OWN_SQL = {
     "nora/infra/sql/character.py": (
-        "a person's Character session (design/self-growth/10 §3) reads that "
+        "a person's Character session (design/self-growth/character.md §3) reads that "
         "person's own lines across their unit's rooms by its own SQL; a photo "
         "or file they posted renders as its stored body (the bare handle), not "
         "as what it showed. The session is writing what the person is like from "

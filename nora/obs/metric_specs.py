@@ -220,7 +220,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "and stage=\"fire_culture\" — a room's account that exists and could "
         "not be read (a raise, or the bounded read timing out). A room never "
         "folded is not an error and moves nothing. The <self> read "
-        "(design/self-growth/20) is stage=\"tag_self\", "
+        "(design/self-growth/character.md) is stage=\"tag_self\", "
         "stage=\"fire_self\" and stage=\"cognition_self\", on the same terms. "
         "The <recalled> pre-fetch (design/unified-memory/README.md step 3b) is "
         "stage=\"tag_prefetch\": a memory search that failed, timed out or "
