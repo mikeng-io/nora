@@ -9,7 +9,7 @@ edges:
   - {dst: 10-architecture, rel: sequences, provenance: asserted}
   - {dst: 20-plan-and-verification, rel: sequences, provenance: asserted}
   - {dst: ../instagram-adoption/social.md, rel: extends, provenance: asserted}
-  - {dst: ../social-per-network/00-intent.md, rel: supersedes-scope-note, provenance: asserted}
+  - {dst: ../social-per-network/README.md, rel: supersedes-scope-note, provenance: asserted}
 ---
 
 # Intent

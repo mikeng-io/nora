@@ -132,7 +132,7 @@ def test_no_function_calls_a_network_parser_or_host_predicate_outside_the_regist
         offenders.extend(_offenders_in(path))
     assert not offenders, (
         "a function outside the link-owner registry calls a network parser "
-        "or host predicate directly (design/social-per-network/"
+        "or host predicate directly (design/social-per-network/links.md"
         "30-link-owner-registry.md, \"Tests and enforcement\"): "
         f"{offenders}. Route it through nora.agent.link_owners.owner_of "
         "instead, or add the function to _ALLOWED with the reason."

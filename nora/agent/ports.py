@@ -80,7 +80,7 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
     "bad_arguments": "the call named an argument the tool does not take; "
                      "nothing ran; calling again with the listed arguments "
                      "will work. Not `unavailable` (R-99, design/"
-                     "social-per-network/30-link-owner-registry.md, "
+                     "social-per-network/links.md, "
                      "2026-09-25): `unavailable` means «I could not check» "
                      "and stays true of the whole turn (conduct.md — «what "
                      "you could not check stays unchecked afterwards too»), "

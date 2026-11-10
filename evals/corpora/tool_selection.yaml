@@ -904,7 +904,7 @@ cases:
     metadata: {tools: [linkedin_search], not_tools: [linkedin_read, instagram_search, web_search]}
     snapshot: *room_a
 
-  # design/social-per-network/30-link-owner-registry.md, "Migration" PR 2:
+  # design/social-per-network/links.md, "Migration" PR 2:
   # X and LinkedIn register in the link-owner registry, so `web_fetch`/
   # `media_fetch` now REDIRECT a pasted page link instead of fetching it.
   # These two are NOT `route_x_read_link`/`route_linkedin_read_profile_link`
@@ -951,7 +951,7 @@ cases:
         linkedin_read: ["www.linkedin.com/in/synth-pr2-person"]
     snapshot: *room_a
 
-  # design/social-per-network/30-link-owner-registry.md, "Migration" PR 3:
+  # design/social-per-network/links.md, "Migration" PR 3:
   # the OWNERS now consult the registry too, so a wrong-first-owner call
   # recovers instead of dead-ending on "I can't read that." The wrong owner
   # here is `instagram_read` ON PURPOSE, not `linkedin_read`: before PR 3,

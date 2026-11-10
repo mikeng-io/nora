@@ -441,28 +441,6 @@
   "date",
   "over-budget"
  ],
- "design/social-per-network/00-intent.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/social-per-network/10-changes.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/social-per-network/20-verification.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/social-per-network/30-link-owner-registry.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/social-per-network/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/standing-compact/00-intent.md": [
   "numbered-or-dated-name",
   "date"

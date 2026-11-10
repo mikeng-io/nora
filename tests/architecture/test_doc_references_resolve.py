@@ -351,10 +351,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     #
     # `_paragraphs` treats each list item as its own record; each of these is a
     # design record naming the code of its day.
-    ("design/social-per-network/10-changes.md", "tests/test_social_fetch_tool.py"): (
-        "the plan names the file it replaces; DEC-201 PR 1 (abeab8e4) moved "
-        "those tests to per-tool tests under tests/unit/"
-    ),
     # --- the self-reference bundle, DEC-193 ---
     #
     # `scripts/ingest_self_asset.py` exists. What remains is history.
