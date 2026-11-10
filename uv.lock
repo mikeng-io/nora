@@ -2019,7 +2019,7 @@ wheels = [
 
 [[package]]
 name = "nora"
-version = "7.17.2"
+version = "7.17.3"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
