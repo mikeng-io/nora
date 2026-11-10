@@ -1,0 +1,3641 @@
+{
+ "deploy/bridge-projection/entry.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 4
+ },
+ "deploy/computer/computerd.py": {
+  "comment_blocks": 14,
+  "file_lines": 1854,
+  "functions": {
+   "create_app": 240
+  },
+  "internal_docstrings": 20
+ },
+ "deploy/computer/lifecycle_controller.py": {
+  "functions": {
+   "Controller.dispatch": 128
+  }
+ },
+ "deploy/computer/lifecycle_event.py": {
+  "internal_docstrings": 2
+ },
+ "deploy/computer/migrate_unit_scope.py": {
+  "functions": {
+   "migrate": 147
+  }
+ },
+ "deploy/discord-bridge/entry.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 3
+ },
+ "deploy/signal-bridge/wrapper.py": {
+  "comment_blocks": 5,
+  "file_lines": 823,
+  "internal_docstrings": 11
+ },
+ "deploy/stt/server.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "deploy/voice-wake/tests/test_codec.py": {
+  "comment_blocks": 1
+ },
+ "deploy/voice-wake/tests/test_gate.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "deploy/voice-wake/wakegate/service.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 7
+ },
+ "evals/__main__.py": {
+  "comment_blocks": 11,
+  "file_lines": 1063,
+  "functions": {
+   "_execute": 197,
+   "_main": 284
+  },
+  "internal_docstrings": 8
+ },
+ "evals/backbone.py": {
+  "comment_blocks": 45,
+  "file_lines": 3005,
+  "functions": {
+   "_drive_draw": 508
+  },
+  "internal_docstrings": 31
+ },
+ "evals/corpora_assess.py": {
+  "comment_blocks": 1
+ },
+ "evals/profile_coverage_input.py": {
+  "functions": {
+   "export_input": 191
+  }
+ },
+ "evals/pseudonyms.py": {
+  "internal_docstrings": 2
+ },
+ "evals/rebuilt/domain.py": {
+  "comment_blocks": 17
+ },
+ "evals/rebuilt/entry.py": {
+  "comment_blocks": 17,
+  "functions": {
+   "standing": 134
+  },
+  "internal_docstrings": 2
+ },
+ "evals/rebuilt/fold_evidence.py": {
+  "internal_docstrings": 2
+ },
+ "evals/rebuilt/grading.py": {
+  "comment_blocks": 5
+ },
+ "evals/rebuilt/judge.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "evals/rebuilt/profile_coverage.py": {
+  "functions": {
+   "measure": 152
+  }
+ },
+ "evals/rebuilt/profile_identity.py": {
+  "functions": {
+   "check_identity": 140
+  }
+ },
+ "evals/rebuilt/rubric.py": {
+  "comment_blocks": 10
+ },
+ "evals/recall.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "evals/retrieval_bakeoff/adapters.py": {
+  "comment_blocks": 3,
+  "file_lines": 918,
+  "internal_docstrings": 3
+ },
+ "evals/retrieval_bakeoff/decide.py": {
+  "internal_docstrings": 5
+ },
+ "evals/retrieval_bakeoff/run.py": {
+  "file_lines": 1192,
+  "functions": {
+   "main": 165
+  },
+  "internal_docstrings": 4
+ },
+ "evals/scenarios.py": {
+  "comment_blocks": 10,
+  "internal_docstrings": 1
+ },
+ "evals/situation.py": {
+  "comment_blocks": 1
+ },
+ "evals/subject_config.py": {
+  "comment_blocks": 7
+ },
+ "nora/__main__.py": {
+  "comment_blocks": 19,
+  "functions": {
+   "App.run": 284
+  },
+  "internal_docstrings": 2
+ },
+ "nora/agent/arithmetic.py": {
+  "comment_blocks": 9,
+  "internal_docstrings": 3
+ },
+ "nora/agent/browse.py": {
+  "comment_blocks": 2,
+  "functions": {
+   "_tools": 177
+  }
+ },
+ "nora/agent/cognition_pace.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 3
+ },
+ "nora/agent/comprehend_tools.py": {
+  "comment_blocks": 4
+ },
+ "nora/agent/dream_guard.py": {
+  "comment_blocks": 17,
+  "internal_docstrings": 3
+ },
+ "nora/agent/dream_screen.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/agent/dreamer.py": {
+  "comment_blocks": 57,
+  "file_lines": 2201,
+  "functions": {
+   "DreamerRuntime._run_body": 310
+  },
+  "internal_docstrings": 16
+ },
+ "nora/agent/egress.py": {
+  "comment_blocks": 6,
+  "internal_docstrings": 1
+ },
+ "nora/agent/factory.py": {
+  "comment_blocks": 12,
+  "file_lines": 968
+ },
+ "nora/agent/fetch_watch.py": {
+  "internal_docstrings": 1
+ },
+ "nora/agent/guards.py": {
+  "comment_blocks": 49,
+  "file_lines": 1537,
+  "functions": {
+   "Deliverer.deliver": 305,
+   "ReplyGuard.evaluate": 226
+  },
+  "internal_docstrings": 10
+ },
+ "nora/agent/intent_router.py": {
+  "comment_blocks": 1
+ },
+ "nora/agent/lineage.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/agent/link_owners.py": {
+  "comment_blocks": 7,
+  "internal_docstrings": 5
+ },
+ "nora/agent/links.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 4
+ },
+ "nora/agent/markdown.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 2
+ },
+ "nora/agent/mcp.py": {
+  "comment_blocks": 2
+ },
+ "nora/agent/memory_search.py": {
+  "comment_blocks": 15,
+  "file_lines": 1259,
+  "functions": {
+   "MemorySearch.read": 171,
+   "walk": 159
+  },
+  "internal_docstrings": 6
+ },
+ "nora/agent/outbound.py": {
+  "comment_blocks": 11,
+  "internal_docstrings": 5
+ },
+ "nora/agent/ports.py": {
+  "comment_blocks": 7,
+  "internal_docstrings": 1
+ },
+ "nora/agent/prefill.py": {
+  "comment_blocks": 40,
+  "file_lines": 1357,
+  "functions": {
+   "_standing_block": 142,
+   "_transcript_block": 147,
+   "build_prefill": 128
+  },
+  "internal_docstrings": 23
+ },
+ "nora/agent/punctuation.py": {
+  "internal_docstrings": 1
+ },
+ "nora/agent/reaction.py": {
+  "comment_blocks": 1
+ },
+ "nora/agent/reasoning_carry.py": {
+  "internal_docstrings": 1
+ },
+ "nora/agent/reasoning_strip.py": {
+  "comment_blocks": 7,
+  "internal_docstrings": 4
+ },
+ "nora/agent/registry.py": {
+  "comment_blocks": 41,
+  "file_lines": 1405,
+  "functions": {
+   "ToolRegistry.__init__": 454,
+   "ToolRegistry.specs": 149
+  },
+  "internal_docstrings": 5
+ },
+ "nora/agent/relay.py": {
+  "comment_blocks": 2,
+  "functions": {
+   "Relay.send": 156
+  }
+ },
+ "nora/agent/rollup_read.py": {
+  "internal_docstrings": 3
+ },
+ "nora/agent/room.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/agent/room_routing.py": {
+  "comment_blocks": 1
+ },
+ "nora/agent/run_budget_transport.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 3
+ },
+ "nora/agent/security.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/agent/shared_state.py": {
+  "comment_blocks": 5,
+  "functions": {
+   "read_shared": 355
+  }
+ },
+ "nora/agent/social_read.py": {
+  "internal_docstrings": 1
+ },
+ "nora/agent/structured.py": {
+  "comment_blocks": 3
+ },
+ "nora/agent/subagent_desk.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/agent/subagent_progress.py": {
+  "internal_docstrings": 2
+ },
+ "nora/agent/surface.py": {
+  "comment_blocks": 3
+ },
+ "nora/agent/tag_trace_sanitize.py": {
+  "comment_blocks": 1
+ },
+ "nora/agent/telemetry.py": {
+  "comment_blocks": 4
+ },
+ "nora/agent/tool_choice.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/agent/tools.py": {
+  "comment_blocks": 373,
+  "file_lines": 18887,
+  "functions": {
+   "_parse_repeat": 129,
+   "build_tool_specs": 13503,
+   "build_tool_specs._movement_person": 161,
+   "build_tool_specs._observation_query": 161,
+   "build_tool_specs.about": 182,
+   "build_tool_specs.character_read": 160,
+   "build_tool_specs.computer_browse": 131,
+   "build_tool_specs.computer_export": 255,
+   "build_tool_specs.computer_import": 225,
+   "build_tool_specs.document_publish": 162,
+   "build_tool_specs.find_parking": 176,
+   "build_tool_specs.generate_image": 299,
+   "build_tool_specs.instagram_read": 281,
+   "build_tool_specs.linkedin_read": 146,
+   "build_tool_specs.load_transcript": 154,
+   "build_tool_specs.media_fetch": 660,
+   "build_tool_specs.note_revise": 121,
+   "build_tool_specs.online_now": 369,
+   "build_tool_specs.record_query": 219,
+   "build_tool_specs.remember_told": 155,
+   "build_tool_specs.remind": 261,
+   "build_tool_specs.room_list": 151,
+   "build_tool_specs.room_read": 141,
+   "build_tool_specs.route": 229,
+   "build_tool_specs.routine_read": 193,
+   "build_tool_specs.video_create": 152,
+   "build_tool_specs.web_fetch": 138,
+   "build_tool_specs.where_been": 467,
+   "build_tool_specs.where_been._been_read": 126,
+   "build_tool_specs.who_said": 127,
+   "build_tool_specs.x_read": 141,
+   "build_tools": 158
+  },
+  "internal_docstrings": 128
+ },
+ "nora/agent/video_desk.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 3
+ },
+ "nora/agent/whereis.py": {
+  "comment_blocks": 13,
+  "functions": {
+   "Whereis.locate": 245
+  },
+  "internal_docstrings": 3
+ },
+ "nora/analytics/__main__.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/analytics/composition.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "nora/analytics/rollup.py": {
+  "comment_blocks": 19,
+  "file_lines": 1080,
+  "functions": {
+   "MobilityRollup._reconcile_places": 124,
+   "MobilityRollup._segment_batch": 304
+  },
+  "internal_docstrings": 11
+ },
+ "nora/analytics/units.py": {
+  "internal_docstrings": 4
+ },
+ "nora/app/adoption.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "nora/app/agent_runner.py": {
+  "comment_blocks": 10,
+  "functions": {
+   "LiveAgentRunner.invoke": 155
+  }
+ },
+ "nora/app/assembler.py": {
+  "comment_blocks": 5
+ },
+ "nora/app/assess_dq.py": {
+  "internal_docstrings": 1
+ },
+ "nora/app/bridge_queue.py": {
+  "comment_blocks": 27,
+  "file_lines": 1793,
+  "functions": {
+   "WorkRunner._run_ingest": 291
+  },
+  "internal_docstrings": 22
+ },
+ "nora/app/cli.py": {
+  "comment_blocks": 13,
+  "file_lines": 1929,
+  "functions": {
+   "add_subcommands": 398,
+   "cmd_unified_backfill": 173
+  },
+  "internal_docstrings": 7
+ },
+ "nora/app/cognition_agent_runner.py": {
+  "internal_docstrings": 1
+ },
+ "nora/app/cognition_grounding.py": {
+  "comment_blocks": 8,
+  "file_lines": 904,
+  "functions": {
+   "build_grounder": 292,
+   "build_grounder.ground": 250
+  },
+  "internal_docstrings": 6
+ },
+ "nora/app/cognition_memory.py": {
+  "comment_blocks": 4,
+  "functions": {
+   "WakeMemory.prepare": 169,
+   "WakeMemory.propose": 211
+  },
+  "internal_docstrings": 3
+ },
+ "nora/app/cognition_session.py": {
+  "comment_blocks": 30,
+  "file_lines": 3592,
+  "functions": {
+   "CognitionSessionRunner.__init__": 159,
+   "CognitionSessionRunner._build_tools": 1751,
+   "CognitionSessionRunner._build_tools.remind": 224,
+   "CognitionSessionRunner._run_session": 162,
+   "CognitionSessionRunner.on_wake": 197
+  },
+  "internal_docstrings": 32
+ },
+ "nora/app/cognition_wiring.py": {
+  "comment_blocks": 12,
+  "functions": {
+   "build_cognition_runner": 152
+  }
+ },
+ "nora/app/composition.py": {
+  "comment_blocks": 222,
+  "file_lines": 5992,
+  "functions": {
+   "build_dependencies": 3917
+  },
+  "internal_docstrings": 30
+ },
+ "nora/app/comprehend.py": {
+  "functions": {
+   "MemoryProposalAdmission._admit": 325
+  },
+  "internal_docstrings": 2
+ },
+ "nora/app/compute_poller.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 3
+ },
+ "nora/app/computer_dispatch.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/app/computer_metrics.py": {
+  "comment_blocks": 1
+ },
+ "nora/app/computer_queue.py": {
+  "comment_blocks": 16,
+  "file_lines": 1365,
+  "internal_docstrings": 11
+ },
+ "nora/app/config_cli.py": {
+  "internal_docstrings": 8
+ },
+ "nora/app/dispatch.py": {
+  "comment_blocks": 2
+ },
+ "nora/app/documents_service.py": {
+  "file_lines": 812,
+  "functions": {
+   "DocumentService.publish": 143
+  },
+  "internal_docstrings": 9
+ },
+ "nora/app/fire.py": {
+  "comment_blocks": 80,
+  "file_lines": 2966,
+  "functions": {
+   "FirePath.__init__": 248,
+   "FirePath._invoke": 231,
+   "FirePath._turn": 402,
+   "FirePath.build_context": 198,
+   "FirePath.speak": 142
+  },
+  "internal_docstrings": 30
+ },
+ "nora/app/gatherings.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 5
+ },
+ "nora/app/graph_project.py": {
+  "comment_blocks": 1
+ },
+ "nora/app/heartbeat.py": {
+  "comment_blocks": 13,
+  "internal_docstrings": 9
+ },
+ "nora/app/memory_backfill.py": {
+  "comment_blocks": 1,
+  "functions": {
+   "backfill_unit": 126
+  },
+  "internal_docstrings": 2
+ },
+ "nora/app/memory_carry.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/app/memory_detach.py": {
+  "internal_docstrings": 1
+ },
+ "nora/app/oauth_keepalive.py": {
+  "internal_docstrings": 1
+ },
+ "nora/app/otp.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "nora/app/participation.py": {
+  "comment_blocks": 14,
+  "functions": {
+   "ParticipationTrigger.close_due_windows": 126
+  },
+  "internal_docstrings": 4
+ },
+ "nora/app/participation_measures.py": {
+  "comment_blocks": 1
+ },
+ "nora/app/pending.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/app/proactive_screen.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/app/report.py": {
+  "comment_blocks": 3
+ },
+ "nora/app/revisions.py": {
+  "internal_docstrings": 1
+ },
+ "nora/app/runtime.py": {
+  "comment_blocks": 30,
+  "file_lines": 1524,
+  "functions": {
+   "_dream_adaptor_once": 245,
+   "dream_loop": 359
+  },
+  "internal_docstrings": 11
+ },
+ "nora/app/social_expiry.py": {
+  "internal_docstrings": 1
+ },
+ "nora/app/social_perception.py": {
+  "internal_docstrings": 3
+ },
+ "nora/app/social_poller.py": {
+  "comment_blocks": 2,
+  "file_lines": 1175,
+  "internal_docstrings": 17
+ },
+ "nora/app/subagent_backend.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 3
+ },
+ "nora/app/subagent_runner.py": {
+  "internal_docstrings": 2
+ },
+ "nora/app/subconscious.py": {
+  "comment_blocks": 2
+ },
+ "nora/app/summons.py": {
+  "comment_blocks": 15,
+  "internal_docstrings": 6
+ },
+ "nora/app/summons_consumer.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/app/unified_backfill.py": {
+  "comment_blocks": 5,
+  "file_lines": 895,
+  "functions": {
+   "_run_units": 186
+  },
+  "internal_docstrings": 2
+ },
+ "nora/app/voice_events.py": {
+  "comment_blocks": 5
+ },
+ "nora/app/wake.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 4
+ },
+ "nora/config.py": {
+  "comment_blocks": 109,
+  "file_lines": 4760,
+  "internal_docstrings": 23
+ },
+ "nora/doctrine/loader.py": {
+  "comment_blocks": 11,
+  "file_lines": 944,
+  "internal_docstrings": 6
+ },
+ "nora/documents/check.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 10
+ },
+ "nora/domain/actions.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/assess.py": {
+  "comment_blocks": 2
+ },
+ "nora/domain/audience.py": {
+  "comment_blocks": 3
+ },
+ "nora/domain/block_types.py": {
+  "comment_blocks": 19,
+  "file_lines": 1116,
+  "internal_docstrings": 1
+ },
+ "nora/domain/blocks.py": {
+  "comment_blocks": 17,
+  "file_lines": 949,
+  "internal_docstrings": 2
+ },
+ "nora/domain/bounds.py": {
+  "comment_blocks": 3
+ },
+ "nora/domain/cognition_ground.py": {
+  "comment_blocks": 6
+ },
+ "nora/domain/cognition_pace.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/cognition_session.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 2
+ },
+ "nora/domain/comprehend.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/computer.py": {
+  "comment_blocks": 4
+ },
+ "nora/domain/computer_events.py": {
+  "comment_blocks": 3
+ },
+ "nora/domain/computer_exports.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "nora/domain/computer_sessions.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/cues.py": {
+  "comment_blocks": 2
+ },
+ "nora/domain/culture.py": {
+  "comment_blocks": 12
+ },
+ "nora/domain/decision_log.py": {
+  "comment_blocks": 10,
+  "internal_docstrings": 1
+ },
+ "nora/domain/doctrine_check.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/documents.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/embedder_input.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/external_files.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 4
+ },
+ "nora/domain/facts.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/framing.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 4
+ },
+ "nora/domain/gatherings.py": {
+  "comment_blocks": 6
+ },
+ "nora/domain/identity.py": {
+  "comment_blocks": 9
+ },
+ "nora/domain/instagram_links.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "nora/domain/lessons.py": {
+  "comment_blocks": 7
+ },
+ "nora/domain/lineage.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/domain/live.py": {
+  "internal_docstrings": 1
+ },
+ "nora/domain/media.py": {
+  "comment_blocks": 14,
+  "file_lines": 1047
+ },
+ "nora/domain/media_join.py": {
+  "comment_blocks": 6,
+  "internal_docstrings": 1
+ },
+ "nora/domain/memory_admission.py": {
+  "functions": {
+   "AdmissionState._admit": 171,
+   "AdmissionState._walk": 162
+  },
+  "internal_docstrings": 1
+ },
+ "nora/domain/memory_index.py": {
+  "comment_blocks": 11
+ },
+ "nora/domain/mobility.py": {
+  "comment_blocks": 20,
+  "file_lines": 1492,
+  "functions": {
+   "label_place": 126,
+   "segment_stays": 125
+  },
+  "internal_docstrings": 4
+ },
+ "nora/domain/mobility_forecast.py": {
+  "comment_blocks": 1,
+  "file_lines": 1021,
+  "functions": {
+   "time_forecast": 127
+  },
+  "internal_docstrings": 5
+ },
+ "nora/domain/models.py": {
+  "comment_blocks": 43,
+  "file_lines": 972
+ },
+ "nora/domain/music.py": {
+  "comment_blocks": 2
+ },
+ "nora/domain/note_body.py": {
+  "comment_blocks": 3,
+  "functions": {
+   "_line": 121
+  },
+  "internal_docstrings": 3
+ },
+ "nora/domain/notes.py": {
+  "comment_blocks": 18,
+  "file_lines": 851,
+  "internal_docstrings": 1
+ },
+ "nora/domain/observations.py": {
+  "comment_blocks": 12,
+  "file_lines": 2499,
+  "functions": {
+   "fold_target_reactions": 211,
+   "head_detail": 202
+  },
+  "internal_docstrings": 18
+ },
+ "nora/domain/participation_measures.py": {
+  "comment_blocks": 2
+ },
+ "nora/domain/playback_liveness.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/ports.py": {
+  "comment_blocks": 18,
+  "file_lines": 3374
+ },
+ "nora/domain/profile.py": {
+  "comment_blocks": 4,
+  "file_lines": 1628,
+  "functions": {
+   "_check_line": 136,
+   "plan_write": 474
+  },
+  "internal_docstrings": 1
+ },
+ "nora/domain/prompt.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/provenance.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/quote_window.py": {
+  "internal_docstrings": 1
+ },
+ "nora/domain/reasoning_strip.py": {
+  "comment_blocks": 3
+ },
+ "nora/domain/reminders.py": {
+  "comment_blocks": 17,
+  "file_lines": 919,
+  "internal_docstrings": 2
+ },
+ "nora/domain/rollup.py": {
+  "file_lines": 1136
+ },
+ "nora/domain/rollup_read.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/run_budget.py": {
+  "comment_blocks": 2
+ },
+ "nora/domain/self_presence.py": {
+  "comment_blocks": 2
+ },
+ "nora/domain/shared_state.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/social_stream.py": {
+  "comment_blocks": 7
+ },
+ "nora/domain/speech_markup.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/domain/standing.py": {
+  "comment_blocks": 13,
+  "internal_docstrings": 1
+ },
+ "nora/domain/standing_revise.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/stimuli.py": {
+  "comment_blocks": 13,
+  "file_lines": 928,
+  "internal_docstrings": 2
+ },
+ "nora/domain/summons.py": {
+  "comment_blocks": 9,
+  "internal_docstrings": 5
+ },
+ "nora/domain/video.py": {
+  "comment_blocks": 1
+ },
+ "nora/domain/x_links.py": {
+  "comment_blocks": 1
+ },
+ "nora/engagement/character_who.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/engagement/computer_context.py": {
+  "comment_blocks": 2,
+  "functions": {
+   "ComputerContextReader._read": 161
+  },
+  "internal_docstrings": 2
+ },
+ "nora/engagement/context.py": {
+  "comment_blocks": 23,
+  "file_lines": 1494,
+  "functions": {
+   "TranscriptInjection.__init__": 137,
+   "TranscriptInjection._observation_reads": 153,
+   "TranscriptInjection.assemble": 133
+  },
+  "internal_docstrings": 23
+ },
+ "nora/engagement/debrief_render.py": {
+  "comment_blocks": 10,
+  "file_lines": 920,
+  "internal_docstrings": 19
+ },
+ "nora/engagement/mentions.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/engagement/pipeline.py": {
+  "comment_blocks": 59,
+  "file_lines": 1426,
+  "functions": {
+   "EngagementPipeline.__init__": 145,
+   "EngagementPipeline._run_turn": 777
+  },
+  "internal_docstrings": 8
+ },
+ "nora/engagement/self_presence.py": {
+  "internal_docstrings": 2
+ },
+ "nora/engagement/stages/debrief.py": {
+  "comment_blocks": 19,
+  "file_lines": 1281,
+  "functions": {
+   "_working_set": 124,
+   "fold_unit": 168,
+   "run": 389
+  },
+  "internal_docstrings": 12
+ },
+ "nora/engagement/stages/deliver.py": {
+  "comment_blocks": 8,
+  "functions": {
+   "build": 127
+  }
+ },
+ "nora/engagement/stages/indicate.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 1
+ },
+ "nora/engagement/stages/invoke.py": {
+  "comment_blocks": 3,
+  "functions": {
+   "run": 146
+  },
+  "internal_docstrings": 1
+ },
+ "nora/engagement/subagents_context.py": {
+  "internal_docstrings": 2
+ },
+ "nora/infra/blobs/cipher.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/blobs/filesystem.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/infra/blobs/rustfs.py": {
+  "internal_docstrings": 1
+ },
+ "nora/infra/computer/browser.py": {
+  "internal_docstrings": 5
+ },
+ "nora/infra/computer/client.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/infra/computer/manager.py": {
+  "comment_blocks": 4,
+  "file_lines": 844,
+  "internal_docstrings": 12
+ },
+ "nora/infra/computer/scoped.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/embedder.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 3
+ },
+ "nora/infra/external_files/google_drive.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 7
+ },
+ "nora/infra/external_files/parse.py": {
+  "internal_docstrings": 1
+ },
+ "nora/infra/external_files/text.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/geocode.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 6
+ },
+ "nora/infra/geocode_hkgov.py": {
+  "internal_docstrings": 3
+ },
+ "nora/infra/google/auth.py": {
+  "internal_docstrings": 2
+ },
+ "nora/infra/honcho/client.py": {
+  "comment_blocks": 19,
+  "file_lines": 1721,
+  "functions": {
+   "HonchoClient.representation": 121
+  },
+  "internal_docstrings": 9
+ },
+ "nora/infra/image_gen/__init__.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/image_gen/oauth_lane.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 6
+ },
+ "nora/infra/image_gen/xai_adapter.py": {
+  "comment_blocks": 2,
+  "functions": {
+   "XaiImageGenerator.generate": 151
+  },
+  "internal_docstrings": 3
+ },
+ "nora/infra/image_gen/xai_oauth.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 1
+ },
+ "nora/infra/life360/client.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 6
+ },
+ "nora/infra/life360/http.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/infra/life360/members.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/infra/life360/places.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/infra/music/ytdlp_source.py": {
+  "comment_blocks": 10,
+  "internal_docstrings": 6
+ },
+ "nora/infra/parking/client.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 2
+ },
+ "nora/infra/parking/nearby.py": {
+  "internal_docstrings": 2
+ },
+ "nora/infra/parking/street.py": {
+  "comment_blocks": 2
+ },
+ "nora/infra/preview.py": {
+  "comment_blocks": 6,
+  "internal_docstrings": 3
+ },
+ "nora/infra/routes/client.py": {
+  "comment_blocks": 7,
+  "internal_docstrings": 4
+ },
+ "nora/infra/routes/directions.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/infra/routes/http.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/routes/places.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 3
+ },
+ "nora/infra/search/_shared.py": {
+  "comment_blocks": 2
+ },
+ "nora/infra/search/exa.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 4
+ },
+ "nora/infra/search/tavily.py": {
+  "comment_blocks": 3
+ },
+ "nora/infra/social/bridge_client.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 3
+ },
+ "nora/infra/social/bridge_server.py": {
+  "comment_blocks": 9,
+  "internal_docstrings": 4
+ },
+ "nora/infra/social/instagram_client.py": {
+  "comment_blocks": 15,
+  "file_lines": 967,
+  "internal_docstrings": 16
+ },
+ "nora/infra/social/instagram_source.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 8
+ },
+ "nora/infra/social/readings.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 1
+ },
+ "nora/infra/social/render.py": {
+  "comment_blocks": 7,
+  "internal_docstrings": 14
+ },
+ "nora/infra/social/results.py": {
+  "comment_blocks": 5
+ },
+ "nora/infra/social/router.py": {
+  "comment_blocks": 14,
+  "internal_docstrings": 3
+ },
+ "nora/infra/social/session_probe/cookies.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/social/session_probe/decide.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/social/session_probe/probe.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 3
+ },
+ "nora/infra/social/subjects.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/infra/social/summons_client.py": {
+  "internal_docstrings": 2
+ },
+ "nora/infra/social/views.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/__init__.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/audit.py": {
+  "comment_blocks": 10,
+  "file_lines": 1177,
+  "functions": {
+   "reaction_states": 190
+  },
+  "internal_docstrings": 5
+ },
+ "nora/infra/sql/blob_refs.py": {
+  "comment_blocks": 2
+ },
+ "nora/infra/sql/bridge_store.py": {
+  "comment_blocks": 4
+ },
+ "nora/infra/sql/character.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 3
+ },
+ "nora/infra/sql/cognition_replay.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/cognition_store.py": {
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/comprehend.py": {
+  "functions": {
+   "SqlComprehendRecords.load": 356
+  },
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/compute_jobs.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/computer_exports.py": {
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/culture.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/documents.py": {
+  "internal_docstrings": 2
+ },
+ "nora/infra/sql/event_evidence.py": {
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/gatherings.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/geocode_cache.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/graph_projection.py": {
+  "file_lines": 831,
+  "functions": {
+   "project_rollups": 131,
+   "project_source": 235
+  }
+ },
+ "nora/infra/sql/history.py": {
+  "comment_blocks": 5
+ },
+ "nora/infra/sql/lessons.py": {
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/media_descriptions.py": {
+  "comment_blocks": 4
+ },
+ "nora/infra/sql/media_objects.py": {
+  "comment_blocks": 7
+ },
+ "nora/infra/sql/memo.py": {
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/memory_embed.py": {
+  "internal_docstrings": 3
+ },
+ "nora/infra/sql/memory_graph.py": {
+  "file_lines": 863,
+  "functions": {
+   "SqlMemoryGraph.walk": 135
+  }
+ },
+ "nora/infra/sql/memory_index.py": {
+  "comment_blocks": 8,
+  "file_lines": 2767,
+  "internal_docstrings": 42
+ },
+ "nora/infra/sql/memory_read.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 5
+ },
+ "nora/infra/sql/migrations/env.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/migrations/versions/0005_reminder_recurrence.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0006_version_announcements.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0009_compute_job_hashes.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0010_tool_call_log.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0023_dreamer_instruction_sha256.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0024_dreamer_model_provenance.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0026_note_tier.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0032_media_objects.py": {
+  "comment_blocks": 2
+ },
+ "nora/infra/sql/migrations/versions/0038_note_body_ceiling.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0039_fact_object_relax.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0040_fact_asserter.py": {
+  "comment_blocks": 2
+ },
+ "nora/infra/sql/migrations/versions/0043_disputed.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0049_note_candidate_create.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0051_reminder_subday_recurrence.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0055_culture.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0056_speech_trigger_state.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0057_reasoning_strip_log.py": {
+  "comment_blocks": 3
+ },
+ "nora/infra/sql/migrations/versions/0058_unit_rename.py": {
+  "comment_blocks": 3
+ },
+ "nora/infra/sql/migrations/versions/0059_standing_revision.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/migrations/versions/0068_system_time_history.py": {
+  "comment_blocks": 3,
+  "functions": {
+   "upgrade": 141
+  }
+ },
+ "nora/infra/sql/migrations/versions/0069_cognition_signal.py": {
+  "functions": {
+   "upgrade": 133
+  },
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/migrations/versions/0070_stimulus_rename.py": {
+  "comment_blocks": 2
+ },
+ "nora/infra/sql/migrations/versions/0071_rollup_builds.py": {
+  "functions": {
+   "upgrade": 221
+  }
+ },
+ "nora/infra/sql/migrations/versions/0073_lineage.py": {
+  "functions": {
+   "upgrade": 131
+  }
+ },
+ "nora/infra/sql/migrations/versions/0074_event_revision.py": {
+  "comment_blocks": 1,
+  "functions": {
+   "upgrade": 167
+  }
+ },
+ "nora/infra/sql/migrations/versions/0075_withdrawal.py": {
+  "comment_blocks": 2
+ },
+ "nora/infra/sql/migrations/versions/0079_cognition_pace_remind.py": {
+  "functions": {
+   "upgrade": 170
+  }
+ },
+ "nora/infra/sql/migrations/versions/0117_persona.py": {
+  "functions": {
+   "upgrade": 123
+  }
+ },
+ "nora/infra/sql/migrations/versions/0129_message_readings.py": {
+  "functions": {
+   "upgrade": 148
+  }
+ },
+ "nora/infra/sql/migrations/versions/0130_profile_names.py": {
+  "functions": {
+   "_migrate": 130
+  }
+ },
+ "nora/infra/sql/migrations/versions/0133_standing_ledger.py": {
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/migrations/versions/0144_platform_observation.py": {
+  "comment_blocks": 2,
+  "functions": {
+   "upgrade": 135
+  }
+ },
+ "nora/infra/sql/migrations/versions/0150_due_ticks.py": {
+  "comment_blocks": 2
+ },
+ "nora/infra/sql/migrations/versions/0151_stimulus_claims.py": {
+  "comment_blocks": 2
+ },
+ "nora/infra/sql/migrations_runner.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "nora/infra/sql/mobility.py": {
+  "comment_blocks": 1,
+  "file_lines": 1057,
+  "internal_docstrings": 7
+ },
+ "nora/infra/sql/music_queue.py": {
+  "comment_blocks": 4
+ },
+ "nora/infra/sql/notes.py": {
+  "comment_blocks": 13,
+  "file_lines": 1443,
+  "functions": {
+   "SqlNoteStore._repoint_proactive_rows": 182,
+   "SqlNoteStore.merge_into": 189
+  },
+  "internal_docstrings": 14
+ },
+ "nora/infra/sql/observations.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 6
+ },
+ "nora/infra/sql/presence.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/profile_inputs.py": {
+  "comment_blocks": 2,
+  "file_lines": 869,
+  "functions": {
+   "SqlProfileInputs.register": 122,
+   "SqlProfileInputs.rollup": 187
+  }
+ },
+ "nora/infra/sql/record_query.py": {
+  "comment_blocks": 2
+ },
+ "nora/infra/sql/reminders.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 6
+ },
+ "nora/infra/sql/rollups.py": {
+  "functions": {
+   "SqlRollupStore.message_facts": 179
+  },
+  "internal_docstrings": 3
+ },
+ "nora/infra/sql/schema.py": {
+  "comment_blocks": 190,
+  "file_lines": 5927,
+  "internal_docstrings": 4
+ },
+ "nora/infra/sql/snapshot.py": {
+  "comment_blocks": 7,
+  "internal_docstrings": 7
+ },
+ "nora/infra/sql/snapshot_at.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 6
+ },
+ "nora/infra/sql/social_stream.py": {
+  "comment_blocks": 1,
+  "file_lines": 1147,
+  "internal_docstrings": 3
+ },
+ "nora/infra/sql/standing.py": {
+  "comment_blocks": 7,
+  "internal_docstrings": 2
+ },
+ "nora/infra/sql/standing_revise.py": {
+  "comment_blocks": 4,
+  "functions": {
+   "standing_revise": 135
+  }
+ },
+ "nora/infra/sql/stimuli.py": {
+  "comment_blocks": 10,
+  "file_lines": 855,
+  "functions": {
+   "SqlStimulusStore.view": 136
+  },
+  "internal_docstrings": 10
+ },
+ "nora/infra/sql/tag_traces.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/sql/unified_backfill.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/infra/steam.py": {
+  "internal_docstrings": 1
+ },
+ "nora/infra/trace_propagation.py": {
+  "comment_blocks": 1
+ },
+ "nora/infra/transit/arrivals.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 7
+ },
+ "nora/infra/transit/catalogue.py": {
+  "comment_blocks": 4
+ },
+ "nora/infra/transit/client.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 4
+ },
+ "nora/infra/transit/places.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/infra/tts.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/infra/version.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 3
+ },
+ "nora/infra/video_gen.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/infra/video_refs.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/infra/vision/client.py": {
+  "comment_blocks": 11,
+  "internal_docstrings": 6
+ },
+ "nora/infra/vision/comprehend.py": {
+  "comment_blocks": 16,
+  "internal_docstrings": 3
+ },
+ "nora/infra/vision/preprocess.py": {
+  "comment_blocks": 8,
+  "internal_docstrings": 6
+ },
+ "nora/infra/voice/http_controller.py": {
+  "internal_docstrings": 3
+ },
+ "nora/infra/voice/hub.py": {
+  "comment_blocks": 6,
+  "internal_docstrings": 2
+ },
+ "nora/infra/weather/hko.py": {
+  "internal_docstrings": 1
+ },
+ "nora/ingest/comprehension.py": {
+  "comment_blocks": 13,
+  "functions": {
+   "MediaComprehension._comprehend": 134
+  },
+  "internal_docstrings": 6
+ },
+ "nora/ingest/exif.py": {
+  "comment_blocks": 1
+ },
+ "nora/ingest/pipeline.py": {
+  "comment_blocks": 14,
+  "functions": {
+   "IngestPipeline._run": 153
+  },
+  "internal_docstrings": 5
+ },
+ "nora/ingest/policy.py": {
+  "comment_blocks": 1
+ },
+ "nora/ingest/relevance_gate.py": {
+  "comment_blocks": 25,
+  "file_lines": 916,
+  "internal_docstrings": 7
+ },
+ "nora/ingest/stages/edit_media.py": {
+  "comment_blocks": 1
+ },
+ "nora/ingest/stages/edit_target.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "nora/ingest/stages/media.py": {
+  "comment_blocks": 14,
+  "functions": {
+   "run": 257
+  },
+  "internal_docstrings": 1
+ },
+ "nora/ingest/stages/quote_target.py": {
+  "comment_blocks": 1
+ },
+ "nora/ingest/stages/stimulus.py": {
+  "comment_blocks": 1
+ },
+ "nora/ingest/stages/touch.py": {
+  "internal_docstrings": 1
+ },
+ "nora/ingest/stickers.py": {
+  "comment_blocks": 6
+ },
+ "nora/instructions/dreamer.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 4
+ },
+ "nora/instructions/frontmatter.py": {
+  "comment_blocks": 1
+ },
+ "nora/instructions/reload.py": {
+  "comment_blocks": 3
+ },
+ "nora/language/character.py": {
+  "comment_blocks": 7,
+  "file_lines": 1170,
+  "internal_docstrings": 8
+ },
+ "nora/language/character_session.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/language/cognition_render.py": {
+  "comment_blocks": 6,
+  "file_lines": 1147,
+  "functions": {
+   "_register": 176
+  },
+  "internal_docstrings": 16
+ },
+ "nora/language/computer_render.py": {
+  "comment_blocks": 1,
+  "functions": {
+   "render_computer": 121
+  }
+ },
+ "nora/language/confirmation_render.py": {
+  "comment_blocks": 1
+ },
+ "nora/language/culture.py": {
+  "comment_blocks": 21,
+  "functions": {
+   "CultureAdaptor.inputs": 171
+  },
+  "internal_docstrings": 3
+ },
+ "nora/language/culture_render.py": {
+  "comment_blocks": 2
+ },
+ "nora/language/doctrine_check.py": {
+  "comment_blocks": 1
+ },
+ "nora/language/lesson_book.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "nora/language/lessons.py": {
+  "internal_docstrings": 2
+ },
+ "nora/language/note_render.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/language/presence_render.py": {
+  "internal_docstrings": 2
+ },
+ "nora/language/profile.py": {
+  "comment_blocks": 2,
+  "file_lines": 1295,
+  "functions": {
+   "ProfilePersonAdaptor.inputs": 394
+  },
+  "internal_docstrings": 2
+ },
+ "nora/language/profile_collective.py": {
+  "comment_blocks": 4,
+  "functions": {
+   "ProfileCollectiveAdaptor.inputs": 233
+  }
+ },
+ "nora/language/profile_render.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/language/profile_verdict.py": {
+  "internal_docstrings": 3
+ },
+ "nora/language/shared_render.py": {
+  "functions": {
+   "render_shared_state": 127
+  }
+ },
+ "nora/obs/determination.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "nora/obs/errors.py": {
+  "comment_blocks": 2
+ },
+ "nora/obs/health.py": {
+  "comment_blocks": 6,
+  "functions": {
+   "build_health_app": 164
+  }
+ },
+ "nora/obs/logging.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 4
+ },
+ "nora/obs/metric_specs.py": {
+  "comment_blocks": 95,
+  "file_lines": 2633
+ },
+ "nora/obs/metrics.py": {
+  "internal_docstrings": 1
+ },
+ "nora/obs/tracing.py": {
+  "comment_blocks": 8,
+  "internal_docstrings": 3
+ },
+ "nora/persons.py": {
+  "comment_blocks": 10,
+  "functions": {
+   "load_persons": 159
+  },
+  "internal_docstrings": 1
+ },
+ "nora/persons_file.py": {
+  "comment_blocks": 8,
+  "internal_docstrings": 3
+ },
+ "nora/platform/bridge/actions.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/platform/bridge/client.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "nora/platform/bridge/envelope.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/bridge/inspection.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 3
+ },
+ "nora/platform/bridge/journal.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/platform/bridge/projection.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 12
+ },
+ "nora/platform/bridge/queue.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/bridge/service.py": {
+  "internal_docstrings": 2
+ },
+ "nora/platform/bridge/telemetry.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 4
+ },
+ "nora/platform/bridge/wire.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/discord/adapter.py": {
+  "comment_blocks": 16,
+  "functions": {
+   "DiscordAdapter.listen": 132
+  }
+ },
+ "nora/platform/discord/bridge_app.py": {
+  "comment_blocks": 10,
+  "file_lines": 1986,
+  "functions": {
+   "DiscordBridge._observation_events": 217
+  },
+  "internal_docstrings": 23
+ },
+ "nora/platform/discord/bridge_control.py": {
+  "comment_blocks": 2
+ },
+ "nora/platform/discord/channels.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/discord/discord_commands.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/discord/discord_presence.py": {
+  "internal_docstrings": 1
+ },
+ "nora/platform/discord/listener.py": {
+  "comment_blocks": 4,
+  "functions": {
+   "DiscordListener.listen": 180
+  }
+ },
+ "nora/platform/discord/media.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/platform/discord/mention_resolve.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/platform/discord/music_commands.py": {
+  "comment_blocks": 6,
+  "internal_docstrings": 3
+ },
+ "nora/platform/discord/music_manager.py": {
+  "comment_blocks": 19,
+  "file_lines": 1058,
+  "internal_docstrings": 12
+ },
+ "nora/platform/discord/music_notify.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 3
+ },
+ "nora/platform/discord/music_player.py": {
+  "comment_blocks": 23,
+  "file_lines": 1002,
+  "internal_docstrings": 6
+ },
+ "nora/platform/discord/music_tool_bridge.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 2
+ },
+ "nora/platform/discord/parser.py": {
+  "comment_blocks": 6,
+  "file_lines": 1133,
+  "internal_docstrings": 7
+ },
+ "nora/platform/discord/react.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "nora/platform/discord/roster.py": {
+  "comment_blocks": 3
+ },
+ "nora/platform/discord/self_id.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/discord/send.py": {
+  "comment_blocks": 8,
+  "functions": {
+   "DiscordSender.send": 176
+  }
+ },
+ "nora/platform/instagram/adapter.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/instagram/ids.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/instagram/listener.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/platform/instagram/media.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "nora/platform/instagram/parser.py": {
+  "comment_blocks": 18,
+  "internal_docstrings": 10
+ },
+ "nora/platform/instagram/roster.py": {
+  "comment_blocks": 6
+ },
+ "nora/platform/instagram/self_id.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/instagram/send.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 6
+ },
+ "nora/platform/registry.py": {
+  "comment_blocks": 4,
+  "functions": {
+   "AdapterRegistry.from_config": 229
+  },
+  "internal_docstrings": 1
+ },
+ "nora/platform/signal/adapter.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/signal/directory.py": {
+  "internal_docstrings": 1
+ },
+ "nora/platform/signal/listener.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/signal/media.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 2
+ },
+ "nora/platform/signal/parser.py": {
+  "comment_blocks": 6,
+  "functions": {
+   "parse_observations": 270
+  },
+  "internal_docstrings": 10
+ },
+ "nora/platform/signal/self_id.py": {
+  "internal_docstrings": 2
+ },
+ "nora/platform/signal/send.py": {
+  "comment_blocks": 12,
+  "functions": {
+   "SignalSender.send": 143
+  },
+  "internal_docstrings": 6
+ },
+ "nora/platform/whatsapp/adapter.py": {
+  "comment_blocks": 2
+ },
+ "nora/platform/whatsapp/jid.py": {
+  "comment_blocks": 1
+ },
+ "nora/platform/whatsapp/parser.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 4
+ },
+ "nora/platform/whatsapp/send.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 4
+ },
+ "nora/policy.py": {
+  "comment_blocks": 29,
+  "file_lines": 1116,
+  "functions": {
+   "load_policy": 276
+  },
+  "internal_docstrings": 7
+ },
+ "nora/presence/__main__.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "nora/presence/collector.py": {
+  "comment_blocks": 9,
+  "internal_docstrings": 5
+ },
+ "nora/presence/composition.py": {
+  "internal_docstrings": 1
+ },
+ "nora/skills/loader.py": {
+  "comment_blocks": 3
+ },
+ "nora/subject/circle.py": {
+  "comment_blocks": 1
+ },
+ "nora/subject/context_selector_render.py": {
+  "comment_blocks": 1
+ },
+ "nora/subject/dreaming.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 1
+ },
+ "nora/subject/evidence.py": {
+  "functions": {
+   "evidence_at": 138
+  },
+  "internal_docstrings": 3
+ },
+ "nora/subject/knowledge.py": {
+  "comment_blocks": 21,
+  "file_lines": 970,
+  "functions": {
+   "know": 308
+  },
+  "internal_docstrings": 3
+ },
+ "nora/subject/lexical_seed.py": {
+  "internal_docstrings": 1
+ },
+ "nora/subject/memory_workspace.py": {
+  "comment_blocks": 2
+ },
+ "nora/subject/obtain.py": {
+  "comment_blocks": 24,
+  "internal_docstrings": 4
+ },
+ "nora/subject/proactive.py": {
+  "comment_blocks": 3
+ },
+ "nora/subject/profile_writer.py": {
+  "functions": {
+   "run_writer": 170
+  }
+ },
+ "nora/subject/sandbox.py": {
+  "comment_blocks": 12,
+  "file_lines": 1182,
+  "internal_docstrings": 6
+ },
+ "nora/subject/sandbox_index.py": {
+  "comment_blocks": 1
+ },
+ "nora/subject/standing_fold.py": {
+  "comment_blocks": 5,
+  "functions": {
+   "read_fold_turn": 126
+  }
+ },
+ "nora/tag.py": {
+  "internal_docstrings": 2
+ },
+ "nora/testing/character_evidence.py": {
+  "internal_docstrings": 2
+ },
+ "nora/testing/decision_log.py": {
+  "comment_blocks": 3
+ },
+ "nora/testing/eval_backends.py": {
+  "comment_blocks": 4
+ },
+ "nora/testing/fakes.py": {
+  "comment_blocks": 18,
+  "file_lines": 3041,
+  "internal_docstrings": 6
+ },
+ "nora/testing/google_drive.py": {
+  "internal_docstrings": 2
+ },
+ "nora/testing/memory_index.py": {
+  "internal_docstrings": 2
+ },
+ "nora/testing/mobility.py": {
+  "internal_docstrings": 1
+ },
+ "nora/testing/note_store.py": {
+  "comment_blocks": 6,
+  "internal_docstrings": 9
+ },
+ "nora/testing/observations.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 4
+ },
+ "nora/testing/reminders.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "nora/testing/scripted_agent.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 2
+ },
+ "nora/testing/standing_store.py": {
+  "comment_blocks": 1
+ },
+ "nora/testing/stimuli.py": {
+  "comment_blocks": 1
+ },
+ "nora/testing/voice.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 2
+ },
+ "nora/web/api.py": {
+  "comment_blocks": 9,
+  "file_lines": 857,
+  "functions": {
+   "register_web_routes": 630
+  },
+  "internal_docstrings": 2
+ },
+ "nora/web/documents.py": {
+  "internal_docstrings": 1
+ },
+ "nora/web/games.py": {
+  "internal_docstrings": 1
+ },
+ "nora/web/gatherings.py": {
+  "internal_docstrings": 1
+ },
+ "nora/web/memory.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 6
+ },
+ "nora/web/presence.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "nora/web/status.py": {
+  "comment_blocks": 1
+ },
+ "nora/web/voice.py": {
+  "comment_blocks": 2
+ },
+ "scripts/affected_tests.py": {
+  "comment_blocks": 2,
+  "file_lines": 837,
+  "internal_docstrings": 11
+ },
+ "scripts/backtest_presence_forecast.py": {
+  "comment_blocks": 1
+ },
+ "scripts/character_synthesis_measure.py": {
+  "comment_blocks": 1
+ },
+ "scripts/check_commit_subject.py": {
+  "comment_blocks": 2
+ },
+ "scripts/check_version_stamp.py": {
+  "comment_blocks": 1
+ },
+ "scripts/ci_plan.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 3
+ },
+ "scripts/confirm_cognition_anchors.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "scripts/engineering_dispatch.py": {
+  "functions": {
+   "Controller.run": 200
+  }
+ },
+ "scripts/find_cognition_anchors.py": {
+  "internal_docstrings": 1
+ },
+ "scripts/gate_refusals.py": {
+  "comment_blocks": 1
+ },
+ "scripts/gen_version_manifest.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 4
+ },
+ "scripts/memory_graph_spike.py": {
+  "comment_blocks": 1,
+  "file_lines": 1678,
+  "functions": {
+   "_run": 335,
+   "age_comparison": 162
+  }
+ },
+ "scripts/migrate_media_to_rustfs.py": {
+  "internal_docstrings": 1
+ },
+ "scripts/pii_denylist_build.py": {
+  "comment_blocks": 2
+ },
+ "scripts/pii_scan.py": {
+  "comment_blocks": 9,
+  "file_lines": 3389,
+  "functions": {
+   "judge_blob": 164,
+   "mode_push": 130
+  },
+  "internal_docstrings": 20
+ },
+ "scripts/release_bundle.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "scripts/revalidate_stay_params.py": {
+  "internal_docstrings": 2
+ },
+ "scripts/secret_delivery.py": {
+  "comment_blocks": 1
+ },
+ "scripts/signoz_provision.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "scripts/standing_edit.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "scripts/testmon_record.py": {
+  "internal_docstrings": 1
+ },
+ "scripts/verify-deploy.py": {
+  "comment_blocks": 1
+ },
+ "scripts/visual_assets.py": {
+  "functions": {
+   "report": 126
+  }
+ },
+ "site/scripts/make_rig.py": {
+  "comment_blocks": 1,
+  "functions": {
+   "build": 129
+  }
+ },
+ "tests/architecture/test_agent_skills.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_alembic_single_head.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_ci_plan.py": {
+  "file_lines": 841,
+  "internal_docstrings": 3
+ },
+ "tests/architecture/test_computer_metrics_are_primed.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_config_comes_from_the_template.py": {
+  "comment_blocks": 1
+ },
+ "tests/architecture/test_contribution_conventions.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_decision_index_ids_are_unique.py": {
+  "comment_blocks": 1
+ },
+ "tests/architecture/test_decision_index_tests_exist.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 5
+ },
+ "tests/architecture/test_doc_references_resolve.py": {
+  "comment_blocks": 8,
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_doctrine_is_classified.py": {
+  "comment_blocks": 2
+ },
+ "tests/architecture/test_doctrine_scope_folders.py": {
+  "comment_blocks": 2
+ },
+ "tests/architecture/test_dream_store_calls_are_declared.py": {
+  "comment_blocks": 7,
+  "internal_docstrings": 9
+ },
+ "tests/architecture/test_dream_unit_is_wall_clocked.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_escaping_is_for_prompts_only.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_every_block_declares_its_type.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 3
+ },
+ "tests/architecture/test_every_case_is_anchored_or_parked.py": {
+  "comment_blocks": 3
+ },
+ "tests/architecture/test_every_gate_construction_bounds_its_model_call.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_every_indexed_kind_is_projected.py": {
+  "internal_docstrings": 3
+ },
+ "tests/architecture/test_every_model_call_is_a_declared_occasion.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 2
+ },
+ "tests/architecture/test_every_recorded_metric_is_declared.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 4
+ },
+ "tests/architecture/test_every_status_carries_a_note.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_file_links_render_as_handles.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_framing_is_one_typed_place.py": {
+  "comment_blocks": 2,
+  "file_lines": 851,
+  "internal_docstrings": 4
+ },
+ "tests/architecture/test_link_inputs_declared.py": {
+  "comment_blocks": 1
+ },
+ "tests/architecture/test_link_owner_call_sites_are_policed.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 3
+ },
+ "tests/architecture/test_media_join_reaches_every_transcript.py": {
+  "comment_blocks": 14,
+  "internal_docstrings": 2
+ },
+ "tests/architecture/test_migration_revision_fits_version_column.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_mutation_tables_anchor_to_their_source.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_no_discord_voice_ownership.py": {
+  "comment_blocks": 1
+ },
+ "tests/architecture/test_no_module_level_mutable_singletons.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "tests/architecture/test_no_retained_per_tag_state.py": {
+  "comment_blocks": 1
+ },
+ "tests/architecture/test_one_block_injector.py": {
+  "comment_blocks": 6,
+  "internal_docstrings": 4
+ },
+ "tests/architecture/test_one_name_space_per_prompt.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 2
+ },
+ "tests/architecture/test_one_quote_resolver.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_one_row_renders_one_line.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 5
+ },
+ "tests/architecture/test_one_transcript_renderer.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_only_two_paths_can_send.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_outbound_offsets_are_computed_last.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_port_fakes_live_in_nora_testing.py": {
+  "comment_blocks": 3
+ },
+ "tests/architecture/test_portal_locales_make_the_same_claims.py": {
+  "comment_blocks": 1
+ },
+ "tests/architecture/test_raw_model_calls_carry_their_own_machinery.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 3
+ },
+ "tests/architecture/test_raw_model_calls_use_strands_telemetry.py": {
+  "comment_blocks": 3
+ },
+ "tests/architecture/test_restore_knows_every_dropped_backfill.py": {
+  "comment_blocks": 1
+ },
+ "tests/architecture/test_slot_held_awaits_are_bounded.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 5
+ },
+ "tests/architecture/test_store_methods_have_production_callers.py": {
+  "comment_blocks": 6,
+  "internal_docstrings": 4
+ },
+ "tests/architecture/test_tests_root_takes_no_new_files.py": {
+  "comment_blocks": 1
+ },
+ "tests/architecture/test_the_eval_subject_is_the_deployed_nora.py": {
+  "comment_blocks": 2
+ },
+ "tests/architecture/test_the_gate_does_not_form_its_verdict_through_the_sdk.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 5
+ },
+ "tests/architecture/test_the_near_miss_corpora_exercise_their_rules.py": {
+  "comment_blocks": 5
+ },
+ "tests/architecture/test_the_path_vocabulary_matches_the_call_sites.py": {
+  "internal_docstrings": 2
+ },
+ "tests/architecture/test_the_registry_is_exhaustive.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 3
+ },
+ "tests/architecture/test_the_subject_is_obtained_not_assembled.py": {
+  "comment_blocks": 1
+ },
+ "tests/architecture/test_the_summons_writes_in_one_place.py": {
+  "internal_docstrings": 1
+ },
+ "tests/architecture/test_tool_builders_forward_everything.py": {
+  "comment_blocks": 3
+ },
+ "tests/architecture/test_tool_names.py": {
+  "comment_blocks": 9
+ },
+ "tests/architecture/test_tools_and_sender_share_one_link_carrier.py": {
+  "comment_blocks": 1
+ },
+ "tests/conftest.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_audit_store_contract.py": {
+  "file_lines": 1162,
+  "internal_docstrings": 2
+ },
+ "tests/contract/test_blob_store_contract.py": {
+  "comment_blocks": 2
+ },
+ "tests/contract/test_character_evidence_contract.py": {
+  "comment_blocks": 1
+ },
+ "tests/contract/test_computer_task_store_contract.py": {
+  "comment_blocks": 1
+ },
+ "tests/contract/test_discord_presence_contract.py": {
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_document_store_contract.py": {
+  "file_lines": 859,
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_dream_adaptor_contract.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 2
+ },
+ "tests/contract/test_dream_schedule_clock_contract.py": {
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_geocoder_contract.py": {
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_media_interpreter_contract.py": {
+  "comment_blocks": 3
+ },
+ "tests/contract/test_media_object_store_contract.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_media_source_contract.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_memory_graph_contract.py": {
+  "file_lines": 1156
+ },
+ "tests/contract/test_memory_index_contract.py": {
+  "comment_blocks": 1
+ },
+ "tests/contract/test_note_store_contract.py": {
+  "comment_blocks": 3,
+  "file_lines": 1148,
+  "internal_docstrings": 2
+ },
+ "tests/contract/test_observation_store_contract.py": {
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_reaction_contract.py": {
+  "internal_docstrings": 2
+ },
+ "tests/contract/test_reminder_store_contract.py": {
+  "comment_blocks": 3,
+  "file_lines": 1101,
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_roster_source_contract.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 2
+ },
+ "tests/contract/test_search_provider_contract.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_send_contract.py": {
+  "internal_docstrings": 2
+ },
+ "tests/contract/test_social_provider_contract.py": {
+  "comment_blocks": 4
+ },
+ "tests/contract/test_social_source_contract.py": {
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_standing_store_contract.py": {
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_stimulus_session_lifecycle_contract.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_stimulus_store_contract.py": {
+  "comment_blocks": 2,
+  "file_lines": 902
+ },
+ "tests/contract/test_voice_controller_contract.py": {
+  "internal_docstrings": 1
+ },
+ "tests/contract/test_voice_presence_contract.py": {
+  "internal_docstrings": 1
+ },
+ "tests/domain/test_decision_log.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/evals/test_bakeoff_harness.py": {
+  "internal_docstrings": 1
+ },
+ "tests/evals/test_bakeoff_qwen_llama.py": {
+  "internal_docstrings": 1
+ },
+ "tests/fakes.py": {
+  "comment_blocks": 1,
+  "functions": {
+   "FakeHoncho._handle": 185
+  }
+ },
+ "tests/fixtures/mobility_scenarios.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 3
+ },
+ "tests/infra/computer/test_computerd.py": {
+  "internal_docstrings": 1
+ },
+ "tests/infra/computer/test_computerd_browser.py": {
+  "file_lines": 848
+ },
+ "tests/infra/computer/test_flood_guard_owner_kill.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 3
+ },
+ "tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 1
+ },
+ "tests/infra/test_alembic.py": {
+  "file_lines": 956
+ },
+ "tests/infra/test_audit_store.py": {
+  "internal_docstrings": 1
+ },
+ "tests/infra/test_engine.py": {
+  "comment_blocks": 1
+ },
+ "tests/infra/test_lineage_store.py": {
+  "internal_docstrings": 2
+ },
+ "tests/infra/test_memory_projection_profile.py": {
+  "internal_docstrings": 1
+ },
+ "tests/infra/test_migration_lock.py": {
+  "internal_docstrings": 2
+ },
+ "tests/infra/test_note_merge_repoints_reminders.py": {
+  "comment_blocks": 1
+ },
+ "tests/infra/test_pii_hooks.py": {
+  "file_lines": 962
+ },
+ "tests/infra/test_profile_names_migration.py": {
+  "functions": {
+   "test_upgrade_downgrade_upgrade_preserves_every_row_and_cursor": 172
+  }
+ },
+ "tests/infra/test_profile_source_inputs.py": {
+  "file_lines": 1154,
+  "functions": {
+   "test_message_checks_reuse_media_lookups_per_attachment_value": 123
+  }
+ },
+ "tests/infra/test_profile_store.py": {
+  "internal_docstrings": 1
+ },
+ "tests/infra/test_profile_verdict.py": {
+  "internal_docstrings": 1
+ },
+ "tests/infra/test_rollup_lineage.py": {
+  "internal_docstrings": 1
+ },
+ "tests/infra/test_row_history.py": {
+  "comment_blocks": 2
+ },
+ "tests/infra/test_schema_parity.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 6
+ },
+ "tests/infra/test_snapshot.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "tests/infra/test_social_read.py": {
+  "internal_docstrings": 1
+ },
+ "tests/infra/test_standing_edit.py": {
+  "comment_blocks": 1
+ },
+ "tests/infra/test_standing_ledger.py": {
+  "comment_blocks": 1,
+  "file_lines": 1088
+ },
+ "tests/infra/test_standing_revision.py": {
+  "comment_blocks": 2
+ },
+ "tests/infra/test_stimulus_claims_migration.py": {
+  "comment_blocks": 2
+ },
+ "tests/infra/test_stimulus_store_plan.py": {
+  "comment_blocks": 2,
+  "functions": {
+   "test_the_due_read_stays_on_the_pending_batch_as_history_grows": 181
+  },
+  "internal_docstrings": 1
+ },
+ "tests/infra/test_tag_trace_store.py": {
+  "internal_docstrings": 2
+ },
+ "tests/integration/conftest.py": {
+  "comment_blocks": 2
+ },
+ "tests/integration/harness.py": {
+  "comment_blocks": 9,
+  "functions": {
+   "build_handler": 239
+  }
+ },
+ "tests/integration/probe_public_download.py": {
+  "functions": {
+   "PublicDownloadBoundary.test_real_ytdlp_ffmpeg_and_direct_subprocess_boundary": 559
+  }
+ },
+ "tests/integration/test_a_real_snapshot_seeds_an_isolated_subject.py": {
+  "file_lines": 879,
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_ambient.py": {
+  "comment_blocks": 1
+ },
+ "tests/integration/test_ambient_loop_positive_control.py": {
+  "comment_blocks": 7,
+  "functions": {
+   "_drive": 162
+  },
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_bridge_deferred.py": {
+  "file_lines": 1246,
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_bridge_entry_smoke.py": {
+  "internal_docstrings": 4
+ },
+ "tests/integration/test_bridge_observability.py": {
+  "comment_blocks": 3,
+  "file_lines": 1248,
+  "functions": {
+   "TestLinkedLifecycle.test_enqueue_reclaim_ack_exports_linked_roots": 189
+  },
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_bridge_projection_publisher.py": {
+  "internal_docstrings": 3
+ },
+ "tests/integration/test_bridge_queue_telemetry.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "tests/integration/test_character_social.py": {
+  "internal_docstrings": 2
+ },
+ "tests/integration/test_composition_bridge.py": {
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_discord_bridge_control.py": {
+  "comment_blocks": 3,
+  "file_lines": 1147,
+  "functions": {
+   "test_the_bridge_owns_the_whole_graph_while_the_app_proxies": 160
+  },
+  "internal_docstrings": 4
+ },
+ "tests/integration/test_eval_draws_isolate_honcho.py": {
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_eval_official_entry_scoped.py": {
+  "functions": {
+   "_run_one_case": 151
+  },
+  "internal_docstrings": 2
+ },
+ "tests/integration/test_eval_sandbox_index_reuse.py": {
+  "internal_docstrings": 2
+ },
+ "tests/integration/test_eval_sandbox_vectors.py": {
+  "internal_docstrings": 2
+ },
+ "tests/integration/test_full_restore_recall.py": {
+  "internal_docstrings": 3
+ },
+ "tests/integration/test_latency.py": {
+  "comment_blocks": 2
+ },
+ "tests/integration/test_memory_dense_seed.py": {
+  "internal_docstrings": 2
+ },
+ "tests/integration/test_memory_rebuild.py": {
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_memory_scope.py": {
+  "internal_docstrings": 4
+ },
+ "tests/integration/test_mentions.py": {
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_outbound_decoration.py": {
+  "comment_blocks": 1
+ },
+ "tests/integration/test_platform_observation_ingest.py": {
+  "comment_blocks": 4,
+  "file_lines": 1263,
+  "internal_docstrings": 6
+ },
+ "tests/integration/test_public_download.py": {
+  "functions": {
+   "test_real_downloader_boundary": 164
+  }
+ },
+ "tests/integration/test_redis_acl_roles.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_rollup_builds.py": {
+  "comment_blocks": 2,
+  "file_lines": 874,
+  "internal_docstrings": 2
+ },
+ "tests/integration/test_rollup_read.py": {
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_rollup_social.py": {
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_rustfs_delete_is_conditional.py": {
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_scoped_browser_recovery.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_shared_eval_database_survives_a_branch_ahead_run.py": {
+  "comment_blocks": 3
+ },
+ "tests/integration/test_signal_bridge_routes.py": {
+  "file_lines": 1485,
+  "internal_docstrings": 2
+ },
+ "tests/integration/test_sigterm_releases_the_claim.py": {
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_silent_failures.py": {
+  "comment_blocks": 2
+ },
+ "tests/integration/test_snapshot_holds_what_was_held.py": {
+  "comment_blocks": 3,
+  "file_lines": 810
+ },
+ "tests/integration/test_snapshot_renders_the_recorded_blocks.py": {
+  "comment_blocks": 1
+ },
+ "tests/integration/test_social_poller.py": {
+  "file_lines": 2083
+ },
+ "tests/integration/test_spike_sandbox_index.py": {
+  "functions": {
+   "test_the_replay_preparation_indexes_the_restored_sandbox": 166
+  }
+ },
+ "tests/integration/test_tagging.py": {
+  "comment_blocks": 2
+ },
+ "tests/integration/test_the_rebuilt_suite_runs.py": {
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_the_subject_is_the_deployed_graph.py": {
+  "comment_blocks": 1
+ },
+ "tests/integration/test_turn_budget_is_legible.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "tests/integration/test_two_entry_points_one_runner.py": {
+  "comment_blocks": 2
+ },
+ "tests/integration/test_version.py": {
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_voice_utterance.py": {
+  "internal_docstrings": 1
+ },
+ "tests/offline_eval_evaluators.py": {
+  "comment_blocks": 7
+ },
+ "tests/offline_eval_harness.py": {
+  "comment_blocks": 22,
+  "functions": {
+   "run_case": 272
+  },
+  "internal_docstrings": 7
+ },
+ "tests/offline_eval_support.py": {
+  "comment_blocks": 19,
+  "file_lines": 1159,
+  "functions": {
+   "build_production_seed": 164,
+   "seed_from_dict": 127
+  },
+  "internal_docstrings": 2
+ },
+ "tests/offline_pipeline.py": {
+  "comment_blocks": 21,
+  "functions": {
+   "build_offline_pipeline": 385
+  }
+ },
+ "tests/test_acceptance_rules.py": {
+  "comment_blocks": 50,
+  "file_lines": 1055,
+  "internal_docstrings": 1
+ },
+ "tests/test_affected_tests.py": {
+  "comment_blocks": 4,
+  "file_lines": 1243,
+  "internal_docstrings": 2
+ },
+ "tests/test_agent_runner_stop_reason.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 1
+ },
+ "tests/test_boundaries.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 3
+ },
+ "tests/test_cli_control_plane.py": {
+  "file_lines": 951,
+  "internal_docstrings": 1
+ },
+ "tests/test_composition.py": {
+  "comment_blocks": 9,
+  "file_lines": 2246,
+  "internal_docstrings": 2
+ },
+ "tests/test_config.py": {
+  "comment_blocks": 8,
+  "file_lines": 2180,
+  "internal_docstrings": 6
+ },
+ "tests/test_discord_adapter.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_discord_mention_resolve.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_discord_parser.py": {
+  "comment_blocks": 2
+ },
+ "tests/test_discord_react.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_discord_self_id.py": {
+  "comment_blocks": 2
+ },
+ "tests/test_doctrine_assembly.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_doctrine_audiences.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 2
+ },
+ "tests/test_doctrine_content.py": {
+  "comment_blocks": 7,
+  "file_lines": 923,
+  "internal_docstrings": 2
+ },
+ "tests/test_doctrine_loader.py": {
+  "comment_blocks": 3
+ },
+ "tests/test_doctrine_version_parity.py": {
+  "comment_blocks": 3
+ },
+ "tests/test_env_template.py": {
+  "comment_blocks": 16,
+  "internal_docstrings": 1
+ },
+ "tests/test_evals_rubric.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_exa.py": {
+  "comment_blocks": 3
+ },
+ "tests/test_factory.py": {
+  "comment_blocks": 5,
+  "internal_docstrings": 2
+ },
+ "tests/test_gathering_tools.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_gatherings_service.py": {
+  "comment_blocks": 2,
+  "file_lines": 882,
+  "internal_docstrings": 1
+ },
+ "tests/test_geocode.py": {
+  "internal_docstrings": 1
+ },
+ "tests/test_guards_deliverer.py": {
+  "comment_blocks": 5,
+  "file_lines": 801
+ },
+ "tests/test_guards_leak.py": {
+  "comment_blocks": 2
+ },
+ "tests/test_guards_replyguard.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "tests/test_guards_terminal.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "tests/test_guards_tool_call_log.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "tests/test_honcho.py": {
+  "comment_blocks": 2
+ },
+ "tests/test_honcho_representation.py": {
+  "comment_blocks": 6,
+  "internal_docstrings": 3
+ },
+ "tests/test_life360_client.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/test_logging.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_main.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 2
+ },
+ "tests/test_media_describers.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_media_fetch.py": {
+  "comment_blocks": 9,
+  "file_lines": 2419,
+  "internal_docstrings": 5
+ },
+ "tests/test_metrics_export.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_model_per_tag.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "tests/test_note_tools.py": {
+  "comment_blocks": 3,
+  "file_lines": 859
+ },
+ "tests/test_output_contracts.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "tests/test_persons.py": {
+  "comment_blocks": 2
+ },
+ "tests/test_platform_registry.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "tests/test_policy.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_ports.py": {
+  "internal_docstrings": 1
+ },
+ "tests/test_prefill.py": {
+  "comment_blocks": 6,
+  "file_lines": 1710,
+  "internal_docstrings": 7
+ },
+ "tests/test_relay.py": {
+  "internal_docstrings": 3
+ },
+ "tests/test_reminder_tools.py": {
+  "comment_blocks": 4,
+  "file_lines": 1341,
+  "internal_docstrings": 1
+ },
+ "tests/test_room_tools.py": {
+  "comment_blocks": 2,
+  "file_lines": 1076
+ },
+ "tests/test_route_position_trust.py": {
+  "internal_docstrings": 1
+ },
+ "tests/test_routes.py": {
+  "comment_blocks": 2,
+  "file_lines": 832,
+  "internal_docstrings": 1
+ },
+ "tests/test_scripted_agent_fidelity.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "tests/test_signal_adapter.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/test_signal_parser.py": {
+  "comment_blocks": 4
+ },
+ "tests/test_signal_self_id.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "tests/test_signal_send.py": {
+  "comment_blocks": 2
+ },
+ "tests/test_skill_content.py": {
+  "comment_blocks": 10,
+  "file_lines": 1143,
+  "internal_docstrings": 5
+ },
+ "tests/test_social_bridge_client.py": {
+  "comment_blocks": 2,
+  "functions": {
+   "_Bridge.read": 146
+  }
+ },
+ "tests/test_span_skeleton.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "tests/test_strands_api_contract.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_tavily.py": {
+  "comment_blocks": 3
+ },
+ "tests/test_tool_choice_force.py": {
+  "internal_docstrings": 1
+ },
+ "tests/test_tool_contract_metadata.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "tests/test_tool_logging.py": {
+  "comment_blocks": 1
+ },
+ "tests/test_tool_surface_policy.py": {
+  "comment_blocks": 17,
+  "file_lines": 1418,
+  "functions": {
+   "_classify_value": 143
+  },
+  "internal_docstrings": 23
+ },
+ "tests/test_tools.py": {
+  "comment_blocks": 12,
+  "file_lines": 1982,
+  "internal_docstrings": 2
+ },
+ "tests/test_tracing.py": {
+  "comment_blocks": 2
+ },
+ "tests/test_transit.py": {
+  "comment_blocks": 6,
+  "file_lines": 829,
+  "internal_docstrings": 1
+ },
+ "tests/test_turn_budget.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "tests/test_vision.py": {
+  "comment_blocks": 8,
+  "file_lines": 1024,
+  "internal_docstrings": 2
+ },
+ "tests/test_web_fetch_tool.py": {
+  "comment_blocks": 2
+ },
+ "tests/test_whatsapp_send.py": {
+  "comment_blocks": 2
+ },
+ "tests/test_where_been.py": {
+  "comment_blocks": 2,
+  "file_lines": 932,
+  "internal_docstrings": 2
+ },
+ "tests/test_whereis.py": {
+  "comment_blocks": 3,
+  "file_lines": 1261
+ },
+ "tests/test_who_said.py": {
+  "comment_blocks": 2
+ },
+ "tests/unit/cognition_view.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/nora_computer_harness.py": {
+  "comment_blocks": 2
+ },
+ "tests/unit/test_adoption.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_aiohttp_tracing.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_analytics_composition.py": {
+  "comment_blocks": 3
+ },
+ "tests/unit/test_analytics_rollup_synthetic.py": {
+  "comment_blocks": 2
+ },
+ "tests/unit/test_ask_memory_index_flag.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_blocks.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_bridge_capture_review.py": {
+  "file_lines": 970,
+  "internal_docstrings": 3
+ },
+ "tests/unit/test_bridge_identity_startup_wait.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_bridge_projection.py": {
+  "file_lines": 990,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_cognition_agenda_skills.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_cognition_agent_runner.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_cognition_anchor_confirmation.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_cognition_block_types_explain_every_field.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_cognition_failure_backoff.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_cognition_grounding.py": {
+  "file_lines": 1109
+ },
+ "tests/unit/test_cognition_input.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_cognition_pace.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_cognition_render_budget.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_cognition_render_goldens.py": {
+  "comment_blocks": 1,
+  "file_lines": 887
+ },
+ "tests/unit/test_cognition_restart_reclaim.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_cognition_session.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_cognition_session_lifecycle.py": {
+  "comment_blocks": 4,
+  "file_lines": 1568,
+  "internal_docstrings": 4
+ },
+ "tests/unit/test_cognition_session_runner.py": {
+  "file_lines": 1406,
+  "internal_docstrings": 3
+ },
+ "tests/unit/test_cognition_source_rows.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_compute_delivery_links.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_compute_poller.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_computer_block.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_computer_leases.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_computer_tools.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_computerd_processes.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_context_selector_render.py": {
+  "internal_docstrings": 3
+ },
+ "tests/unit/test_culture_adaptor.py": {
+  "file_lines": 821
+ },
+ "tests/unit/test_culture_render.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_debrief.py": {
+  "comment_blocks": 7,
+  "file_lines": 1805,
+  "internal_docstrings": 3
+ },
+ "tests/unit/test_debrief_render.py": {
+  "comment_blocks": 8,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_discord_bridge_control.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_discord_guild_entry.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_document_checker.py": {
+  "comment_blocks": 4,
+  "file_lines": 985
+ },
+ "tests/unit/test_documents_service.py": {
+  "file_lines": 1060
+ },
+ "tests/unit/test_domain_identity.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_dream_guard.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_dream_memory_budget.py": {
+  "comment_blocks": 3
+ },
+ "tests/unit/test_dream_screen.py": {
+  "comment_blocks": 2
+ },
+ "tests/unit/test_dreamer_assembly_goldens.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_dreamer_instructions.py": {
+  "comment_blocks": 3
+ },
+ "tests/unit/test_dreamer_runtime.py": {
+  "comment_blocks": 17,
+  "file_lines": 2397,
+  "functions": {
+   "test_every_read_only_tool_is_classified_unit_safe_or_room_scoped": 154
+  },
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_egress_predicates.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_engagement_admission.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_engagement_context.py": {
+  "comment_blocks": 4,
+  "file_lines": 1012,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_engagement_deliver.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_engagement_pipeline.py": {
+  "comment_blocks": 20,
+  "file_lines": 3208,
+  "internal_docstrings": 6
+ },
+ "tests/unit/test_eval_backbone.py": {
+  "comment_blocks": 3,
+  "file_lines": 1365,
+  "internal_docstrings": 3
+ },
+ "tests/unit/test_eval_full_restore.py": {
+  "file_lines": 1115,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_eval_host_lock.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_eval_main_shared_db_guard.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_external_files.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_external_files_parse_worker.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_file_fetch_tool.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_fire_path.py": {
+  "comment_blocks": 13,
+  "file_lines": 3351,
+  "internal_docstrings": 8
+ },
+ "tests/unit/test_generate_image_description.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_headers_goldens.py": {
+  "file_lines": 922,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_heartbeat_loop.py": {
+  "comment_blocks": 5,
+  "file_lines": 1025,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_ingest_pipeline.py": {
+  "comment_blocks": 3,
+  "file_lines": 1113,
+  "internal_docstrings": 8
+ },
+ "tests/unit/test_ingest_stages.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_instagram_bridge_contract.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_instagram_parser.py": {
+  "comment_blocks": 4,
+  "file_lines": 1084
+ },
+ "tests/unit/test_instagram_read_links.py": {
+  "comment_blocks": 1,
+  "file_lines": 986
+ },
+ "tests/unit/test_instagram_read_readings.py": {
+  "file_lines": 836,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_instagram_roster.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_instagram_search_tool.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_instagram_shared_on_demand.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_instagram_social_client.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 3
+ },
+ "tests/unit/test_instagram_summons_event.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_judge_source_names_speakers.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_lineage.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_link_owners.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_markdown.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_media_comprehender.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_media_comprehension.py": {
+  "comment_blocks": 2
+ },
+ "tests/unit/test_media_custody.py": {
+  "comment_blocks": 1,
+  "file_lines": 865
+ },
+ "tests/unit/test_media_encryption.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_media_join.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_memory_backfill.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_memory_graph_spike.py": {
+  "file_lines": 875,
+  "functions": {
+   "test_age_comparison_measures_the_source_once_outside_replay": 182
+  },
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_memory_search.py": {
+  "file_lines": 1038,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_memory_search_tool.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_memory_surfaces.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_mobility_forecast.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_mobility_scenarios.py": {
+  "comment_blocks": 4
+ },
+ "tests/unit/test_mobility_web_reads.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_music_notify.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_music_player.py": {
+  "comment_blocks": 2,
+  "file_lines": 1099
+ },
+ "tests/unit/test_music_player_manager.py": {
+  "comment_blocks": 5,
+  "file_lines": 1961,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_nora_computer_backup.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_note_index_round_trip.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_note_merge_reminder_parity.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 8
+ },
+ "tests/unit/test_note_render.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_objective_parser_parity.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 7
+ },
+ "tests/unit/test_offline_pipeline_assembler.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_online_now.py": {
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_orient_kind_table.py": {
+  "file_lines": 1126,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_outbound_composer.py": {
+  "comment_blocks": 1,
+  "file_lines": 855,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_participation.py": {
+  "comment_blocks": 2,
+  "file_lines": 828,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_participation_false_speak.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_people_in_window.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_persons_former_ids.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_pii_scan.py": {
+  "file_lines": 1416,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_place_identity.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_platform_observation_fixtures.py": {
+  "comment_blocks": 2,
+  "file_lines": 1116,
+  "internal_docstrings": 3
+ },
+ "tests/unit/test_platform_observation_journey.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_platform_observation_wired.py": {
+  "comment_blocks": 2,
+  "file_lines": 1691,
+  "functions": {
+   "test_the_session_runner_assembles_and_consumes_an_observation_stimulus": 139
+  }
+ },
+ "tests/unit/test_pr584_astra_readiness.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_profile_collective.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_prompt_adversarial.py": {
+  "comment_blocks": 8,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_prompt_documents.py": {
+  "comment_blocks": 4
+ },
+ "tests/unit/test_prompt_one_line.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_reasoning_strip_probe.py": {
+  "comment_blocks": 4,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_reasoning_strip_watch.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_release_deployment.py": {
+  "comment_blocks": 2,
+  "file_lines": 1375
+ },
+ "tests/unit/test_relevance_gate.py": {
+  "comment_blocks": 11,
+  "file_lines": 1321,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_replay_diagnosis.py": {
+  "functions": {
+   "test_decision_resolves_fingerprinted_writer_events": 164
+  }
+ },
+ "tests/unit/test_rollup_determinism.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_routine_read.py": {
+  "internal_docstrings": 3
+ },
+ "tests/unit/test_runtime.py": {
+  "comment_blocks": 13,
+  "file_lines": 2568,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_sandbox_shared_database_guard.py": {
+  "comment_blocks": 3,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_scoped_computer.py": {
+  "comment_blocks": 1,
+  "file_lines": 1688,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_shared_assembly_goldens.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_shared_state.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_signoz_config.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_signoz_telemetry.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_social_router.py": {
+  "comment_blocks": 2
+ },
+ "tests/unit/test_standing_corpus.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_step4c_edge_goldens.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 4
+ },
+ "tests/unit/test_sticker_reader.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_strands_reasoning_transport_contract.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_subconscious_executor.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_summons_assembly_goldens.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_summons_occasion.py": {
+  "file_lines": 896
+ },
+ "tests/unit/test_summons_reads_the_post.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_testmon_record.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_the_judge_can_remove_a_pass.py": {
+  "comment_blocks": 2
+ },
+ "tests/unit/test_tool_catalogue.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_tool_registry.py": {
+  "comment_blocks": 20,
+  "file_lines": 1140,
+  "functions": {
+   "test_budgets_match_todays_table": 226
+  },
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_tool_route_grader.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_tool_selection_cognition_corpus.py": {
+  "comment_blocks": 1
+ },
+ "tests/unit/test_tool_surface.py": {
+  "comment_blocks": 2
+ },
+ "tests/unit/test_tool_unknown_arguments.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_tool_unknown_arguments_wiring.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_unified_backfill.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_video_generation.py": {
+  "file_lines": 1446,
+  "internal_docstrings": 2
+ },
+ "tests/unit/test_vision_preprocess.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_voice_hub.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_wake_evaluator.py": {
+  "comment_blocks": 1,
+  "file_lines": 924,
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_ytdlp_source.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/web/test_api.py": {
+  "file_lines": 845,
+  "internal_docstrings": 1
+ },
+ "voice-lab/scripts/gen_negatives_minimax.py": {
+  "comment_blocks": 1
+ },
+ "voice-lab/scripts/modal_train_wakeword.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 4
+ }
+}
