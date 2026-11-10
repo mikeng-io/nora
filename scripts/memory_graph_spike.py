@@ -1394,6 +1394,9 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                             measured["proposal_argument_errors"] = sum(
                                 e.get("argument_validation") == "rejected_before_dispatch"
                                 for e in proposals)
+                            if (proposals and proposals[-1].get("argument_validation")
+                                    == "rejected_before_dispatch"):
+                                raise ValueError("unrecovered proposal argument error")
                             proposals = [e for e in proposals if e.get("argument_validation")
                                          != "rejected_before_dispatch"]
                             if any(not isinstance(e["result"], dict) for e in proposals):

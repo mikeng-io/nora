@@ -613,7 +613,10 @@ async def test_fixed_coverage_wire_labels_sparse_saved_and_read_indices(
     assert exchanges == original_exchanges
 
 
-@pytest.mark.parametrize("failure", ["arguments", "legacy", "coerced_runtime", "returned_error"])
+@pytest.mark.parametrize("failure", [
+    "arguments", "no_retry", "unrecovered_after_success", "legacy", "coerced_runtime",
+    "returned_error",
+])
 async def test_replay_recovers_only_proven_predispatch_argument_failures(
         tmp_path, monkeypatch, failure):
     import contextvars
@@ -667,7 +670,9 @@ async def test_replay_recovers_only_proven_predispatch_argument_failures(
             bad = {"items": ["0"] if failure == "coerced_runtime" else [0],
                    "statements": [{"what": failure}]}
         good = {"items": [0], "statements": [{"what": "generated"}]}
-        for index, args in enumerate((bad, good)):
+        calls = ((bad,) if failure == "no_retry" else
+                 (good, bad) if failure == "unrecovered_after_success" else (bad, good))
+        for index, args in enumerate(calls):
             use = {"toolUseId": f"generated-{index}", "name": "memory_propose", "input": args}
             contextvars.copy_context().run(hook.capture, BeforeToolCallEvent(
                 agent=SimpleNamespace(), selected_tool=tool, tool_use=use, invocation_state={}))
@@ -694,11 +699,15 @@ async def test_replay_recovers_only_proven_predispatch_argument_failures(
     report = await spike.run(env.args)
     batches = list(report["cost_per_batch"]["batches"].values())
     assert len(batches) == 2
-    assert len(effects) == (2 if failure in {"arguments", "legacy"} else 4)
+    expected_effects = (0 if failure == "no_retry" else
+                        2 if failure in {"arguments", "legacy", "unrecovered_after_success"} else 4)
+    assert len(effects) == expected_effects
     assert all(items == [0] for items in effects)  # SDK coercion can precede a handler error.
     if failure == "arguments":
         assert all(b["status"] == "PASS" and b["proposal_argument_errors"] == 1 for b in batches)
         assert spike.smoke_fact_support.await_count == 2
     else:
-        assert all(b["status"] == "ERROR" and b["proposal_argument_errors"] == 0 for b in batches)
+        argument_errors = 1 if failure in {"no_retry", "unrecovered_after_success"} else 0
+        assert all(b["status"] == "ERROR" and b["proposal_argument_errors"] == argument_errors
+                   for b in batches)
         assert spike.smoke_fact_support.await_count == 0

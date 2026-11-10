@@ -27,7 +27,8 @@ NOTICE = (
 )
 
 
-async def wake(budget=None, seed=None, historical=False, reaction=False, reaction_only=False):
+async def wake(budget=None, seed=None, historical=False, reaction=False, reaction_only=False,
+               public_media=False):
     stimuli = {
         i: Stimulus(
             id=i,
@@ -69,7 +70,8 @@ async def wake(budget=None, seed=None, historical=False, reaction=False, reactio
     sources = (
         Source(("message", "101"), "record", "generated-unit", ("generated-a",), "Image attached."),
         Source(
-            ("media", "101:generated-image"), "record", "generated-unit", ("generated-a",), NOTICE
+            ("media", "101:generated-image"), "record", "generated-unit",
+            () if public_media else ("generated-a",), NOTICE
         ),
         Source(("message", "102"), "record", "generated-unit", ("generated-b",), "Context from B."),
         Source(("message", "103"), "record", "generated-unit", (), "Loaded but never shown."),
@@ -503,7 +505,7 @@ async def test_a_person_never_shown_is_still_unshown():
     assert result["statements"][0]["reason"] == "unshown"
 
 
-@pytest.mark.parametrize("kind", ["reading", "relation", "correction"])
+@pytest.mark.parametrize("kind", ["reading", "relation", "correction", "attribute"])
 @pytest.mark.parametrize("invented_tail", [False, True])
 async def test_api_punctuation_quotes_keep_custody_at_every_admission_gate(
         monkeypatch, kind, invented_tail):
@@ -512,7 +514,8 @@ async def test_api_punctuation_quotes_keep_custody_at_every_admission_gate(
 
     raw = "Generated A likes Generated work — spare copy available. 準備——可以。"
     monkeypatch.setitem(globals(), "NOTICE", raw)
-    state, prompt = await wake(seed=lambda m: _seed_key_shaped_label(m, blocked=False))
+    state, prompt = await wake(seed=lambda m: _seed_key_shaped_label(m, blocked=False),
+                               public_media=kind == "attribute")
     model = build_structured_model(base_url="http://127.0.0.1:1", api_key="generated-key",
                                    model_id="generated-model", max_tokens=10, temperature=0)
     request = model.format_request([{"role": "user", "content": [{"text": prompt}]}])
@@ -529,15 +532,27 @@ async def test_api_punctuation_quotes_keep_custody_at_every_admission_gate(
         statement = {"type": "reading", "what": "The notice offers a spare copy",
                      "how": "reported", "happened_at": {"source": int(n), "expression": None},
                      "cite": [citation]}
-    elif kind == "relation":
+    elif kind in {"relation", "attribute"}:
         statement = {"type": "relation", "rel": "likes", "subject": "@person:generated-a",
                      "object": {"new": {"kind": "work", "name": "Generated handbook"}},
-                     "cite": [citation]}
+                     "cite": [{"source": int(n), "quote": quote}] if kind == "attribute"
+                     else [citation]}
+        if kind == "attribute":
+            statement["object"]["new"]["attributes"] = {
+                "availability": {"value": "spare", "cite": [citation]}}
     else:
         statement = {**_correction(), "cite": [citation]}
     result = await state.memory.propose(state, items=[0], statements=[statement])
-    assert result["statements"][0]["status"] == ("refused" if invented_tail else "saved"), result
-    if invented_tail:
+    assert result["statements"][0]["status"] == (
+        "refused" if invented_tail and kind != "attribute" else "saved"), result
+    if kind == "attribute":
+        entity = next(e for e in state.memory.graph.entities.values()
+                      if e.name == "Generated handbook")
+        assert dict(entity.attributes) == ({} if invented_tail else {"availability": "spare"})
+        if invented_tail:
+            assert any(p["reason"] == "span_not_in_source"
+                       for p in result["statements"][0]["refused_parts"])
+    elif invented_tail:
         assert result["statements"][0]["reason"] == (
             "evidence_absent" if kind == "reading" else "span_not_in_source")
     elif kind == "reading":

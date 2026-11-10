@@ -1174,3 +1174,26 @@ async def test_api_punctuation_span_keeps_store_provenance(graph, span, accepted
     else:
         assert Refusal("relation", REL.id, "span_not_in_source") in result.refused
     assert source.text == "I attended the event — by train."
+
+
+@pytest.mark.parametrize("invented_tail", [False, True])
+async def test_api_punctuation_attribute_keeps_store_provenance(graph, invented_tail):
+    source = replace(SOURCE, persons=(), text="I attended the event — by train.")
+    event = replace(EVENT, attributes={"travel": "train"})
+    attribute = Evidence(source.key, entity_id=event.id, attribute="travel",
+                         span="event, by train" + (" invented" if invented_tail else ""))
+    result = await graph.stage_and_admit(
+        entities=(PERSON, event), relations=(REL,), evidence=(EV, attribute),
+        sources={source.key: source})
+    assert result.relations == (REL,)
+    stored = next(e for e in result.entities if e.id == event.id)
+    assert dict(stored.attributes) == ({} if invented_tail else {"travel": "train"})
+    assert (attribute in result.evidence) is not invented_tail
+    if invented_tail:
+        assert Refusal("evidence", event.id, "span_not_in_source",
+                       attribute="travel") in result.refused
+    readback = await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1"})))
+    persisted = next(n for n in readback.nodes if n.key == event.key)
+    assert persisted.entity is not None
+    assert dict(persisted.entity.attributes) == dict(stored.attributes)
+    assert source.text == "I attended the event — by train."

@@ -40,5 +40,19 @@
     "old": "                            {**read, \"evidence_index\": index}",
     "new": "                            read",
     "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_wire_labels_sparse_saved_and_read_indices"
+  },
+  {
+    "name": "unrecovered tool arguments cannot pass a restraint case",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                            if (proposals and proposals[-1].get(\"argument_validation\")\n                                    == \"rejected_before_dispatch\"):\n                                raise ValueError(\"unrecovered proposal argument error\")\n",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_replay_recovers_only_proven_predispatch_argument_failures[no_retry]"
+  },
+  {
+    "name": "attribute evidence admits only the exact model-visible source span",
+    "file": "nora/domain/memory_admission.py",
+    "old": "elif e.span is not None and not contains_source_span(e.span, source.text):",
+    "new": "elif e.span is not None and e.span not in source.text:",
+    "target": "tests/contract/test_memory_graph_contract.py::test_api_punctuation_attribute_keeps_store_provenance"
   }
 ]
