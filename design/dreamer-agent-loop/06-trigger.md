@@ -11,6 +11,14 @@ edges:
 
 # Trigger — An Adaptor Must Say When It Wants To Run
 
+The cross-layer execution and time contract is
+[Cognition 18](../cognition-loop/18-execution-and-time.md). It distinguishes
+current Dreamer adaptor dispatch from Cognition's separate wake/session path
+and specifies the remaining consolidation into one subconscious execution
+owner. The findings and proposals below are historical where later Cognition
+amendments replace them; they do not prove that consolidation is implemented.
+Component eligibility and outcomes remain distinct from shared time arithmetic.
+
 ## 1. The absence
 
 `DreamAdaptor` has **no `should_fire` verb**, deliberately. The fire condition

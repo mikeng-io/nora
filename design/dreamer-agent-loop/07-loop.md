@@ -12,6 +12,14 @@ edges:
 
 # The Loop — What One Turn Is, and How It Ends
 
+The cross-layer execution and time contract is
+[Cognition 18](../cognition-loop/18-execution-and-time.md). It distinguishes
+current Dreamer adaptor dispatch from Cognition's separate wake/session path
+and specifies the remaining consolidation into one subconscious execution
+owner. The findings and proposals below are historical where later Cognition
+amendments replace them; they do not prove that consolidation is implemented.
+Component eligibility and outcomes remain distinct from shared time arithmetic.
+
 This is the node the bundle is named for, and it was missing. Rather than invent
 a loop, it takes the shape from a sibling project that **built** one, hit two
 failures, and recorded the fix. §5 is explicit about which parts of that are
