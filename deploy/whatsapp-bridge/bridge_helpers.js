@@ -4,7 +4,7 @@
  * Everything in this module is free of Baileys sockets, HTTP, and wall-clock
  * side effects beyond injected ones, so `bridge.test.mjs` can exercise the
  * parsing/resolution/buffering rules without pairing. Shapes are pinned by
- * design/whatsapp-adoption/03-transport-contract.md — drift there is a
+ * design/whatsapp-adoption/bridge.md — drift there is a
  * contract failure, not a judgment call.
  *
  * Adapted from Hermes' scripts/whatsapp-bridge/ (MIT). Not copied: the
@@ -112,7 +112,7 @@ export function resolveIdentity(jid, lidToPhone = {}, phoneToLid = {}) {
 /**
  * phone -> lid, the inverse of buildLidMap's lid -> phone. Both directions
  * ride every message event: the Python adapter's MentionPolicy contract is a
- * membership test against BOTH forms (design/whatsapp-adoption/03), so a
+ * membership test against BOTH forms (design/whatsapp-adoption/bridge.md), so a
  * sender or mention known only as a phone JID must still carry its lid when
  * the session map knows one.
  */

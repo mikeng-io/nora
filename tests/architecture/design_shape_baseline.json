@@ -728,42 +728,5 @@
  "design/tool-concurrency/_index.yaml": [
   "not-a-design-file",
   "date"
- ],
- "design/whatsapp-adoption/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/whatsapp-adoption/01-bridge-container.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/whatsapp-adoption/02-identity-and-policy.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/whatsapp-adoption/03-transport-contract.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/whatsapp-adoption/04-transport-implementation-notes.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/whatsapp-adoption/05-delegate-review.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/whatsapp-adoption/06-implementation-review.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/whatsapp-adoption/_index.yaml": [
-  "not-a-design-file"
- ],
- "design/whatsapp-adoption/viz-whatsapp-adoption.html": [
-  "not-a-design-file",
-  "date"
  ]
 }

@@ -273,7 +273,7 @@ design/unified-memory/README.md
 design/unified-memory/profiles.md
 design/unified-memory/profiles.md
 design/unified-memory/README.md
-design/whatsapp-adoption/02-identity-and-policy.md
-design/whatsapp-adoption/05-delegate-review.md
-design/whatsapp-adoption/06-implementation-review.md
+design/whatsapp-adoption/identity.md
+design/whatsapp-adoption/README.md
+design/whatsapp-adoption/README.md
 ```

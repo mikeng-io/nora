@@ -16,7 +16,7 @@ FROM a file under it, and a citation OF a path under it from anywhere else.
 sweep of every backticked, slash-containing token in every tracked `.md` file
 produces mostly non-defects: version-like numbers and IPs (no extension), bare
 relative mentions inside a file already scoped to that subtree
-(`agent/guards.py` inside a doc under `design/whatsapp-adoption/`), and — the
+(`agent/guards.py` inside a doc under `design/whatsapp-adoption/README.md`), and — the
 largest category — prose that talks ABOUT a deleted or not-yet-built file
 rather than pointing at a live one. Each tightening below is a STRUCTURAL
 signal already present in this repo's own conventions, not a per-path guess:
@@ -439,9 +439,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "condition with a real delivery path; this design records the reasoning as it "
         "stood, and rewriting a decision record to match later code is what this "
         "repo's design docs deliberately do not do"
-    ),
-    ("design/whatsapp-adoption/01-bridge-container.md", "deploy/watchdog.sh"): (
-        "same deletion, same reason — a historical decision record, not a broken link"
     ),
     ("design/08-stack-refactor-brief.md", "nora/store/db.py"): (
         "pre-refactor handoff brief describing the SQLite-era code the brief itself "

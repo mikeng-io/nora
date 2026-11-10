@@ -186,7 +186,7 @@ services:
       options: {max-size: "10m", max-file: "3"}
 
 
-  # whatsapp-bridge — Nora's WhatsApp transport (design/whatsapp-adoption/).
+  # whatsapp-bridge — Nora's WhatsApp transport (design/whatsapp-adoption/README.md).
   # A containerized Baileys (Node) daemon, the transport TWIN of signal-cli
   # above: same private `nora` network, same no-published-ports posture, same
   # ./state/ volume discipline. The bridge holds the full WhatsApp session
@@ -199,7 +199,7 @@ services:
   #   docker compose run --rm whatsapp-bridge --pair --phone <digits>
   # once (prints a pairing code to type into the phone app: Linked Devices →
   # Link with phone number), then normal `docker compose up -d` boots with
-  # the saved session. See design/whatsapp-adoption/01-bridge-container.md.
+  # the saved session. See design/whatsapp-adoption/bridge.md.
   whatsapp-bridge:
     build:
       context: ./deploy/whatsapp-bridge

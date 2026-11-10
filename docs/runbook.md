@@ -501,7 +501,7 @@ Do not run checkout `docker compose restart` against the installed application.
 
 ## 4b. WhatsApp (whatsapp-bridge)
 
-The bridge (`deploy/whatsapp-bridge/`, design/whatsapp-adoption/) is the
+The bridge (`deploy/whatsapp-bridge/`, design/whatsapp-adoption/README.md) is the
 transport twin of signal-cli: same private network, same no-published-ports
 posture, session on `./state/whatsapp` (chmod 700, never commit). It is only
 relevant when `[platforms.whatsapp] enabled = true`.
@@ -531,7 +531,7 @@ deny-by-default until the DM study lands.
 | WhatsApp protocol update | bridge reconnect loop / messages stop | bump the Baileys pin in deploy/whatsapp-bridge/package.json, rebuild, re-pair if the session was invalidated |
 | Phone offline >~14 days (operational lore, not an SLA) | device unlinked | re-pair with the command above |
 | Session dir lost/corrupt | `paired: false` in the bridge's /health | re-pair (no data loss) |
-| Account restricted (ban) | login throttled/rejected | stop using the number; evaluate cause (design/whatsapp-adoption/02 §risk posture) |
+| Account restricted (ban) | login throttled/rejected | stop using the number; evaluate cause (design/whatsapp-adoption/identity.md §risk posture) |
 | Network blip | transient disconnect | self-heals; the bridge reconnects with backoff |
 
 The container healthcheck only proves the HTTP layer serves (curl exists in

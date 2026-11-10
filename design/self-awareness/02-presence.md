@@ -39,7 +39,7 @@ nothing can:
 | Instagram | live: the bridge's `GET /health` carries `self.username` (`design/instagram-adoption/bridge.md`); `nora/platform/instagram/self_id.py` reads that response and ignores the field today, so the build reads it | the adapter knows the logged-in account |
 | Discord | live: `GET /users/@me` carries `username` and `discriminator` (`design/discord-integration/03`); `nora/platform/discord/self_id.py`'s `derive_identity` reads them off the SAME call `resolve_identity()` already makes at startup, and `DiscordAdapter.own_handle()` reuses the cached result — no second call per turn. Rendered `@username#discriminator`, or `@username` alone once the account carries Discord's migrated `discriminator = "0"` | the adapter already calls this endpoint once at startup; reusing it costs nothing |
 | Signal | declared, until the build confirms the adapter can report it | `self_id.py` derives her id and deliberately drops the username (below); whether the transport exposes her own handle is a build-time check, not assumed here |
-| WhatsApp | declared | the bridge contract (`design/whatsapp-adoption/03-transport-contract.md`) exposes `{phone, lid}` only; there is no handle to read |
+| WhatsApp | declared | the bridge contract (`design/whatsapp-adoption/bridge.md`) exposes `{phone, lid}` only; there is no handle to read |
 | X, Threads | declared | no adapter |
 
 A declared handle is a copy, with exactly the risk above. It is the fallback,

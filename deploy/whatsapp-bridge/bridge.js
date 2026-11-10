@@ -5,7 +5,7 @@
  * Node 24 daemon that connects to WhatsApp via Baileys and exposes two
  * surfaces:
  *
- *  - LEGACY (design/whatsapp-adoption/03-transport-contract.md): HTTP + SSE
+ *  - LEGACY (design/whatsapp-adoption/bridge.md): HTTP + SSE
  *    for the pre-streams app. Kept byte-compatible while the migration runs;
  *    it is not the correctness path.
  *  - DURABLE (design/platform-bridges, frozen nora-bridge-wire v1): every
@@ -770,7 +770,7 @@ function handleSelf(req, res) {
   const me = sock?.user || {};
   const id = normalizeJid(me.id) || null;
   const lidJid = normalizeJid(me.lid) || null;
-  // Contract (design/whatsapp-adoption/03-transport-contract.md): `phone` and
+  // Contract (design/whatsapp-adoption/bridge.md): `phone` and
   // `lid` are DIGIT strings — the Python adapter feeds them straight into its
   // phone_form()/lid_form() normalization. The JID spellings ride along under
   // their own names for the operator.
