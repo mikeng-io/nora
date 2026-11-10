@@ -260,6 +260,12 @@ class WakeEvaluator:
             self._background.discard(finished)
             if self._live.get(unit) is finished:
                 del self._live[unit]
+            # A task cancelled before its first step never reached
+            # `await outcome`: close the coroutine or its frame leaks and the
+            # interpreter warns "never awaited". A completed one's close is a
+            # no-op.
+            if inspect.iscoroutine(outcome):
+                outcome.close()
 
         task.add_done_callback(_done)
 

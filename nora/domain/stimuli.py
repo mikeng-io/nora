@@ -19,9 +19,10 @@ eligible by the read's cutoff and no wake that did not fail CLAIMED it —
 passed over stays pending without ever being enumerated. `through_stimulus_id`
 only grows — `decide` never sets it below the one it read — and a wake's
 claims sit at or under its own `through`, so «claimed by some earlier wake»
-and «claimed by the newest» are the same probe. `pending_floor` on the mark
-is the residual read's bound: below it every row is retracted or claimed by a
-`closed` wake, permanently, so reading under an advanced mark stays bounded.
+and «claimed by the newest» are the same probe. `stimulus_pending` holds the
+«not permanently consumed» set per `(unit, mode)` — appended rows minus
+`closed` claims and retractions — so the read walks the backlog itself,
+never the history behind it.
 
 **Single-flight and cooldown are derived from durable rows.** With NO session
 hook (only a test builds such an evaluator) no session runs, so a wake is
@@ -217,12 +218,6 @@ class WakeRow:
     #: The stimuli this wake claimed (`stimulus_claim` rows, and the `claimed`
     #: key in its own `detail`): the append-only fact of what it consumed.
     claimed_ids: tuple[int, ...] = ()
-    #: The lowest stimulus id under `through_stimulus_id` that may still be
-    #: pending when this wake was written (`detail.pending_floor`): below it,
-    #: every row is retracted or claimed by a `closed` wake — permanently
-    #: consumed. None on rows written before the floor existed (their
-    #: below-mark reads run the full under-mark range, once).
-    pending_floor: int | None = None
 
 
 @dataclass(frozen=True)
@@ -475,12 +470,7 @@ class Watermark:
     `(through_stimulus_id, through_ms)` is the wake's record of how far it
     got; `claimed` is what it took (the `stimulus_claim` rows) and `unclaimed`
     the stimuli inside its range it left pending (DEC-245) — the early-door
-    list a reader re-offers before they are due. `pending_floor` is the
-    lowest id under `through_stimulus_id` that may still be pending: below it
-    every row is retracted or claimed by a `closed` wake, permanently. It is
-    the read's bound on the residual range — a cursor, never a list — so
-    reading the backlog under an advanced mark stays bounded however large
-    the backlog grows. None on wakes written before the floor existed.
+    list a reader re-offers before they are due.
 
     `ZERO` is a unit that has never woken."""
 
@@ -488,7 +478,6 @@ class Watermark:
     through_ms: int = 0
     unclaimed: frozenset[int] = frozenset()
     claimed: frozenset[int] = frozenset()
-    pending_floor: int | None = None
 
     @classmethod
     def of(cls, wake: WakeRow | None) -> Watermark:
@@ -497,7 +486,6 @@ class Watermark:
         return cls(
             wake.through_stimulus_id, wake.at_ms,
             frozenset(wake.unclaimed_ids), frozenset(wake.claimed_ids),
-            wake.pending_floor,
         )
 
 

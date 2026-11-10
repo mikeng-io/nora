@@ -585,7 +585,7 @@ async def _reset_sequences(conn: AsyncConnection, table: str) -> None:
 
 async def _refuse_a_target_that_holds_rows(conn: AsyncConnection) -> None:
     held = []
-    for table in (*copied_tables(), "row_history"):
+    for table in (*copied_tables(), "row_history", "stimulus_pending"):
         if (await conn.execute(sa.text(f'SELECT EXISTS (SELECT 1 FROM "{table}")'))).scalar_one():  # noqa: S608 — table and column names are module constants, never input
             held.append(table)
     if held:
@@ -644,7 +644,44 @@ async def seed(source: AsyncEngine, target: AsyncEngine, at: datetime) -> SeedRe
                 orphaned[table] = offered - inserted
             await _reset_sequences(dst, table)
         history_rows = await _copy_history(src, dst, at)
+        await _rebuild_derived(dst)
     return SeedReport(at=at, copied=copied, orphaned=orphaned, history_rows=history_rows)
+
+
+async def _rebuild_derived(dst: AsyncConnection) -> None:
+    """Rebuild `stimulus_pending` on the restored rows: it is DERIVED state —
+    the «not permanently consumed» set `view` walks — not restorable state,
+    so nothing copies it; it is recomputed once, exactly as `view` would
+    lazily seed it: a mode sentinel plus every live stimulus not CONSUMED in
+    that `(unit, mode)` — claimed by a `closed` wake, or by an untracked one
+    (already the watermark, never releasable), in either case not failed."""
+    await dst.execute(sa.text(
+        "INSERT INTO stimulus_pending (unit, mode, stimulus_id)"
+        " SELECT s.unit, m.mode, s.id FROM stimulus s"
+        " JOIN (SELECT DISTINCT unit, mode FROM cognition_wake"
+        "       UNION SELECT DISTINCT unit, 'live' FROM stimulus) m"
+        "   ON m.unit = s.unit"
+        " WHERE NOT EXISTS (SELECT 1 FROM stimulus_retraction r"
+        "                   WHERE r.stimulus_id = s.id)"
+        "   AND NOT EXISTS ("
+        "     SELECT 1 FROM stimulus_claim c"
+        "     JOIN cognition_wake w ON w.id = c.wake_id"
+        "     WHERE c.stimulus_id = s.id AND w.unit = s.unit AND w.mode = m.mode"
+        "       AND (w.tracked = 0 OR EXISTS ("
+        "         SELECT 1 FROM cognition_wake_outcome o"
+        "         WHERE o.wake_id = w.id AND o.outcome = 'closed'))"
+        "       AND NOT EXISTS ("
+        "         SELECT 1 FROM cognition_wake_outcome o2"
+        "         WHERE o2.wake_id = w.id AND o2.outcome <> 'closed'))"
+        " ON CONFLICT (unit, mode, stimulus_id) DO NOTHING"
+    ))
+    await dst.execute(sa.text(
+        "INSERT INTO stimulus_pending (unit, mode, stimulus_id)"
+        " SELECT unit, mode, 0 FROM ("
+        "  SELECT DISTINCT unit, mode FROM cognition_wake"
+        "  UNION SELECT DISTINCT unit, 'live' FROM stimulus) m"
+        " ON CONFLICT (unit, mode, stimulus_id) DO NOTHING"
+    ))
 
 
 async def _copy_history(src: AsyncConnection, dst: AsyncConnection, at: datetime) -> int:

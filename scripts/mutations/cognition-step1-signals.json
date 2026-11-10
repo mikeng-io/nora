@@ -28,11 +28,11 @@
     "target": "tests/unit/test_wake_evaluator.py::test_a_reply_to_nora_never_wakes_a_unit_by_itself"
   },
   {
-    "name": "watermark: a stimulus due after the watermark's time counts as consumed by the id range",
-    "file": "nora/domain/stimuli.py",
-    "old": "        return due_tick_of_ms(stimulus.due_ms) <= tick_of_ms(self.through_ms)",
-    "new": "        return True",
-    "target": "tests/unit/test_wake_evaluator.py::test_a_stimulus_due_after_the_watermarks_time_is_not_consumed_by_the_id_range tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
+    "name": "twin view: a stimulus due after the watermark's time counts as consumed by the id range",
+    "file": "nora/testing/stimuli.py",
+    "old": "            sid for w in mine for sid in w.claimed_ids",
+    "new": "            sid for w in mine for sid in range(1, w.through_stimulus_id + 1)",
+    "target": "tests/unit/test_wake_evaluator.py::test_a_due_later_wake_does_not_resurrect_stimuli_already_consumed tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
   },
   {
     "name": "cooldown: a strong cue may cut it twice in a row",
@@ -56,18 +56,18 @@
     "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli tests/unit/test_wake_evaluator.py::test_a_due_later_wake_does_not_resurrect_stimuli_already_consumed"
   },
   {
-    "name": "SQL watermark: an undated stimulus stamped after the time bound is consumed under its id",
+    "name": "SQL record_wake: an untracked wake consumes the whole range, not what it claimed",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "            STIMULUS.c.recorded_at > _at(through_ms),",
-    "new": "            sa.false(),",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_recorded_after_the_wakes_time_bound_stays_pending_under_its_id"
+    "old": "                    STIMULUS_PENDING.c.stimulus_id.in_(wake.claimed_ids),",
+    "new": "                    STIMULUS_PENDING.c.stimulus_id <= wake.through_stimulus_id,",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
   },
   {
-    "name": "SQL watermark: a stimulus due after the time bound is consumed under its id",
+    "name": "SQL record_outcome: a closed wake consumes the whole range, not what it claimed",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "        sa.select(*columns).where(*base, under, STIMULUS.c.due_tick > through_tick),",
-    "new": "        sa.select(*columns).where(*base, under, sa.false()),",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
+    "old": "                    STIMULUS_PENDING.c.stimulus_id.in_(\n                        sa.select(STIMULUS_CLAIM.c.stimulus_id).where(\n                            STIMULUS_CLAIM.c.wake_id == outcome.wake_id,\n                        ),\n                    ),",
+    "new": "                    STIMULUS_PENDING.c.stimulus_id <= sa.select(\n                        COGNITION_WAKE.c.through_stimulus_id,\n                    ).where(\n                        COGNITION_WAKE.c.id == outcome.wake_id,\n                    ).scalar_subquery(),",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus"
   },
   {
     "name": "settle margin removed: an id committed after a higher one is consumed unseen",

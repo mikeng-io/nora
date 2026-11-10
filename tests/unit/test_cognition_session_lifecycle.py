@@ -578,7 +578,7 @@ async def test_a_wake_with_no_outcome_blocks_its_unit_and_no_later_wake_swallows
         unit="u1", mode="live", reason="settled", from_stimulus_id=first,
         through_stimulus_id=w2_sid, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=rig.clock.ms, cut_cooldown=False, at_ms=rig.clock.ms,
-        tracked=True,
+        tracked=True, claimed_ids=(w2_sid,),
     ), recorded_at_ms=rig.clock.ms, guard=_guard_of(rig.stimuli))
     assert w2 is not None
 
@@ -1057,6 +1057,16 @@ async def test_two_concurrent_wake_at_calls_cannot_both_pass_the_pending_cap():
         return CognitionRunResult(stop_reason="end_turn")
 
     rig = _rig(agent=ScriptedAgent(script=[two_at_once]), max_self_wakes=1)
+    # A real store yields inside the critical section; the double must too, or
+    # the unit lock cannot be observed by this test.
+    real_pending = rig.ledger.pending_self_wakes
+
+    async def yielding_pending(*, unit: str, since_ms: int) -> Any:
+        rows = await real_pending(unit=unit, since_ms=since_ms)
+        await asyncio.sleep(0)
+        return rows
+
+    rig.ledger.pending_self_wakes = yielding_pending
     await rig.say()
     rig.clock.advance(1)
     await rig.tick()
@@ -1506,6 +1516,7 @@ async def test_a_late_close_between_the_read_and_the_write_refuses_the_new_wake(
         unit="u1", mode="live", reason="settled", from_stimulus_id=0,
         through_stimulus_id=sid, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=T, cut_cooldown=False, at_ms=rig.clock.ms, tracked=True,
+        claimed_ids=(sid,),
     ), recorded_at_ms=rig.clock.ms, guard=_guard_of(rig.stimuli))
     assert w1 is not None
     rig.clock.advance(900 + 300 + 1)

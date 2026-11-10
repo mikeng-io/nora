@@ -287,10 +287,10 @@
     "target": "tests/unit/test_cognition_agent_runner.py -k test_a_timeout_is_raised"
   },
   {
-    "name": "stimuli sql: a retracted stimulus is actually never pending",
-    "file": "nora/infra/sql/stimuli.py",
-    "old": "        STIMULUS.c.unit == unit,\n        eligible,\n        live_stimulus(STIMULUS.c.id),\n    )",
-    "new": "        STIMULUS.c.unit == unit,\n        eligible,\n    )",
+    "name": "stimuli twin: a retracted stimulus is actually never pending",
+    "file": "nora/testing/stimuli.py",
+    "old": "            if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)\n",
+    "new": "            if s.unit == unit and s.id not in self.uncommitted\n",
     "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_retracted_stimulus_is_never_pending_and_retracting_twice_is_a_no_op"
   },
   {

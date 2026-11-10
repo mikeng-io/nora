@@ -16,7 +16,12 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from nora.domain.ports import CARRY_STATES, NewCarry, NewWakeOutcome, RecordedOutcome
+from nora.domain.ports import (
+    CARRY_STATES,
+    NewCarry,
+    NewWakeOutcome,
+    RecordedOutcome,
+)
 from nora.domain.ports import HealthRow as DomainHealthRow
 from nora.domain.stimuli import (
     NO_CAUSE,
@@ -33,6 +38,7 @@ from nora.domain.stimuli import (
     stored_cause,
     wake_state,
 )
+
 
 def live_stimulus(retracted: Collection[int], stimulus_id: int | None) -> bool:
     """THE retraction predicate, the double's twin of
@@ -140,22 +146,19 @@ class InMemoryStimulusStore:
                 break
         mark = Watermark.of(mark_wake)
         # Consumption is a per-row fact, as the SQL `stimulus_claim` read makes
-        # it: claimed by a wake that did not fail. A stimulus above the mark's
-        # `through` was never claimable (`through` never retreats and a wake's
-        # claims sit at or under its own); one under it is pending only from
-        # `pending_floor` up — the cursor `record_wake` computes, not a walk of
-        # history — and only while no non-failed wake claims it.
+        # it: claimed by a wake that did not fail. The SQL store walks
+        # `stimulus_pending`, the materialized «not permanently consumed» set;
+        # here the same set is computed — committed, live, eligible, and
+        # claimed by no non-failed wake of this (unit, mode): an OPEN claim
+        # suppresses while it stands, a failed or expired one releases.
         claimed = {
             sid for w in mine for sid in w.claimed_ids
             if (st := self._state(w, stale_before_ms)) is None or st.state != "failed"
         }
-        floor = mark.pending_floor or 0
         eligible = [
             s for s in self.stimuli
             if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)
-            and s.eligible_ms <= now_ms
-            and (s.id > mark.through_stimulus_id
-                 or (floor <= s.id <= mark.through_stimulus_id and s.id not in claimed))
+            and s.eligible_ms <= now_ms and s.id not in claimed
         ]
         pending = eligible[:limit]
         current: dict[int, NewCarry] = {}
@@ -317,30 +320,9 @@ class InMemoryStimulusStore:
             recorded_at_ms=recorded_at_ms, detail=dict(wake.detail), tracked=wake.tracked,
             unclaimed_ids=tuple(sorted(wake.unclaimed_ids)),
             claimed_ids=tuple(sorted(wake.claimed_ids)),
-            pending_floor=self._pending_floor(wake),
         )
         self.wakes.append(row_)
         return row_.id
-
-    def _pending_floor(self, wake: NewWake) -> int:
-        """`SqlStimulusStore.record_wake`'s floor, in memory: the first live
-        stimulus at or under `through` not claimed by a wake that CLOSED (only
-        a closed wake's claims are permanent), starting from the previous
-        floor; `through + 1` when nothing under `through` qualifies."""
-        mine = [w for w in self.wakes if w.unit == wake.unit and w.mode == wake.mode]
-        prev = next(
-            (w.pending_floor for w in reversed(mine) if w.pending_floor is not None),
-            0,
-        ) or 0
-        closed = {
-            sid for w in mine for sid in w.claimed_ids if self._counted(w.id)
-        }
-        for s in self.stimuli:
-            if (s.unit == wake.unit and s.id not in self.uncommitted
-                    and prev <= s.id <= wake.through_stimulus_id
-                    and self._live(s.id) and s.id not in closed):
-                return s.id
-        return wake.through_stimulus_id + 1
 
     def seed_wake(self, unit: str, wake_id: int, *, tracked: bool = True) -> None:
         """A wake row with this id, as the evaluator would have written it, for

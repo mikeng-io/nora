@@ -7,10 +7,10 @@ the SQL does, and this suite is what says it does.
 
 **The property it is really about is the claim.** A stimulus is consumed when
 a wake that did not fail claimed it — the append-only `stimulus_claim` fact,
-never a watermark's range — and a wake's `pending_floor` bounds where the
-unclaimed residue is looked for. Rows a wake's range passed over stay pending
-without ever being enumerated: reading the backlog under an advanced mark is
-bounded by `limit`, not by the backlog's size.
+never a watermark's range — read through `stimulus_pending`, the
+materialized «not permanently consumed» set. Rows a wake's range passed
+over stay pending without ever being enumerated: reading the backlog under
+an advanced mark is bounded by `limit`, not by the backlog's size.
 
 The database is built ONCE for this module and truncated between tests
 (AGENTS.md, «A contract suite scopes its database to the MODULE»).
@@ -26,6 +26,7 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
+from nora.domain.ports import NewWakeOutcome
 from nora.domain.stimuli import NewStimulus, NewWake, WakeGuard
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -67,12 +68,13 @@ async def store(request: Any) -> AsyncIterator[Any]:
         yield SqlStimulusStore(engine)
     finally:
         async with engine.begin() as conn:
-            # All five: leftover carry/outcome rows collide with ids `restart
+            # Leftover carry/outcome/pending rows collide with ids `restart
             # identity` hands out next and leak through the side doors into a
-            # later test's pending/over.
+            # later test's pending.
             await conn.execute(sa.text(
                 "truncate stimulus, cognition_wake, cognition_wake_outcome, "
-                "cognition_carry, stimulus_retraction, stimulus_claim restart identity"
+                "cognition_carry, stimulus_retraction, stimulus_claim, "
+                "stimulus_pending restart identity"
             ))
         await engine.dispose()
 
@@ -371,18 +373,37 @@ async def test_an_advanced_marks_backlog_is_read_in_bounded_oldest_first_cycles(
         ), recorded_at_ms=boundary + 1)
         view = await store.view(unit=UNIT, mode="live", now_ms=boundary + 2, limit=1)
     assert [s.id for s in view.pending] == [selves[2]]
-    # The residual cursor advanced WITH the claims — it bounds the under-mark
-    # range, never a list of it. The newest mark's floor is `selves[1]`: its
-    # own claim was still open when the floor was written, so it stays inside
-    # the range and the claim probe is what removes it.
-    assert view.mark.pending_floor == selves[1]
+
+
+async def test_a_closed_claim_in_another_mode_never_consumes(store):
+    """Claim scope is `(unit, mode)`: a `closed` claim in mode A must not
+    consume the stimulus for mode B. `ck_cognition_wake_mode` admits only
+    `live` today, so mode B is exercised as a lazily-seeded VIEW: the seed
+    and the live outcome's delete must both leave sid1's `(unit, other)`
+    row — a claim in `live` is no fact about `other`."""
+    other = "other"
+    s1 = await store.append(stimulus=_msg("messages:x"), recorded_at_ms=NOW)
+    s2 = await store.append(stimulus=_msg("messages:y"), recorded_at_ms=NOW)
+    wid = await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="live", reason="settled", from_stimulus_id=0,
+        through_stimulus_id=s1, stimulus_count=1, eligible_count=1,
+        oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW + 10,
+        claimed_ids=(s1,),
+    ), recorded_at_ms=NOW + 10)
+    await store.record_outcome(outcome=NewWakeOutcome(
+        wake_id=wid, unit=UNIT, outcome="closed", at_ms=NOW + 11,
+    ), recorded_at_ms=NOW + 11)
+    view = await store.view(unit=UNIT, mode=other, now_ms=NOW + 13, limit=100)
+    assert [s.id for s in view.pending] == [s1, s2]
+    live_view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 13, limit=100)
+    assert [s.id for s in live_view.pending] == [s2]
 
 
 async def test_the_pending_reads_work_does_not_grow_with_the_backlog(_stimulus_db):
     """Query counter, SQL only (the fake has no statements to count): the
     same advanced-mark shape at n=20 and n=2000 — `view(limit=1)` must run
     the SAME bounded set of statements. The old drain loop grew with the
-    backlog; the floor-bounded residual does not."""
+    backlog; the `stimulus_pending` walk visits the backlog itself."""
     from nora.domain.ticks import due_tick_of_ms
 
     engine = create_sql_engine(_stimulus_db)
@@ -428,7 +449,8 @@ async def test_the_pending_reads_work_does_not_grow_with_the_backlog(_stimulus_d
         async with engine.begin() as conn:
             await conn.execute(sa.text(
                 "truncate stimulus, cognition_wake, cognition_wake_outcome, "
-                "cognition_carry, stimulus_retraction, stimulus_claim restart identity"
+                "cognition_carry, stimulus_retraction, stimulus_claim, "
+                "stimulus_pending restart identity"
             ))
         await engine.dispose()
 
@@ -546,21 +568,29 @@ def _kind(kind: str, ref: str, *, at: int = NOW, due: int | None = None,
 
 async def test_a_wake_that_names_unclaimed_stimuli_leaves_exactly_those_pending(store):
     m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
-    r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
-    m3 = await store.append(stimulus=_msg("messages:3"), recorded_at_ms=NOW)
+    # A not-yet-due `self` named unclaimed: it can ONLY show through the
+    # early-offer door — the pending set keeps it but the eligibility filter
+    # withholds it until its own instant.
+    s2 = await store.append(
+        stimulus=_kind("self", "ref:2", at=NOW, due=NOW + 60_000),
+        recorded_at_ms=NOW,
+    )
+    r3 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
+    m4 = await store.append(stimulus=_msg("messages:4"), recorded_at_ms=NOW)
     wake = NewWake(
         unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
-        through_stimulus_id=r2, stimulus_count=1, eligible_count=1,
+        through_stimulus_id=r3, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW + 10,
-        unclaimed_ids=(m1,), claimed_ids=(r2,),
+        unclaimed_ids=(m1, s2), claimed_ids=(r3,),
     )
     await store.record_wake(wake=wake, recorded_at_ms=NOW + 10)
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 20, limit=100)
-    # the rollup is consumed; the message BELOW its id stays pending, and so
-    # does the one above it (an ordinary id past the watermark)
-    assert [s.id for s in view.pending] == [m1, m3]
-    assert view.last_wake.unclaimed_ids == (m1,)
-    assert view.watermark.unclaimed == frozenset({m1})
+    # the rollup is consumed; the message BELOW its id stays pending — and so
+    # does the future-due `self`, re-offered early because the wake NAMED it —
+    # and the message above the watermark (an ordinary id past it)
+    assert [s.id for s in view.pending] == [m1, s2, m4]
+    assert view.last_wake.unclaimed_ids == (m1, s2)
+    assert view.watermark.unclaimed == frozenset({m1, s2})
 
 
 async def test_an_unclaimed_stimulus_is_taken_by_the_next_wake_and_only_once(store):
@@ -690,7 +720,8 @@ async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulu
         async with store._engine.begin() as conn:
             await conn.execute(sa.text(
                 "truncate stimulus, cognition_wake, cognition_wake_outcome, cognition_carry, "
-                "stimulus_retraction, stimulus_claim restart identity cascade"
+                "stimulus_retraction, stimulus_claim, stimulus_pending "
+                "restart identity cascade"
             ))
     rng = random.Random(seed)
     policy = WakePolicy(
@@ -804,8 +835,8 @@ async def test_a_truncated_pending_read_is_the_same_bounded_oldest_first_list_in
 
 
 async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_reads(store):
-    """`record_wake` writes `detail` as a jsonb OBJECT, so `detail->'unclaimed'`,
-    `detail->'claimed'` and `detail->'pending_floor'` are queryable; a row whose
+    """`record_wake` writes `detail` as a jsonb OBJECT, so `detail->'unclaimed'`
+    and `detail->'claimed'` are queryable; a row whose
     detail is a jsonb string still reads, in both stores."""
     m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
@@ -818,20 +849,16 @@ async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_read
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=100)
     assert view.watermark.unclaimed == frozenset({m1})
     assert view.watermark.claimed == frozenset({r2})
-    # The floor is the lowest unclaimed-by-a-closed-wake id under `through`:
-    # m1 was never claimed by anyone, so it bounds the residual.
-    assert view.watermark.pending_floor == m1
     assert [s.id for s in view.pending] == [m1]
     if not hasattr(store, "_engine"):
         return
     async with store._engine.begin() as conn:
         typed = (await conn.execute(sa.text(
             "SELECT jsonb_typeof(detail) AS d, jsonb_typeof(detail->'unclaimed') AS u, "
-            "jsonb_typeof(detail->'claimed') AS c, "
-            "jsonb_typeof(detail->'pending_floor') AS f "
+            "jsonb_typeof(detail->'claimed') AS c "
             "FROM cognition_wake ORDER BY id DESC LIMIT 1"
         ))).one()
-        assert (typed.d, typed.u, typed.c, typed.f) == ("object", "array", "array", "number")
+        assert (typed.d, typed.u, typed.c) == ("object", "array", "array")
         # A legacy row: a jsonb string holding the JSON.
         await conn.execute(sa.text(
             "UPDATE cognition_wake SET detail = to_jsonb(detail::text) "

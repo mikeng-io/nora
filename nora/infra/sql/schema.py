@@ -3902,6 +3902,32 @@ IDX_STIMULUS_CLAIM_WAKE = sa.Index(
     "idx_stimulus_claim_wake", STIMULUS_CLAIM.c.wake_id,
 )
 
+# `stimulus_pending`: the materialized "not permanently consumed" set the
+# pending read walks — one row per `(unit, mode, stimulus_id)` while the
+# stimulus can still be offered. `append` writes a row for every mode the
+# unit has seeded; `view` lazily seeds a `(unit, mode)`'s set on first read
+# (the `stimulus_id = 0` sentinel marks the seed so a fully-consumed mode
+# does not re-seed every read); a `closed` outcome deletes its wake's claims
+# and a retraction deletes the stimulus — open and failed claims keep their
+# rows, and the `stimulus_claim` probe still excludes the open ones while the
+# failed ones release. Consumed history is never visited: the read's row
+# count IS the genuine backlog, bounded by itself. Derived state — rebuilt,
+# never copied, at `snapshot_at.seed`.
+STIMULUS_PENDING = sa.Table(
+    "stimulus_pending",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("mode", sa.Text, nullable=False),
+    sa.Column("stimulus_id", sa.BigInteger, nullable=False),
+    _recorded_at(),
+)
+
+UQ_STIMULUS_PENDING = sa.Index(
+    "uq_stimulus_pending", STIMULUS_PENDING.c.unit, STIMULUS_PENDING.c.mode,
+    STIMULUS_PENDING.c.stimulus_id, unique=True,
+)
+
 SOURCE_HEALTH = sa.Table(
     "source_health",
     METADATA,

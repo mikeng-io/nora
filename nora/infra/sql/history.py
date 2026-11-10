@@ -269,6 +269,10 @@ NOT_RESTORED: dict[str, str] = {
     "presence_corridor_speed": (
         "retired writer (design/27 §4.4 M2): nothing writes or reads it; table kept"
     ),
+    # 0151: a cache of «live and not permanently consumed», deleted on
+    # closed claims and retractions; `snapshot_at.seed` rebuilds it from the
+    # restored rows exactly as `view` would lazily seed it.
+    "stimulus_pending": "derived; snapshot_at.seed rebuilds it",
     # 0105_memory_index: a projection of the stores above, so a restore leaves
     # it empty and `memory_index_state` reads `never` until a rebuild.
     "memory_node": "derived; nora memory rebuild",

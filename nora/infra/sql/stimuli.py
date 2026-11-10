@@ -45,6 +45,7 @@ from nora.infra.sql.schema import (
     COGNITION_WAKE_OUTCOME,
     STIMULUS,
     STIMULUS_CLAIM,
+    STIMULUS_PENDING,
     STIMULUS_RETRACTION,
 )
 
@@ -61,31 +62,25 @@ def _ms(at: datetime) -> int:
 
 
 def pending_query(
-    *, unit: str, mode: str, now_ms: int, floor: int, through_id: int,
+    *, unit: str, mode: str, now_ms: int,
     stale_before_ms: int | None, limit: int,
 ) -> sa.Select[Any]:
-    """The unit's stimuli pending by `now_ms`, ascending id: live, eligible,
-    and NOT claimed by a wake that did not fail — consumption is a per-row
-    `stimulus_claim` fact (a wake claims a SET, `decide`), never a range the
-    next wake must enumerate to honour.
+    """The unit's stimuli pending by `now_ms`, ascending id, read through
+    `stimulus_pending`: the materialized «not permanently consumed» set for
+    `(unit, mode)` — appended rows minus `closed` claims and retractions.
+    The read walks ONLY the set, so its row visits are the genuine backlog
+    and consumed history is never scanned; three probes per row:
 
-    Two bounded reads, each an `idx_stimulus_unit_id` walk that stops at
-    `limit` rows:
-
-    - `id > through_id` — never claimed at all: a wake's claims always sit
-      at or under its own `through`, and `through` never retreats.
-    - `floor <= id <= through_id` — the residual under the watermark. The
-      wake recorded `floor` (`detail.pending_floor`, the lowest id that
-      could still be pending under it — computed from claims by `closed`
-      wakes, which can never release), so the range is a cursor over the
-      real backlog, not a walk of the unit's history. Marks written before
-      the floor existed pass `floor=0`: the whole under-mark range, once —
-      the next wake lands a floor.
-
-    ELIGIBILITY splits on whether the row carries a deadline (node 18: tick
-    arithmetic applies to timed deadlines; an undated stimulus keeps exact
-    commit-order provenance — a message recorded at 90000 is not pending to
-    a read at 88000, though both floor to the same tick)."""
+    - ELIGIBILITY splits on whether the row carries a deadline (node 18:
+      tick arithmetic applies to timed deadlines; an undated stimulus keeps
+      exact commit-order provenance — a message recorded at 90000 is not
+      pending to a read at 88000, though both floor to the same tick).
+    - `live_stimulus`: not retracted.
+    - NOT claimed by a wake of this `(unit, mode)` that did not fail —
+      consumption is a per-row `stimulus_claim` fact (a wake claims a SET,
+      `decide`), never a range the next wake must enumerate to honour. An
+      OPEN claim suppresses while it stands; a failed or expired one
+      releases, since both keep their `stimulus_pending` row."""
     now_tick = tick_of_ms(now_ms)
     eligible = sa.or_(
         sa.and_(
@@ -104,19 +99,82 @@ def pending_query(
         COGNITION_WAKE.c.mode == mode,
         ~_failed_wake(COGNITION_WAKE, stale_before_ms),
     )
-    base = (STIMULUS.c.unit == unit, eligible, live_stimulus(STIMULUS.c.id))
-    above = (
+    sp = STIMULUS_PENDING
+    return (
         sa.select(STIMULUS)
-        .where(*base, STIMULUS.c.id > through_id)
-        .order_by(STIMULUS.c.id.asc()).limit(limit)
+        .select_from(sp.join(STIMULUS, STIMULUS.c.id == sp.c.stimulus_id))
+        .where(
+            sp.c.unit == unit, sp.c.mode == mode,
+            eligible, live_stimulus(STIMULUS.c.id), ~claimed,
+        )
+        .order_by(sp.c.stimulus_id.asc()).limit(limit)
     )
-    below = (
-        sa.select(STIMULUS)
-        .where(*base, STIMULUS.c.id.between(floor, through_id), ~claimed)
-        .order_by(STIMULUS.c.id.asc()).limit(limit)
+
+
+def _consumed_claim(stimulus_id: Any, *, unit: str, mode: str) -> Any:
+    """`stimulus_id` was claimed by a wake of `(unit, mode)` whose claim can
+    never release: a `closed` outcome, or an UNTRACKED wake — it is already
+    the watermark, it can never fail or expire. A failed outcome on either
+    releases. Seeding a pending set skips exactly these."""
+    failed = sa.exists().where(
+        COGNITION_WAKE_OUTCOME.c.wake_id == COGNITION_WAKE.c.id,
+        COGNITION_WAKE_OUTCOME.c.outcome != "closed",
     )
-    both = sa.union_all(above, below).subquery("pending")
-    return sa.select(both).order_by(both.c.id.asc()).limit(limit)
+    return sa.exists().where(
+        STIMULUS_CLAIM.c.stimulus_id == stimulus_id,
+        COGNITION_WAKE.c.id == STIMULUS_CLAIM.c.wake_id,
+        COGNITION_WAKE.c.unit == unit, COGNITION_WAKE.c.mode == mode,
+        ~failed,
+        sa.or_(
+            COGNITION_WAKE.c.tracked == 0,
+            sa.exists().where(
+                COGNITION_WAKE_OUTCOME.c.wake_id == COGNITION_WAKE.c.id,
+                COGNITION_WAKE_OUTCOME.c.outcome == "closed",
+            ),
+        ),
+    )
+
+
+#: The `stimulus_pending.stimulus_id` value whose row marks «this
+#: `(unit, mode)`'s pending set was seeded» — stimulus ids start at 1, so 0
+#: can never collide. Without it a mode whose set drains to empty would be
+#: indistinguishable from a mode never seeded, and `view` would re-seed on
+#: every read.
+_SEED_SENTINEL = 0
+
+
+async def _ensure_seeded(conn: Any, unit: str, mode: str) -> None:
+    """First read of a `(unit, mode)`: materialize its pending set — every
+    live stimulus not closed-claimed in the mode — marked by the sentinel so
+    it happens once. `append` writes rows only into modes already seeded, so
+    nothing before this point is missed: the seed covers all of it."""
+    marked = (await conn.execute(
+        pg_insert(STIMULUS_PENDING).values(
+            unit=unit, mode=mode, stimulus_id=_SEED_SENTINEL,
+        ).on_conflict_do_nothing(
+            index_elements=[STIMULUS_PENDING.c.unit,
+                            STIMULUS_PENDING.c.mode,
+                            STIMULUS_PENDING.c.stimulus_id],
+        ).returning(STIMULUS_PENDING.c.id),
+    )).first()
+    if marked is None:
+        return
+    await conn.execute(
+        pg_insert(STIMULUS_PENDING).from_select(
+            ["unit", "mode", "stimulus_id"],
+            sa.select(
+                sa.literal(unit), sa.literal(mode), STIMULUS.c.id,
+            ).where(
+                STIMULUS.c.unit == unit,
+                live_stimulus(STIMULUS.c.id),
+                ~_consumed_claim(STIMULUS.c.id, unit=unit, mode=mode),
+            ),
+        ).on_conflict_do_nothing(
+            index_elements=[STIMULUS_PENDING.c.unit,
+                            STIMULUS_PENDING.c.mode,
+                            STIMULUS_PENDING.c.stimulus_id],
+        ),
+    )
 
 
 def _stimulus(r: Any) -> Stimulus:
@@ -139,7 +197,7 @@ def _wake(r: Any) -> WakeRow:
         cut_cooldown=bool(r.cut_cooldown), at_ms=int(r.at_ms),
         recorded_at_ms=_ms(r.recorded_at), detail=_wake_detail(r.detail),
         tracked=bool(r.tracked), unclaimed_ids=unclaimed_ids(r.detail),
-        claimed_ids=claimed_ids(r.detail), pending_floor=pending_floor(r.detail),
+        claimed_ids=claimed_ids(r.detail),
     )
 
 
@@ -159,15 +217,6 @@ def claimed_ids(raw: Any) -> tuple[int, ...]:
     """A wake row's claimed stimulus ids (`detail.claimed`), whichever form
     its detail was written in."""
     return _detail_ids(raw, _CLAIMED_KEY)
-
-
-def pending_floor(raw: Any) -> int | None:
-    """A wake row's `detail.pending_floor`: the lowest id under its `through`
-    that may still be pending. None when the row predates it."""
-    floor: Any = jsonb_object(raw).get(_PENDING_FLOOR_KEY)
-    while isinstance(floor, str):
-        floor = json.loads(floor)
-    return None if floor is None else int(floor)
 
 
 def _wake_detail(raw: Any) -> dict[str, object]:
@@ -198,8 +247,9 @@ _UNCLAIMED_KEY = "unclaimed"
 #: `stimulus_claim` indexes, as the wake row's own provenance.
 _CLAIMED_KEY = "claimed"
 
-#: The `detail` key `record_wake` computes: the lowest stimulus id under the
-#: wake's `through` that may still be pending — the residual read's bound.
+#: The `detail` key early claim-row marks carried: the residual read's old
+#: cursor. `_wake_detail` strips it — rows written before `stimulus_pending`
+#: may still hold it, and `WakeRow.detail` must not surface it.
 _PENDING_FLOOR_KEY = "pending_floor"
 
 
@@ -370,6 +420,27 @@ class SqlStimulusStore:
         stmt = stmt.returning(STIMULUS.c.id)
         async with self._engine.begin() as conn:
             row = (await conn.execute(stmt)).first()
+            if row is not None:
+                # A row per mode the unit has SEEDED (the `stimulus_id = 0`
+                # sentinel rows); modes nobody has read yet are covered when
+                # `view` seeds them — the seed scans all live stimuli, this
+                # one included.
+                await conn.execute(
+                    pg_insert(STIMULUS_PENDING).from_select(
+                        ["unit", "mode", "stimulus_id"],
+                        sa.select(
+                            STIMULUS_PENDING.c.unit, STIMULUS_PENDING.c.mode,
+                            sa.literal(int(row.id)),
+                        ).where(
+                            STIMULUS_PENDING.c.unit == stimulus.unit,
+                            STIMULUS_PENDING.c.stimulus_id == _SEED_SENTINEL,
+                        ),
+                    ).on_conflict_do_nothing(
+                        index_elements=[STIMULUS_PENDING.c.unit,
+                                        STIMULUS_PENDING.c.mode,
+                                        STIMULUS_PENDING.c.stimulus_id],
+                    ),
+                )
         return None if row is None else int(row.id)
 
     async def existing_id(self, *, unit: str, kind: str, ref: str) -> int | None:
@@ -400,7 +471,8 @@ class SqlStimulusStore:
             .order_by(COGNITION_WAKE.c.id.desc())
             .limit(1)
         )
-        async with self._engine.connect() as conn:
+        async with self._engine.begin() as conn:
+            await _ensure_seeded(conn, unit, mode)
             last_row = (await conn.execute(last_q)).first()
             last = None if last_row is None else _wake(last_row)
             last_session = None
@@ -429,8 +501,6 @@ class SqlStimulusStore:
             mark = Watermark.of(mark_wake)
             pending_q = pending_query(
                 unit=unit, mode=mode, now_ms=now_ms,
-                floor=mark.pending_floor or 0,
-                through_id=mark.through_stimulus_id,
                 stale_before_ms=stale_before_ms, limit=limit,
             )
             raw = [_stimulus(r) for r in (await conn.execute(pending_q)).all()]
@@ -465,9 +535,8 @@ class SqlStimulusStore:
             # ONE bound for the whole read, oldest first, the same in both stores
             # (`InMemoryStimulusStore.view`, bound by the contract suite): the
             # side doors are not exempt from `limit`. Nothing else is
-            # enumerated: a stimulus the bound hides stays pending on the
-            # claim probe alone — the residual read's `floor` cursor bounds
-            # where it is looked for, never a list of it.
+            # enumerated: a stimulus the bound hides stays in `stimulus_pending`
+            # and is found by the set's own walk, never a list of it.
             pending.sort(key=lambda x: x.id)
             del pending[limit:]
             activity_q = activity_query(unit=unit)
@@ -531,10 +600,15 @@ class SqlStimulusStore:
         o = COGNITION_WAKE_OUTCOME
         async with self._engine.begin() as conn:
             await _lock_unit(conn, outcome.unit)
-            wake_unit = (await conn.execute(
-                sa.select(COGNITION_WAKE.c.unit).where(COGNITION_WAKE.c.id == outcome.wake_id),
-            )).scalar_one_or_none()
-            _check_outcome_wake(outcome, wake_unit)
+            wake_row = (await conn.execute(
+                sa.select(COGNITION_WAKE.c.unit, COGNITION_WAKE.c.mode)
+                .where(COGNITION_WAKE.c.id == outcome.wake_id),
+            )).first()
+            if wake_row is None:
+                raise ValueError(
+                    f"no cognition wake {outcome.wake_id} to record an outcome for"
+                )
+            _check_outcome_wake(outcome, str(wake_row.unit))
             existing = (await conn.execute(
                 sa.select(o.c.outcome).where(o.c.wake_id == outcome.wake_id),
             )).first()
@@ -564,6 +638,22 @@ class SqlStimulusStore:
                 outcome=value, detail=detail, at_ms=outcome.at_ms, cause=stored_cause(value, cause),
                 recorded_at=_at(recorded_at_ms),
             ))
+            if value == "closed":
+                # A closed wake's claims are permanent: drop them from the
+                # pending set. Open and failed claims keep their rows — the
+                # read's claim probe releases them, and only `closed` may
+                # consume. `> 0`: the seed sentinel is bookkeeping, never a
+                # claim, and must survive every delete.
+                await conn.execute(sa.delete(STIMULUS_PENDING).where(
+                    STIMULUS_PENDING.c.unit == wake_row.unit,
+                    STIMULUS_PENDING.c.mode == wake_row.mode,
+                    STIMULUS_PENDING.c.stimulus_id > _SEED_SENTINEL,
+                    STIMULUS_PENDING.c.stimulus_id.in_(
+                        sa.select(STIMULUS_CLAIM.c.stimulus_id).where(
+                            STIMULUS_CLAIM.c.wake_id == outcome.wake_id,
+                        ),
+                    ),
+                ))
             if rows:
                 await conn.execute(sa.insert(COGNITION_CARRY), [
                     {
@@ -607,6 +697,13 @@ class SqlStimulusStore:
         stmt = stmt.returning(STIMULUS_RETRACTION.c.id)
         async with self._engine.begin() as conn:
             rows = (await conn.execute(stmt)).all()
+            await conn.execute(sa.delete(STIMULUS_PENDING).where(
+                STIMULUS_PENDING.c.stimulus_id.in_(
+                    sa.select(STIMULUS_RETRACTION.c.stimulus_id).where(
+                        STIMULUS_RETRACTION.c.unit == unit,
+                    ),
+                ),
+            ))
         return len(rows)
 
     async def count_rollup(
@@ -631,6 +728,10 @@ class SqlStimulusStore:
         stmt = stmt.returning(STIMULUS_RETRACTION.c.id)
         async with self._engine.begin() as conn:
             row = (await conn.execute(stmt)).first()
+            if row is not None:
+                await conn.execute(sa.delete(STIMULUS_PENDING).where(
+                    STIMULUS_PENDING.c.stimulus_id == stimulus_id,
+                ))
         return row is not None
 
     async def record_wake(
@@ -655,7 +756,6 @@ class SqlStimulusStore:
                     )).scalar_one_or_none()
                     if now_outcome != guard.last_outcome:
                         return None
-            floor = await _pending_floor(conn, wake)
             stmt = sa.insert(COGNITION_WAKE).values(
                 unit=wake.unit, mode=wake.mode, reason=wake.reason,
                 from_stimulus_id=wake.from_stimulus_id,
@@ -667,7 +767,7 @@ class SqlStimulusStore:
                 # handed. `sa.cast(json.dumps(...), JSONB)` would store a jsonb STRING
                 # holding the JSON (`jsonb_typeof = 'string'`, so `detail->'unclaimed'`
                 # reads NULL); `jsonb_object` reads either form.
-                detail=_with_detail(wake, floor),
+                detail=_with_detail(wake),
                 at_ms=wake.at_ms, recorded_at=_at(recorded_at_ms), tracked=int(wake.tracked),
             ).returning(COGNITION_WAKE.c.id)
             result = await conn.execute(stmt)
@@ -677,49 +777,28 @@ class SqlStimulusStore:
                     {"unit": wake.unit, "stimulus_id": sid, "wake_id": wake_id}
                     for sid in sorted(wake.claimed_ids)
                 ])
+            if wake.claimed_ids and not wake.tracked:
+                # An untracked wake is already the watermark — it can never
+                # fail or expire — so its claims are permanent at write.
+                # A tracked wake's claims release on a failed outcome, so
+                # only `closed` deletes them (in `record_outcome`). The
+                # `> 0` keeps the seed sentinel out of any delete: it is
+                # bookkeeping, never a stimulus, and losing it re-seeds the
+                # whole mode on the next read.
+                await conn.execute(sa.delete(STIMULUS_PENDING).where(
+                    STIMULUS_PENDING.c.unit == wake.unit,
+                    STIMULUS_PENDING.c.mode == wake.mode,
+                    STIMULUS_PENDING.c.stimulus_id > _SEED_SENTINEL,
+                    STIMULUS_PENDING.c.stimulus_id.in_(wake.claimed_ids),
+                ))
             return wake_id
 
     async def aclose(self) -> None:
         await self._engine.dispose()
 
 
-async def _pending_floor(conn: Any, wake: NewWake) -> int:
-    """The lowest stimulus id under the new wake's `through` that may still be
-    pending — `detail.pending_floor`, the residual read's cursor.
-
-    Starting at the previous floor (the newest wake's, for this unit and
-    mode), the first row that is neither retracted nor claimed BY A WAKE THAT
-    CLOSED — a closed wake's claims are permanent; an open or failed wake's
-    are not, so only `closed` may advance the floor — is it. `through + 1`
-    when nothing under `through` qualifies: the residual range is empty, and
-    the floor says so instead of unbounded."""
-    prev = (await conn.execute(
-        sa.select(COGNITION_WAKE.c.detail)
-        .where(
-            COGNITION_WAKE.c.unit == wake.unit, COGNITION_WAKE.c.mode == wake.mode,
-            COGNITION_WAKE.c.detail[_PENDING_FLOOR_KEY].isnot(None),
-        ).order_by(COGNITION_WAKE.c.id.desc()).limit(1),
-    )).scalar_one_or_none()
-    floor = pending_floor(prev) or 0
-    closed_claim = sa.exists().where(
-        STIMULUS_CLAIM.c.stimulus_id == STIMULUS.c.id,
-        COGNITION_WAKE.c.id == STIMULUS_CLAIM.c.wake_id,
-        COGNITION_WAKE_OUTCOME.c.wake_id == COGNITION_WAKE.c.id,
-        COGNITION_WAKE_OUTCOME.c.outcome == "closed",
-    )
-    lowest = (await conn.execute(
-        sa.select(sa.func.min(STIMULUS.c.id)).where(
-            STIMULUS.c.unit == wake.unit,
-            STIMULUS.c.id.between(floor, wake.through_stimulus_id),
-            live_stimulus(STIMULUS.c.id),
-            ~closed_claim,
-        ),
-    )).scalar_one_or_none()
-    return wake.through_stimulus_id + 1 if lowest is None else int(lowest)
-
-
-def _with_detail(wake: NewWake, floor: int) -> dict[str, object]:
-    detail: dict[str, object] = {**wake.detail, _PENDING_FLOOR_KEY: floor}
+def _with_detail(wake: NewWake) -> dict[str, object]:
+    detail: dict[str, object] = {**wake.detail}
     if wake.unclaimed_ids:
         detail[_UNCLAIMED_KEY] = sorted(wake.unclaimed_ids)
     if wake.claimed_ids:

@@ -374,9 +374,10 @@ async def test_a_due_later_wake_does_not_resurrect_stimuli_already_consumed():
 
 
 async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
-    """Concurrent ingests commit out of id order. With no settle margin a
-    read that saw id 2 before id 1 committed consumes id 1 unseen; with the
-    margin the read waits until both are in."""
+    """Concurrent ingests commit out of id order. Under the claim model the
+    race is LOSSLESS — the wake claimed only id 2, so id 1 commits into the
+    pending set and the next read offers it; the settle margin is what makes
+    one wake see both together rather than two wakes splitting them."""
     lost_ev, lost, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0))
     first = await _say(lost, clock)
     lost.uncommitted.add(first)
@@ -386,7 +387,9 @@ async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
     lost.uncommitted.clear()                     # id 1 commits
     assert lost.wakes[0].stimulus_count == 1
     view = await lost.view(unit="nora", mode="live", now_ms=clock.ms + 10**6, limit=100)
-    assert first not in [s.id for s in view.pending], "control: the race loses id 1"
+    assert first in [s.id for s in view.pending], (
+        "the race is lossless: id 1 was never claimed, so it stays pending"
+    )
 
     ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0), settle=5)
     first = await _say(store, clock)

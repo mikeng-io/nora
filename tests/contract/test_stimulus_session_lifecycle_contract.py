@@ -45,6 +45,7 @@ NOW = 1_790_000_000_000
 UNIT = "nora"
 ALL_TABLES = (
     "stimulus, cognition_wake, cognition_carry, stimulus_retraction, "
+    "stimulus_claim, stimulus_pending, "
     "cognition_wake_outcome, cognition_session_close, cognition_self_wake, "
     "cognition_session"
 )
@@ -108,7 +109,8 @@ async def _guard_now(stimuli: Any) -> WakeGuard:
 
 
 async def _wake(
-    stimuli: Any, *, through: int, at: int = NOW, tracked: bool = True, guard: Any = None,
+    stimuli: Any, *, through: int, at: int = NOW, tracked: bool = True,
+    claimed: tuple[int, ...] = (), guard: Any = None,
 ) -> Any:
     if tracked and guard is None:
         guard = await _guard_now(stimuli)
@@ -116,6 +118,7 @@ async def _wake(
         unit=UNIT, mode="live", reason="settled", from_stimulus_id=0,
         through_stimulus_id=through, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=NOW, cut_cooldown=False, at_ms=at, tracked=tracked,
+        claimed_ids=claimed,
     ), recorded_at_ms=at, guard=guard)
 
 
@@ -153,7 +156,7 @@ async def _self(stimuli: Any, ref: str, *, due: int = NOW + 100) -> int:
 async def test_a_closed_wake_is_the_watermark(stores):
     stimuli, _ledger = stores
     await _msgs(stimuli, 3)
-    wake = await _wake(stimuli, through=3)
+    wake = await _wake(stimuli, through=3, claimed=(1, 2, 3))
     recorded = await _close(stimuli, wake)
     assert (recorded.outcome, recorded.written) == ("closed", True)
     view = await _view(stimuli, stale_before_ms=NOW + 1)
@@ -167,7 +170,7 @@ async def test_a_closed_wake_is_the_watermark(stores):
 async def test_a_wake_that_did_not_close_does_not_advance_the_watermark(stores, outcome):
     stimuli, _ledger = stores
     await _msgs(stimuli, 3)
-    wake = await _wake(stimuli, through=3)
+    wake = await _wake(stimuli, through=3, claimed=(1, 2, 3))
     await _close(stimuli, wake, outcome)
     view = await _view(stimuli)
     assert [s.id for s in view.pending] == [1, 2, 3]
@@ -179,9 +182,9 @@ async def test_a_wake_that_did_not_close_does_not_advance_the_watermark(stores, 
 async def test_a_failed_wake_falls_back_to_the_newest_wake_that_did_not_fail(stores):
     stimuli, _ledger = stores
     await _msgs(stimuli, 3)
-    good = await _wake(stimuli, through=1, at=NOW)
+    good = await _wake(stimuli, through=1, at=NOW, claimed=(1,))
     await _close(stimuli, good)
-    bad = await _wake(stimuli, through=3, at=NOW + 100)
+    bad = await _wake(stimuli, through=3, at=NOW + 100, claimed=(2, 3))
     await _close(stimuli, bad, "failed")
     view = await _view(stimuli)
     assert view.mark.through_stimulus_id == 1
@@ -197,15 +200,15 @@ async def test_consecutive_failures_and_the_mark_of_the_newest_failed_wake(store
     stimuli, _ledger = stores
     await _msgs(stimuli, 6)
     assert (await _view(stimuli, stale_before_ms=NOW)).failures == 0
-    good = await _wake(stimuli, through=1, at=NOW)
+    good = await _wake(stimuli, through=1, at=NOW, claimed=(1,))
     await _close(stimuli, good)
     view = await _view(stimuli, stale_before_ms=NOW)
     assert (view.failures, view.agenda_failures, view.failed_mark) == (0, 0, None)
-    a = await _wake(stimuli, through=2, at=NOW + 100)
+    a = await _wake(stimuli, through=2, at=NOW + 100, claimed=(2,))
     await _close(stimuli, a, "failed", cause="agenda")
-    b = await _wake(stimuli, through=3, at=NOW + 200)
+    b = await _wake(stimuli, through=3, at=NOW + 200, claimed=(3,))
     await _close(stimuli, b, "cancelled")
-    c = await _wake(stimuli, through=4, at=NOW + 300)
+    c = await _wake(stimuli, through=4, at=NOW + 300, claimed=(4,))
     await _close(stimuli, c, "timeout", cause="agenda")
     view = await _view(stimuli, stale_before_ms=NOW)
     assert view.failures == 2                                  # a and c, b is transparent
@@ -221,7 +224,7 @@ async def test_consecutive_failures_and_the_mark_of_the_newest_failed_wake(store
     # ... and while it is still OPEN it neither counts nor ends the run
     running = await _view(stimuli, stale_before_ms=NOW)
     assert running.failures == 2
-    # one closed wake resets the run
+    # one closed wake resets the run — it claims what its read showed
     await _close(stimuli, await _open_wake_id(stimuli), "closed")
     view = await _view(stimuli, stale_before_ms=NOW)
     assert (view.failures, view.agenda_failures, view.failed_mark) == (0, 0, None)
@@ -235,22 +238,22 @@ async def test_a_failed_outcome_stores_its_cause_and_only_agenda_counts_toward_a
     unrecorded; an unknown cause is refused."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 4)
-    infra = await _wake(stimuli, through=2, at=NOW)
+    infra = await _wake(stimuli, through=2, at=NOW, claimed=(1, 2))
     await _close(stimuli, infra, "failed")                       # cause defaults to infra
     view = await _view(stimuli, stale_before_ms=NOW)
     assert (view.failures, view.agenda_failures, view.failed_mark) == (1, 0, None)
-    agenda = await _wake(stimuli, through=3, at=NOW + 100)
+    agenda = await _wake(stimuli, through=3, at=NOW + 100, claimed=(3,))
     await _close(stimuli, agenda, "failed", cause="agenda")
     view = await _view(stimuli, stale_before_ms=NOW)
     assert (view.failures, view.agenda_failures) == (2, 1)
     assert view.failed_mark.through_stimulus_id == 3
-    later_infra = await _wake(stimuli, through=4, at=NOW + 200)
+    later_infra = await _wake(stimuli, through=4, at=NOW + 200, claimed=(4,))
     await _close(stimuli, later_infra, "timeout", cause="infra")
     view = await _view(stimuli, stale_before_ms=NOW)
     assert (view.failures, view.agenda_failures) == (3, 1)       # infra is transparent
     assert view.failed_mark.through_stimulus_id == 3             # ... and never the mark
     with pytest.raises(ValueError, match="failure cause"):
-        await _close(stimuli, await _wake(stimuli, through=4, at=NOW + 300), "failed",
+        await _close(stimuli, await _wake(stimuli, through=4, at=NOW + 300, claimed=(4,)), "failed",
                      cause="weather")
 
 
@@ -264,7 +267,7 @@ async def test_an_untracked_wake_is_a_watermark_with_or_without_a_clock(stores):
     untracked wake never expires even when the reader tracks sessions."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
-    await _wake(stimuli, through=2, tracked=False)
+    await _wake(stimuli, through=2, tracked=False, claimed=(1, 2))
     for kw in ({}, {"stale_before_ms": NOW + 10**9}):
         view = await _view(stimuli, **kw)
         assert view.pending == () and view.last_session is None
@@ -272,7 +275,7 @@ async def test_an_untracked_wake_is_a_watermark_with_or_without_a_clock(stores):
     # Under a newer tracked wake that failed, the mark falls back to the
     # untracked one, which a stale clock does not expire either.
     await _msgs(stimuli, 1)
-    bad = await _wake(stimuli, through=3, at=NOW + 100)
+    bad = await _wake(stimuli, through=3, at=NOW + 100, claimed=(3,))
     await _close(stimuli, bad, "failed")
     view = await _view(stimuli, stale_before_ms=NOW + 10**9)
     assert view.mark.through_stimulus_id == 2
@@ -285,7 +288,7 @@ async def test_a_tracked_wake_with_no_outcome_is_open_then_expired_past_the_time
     take it — and EXPIRED, read as failed, past the timeout."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
-    wake = await _wake(stimuli, through=2, at=NOW)
+    wake = await _wake(stimuli, through=2, at=NOW, claimed=(1, 2))
     running = await _view(stimuli, stale_before_ms=NOW - 1)
     assert running.last_session.state == "running"
     assert (running.last_session.started_at_ms, running.last_session.outcome) == (NOW, None)
@@ -304,10 +307,10 @@ async def test_an_expired_wake_under_a_closed_one_is_skipped_by_the_mark(stores)
     """The mark query (not the newest-wake shortcut) applies the expiry too."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 3)
-    first = await _wake(stimuli, through=1, at=NOW)
+    first = await _wake(stimuli, through=1, at=NOW, claimed=(1,))
     await _close(stimuli, first)
-    await _wake(stimuli, through=2, at=NOW + 10)              # never resolved
-    third = await _wake(stimuli, through=3, at=NOW + 20)
+    await _wake(stimuli, through=2, at=NOW + 10, claimed=(2,))  # never resolved
+    third = await _wake(stimuli, through=3, at=NOW + 20, claimed=(3,))
     await _close(stimuli, third, "failed")
     fresh = await _view(stimuli, stale_before_ms=NOW)
     assert fresh.mark.through_stimulus_id == 2                 # the open one holds
@@ -319,7 +322,7 @@ async def test_an_expired_wake_under_a_closed_one_is_skipped_by_the_mark(stores)
 async def test_one_outcome_per_wake_and_the_first_stands(stores):
     stimuli, _ledger = stores
     await _msgs(stimuli, 1)
-    wake = await _wake(stimuli, through=1)
+    wake = await _wake(stimuli, through=1, claimed=(1,))
     first = await _close(stimuli, wake, "cancelled")
     second = await _close(stimuli, wake, "closed", carries=[_carry(1)])
     assert (first.outcome, first.written) == ("cancelled", True)
@@ -335,17 +338,16 @@ async def test_a_close_for_a_wake_a_later_wake_superseded_is_timeout_with_no_car
     strikes). The store records it `timeout` and writes none of its carries."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
-    old = await _wake(stimuli, through=2, at=NOW)
-    newer = await _wake(stimuli, through=2, at=NOW + 1000)
+    old = await _wake(stimuli, through=2, at=NOW, claimed=(1, 2))
+    newer = await _wake(stimuli, through=2, at=NOW + 1000, claimed=(1, 2))
     late = await _close(stimuli, old, "closed", carries=[_carry(1), _carry(2)])
     assert (late.outcome, late.written) == ("timeout", True)
     await _close(stimuli, newer, "closed")
     view = await _view(stimuli)
     assert dict(view.carry) == {} and view.pending == ()
     # CONTROL: a close of the NEWEST wake is a close.
-    assert (await _close(stimuli, await _wake(stimuli, through=2, at=NOW + 2000))).outcome == (
-        "closed"
-    )
+    newest = await _wake(stimuli, through=2, at=NOW + 2000, claimed=(1, 2))
+    assert (await _close(stimuli, newest)).outcome == "closed"
 
 
 # ---- carry: written with the close, counted only for a closed wake --------
@@ -353,7 +355,7 @@ async def test_a_close_for_a_wake_a_later_wake_superseded_is_timeout_with_no_car
 async def test_carries_ride_only_a_closed_outcome(stores):
     stimuli, _ledger = stores
     await _msgs(stimuli, 1)
-    wake = await _wake(stimuli, through=1)
+    wake = await _wake(stimuli, through=1, claimed=(1,))
     with pytest.raises(ValueError):
         await _close(stimuli, wake, "failed", carries=[_carry(1)])
     with pytest.raises(ValueError):
@@ -370,7 +372,7 @@ async def test_a_close_that_fails_part_way_writes_nothing(stores):
     and NO carry — not a closed wake with half its carries."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 3)
-    wake = await _wake(stimuli, through=3)
+    wake = await _wake(stimuli, through=3, claimed=(1, 2, 3))
     with pytest.raises(Exception):  # noqa: B017 -- the SQL CHECK or the double's refusal
         await _close(stimuli, wake, "closed", carries=[
             _carry(1), _carry(2), _carry(3, state="bogus"),
@@ -385,7 +387,7 @@ async def test_a_close_that_fails_part_way_writes_nothing(stores):
 async def test_a_carried_stimulus_is_pending_again_with_its_strike(stores):
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
-    wake = await _wake(stimuli, through=2)
+    wake = await _wake(stimuli, through=2, claimed=(1, 2))
     await _close(stimuli, wake, carries=[_carry(1, 1, waits=True), _carry(2, 2)])
     view = await _view(stimuli)
     assert [(s.id, s.waits) for s in view.pending] == [(1, True), (2, False)]
@@ -395,11 +397,11 @@ async def test_a_carried_stimulus_is_pending_again_with_its_strike(stores):
 async def test_the_newest_carry_row_decides_and_released_or_struck_is_not_carried(stores):
     stimuli, _ledger = stores
     await _msgs(stimuli, 3)
-    first = await _wake(stimuli, through=3, at=NOW)
+    first = await _wake(stimuli, through=3, at=NOW, claimed=(1, 2, 3))
     await _close(stimuli, first, carries=[
         _carry(1, 1, "carried"), _carry(2, 1, "carried"), _carry(3, 1, "released"),
     ])
-    second = await _wake(stimuli, through=3, at=NOW + 100)
+    second = await _wake(stimuli, through=3, at=NOW + 100, claimed=(1, 2, 3))
     await _close(stimuli, second, carries=[
         _carry(1, 2, "released"), _carry(2, 2, "struck"), _carry(3, 2, "carried"),
     ])
@@ -437,7 +439,7 @@ async def test_a_retracted_stimulus_never_returns_through_carry(stores):
     stimuli, _ledger = stores
     await _msgs(stimuli, 1)
     sid = await _self(stimuli, "w1")
-    wake = await _wake(stimuli, through=sid, at=NOW + 200)
+    wake = await _wake(stimuli, through=sid, at=NOW + 200, claimed=(1, sid))
     await _close(stimuli, wake, carries=[_carry(sid), _carry(1)])
     assert {s.id for s in (await _view(stimuli)).pending} == {1, sid}   # control
     await stimuli.retract(unit=UNIT, stimulus_id=sid, reason="cancelled", recorded_at_ms=NOW)
@@ -472,17 +474,17 @@ async def test_a_guarded_wake_is_written_only_while_the_view_it_came_from_holds(
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
     assert await _wake(stimuli, through=1, guard=WakeGuard(5, None)) is None
-    first = await _wake(stimuli, through=1, guard=WakeGuard(None, None))
+    first = await _wake(stimuli, through=1, guard=WakeGuard(None, None), claimed=(1,))
     assert first is not None
     # A second writer that also read «no wake yet» is refused.
     assert await _wake(stimuli, through=2, guard=WakeGuard(None, None)) is None
     # The view saw `first` with no outcome; it closed since.
     await _close(stimuli, first)
     assert await _wake(stimuli, through=2, guard=WakeGuard(first, None)) is None
-    second = await _wake(stimuli, through=2, guard=WakeGuard(first, "closed"))
+    second = await _wake(stimuli, through=2, guard=WakeGuard(first, "closed"), claimed=(2,))
     assert second is not None and second != first
     # Unguarded (no hook): written as before.
-    assert await _wake(stimuli, through=2, tracked=False) is not None
+    assert await _wake(stimuli, through=2, tracked=False, claimed=(2,)) is not None
 
 
 # ---- the ledger's self-wake state -----------------------------------------
@@ -567,7 +569,7 @@ async def test_an_outcome_for_a_wake_nobody_wrote_is_refused(stores):
     with pytest.raises(ValueError, match="no cognition wake 999"):
         await _close(stimuli, 999)
     await _msgs(stimuli, 1)
-    wake = await _wake(stimuli, through=1)
+    wake = await _wake(stimuli, through=1, claimed=(1,))
     view = await _view(stimuli, stale_before_ms=NOW + 1)
     assert view.last_session.outcome is None and view.last_wake.id == wake
 
@@ -577,7 +579,7 @@ async def test_an_outcome_from_another_units_session_is_refused(stores):
     unit's name would take that unit's lock and advance nothing."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 1)
-    wake = await _wake(stimuli, through=1)
+    wake = await _wake(stimuli, through=1, claimed=(1,))
     with pytest.raises(ValueError, match="belongs to unit"):
         await stimuli.record_outcome(
             outcome=NewWakeOutcome(
@@ -603,7 +605,7 @@ async def test_a_tracked_wake_without_a_guard_is_refused_and_an_untracked_one_is
     with pytest.raises(ValueError, match="WakeGuard"):
         await stimuli.record_wake(wake=new, recorded_at_ms=NOW)
     assert (await _view(stimuli)).last_wake is None
-    assert await _wake(stimuli, through=2, tracked=False) is not None
+    assert await _wake(stimuli, through=2, tracked=False, claimed=(1, 2)) is not None
 
 
 # ---- the per-unit lock, against real Postgres only --------------------------
@@ -636,14 +638,16 @@ async def test_a_wake_write_and_a_close_wait_for_the_units_lock(sql_stores):
 
     stimuli, _ledger, engine = sql_stores
     await _msgs(stimuli, 2)
-    first = await _wake(stimuli, through=1)
+    first = await _wake(stimuli, through=1, claimed=(1,))
     guard = await _guard_now(stimuli)
 
     async with engine.connect() as holder:
         await holder.execute(sa.text(
             "select pg_advisory_xact_lock(:c, hashtext(:u))"
         ), {"c": _LOCK_CLASS, "u": UNIT})
-        write = asyncio.ensure_future(_wake(stimuli, through=2, at=NOW + 10, guard=guard))
+        write = asyncio.ensure_future(
+            _wake(stimuli, through=2, at=NOW + 10, claimed=(2,), guard=guard),
+        )
         close = asyncio.ensure_future(_close(stimuli, first))
         await asyncio.wait({write, close}, timeout=0.5)
         assert not write.done(), "a guarded wake write ran while the unit's lock was held"
@@ -668,7 +672,7 @@ async def test_a_guarded_wake_and_a_close_never_both_take_the_same_stimuli(sql_s
     guard = await _guard_now(stimuli)
 
     wrote, closed = await asyncio.gather(
-        _wake(stimuli, through=2, at=NOW + 10, guard=guard),
+        _wake(stimuli, through=2, at=NOW + 10, claimed=(2,), guard=guard),
         _close(stimuli, first, carries=[_carry(1)]),
     )
     view = await _view(stimuli)
@@ -690,7 +694,7 @@ async def test_a_closed_or_cancelled_outcome_records_no_cause_whatever_the_calle
     succeeded must not read as «the world failed» in a count of infra failures."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 1)
-    wake = await _wake(stimuli, through=1)
+    wake = await _wake(stimuli, through=1, claimed=(1,))
     await _close(stimuli, wake, outcome, cause="infra")
     view = await _view(stimuli, stale_before_ms=NOW + 1)
     assert view.last_session.cause == "none"
@@ -702,7 +706,7 @@ async def test_a_closed_or_cancelled_outcome_records_no_cause_whatever_the_calle
 async def test_a_failure_keeps_the_cause_it_was_written_with(stores, outcome, cause):
     stimuli, _ledger = stores
     await _msgs(stimuli, 1)
-    wake = await _wake(stimuli, through=1)
+    wake = await _wake(stimuli, through=1, claimed=(1,))
     await _close(stimuli, wake, outcome, cause=cause)
     view = await _view(stimuli, stale_before_ms=NOW + 1)
     assert (view.last_session.state, view.last_session.cause) == ("failed", cause)
@@ -712,7 +716,7 @@ async def test_a_failure_keeps_the_cause_it_was_written_with(stores, outcome, ca
 async def test_a_failure_cannot_be_written_with_no_cause(stores, outcome):
     stimuli, _ledger = stores
     await _msgs(stimuli, 1)
-    wake = await _wake(stimuli, through=1)
+    wake = await _wake(stimuli, through=1, claimed=(1,))
     with pytest.raises(ValueError, match="names its cause"):
         await _close(stimuli, wake, outcome, cause="none")
 
@@ -727,11 +731,11 @@ async def test_open_wakes_lists_tracked_wakes_with_no_outcome_recorded_before_th
     that no longer exists failed nothing, whatever the clock says)."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 4)
-    closed = await _wake(stimuli, through=1, at=NOW)
+    closed = await _wake(stimuli, through=1, at=NOW, claimed=(1,))
     await _close(stimuli, closed)
-    open_old = await _wake(stimuli, through=2, at=NOW + 10)
-    untracked = await _wake(stimuli, through=3, at=NOW + 20, tracked=False)
-    open_new = await _wake(stimuli, through=4, at=NOW + 30)
+    open_old = await _wake(stimuli, through=2, at=NOW + 10, claimed=(2,))
+    untracked = await _wake(stimuli, through=3, at=NOW + 20, tracked=False, claimed=(3,))
+    open_new = await _wake(stimuli, through=4, at=NOW + 30, claimed=(4,))
 
     listed = await stimuli.open_wakes(recorded_before_ms=NOW + 25)
     assert [w.id for w in listed] == [open_old]
@@ -746,7 +750,7 @@ async def test_open_wakes_lists_tracked_wakes_with_no_outcome_recorded_before_th
 async def test_a_cancelled_outcome_closes_the_open_list_and_returns_the_range(stores):
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
-    wake = await _wake(stimuli, through=2, at=NOW)
+    wake = await _wake(stimuli, through=2, at=NOW, claimed=(1, 2))
     assert [w.id for w in await stimuli.open_wakes(recorded_before_ms=NOW + 1)] == [wake]
     recorded = await _close(stimuli, wake, "cancelled", at=NOW + 5)
     assert (recorded.outcome, recorded.written) == ("cancelled", True)

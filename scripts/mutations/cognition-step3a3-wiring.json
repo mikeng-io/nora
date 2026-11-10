@@ -9,7 +9,7 @@
   {
     "name": "stimuli (sql): an outcome for a wake nobody wrote or another unit's is refused",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "            _check_outcome_wake(outcome, wake_unit)\n",
+    "old": "            _check_outcome_wake(outcome, str(wake_row.unit))\n",
     "new": "            pass\n",
     "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_an_outcome_for_a_wake_nobody_wrote_is_refused tests/contract/test_stimulus_session_lifecycle_contract.py::test_an_outcome_from_another_units_session_is_refused"
   },
