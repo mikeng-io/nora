@@ -36,7 +36,7 @@ identifies current integration/validation attention, not a new execution order.
 | Honest external memory-quality baseline | [existing outcome #435](https://github.com/mikeng-io/nora/issues/435), children #429–431 | Reuse Planned/Next. Keep LongMemEval-S → GroupMemBench → Mem2ActBench, one native delivery milestone, no duplicate umbrella in its count. No full-run result is claimed. |
 | Continuity of decisions, arrangements and actual actions across rooms | [Notebook](../../design/notebook-memory-types/00-design.md), [one Standing](../../design/notebook-memory-types/20-standing.md), [turn records](../../design/standing-ledger/30-turn-records.md) | Own outcome, In progress/Now. Standing consolidation and typed Profile have merged source. Remaining scope is full memory-type migration and end-to-end continuity/actual-action evidence; never restore a separate shared-state block, conclusion tool or another cognitive writer. |
 | Multi-step computer work delegated to Pi, with switchable worker and sandbox | [agent-worker intent](../../design/agent-worker/00-intent.md), [adapters](../../design/agent-worker/20-adapters.md), [sandbox port](../../design/agent-worker/30-sandbox-port.md), [verification](../../design/agent-worker/50-verification-and-migration.md) | One outcome, design reconciliation first (operator, 2026-11-04; issue #520); implementation not started. Proposed/Now reflects current design attention. Next scope: one VM per unit/canonical private-DM scope, reusable anonymous Chrome task tabs and direct screenshots with executor/model selection explicit before implementation; reuse of CDP/Flash is recommended, Jev/cua-s1 remain unselected alternatives. Existing Strands subagent stays Nora; Pi is the computer worker inside the sandbox. Streamed spawn, measured Pi adapter and scoped relay are delivery slices; ACP and another VM provider are later extensions, not new parallel projects. Current sbx microVM is not a future unbuilt capability. |
-| Personalised replies and useful group recommendations | [personalisation](../../design/personalisation/00-intent.md), [migration](../../design/personalisation/60-migration.md) | Own outcome, Proposed/Later. Likes, constraints, one ranker, venues/games and feedback share one engine. Historical fit/recommendations bundles were renamed, not three engines to build. Refresh graph-backed inputs and Standing dependencies before a bounded venue/reply slice. |
+| Personalised replies and useful group recommendations | [personalisation](../../design/personalisation/README.md), [migration](../../design/personalisation/README.md) | Own outcome, Proposed/Later. Likes, constraints, one ranker, venues/games and feedback share one engine. Historical fit/recommendations bundles were renamed, not three engines to build. Refresh graph-backed inputs and Standing dependencies before a bounded venue/reply slice. |
 | One private conversation across linked platforms with curated shared understanding | [existing #124](https://github.com/mikeng-io/nora/issues/124), [private DM](../../design/private-dm/README.md), [cross-unit reads](../../design/private-dm/curation.md) | Reuse Proposed/Later. WhatsApp/Signal continuity, owner-map and backup prerequisites, default-unit writes and provenance-preserving publication remain the scope. Shared unit computer migration is already recorded implemented; do not repeat it as a prerequisite build. |
 | Understand reactions, polls and room changes from captured evidence | [existing #433](https://github.com/mikeng-io/nora/issues/433), [observations](../../design/platform-observations/README.md), [coverage](../../design/platform-observations/observations.md) | Reuse Validating/Now. November 2 source includes typed observation foundation, read tools and Standing projections despite older proposed frontmatter. Complete platform-specific lifecycle/coverage and input readback; counts/reactions never become inferred agreement or consent. Telegram adoption is separate. |
 | Keep receiving and recover work across application releases | [existing #422](https://github.com/mikeng-io/nora/issues/422), [bridges](../../design/platform-bridges/00-contract.md) | Reuse Validating/Now. Source includes standalone bridges/durable handoff. Retain pending failure-window, recreation, platform and installed-wrapper proof as acceptance; design frontmatter alone cannot roll delivery back to not-built. |
@@ -176,14 +176,14 @@ design/notebook-memory-types/10-relations.md
 design/notebook-memory-types/20-shared-cognitive-state.md
 design/notebook-memory-types/20-standing.md
 design/notebook-memory-types/_index.yaml
-design/personalisation/00-intent.md
-design/personalisation/10-likes.md
-design/personalisation/20-ranker.md
-design/personalisation/25-personalisation.md
-design/personalisation/30-recommendation-types.md
-design/personalisation/40-feedback.md
-design/personalisation/50-verification.md
-design/personalisation/60-migration.md
+design/personalisation/README.md
+design/personalisation/likes.md
+design/personalisation/ranker.md
+design/personalisation/likes.md
+design/personalisation/ranker.md
+design/personalisation/feedback.md
+design/personalisation/ranker.md
+design/personalisation/README.md
 design/personalisation/_index.yaml
 design/platform-bridges/00-contract.md
 design/platform-bridges/01-source-map.md

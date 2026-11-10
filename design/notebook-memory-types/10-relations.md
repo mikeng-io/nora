@@ -7,7 +7,7 @@ timestamp: '2026-10-29'
 edges:
   - {dst: 00-design, rel: details, provenance: asserted}
   - {dst: ../cognition-loop/data.md, rel: amends, provenance: asserted}
-  - {dst: ../personalisation/00-intent.md, rel: informs, provenance: asserted}
+  - {dst: ../personalisation/README.md, rel: informs, provenance: asserted}
 ---
 
 # 10 · Relations

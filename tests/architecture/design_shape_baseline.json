@@ -343,43 +343,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/personalisation/00-intent.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/personalisation/10-likes.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/personalisation/20-ranker.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/personalisation/25-personalisation.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/personalisation/30-recommendation-types.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/personalisation/40-feedback.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/personalisation/50-verification.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/personalisation/60-migration.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/personalisation/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/platform-bridges/00-contract.md": [
   "numbered-or-dated-name",
   "date"

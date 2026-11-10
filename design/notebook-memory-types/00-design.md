@@ -10,7 +10,7 @@ edges:
   - {dst: ../standing-ledger/20-the-ledger.md, rel: amends, provenance: asserted}
   - {dst: ../standing-ledger/50-migration.md, rel: amends, provenance: asserted}
   - {dst: ../standing-ledger/30-turn-records.md, rel: amends, provenance: asserted}
-  - {dst: ../personalisation/00-intent.md, rel: informs, provenance: asserted}
+  - {dst: ../personalisation/README.md, rel: informs, provenance: asserted}
 ---
 
 # 00 · The Notebook by memory type
@@ -71,7 +71,7 @@ Three things place every kind, and none of them is a new layer.
 Five types are the cognitive-science categories (CoALA lists working,
 episodic, semantic and procedural; prospective memory is remembering to act
 on an intention). **Interests is ours**: no standard taxonomy has it, and it is
-here because personalisation reads it ([personalisation](../personalisation/00-intent.md)).
+here because personalisation reads it ([personalisation](../personalisation/README.md)).
 
 **The vocabulary becomes Layer › Memory type › Kind › Entry.** "Tier" retires,
 and with it "Register", "Character" and "Standing" as tier names.
