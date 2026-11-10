@@ -40,7 +40,7 @@ COPY --from=build /repo/site/dist ./site-dist
 COPY --from=wiki /repo/docs-site/dist ./wiki-dist
 RUN node csp-hashes.mjs Caddyfile.in Caddyfile site-dist wiki-dist
 
-FROM caddy:2-alpine@sha256:24ec7b05bc532c7bb57f727030c5056e257ff7138b4b50460306819ff79362bd
+FROM caddy:2-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
 COPY --from=csp /csp/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /repo/site/dist /srv
 COPY --from=wiki /repo/docs-site/dist /srv/wiki
