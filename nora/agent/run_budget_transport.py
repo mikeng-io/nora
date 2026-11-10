@@ -103,6 +103,14 @@ class _BoundedStream:
         self._done = False
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
+        if self._done:
+            # openai 3 drains the response after the SSE parser stops
+            # (`drain_response_async`), which iterates this body a second
+            # time. A finished stream has already reconciled and released;
+            # a second pass over a replayable body would count the same
+            # usage twice, and over a network body would find no usage and
+            # latch the budget as spent.
+            return
         budget = self._budget
         usage: tuple[int, int] | None = None
         saw_done = False

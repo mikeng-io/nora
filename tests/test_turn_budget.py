@@ -133,7 +133,7 @@ def test_both_config_files_declare_the_same_budget(config_name):
 
 @pytest.mark.parametrize("config_name", CONFIGS)
 def test_all_three_caps_are_declared(config_name):
-    """A cap absent from `limits` is not a cap: Strands' `_check_limits` skips
+    """A cap absent from `limits` is not a cap: Strands' `_reached_own_limit` skips
     one it cannot find, so an omitted `output_tokens` silently means
     "unbounded". `nora.config.LimitsConfig` makes all three required; this
     checks the files actually carry them."""

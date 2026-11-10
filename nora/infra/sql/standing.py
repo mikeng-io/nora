@@ -98,7 +98,7 @@ def _derived(standing: Standing) -> dict[str, Any]:
     }
 
 
-def _standing(row: sa.Row[Any]) -> Standing:
+def _standing(row: sa.Row[*tuple[Any, ...]]) -> Standing:
     """The shared row -> `Standing` mapping for `read` and `read_as_of`.
 
     One mapping rather than two, because the two tables carry the same six

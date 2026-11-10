@@ -52,13 +52,14 @@ class _StubModel(Model):
     Not a stub that returns a fixed `stop_reason`: it emits a `toolUse` and a
     per-call `totalTokens` in a `metadata` event, exactly as the OpenAI
     provider does under `tool_choice="required"`, and lets Strands' own
-    `_check_limits` decide whether a cap was crossed. That is the whole point
+    `_reached_own_limit` decide whether a cap was crossed. That is the whole point
     — the value under test is one the SDK computes, and a double that handed
     it over directly would assert nothing about the SDK at all.
 
     **It has to call a tool for a cap to bind at all**, and that is a real
-    property of the SDK worth writing down: `_check_limits` runs at the TOP of
-    an event-loop cycle, and the loop only reaches a second cycle when the
+    property of the SDK worth writing down: the limit check
+    (`_reached_own_limit`) runs at the TOP of an event-loop cycle, and the loop
+    only reaches a second cycle when the
     previous one ended in `tool_use`. A turn that answers in one shot can
     never trip a limit. Nora's turns always use tools — `send_reply` IS a tool
     and `tool_choice="required"` forces one (DEC-21) — so every real turn has
@@ -142,7 +143,7 @@ async def _run(
 async def test_strands_reports_a_token_cap_as_a_stop_reason_and_raises_nothing():
     """The SDK behaviour every other part of R-23 depends on.
 
-    `_check_limits` yields an `EventLoopStopEvent` with
+    The limit check (`_reached_own_limit`) yields an `EventLoopStopEvent` with
     `stop_reason="limit_total_tokens"` and the call RETURNS. If a future
     Strands upgrade started raising instead, `invoke.run` would catch it and
     count `llm_error` — a different reason, and this test is what would say so

@@ -84,7 +84,7 @@ _PG_UNIQUE_VIOLATION = "23505"
 log = logging.getLogger("nora.infra.sql.reminders")
 
 
-def _row_to_series(r: Row[Any]) -> Series | None:
+def _row_to_series(r: Row[*tuple[Any, ...]]) -> Series | None:
     """The seven recurrence columns, back as the one optional value object.
 
     `recurrence = 'none'` is the ONLY thing read to decide: the all-or-nothing
@@ -110,7 +110,7 @@ def _row_to_series(r: Row[Any]) -> Series | None:
     )
 
 
-def _row_to_reminder(r: Row[Any]) -> Reminder:
+def _row_to_reminder(r: Row[*tuple[Any, ...]]) -> Reminder:
     """A row, normalised on the way OUT.
 
     `timestamptz` already comes back UTC-aware from asyncpg, so
