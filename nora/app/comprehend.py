@@ -24,7 +24,7 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nora.agent.fetch_watch import GraphFetched
-from nora.domain.comprehend import PARTS, REFUSAL_REASONS
+from nora.domain.comprehend import PARTS, REFUSAL_REASONS, named_candidates
 from nora.domain.memory_graph import (
     MEMORY_KINDS,
     POINTER_KINDS,
@@ -74,6 +74,10 @@ class NewEntity(Shape):
     name: str
     aliases: list[str] = Field(default_factory=list)
     attributes: dict[str, CitedValue] = Field(default_factory=dict)
+    distinct: str | None = Field(default=None, description=(
+        "Why this entity is not one of the candidates a `possible_existing` "
+        "refusal listed, or null; set it only to re-propose a refused new "
+        "entity, never on a first proposal."))
 
 
 class NewEndpoint(Shape):
@@ -319,6 +323,55 @@ class MemoryProposalAdmission:
             keys.append(key)
         return {key: fetched.sources[key] for key in keys}, None
 
+    async def _possible_existing(
+        self, new: NewEntity, work: WorkItem, fetched: GraphFetched,
+        proposed: Entity,
+    ) -> tuple[list[dict[str, Any]], set[Key]] | None:
+        """The resolution candidates (27 §7a) for a `{new: …}` endpoint's
+        name/kind in this unit, or None when there are none or the model
+        confirmed the entity distinct (`new.distinct`). Candidates carry
+        their `@kind:id` handle, name, aliases and three strongest relations,
+        so the refusal can be repaired by naming the existing handle; their
+        keys join the session's shown keys via the caller's `aux`, which is
+        what lets the handle re-propose instead of `unshown`.
+        Two hard-refusal paths stay exactly as they were: the candidate that
+        IS `proposed` (same deterministic id — a retry of a statement this
+        session already admitted) is not a «possible» existing but the
+        duplicate-recovery path's business, and an exact name/alias match is
+        the store's own `duplicate_entity`, whatever `distinct` says."""
+        if (new.distinct or "").strip():
+            return None
+        candidates = await named_candidates(
+            self.graph, unit=work.unit, kind=new.kind, name=new.name,
+            persons=frozenset(
+                p for s in fetched.sources.values() for p in s.persons),
+            near=work.source, as_of=work.as_of, historical=work.historical,
+            drop=lambda e: e.key == proposed.key
+                           or new.name in (e.name, *e.aliases))
+        if not candidates:
+            return None
+        cards: list[dict[str, Any]] = []
+        keys: set[Key] = set()
+        for candidate in candidates:
+            node = next((n for n in candidate.nodes if n.entity is not None), None)
+            entity = node.entity if node is not None else None
+            keys.update(n.key for n in candidate.nodes)
+            keys.update(
+                k for e in candidate.relations for k in (e.relation.src, e.relation.dst))
+            cards.append({
+                "handle": (f"@{entity.key[0]}:{entity.key[1]}" if entity else None),
+                "name": entity.name if entity else None,
+                "aliases": list(entity.aliases) if entity else [],
+                "relations": [
+                    {"id": e.relation.id, "rel": e.relation.rel,
+                     "src": f"@{e.relation.src[0]}:{e.relation.src[1]}",
+                     "dst": f"@{e.relation.dst[0]}:{e.relation.dst[1]}",
+                     "evidence": e.evidence_count,
+                     "asserted_at": e.relation.asserted_at.isoformat()}
+                    for e in candidate.relations],
+            })
+        return cards, keys
+
     async def _admit(
         self, work: WorkItem, output: Proposal, fetched: GraphFetched,
         session: int, scope: Scope, indices: list[int] | None = None,
@@ -329,6 +382,7 @@ class MemoryProposalAdmission:
         schema-refused sibling neither shifts results nor withholds admission."""
         local_refusals: list[dict[str, str]] = []
         report: dict[int, dict[str, Any]] = {}
+        candidate_keys: set[Key] = set()
 
         async def refuse(part: str, reason: str) -> None:
             local_refusals.append({"kind": part, "reason": reason})
@@ -384,6 +438,16 @@ class MemoryProposalAdmission:
                     return None
                 keys[slot] = key
                 if entity is not None and isinstance(endpoint, NewEndpoint):
+                    candidates = await self._possible_existing(
+                        endpoint.new, work, fetched, entity)
+                    if candidates is not None:
+                        cards, keys_found = candidates
+                        candidate_keys.update(keys_found)
+                        report[index] = {
+                            "status": "refused", "reason": "possible_existing",
+                            "kind": "relation", "candidates": cards}
+                        await refuse("entity", "possible_existing")
+                        return None
                     entities.append(entity)
                     entity_stmt[entity.id] = index
                     for name, cited in endpoint.new.attributes.items():
@@ -643,6 +707,7 @@ class MemoryProposalAdmission:
         return admission, local_refusals, {
             "report": report, "claims": claims, "cited_items": cited_items,
             "refused_by_stmt": refused_by_stmt,
+            "candidate_keys": candidate_keys,
         }
 
 

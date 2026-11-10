@@ -1374,7 +1374,16 @@ class CognitionSessionRunner:
         )
         from nora.agent.surface import deferred_surface
 
-        surface = deferred_surface(tools)
+        # The whole offered surface is resident (29 §2's read tools «any
+        # time»): nothing sits on a shelf behind `load_tools`, so the read
+        # catalogue is callable on the first step and no name cap applies.
+        # A tool the registry offers but cannot wire answers `unavailable`,
+        # never silently absent. Acting verbs still refuse until a
+        # `memory_propose` was admitted (`acting`), and a historical session
+        # holds `(memory_propose, close)` only.
+        surface = deferred_surface(
+            tools, resident={t.tool_name if hasattr(t, "tool_name") else t.__name__
+                             for t in tools})
         from nora.language.comprehend_render import render_session_system
 
         system_prompt = render_session_system(
