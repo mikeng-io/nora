@@ -204,56 +204,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/discord-music/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/discord-music/01-playback-and-source.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/discord-music/02-control-surface.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/discord-music/03-state-and-persistence.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/discord-music/04-deferred.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/discord-music/05-crossfade-spike.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/discord-music/06-session-persistence.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/discord-music/07-agent-tool.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/discord-music/08-autoplay.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/discord-music/09-message-conventions.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/discord-music/10-notification-routing.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/discord-music/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/event-abstraction/00-overview.md": [
   "numbered-or-dated-name",
   "date"

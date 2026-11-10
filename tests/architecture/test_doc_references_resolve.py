@@ -462,16 +462,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "migration was renumbered/renamed before landing (0003_presence_places.py today), "
         "same shape as 0017_events.py's own documented renumbering"
     ),
-    (
-        "design/discord-music/01-playback-and-source.md",
-        "tests/contract/test_track_source_contract.py",
-    ): (
-        "planned contract suite; TrackSource has no shared fake or contract suite yet "
-        "(also pinned NO_SHARED_FAKE in test_port_fakes_live_in_nora_testing.py)"
-    ),
-    ("design/discord-music/04-deferred.md", "tests/contract/test_track_source_contract.py"): (
-        "same not-yet-built contract suite as 01-playback-and-source.md"
-    ),
     ("design/event-abstraction/02-naming-rename.md", "nora/infra/sql/events.py"): (
         "naming-rename plan; shipped as nora/domain/events.py instead"
     ),

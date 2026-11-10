@@ -3,7 +3,7 @@
 # host actually runs, so that's what we validate the container against).
 FROM python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
 
-# ffmpeg is the Discord Music design's playback transcoder (design/discord-music/
+# ffmpeg is the Discord Music design's playback transcoder (design/voice-channel/music.md
 # 01-playback-and-source.md) -- discord.py's FFmpegPCMAudio shells out to whatever
 # `ffmpeg` it finds on PATH, it doesn't bundle one. Same package deploy/stt/Dockerfile
 # already installs it for, for the same underlying reason (a universal decoder for

@@ -17,6 +17,9 @@ that room, not a new conversation, memory scope or autonomous listener.
 - **Nora's voice control plane** decides joins, exits, music queues, track
   resolution, volume and replies. It calls the controller through ports and
   never opens a Discord voice socket or proxies music bytes.
+- **The music player** owns deterministic per-guild queues, source resolution,
+  session continuity, autoplay and announcements. [Music](music.md) defines
+  those decisions and their notification contract.
 - **The receive sidecar and wake gate** decode per-user audio, recognise the
   wake phrase, transcribe only the woken utterance and submit text through
   ordinary ingest. [Receiving speech](receive.md) defines identity, retention

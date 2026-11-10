@@ -145,7 +145,7 @@ design/computer-unit-scope/01-migration.md
 design/computer-unit-scope/_index.yaml
 scripts/context_decision_probe.py
 design/self-growth/character.md
-design/discord-music/10-notification-routing.md
+design/voice-channel/music.md
 design/cognition-loop/execution.md
 design/cognition-loop/README.md
 design/cognition-loop/data.md

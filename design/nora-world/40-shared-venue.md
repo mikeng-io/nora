@@ -26,7 +26,7 @@ or they hear everything twice.
 ## 2. The backing track is a file, not a stream
 
 1. A person pastes a YouTube link. The server downloads it with yt-dlp, as
-   the music path already does (`design/discord-music/`, in the
+   the music path already does (`design/voice-channel/music.md`, in the
    `voice-sidecar` container).
 2. Demucs separates the vocals out, giving a real instrumental.
 3. Time-synced lyrics come from LRCLIB when available.

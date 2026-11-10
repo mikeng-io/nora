@@ -210,7 +210,7 @@ forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus
 name = "the room policy is composed in, never imported by a lower layer"
 type = "forbidden"
 # `resolve_voice_room` (nora/web/voice.py) and `resolve_music_channel`
-# (nora/platform/discord/music_notify.py, design/discord-music/10) are both
+# (nora/platform/discord/music_notify.py, design/voice-channel/music.md) are both
 # threaded as `Callable[[str], str | None]` rather than as the `Policy` itself,
 # each justified in a docstring by "this layer must not learn that nora.policy
 # exists". Both were true and neither was enforced — the same "a neutrality

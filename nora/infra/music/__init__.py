@@ -1,5 +1,5 @@
 """Playback resolution — a `TrackSource` port, `yt-dlp`/YouTube today
-(design/discord-music/01-playback-and-source.md)."""
+(design/voice-channel/music.md)."""
 
 from .ytdlp_source import YtDlpSource
 
