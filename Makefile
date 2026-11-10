@@ -146,7 +146,7 @@ test test-fast test-affected:
 eval-source:
 	./scripts/refresh_eval_clone.sh
 
-# The ambient-participation flip gate (design/dreamer-agent-loop/35 §9): all
+# The ambient-participation flip gate (design/cognition-loop/proactive.md §9): all
 # 15 cases must reach their expected verdict — zero false-speaks on the
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:

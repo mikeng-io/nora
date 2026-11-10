@@ -8,7 +8,7 @@ status: measured
 edges:
   - {dst: 00-intent.md, rel: follows, provenance: asserted}
   - {dst: ../standing-compact/20-verification.md, rel: measures, provenance: asserted}
-  - {dst: ../dreamer-agent-loop/26-standing.md, rel: measures, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: measures, provenance: asserted}
 ---
 
 # Study: Standing drops open plans

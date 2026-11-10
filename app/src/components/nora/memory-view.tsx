@@ -166,7 +166,7 @@ export function MemoryView({ compact = false }: { compact?: boolean }) {
 
 /** One Profile account of the viewer (45, the switch): every chain head with
  * its state, the evidence behind each line, and the open disputes — the
- * correction surface (cognition-loop/50 §4). */
+ * correction surface (cognition-loop/data.md §4). */
 function ProfileAccountPanel({ account }: { account: ProfileAccount }) {
   const t = useTranslations("memory");
   const locale = useLocale();

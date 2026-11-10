@@ -36,7 +36,7 @@ is triggered **event-driven** from the ingest path, not by a background loop.
 - Live DB 2026-08-31 — Discord #discussion fold 7's transcript spans 7 days
   (2026-08-24 → 08-31) at 40 rows; the conversation had more history than the
   window could carry.
-- `design/dreamer-agent-loop/26-standing.md` §4 — the original rejection of a
+- `design/cognition-loop/data.md` §4 — the original rejection of a
   watermark slice named two reasons: `since` excludes Nora's own rows in SQL,
   and `tag_id` has no ordering relation to message ids. The first is fixable
   with a new read; the second is moot — the watermark is a row id, not a

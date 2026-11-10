@@ -1,6 +1,6 @@
 # Prior art, October 2026: identity, scope, taxonomy, graph
 
-Status: **record**, 2026-10-14. This extends [cognition-loop/80](../cognition-loop/80-prior-art.md),
+Status: **record**, 2026-10-14. This extends [cognition-loop/README.md](../cognition-loop/README.md),
 which read Honcho, Graphiti/Zep, Letta, Generative Agents and Mem0 from source
 on 2026-09-28. This node adds what that one did not ask: how systems form
 **identity**, whether memory can be about **non-humans and groups**, whether
@@ -83,7 +83,7 @@ taken idea now lives.
 > 2026-10-28 (ratified, [27](27-the-memory-is-a-graph.md)): the first refusal is answered rather than reversed. Relations may be model-proposed, but each must carry relation_evidence rows citing what the session fetched; an edge with no evidence is not written. See [27](27-the-memory-is-a-graph.md#2-what-this-supersedes-and-why-the-old-reasons-are-answered).
 
 - **Model-extracted triples as graph edges** (Graphiti, Cognee, MemOS). The
-  edge says nothing about its evidence. cognition-loop/80 refused this already;
+  edge says nothing about its evidence. cognition-loop/README.md refused this already;
   Mem0's removal of its graph is corroboration.
 - **Switching memory off in groups** (ChatGPT). Nora lives in groups; the
   answer is scope on every item, not absence.

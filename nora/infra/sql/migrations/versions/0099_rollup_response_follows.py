@@ -4,7 +4,7 @@ The response rollup counted a member's message as a response to one of Nora's
 sends only when it quoted that send. In group chat most answers quote nothing,
 so answered sends read `unanswered`, and an `ask` would have read `silent`.
 `nora.domain.rollup.unquoted_follows` now reads a member's message soon after
-her send, or one naming her, as answering it (design/cognition-loop/25-rollup.md
+her send, or one naming her, as answering it (design/cognition-loop/observation.md
 §3). This column keeps those apart from `replies`, which stays «quoted it»: a
 reader can tell a quoted answer from an inferred one.
 

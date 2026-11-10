@@ -56,7 +56,7 @@ instead of repeating its age.
 her stance on it, it is a decision.** "Where are we eating on Halloween" is a
 note. "I'd put Sai Kung first, because …" is her decision on that note, and
 the decision names the note by id. One question never has two homes, which is
-the same rule [12-schemas](../cognition-loop/12-schemas.md) §3 already applies
+the same rule [12-schemas](../cognition-loop/data.md) §3 already applies
 between a note's `Owed` (what members owe each other) and Standing's `I owe`
 (what she owes).
 

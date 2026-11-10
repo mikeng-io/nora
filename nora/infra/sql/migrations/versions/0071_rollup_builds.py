@@ -1,5 +1,5 @@
 """rollup_builds -- the Rollup as versioned builds of a pure projection of the
-Record (design/cognition-loop/25-rollup.md §2, 10-tiers.md §3/§8,
+Record (design/cognition-loop/observation.md §2, 10-tiers.md §3/§8,
 70-migration.md §2 row 2 and §5, the rows marked 2).
 
 WHAT THIS ADDS, all additive (no table dropped, no column dropped):

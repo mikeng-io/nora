@@ -1,5 +1,5 @@
 """system_time_history -- every store Nora writes is append-only in system
-time, so she can be restored as of any T (design/cognition-loop/10-tiers.md
+time, so she can be restored as of any T (design/cognition-loop/data.md
 §8; 70-migration.md §2 row 1b and §5).
 
 WHAT THIS ADDS, all additive (no table dropped, no reader changed):

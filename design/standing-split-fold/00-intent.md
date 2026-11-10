@@ -40,7 +40,7 @@ root cause of both live symptoms:
   container (verified 2026-08-29 13:49 UTC).
 - Live DB — standing row written 13:49:08 UTC (5 min after container start)
   is a third-person event list; `turn_verdict` 21/21 grounded=true.
-- `design/dreamer-agent-loop/26-standing.md` §1 — "It is a SECOND model
+- `design/cognition-loop/data.md` §1 — "It is a SECOND model
   reading a FINISHED exchange. Not the model that replied, reflecting — a
   different call, seeing the whole turn including its own outcome. The
   argument is **impartiality, not cost**."

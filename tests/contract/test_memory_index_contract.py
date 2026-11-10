@@ -486,7 +486,7 @@ async def test_a_narrowing_drops_non_hub_neighbours_and_keeps_hubs(load: Load) -
     assert {nb.node.key for nb in found} == {("person", "kit")}
 
 
-# --- the social stream's nodes (design/cognition-loop/22 §9) ------------------
+# --- the social stream's nodes (design/cognition-loop/observation.md §9) ------------------
 
 #: (node, in scope for SCOPE, in scope once kit has set `social = false`).
 #: A social node is its author's: readable only where the room lists them.

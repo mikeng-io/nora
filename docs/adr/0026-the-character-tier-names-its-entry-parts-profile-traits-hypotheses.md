@@ -8,7 +8,7 @@
 
 ## Context
 
-[05 · Data model](../../design/cognition-loop/05-data-model.md) §1 calls
+[05 · Data model](../../design/cognition-loop/data.md) §1 calls
 Notebook rows "Nora's judgement"; §2 defines Layer › Tier › Kind › Entry.
 The operator settled the Character tier's names on 2026-10-21. The collisions
 are vocabulary problems within that hierarchy, not a new topology.

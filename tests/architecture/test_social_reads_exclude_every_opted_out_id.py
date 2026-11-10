@@ -2,7 +2,7 @@
 every id an opted-out person's items may be recorded under
 (`Persons.social_off_ids`), never one rebuilt from current ids alone, which
 lets an item recorded under a retired id through, and never none at all
-(design/cognition-loop/22 §2).
+(design/cognition-loop/observation.md §2).
 
 The construction sites are found, not listed: every `SqlSocialStreamStore(...)`
 call anywhere in `nora/`. Each is either the one inside

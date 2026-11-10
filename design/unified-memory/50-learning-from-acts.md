@@ -106,7 +106,7 @@ Keep the existing measures, with their limits explicit:
   writer's own re-support judgement remains its claim until independently checked;
   it is not proof that a later action applied the lesson or improved.
 
-[Assess](../cognition-loop/30-cognition.md#6-the-assess-adaptor-and-data-quality)
+[Assess](../cognition-loop/session.md)
 reports citation quality, drift and data-quality findings without editing memory.
 Record maintenance and retrieval cost as well as quality. Reopen the smallest
 responsible contract when a measured journey exposes a failure; a growing graph

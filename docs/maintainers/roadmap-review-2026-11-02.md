@@ -57,7 +57,7 @@ making one roadmap card per file.
 | Changed group | Treatment |
 |---|---|
 | unified-memory, cognition-loop, culture-tier, self-growth | Memory/Cognition outcome. Later one-session amendments supersede old separate adaptors; historical profile/vector/identity phases remain provenance. |
-| notebook-memory-types, standing-ledger, dreamer-agent-loop | Continuity outcome. Retired dreamer/adaptor descriptions are history; one Standing owns current presentation. |
+| notebook-memory-types, standing-ledger, cognition-loop | Continuity outcome. Retired dreamer/adaptor descriptions are history; one Standing owns current presentation. |
 | agent-worker, subagent | Pi/computer-work outcome. Existing subagent and existing microVM are baseline, not the new work. |
 | personalisation; removed fit and recommendations | One personalisation outcome. Renames do not create additional initiatives. |
 | private-dm and old private-dm entry point | Reuse #124, latest cross-unit and publication amendments. |
@@ -125,38 +125,38 @@ design/agent-worker/50-verification-and-migration.md
 design/agent-worker/_index.yaml
 design/artifact/00-design.md
 design/capability-drop/01-when-stays-in-schema.md
-design/cognition-loop/00-intent.md
-design/cognition-loop/05-data-model.md
-design/cognition-loop/10-tiers.md
-design/cognition-loop/12-schemas.md
-design/cognition-loop/15-map.md
-design/cognition-loop/20-observe.md
-design/cognition-loop/22-social-stream.md
-design/cognition-loop/25-rollup.md
-design/cognition-loop/30-cognition.md
-design/cognition-loop/40-register.md
-design/cognition-loop/50-character-and-standing.md
-design/cognition-loop/55-self.md
-design/cognition-loop/70-migration.md
-design/cognition-loop/80-prior-art.md
-design/cognition-loop/_index.yaml
+design/cognition-loop/README.md
+design/cognition-loop/data.md
+design/cognition-loop/data.md
+design/cognition-loop/data.md
+design/cognition-loop/README.md
+design/cognition-loop/observation.md
+design/cognition-loop/observation.md
+design/cognition-loop/observation.md
+design/cognition-loop/session.md
+design/cognition-loop/data.md
+design/cognition-loop/data.md
+design/cognition-loop/data.md
+design/cognition-loop/README.md
+design/cognition-loop/README.md
+design/cognition-loop/README.md
 design/computer-unit-scope/00-contract.md
 design/computer-unit-scope/01-migration.md
 design/computer-unit-scope/_index.yaml
 design/context-plan/evidence/local_models.py
 design/culture-tier/00-overview.md
 design/discord-music/10-notification-routing.md
-design/dreamer-agent-loop/02-instrument-blindness.md
-design/dreamer-agent-loop/18-flows.md
-design/dreamer-agent-loop/19-between-tiers.md
-design/dreamer-agent-loop/26-standing.md
-design/dreamer-agent-loop/27-note-dreamer.md
-design/dreamer-agent-loop/33-note-dreamer-schedule.md
-design/dreamer-agent-loop/34-note-dreamer-consolidation.md
-design/dreamer-agent-loop/36-note-tier-review-draft-2026-09-03.md
-design/dreamer-agent-loop/39-proactive-ooda-loop.md
-design/dreamer-agent-loop/41-note-tier-time-is-optional.md
-design/dreamer-agent-loop/42-note-format.md
+design/cognition-loop/execution.md
+design/cognition-loop/README.md
+design/cognition-loop/data.md
+design/cognition-loop/data.md
+design/cognition-loop/session.md
+design/cognition-loop/observation.md
+design/cognition-loop/session.md
+design/cognition-loop/data.md
+design/cognition-loop/README.md
+design/cognition-loop/data.md
+design/notebook-memory-types/00-design.md
 design/evaluation/08-the-sdk-surface.md
 design/evaluation/10-the-scenario-map.md
 design/evaluation/11-the-sandbox-rebuild.md

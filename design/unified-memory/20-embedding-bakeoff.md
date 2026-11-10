@@ -12,7 +12,7 @@ the plan: what is compared, on what, and what counts as a pass.
 
 ## Why a bake-off and not a leaderboard
 
-The last choice ([dreamer-agent-loop/24](../dreamer-agent-loop/24-embedding-seam.md)
+The last choice ([cognition-loop/data.md](../cognition-loop/data.md)
 §7.6) is the precedent. The literature said bge-m3 was superseded. On eight
 queries over Nora's own triples (Cantonese questions, mixed script, Cantonese
 slang, near-duplicates), bge-m3 scored 7/8 and won, and EmbeddingGemma-300m's

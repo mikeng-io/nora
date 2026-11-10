@@ -173,7 +173,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "system time stripped: what the step-2 determinism gate compares "
         "between an incremental build and a rebuild "
         "(tests/integration/test_rollup_builds.py). Its consumer at runtime is "
-        "`rollup_read` (design/cognition-loop/30-cognition.md §2), not built "
+        "`rollup_read` (design/cognition-loop/session.md §2), not built "
         "in step 2a.",
     ),
     ("computer_events.py", "orphaned_starts"): _Pin(
@@ -212,13 +212,13 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("social_stream.py", "item_state"): _Pin(
         "deferred_consumer",
         "An item's current state, the join every read of social items makes "
-        "(design/cognition-loop/22-social-stream.md §5). The poller writes "
+        "(design/cognition-loop/observation.md §5). The poller writes "
         "states; nothing reads social items yet.",
     ),
     ("standing.py", "write_if_unchanged"): _Pin(
         "operator_script",
         "The compare-and-set write for a manual Standing edit (design/"
-        "dreamer-agent-loop/26-standing.md §9, 2026-09-25). Its one caller is "
+        "cognition-loop/data.md §9, 2026-09-25). Its one caller is "
         "`scripts/standing_edit.py`, deliberately outside `nora/` — this is "
         "the operator's own entry point, not a verb the tag/participation "
         "loop should ever reach, and `_call_sites` scans `nora/` only.",

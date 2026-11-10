@@ -1598,7 +1598,7 @@ class LinkedInSocialConfig(BaseModel):
 
 
 class SocialPollConfig(BaseModel):
-    """The social stream's poller (design/cognition-loop/22-social-stream.md §3,
+    """The social stream's poller (design/cognition-loop/observation.md §3,
     §4): each member's Instagram account is probed, and a story or a list of
     posts and reels is read only when the probe says it changed. Every value is
     a starting value, sized after a week of `social_poll` rows.
@@ -1711,7 +1711,7 @@ class SocialConfig(BaseModel):
     tool result is re-sent on every subsequent model call and what accumulates
     must be bounded.
 
-    **A story frame's bytes** (design/cognition-loop/22-social-stream.md §5),
+    **A story frame's bytes** (design/cognition-loop/observation.md §5),
     kept in custody by the poller, are deleted `story_media_keep_days` after
     the frame's `expires_at` once its media is both perceived and embedded,
     and `story_media_keep_max_days` after it whatever is done

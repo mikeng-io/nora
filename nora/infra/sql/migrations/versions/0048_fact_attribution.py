@@ -1,5 +1,5 @@
 """fact_candidate.asserted_* and fact.asserted_* -- who said it, and when
-(design/dreamer-agent-loop/32-fact-dreamer-schedule.md §3.4, §5 closed
+(design/cognition-loop/observation.md §3.4, §5 closed
 decision 2).
 
 **Why on BOTH tables.** The candidate row carries the claim's attribution —

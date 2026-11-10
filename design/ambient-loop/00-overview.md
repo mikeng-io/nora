@@ -5,11 +5,11 @@ description: "Nora has two backbones. The tag path answers when called. The ambi
 tags: [nora, ambient, ooda, backbone, participation, proactive, notes, standing, memory]
 timestamp: '2026-09-11'
 edges:
-  - {dst: "dreamer-agent-loop/39-proactive-ooda-loop", rel: revises, provenance: asserted}
-  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: depends_on, provenance: asserted}
-  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: depends_on, provenance: asserted}
-  - {dst: "dreamer-agent-loop/26-standing", rel: depends_on, provenance: asserted}
-  - {dst: "dreamer-agent-loop/33-note-dreamer-schedule", rel: depends_on, provenance: asserted}
+  - {dst: "cognition-loop/README.md", rel: revises, provenance: asserted}
+  - {dst: "cognition-loop/proactive.md", rel: depends_on, provenance: asserted}
+  - {dst: "cognition-loop/proactive.md", rel: depends_on, provenance: asserted}
+  - {dst: "cognition-loop/data.md", rel: depends_on, provenance: asserted}
+  - {dst: "cognition-loop/observation.md", rel: depends_on, provenance: asserted}
 version: 4
 ---
 

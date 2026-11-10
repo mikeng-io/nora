@@ -52,7 +52,7 @@ the one interpreter (29 §1); a second derivation pass would interpret twice.
 ## 2. The session is an OODA loop; CMS is inside each phase
 
 The ambient loop's own staging ([ambient-loop/01](../ambient-loop/01-stages-and-seams.md),
-[cognition-loop/20](../cognition-loop/20-observe.md)) is kept, and 29's one
+[cognition-loop/observation.md](../cognition-loop/observation.md)) is kept, and 29's one
 session is placed on it:
 
 | OODA | what happens | who | CMS |

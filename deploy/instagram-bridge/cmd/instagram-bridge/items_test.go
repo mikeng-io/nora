@@ -2,7 +2,7 @@ package main
 
 // GET /accounts/{igid}/items, and what the two configured GraphQL reads (the
 // story and the timeline) share: a doc_id from config, the `stale_query`
-// code, and never a seen-mark (design/cognition-loop/22-social-stream.md §1,
+// code, and never a seen-mark (design/cognition-loop/observation.md §1,
 // §1a, §4).
 
 import (

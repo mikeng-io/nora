@@ -41,7 +41,7 @@ var (
 // working mechanism until an operator captures the id again, which is
 // ErrUnsupported's meaning; it is named because the consequence differs from
 // a plain refusal: the LOGIN is fine, so a caller halts that one read and
-// must not back the login off (design/cognition-loop/22-social-stream.md §4).
+// must not back the login off (design/cognition-loop/observation.md §4).
 var ErrStaleQuery = refine(ErrUnsupported, "stale query document")
 
 // ErrTooLarge REFINES ErrUpstreamRejected; it is not a seventh kind.

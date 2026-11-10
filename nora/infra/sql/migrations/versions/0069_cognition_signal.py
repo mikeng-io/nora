@@ -1,5 +1,5 @@
 """cognition_signal -- signals, the shadow wake log, reactions, deletes and
-source health (design/cognition-loop/70-migration.md §2 step 1, 20-observe.md).
+source health (design/cognition-loop/README.md §2 step 1, 20-observe.md).
 
 Five new tables, all append-only (10-tiers.md §8); nothing existing changes.
 Two of them keep `row_history` all the same (below):

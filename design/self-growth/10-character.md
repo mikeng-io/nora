@@ -6,7 +6,7 @@ tags: [nora, character, culture, dreamer, event-driven, self]
 timestamp: '2026-10-07'
 edges:
   - {dst: 20-self-block, rel: sequences, provenance: asserted}
-  - {dst: ../cognition-loop/50-character-and-standing.md, rel: realizes, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: realizes, provenance: asserted}
 ---
 
 # 10 · Character
@@ -14,7 +14,7 @@ edges:
 ## 1. Character and culture are one thing
 
 Culture is the Character of a room or of the unit
-(`design/cognition-loop/50-character-and-standing.md` §1). There is one
+(`design/cognition-loop/data.md` §1). There is one
 Character adaptor (today's culture adaptor, generalised), one store and one
 revision chain, keyed by `(unit, entity)`. DEC-278 already stores person
 accounts in the culture store under `character_key(scope, person_id)`.
@@ -166,7 +166,7 @@ evaluator carries stimuli kinds, brakes and floors built for fast group
 thinking, which none of the slow adaptors need. Lessons uses the same rule
 ([40](40-lessons.md) §2), once the scheduler takes a count per key kind.
 Per-kind batches (100 persons, 5 units, 100 Nora) and moving the wake off
-Cognition's evaluator amend `design/cognition-loop/20-observe.md` §3, which
+Cognition's evaluator amend `design/cognition-loop/observation.md` §3, which
 sets one `character_batch` of 200 for every entity; DEC-288 records the room
 part with C1, and each later kind's PR records its own. This holds unless the dream scheduler cannot run one
 session per key concurrently or cannot be woken mid-cycle for a correction.
@@ -184,7 +184,7 @@ that, so a later merge or sunset of Honcho (#736) changes no Character code.
 - **Evidence:** closed `response` episodes from `nora/infra/sql/rollups.py`.
   `silent` counts only where an answer was expected and the platform was
   proved up; otherwise it is `unknown`, not evidence.
-- **Echo rule** (`design/cognition-loop/10-tiers.md` §2 rule 4): a revision
+- **Echo rule** (`design/cognition-loop/data.md` §2 rule 4): a revision
   citing only her own sends is refused by the write verb.
 - **Descriptive only.** What she has learned to *do* is a lesson
   ([40](40-lessons.md)), not a line of her Character.

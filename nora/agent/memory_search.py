@@ -475,7 +475,7 @@ def scope_for(
     passes presence here.
 
     `social_off` are the persons whose `identity.toml` block sets `social =
-    false`: none of their social items is read (design/cognition-loop/22 §2),
+    false`: none of their social items is read (design/cognition-loop/observation.md §2),
     whenever it was recorded. Required with no default: a caller that
     forgot it would read every opted-out person's items."""
     here = target.room

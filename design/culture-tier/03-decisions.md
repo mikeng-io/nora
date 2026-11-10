@@ -384,4 +384,4 @@ which claims were tested rather than argued.
     The general form of this — that tool access is the precondition for any
     Dreamer adaptor to do more than restate its batch — is not culture's, and
     is recorded where it belongs, in
-    `design/dreamer-agent-loop/03-no-agent-loop §7`.
+    `design/cognition-loop/session.md §7`.

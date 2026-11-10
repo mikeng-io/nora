@@ -16,7 +16,7 @@ doesn't render copy, so that rule lives in the frontend, not here.
 **Profile (design/unified-memory/45, the switch).** While `[memory.profile] read`
 is on, each entry also carries `profile`: the caller's own Profile account
 per unit that lists them — every chain head with its state, the evidence
-behind each line, and the account's open disputes (cognition-loop/50 §4: an
+behind each line, and the account's open disputes (cognition-loop/data.md §4: an
 account nobody sees cannot be corrected). A line's message and episode
 citations resolve to their text only where the viewer is listed in the room
 it was said in TODAY (the write checked the rooms of that day); anything

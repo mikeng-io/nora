@@ -384,7 +384,7 @@ the portal supplies the look; "adopt shadcn" means this split, not a wholesale s
 `kind`, `row_key`, `scope`, `v1024` for bge-m3, HNSW cosine, `fingerprint` as the re-embed
 predicate) and a `pg_trgm` lexical channel are in the schema. **Nothing writes or reads the
 embedding table any more:** its only consumer was the knowledge tier, deprecated 2026-09-07 with
-its code deleted (`design/dreamer-agent-loop/24-embedding-seam.md`, issue #115); the schema
+its code deleted (`design/cognition-loop/data.md`, issue #115); the schema
 stays. The lexical channel was measured on Cantonese and English (`word_similarity('大步行',
 '我今日去咗大步行')` = 0.5); a `tsvector` cannot segment Chinese at all.
 

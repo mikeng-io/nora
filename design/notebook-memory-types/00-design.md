@@ -5,8 +5,8 @@ description: "Notebook taxonomy: note, topic, lesson, profile and decision. Oper
 tags: [nora, notebook, memory-types, note, topic, lesson, profile, decision, vocabulary]
 timestamp: '2026-10-29'
 edges:
-  - {dst: ../cognition-loop/05-data-model.md, rel: amends, provenance: asserted}
-  - {dst: ../cognition-loop/40-register.md, rel: supersedes, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: amends, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: supersedes, provenance: asserted}
   - {dst: ../standing-ledger/20-the-ledger.md, rel: amends, provenance: asserted}
   - {dst: ../standing-ledger/50-migration.md, rel: amends, provenance: asserted}
   - {dst: ../standing-ledger/30-turn-records.md, rel: amends, provenance: asserted}
@@ -35,7 +35,7 @@ do not line up either: `note_create` / `memo_create` / `event_propose`,
 topic the same way would make five copies.
 
 The data model already said the Notebook is **one entry, one machinery, with a
-rule per kind** ([05](../cognition-loop/05-data-model.md) §3). This node keeps
+rule per kind** ([05](../cognition-loop/data.md) §3). This node keeps
 that and changes what the kinds ARE: the tiers were named after the items they
 held, so the items' names became the architecture. The kinds are named after
 **what kind of memory they are**. They organize
@@ -50,7 +50,7 @@ not a container every correction must enter.
 Three things place every kind, and none of them is a new layer.
 
 1. **Layer, unchanged**: who writes it and how it is derived (Authored,
-   Record, Rollup, Notebook, Views; [05](../cognition-loop/05-data-model.md)
+   Record, Rollup, Notebook, Views; [05](../cognition-loop/data.md)
    §1). Only the Record and the Rollup are evidence.
 2. **Memory type**: what it remembers. It replaces "tier", and unlike a tier
    it spans layers.
@@ -152,7 +152,7 @@ storage-kind migration before consolidating the three renderings:
 | room `Where it stands` paragraph | splits into decisions and topic activity (already standing-ledger step 4) |
 | person `I owe them` | **note** |
 | person `How they take me` | **profile** of that person (it rests on the Rollup's responses to her) |
-| person `Between us` | **dropped**: named in [12-schemas](../cognition-loop/12-schemas.md) §5, never defined, never written (operator, option A) |
+| person `Between us` | **dropped**: named in [12-schemas](../cognition-loop/data.md) §5, never defined, never written (operator, option A) |
 
 Folding standing into profile was considered and refused: a profile is
 third-person and re-derivable, standing first-person and by definition not.
@@ -184,7 +184,7 @@ immediately; they do not wait for a summary or a synchronous Cognition session.
 ## 6. External kinds: postings, and the one crossing
 
 An **event** and a **document** are postings: Nora's published acts, so Record
-(a document already is, [05](../cognition-loop/05-data-model.md) §1a), shown
+(a document already is, [05](../cognition-loop/data.md) §1a), shown
 through Views. A **staged** event is a hypothesis and is a note; **publishing**
 it is the act that makes it a posting; "did it happen?" is a note again until
 evidence settles it. Publishing is the one place the external disclosure
@@ -212,7 +212,7 @@ receipts; it does not write the entry store. No live topic writer, lineage rende
 is built.
 
 Each kind's rules get their named tests when that kind is built on
-the entry, as [05](../cognition-loop/05-data-model.md) §3 already requires.
+the entry, as [05](../cognition-loop/data.md) §3 already requires.
 
 **This holds unless** a kind converged onto the entry is measured losing a row,
 a citation or a withdrawal its own store kept, or two kinds are found sharing

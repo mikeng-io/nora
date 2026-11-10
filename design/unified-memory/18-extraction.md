@@ -7,8 +7,8 @@ edges:
   - {dst: 00-intent, rel: extends, provenance: asserted}
   - {dst: 10-honcho-audit, rel: depends_on, provenance: asserted}
   - {dst: 45-persona-adaptor, rel: extends, provenance: asserted}
-  - {dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
-  - {dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: extends, provenance: asserted}
+  - {dst: ../cognition-loop/observation.md, rel: extends, provenance: asserted}
 ---
 
 # Extraction
@@ -45,7 +45,7 @@ both derivation and synthesis. A capped synthesis was measured against an
 uncapped log. The missing statements were an architectural gap, not proof
 that the card needed to grow without bound.
 
-[cognition-loop/05 §2](../cognition-loop/05-data-model.md#2-the-vocabulary-layer--tier--kind--entry)
+[cognition-loop/data.md §2](../cognition-loop/data.md)
 said “per-person facts live in Memory (Honcho)”. Unified memory removed
 Honcho without giving those statements a home; the `persona-*` identity
 part became a de-facto fact store inside the Notebook. The revision gives
@@ -109,7 +109,7 @@ Memory no longer sits beside the flow. See also
 
 Authored still fixes the rules. A Rollup may compute over readings because
 they are Record items, but its computation remains **code only**
-([cognition-loop/25](../cognition-loop/25-rollup.md)). A model reading does
+([cognition-loop/observation.md](../cognition-loop/observation.md)). A model reading does
 not turn a Rollup into model-written synthesis.
 
 ## Character is the card; Views answer from everything

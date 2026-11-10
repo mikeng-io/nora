@@ -41,14 +41,14 @@ and its own way of changing:
 
 The sections are 30 §3's (Identity: `Names`, `Accounts`, `Role`,
 `Relationships`, `Attributes`, `Instructions`; a collective's `Purpose`,
-`Norms`) and cognition-loop/12 §4's (Character's sections), plus one
+`Norms`) and cognition-loop/data.md §4's (Character's sections), plus one
 `Hypotheses` section. `Unsure` goes: what it held becomes either a
 hypothesis or nothing.
 
 **The modes table that holds is [45](45-persona-adaptor.md) §3** (amended
 2026-10-15). This table said Character was `induced` only; 45 allows
 `deduced` in character too, and 45's is kept. `authored` is not one of
-cognition-loop/10 §4's six modes, so an authored line carries no mode.
+cognition-loop/data.md §4's six modes, so an authored line carries no mode.
 
 **Where it sits.** Persona **is the Character tier, widened**, not a fifth
 tier. The Notebook keeps four tiers (Register, Persona, Lessons, Standing), and
@@ -71,7 +71,7 @@ as for a session's. It writes `told` lines only, never a deduction,
 induction or hypothesis, and never retires or revises: weighing stays the
 adaptor's. "That's wrong" is still a Record item plus a stimulus (§2).
 
-**Collectives.** A room's or the unit's Culture (cognition-loop/10 §5) is
+**Collectives.** A room's or the unit's Culture (cognition-loop/data.md §5) is
 already Character's machinery for a collective, so it is that collective's
 Persona Character part, and its `Purpose` and `Norms` are the Identity part.
 Whether Culture's tables are merged into Persona's or kept and read as
@@ -80,7 +80,7 @@ build takes the one with the smaller migration.
 
 ## 2. Disputes: anyone, weighed in context; the subject's hides at once
 
-30 §7 kept the cognition-loop/50 §4 rule: only the subject may dispute a line
+30 §7 kept the cognition-loop/data.md §4 rule: only the subject may dispute a line
 about themselves. **Ruled otherwise.** Anyone may dispute any line. Amended
 2026-10-15 (operator): what happens next depends on who disputes.
 
@@ -124,7 +124,7 @@ same line, and where the dispute is wrong.
 The first version of this section compared "today's lineage rule" with a
 unit-wide view, and recommended lineage. Both halves were wrong about today:
 lineage is built but **switched off**, `[lineage] mode = "off"`, marked "do
-not enable" (operator, 2026-10-03, cognition-loop/10 §3), and its table here
+not enable" (operator, 2026-10-03, cognition-loop/data.md §3), and its table here
 described the rule wrongly. A recommendation resting on a filter that is off
 protects nothing.
 
@@ -208,8 +208,8 @@ never quoted, never a search hit, and its index node is dropped
 ([25](25-memory-graph.md) §7). **Lines and entries derived from it stay**, and
 cite it as "a message since deleted". There is no retraction cascade and
 nothing is purged: the cascade, `nora person forget` and the `citation` edge
-table were deleted on 2026-10-03 (migrations 0092/0093; cognition-loop/10 §2
-rule 7, cognition-loop/05 §3, cognition-loop/70 §9), and this ruling does not
+table were deleted on 2026-10-03 (migrations 0092/0093; cognition-loop/data.md §2
+rule 7, cognition-loop/data.md §3, cognition-loop/README.md §9), and this ruling does not
 bring them back.
 
 The one exception is the subject's own: a dispute or "forget that" by the

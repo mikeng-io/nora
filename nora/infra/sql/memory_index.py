@@ -88,7 +88,7 @@ its person alone. Both copy the row's presence lineage, which a reader must
 pass as `rollup_read.visible_rows` does (R-31, DEC-222): the scope
 alone never discloses a place.
 
-**What a social item is** (design/cognition-loop/22 §9, the operator's
+**What a social item is** (design/cognition-loop/observation.md §9, the operator's
 rulings). One `social` node per `social_item`, keyed `network:item_id`, and
 one `social_media` node per medium of it, `(item, sha256)` in `media_ref`'s
 order, `attached_to` the item: a carousel is several. Both are their
@@ -696,7 +696,7 @@ async def story_frame_embedded(
     conn: AsyncConnection, frames: Iterable[tuple[str, str]], *, model: str,
 ) -> set[tuple[str, str]]:
     """Of `frames` (`(network, item_id)`), those whose embedding is done, for
-    `StoryMediaExpiry` (design/cognition-loop/22 §5): the frame has at least
+    `StoryMediaExpiry` (design/cognition-loop/observation.md §5): the frame has at least
     one medium node, and every one of them holds a vector of `model` or is
     terminal, given up (`EMBED_MAX_ATTEMPTS`) or failed `empty`, which no
     later tick will change. A frame with no medium node (never projected,

@@ -710,7 +710,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "plus \"unattributed\"), and by audience. recovered vs send_reply is "
         "DEC-93's tell: a rising recovered share means the route is not "
         "honouring tool_choice=required. `audience` was added before the "
-        "participation occasion shipped (design/dreamer-agent-loop/35 §6): the "
+        "participation occasion shipped (design/cognition-loop/proactive.md §6): the "
         "series named only tag turns when it was created, and a participation "
         "outcome landing here unlabelled would be indistinguishable from one.",
         ("outcome", "audience"),
@@ -851,11 +851,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(too_soon / too_far / too_many); the turn-provenance refusal "
         "(fire_turn); the input refusals (unmapped / unparseable / past); "
         "screened, a proactive row whose text failed the Dreamer's "
-        "identifier/coordinate screen (design/dreamer-agent-loop/39 D3); "
+        "identifier/coordinate screen (design/cognition-loop/README.md D3); "
         "refused_origin_unresolvable / refused_origin_wrong_unit / "
         "refused_origin_not_proactive, a note-linked proactive row whose "
         "origin room cannot be resolved, drifted across a unit, or is "
-        "not proactive-trusted — design/dreamer-agent-loop/40 (#248), where "
+        "not proactive-trusted — design/cognition-loop/proactive.md (#248), where "
         "the row's destination is the note's own room, never a fallback to "
         "home; duplicate_note, a proactive row about a note that already has "
         "one waiting or firing (issue #158: one reminder per thing, held at "
@@ -1529,7 +1529,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_participation_silence_total",
         "Participation determinations that concluded 'say nothing' (the "
-        "healthy default — design/dreamer-agent-loop/35 §6), by platform. "
+        "healthy default — design/cognition-loop/proactive.md §6), by platform. "
         "Budget-cut turns are NOT here; those are silent failures.",
         ("platform",),
     ),
@@ -1596,7 +1596,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_relevance_gate_total",
         "Relevance Gate verdicts the MODEL returned, by verdict and platform "
-        "(design/dreamer-agent-loop/36). A fail-closed no_go is NOT here — it "
+        "(design/cognition-loop/proactive.md). A fail-closed no_go is NOT here — it "
         "is on nora_relevance_gate_errors_total — so go/(go+no_go) here is a "
         "true admission rate and not a rate diluted by outages. In shadow "
         "mode only the go verdicts are delivered anywhere; this series is the "
@@ -2071,7 +2071,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "trigger for chunking long nodes.",
         ("kind",),
     ),
-    # The social stream's poller (design/cognition-loop/22-social-stream.md §4).
+    # The social stream's poller (design/cognition-loop/observation.md §4).
     # Every vocabulary is DERIVED from `nora.domain.social_stream`. No person,
     # account or item is a label.
     _CounterSpec(
@@ -2402,7 +2402,7 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Age of a unit's oldest pending stimulus that could wake it (a reply "
         "to Nora inside reply_quiet_seconds does not count), set by the wake "
         "evaluator each tick; 0 when nothing is pending "
-        "(design/cognition-loop/20-observe.md §4). ABSENT until the "
+        "(design/cognition-loop/observation.md §4). ABSENT until the "
         "evaluator's first tick for the unit.",
         ("unit",),
     ),
@@ -2600,7 +2600,7 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     _HistogramSpec(
         "nora_relevance_gate_seconds",
         "One Relevance Gate model call's latency, on every exit including the "
-        "fail-closed ones (design/dreamer-agent-loop/36, issue #163). "
+        "fail-closed ones (design/cognition-loop/proactive.md, issue #163). "
         "RIGHT-CENSORED at [relevance_gate] timeout_seconds — a timed-out call "
         "is recorded at the ceiling, so read the top bucket against "
         "nora_relevance_gate_errors_total{kind=\"timeout\"}.",

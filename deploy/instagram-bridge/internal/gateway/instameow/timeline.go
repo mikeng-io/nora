@@ -3,7 +3,7 @@ package instameow
 // `GET /accounts/{igid}/items`: one page of an account's posts and reels,
 // newest first, over the web app's profile timeline document
 // (`PolarisProfilePostsTabContentQuery_connection`,
-// design/cognition-loop/22-social-stream.md §1a, §7).
+// design/cognition-loop/observation.md §1a, §7).
 //
 // Before S0 no mechanism for this list was known anywhere (P13's
 // investigation; the social stream's back-fill waited on it). The document is

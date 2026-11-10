@@ -113,7 +113,7 @@ EMBEDDED_KINDS: tuple[str, ...] = (
 #: from its bytes (`embeds_bytes`), and a reading of those bytes is its text.
 ATTACHMENT_KINDS: tuple[str, ...] = ("media", "social_media")
 
-#: The social stream's kinds (design/cognition-loop/22). A person's
+#: The social stream's kinds (design/cognition-loop/observation.md). A person's
 #: `social = false` (`identity.toml`) keeps every one of theirs out of every
 #: read (`MemoryScope.social_off`), including those recorded before the switch.
 SOCIAL_KINDS: tuple[str, ...] = ("social", "social_media", "social_location")

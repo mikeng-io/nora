@@ -64,11 +64,11 @@ the older, well-studied family:
 | signal | what it says | store | exists |
 |---|---|---|---|
 | what people say | likes, dislikes, plans, constraints | messages; write-only extraction; profiles for likes | messages and reading writer exist; the destination-scoped constraint and likes readers are step 1 ([10](10-likes.md) §1); the deleted fact tier is not a source |
-| **social engagement** | what members post (places they went, food, game clips), what they send each other (reels, links), what they react to | the social stream's `social_item`, perceptions and counts, read through `social_read` ([22](../cognition-loop/22-social-stream.md) §8, built S0 to S8); reactions; links in rooms | yes (the poller ships off by default) |
+| **social engagement** | what members post (places they went, food, game clips), what they send each other (reels, links), what they react to | the social stream's `social_item`, perceptions and counts, read through `social_read` ([22](../cognition-loop/observation.md) §8, built S0 to S8); reactions; links in rooms | yes (the poller ships off by default) |
 | where people are, and usually are | origin at a given hour; usual routes and their speeds | the hour-of-week forecaster `nora/domain/mobility_forecast.py` over historical stays; separate `presence_occupancy` bins; `presence_place_rhythm` (person/place circular means, no bins); `presence_trips`, `presence_corridors`, `presence_derived_places` | yes |
 | where the group has been together | revealed venue preference | `rollup_outing`, `rollup_colocation` | yes |
 | who does things with whom | likely attendee sets | `rollup_tie` | yes |
-| what they play | genres, hours, who with | Steam current game (`nora/infra/steam.py`), Discord rich presence (`nora/platform/discord/discord_presence.py`); the play-profile rollup ([25](../cognition-loop/25-rollup.md) §6) | live reads yes; the rollup is designed |
+| what they play | genres, hours, who with | Steam current game (`nora/infra/steam.py`), Discord rich presence (`nora/platform/discord/discord_presence.py`); the play-profile rollup ([25](../cognition-loop/observation.md) §6) | live reads yes; the rollup is designed |
 | plans | the event, its RSVPs, its open venue | `events`, `event_rsvps`, notes | yes |
 | how her proposals land | replies, reactions, edits, silence | `rollup_response` episodes, with responders; recommendation sends need a separate decision link ([learning-from-acts](../unified-memory/50-learning-from-acts.md) §1) | yes |
 | candidates | venues and travel times; games | `nora/infra/routes/directions.py`, `nora/infra/transit/arrivals.py`, `place_info`; a game catalogue source | venues yes; games new |

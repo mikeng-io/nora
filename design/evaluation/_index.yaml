@@ -64,8 +64,8 @@ edges:
   - {src: 09-the-backbone-measured, dst: GOAL-2-backbone, rel: measures, provenance: measured}
   - {src: 10-the-scenario-map, dst: GOAL-2-backbone, rel: depends_on, provenance: asserted}
 external_edges:
-  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
-  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
+  - {dst: "cognition-loop/proactive.md", rel: relates_to, provenance: asserted}
+  - {dst: "cognition-loop/proactive.md", rel: relates_to, provenance: asserted}
 decisions:
   reserved: "NONE CLAIMED. No decision is taken by this bundle; 01-boundaries section 6 is the first one to make, and it is the operator's"
   index: null

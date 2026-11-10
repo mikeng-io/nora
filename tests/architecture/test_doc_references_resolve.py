@@ -458,10 +458,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         for doc, old, new in (
             ("design/09-decision-index.md",
              "evals/adversarial/being_contradicted.yaml", "being_contradicted.yaml"),
-            ("design/dreamer-agent-loop/13-doctrine.md",
-             "evals/cases/note_candidates/note_candidates.yaml", "note_candidates.yaml"),
-            ("design/dreamer-agent-loop/35-ambient-participation.md",
-             "evals/cases/participation/participation.yaml", "participation.yaml"),
         )
     },
     # --- the old eval layer ---
@@ -484,8 +480,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
             "design/ambient-loop/02-doctrine-and-measurement.md",
             "design/capability-drop/03-code-surface.md",
             "design/capability-drop/implementation-brief.md",
-            "design/dreamer-agent-loop/13-doctrine.md",
-            "design/dreamer-agent-loop/39-proactive-ooda-loop.md",
             "design/evaluation/06-first-full-run.md",
         )
     },
@@ -508,14 +502,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "reference records where it lived"
     ),
     ("design/capability-drop/implementation-brief.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/dreamer-agent-loop/16-open-items.md", "evals/harness.py"): (
-        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/dreamer-agent-loop/39-proactive-ooda-loop.md", "nora/app/eval_support.py"): (
         "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
         "reference records where it lived"
     ),
@@ -592,17 +578,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("design/09-decision-index.md", ".github/workflows/gates.yml"): (
         "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
         "and the file was never added back after that decision"
-    ),
-    (
-        "design/dreamer-agent-loop/34-note-dreamer-consolidation.md",
-        "nora/language/note_revisitor.py",
-    ): (
-        "the consolidation this document designs never happened: NoteRevisitor "
-        "was deleted outright rather than merged into the curator (2026-09-08 "
-        "deprecation, R-75), and issue #99 was closed as superseded on that "
-        "basis. Surfaced only once PARTLY DEPRECATED stopped exempting whole "
-        "files. The document needs its own banner; that is the author's call, "
-        "not this gate's"
     ),
     ("design/11-recall-and-threading.md", "nora/engagement/recall.py"): (
         "early recall design; the module never landed at this path"

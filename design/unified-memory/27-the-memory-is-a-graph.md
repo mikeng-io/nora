@@ -11,8 +11,8 @@ edges:
   - {dst: 40-prior-art, rel: depends_on, provenance: asserted}
   - {dst: 45-persona-adaptor, rel: extends, provenance: asserted}
   - {dst: 47-character-dimensions, rel: depends_on, provenance: asserted}
-  - {dst: ../cognition-loop/30-cognition, rel: extends, provenance: asserted}
-  - {dst: ../cognition-loop/10-tiers, rel: extends, provenance: asserted}
+  - {dst: ../cognition-loop/session.md, rel: extends, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: extends, provenance: asserted}
   - {dst: ../culture-tier/00-overview, rel: extends, provenance: asserted}
   - {dst: ../self-growth/40-lessons, rel: extends, provenance: asserted}
 ---
@@ -90,7 +90,7 @@ or more, if a measured query needs one.
 
 Record, Rollup and Notebook are not separate graphs. They are the `layer` of
 each relation, and the layer decides who writes it and how it is corrected,
-by the rules the data model already has ([cognition-loop/05](../cognition-loop/05-data-model.md)):
+by the rules the data model already has ([cognition-loop/data.md](../cognition-loop/data.md)):
 
 | layer | written by | example relations | corrected by |
 |---|---|---|---|

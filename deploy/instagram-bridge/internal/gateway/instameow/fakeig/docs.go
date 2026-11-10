@@ -2,7 +2,7 @@ package fakeig
 
 // The configured GraphQL documents' answers (the gateway's docs.go), as
 // LITERAL JSON bytes in the shapes captured from the web client in S0
-// (design/cognition-loop/22-social-stream.md §1a). Every value is synthetic:
+// (design/cognition-loop/observation.md §1a). Every value is synthetic:
 // short placeholder ids, placeholder CDN paths, placeholder usernames.
 
 import (

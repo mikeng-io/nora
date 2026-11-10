@@ -696,7 +696,7 @@ cases:
     metadata: {tools: [group_members], not_tools: [room_list, room_read]}
     snapshot: *room_a
 
-  # --- the Record over an interval (design/cognition-loop/15-map.md §4) ------
+  # --- the Record over an interval (design/cognition-loop/README.md §4) ------
   # `record_query` (2026-09-29) reads what was said over a stretch of time, by
   # author or by words, under lineage. Each case names the neighbour it could
   # lose to: `load_transcript` pages back from now in this room with no filter;

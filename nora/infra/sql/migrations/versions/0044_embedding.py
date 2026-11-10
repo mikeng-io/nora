@@ -1,6 +1,6 @@
 """embedding -- the dense channel's storage, and the seam's one table
 
-`design/dreamer-agent-loop/24-embedding-seam.md` §7.5.
+`design/cognition-loop/data.md` §7.5.
 
 **ONE table for every tier, not one per tier.** §1's whole argument is that this
 is one seam and not three: a tier adopts retrieval by declaring three things --

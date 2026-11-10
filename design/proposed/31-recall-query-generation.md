@@ -1,7 +1,7 @@
 # 31 — Recall query generation & personalization
 
 > **PARTLY INVALIDATED 2026-09-07 — the knowledge tier (the "fact tier") has been deprecated and its code deleted (issue #115).** `search_knowledge`, `get_knowledge` and the `<facts>` prefill block are gone. Every part of this draft that treats the knowledge tier as a storage layer the decomposition may route to — in particular "Major 2 — RESOLVED" below — no longer holds; the surviving storage layers are Honcho memory (`about`/`ask_memory`) and notes (`note_search`).
-> The evidence that decided it is in `design/dreamer-agent-loop/20-knowledge-tier.md` §0. The database tables are not dropped by that change.
+> The evidence that decided it is in `design/cognition-loop/data.md` §0. The database tables are not dropped by that change.
 
 
 **Status:** Draft for review (operator session 2026-09-03)

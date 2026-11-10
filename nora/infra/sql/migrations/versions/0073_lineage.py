@@ -1,5 +1,5 @@
 """lineage -- the columns every derived row carries, their backfill, and the
-Record's trigram index (design/cognition-loop/10-tiers.md §3, 15-map.md §4,
+Record's trigram index (design/cognition-loop/data.md §3, 15-map.md §4,
 70-migration.md §2 row 2 and §5; migration step 2, the lineage half).
 
 WHAT THIS ADDS, all additive:
@@ -26,7 +26,7 @@ WHAT THIS ADDS, all additive:
 
 2. `idx_messages_body_trgm`, a GIN trigram index over `messages.body`, for
    `record_query`'s lexical search (15 §4). `pg_trgm` is already installed
-   (`0026_note_tier`); it is the operator design/dreamer-agent-loop/
+   (`0026_note_tier`); it is the operator design/cognition-loop/
    24-embedding-seam.md §2 measured on Cantonese (a term inside a sentence
    found; a CJK run is one `simple` tsvector token, so full-text search would
    not find it). The index serves `ilike` substring search and pg_trgm's

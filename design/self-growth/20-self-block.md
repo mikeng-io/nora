@@ -15,7 +15,7 @@ edges:
 - **Content:** the current Character · Nora account for the turn's unit
   ([10](10-character.md) §4), capped in characters.
 - **Position:** directly after the doctrine and before every other block, so
-  the doctrine is read first and wins (`design/cognition-loop/55-self.md` §3).
+  the doctrine is read first and wins (`design/cognition-loop/data.md` §3).
 - **Occasions:** tag, fire and Cognition. Not the relevance gate, not the
   public surface or summons, which have no unit.
 - **Assembly:** a row in `_BLOCKS` and a renderer, through context assembly
@@ -31,7 +31,7 @@ edges:
 ## 2. What leaves
 
 `self_card` leaves the tag and fire turns in the same PR
-(`design/cognition-loop/55-self.md` §3 schedules it). It is not a second
+(`design/cognition-loop/data.md` §3 schedules it). It is not a second
 account of who she is: `self_card_render.py` and `_self_card_block` in
 `nora/agent/prefill.py` frame it as episodic continuity, what she said and
 did before, not self-description. So what is lost is that continuity (what

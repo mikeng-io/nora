@@ -57,8 +57,8 @@ in §4 covers practice there as well as character.
 marked; `50-character-and-standing.md` §6 now says the doctrine check reads the law
 subset.
 
-`design/cognition-loop/55-self.md` §2 lists "given: constraints, voice,
-conduct" and `design/cognition-loop/10-tiers.md` §1 defines doctrine as what
+`design/cognition-loop/data.md` §2 lists "given: constraints, voice,
+conduct" and `design/cognition-loop/data.md` §1 defines doctrine as what
 wins over anything derived about her. Narrowing "given" to law amends both. It
 needs a DEC row (`nora-decision`) in the PR that ships the classification.
 

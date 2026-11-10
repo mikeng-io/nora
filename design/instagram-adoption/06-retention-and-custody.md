@@ -15,7 +15,7 @@ edges:
 ## The rule (operator, 2026-09-21)
 
 > **Amended 2026-10-16 (operator) for the social stream only**
-> (design/cognition-loop/22-social-stream.md §5): the poller keeps what a
+> (design/cognition-loop/observation.md §5): the poller keeps what a
 > member's posts and reels whole (media included, no retention), and of a
 > story keeps what it *said* (metadata, caption, perception text, its image
 > or video embedding) and deletes its media bytes at a bound. A live read on the tag path is

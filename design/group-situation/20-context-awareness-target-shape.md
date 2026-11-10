@@ -7,7 +7,7 @@ timestamp: 2026-10-10
 status: measured
 edges:
   - {dst: 00-intent.md, rel: follows, provenance: asserted}
-  - {dst: ../cognition-loop/05-data-model.md, rel: depends_on, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: depends_on, provenance: asserted}
   - {dst: ../context-assembly/04-every-occasion.md, rel: extends, provenance: asserted}
 ---
 
@@ -71,7 +71,7 @@ conflicts.
 
 ## 3. The target shape
 
-DEC-249 ([05](../cognition-loop/05-data-model.md) §1, §6) already holds the
+DEC-249 ([05](../cognition-loop/data.md) §1, §6) already holds the
 answer's structure: Record → Rollup → Notebook → Views, one assembly path, a
 View cut per reader at read time and never stored. Under it, **a situation is
 not a block a producer writes, it is a View slice**: for every entity in the

@@ -1,4 +1,4 @@
-# The Relevance Gate suite (design/dreamer-agent-loop/36).
+# The Relevance Gate suite (design/cognition-loop/proactive.md).
 #
 # This grades the GATE, not a turn: each case is `transcript + standing ->
 # expected verdict`, driven through the real `RelevanceGate.decide` against

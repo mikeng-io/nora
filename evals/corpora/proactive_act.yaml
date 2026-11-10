@@ -1,4 +1,4 @@
-# The proactive ACT suite (design/dreamer-agent-loop/39 §5, DEC-162 (10)).
+# The proactive ACT suite (design/cognition-loop/README.md §5, DEC-162 (10)).
 #
 # Each case is ONE proactive row coming due — what the decide turn (the Cognition session's `remind` since 2026-10-03) wrote to
 # its later self — plus the room as it REALLY was at fire time: its transcript
@@ -311,7 +311,7 @@ cases:
     # instant her own message answered the row's question outright («呢兩樣
     # 唔使再問»). Live she spoke again and repeated it. The row's text went out
     # under `<tag_message>`, described as a person's request to answer, which
-    # contradicted the header (design/cognition-loop/35 §2). Like a11,
+    # contradicted the header (design/cognition-loop/proactive.md §2). Like a11,
     # `<loop_decisions>` is absent in the sandbox, so the judgement rests on
     # the transcript alone.
     snapshot:
@@ -341,7 +341,7 @@ cases:
     # convenience store they were standing at, so by the fire the question
     # was moot. She had not yet spoken that morning, so unlike a12 nothing of
     # hers answers it: only the room's own lines and, once presence is a
-    # block (design/cognition-loop/35 §3.2), where they were. Live she spoke
+    # block (design/cognition-loop/proactive.md §3.2), where they were. Live she spoke
     # and restated the meeting arrangements.
     snapshot:
       platform: signal

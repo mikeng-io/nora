@@ -126,7 +126,7 @@ Field rules:
   the author.
 - Before this both fell through the empty-turn drop and were lost. Nora
   records each BESIDE the message it touches, never as a transcript line
-  (`design/cognition-loop/20-observe.md` §1).
+  (`design/cognition-loop/observation.md` §1).
 
 ### `heartbeat`
 

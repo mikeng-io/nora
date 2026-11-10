@@ -32,7 +32,7 @@ Replay leaks if it sees anything Nora did not hold at the moment of the
 choice. Cutting evidence by when it happened is not enough: a post back-filled
 later has an old `taken_at`, and a social item's perceptions and counts change
 after it is first recorded. So replay is **bitemporal**, the contract
-[cognition-loop 10](../cognition-loop/10-tiers.md) §8 already states for
+[cognition-loop 10](../cognition-loop/data.md) §8 already states for
 reading a tier as of a time:
 
 - only rows **recorded** by the cutoff (`recorded_at` or the source's system-time equivalent, not `taken_at` or `at`), with the revision of each that was current at the cutoff;

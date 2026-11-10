@@ -263,7 +263,7 @@ func (s *Service) ReadAccount(ctx context.Context, id domain.IGID) (AccountRead,
 // ReadStory reads one account's current story — ONE igid, because a batch
 // would open stories nobody asked about. The social stream's poller reads
 // members' stories, each only when its probe moved
-// (design/cognition-loop/22-social-stream.md §3); the read never marks a
+// (design/cognition-loop/observation.md §3); the read never marks a
 // story seen (§1).
 //
 // Like ReadAccount, it takes the igid already parsed at the edge.
@@ -275,7 +275,7 @@ func (s *Service) ReadStory(ctx context.Context, id domain.IGID) (domain.Story, 
 }
 
 // ReadItems reads one page of an account's posts and reels (`GET
-// /accounts/{igid}/items`, design/cognition-loop/22-social-stream.md §1a,
+// /accounts/{igid}/items`, design/cognition-loop/observation.md §1a,
 // §7). The timeline document takes a USERNAME: the caller's, parsed at the
 // edge, when it gave one (a back-fill paging on, one upstream call a page);
 // otherwise the gateway resolves it through the same profile read `GET

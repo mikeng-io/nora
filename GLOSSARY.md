@@ -63,7 +63,7 @@ Character tier.
 
 ## Memory — record versus interpretation
 
-**Memory is Honcho, and only Honcho** (`design/cognition-loop/10-tiers.md`
+**Memory is Honcho, and only Honcho** (`design/cognition-loop/data.md`
 §6's words table: memory means Honcho, never "any store of ours"). Postgres
 holds two windows onto the same layer, the **Record**, not memory:
 
@@ -126,7 +126,7 @@ is why `nora/infra`'s two clients have opposite error contracts.
   on a tag when Honcho has one (`nora/agent/prefill.py::_peer_card_block`). The
   `<peer_history>` block a tag gets is `representation`, not the card — the
   two are deliberately not merged. Never Character evidence
-  (`design/cognition-loop/10-tiers.md` §6, `50-character-and-standing.md` §5,
+  (`design/cognition-loop/data.md` §6, `50-character-and-standing.md` §5,
   DEC-214): it is memory, read as a hint, unscoped within its Honcho
   workspace, and the Character adaptor cites only the Record and the Rollup.
 - **nothing found ≠ could not ask.** `load_transcript` empty means *nothing
@@ -138,7 +138,7 @@ is why `nora/infra`'s two clients have opposite error contracts.
 The most-used words in this repo.
 
 - **The Dreamer** — the subconscious execution runtime in the target architecture
-  ([execution and time](design/cognition-loop/18-execution-and-time.md)), never
+  ([execution and time](design/cognition-loop/execution.md)), never
   a data tier or the name of every background task. Today `dream_loop` runs
   registered adaptors through `DreamerRuntime`; Cognition has a separate
   wake/session runner sharing the agent factory, guards, budget types, tool
@@ -166,7 +166,7 @@ The most-used words in this repo.
   `<room>`, which is the operator's statement of what a room is FOR.
 
   **Culture IS the Character tier's room case** (DEC-290,
-  `design/cognition-loop/10-tiers.md` §5): a room's entry keeps its
+  `design/cognition-loop/data.md` §5): a room's entry keeps its
   `primary_id` key, and the person, unit and Nora cases hang off the unit
   (**Character**, below). Her own standing in a room is Standing's question,
   not Character's; the room fold does not read it.
@@ -189,7 +189,7 @@ The most-used words in this repo.
   folded into it by `note_merge` and retired `retired-merged`; anything that looks it up after
   that follows `replaced_by` to the note it went into. **Nothing Nora says can create, revise or close a note**:
   her own rows are excluded from what note-writing reads. (Not "the note
-  tier" — `design/cognition-loop/10-tiers.md` names the tier **Register**;
+  tier" — `design/cognition-loop/data.md` names the tier **Register**;
   note is one of its three kinds, alongside memo and event.) That is the one
   structural brake on her talking to herself (39 §1).
 
@@ -205,7 +205,7 @@ The most-used words in this repo.
   to one **workspace**, and — once `policy.toml` declares `[units]` — inside
   that workspace's **Honcho workspace** each unit is a Honcho *named scope* — its rooms' Honcho sessions are the scope's
   members (bare "session" means a Cognition session, never a Honcho session,
-  `design/cognition-loop/10-tiers.md` §6), and every memory read made for the unit passes the scope, so what
+  `design/cognition-loop/data.md` §6), and every memory read made for the unit passes the scope, so what
   Nora recalls for a unit comes from that unit's rooms. The memory port takes
   a unit, never a Honcho workspace id.
 
@@ -246,7 +246,7 @@ The most-used words in this repo.
   wherever Standing is: the tag turn and every fire turn. Not a note: it holds her work, not the group's open
   question.
 
-- **proactive** — acting when nobody asked (design/dreamer-agent-loop/39,
+- **proactive** — acting when nobody asked (design/cognition-loop/README.md,
   DEC-162), the active half beside the tag path's passive one. The Cognition
   session decides it (DEC-228, DEC-277): its `remind` sets Nora a reminder for
   a chosen hour, and when that comes due the **act turn** runs — a fire turn
@@ -271,7 +271,7 @@ The most-used words in this repo.
 
 ## The layers and the Notebook's tiers
 
-**`design/cognition-loop/05-data-model.md` is canonical for the topology and
+**`design/cognition-loop/data.md` is canonical for the topology and
 the vocabulary** (DEC-249): five **layers** in one flow, each defined by who
 writes it, **Authored** (humans) → **Record** (ingestion) → **Rollup**
 (code) → **Notebook** (the subconscious, one writer per tier) → **Views** (assembled at read
@@ -279,7 +279,7 @@ time through one path, never stored), with **Memory** (Honcho) beside the
 flow; and the hierarchy **Layer › Tier › Kind › Entry**. A **tier** is a
 subdivision inside the Notebook only (Register, Character, Standing,
 Lessons); the Record and the Rollup are layers, not tiers.
-**`design/cognition-loop/10-tiers.md` is canonical for the Record and Rollup layers and the four
+**`design/cognition-loop/data.md` is canonical for the Record and Rollup layers and the four
 tiers below and every word they use**; this section only resolves what
 collides with words already in use elsewhere in this file, and adds what had
 no entry.
@@ -399,7 +399,7 @@ Other words this bundle introduces:
   `Gathering` (above). Never the fire-turn occasion (code `Event`, DEC-139,
   see *occasion*, below).
 - **subconscious / conscious** — the operator's own words (潛意識 / 明意識,
-  `design/cognition-loop/55-self.md` §6) for the conscious and the subconscious: the Dreamer's
+  `design/cognition-loop/data.md` §6) for the conscious and the subconscious: the Dreamer's
   four adaptors run underneath, always; the tag turn and the fire turn
   speak. Not code names, and never "tier" or "layer" (a layer is a data
   layer, DEC-249).
@@ -468,7 +468,7 @@ claiming `kind: capability` **fails to load** as an unknown kind. The files sit 
   (`nora_silent_failures_total{audience}`), so a fire turn's failures are
   never charged to the tag budget.
 - **participation** — the occasion triggered by the room itself
-  (design/dreamer-agent-loop/35): an untagged message in an operator-opted-in
+  (design/cognition-loop/proactive.md): an untagged message in an operator-opted-in
   room closes a quiescence window once the room goes quiet, and ONE
   determination runs with the right to stay silent. NOT "ambient" — ambient
   means recorded, never answered; participation is the governed exception to
@@ -530,7 +530,7 @@ claiming `kind: capability` **fails to load** as an unknown kind. The files sit 
 - **placement** — where a block goes: `header` (the static, cache-hit prefix)
   or `turn` (rebuilt every turn). Deliberately not called a *tier* — a tier in
   this file is one of the Notebook's Register, Character, Lessons or
-  Standing (`design/cognition-loop/10-tiers.md`), each with its own store,
+  Standing (`design/cognition-loop/data.md`), each with its own store,
   and this is a position in one prompt. One volatile byte placed in `header`
   ends the 95-99% prefix-cache hit for everything after it.
 
@@ -543,7 +543,7 @@ path's whole context assembler, a runtime rather than a block). The verb
 ## Reminders
 
 Time vocabulary is canonical in
-[execution and time](design/cognition-loop/18-execution-and-time.md). A logical
+[execution and time](design/cognition-loop/execution.md). A logical
 **tick** is a position on the proposed fixed minute grid; an **evaluation pass**
 is an actual eligibility check. A **time slot** is an indexed schedule window,
 not the conversation concurrency permit below. Numbered reminder deadlines and
@@ -609,7 +609,7 @@ them differently.
 - **scope** — what a Dreamer adaptor iterates over (`scopes()`,
   `key_kind = "scope"`). Today one conversation's `primary_id`. Distinct from
   *unit*, which is the other `key_kind`. The Cognition adaptor
-  (`design/cognition-loop/30-cognition.md`) is unit-keyed, one session per
+  (`design/cognition-loop/session.md`) is unit-keyed, one session per
   unit per wake, not scope-keyed like `culture`: its agenda items, not the
   adaptor itself, each bind one room (`10-tiers.md` §2 rule 6; the unit read
   boundary this settles is `70-migration.md` §4).

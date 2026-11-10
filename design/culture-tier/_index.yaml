@@ -39,9 +39,9 @@ edges:
   - {src: 04-phase-two-note, dst: 02-measurement, rel: depends_on, provenance: asserted}
 external_edges:
   - {dst: "ambient-loop/00-overview", rel: depends_on, provenance: asserted}
-  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
-  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
-  - {dst: "dreamer-agent-loop/26-standing", rel: relates_to, provenance: asserted}
+  - {dst: "cognition-loop/proactive.md", rel: relates_to, provenance: asserted}
+  - {dst: "cognition-loop/proactive.md", rel: relates_to, provenance: asserted}
+  - {dst: "cognition-loop/data.md", rel: relates_to, provenance: asserted}
   - {dst: "proposed/24-honcho-integration-v2", rel: depends_on, provenance: asserted}
 decisions:
   reserved: "DEC-182 .. DEC-185 (DEC-181 withdrawn) — CLAIMED AT MERGE, NOT NOW; DEC-163..175 is an unexplained gap, find its holder first"

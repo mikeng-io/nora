@@ -9,7 +9,7 @@ governance: operator-directed
 edges:
   - {dst: ../sandbox-runtime/00-design.md, rel: depends_on, provenance: asserted}
   - {dst: ../artifact/00-design.md, rel: depends_on, provenance: asserted}
-  - {dst: ../cognition-loop/30-cognition.md, rel: depends_on, provenance: asserted}
+  - {dst: ../cognition-loop/session.md, rel: depends_on, provenance: asserted}
   - {dst: ../video-generation/README.md, rel: relates_to, provenance: asserted}
 ---
 

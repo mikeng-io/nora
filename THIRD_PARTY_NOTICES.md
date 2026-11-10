@@ -47,7 +47,7 @@ limitations under the License.
 
 **Taken: the prompt's reasoning and its four worked examples.** That is the
 load-bearing part and it is corpus-independent —
-`design/dreamer-agent-loop/25-knowledge-pipeline.md` §4.1: `NYC`/`New York
+`design/cognition-loop/data.md` §4.1: `NYC`/`New York
 City` (an abbreviation), `Java` the language against `Java` the island (one
 name, two real-world things), `Marco's car`/`Marco's vehicle` (a synonym with
 the same possessor), and `Sam`/`Sam` (the same person referred to again). Three

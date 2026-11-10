@@ -1,5 +1,5 @@
 """note_candidate gains a CREATE kind — the note tier's Dreamer-side create
-path (design/dreamer-agent-loop/33-note-dreamer-schedule.md §4, issue #98).
+path (design/cognition-loop/observation.md §4, issue #98).
 
 **The table was a miss cache and stays one for `kind='miss'` rows.**
 `note_candidate` today holds `(workspace, probe)` -> "we looked and found

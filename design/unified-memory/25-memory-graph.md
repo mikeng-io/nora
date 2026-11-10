@@ -40,7 +40,7 @@ of truth (conversational-recall/20):
 | edges | where the truth lives | projected by |
 |---|---|---|
 | `authored_by`, `in_room`, `attached_to`, `shared_by`, `during`, `mentions`, `located_in`, `outcome_of` | the stores' columns (a message's author and room, media in `messages.media_json`, an episode's interval and act, a place's containing place) | code, from the columns |
-| `cites`, `about`, `supersedes`, and the entry → entry links (§2) | the Notebook entry's own citations, links and revision chain (cognition-loop/05 §3: "code resolves them and writes the edges"), stored with the entry | code, from the entry |
+| `cites`, `about`, `supersedes`, and the entry → entry links (§2) | the Notebook entry's own citations, links and revision chain (cognition-loop/data.md §3: "code resolves them and writes the edges"), stored with the entry | code, from the entry |
 | `disputes`, `feedback_on`, `depicts` | a Record item (`persona_dispute`, `feedback`, a face label) | code, from the Record |
 
 **`cites` edges exist only for stores that store citations** (operator,
@@ -52,8 +52,8 @@ as it does a memo's. Standing stores no citations and has no `cites` edges.
 
 **Nothing walks these edges for withdrawal** (operator, 2026-10-15). The
 retraction cascade and its `citation` edge table were deleted on 2026-10-03
-(migrations 0092 and 0093; cognition-loop/10 §2 rule 7, cognition-loop/05
-§3, cognition-loop/70 §9), and the table was dropped because nothing read it.
+(migrations 0092 and 0093; cognition-loop/data.md §2 rule 7, cognition-loop/data.md
+§3, cognition-loop/README.md §9), and the table was dropped because nothing read it.
 `memory_edge` is not that table again: its named reader is the retrieval
 service (§4), which expands along it on every search. A message deleted on
 the platform (`messages.hidden_at`) is hidden: never quoted, never a hit, its
@@ -79,7 +79,7 @@ set, each with its writer:
 | `about` | entry → entity (person, room, unit, Nora, place) | write verb |
 | `cites` | an entry that stores citations (memo, event, lesson, Persona line, note; never Standing) → Record row, Rollup key or episode | write verb |
 | `supersedes` | entry → entry | write verb |
-| `tracks`, `closes_into`, `leaves_behind`, `draws_on`, `informed_by` | entry → entry: DEC-249's typed links (cognition-loop/05 §3). A note tracks an event, closes into a memo; an event leaves behind a memo; a collective's Persona, a lesson, or a `deduced` Persona line draws on a Persona line; a Standing line is informed by a Persona line or a lesson | write verb |
+| `tracks`, `closes_into`, `leaves_behind`, `draws_on`, `informed_by` | entry → entry: DEC-249's typed links (cognition-loop/data.md §3). A note tracks an event, closes into a memo; an event leaves behind a memo; a collective's Persona, a lesson, or a `deduced` Persona line draws on a Persona line; a Standing line is informed by a Persona line or a lesson | write verb |
 | `disputes` | `persona_dispute` item → Persona line | projected from the Record item |
 | `feedback_on` | `feedback` item → act (a send, a comment reply, a summons answer) | projected from the Record item ([50](50-learning-from-acts.md) §3) |
 | `depicts` | media → person | face label (step 6) |
@@ -87,12 +87,12 @@ set, each with its writer:
 | `located_in` | place → place (a restaurant → a district → a city); an outing → its district | code, from the place's resolved address components; never a model |
 | `outcome_of` | episode → act | the Rollup builder ([50](50-learning-from-acts.md)) |
 
-**A link is never evidence** (cognition-loop/05 §3, DEC-249). A Persona line
+**A link is never evidence** (cognition-loop/data.md §3, DEC-249). A Persona line
 cites only Record rows, Rollup keys and episodes. A line that rests on other
 lines (a `deduced` line's premises) links to them with `draws_on`; it does
 not cite them ([45](45-persona-adaptor.md) §3).
 
-**What is refused** (cognition-loop/80): a model-extracted triple such as
+**What is refused** (cognition-loop/README.md): a model-extracted triple such as
 "Rin –likes→ roguelikes". That is a Character line with its citations, not an
 edge. A memory graph records where things came from and how they are tied; a
 knowledge graph records claims a model pulled out of text, with nothing
@@ -141,7 +141,7 @@ prompt, the Cognition session, the portal.
 
 1. **Scope** first (operator, 2026-10-15). **The unit is the read boundary.**
    `[lineage] mode` is `off` and is not re-enabled ("do not enable", operator
-   2026-10-03, cognition-loop/10 §3), and a Persona account renders only in
+   2026-10-03, cognition-loop/data.md §3), and a Persona account renders only in
    the unit's rooms that list the person (`nora/language/character.py:40-47`).
    On top of that, **evidence about a person counts only if it was said in a
    room that person is listed in**: a `mentions` edge from a room Kit is not
@@ -368,7 +368,7 @@ text by a model (§2).
 ## 7a. The social stream's items (built 2026-10-16)
 
 Operator rulings of 2026-10-16, answering
-[cognition-loop/22](../cognition-loop/22-social-stream.md) §9. The code is
+[cognition-loop/observation.md](../cognition-loop/observation.md) §9. The code is
 `nora.infra.sql.memory_index` (`_project_social`, `story_frame_embedded`),
 `nora.infra.sql.memory_read` and `nora.agent.memory_search`; migrations
 `0110_memory_social` and, for the tagged place (item 4), `0113_memory_social_location`.
@@ -432,7 +432,7 @@ Operator rulings of 2026-10-16, answering
    (`social_off`). Alt text stays out: it was not ruled on, and it would
    carry the place past the gate. The poller records `location` for posts,
    reels and story frames, the place's name only
-   ([cognition-loop/22](../cognition-loop/22-social-stream.md) §5). Items
+   ([cognition-loop/observation.md](../cognition-loop/observation.md) §5). Items
    recorded with a location before
    `0113` are put on the projection queue by that migration and re-projected
    by the drain loop; no rebuild is needed.

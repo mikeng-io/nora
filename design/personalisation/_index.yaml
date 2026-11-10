@@ -45,5 +45,5 @@ edges:
   - {src: 60-migration, dst: 50-verification, rel: depends_on, provenance: asserted}
   - {src: 20-ranker, dst: ../standing-ledger/20-the-ledger.md, rel: depends_on, provenance: asserted}
   - {src: 40-feedback, dst: ../unified-memory/50-learning-from-acts.md, rel: extends, provenance: asserted}
-  - {src: 10-likes, dst: ../cognition-loop/22-social-stream.md, rel: depends_on, provenance: asserted}
-  - {src: 10-likes, dst: ../cognition-loop/25-rollup.md, rel: depends_on, provenance: asserted}
+  - {src: 10-likes, dst: ../cognition-loop/observation.md, rel: depends_on, provenance: asserted}
+  - {src: 10-likes, dst: ../cognition-loop/observation.md, rel: depends_on, provenance: asserted}

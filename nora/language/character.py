@@ -16,7 +16,7 @@ store and revision chain:
   `search_memory`), never a pre-fetch: the account must not depend on Honcho.
   Its citations are the ids of the messages it was handed. Its evidence
   also holds the person's social items not yet handed to a session
-  (design/cognition-loop/22 §6): only the polled ones count toward the wake,
+  (design/cognition-loop/observation.md §6): only the polled ones count toward the wake,
   and polled and back-filled alike are handed, the oldest recorded first,
   at most `SOCIAL_ITEMS_MAX` a session, as `<social_items>`, each cited
   `social:<network>:<item id>`.

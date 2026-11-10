@@ -69,7 +69,7 @@ reminders. The Dreamer supplies background research, including culture work.
 Cognition currently has a separate wake evaluator and session runner; it
 shares Dreamer's agent factory, tools and instruction infrastructure but does
 not execute through `DreamerRuntime.run`. The
-[execution and time design](design/cognition-loop/18-execution-and-time.md)
+[execution and time design](design/cognition-loop/execution.md)
 consolidates subconscious execution under Dreamer and defines the shared clock
 beneath it and conscious turns. That runtime consolidation is not implemented.
 The reminder heartbeat drives deferred conscious fire turns; addressed turns

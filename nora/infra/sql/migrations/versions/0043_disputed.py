@@ -1,6 +1,6 @@
 """fact / room_lexeme gain a `disputed` state -- the correction loop's one new column set
 
-`design/dreamer-agent-loop/31-recognition.md` §7, implementing 30 §2.1's D25.
+`design/cognition-loop/data.md` §7, implementing 30 §2.1's D25.
 
 **A dispute MARKS a row; it does not mute it.** 30 §2.1, 29 §5 and 19 §4 all
 decide a three-state render -- standing, disputed-and-marked, gone -- and only

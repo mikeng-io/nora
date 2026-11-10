@@ -11,7 +11,7 @@ answered there; §3, §4, §6 and the rest of §7 stand under Persona.
 [45](45-persona-adaptor.md)'s; this node's tables are kept as the reasoning
 that led to them.
 
-**This node proposes amending DEC-249.** [cognition-loop/05](../cognition-loop/05-data-model.md)
+**This node proposes amending DEC-249.** [cognition-loop/data.md](../cognition-loop/data.md)
 §1 fixes the Notebook at four tiers, and §2 rules that "per-person facts live
 in Memory" (Honcho) and "the Notebook stores no statement-level provenance".
 With Honcho retired, per-person facts need a home. This node puts them in a
@@ -33,10 +33,10 @@ or plain derivation.
 
 **Character is live and describes behaviour only.** DEC-290; 35 person
 accounts on norty, the latest written 2026-10-14. Its sections
-([cognition-loop/12](../cognition-loop/12-schemas.md) §4) are all about
+([cognition-loop/data.md](../cognition-loop/data.md) §4) are all about
 behaviour: `How they talk`, `What they care about`, `How they decide`,
 `What they reliably do`, `Who they are close to`, `Unsure`. Culture is the
-same machinery for a room or the unit (cognition-loop/10 §5). The `Unsure`
+same machinery for a room or the unit (cognition-loop/data.md §5). The `Unsure`
 section is where the operator's "half abduction" lives: what the evidence
 suggests but does not carry, with no mode saying so.
 
@@ -45,7 +45,7 @@ suggests but does not carry, with no mode saying so.
 | where | holds | written by | problem |
 |---|---|---|---|
 | `identity.toml` | names, platform accounts per person | the operator, by hand | covers who may be resolved, not who someone is |
-| Honcho peer card | `IDENTITY:` / `ATTRIBUTE:` / `RELATIONSHIP:` / `INSTRUCTION:` lines | Honcho's dream pass | uncited, unscoped within its workspace (cognition-loop/50 §5), leaving with Honcho ([10](10-honcho-audit.md)); in 164 of 200 live tag turns |
+| Honcho peer card | `IDENTITY:` / `ATTRIBUTE:` / `RELATIONSHIP:` / `INSTRUCTION:` lines | Honcho's dream pass | uncited, unscoped within its workspace (cognition-loop/data.md §5), leaving with Honcho ([10](10-honcho-audit.md)); in 164 of 200 live tag turns |
 | doctrine `identity` | who Nora is | the operator | authored; correct as it is |
 | `<self>` | her Character · Nora account (DEC-292) | the Character adaptor | what she is like, not who she is |
 
@@ -75,10 +75,10 @@ stimulus); see §7. *(Amended 2026-10-17, DEC-317: on the graph surface the
 turn's `remember` writes a `told` line through the Persona write's judge;
 [35](35-persona.md) §1.)*
 
-Identity also needs `told` and `deduced`, which cognition-loop/10 §4 allows
+Identity also needs `told` and `deduced`, which cognition-loop/data.md §4 allows
 only in Register and Standing. Its "allowed in" column is amended by this
 node. Whether the six modes stay as stored detail is itself open
-(cognition-loop/05 §10 Q2); this node assumes they do.
+(cognition-loop/data.md §10 Q2); this node assumes they do.
 
 **Recommendation:** Identity is the Notebook's fifth tier. The alternative
 is Identity sections inside a Character account, which mixes two
@@ -91,9 +91,9 @@ operator is asking for.
 
 > 2026-10-22 (operator brief; proposed): [47](47-character-dimensions.md) defines named prose slots for traits and hypothesis explanations in phase 4, alongside ADR 0026’s profile/traits/hypotheses names. Profile typed facts remain [75](75-typed-identity.md)’s; citations, modes and state remain columns, not the fixed-heading markup described historically below. Reading claim slots belong to phase 2 in [18](18-extraction.md).
 
-The entry columns are cognition-loop/05 §3's (home, entity, body, citations,
+The entry columns are cognition-loop/data.md §3's (home, entity, body, citations,
 reasoning, confidence, visibility). The body is fixed-heading Markdown under
-cognition-loop/12's grammar. **One line per fact**, each ending in its
+cognition-loop/data.md's grammar. **One line per fact**, each ending in its
 citations and its mode.
 
 **Actor** (`kind`: `human`, `nora`, `agent`):
@@ -116,7 +116,7 @@ citations and its mode.
 
 Two things a collective's identity might hold are already answered elsewhere,
 and stay there so no question has two homes: its names and their origins are
-Culture's `Names and where they came from` section (cognition-loop/12 §4), and
+Culture's `Names and where they came from` section (cognition-loop/data.md §4), and
 its members are the roster, already rendered as the `room_members` block.
 *(Amended 2026-10-15: a collective's names now live in Persona as `name`
 identity lines, [45](45-persona-adaptor.md) §2; Culture's `Names and where
@@ -140,7 +140,7 @@ itself worth seeing.
 Authored > told by the subject > told by someone else about the subject >
 deduced. A lower line never overrides a higher one; it sits beside it. Two
 cited lines that conflict are both kept, marked `current`, `superseded` or
-`disputed` (Cognee's conflict nodes, cognition-loop/80 §4's
+`disputed` (Cognee's conflict nodes, cognition-loop/README.md §4's
 contradiction-as-a-row), until a later statement settles them.
 
 **Speech acts are kept.** "Thinking about going to Japan" is not "went to
@@ -150,7 +150,7 @@ told with.
 
 ## 5. Character, with the modes made explicit
 
-Two proposed changes to Character's schema (cognition-loop/12 §4, DEC-290),
+Two proposed changes to Character's schema (cognition-loop/data.md §4, DEC-290),
 both the operator's to rule on (§8):
 
 - **`Unsure` becomes explicit modes.** Each line carries `induced` (with the
@@ -192,21 +192,21 @@ write's judge; [35](35-persona.md) §1. The memo and note rows stand.)*
    [35](35-persona.md) §2: only the subject's own dispute hides a line at
    once; anyone else's marks it `disputed` for the next session.)*
 2. The writer's next session re-evidences the line or removes it
-   (cognition-loop/50 §4).
+   (cognition-loop/data.md §4).
 3. ~~Everything whose citations reach it is marked `unsupported` and goes
    back for re-derivation (the retraction cascade).~~ *(Superseded: the
    cascade was deleted 2026-10-03, migrations 0092/0093. Nothing derived is
    re-marked; [35](35-persona.md) §5.)*
 4. The revision chain keeps what was believed and when it changed.
 
-**Only the subject may dispute a line about themselves** (cognition-loop/50
+**Only the subject may dispute a line about themselves** (cognition-loop/data.md
 §4). Anyone else can add their own told evidence, which sits beside it.
 **Assent never upgrades an abduction**: "yeah" to "is it because evenings are
-short?" does not make the hypothesis a fact (cognition-loop/10 §4). It takes a
+short?" does not make the hypothesis a fact (cognition-loop/data.md §4). It takes a
 statement with content.
 
 **Seeing it.** The portal shows each person the Identity and Character about
-them, with the evidence behind each line (cognition-loop/50 §4).
+them, with the evidence behind each line (cognition-loop/data.md §4).
 `persona_dispute` (formerly `character_dispute`) is designed and **not
 built**; it is this bundle's build. The citation-edge table is not: it was
 dropped 2026-10-03 (migration 0093), and the memory index's `memory_edge` is
@@ -229,7 +229,7 @@ read by the retrieval service, not by a cascade ([25](25-memory-graph.md) §1).
 3a. `Unsure` replaced by explicit per-line modes (§5): a Character schema
    change.
 4. Visibility of a told Identity line: today's lineage rule (its origin room,
-   then the person's rooms in the unit, cognition-loop/50 §5). *(Ruled: the
+   then the person's rooms in the unit, cognition-loop/data.md §5). *(Ruled: the
    unit is the boundary and lineage stays off, 35 §3.)* The prior-art
    review found one person's disclosure surfacing in another's session to be
    the main multi-user risk ([40](40-prior-art.md)).

@@ -5,7 +5,7 @@ description: "Read likes from profile facts, traits and guesses; derive facet sc
 tags: [nora, recommendations, likes, evidence, decay, social-engagement, presence]
 timestamp: '2026-10-25'
 edges:
-  - {dst: ../cognition-loop/22-social-stream.md, rel: depends_on, provenance: asserted}
+  - {dst: ../cognition-loop/observation.md, rel: depends_on, provenance: asserted}
   - {dst: ../unified-memory/35-persona.md, rel: depends_on, provenance: asserted}
 ---
 
@@ -85,7 +85,7 @@ their existing evidence rules; personalisation never writes a posterior back
 as a new profile fact.
 
 The social stream is built, including perceptions and counts
-([22](../cognition-loop/22-social-stream.md) §8). A shared reel is weak
+([22](../cognition-loop/observation.md) §8). A shared reel is weak
 interest, not proof of consumption or approval of every facet. Its recorded
 revision and source remain attached to the projection.
 

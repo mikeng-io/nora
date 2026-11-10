@@ -40,7 +40,7 @@ result cut to 600 characters, and a `web_search` result is 9.6k at the median
 six restaurants.
 
 Standing stays **lossy and rewritten every turn**
-([26 §8](../dreamer-agent-loop/26-standing.md)). A decided venue still belongs in
+([26 §8](../cognition-loop/data.md)). A decided venue still belongs in
 a note. The working set is exactly what a lossy row is FOR: useful for a few
 turns, harmless to lose, and dated so the fold can tell when it has gone stale.
 

@@ -86,7 +86,7 @@ estimates were stale by three orders of magnitude, so these are `count(*)`.
 | `inductive` | 1,625 | 143 |
 | last 14 days, main | explicit 6,173 · inductive 492 · deductive 230 | |
 
-- **The corpus is 89% `explicit`.** cognition-loop/80 §6 keeps exactly
+- **The corpus is 89% `explicit`.** cognition-loop/README.md §6 keeps exactly
   that level (what a person told), and it is the level Nora's Register
   `told` mode already represents with a citation to the message.
 - **1,218 of 1,295 Honcho workspaces are `nora-eval*` leftovers**, one per
@@ -112,8 +112,8 @@ estimates were stale by three orders of magnitude, so these are `count(*)`.
 | `suggest_venue` preference question | the index: told preferences and induced Character lines | 1 call site |
 | `remember` → `conclude` | a Record item plus a stimulus; the Persona adaptor writes the Identity line citing the message ([30](30-identity-and-character.md) §7, [35](35-persona.md)) | ruled 2026-10-15 (35) |
 | `feed` (5 sites) | nothing: the Record already holds every message, and the index reads the Record | the media reading feed: the index indexes each attachment `(message, sha256)` with the reading copied in from `media_objects.{title,description,content}` ([25](25-memory-graph.md) §7). There is no `media_descriptions` table; `nora/infra/sql/media_descriptions.py` is a cache over `media_objects` and `sticker_index` |
-| 21,722 + 1,425 `explicit` conclusions | **not carried.** They have no citation to a Record row, so under rule 3 of cognition-loop/80 §6 ("memory is a hint, never a citation") they cannot ground a tier entry | **dropped** (operator, 2026-10-15, [35](35-persona.md) §4) |
-| `deductive` / `inductive` conclusions | dropped; cognition-loop/80 §6 step 2 already plans their exit from the prompt once Character ships | step 4 there ("measure before cutting") is this table's last column |
+| 21,722 + 1,425 `explicit` conclusions | **not carried.** They have no citation to a Record row, so under rule 3 of cognition-loop/README.md §6 ("memory is a hint, never a citation") they cannot ground a tier entry | **dropped** (operator, 2026-10-15, [35](35-persona.md) §4) |
+| `deductive` / `inductive` conclusions | dropped; cognition-loop/README.md §6 step 2 already plans their exit from the prompt once Character ships | step 4 there ("measure before cutting") is this table's last column |
 
 **The order this forces.** Search can go first: it is the bulk of the use and
 has a clean replacement. The two prefilled blocks go last, after a person's

@@ -199,7 +199,7 @@ func issuerFor(cli Client) (GraphQLIssuer, error) {
 // The read used to be the library's `FetchReel`, REST
 // `/api/v1/feed/reels_media/`. Instagram answers that with HTTP 500 on every
 // call (4/4, 2026-10-16, library v0.2609.0, the latest;
-// design/cognition-loop/22-social-stream.md §1). The web app reads a story
+// design/cognition-loop/observation.md §1). The web app reads a story
 // through a GraphQL document instead, `PolarisStoriesV3ReelPageStandaloneQuery`
 // (§1a), and so does this read now, through graphqlDoc with the doc_id from
 // INSTAGRAM_STORY_DOC_ID. The response is the same reel the REST read
@@ -208,7 +208,7 @@ func issuerFor(cli Client) (GraphQLIssuer, error) {
 // # A story read is a deliberate act, and that changes the rules
 //
 // The social stream's poller reads members' stories
-// (design/cognition-loop/22-social-stream.md §3): a probe on /profile's
+// (design/cognition-loop/observation.md §3): a probe on /profile's
 // `latest_reel_media` decides, and the read runs only when that value moved.
 // Two consequences are built into the route rather than left to the caller:
 //

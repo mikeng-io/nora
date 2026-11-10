@@ -6,20 +6,20 @@ tags: [nora, self, doctrine, character, lessons, cognition]
 timestamp: '2026-10-07'
 edges:
   - {dst: 10-character, rel: sequences, provenance: asserted}
-  - {dst: ../cognition-loop/55-self.md, rel: realizes, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: realizes, provenance: asserted}
 ---
 
 # 00 · Intent
 
 ## 1. The problem
 
-The doctrine is law (`design/cognition-loop/55-self.md` §3, operator decision
+The doctrine is law (`design/cognition-loop/data.md` §3, operator decision
 D6). Nora never changes it. Her growth lives only in her own blocks, which
 render after it and below it: Character · Nora (`self`), Lessons (`lessons`)
 and Standing. Every lesson and every Character · Nora revision passes a
 doctrine check. A lesson that would loosen or contradict the doctrine is
 refused and written as a tension row for the operator
-(`design/cognition-loop/50-character-and-standing.md` §6).
+(`design/cognition-loop/data.md` §6).
 
 Today the doctrine carries more than law. `nora/doctrine/rooms/voice.md`,
 `nora/doctrine/rooms/belonging.md` and much of

@@ -57,32 +57,32 @@
       "persona_store": 1
     }
   },
-  "design/cognition-loop/05-data-model.md": {
+  "design/cognition-loop/data.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 1
     }
   },
-  "design/cognition-loop/10-tiers.md": {
+  "design/cognition-loop/data.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "persona": 2
     }
   },
-  "design/cognition-loop/22-social-stream.md": {
+  "design/cognition-loop/observation.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 7,
       "persona": 1
     }
   },
-  "design/cognition-loop/70-migration.md": {
+  "design/cognition-loop/README.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "persona": 2
     }
   },
-  "design/cognition-loop/80-prior-art.md": {
+  "design/cognition-loop/README.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "persona": 2

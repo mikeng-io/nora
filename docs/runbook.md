@@ -54,7 +54,7 @@ To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="heartbeat"}` alongside
    `nora_reminders_fired_total{outcome}` and `nora_heartbeat_last_tick_age_seconds`.
 
-   The participation occasion (design/dreamer-agent-loop/35, once enabled) is the
+   The participation occasion (design/cognition-loop/proactive.md, once enabled) is the
    third audience on this series, and it changes what "silent" MEANS: a
    participation turn that says nothing is the HEALTHY outcome, so it never lands
    here — it counts on `nora_participation_silence_total`, and a spoke turn on
@@ -65,7 +65,7 @@ To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="participation"} / (nora_participation_silence_total + nora_participation_spoke_total)`,
    NOT a share of the tag budget.
 
-   The proactive occasion (design/dreamer-agent-loop/39, DEC-162; since
+   The proactive occasion (design/cognition-loop/README.md, DEC-162; since
    2026-10-03, DEC-277, its reminder rows are written by the Cognition
    session's `remind`, and the fire path's act turn below is unchanged) is the fourth audience and has
    participation's exact shape: a `kind="proactive"` row's act turn that

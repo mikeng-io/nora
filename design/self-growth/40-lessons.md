@@ -5,7 +5,7 @@ description: "A lesson is practice induced from the outcomes of many of her acts
 tags: [nora, lessons, event-driven, dreamer, doctrine-check, tension]
 timestamp: '2026-10-07'
 edges:
-  - {dst: ../cognition-loop/50-character-and-standing.md, rel: realizes, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: realizes, provenance: asserted}
 ---
 
 # 40 · Lessons
@@ -118,7 +118,7 @@ week, each false one closed unchanged by the session.
 ## 5. Tension rows
 
 Operator-only: never returned by a read tool, never rendered in a block, with a
-test pinning both (`design/cognition-loop/55-self.md` §4). The doctrine file
+test pinning both (`design/cognition-loop/data.md` §4). The doctrine file
 and line quoted, the evidence cited, and what the lesson would have said.
 
 ## 6. What is hard
@@ -126,7 +126,7 @@ and line quoted, the evidence cited, and what the lesson would have said.
 - **Noisy labels.** A reaction, a reply or silence is a weak signal of whether
   something worked.
 - **Drift toward engagement.** She learns whatever earns reactions
-  (`design/cognition-loop/80-prior-art.md` §4). The cap, decay, rollback and
+  (`design/cognition-loop/README.md` §4). The cap, decay, rollback and
   the Assess pass push against it.
 - **"Expected an answer" is read from her words, not flagged** (operator,
   2026-10-07). The Rollup's `silent` stays narrow: a structured mention, or

@@ -1,6 +1,6 @@
 """cognition_session / cognition_session_close / cognition_would_write --
 the Cognition adaptor's session and its dry-run write verbs, shadow
-(design/cognition-loop/70-migration.md §2 row 3a: "the Cognition adaptor's
+(design/cognition-loop/README.md §2 row 3a: "the Cognition adaptor's
 session and agenda; its note, event and Standing verbs in dry run (would-
 write rows recorded, nothing committed)"; 30-cognition.md §1-§2; migration
 step 3a).

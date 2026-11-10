@@ -62,11 +62,11 @@ rests on the room's own messages and the note index. The text below is the
 2026-09-17 record of why it was added.
 
 Added 2026-09-17. It is the plainest instance of the general finding in
-`design/dreamer-agent-loop/03-no-agent-loop §7`, and it was sitting inside this
+`design/cognition-loop/session.md §7`, and it was sitting inside this
 file's own §2 the whole time.
 
 §2 asks the model for **"my own standing here"**. `standing` is a tier
-(`design/dreamer-agent-loop/26-standing.md`) that holds exactly that — Nora's
+(`design/cognition-loop/data.md`) that holds exactly that — Nora's
 position in one room, per room, written by the debrief. The relevance gate
 already treats it as authoritative: `relevance_gate.py:266-272` makes it *"the
 ONLY place that can establish what she owes this room"*. The culture adaptor

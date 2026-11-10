@@ -315,7 +315,7 @@ No route exists (corrected 2026-10-16: an earlier draft said the routes return
 `501`); Nora's side answers `unavailable` without a call
 (`nora/infra/social/instagram_client.py`). **Mechanism found 2026-10-16**: the web app's
 `PolarisProfilePostsTabContentQuery_connection` GraphQL query
-(design/cognition-loop/22-social-stream.md §1a); the route is that node's S1.
+(design/cognition-loop/observation.md §1a); the route is that node's S1.
 
 ## P14: Writes onto resource paths (`16` step 5)
 

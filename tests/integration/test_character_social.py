@@ -1,4 +1,4 @@
-"""A person's social items as Character evidence (design/cognition-loop/22 §6),
+"""A person's social items as Character evidence (design/cognition-loop/observation.md §6),
 on the session path: the real `SqlSocialStreamStore` read, `PersonEvidence`'s
 count, read and cursor, the `<social_items>` block and `character_revise`.
 

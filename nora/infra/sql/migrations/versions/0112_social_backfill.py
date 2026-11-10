@@ -1,6 +1,6 @@
 """social_poll: the back-fill's pages and where each member's back-fill stands.
 
-design/cognition-loop/22-social-stream.md §7. A back-fill page is a
+design/cognition-loop/observation.md §7. A back-fill page is a
 `social_poll` row of stage `backfill`, and `cursor` is where the next page
 starts (null: the walk ended on that page). A member's back-fill stands at the
 cursor of their latest `backfill` row that read a page, so the progress is

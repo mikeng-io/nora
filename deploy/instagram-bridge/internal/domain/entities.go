@@ -200,7 +200,7 @@ type TimelineItem struct {
 }
 
 // ItemCounts is a post's or reel's counts as the timeline node carries them
-// (design/cognition-loop/22-social-stream.md §5 `social_item_count`). Each
+// (design/cognition-loop/observation.md §5 `social_item_count`). Each
 // field is nil when the node did not carry it readably: unknown, never 0.
 // LikesHidden is the author's `like_and_view_counts_disabled`.
 type ItemCounts struct {

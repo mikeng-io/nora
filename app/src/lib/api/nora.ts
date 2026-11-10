@@ -28,7 +28,7 @@ export type Status = z.infer<typeof StatusSchema>;
 // `profile` is optional: only a backend running the Profile switch
 // (`[memory.profile] read`) sends it — the caller's own account per unit, every
 // chain head with its state, the evidence behind each line, and the open
-// disputes (cognition-loop/50 §4).
+// disputes (cognition-loop/data.md §4).
 export const ProfileEvidenceSchema = z.object({
   ref: z.string(),
   kind: z.enum(["message", "episode", "social", "rollup", "unknown"]),

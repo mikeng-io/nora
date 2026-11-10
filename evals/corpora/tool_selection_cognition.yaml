@@ -243,7 +243,7 @@ cases:
     metadata: {tools: [memo_create, note_set_status], not_tools: [note_create]}
     snapshot: *room_a
 
-  # ---- `social_read` (design/cognition-loop/22 §6, the map's `social_items`):
+  # ---- `social_read` (design/cognition-loop/observation.md §6, the map's `social_items`):
   # a member's recorded stories, posts and reels, against the reads it is
   # confusable with. The input is the sentence a live agenda's `<social>` row
   # carries (`nora.language.cognition_render._social_row`: «<name> posted

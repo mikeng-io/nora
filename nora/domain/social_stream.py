@@ -1,5 +1,5 @@
 """The social stream's vocabulary: one source interface per network, the
-decision a probe makes (design/cognition-loop/22-social-stream.md §2, §3), and
+decision a probe makes (design/cognition-loop/observation.md §2, §3), and
 when a story frame's bytes may go (§5).
 
 Pure: no I/O. `SocialSource` (`nora.domain.ports`) is the port; the types a
@@ -272,7 +272,7 @@ class Member:
 @dataclass(frozen=True)
 class ItemCounts:
     """What a post's or reel's audience did, as the author's grid shows it
-    (design/cognition-loop/22-social-stream.md §5, `social_item_count`).
+    (design/cognition-loop/observation.md §5, `social_item_count`).
 
     Each count is None when the read did not carry it (an absent key, an
     older bridge, a null field): unknown, never 0. `likes_hidden` is the
@@ -594,7 +594,7 @@ def bytes_due(
 
 @dataclass(frozen=True)
 class RecordedItem:
-    """One recorded item as a reader is shown it (design/cognition-loop/22 §6):
+    """One recorded item as a reader is shown it (design/cognition-loop/observation.md §6):
     what it is, when it was posted, its caption, where it was tagged, and the
     readings of its media (each medium's title and description, in its
     order; empty while none is perceived). Never the account, the tagged or

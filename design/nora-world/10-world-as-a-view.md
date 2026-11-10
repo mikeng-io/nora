@@ -8,8 +8,8 @@ status: proposed
 governance: pre-governance-input
 edges:
   - {dst: 00-overview.md, rel: realizes, provenance: asserted}
-  - {dst: ../cognition-loop/05-data-model.md, rel: depends_on, provenance: asserted}
-  - {dst: ../cognition-loop/10-tiers.md, rel: depends_on, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: depends_on, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: depends_on, provenance: asserted}
 ---
 
 # The world as a View of the Notebook
@@ -18,7 +18,7 @@ edges:
 
 The unit is the read boundary (DEC-231), and a boundary is drawn by scope,
 never by a filter inside it: lineage stays built and `[lineage] mode` stays
-`off` (operator, 2026-10-03, `design/cognition-loop/10-tiers.md` «Lineage
+`off` (operator, 2026-10-03, `design/cognition-loop/data.md` «Lineage
 decides who may see a row»). So the world follows the unit, not the room:
 
 - **Each unit has its own world.** Its rooms are districts of that world, and

@@ -4260,7 +4260,7 @@ async def build_dependencies(
                 "stream, so no summons will ever be received",
             )
 
-    # The social stream's poller (design/cognition-loop/22-social-stream.md):
+    # The social stream's poller (design/cognition-loop/observation.md):
     # built here, started by `nora/__main__.py`, because the eval subject
     # composes this graph too and must not read members' accounts through the
     # deployment's login. `[social.poll] enabled` needs `[social.instagram]`
@@ -4425,7 +4425,7 @@ async def build_dependencies(
         # `[participation]` has a way to learn this.
         log.error(
             "participation.enabled = true but relevance_gate.enabled = false — "
-            "NOTHING will happen: since design/dreamer-agent-loop/36 the "
+            "NOTHING will happen: since design/cognition-loop/proactive.md the "
             "quiescence trigger and the room policy are the gate's, so with the "
             "gate off no window is ever noted, judged or turned into a turn. "
             "Set [relevance_gate] enabled = true (it ships in shadow mode)."
@@ -4722,7 +4722,7 @@ async def build_dependencies(
                     evidence=PersonEvidence(
                         store=SqlCharacterEvidence(engine), keys=person_keys,
                         # Their social items are evidence too (design/
-                        # cognition-loop/22 §6), read whether or not the poller
+                        # cognition-loop/observation.md §6), read whether or not the poller
                         # runs, opted-out persons left out by the store.
                         social=readable_social_store(engine, persons),
                         former_ids=persons.former_ids_for,

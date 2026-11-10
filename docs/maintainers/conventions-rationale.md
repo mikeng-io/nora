@@ -435,8 +435,8 @@ tier.** Both are gone: the code is deleted, the decision-index rows are marked
 (never renumbered), and every design node and spec that describes them carries a
 `DEPRECATED` banner. **Their database tables are NOT dropped** — the code goes,
 the schema stays, and dropping them is a separate explicit decision. The evidence
-that decided it is `design/dreamer-agent-loop/20-knowledge-tier.md` §0; the issue
-is #115. Nothing under `design/dreamer-agent-loop/` numbered 20, 21, 23, 24, 25,
+that decided it is `design/cognition-loop/data.md` §0; the issue
+is #115. Nothing under `design/cognition-loop/` numbered 20, 21, 23, 24, 25,
 28, 31 or 32 describes code that exists.
 
 **Deprecated 2026-09-08 — the note tier's entity-resolution chain and the
@@ -513,11 +513,11 @@ and was not reached for until the third rewrite.
 collector, how to instrument a model call, how to read it back — is
 `docs/observability.md`. This section is why the rules are what they are.)*
 
-`design/dreamer-agent-loop/02-instrument-blindness.md` is the catalogue: eight
+`design/cognition-loop/execution.md` is the catalogue: eight
 layers where an instrument could not observe the thing it existed to observe,
 plus the silent-match family one level down — the instruments we use to FIND
 those layers returning a positive-looking answer without ever engaging.
-`design/dreamer-agent-loop/09-measurement.md` is where the bundle gives that
+`design/cognition-loop/execution.md` is where the bundle gives that
 discipline a home for its own change. Neither is repeated here. This section
 carries the eight rules and the measurement behind each.
 

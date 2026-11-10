@@ -7,7 +7,7 @@ timestamp: '2026-10-29'
 edges:
   - {dst: 27-the-memory-is-a-graph, rel: supersedes, provenance: asserted}
   - {dst: ../notebook-memory-types/00-design.md, rel: amends, provenance: asserted}
-  - {dst: ../cognition-loop/30-cognition.md, rel: amends, provenance: asserted}
+  - {dst: ../cognition-loop/session.md, rel: amends, provenance: asserted}
   - {dst: 28-provenance, rel: depends_on, provenance: asserted}
   - {dst: 50-learning-from-acts, rel: depends_on, provenance: asserted}
 ---

@@ -74,20 +74,20 @@ edges:
   - {src: 32-platform-observations, dst: 27-the-memory-is-a-graph, rel: extends, provenance: operator-requested}
   - {src: 32-platform-observations, dst: 29-one-cognition-session, rel: extends, provenance: operator-requested}
   - {src: 32-platform-observations, dst: ../platform-bridges/02-wire-and-platforms.md, rel: amends, provenance: proposed}
-  - {src: 00-intent, dst: ../cognition-loop/05-data-model, rel: depends_on, provenance: asserted}
-  - {src: 00-intent, dst: ../cognition-loop/10-tiers, rel: depends_on, provenance: asserted}
-  - {src: 00-intent, dst: ../cognition-loop/80-prior-art, rel: extends, provenance: asserted}
+  - {src: 00-intent, dst: ../cognition-loop/data.md, rel: depends_on, provenance: asserted}
+  - {src: 00-intent, dst: ../cognition-loop/data.md, rel: depends_on, provenance: asserted}
+  - {src: 00-intent, dst: ../cognition-loop/README.md, rel: extends, provenance: asserted}
   - {src: 00-intent, dst: ../conversational-recall/00-intent, rel: depends_on, provenance: asserted}
   - {src: 00-intent, dst: ../group-situation/20-context-awareness-target-shape, rel: follows, provenance: asserted}
   - {src: 10-honcho-audit, dst: 00-intent, rel: depends_on, provenance: asserted}
-  - {src: 20-embedding-bakeoff, dst: ../dreamer-agent-loop/24-embedding-seam, rel: extends, provenance: asserted}
+  - {src: 20-embedding-bakeoff, dst: ../cognition-loop/data.md, rel: extends, provenance: asserted}
   - {src: 20-embedding-bakeoff, dst: ../conversational-recall/10-findings, rel: depends_on, provenance: asserted}
-  - {src: 15-memory-map, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
+  - {src: 15-memory-map, dst: ../cognition-loop/data.md, rel: extends, provenance: asserted}
   - {src: 18-extraction, dst: 00-intent, rel: extends, provenance: asserted}
   - {src: 18-extraction, dst: 10-honcho-audit, rel: depends_on, provenance: asserted}
   - {src: 18-extraction, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
-  - {src: 18-extraction, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
-  - {src: 18-extraction, dst: ../cognition-loop/25-rollup, rel: extends, provenance: asserted}
+  - {src: 18-extraction, dst: ../cognition-loop/data.md, rel: extends, provenance: asserted}
+  - {src: 18-extraction, dst: ../cognition-loop/observation.md, rel: extends, provenance: asserted}
   - {src: 31-build-one-session, dst: 29-one-cognition-session, rel: details, provenance: asserted}
   - {src: 29-one-cognition-session, dst: 27-the-memory-is-a-graph, rel: supersedes, provenance: asserted}
   - {src: 29-one-cognition-session, dst: 28-provenance, rel: depends_on, provenance: asserted}
@@ -100,17 +100,17 @@ edges:
   - {src: 27-the-memory-is-a-graph, dst: 18-extraction, rel: supersedes, provenance: asserted}
   - {src: 27-the-memory-is-a-graph, dst: 40-prior-art, rel: depends_on, provenance: asserted}
   - {src: 27-the-memory-is-a-graph, dst: 47-character-dimensions, rel: depends_on, provenance: asserted}
-  - {src: 27-the-memory-is-a-graph, dst: ../cognition-loop/30-cognition, rel: extends, provenance: asserted}
-  - {src: 27-the-memory-is-a-graph, dst: ../cognition-loop/10-tiers, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: ../cognition-loop/session.md, rel: extends, provenance: asserted}
+  - {src: 27-the-memory-is-a-graph, dst: ../cognition-loop/data.md, rel: extends, provenance: asserted}
   - {src: 27-the-memory-is-a-graph, dst: ../culture-tier/00-overview, rel: extends, provenance: asserted}
   - {src: 27-the-memory-is-a-graph, dst: ../self-growth/40-lessons, rel: extends, provenance: asserted}
   - {src: 25-memory-graph, dst: 15-memory-map, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: 20-embedding-bakeoff, rel: depends_on, provenance: asserted}
   - {src: 25-memory-graph, dst: ../context-plan/15-what-the-composer-decides, rel: follows, provenance: asserted}
-  - {src: 30-identity-and-character, dst: ../cognition-loop/12-schemas, rel: extends, provenance: asserted}
-  - {src: 30-identity-and-character, dst: ../cognition-loop/50-character-and-standing, rel: extends, provenance: asserted}
+  - {src: 30-identity-and-character, dst: ../cognition-loop/data.md, rel: extends, provenance: asserted}
+  - {src: 30-identity-and-character, dst: ../cognition-loop/data.md, rel: extends, provenance: asserted}
   - {src: 35-persona, dst: 30-identity-and-character, rel: supersedes, provenance: asserted}
-  - {src: 35-persona, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
+  - {src: 35-persona, dst: ../cognition-loop/data.md, rel: extends, provenance: asserted}
   - {src: 45-persona-adaptor, dst: 35-persona, rel: depends_on, provenance: asserted}
   - {src: 45-persona-adaptor, dst: ../self-growth/10-character, rel: supersedes, provenance: asserted}
   - {src: 47-character-dimensions, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
@@ -124,5 +124,5 @@ edges:
   - {src: 70-honcho-cutover, dst: 00-intent, rel: realizes, provenance: asserted}
   - {src: 76-typed-identity-build, dst: 75-typed-identity, rel: realizes, provenance: asserted}
   - {src: 75-typed-identity, dst: 45-persona-adaptor, rel: extends, provenance: asserted}
-  - {src: 40-prior-art, dst: ../cognition-loop/80-prior-art, rel: extends, provenance: asserted}
+  - {src: 40-prior-art, dst: ../cognition-loop/README.md, rel: extends, provenance: asserted}
 ---

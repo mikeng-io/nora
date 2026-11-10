@@ -73,7 +73,7 @@ reopen the closed set rather than adding an arbitrary attribute bag.
 
 The room/unit prose path has the same gap as person traits: the current
 [culture objective](../../nora/dreamer/objectives/culture.md) requires the body
-to be prose with “No headings”. [12 §4](../cognition-loop/12-schemas.md#4-character)
+to be prose with “No headings”. [12 §4](../cognition-loop/data.md)
 proposed sections on 2026-09-28 for person, room, unit and Nora, but those
 Character headings were not built; §4a's proposed Lessons headings are not
 an implementation receipt either. A design table alone does not give readers

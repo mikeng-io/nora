@@ -286,7 +286,7 @@ including memory.**
 
 The tier is a Dreamer adaptor, and what a Dreamer adaptor is for is deriving
 across the stores Nora already holds rather than restating the one corpus it
-was handed (`design/dreamer-agent-loop/03-no-agent-loop §7`). So the room's
+was handed (`design/cognition-loop/session.md §7`). So the room's
 batch is one input among several — with the account written last time, the
 room's `standing`, what the room has open, and what memory holds about the
 people in it (`01-the-adaptor §1.2`). DEC-182 is narrowed accordingly: it

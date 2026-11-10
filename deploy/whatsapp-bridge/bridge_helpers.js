@@ -702,7 +702,7 @@ export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, rec
   // A REACTION or a REVOKE (delete for everyone) is not a message: it names
   // the message it touches and says nothing itself. Emitted as its own event
   // type so Nora records it BESIDE that message, never as a transcript line
-  // (design/cognition-loop/20-observe.md §1). Both used to fall through to
+  // (design/cognition-loop/observation.md §1). Both used to fall through to
   // the empty-turn drop below and were lost.
   const who = {
     id: msg.key.id || null,

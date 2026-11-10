@@ -33,14 +33,14 @@ replacement has measured at least as well.
 | **1. Every turn keeps a record** | the fire path keeps its trace; `CognitionAgentRunner` returns its exchange and the session persists it; the turn-record view built from the traces, with each item's recorded disclosure requirements; `tool_call_log` and `recall_lookups` unchanged; the handle on her own transcript rows ([30](30-turn-records.md) §3); the `turn(...)` cite in the validator | rows written for tag, fire and Cognition turns, read back on the deploy host; the per-item lineage negatives ([40](40-verification.md) §5); the handle on her rows changes every prompt that renders her rows, so the eval suite runs before and after it |
 | **2. The ledger, beside today's Standing** | the decision, commitment and thread tables and their revision chains, room and unit scope, ops through the one validator with a required base and an atomic compare-and-append (ledger ops only; legacy paragraph writes keep today's optional base until step 3), the render ([20](20-the-ledger.md) §5); the `thread` argument on `load_transcript` and `room_read`; the old paragraph still rendered | retention test ([40](40-verification.md) §4) exact; the lineage and stale-write negatives (§5); `tool_selection` for the `thread` argument (§6) |
 | **3. The writers switch** | the debrief emits ops instead of a paragraph (a doctrine change to `nora/dreamer/objectives/standing-debrief.md`, eval-gated); the tag-path op tool; Cognition's `standing_revise` emits ops | work recall and topic recall beat master (§1, §3); `tool_selection` for the op tool (§6) |
-| **4. The paragraph and the working set retire** | `Where it stands` and `Found, not yet given` stop being written and rendered; existing rows still read back and are never rewritten ([12-schemas](../cognition-loop/12-schemas.md) §6's rule); `rebuild_state` deleted | the step-3 numbers hold with the paragraph gone |
+| **4. The paragraph and the working set retire** | `Where it stands` and `Found, not yet given` stop being written and rendered; existing rows still read back and are never rewritten ([12-schemas](../cognition-loop/data.md) §6's rule); `rebuild_state` deleted | the step-3 numbers hold with the paragraph gone |
 | **5. `recall_lookups` retires** | the turn-record read tool ([30](30-turn-records.md) §5) ships; `recall_lookups` is removed; DEC-112 amended to name the ledger and the read as her evidence; the `ToolCallLog` hook and its table retire or stay by the open question below | being contradicted does not regress (§2); `tool_selection` for the read (§6) |
 
 ## Superseded and amended
 
 - [standing-compact 30](../standing-compact/30-working-set.md): the working set
   becomes a decision's `Options` (step 4).
-- [12-schemas](../cognition-loop/12-schemas.md) §5: room Standing's sections
+- [12-schemas](../cognition-loop/data.md) §5: room Standing's sections
   and the unit sections are replaced by the three entry kinds; person Standing
   is unchanged. A pointer goes into that node when step 2 lands.
 - DEC-112 (step 5), by its own decision row at merge time

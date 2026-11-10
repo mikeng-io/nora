@@ -269,7 +269,7 @@ func synthUsernameLookupAmbiguous() []*slidetypes.SearchResult {
 func synthPK(n int) string { return fmt.Sprintf("9%017d", n) }
 
 // synthStoryJSON is a `PolarisStoriesV3ReelPageStandaloneQuery` answer in the
-// S0 shape (design/cognition-loop/22-social-stream.md §1a): the reel's own
+// S0 shape (design/cognition-loop/observation.md §1a): the reel's own
 // `expiring_at` null, each frame's its own.
 func synthStoryJSON() string {
 	return `{"data":{"xdt_api__v1__feed__reels_media":{"reels_media":[{

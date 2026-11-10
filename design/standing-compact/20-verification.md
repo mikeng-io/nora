@@ -69,7 +69,7 @@ samples, never as a rate from one draw.
 | reading | healthy | reopens |
 |---|---|---|
 | debrief model calls per fold, in Langfuse | 1 (2 on a consolidate retry) | anything else |
-| `nora_debrief_seconds` p95 | ≤ 5s ([26 §5](../dreamer-agent-loop/26-standing.md)) | above it: the larger tool results cost the slot; lower the bound |
+| `nora_debrief_seconds` p95 | ≤ 5s ([26 §5](../cognition-loop/data.md)) | above it: the larger tool results cost the slot; lower the bound |
 | `nora_standing_overflow_refusals_total` | occasional | constant: the working set crowds the cap; revisit `max_chars` or what belongs |
 | stale clauses in `standing` | none older than a few days re-affirmed as current | the ratchet §10-changes §1 names: reconsider a bound |
 | `nora_debrief_clips_total{block="tool_result"}` | falls sharply from today's rate | unchanged: the bound is not where the results are |

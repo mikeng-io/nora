@@ -88,7 +88,7 @@ the old one.
 | `supersedes` | uuid | the line it replaces, or null |
 | `support_count` | int | how many distinct citations have supported it over its life |
 | `last_supported_at` | bigint | the newest evidence that supported it |
-| `unit`, `exclude_persons`, `as_of` | | today's derived-row columns (cognition-loop/10 §3); scope is the unit ([35](35-persona.md) §3; the `lineage` column stays computed but `[lineage]` stays off) |
+| `unit`, `exclude_persons`, `as_of` | | today's derived-row columns (cognition-loop/data.md §3); scope is the unit ([35](35-persona.md) §3; the `lineage` column stays computed but `[lineage]` stays off) |
 | `written_by_session` | text | the adaptor run that wrote it |
 
 The lines are also index nodes, and their citations, `about`, `supersedes`
@@ -135,7 +135,7 @@ confirming one early cannot free a slot for another.
 
 `Accounts` (platform identities) are rendered from `identity.toml` and are
 never a line a model writes (30 §3). **A collective's names** are `name`
-lines; Culture's `Names and where they came from` section (cognition-loop/12
+lines; Culture's `Names and where they came from` section (cognition-loop/data.md
 §4) is retired into them. A collective's members stay the roster's
 (`room_members`). Over a cap, the write must retire a line in the same call,
 and the refusal says which cap.
@@ -145,7 +145,7 @@ and the refusal says which cap.
 > 2026-10-22 (external path proposed; operator policy decided): [47's composition ladder](47-character-dimensions.md#the-composition-ladder--observations-to-checked-explanations) extends the independent hypothesis judge's evidence sources below to retained external evidence, with query/source/time provenance. It preserves prediction-window verdicts and unknown on unavailable evidence; the outbound payload rule is accepted, and the operator’s location decision in 47 admits stored named-place claims with the code-set flag that keeps the existing room location setting working. No live lookup or verdict path changes here.
 
 **This is the one amended "allowed in" table for Persona** (2026-10-15); it
-amends cognition-loop/10 §4 for this tier, and [35](35-persona.md) §1 defers
+amends cognition-loop/data.md §4 for this tier, and [35](35-persona.md) §1 defers
 to it.
 
 | mode | allowed in | must cite | refused when |
@@ -156,7 +156,7 @@ to it.
 | `abduced` | hypothesis | at least one current `induced` trait it explains, and a `prediction` | no prediction; it explains no induced trait; the prediction names no observable or no window |
 
 **Authored lines** (names and accounts from `identity.toml`) carry no mode:
-`authored` is not one of cognition-loop/10 §4's six modes. They are rendered
+`authored` is not one of cognition-loop/data.md §4's six modes. They are rendered
 from the operator's files and never written as lines.
 
 A `told` line keeps the verb it was told with: "thinking about Japan" is not
@@ -167,7 +167,7 @@ weighing"), until a later statement settles them.
 
 **A hypothesis is a question, not a fact.** It renders under "open
 questions", and Nora may ask it. Assent ("yeah") never changes its verdict
-(cognition-loop/10 §4).
+(cognition-loop/data.md §4).
 
 **It is not graded by its writer** (amended 2026-10-15; the first version had
 each session grade its own predictions). The verdict is set when
@@ -214,7 +214,7 @@ dispute, or a told line about them by someone else.
 | **their response episodes** (how they answered Nora) | no | yes ([50](50-learning-from-acts.md)), under the same rule |
 | **their Rollup aggregates** (rhythm, ties) | no | yes, as evidence for induction |
 | open disputes and `remember` items about them | no | yes |
-| **their social items** (posts, reels and story frames: what each is, when posted, its caption and media readings, and a post's or reel's counts, [cognition-loop/22](../cognition-loop/22-social-stream.md) §5) | person Character only, at most 6 a wake (cognition-loop/22 §6) | yes, through the readable social store (opt-out and gone or hidden enforced), cited `social:<network>:<item id>`; an item has no room, so it counts as evidence in a unit that lists its author; named places become location-bearing Character input under the 2026-10-22 decision in [47](47-character-dimensions.md#decided-operator-2026-10-22), with a code-set flag preserving the existing room location read setting (phase 4; not built). The social input is added once step 6's adaptor lands |
+| **their social items** (posts, reels and story frames: what each is, when posted, its caption and media readings, and a post's or reel's counts, [cognition-loop/observation.md](../cognition-loop/observation.md) §5) | person Character only, at most 6 a wake (cognition-loop/observation.md §6) | yes, through the readable social store (opt-out and gone or hidden enforced), cited `social:<network>:<item id>`; an item has no room, so it counts as evidence in a unit that lists its author; named places become location-bearing Character input under the 2026-10-22 decision in [47](47-character-dimensions.md#decided-operator-2026-10-22), with a code-set flag preserving the existing room location read setting (phase 4; not built). The social input is added once step 6's adaptor lands |
 | the unit's room cultures | yes | yes |
 
 The mentions input is the one that matters most for Honcho parity (§6): today
@@ -273,7 +273,7 @@ a `conflict` that applies nothing. Prerequisites 1 to 3 are built:
 `PersonaCitable` maps each cited row and episode to `(ts, person, room)`,
 cites Rollup aggregates as `rollup:<kind>:<subject>` and episodes as
 `response:<id>`, and counts days in HKT. A member's social item is
-citable as `social:<network>:<item id>` (cognition-loop/22 §6), mapped to
+citable as `social:<network>:<item id>` (cognition-loop/observation.md §6), mapped to
 `(taken_at, author, no room)` and resolved only against the items the session
 was handed: evidence on its author's own account alone, and only while the
 author is listed in a room of the unit, as a `deduced` premise or an

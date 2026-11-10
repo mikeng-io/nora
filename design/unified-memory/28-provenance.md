@@ -7,7 +7,7 @@ timestamp: '2026-10-29'
 edges:
   - {dst: 27-the-memory-is-a-graph, rel: details, provenance: asserted}
   - {dst: 40-prior-art, rel: extends, provenance: asserted}
-  - {dst: ../cognition-loop/05-data-model.md, rel: informs, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: informs, provenance: asserted}
 ---
 
 # 28 · Provenance, referenced to W3C PROV

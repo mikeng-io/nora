@@ -1,6 +1,6 @@
 """social_item, social_poll, social_item_state — the social stream's Record.
 
-design/cognition-loop/22-social-stream.md §5. Three APPEND-ONLY tables: a
+design/cognition-loop/observation.md §5. Three APPEND-ONLY tables: a
 `social_item` is one story frame, post or reel, unique on `(network, item_id)`
 so a second insert of the same item does nothing (the dedupe) and carrying no
 unit column; a `social_poll` row is one probe or one read; a `social_item_state`

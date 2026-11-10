@@ -11,7 +11,7 @@
 
 ## Context
 
-Design 42 (`design/dreamer-agent-loop/42-note-format.md`) gives a note body a
+Design 42 (`design/notebook-memory-types/00-design.md`) gives a note body a
 schema: fixed sections (Decided, Open, Owed, Proposed, Ruled out), a line
 grammar, and a citation on every line to the messages the writer was shown.
 Appending to a schema body breaks it: the head stops being one note in the

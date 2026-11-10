@@ -1,7 +1,7 @@
 package instameow
 
 // The GraphQL documents the library does NOT carry: the web app's story read
-// and its profile timeline (design/cognition-loop/22-social-stream.md §1a).
+// and its profile timeline (design/cognition-loop/observation.md §1a).
 //
 // `graphql` (call.go) sends a document by its friendly name, and the library
 // looks the doc_id up in its own table (`graphql.GraphQLDocs`) and always

@@ -12,7 +12,7 @@ edges:
 ---
 
 > **Withdrawn 2026-09-26.** The operator ruled that remembering a dated plan
-> is the note tier's job (design/dreamer-agent-loop/42), not Standing's, so
+> is the note tier's job (design/../notebook-memory-types/00-design.md), not Standing's, so
 > Standing gets no `open_plans` field. The build (PR #565, never merged) was
 > closed; its one fix that stands alone, `scripts/standing_edit.py` keeping
 > `working_set` on an operator edit, landed separately. On today's fold the

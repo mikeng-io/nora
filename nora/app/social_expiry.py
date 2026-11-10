@@ -1,5 +1,5 @@
 """`StoryMediaExpiry` — a story frame's bytes deleted at their bound
-(design/cognition-loop/22-social-stream.md §5; 70-migration.md §9).
+(design/cognition-loop/observation.md §5; 70-migration.md §9).
 
 **What goes, and when** (`nora.domain.social_stream.bytes_due`). Only a story
 frame's media bytes: a post's and a reel's are never read here. They go
