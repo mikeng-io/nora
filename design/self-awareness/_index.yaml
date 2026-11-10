@@ -50,7 +50,7 @@ scope:
     - "Editing identity.md. Its not_here rule is kept, not relaxed"
     - "A generated capability block — the tool catalogue is that layer (DEC-150)"
     - "Social fetching (social_fetch, its per-network split, Instagram wiring) — design/instagram-adoption/"
-    - "Her profile on each network (avatar, display name, bio) — a separate bundle; appearance for drawing herself is design/self-reference/ (DEC-193)"
+    - "Her profile on each network (avatar, display name, bio) — a separate bundle; appearance for drawing herself is design/self-reference/README.md (DEC-193)"
 operator_decisions:
   - "D1 unit boundary for <presence>/room_list/room_read — DECIDED B (2026-09-23): this unit by name, other units by existence only, read_room never crosses a unit"
   - "D2 whether <presence> renders on the proactive loop — DECIDED yes (2026-09-23)"

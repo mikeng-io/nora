@@ -42,7 +42,7 @@ identifies current integration/validation attention, not a new execution order.
 | Keep receiving and recover work across application releases | [existing #422](https://github.com/mikeng-io/nora/issues/422), [bridges](../../design/platform-bridges/00-contract.md) | Reuse Validating/Now. Source includes standalone bridges/durable handoff. Retain pending failure-window, recreation, platform and installed-wrapper proof as acceptance; design frontmatter alone cannot roll delivery back to not-built. |
 | Join Telegram through the same platform contracts | [observation coverage](../../design/platform-observations/01-coverage.md), [platform adoption questions](../../design/platform-observations/_index.yaml) | Own outcome, Proposed/Later. First decide bot versus client mode and required account permissions/capabilities. Then trace identity/policy, ingest, replies/media, observations and recovery end to end. No account creation, token request or implementation is authorized by this card. |
 | Inspect Nora's behavior and cost across deployments | [existing #440](https://github.com/mikeng-io/nora/issues/440), [observability](../observability.md) | Reuse Validating/Now. SigNoz code migration is source-delivered; retained logs, four-producer correlation, usage/cost and installed telemetry acceptance remain evidence questions. Do not declare production cutover from merged source. |
-| Consistent Mini/adult identity and usable modeled forms | [existing #245](https://github.com/mikeng-io/nora/issues/245), [representations](../../design/self-reference/07-native-and-embodied-form.md), [Mini](../../design/self-reference/09-mini08-balanced.md) | Reuse Planned/Later. Approved 2D references and recent social artwork are delivered source assets. Orthographic consistency, mesh, rig and animation remain separately measured deliverables. Retain current Mini runtime direction. |
+| Consistent Mini/adult identity and usable modeled forms | [existing #245](https://github.com/mikeng-io/nora/issues/245), [representations](../../design/self-reference/modeling.md), [Mini](../../design/self-reference/identity.md) | Reuse Planned/Later. Approved 2D references and recent social artwork are delivered source assets. Orthographic consistency, mesh, rig and animation remain separately measured deliverables. Retain current Mini runtime direction. |
 
 These are candidates/ongoing directions, not authority to execute them all.
 Implementation chooses a bounded slice against its canonical acceptance. Reopen
@@ -234,12 +234,12 @@ design/self-awareness/07-room-tools-plan.md
 design/self-growth/character.md
 design/self-growth/character.md
 design/self-growth/lessons.md
-design/self-reference/01-appearance-doctrine.md
-design/self-reference/02-canonical-assets.md
-design/self-reference/05-visual-identity-spec.md
-design/self-reference/07-native-and-embodied-form.md
-design/self-reference/08-bauhinia-human-form.md
-design/self-reference/09-mini08-balanced.md
+design/self-reference/identity.md
+design/self-reference/references.md
+design/self-reference/identity.md
+design/self-reference/modeling.md
+design/self-reference/identity.md
+design/self-reference/identity.md
 design/self-reference/_index.yaml
 design/standing-ledger/00-intent.md
 design/standing-ledger/10-what-standing-holds.md

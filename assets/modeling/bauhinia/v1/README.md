@@ -13,7 +13,7 @@ face/details sheets. This inspection establishes no engineering readiness.
 
 ## Production setting supersession — 2026-10-26
 
-The later [operator ruling](../../../../design/self-reference/09-mini08-balanced.md#production-setting-supersession--2026-10-26)
+The later [operator ruling](../../../../design/self-reference/identity.md)
 approves Mini Bauhinia as production direction and requires **2D anime for
 all non-3D uses of both forms**; stylized 3D PNGs serve Meshy inputs only.
 This supersedes the earlier same-day modeling-only outfit restriction.
@@ -34,11 +34,11 @@ forms; no new identities or geometry/rig approval.
 ## Earlier modeling-only authority — superseded later on 2026-10-26
 
 The [adult original's repository copy](../../../nora-human-bauhinia-reference.png)
-and [approved adult specification](../../../../design/self-reference/08-bauhinia-human-form.md)
+and [approved adult specification](../../../../design/self-reference/identity.md)
 remain authoritative for the adult face, proportions, silhouette and outfit.
 The operator-approved [Mini style study](mini-style-study.png) authorizes
 Bauhinia clothing for **this modeling pack only**;
-[option08](../../../../design/self-reference/09-mini08-balanced.md) still governs
+[option08](../../../../design/self-reference/identity.md) still governs
 Mini face language and proportions. This dated exception permits the outfit
 transfer; the adult modeling-base ruling alone did not authorize it.
 

@@ -74,4 +74,4 @@ deleted the last generated capability block for exactly that reason.
   as on turns that answer a person (`02`).
 - **Her profile on each network** (avatar, display name, bio) is a separate
   bundle, not this one. Her *appearance* for drawing herself is
-  `design/self-reference/` (DEC-193, designed, not built).
+  `design/self-reference/README.md` (DEC-193, designed, not built).

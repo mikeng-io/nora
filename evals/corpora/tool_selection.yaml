@@ -1000,7 +1000,7 @@ cases:
   # expected Saturday moves with the day the case runs. If the deployment's
   # `[image_gen]` is enabled, each draw spends one provider call, as
   # `route_generate_image` already does. Run on norty 2026-09-24 at n=5 per
-  # arm; the numbers are in design/self-reference/06 §10 and §11.
+  # arm; the numbers are in design/self-reference/references.md and §11.
   #
   # The self case also fails on a prompt that gives her only a blank
   # backdrop (2026-09-24, live on WhatsApp): a prompt restating the

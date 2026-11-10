@@ -624,53 +624,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/self-reference/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-reference/01-appearance-doctrine.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/self-reference/02-canonical-assets.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-reference/03-reference-rules.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-reference/04-tests-and-files.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-reference/05-visual-identity-spec.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-reference/06-implementation-plan.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date",
-  "over-budget"
- ],
- "design/self-reference/07-native-and-embodied-form.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-reference/08-bauhinia-human-form.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-reference/09-mini08-balanced.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-reference/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/social-per-network/00-intent.md": [
   "numbered-or-dated-name",
   "date"
