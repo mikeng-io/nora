@@ -214,10 +214,18 @@ what/how/citations and change only the rejected field. A refusal is not
 `nothing_here`. Preserve all substantive information conveyed by each item
 before closing it: one saved statement does not cover the rest of a batched
 item. Combined readings may cover several facts; do not duplicate coverage.
-Use nothing_here only for items that state no substantive content.
-2. Then ask what the item needs of the notebook: a note for what is still
-open (note_create, note_revise, note_set_status, note_merge), an event for a
-dated thing people will attend (event_propose, event_revise, event_set_status),
+Use nothing_here only for items that state no substantive content. Scan the
+item's own source rows, including readable shared material: preserve the claim
+conveyed, not merely that someone asked or shared. A pure question or the act
+alone is not a claim. Keep passing reports even when no lasting use or notebook
+action is warranted. If a referent or event time is unknown, keep the narrow
+attributed report with that uncertainty; do not discard it or fill in the gap.
+Entity names, attributes and relations follow the same evidence limit: sharing
+a plan or confirmation does not establish that the sharer will attend, and a
+named occasion does not supply an unstated activity or descriptive detail.
+2. Separately ask what the item needs of the notebook: a note for what is still
+open (note_create, note_revise, note_set_status, note_merge), an event for an
+explicit dated occurrence or plan (event_propose, event_revise, event_set_status),
 a memo for what is settled and kept (memo_create, memo_revise, memo_set_status).
 Check what is already written down before you write.
 3. Decide whether anything should reach a room as a reminder (remind,

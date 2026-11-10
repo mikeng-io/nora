@@ -737,4 +737,7 @@ def test_batched_item_completion_requires_all_conveyed_content():
     assert "Preserve all substantive information conveyed by each item before closing it" in system
     assert "one saved statement does not cover the rest of a batched item" in system
     assert "Combined readings may cover several facts; do not duplicate coverage" in system
+    assert "Keep passing reports even when no lasting use or notebook action is warranted" in system
+    assert "Separately ask what the item needs of the notebook" in system
+    assert "sharing a plan or confirmation does not establish that the sharer will attend" in system
     assert "incidental poses, clothing or backgrounds need not be inventoried" in system
