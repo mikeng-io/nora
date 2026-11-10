@@ -180,20 +180,20 @@
       "persona": 1
     }
   },
-  "design/unified-memory/10-honcho-audit.md": {
+  "design/unified-memory/README.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 12,
       "persona": 9
     }
   },
-  "design/unified-memory/15-memory-map.md": {
+  "design/unified-memory/README.md": {
     "reason": "Links to existing historical design filenames; no active retired terminology.",
     "matches": {
       "persona": 1
     }
   },
-  "design/unified-memory/18-extraction.md": {
+  "design/unified-memory/graph.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 1,
@@ -201,7 +201,7 @@
       "persona_write": 3
     }
   },
-  "design/unified-memory/25-memory-graph.md": {
+  "design/unified-memory/graph.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 14,
@@ -209,13 +209,13 @@
       "persona_dispute": 3
     }
   },
-  "design/unified-memory/27-the-memory-is-a-graph.md": {
+  "design/unified-memory/graph.md": {
     "reason": "Links to existing historical design filenames; no active retired terminology.",
     "matches": {
       "persona": 3
     }
   },
-  "design/unified-memory/30-identity-and-character.md": {
+  "design/unified-memory/profiles.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 11,
@@ -223,16 +223,16 @@
       "persona_dispute": 2
     }
   },
-  "design/unified-memory/35-persona.md": {
+  "design/unified-memory/profiles.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
-      "<path> design/unified-memory/35-persona.md": 1,
+      "<path> design/unified-memory/profiles.md": 1,
       "Persona": 24,
       "persona": 10,
       "persona_dispute": 1
     }
   },
-  "design/unified-memory/40-prior-art.md": {
+  "design/unified-memory/README.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 3,
@@ -240,10 +240,10 @@
       "persona": 8
     }
   },
-  "design/unified-memory/45-persona-adaptor.md": {
+  "design/unified-memory/profiles.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
-      "<path> design/unified-memory/45-persona-adaptor.md": 1,
+      "<path> design/unified-memory/profiles.md": 1,
       "PERSONA_COVERAGE": 1,
       "Persona": 25,
       "PersonaCitable": 1,
@@ -264,32 +264,32 @@
       "persona_write": 5
     }
   },
-  "design/unified-memory/47-character-dimensions.md": {
+  "design/unified-memory/profiles.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "persona": 9,
       "persona_verdict": 2
     }
   },
-  "design/unified-memory/50-learning-from-acts.md": {
+  "design/unified-memory/understanding.md": {
     "reason": "Links to existing historical design filenames; no active retired terminology.",
     "matches": {
       "persona": 1
     }
   },
-  "design/unified-memory/60-build-step-3.md": {
+  "design/unified-memory/graph.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 2
     }
   },
-  "design/unified-memory/65-build-step-3-vectors.md": {
+  "design/unified-memory/graph.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 2
     }
   },
-  "design/unified-memory/70-honcho-cutover.md": {
+  "design/unified-memory/README.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 10,
@@ -298,7 +298,7 @@
       "persona_reader": 1
     }
   },
-  "design/unified-memory/75-typed-identity.md": {
+  "design/unified-memory/profiles.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 6,
@@ -306,7 +306,7 @@
       "persona_write": 2
     }
   },
-  "design/unified-memory/76-typed-identity-build.md": {
+  "design/unified-memory/profiles.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 3,
@@ -318,7 +318,7 @@
       "persona_render": 1
     }
   },
-  "design/unified-memory/_index.yaml": {
+  "design/unified-memory/README.md": {
     "reason": "Links to existing historical design filenames; no active retired terminology.",
     "matches": {
       "persona": 12

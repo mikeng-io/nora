@@ -1,4 +1,4 @@
-"""memory_node: `persona_line`, one Persona account line (design/unified-memory/45 §1).
+"""memory_node: `persona_line`, one Persona account line (design/unified-memory/profiles.md §1).
 
 The switch (00 «Sequence» step 8): a line's text is embedded and searched like
 a note's; its citations, `about`, `supersedes` and `draws_on` are edges. No new

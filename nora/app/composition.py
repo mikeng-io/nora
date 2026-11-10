@@ -2652,7 +2652,7 @@ async def build_dependencies(
     lessons_reader: ActiveLessons | None = (
         ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
     )
-    # THE SWITCH (design/unified-memory/45 §5, 00 «Sequence» step 8): the
+    # THE SWITCH (design/unified-memory/profiles.md §5, 00 «Sequence» step 8): the
     # Profile accounts' read half — one store, read-only by the Protocol the
     # readers are typed against (`ProfileHeads` has `account_heads` and nothing
     # else), handed to the tag assembler, the fire path, the Cognition
@@ -3606,7 +3606,7 @@ async def build_dependencies(
         # Built once above: the assembler's pre-fetch holds the same one.
         memory_search=memory_search,
         # The graph surface's `remember` writes a Profile `told` line
-        # (design/unified-memory/45); wired with `memory_search`, never alone.
+        # (design/unified-memory/profiles.md); wired with `memory_search`, never alone.
         profile=(SqlProfileStore(
                     engine, screen=functools.partial(text_offence, content_checks=content_checks),
                     index=profile_index)
@@ -4802,7 +4802,7 @@ async def build_dependencies(
                 **profile_room_keys, **profile_unit_keys, **profile_nora_keys,
             })
 
-            # PROFILE · PERSON, in shadow (design/unified-memory/45 §4): one
+            # PROFILE · PERSON, in shadow (design/unified-memory/profiles.md §4): one
             # session per (unit, listed person), on the person's Character
             # wake plus a turn's `told` line; it writes `profile_line`, which
             # nothing renders until the switch. Inside the culture block: it

@@ -459,7 +459,7 @@ services:
     # the `honcho` network below, which holds Honcho's api and this one service.
     # docs/runbook.md §"Closing Honcho" has the order the steps must go in.
     #
-    # `embedder` (design/unified-memory/65-build-step-3-vectors.md V1): the
+    # `embedder` (design/unified-memory/graph.md V1): the
     # internal network that holds the embedding server and this one service.
     networks: [nora, honcho, embedder]
     logging:
@@ -893,7 +893,7 @@ services:
       retries: 5
 
   # embedder — the memory index's embedding model
-  # (design/unified-memory/65-build-step-3-vectors.md): Qwen3-VL-Embedding-2B,
+  # (design/unified-memory/graph.md): Qwen3-VL-Embedding-2B,
   # the Q4_K_M GGUF and its f16 projector, served by llama.cpp's server with
   # `--embedding --pooling last`, the setup the bake-off measured (#22, #24:
   # ~3.06 GB peak RSS, ~0.4 s a text and ~3.4 s an image on norty's CPU).

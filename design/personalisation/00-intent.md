@@ -70,7 +70,7 @@ the older, well-studied family:
 | who does things with whom | likely attendee sets | `rollup_tie` | yes |
 | what they play | genres, hours, who with | Steam current game (`nora/infra/steam.py`), Discord rich presence (`nora/platform/discord/discord_presence.py`); the play-profile rollup ([25](../cognition-loop/observation.md) §6) | live reads yes; the rollup is designed |
 | plans | the event, its RSVPs, its open venue | `events`, `event_rsvps`, notes | yes |
-| how her proposals land | replies, reactions, edits, silence | `rollup_response` episodes, with responders; recommendation sends need a separate decision link ([learning-from-acts](../unified-memory/50-learning-from-acts.md) §1) | yes |
+| how her proposals land | replies, reactions, edits, silence | `rollup_response` episodes, with responders; recommendation sends need a separate decision link ([learning-from-acts](../unified-memory/understanding.md) §1) | yes |
 | candidates | venues and travel times; games | `nora/infra/routes/directions.py`, `nora/infra/transit/arrivals.py`, `place_info`; a game catalogue source | venues yes; games new |
 
 ## 5. Who does what
@@ -114,7 +114,7 @@ frame someone else set, never a list Nora proposes.
 **Inventory evidence.** Retained fact validity columns are
 `nora/infra/sql/schema.py:2015`; deletion of their writers is
 `design/09-decision-index.md:268`. Extraction are write-only today
-(`design/unified-memory/18-extraction.md`), so their consumer is named build
+(`design/unified-memory/graph.md`), so their consumer is named build
 work. Occupancy bins and person/place rhythm differ at
 `nora/infra/sql/schema.py:517` and `nora/infra/sql/schema.py:543`; the forecast
 reads stays at `nora/domain/mobility_forecast.py:235`. The built social

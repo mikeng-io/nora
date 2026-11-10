@@ -9,7 +9,7 @@ edges:
   - {dst: 10-relations, rel: depends_on, provenance: asserted}
   - {dst: ../standing-ledger/50-migration.md, rel: amends, provenance: asserted}
   - {dst: ../cognition-loop/session.md, rel: amends, provenance: asserted}
-  - {dst: ../unified-memory/29-one-cognition-session.md, rel: details, provenance: asserted}
+  - {dst: ../unified-memory/understanding.md, rel: details, provenance: asserted}
 ---
 
 # 20 · One Standing

@@ -2674,7 +2674,7 @@ class NoraProfileConfig(BaseModel):
 
 
 class ProfileConfig(BaseModel):
-    """`[memory.profile]`: the Profile sessions, in shadow (design/unified-memory/45 §4,
+    """`[memory.profile]`: the Profile sessions, in shadow (design/unified-memory/profiles.md §4,
     00 «Sequence» step 6). One Dreamer session per (unit, listed person), woken
     like the person's Character session (`[memory.profile.person] update_every_messages` and
     `[memory.profile] update_every_seconds`) and at once by a `told` line a turn wrote about them,

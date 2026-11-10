@@ -54,7 +54,7 @@ The profile may say *how* someone engages ("follows the qualifying sessions,
 tunes out the merchandise talk"), citing what shows it, and never states the
 interest alone. Two copies of "likes racing" would drift.
 
-Amended 2026-10-29 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md)
+Amended 2026-10-29 ([unified-memory/graph.md](../unified-memory/graph.md)
 §6b): the edge is `interested_in`, and its weight is its own evidence counted
 by code, not a Rollup row, because which messages are about a topic is a
 judgement. `likes` narrows to one specific thing.

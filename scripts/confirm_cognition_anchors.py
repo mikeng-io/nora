@@ -39,7 +39,7 @@ def scenarios() -> dict[int, str]:
     the code-test rows, so a stray table elsewhere can never rewrite a spec.
     """
     result = {}
-    doc = (ROOT / "design/unified-memory/31-build-one-session.md").read_text()
+    doc = (ROOT / "design/unified-memory/understanding.md").read_text()
     section = doc.split("## 2.", 1)[1].split("\n## ", 1)[0]
     for line in section.splitlines():
         columns = [c.strip() for c in line.split("|")]

@@ -6,16 +6,16 @@ tags: [nora, recommendations, likes, evidence, decay, social-engagement, presenc
 timestamp: '2026-10-25'
 edges:
   - {dst: ../cognition-loop/observation.md, rel: depends_on, provenance: asserted}
-  - {dst: ../unified-memory/35-persona.md, rel: depends_on, provenance: asserted}
+  - {dst: ../unified-memory/profiles.md, rel: depends_on, provenance: asserted}
 ---
 
 # 10 · Likes
 
 ## 1. Likes come from profiles
 
-> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): likes now read the memory graph's `likes` / `dislikes` relations (with evidence and speech act) and step 2's traits and guesses; constraints and dated plans read `plans`, `at` and relation validity. The separate constraint reader and its interval extraction below are superseded by step 1 of the Cognition loop; the scoring and decay are unchanged.
+> 2026-10-28 ([unified-memory/graph.md](../unified-memory/graph.md) §6a): likes now read the memory graph's `likes` / `dislikes` relations (with evidence and speech act) and step 2's traits and guesses; constraints and dated plans read `plans`, `at` and relation validity. The separate constraint reader and its interval extraction below are superseded by step 1 of the Cognition loop; the scoring and decay are unchanged.
 
-> 2026-10-29 ([notebook-memory-types/10](../notebook-memory-types/10-relations.md) §3, [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §6b): a person's **interest** in a subject is the graph's `interested_in` relation to a `topic` entity, weighted by its own evidence counted by code; `likes` / `dislikes` are a preference for one specific work, place or event. Personalisation reads both from the graph, never a profile line stating an interest; a profile line adds only *how* someone engages, citing what shows it.
+> 2026-10-29 ([notebook-memory-types/10](../notebook-memory-types/10-relations.md) §3, [unified-memory/graph.md](../unified-memory/graph.md) §6b): a person's **interest** in a subject is the graph's `interested_in` relation to a `topic` entity, weighted by its own evidence counted by code; `likes` / `dislikes` are a preference for one specific work, place or event. Personalisation reads both from the graph, never a profile line stating an interest; a profile line adds only *how* someone engages, citing what shows it.
 
 **Likes are a read view, not another store or writer.** Personalisation reads
 per-person profiles: **facts**, **traits**, **guesses (unconfirmed)**, under
@@ -51,7 +51,7 @@ block, make the calculation replayable.
 **Hard constraints are separate from likes scores.** Step 1 also builds a
 frame constraint reader over eligible original messages and extraction
 for explicit restrictions and dated plans. The extraction writer exists,
-but has no retrieval consumer yet (`design/unified-memory/18-extraction.md`);
+but has no retrieval consumer yet (`design/unified-memory/graph.md`);
 this reader and its interval extraction are new build work. It preserves the
 subject, source, assertion time, event interval, place and speech act. Only an
 explicit applicable restriction removes a candidate; a question, guess or

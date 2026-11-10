@@ -10,7 +10,7 @@ edges:
 
 # 40 · Lessons
 
-> 2026-10-28 (operator, ruled; [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#9-profiles-are-reshaped-in-the-loop-from-the-graph)): the `lessons` adaptor retires. Nora's lessons are reshaped by step 2 of the one Cognition loop when a `response` episode closes; `lesson_write` / `lesson_retire` move to that step.
+> 2026-10-28 (operator, ruled; [unified-memory/graph.md](../unified-memory/graph.md)): the `lessons` adaptor retires. Nora's lessons are reshaped by step 2 of the one Cognition loop when a `response` episode closes; `lesson_write` / `lesson_retire` move to that step.
 
 ## 1. The unit of evidence
 

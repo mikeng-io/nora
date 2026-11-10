@@ -158,7 +158,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("peer_card", 20, "person"),
     ("peer_history", 30, "person"),
     ("people_in_window", 35, "room"),
-    # THE PRE-FETCH (design/unified-memory/00 step 3b): what her memory holds
+    # THE PRE-FETCH (design/unified-memory/README.md step 3b): what her memory holds
     # that this message touches, searched by code from its own seeds. Beside
     # the memory of the people talking it will replace on the graph surface,
     # and before the unit's open questions. `turn`: it is searched from one

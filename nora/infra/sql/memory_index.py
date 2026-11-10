@@ -30,7 +30,7 @@ address or coordinates), a district's or a city's its name. A failure's
 `last_error` is the exception's CLASS only: a driver error's message carries
 the statement's parameters, which here are message bodies.
 
-**Place containment** (design/unified-memory/25-memory-graph.md §6a, 00
+**Place containment** (design/unified-memory/graph.md §6a, 00
 «Sequence» step 3a). A place lies in a district and a district in a city:
 `located_in` edges, from the areas a geocoder's structured address
 components name (`nora.domain.ports.PlaceArea`, stored beside the place: an
@@ -1089,7 +1089,7 @@ async def _place_in(
     geocoder gave (a public name, the only text a hub carries besides a
     venue's), and returns the edge to it for the caller, which owns it. The
     district's own edge to its city is `_district_cities`'. No area, no edge
-    (design/unified-memory/25-memory-graph.md §6a)."""
+    (design/unified-memory/graph.md §6a)."""
     if district:
         target = _area_id("district", district)
         await _area_hub(conn, target, district)
@@ -1177,7 +1177,7 @@ async def _project_character(conn: AsyncConnection, source_id: str) -> None:
     await _entry_edges(conn, "character", source_id, edges)
 
 
-# --- Profile (design/unified-memory/45 §1) -----------------------------------
+# --- Profile (design/unified-memory/profiles.md §1) -----------------------------------
 
 #: A profile line's episode citation, `response:<send id>`: the send's Record
 #: id, so the message's node. And its social citation, `social:<network>:<id>`.

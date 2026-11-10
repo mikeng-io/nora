@@ -1,4 +1,4 @@
-"""The Profile verdict judge (design/unified-memory/45 §3): a guess is
+"""The Profile verdict judge (design/unified-memory/profiles.md §3): a guess is
 never graded by the adaptor that wrote it, so the verdict is this adaptor's
 alone.
 

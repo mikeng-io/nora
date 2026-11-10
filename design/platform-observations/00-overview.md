@@ -14,7 +14,7 @@ table, tool, model occasion or live flag is changed by this document. Exact new
 field/table/tool signatures are resolved against the implementation when built.
 
 The operator asks for two connected deliverables: the actual memory-graph findings
-in [27 §17](../unified-memory/27-the-memory-is-a-graph.md#17-implementation-findings-and-longitudinal-understanding-2026-10-30),
+in [27 §17](../unified-memory/graph.md),
 and a complete path for useful platform metadata/data that Nora does not yet
 collect or see. Typing indicators are explicitly unwanted. Adding Telegram should
 add mappings and coverage, not a new platform-specific cognition workflow.
@@ -28,8 +28,8 @@ observations below require an explicit typed domain/wire extension; do not smugg
 poll votes or membership changes through empty messages. Keep existing transport
 choices; this document does not introduce a second bus or collector.
 
-[The memory map](../unified-memory/15-memory-map.md) owns Record, deterministic Rollup and interpreted
-Notebook. [27](../unified-memory/27-the-memory-is-a-graph.md) owns graph links/evidence; [29](../unified-memory/29-one-cognition-session.md)
+[The memory map](../unified-memory/README.md) owns Record, deterministic Rollup and interpreted
+Notebook. [27](../unified-memory/graph.md) owns graph links/evidence; [29](../unified-memory/understanding.md)
 owns interpretation and action in the unified session. Existing context assembly
 owns every model block. Reuse the existing Postgres stores, stimulus machinery,
 media custody/perception, graph read service and tools before adding anything.
@@ -173,7 +173,7 @@ does not predict its relevance.
 ## 6. What reaches Nora: automatic context and neutral tools
 
 Both surfaces read the same scoped, current projection and graph semantics.
-[27 §17](../unified-memory/27-the-memory-is-a-graph.md#17-implementation-findings-and-longitudinal-understanding-2026-10-30)
+[27 §17](../unified-memory/graph.md)
 F1/F2 must be addressed: richer data is ineffective if structural anchors disappear
 or automatic recall walks different relations from the explicit graph tools.
 

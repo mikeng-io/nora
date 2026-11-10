@@ -139,7 +139,7 @@ inconsistent; substring matching on a distinctive token is the robust primitive.
 
 ## Honcho Workspace
 
-> **Retiring (operator, 2026-10-16):** the workspace goes with Honcho at step 9 of `design/unified-memory/00-intent.md` «Sequence», and the unit becomes the only boundary (`design/unified-memory/35-persona.md` row 6). Until then this describes the code.
+> **Retiring (operator, 2026-10-16):** the workspace goes with Honcho at step 9 of `design/unified-memory/README.md` «Sequence», and the unit becomes the only boundary (`design/unified-memory/profiles.md` row 6). Until then this describes the code.
 
 > **Superseded 2026-09-28 (DEC-214):** one Honcho workspace per Nora
 > WORKSPACE (a group of units in `policy.toml` `[units]`, bound in

@@ -1,4 +1,4 @@
-"""Shared graph contract for design/unified-memory/27; no runtime wiring.
+"""Shared graph contract for design/unified-memory/graph.md; no runtime wiring.
 
 Entity ids are store-owned strings; event_entry is a Register row, event an
 entity. Evidence snapshots are hydrated by the caller from sources actually

@@ -5,7 +5,7 @@ It uses the existing Experiment, Judge client, bounded timeout, spend accumulato
 local OTel trace capture, Outcome/MeetsGrader and positions report. A frozen
 census has no writable subject: it does not create a sandbox, Honcho workspace,
 Nora reply, or config file. The writer and reply paths are unchanged. This is
-the coverage gate in `design/unified-memory/45-persona-adaptor.md` §6; the
+the coverage gate in `design/unified-memory/profiles.md` §6; the
 80-pair reply replay remains subsequent work. No formal coverage is claimed by
 building this instrument or by the independent synthetic writer acceptance.
 

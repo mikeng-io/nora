@@ -261,33 +261,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "ADR 0029 renamed this typed-tier file; this historical design or generated "
         "evidence citation resolves in git history. Current code uses profile names."
     ),
-    ('design/unified-memory/45-persona-adaptor.md', 'nora/language/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    (
-        'design/unified-memory/45-persona-adaptor.md',
-        'nora/language/persona_collective.py',
-    ): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('design/unified-memory/47-character-dimensions.md', 'nora/domain/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('design/unified-memory/47-character-dimensions.md', 'nora/infra/sql/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('design/unified-memory/47-character-dimensions.md', 'nora/language/persona_verdict.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('design/unified-memory/70-honcho-cutover.md', 'nora/infra/sql/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
     ('openwiki/concepts/persona-and-provenance.md', 'nora/domain/persona.py'): (
         "ADR 0029 renamed this typed-tier file; this historical design or generated "
         "evidence citation resolves in git history. Current code uses profile names."

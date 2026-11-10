@@ -1,5 +1,5 @@
 """The Profile write's rules (`nora.domain.profile.plan_write`), one test per
-rule of design/unified-memory/45 §2 and §3: each test fails if its rule is
+rule of design/unified-memory/profiles.md §2 and §3: each test fails if its rule is
 taken out. The store's transaction and CHECKs are `tests/infra/test_profile_store.py`.
 """
 

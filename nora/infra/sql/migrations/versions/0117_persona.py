@@ -1,6 +1,6 @@
 """persona, persona_line: one account per entity, kept as typed lines.
 
-design/unified-memory/45 §1-§3, 00 «Sequence» step 5. `persona` is the
+design/unified-memory/profiles.md §1-§3, 00 «Sequence» step 5. `persona` is the
 account and changes in place (`revision`, the compare-and-set a write is
 judged against), so it gets `nora_row_history` (0068's function).
 `persona_line` is APPEND-ONLY: a change inserts a row whose `supersedes`

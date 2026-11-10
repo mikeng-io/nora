@@ -118,7 +118,7 @@ from a complete index in which every node in scope was searched; `ok`.
 
 The floors, the cut and the `about` seed's score are set from the cosine
 spread measured on the backfilled index
-(`design/unified-memory/65-build-step-3-vectors.md` §6); the walk's other
+(`design/unified-memory/graph.md` §6); the walk's other
 constants are starting values.
 """
 
@@ -213,7 +213,7 @@ DEFAULT_DEPTH = "low"
 RELEVANCE_FLOOR = 0.1
 #: The floor of a seed scored by its cosine to the question: a dense seed
 #: and an exact hit past the pinned ones (and the `about` seed, which scores
-#: above it). Measured on the backfilled index (design/unified-memory/65 §6):
+#: above it). Measured on the backfilled index (design/unified-memory/graph.md §6):
 #: this model's cosines cluster high, the top 50's non-hits at 0.35 at the
 #: 10th percentile and up to 0.78; a known item ranked in the top 20 of its
 #: own query never scored under 0.387 (127 of 143 queries), and a query
@@ -255,7 +255,7 @@ PINNED_LIMIT = 5
 #: 2,500 found 115 for a quarter more text every call.
 PACKET_TOKENS = 2_000
 #: The pre-fetch block's budget (`nora.engagement.context`, design
-#: unified-memory/00 step 3b): the same cut as `memory_search`'s answer, run
+#: unified-memory/README.md step 3b): the same cut as `memory_search`'s answer, run
 #: from the message's own seeds before the turn, on a smaller budget because
 #: it rides every tag turn on the graph surface whether or not she needs it.
 #: Set from the same replay as `PACKET_TOKENS` (65 §6, 143 known items):

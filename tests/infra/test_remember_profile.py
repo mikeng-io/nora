@@ -1,5 +1,5 @@
 """`remember` on the memory graph's surface: a Profile `told` line
-(DEC-317, design/unified-memory/45 §3).
+(DEC-317, design/unified-memory/profiles.md §3).
 
 Through the real store and Postgres, so the line that lands is the one the
 judge passed: told by the speaker, citing the message that raised the turn,

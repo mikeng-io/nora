@@ -2,8 +2,8 @@
 
 - **Status:** superseded by [0029](0029-a-prompt-block-names-its-subject-and-author-by-id.md)
 - **Date:** 2026-10-21
-- **Note (2026-11-08):** the per-message extraction worker implementing design node 18's one-call-per-batch extraction was removed; step 1 of the Cognition loop per [design/unified-memory/27 §2](../../design/unified-memory/27-the-memory-is-a-graph.md#2-what-this-supersedes-and-why-the-old-reasons-are-answered) holds the reading role.
-- **Reverses, in part:** [design/unified-memory/45](../../design/unified-memory/45-persona-adaptor.md)'s "Persona" naming.
+- **Note (2026-11-08):** the per-message extraction worker implementing design node 18's one-call-per-batch extraction was removed; step 1 of the Cognition loop per [design/unified-memory/graph.md §2](../../design/unified-memory/graph.md) holds the reading role.
+- **Reverses, in part:** [design/unified-memory/profiles.md](../../design/unified-memory/profiles.md)'s "Persona" naming.
 - **Index:** a DEC number is taken at merge.
 
 ## Context
@@ -46,7 +46,7 @@ Building that target is outside this ADR's implementation.
 
 **The rename is deferred, not done.** Docs use the names above; existing code
 names stay until **one later migration PR**, before
-[design/unified-memory/00, «Sequence», step 8](../../design/unified-memory/00-intent.md).
+[design/unified-memory/README.md, «Sequence», step 8](../../design/unified-memory/README.md).
 The deferred scope includes `persona_line`, `persona_key`, `persona_dispute`,
 migrations 0117–0125, `nora/{domain,language,infra/sql,subject}/persona*.py`,
 `persona-*.md` objectives, `<persona_lines>` prompt blocks and `[persona]`

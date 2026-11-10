@@ -4,7 +4,7 @@ kind: objective
 version: 5
 applies_to: [profile_unit_adaptor]
 description: >-
-  The unit's own Profile (design/unified-memory/45 §4). Reads the
+  The unit's own Profile (design/unified-memory/profiles.md §4). Reads the
   lines the account holds, each room's current Culture account and the Record
   rows those cite, and on the first session the unit's prose Character
   account; writes typed lines (facts, traits, guesses) with their

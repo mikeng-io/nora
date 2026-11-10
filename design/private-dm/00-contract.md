@@ -1,6 +1,6 @@
 # Private DM — shared unit understanding, curated publication
 
-> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): the memory graph keeps this contract. One profile per person per unit is its per-unit pointer; a DM's view of its owner is composed at read time from each unit that lists them, never written across units; curation is now step 2 or step 3 of the one Cognition loop; and the DM build adds a private scope to the graph so what is derived only from private DM evidence is readable only in the owner's DM and by the bound curation session of 02 §4.
+> 2026-10-28 ([unified-memory/graph.md](../unified-memory/graph.md) §6a): the memory graph keeps this contract. One profile per person per unit is its per-unit pointer; a DM's view of its owner is composed at read time from each unit that lists them, never written across units; curation is now step 2 or step 3 of the one Cognition loop; and the DM build adds a private scope to the graph so what is derived only from private DM evidence is readable only in the owner's DM and by the bound curation session of 02 §4.
 
 Status: proposed, **not implemented**, revised 2026-10-21. The operator clarified
 that Persona and Cognition are shared within a unit; private conversations may
@@ -51,8 +51,8 @@ its bound DMs. Raw private evidence remains protected; the shared account holds
 only the understanding curated for shared use. Confidential details that cannot
 be published stay in private Record and remain available in authorised DMs.
 
-The [existing Persona contract](../unified-memory/35-persona.md) and
-[writer](../unified-memory/45-persona-adaptor.md) remain the baseline. This is a
+The [existing Persona contract](../unified-memory/profiles.md) and
+[writer](../unified-memory/profiles.md) remain the baseline. This is a
 proposed extension to their evidence/disclosure contract, not a claim that the
 current code already curates private sources safely. Hypotheses stay qualified
 questions with their existing grounding, prediction and retirement rules.

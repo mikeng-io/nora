@@ -1,5 +1,5 @@
 """The Profile adaptor, in shadow: one Dreamer session per (unit, person),
-writing typed lines through `profile_write` (design/unified-memory/45 §4).
+writing typed lines through `profile_write` (design/unified-memory/profiles.md §4).
 
 **Shadow** (45 §6, 00 «Sequence» step 6): it writes `profile_line` and
 nothing reads it. The Character head, `peer_card` and `peer_history` keep

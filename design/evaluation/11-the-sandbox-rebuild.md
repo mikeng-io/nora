@@ -83,7 +83,7 @@ The subject appends the invented arrivals using the roster's actual account, and
 seeds held birthday state through the canonical append-only Persona write API.
 A later stimulus clock is explicit in `sandbox_from_snapshot`; the ordinary
 exact-anchor clock guard remains unchanged. This exception measures the six
-invented vectors requested by design/unified-memory/75, and does not license
+invented vectors requested by design/unified-memory/profiles.md, and does not license
 synthetic edits to any other anchored corpus. Procedure: `evals/PERSONA_IDENTITY.md`.
 
 ## 1. What this replaces, and why twice was not enough

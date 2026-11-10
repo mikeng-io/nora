@@ -40,7 +40,7 @@ that and changes what the kinds ARE: the tiers were named after the items they
 held, so the items' names became the architecture. The kinds are named after
 **what kind of memory they are**. They organize
 use, writer authority and lifecycle; they do not exhaust the ontology of what
-Nora can understand. The [memory map](../unified-memory/15-memory-map.md) owns
+Nora can understand. The [memory map](../unified-memory/README.md) owns
 their place in the whole system, including profiles and graph/index ownership.
 Revision applies across kinds; a lesson is one possible result of learning,
 not a container every correction must enter.
@@ -122,7 +122,7 @@ Views) is written once.
    the ledger's thread was ("a pointer to a topic the room keeps returning
    to", [standing-ledger 20](../standing-ledger/20-the-ledger.md) §4), and it is the
    grounded signal personalisation weights by. Amended 2026-10-29
-   ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §6b): the
+   ([unified-memory/graph.md](../unified-memory/graph.md) §6b): the
    activity is counted by code from the judged `interested_in` relation's
    evidence, not built in the Rollup, because which messages are about a topic
    is a judgement.
@@ -199,7 +199,7 @@ authority test for a layer, and audience is a property.
 |---|---|
 | the topic entity's graph kind and the Rollup builder's topic-activity rows | the build PR, measured on a generated corpus |
 | how an event's graph entity and its posting relate once the event is Record | the build PR |
-| the model-facing verb names (one vocabulary over all kinds: write, revise, end, read, search). **Decided 2026-10-29** ([unified-memory/29](../unified-memory/29-one-cognition-session.md) §4): `create`, `revise`, `set_status`, `read`, `search` | ADR 0015's `tool_selection` before and after, per rename |
+| the model-facing verb names (one vocabulary over all kinds: write, revise, end, read, search). **Decided 2026-10-29** ([unified-memory/understanding.md](../unified-memory/understanding.md) §4): `create`, `revise`, `set_status`, `read`, `search` | ADR 0015's `tool_selection` before and after, per rename |
 | the migration order of the existing stores onto the entry | a migration node, under render parity, no table dropped |
 
 Amendment, 2026-10-29: the shared entry store, append-only revision chain and

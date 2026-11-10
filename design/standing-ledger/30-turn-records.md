@@ -79,7 +79,7 @@ window is reached the way any row is, and carries its handle too.
 
 > 2026-10-29 (operator, ruled; [notebook-memory-types](../notebook-memory-types/00-design.md) §5): route 1 below writes the turn record's decided part, never the ledger; route 2, the debrief, becomes a check for a turn that decided something and did not record it. Cognition is the decision entry's one writer, so DEC-249's "the conscious never writes the Notebook" holds.
 
-> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): a turn record is a Record node of the memory graph (`turn`, added with this bundle's build), so a ledger line citing `turn(...)` is walkable.
+> 2026-10-28 ([unified-memory/graph.md](../unified-memory/graph.md) §6a): a turn record is a Record node of the memory graph (`turn`, added with this bundle's build), so a ledger line citing `turn(...)` is walkable.
 
 A ledger line cites a turn record as `turn(<id>)`, beside the house grammar's
 `[ids]` and `rollup(...)` (`nora/domain/note_body.py`). The validator holds a

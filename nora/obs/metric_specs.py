@@ -222,7 +222,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "folded is not an error and moves nothing. The <self> read "
         "(design/self-growth/20) is stage=\"tag_self\", "
         "stage=\"fire_self\" and stage=\"cognition_self\", on the same terms. "
-        "The <recalled> pre-fetch (design/unified-memory/00 step 3b) is "
+        "The <recalled> pre-fetch (design/unified-memory/README.md step 3b) is "
         "stage=\"tag_prefetch\": a memory search that failed, timed out or "
         "could not be rendered, so the turn went on without the block.",
         ("stage", "platform"),
@@ -1663,7 +1663,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     # The Lessons session: one per unit, by what it did; `decayed` is code
     # retiring a lesson at its horizon.
-    # The Profile sessions, in shadow (design/unified-memory/45 §4).
+    # The Profile sessions, in shadow (design/unified-memory/profiles.md §4).
     _CounterSpec(
         "nora_profile_session_total",
         "Profile sessions by outcome (" + " / ".join(sorted(PROFILE_OUTCOMES)) + "). "

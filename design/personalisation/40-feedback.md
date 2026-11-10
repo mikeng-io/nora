@@ -6,7 +6,7 @@ tags: [nora, recommendations, feedback, learning-from-picks, thompson-sampling, 
 timestamp: '2026-10-25'
 edges:
   - {dst: 10-likes, rel: extends, provenance: asserted}
-  - {dst: ../unified-memory/50-learning-from-acts.md, rel: extends, provenance: asserted}
+  - {dst: ../unified-memory/understanding.md, rel: extends, provenance: asserted}
 ---
 
 # 40 · Feedback
@@ -69,7 +69,7 @@ all options. Read the decision's close alongside that evidence:
 
 ## 3. Learning from picks: whether to propose under a cap
 
-> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): Lessons, named above, are now written by step 2 of the one Cognition loop, not a Lessons adaptor; the engine still neither writes nor reads them.
+> 2026-10-28 ([unified-memory/graph.md](../unified-memory/graph.md) §6a): Lessons, named above, are now written by step 2 of the one Cognition loop, not a Lessons adaptor; the engine still neither writes nor reads them.
 
 Proposing is a choice with a cost: an unwanted suggestion is noise in a
 friends' room. For each `(unit, destination room, recommendation type, context bucket)` (context: trigger

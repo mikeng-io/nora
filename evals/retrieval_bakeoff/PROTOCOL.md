@@ -3,7 +3,7 @@
 The rules the labelled set is built and judged by. This file is committed
 before any label exists, so a label can be checked against a rule that was
 fixed before it was written. Design source:
-[unified-memory/20](../../design/unified-memory/20-embedding-bakeoff.md)
+[unified-memory/graph.md](../../design/unified-memory/graph.md)
 (what is compared, the slices, the pass margins) and
 [conversational-recall/30](../../design/conversational-recall/30-measurement.md)
 (synthetic or public media only, independent labels).
@@ -21,7 +21,7 @@ fixed before it was written. Design source:
 | `labels.lock` | sha256 of `set.yaml`, `media.yaml`, `texts.yaml`, `labels.yaml` and `labels_text.yaml` |
 | `run.py` | the harness: loads the locked set, runs each arm fail-closed, scores it, writes one aggregates-only result |
 | `adapters.py` | one embedder per serving path (Ollama, llama-server, sentence-transformers), with each model's prefix and dtype rule |
-| `decide.py` | the decision rule over fused results (design/unified-memory/20 «Slices and margins») |
+| `decide.py` | the decision rule over fused results (design/unified-memory/graph.md «Slices and margins») |
 | `results/` | one JSON per run: aggregates and provenance, no vector and no text |
 
 `tests/evals/test_bakeoff_set.py` enforces the shape: the three journey slices

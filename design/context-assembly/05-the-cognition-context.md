@@ -7,7 +7,7 @@ timestamp: '2026-11-08'
 status: proposed
 edges:
   - {dst: 04-every-occasion.md, rel: extends, provenance: asserted}
-  - {dst: ../unified-memory/29-one-cognition-session.md, rel: depends_on, provenance: asserted}
+  - {dst: ../unified-memory/understanding.md, rel: depends_on, provenance: asserted}
 ---
 
 # The Cognition context

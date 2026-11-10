@@ -5116,7 +5116,7 @@ IDX_BLOB_TOMBSTONE_SHA = sa.Index(
 )
 
 
-# `profile` / `profile_line` (migration `0117_persona`, design/unified-memory/45
+# `profile` / `profile_line` (migration `0117_persona`, design/unified-memory/profiles.md
 # §1): one account per entity, kept as typed lines. `profile` is the account
 # and changes in place (`revision`, bumped by every committed write, is the
 # compare-and-set a session writes against), so it keeps `row_history`.
@@ -5451,7 +5451,7 @@ LEDGER_COMMITMENT_REVISION = _ledger_table(
 )
 LEDGER_THREAD_REVISION = _ledger_table("standing_thread_revision", "thread", history=True)
 
-# Generic memory graph stores (design/unified-memory/27). Vocabularies live in code.
+# Generic memory graph stores (design/unified-memory/graph.md). Vocabularies live in code.
 ENTITY = sa.Table(
     "entity",
     METADATA,

@@ -156,7 +156,7 @@ The most-used words in this repo.
   room's `primary_id`). It writes through `character_revise`, citing the
   messages it rests on, and reads no presence and no Standing: its entry is
   evidence for entries that render in other rooms.
-  [47](design/unified-memory/47-character-dimensions.md#decided-operator-2026-10-22)
+  [47](design/unified-memory/profiles.md)
   admits supported named-place Character lines in phase 4; the code-set line
   flag only keeps the per-room location setting on reads. Reading no presence
   describes this prose adaptor, not a storage ban. Every
@@ -215,7 +215,7 @@ The most-used words in this repo.
   models entirely. Declared in `policy.toml` (`[units.friends] workspace =
   "67"`). With no `[units]` table every unit is in one implicit workspace
   (`default`). Not a Honcho workspace — see the next entry. When Honcho is
-  removed (`design/unified-memory/35-persona.md` row 6), the unit becomes the
+  removed (`design/unified-memory/profiles.md` row 6), the unit becomes the
   only boundary; this entry describes the current code.
 
 - **Honcho workspace** — Honcho's tenant: where one workspace's peers,
@@ -291,7 +291,7 @@ no entry.
   items (`10-tiers.md` §1's words). Written by code. This is what "the
   record store" / "the RECORD" above already names — never "a database row"
   in general.
-- **reading** — a perception of a Record item: a media reading says what was shown; an extraction says what was said, about whom and how, tied to source message ids. Every Record item is perceived once on arrival; text is a medium like any other. Code runs extraction on every batch; they record statements, not truth, and are versioned, rebuildable and superseded rather than deleted. See [18 · Extraction](design/unified-memory/18-extraction.md).
+- **reading** — a perception of a Record item: a media reading says what was shown; an extraction says what was said, about whom and how, tied to source message ids. Every Record item is perceived once on arrival; text is a medium like any other. Code runs extraction on every batch; they record statements, not truth, and are versioned, rebuildable and superseded rather than deleted. See [18 · Extraction](design/unified-memory/graph.md).
 
 - **Rollup** — the computed layer: **episodes** (a Rollup row for one bounded
   happening, with a start, an end and participants — a stay, a co-location,
@@ -302,7 +302,7 @@ no entry.
   presence part of this layer.
 - **Character dimension** — a closed trait `kind` answering one generic question
   about a person, room, unit or Nora, with named slots whose contents remain
-  prose. Proposed in [47](design/unified-memory/47-character-dimensions.md):
+  prose. Proposed in [47](design/unified-memory/profiles.md):
   topic, habit, skill, preference, disposition, style, value, social and goal.
   Applicability and evidence govern admission; no entry must fill all dimensions.
   A supporting occasion there means an underlying evidence act/interaction,
@@ -334,7 +334,7 @@ no entry.
   DisclosureGuard working on reads; it adds no new disclosure policy. Sensitive
   categories have no special handling. Dedicated profile keys may be deduced;
   fallback attributes remain told-only; gender/sex/birthday keep the existing
-  contract. The rules are in [47](design/unified-memory/47-character-dimensions.md#decided-operator-2026-10-22).
+  contract. The rules are in [47](design/unified-memory/profiles.md).
   Today `culture` (the room
   adaptor) and `character-*` write live prose through `character_revise`,
   while `profile-*` writes shadow typed lines through `profile_write`, with

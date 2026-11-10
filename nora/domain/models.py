@@ -807,7 +807,7 @@ class TagContext:
     # `read_culture` keyed `nora_character_key(unit)` on the tag and fire turns.
     # `None` until the unit has one.
     self_account: CultureRevision | None = None
-    # THE SWITCH (design/unified-memory/45 §5, `[memory.profile] read`): each entity
+    # THE SWITCH (design/unified-memory/profiles.md §5, `[memory.profile] read`): each entity
     # of this turn's Profile account — self, room, unit, then the persons — read
     # through `read_profile` and rendered as `<profile>` blocks INSTEAD of
     # `self_account`, `culture`, `unit_culture`, `character`, `peer_card`,
@@ -916,7 +916,7 @@ class TagContext:
     # while `[subagent]` is off, in a room with no job in the window, and in every harness
     # that wires no reader: the block then renders nothing.
     subagents: SubagentsView | None = None
-    # `<recalled>`, the pre-fetch (design/unified-memory/00 step 3b, 25 §5):
+    # `<recalled>`, the pre-fetch (design/unified-memory/README.md step 3b, 25 §5):
     # the memory index searched from this message's own seeds before the
     # turn, as `nora.agent.memory_search.render_packet`'s items (the same
     # shape `memory_search` answers with), cut at `PREFETCH_TOKENS`. Tag turn

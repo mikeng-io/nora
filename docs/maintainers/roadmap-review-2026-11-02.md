@@ -32,7 +32,7 @@ identifies current integration/validation attention, not a new execution order.
 
 | Direction and user value | Canonical design / existing home | Disposition and next evidence |
 |---|---|---|
-| One memory and Cognition: recall, connect and revise understanding across turns | [one-session build](../../design/unified-memory/31-build-one-session.md), [graph](../../design/unified-memory/27-the-memory-is-a-graph.md), [Cognition](../../design/unified-memory/29-one-cognition-session.md) | Own outcome, In progress/Now. Recent source delivery includes graph, Register and Profile work; the November 2 snapshot explicitly leaves semantic longitudinal evidence, capture reliability, historical backfill preparation and cutover acceptance open. Do not make public benchmarks a cutover prerequisite. |
+| One memory and Cognition: recall, connect and revise understanding across turns | [one-session build](../../design/unified-memory/understanding.md), [graph](../../design/unified-memory/graph.md), [Cognition](../../design/unified-memory/understanding.md) | Own outcome, In progress/Now. Recent source delivery includes graph, Register and Profile work; the November 2 snapshot explicitly leaves semantic longitudinal evidence, capture reliability, historical backfill preparation and cutover acceptance open. Do not make public benchmarks a cutover prerequisite. |
 | Honest external memory-quality baseline | [existing outcome #435](https://github.com/mikeng-io/nora/issues/435), children #429–431 | Reuse Planned/Next. Keep LongMemEval-S → GroupMemBench → Mem2ActBench, one native delivery milestone, no duplicate umbrella in its count. No full-run result is claimed. |
 | Continuity of decisions, arrangements and actual actions across rooms | [Notebook](../../design/notebook-memory-types/00-design.md), [one Standing](../../design/notebook-memory-types/20-standing.md), [turn records](../../design/standing-ledger/30-turn-records.md) | Own outcome, In progress/Now. Standing consolidation and typed Profile have merged source. Remaining scope is full memory-type migration and end-to-end continuity/actual-action evidence; never restore a separate shared-state block, conclusion tool or another cognitive writer. |
 | Multi-step computer work delegated to Pi, with switchable worker and sandbox | [agent-worker intent](../../design/agent-worker/00-intent.md), [adapters](../../design/agent-worker/20-adapters.md), [sandbox port](../../design/agent-worker/30-sandbox-port.md), [verification](../../design/agent-worker/50-verification-and-migration.md) | One outcome, design reconciliation first (operator, 2026-11-04; issue #520); implementation not started. Proposed/Now reflects current design attention. Next scope: one VM per unit/canonical private-DM scope, reusable anonymous Chrome task tabs and direct screenshots with executor/model selection explicit before implementation; reuse of CDP/Flash is recommended, Jev/cua-s1 remain unselected alternatives. Existing Strands subagent stays Nora; Pi is the computer worker inside the sandbox. Streamed spawn, measured Pi adapter and scoped relay are delivery slices; ACP and another VM provider are later extensions, not new parallel projects. Current sbx microVM is not a future unbuilt capability. |
@@ -250,29 +250,29 @@ design/standing-ledger/50-migration.md
 design/standing-ledger/_index.yaml
 design/subagent/00-design.md
 design/tool-catalogue/05-measurement.md
-design/unified-memory/00-intent.md
-design/unified-memory/10-honcho-audit.md
-design/unified-memory/15-memory-map.md
-design/unified-memory/18-extraction.md
-design/unified-memory/18-message-readings.md
-design/unified-memory/25-memory-graph.md
-design/unified-memory/27-the-memory-is-a-graph.md
-design/unified-memory/28-provenance.md
-design/unified-memory/29-one-cognition-session.md
-design/unified-memory/30-identity-and-character.md
-design/unified-memory/31-build-one-session.md
-design/unified-memory/32-platform-observations.md
-design/unified-memory/35-persona.md
-design/unified-memory/40-prior-art.md
-design/unified-memory/45-persona-adaptor.md
-design/unified-memory/47-character-dimensions.md
-design/unified-memory/50-learning-from-acts.md
-design/unified-memory/60-build-step-3.md
-design/unified-memory/65-build-step-3-vectors.md
-design/unified-memory/70-honcho-cutover.md
-design/unified-memory/75-typed-identity.md
-design/unified-memory/76-typed-identity-build.md
-design/unified-memory/_index.yaml
+design/unified-memory/README.md
+design/unified-memory/README.md
+design/unified-memory/README.md
+design/unified-memory/graph.md
+design/unified-memory/graph.md
+design/unified-memory/graph.md
+design/unified-memory/graph.md
+design/unified-memory/graph.md
+design/unified-memory/understanding.md
+design/unified-memory/profiles.md
+design/unified-memory/understanding.md
+design/platform-observations/00-overview.md
+design/unified-memory/profiles.md
+design/unified-memory/README.md
+design/unified-memory/profiles.md
+design/unified-memory/profiles.md
+design/unified-memory/understanding.md
+design/unified-memory/graph.md
+design/unified-memory/graph.md
+design/unified-memory/README.md
+design/unified-memory/profiles.md
+design/unified-memory/profiles.md
+design/unified-memory/README.md
 design/whatsapp-adoption/02-identity-and-policy.md
 design/whatsapp-adoption/05-delegate-review.md
 design/whatsapp-adoption/06-implementation-review.md

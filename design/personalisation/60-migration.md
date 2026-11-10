@@ -42,7 +42,7 @@ edges:
 
 This bundle is design only: none of these build steps is implemented by this
 PR. The retained fact table is not a writer, and the new extraction
-writer has no retrieval consumer (`design/unified-memory/18-extraction.md`).
+writer has no retrieval consumer (`design/unified-memory/graph.md`).
 Profiles retain their one existing owner; the new ranker projects likes at
 read time. ADR 0029's naming/identity migration and historical profile reads
 are explicit prerequisites, not assumed completed work. The existing profile

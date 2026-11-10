@@ -1,6 +1,6 @@
 """messages.mention_persons_json: the @-mentioned accounts, resolved to persons.
 
-design/unified-memory/25 §2 («mentions» edges: message -> person, from
+design/unified-memory/graph.md §2 («mentions» edges: message -> person, from
 resolved handles only) and 45 §4 (a Persona session reads what others say
 ABOUT its subject). `mentions_json` holds the raw platform account ids; the
 memory-index projector is pure SQL and cannot resolve them against

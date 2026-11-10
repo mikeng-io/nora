@@ -1,7 +1,7 @@
 """memory_node: the social stream's kinds, `social` and `social_media`.
 
 design/cognition-loop/observation.md §9 and
-design/unified-memory/25-memory-graph.md §2 and §7: one `social` node per
+design/unified-memory/graph.md §2 and §7: one `social` node per
 `social_item` and one `social_media` node per medium of it. Both are
 embedded, so `idx_memory_node_unembedded`'s predicate (the worker's literal
 `kind IN (...)`, which must imply it) names them too. No new relation: an

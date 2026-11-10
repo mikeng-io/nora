@@ -2062,7 +2062,7 @@ class PlaceArea:
     neighbourhood (旺角 / Mong Kok), `city` the locality or first-level area
     that holds it (九龍 / Kowloon). Either may be None. Never a street, an
     address or a coordinate: these are public names, and they become the
-    memory index's place hubs (design/unified-memory/25-memory-graph.md §6a)."""
+    memory index's place hubs (design/unified-memory/graph.md §6a)."""
 
     district: str | None = None
     city: str | None = None

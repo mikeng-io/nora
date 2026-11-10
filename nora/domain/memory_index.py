@@ -72,7 +72,7 @@ __all__ = [
 #: everything about an attachment is read off its message (its room, its type
 #: in `messages.media_json`, its drop with the message) and a social item has
 #: no message and no room. `profile_line` is one Profile account line
-#: (design/unified-memory/45 §1), keyed by its row id.
+#: (design/unified-memory/profiles.md §1), keyed by its row id.
 NodeKind = Literal[
     "message", "media", "note", "memo", "event", "lesson", "character",
     "outing", "stay", "trip", "person", "room", "unit", "nora", "place",

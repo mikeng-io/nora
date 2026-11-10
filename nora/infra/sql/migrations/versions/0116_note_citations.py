@@ -1,6 +1,6 @@
 """note_revision.citations: the ids and Rollup keys a note revision cites.
 
-design/unified-memory/00-intent.md «Sequence» step 4 and
+design/unified-memory/README.md «Sequence» step 4 and
 25-memory-graph.md §1: `cites` edges exist only for stores that store
 citations. Memos, lessons and Character revisions do; a note's citations sat
 only in its body's brackets, so the memory index drew no `cites` edge from a

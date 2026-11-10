@@ -34,7 +34,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     assert isinstance(subject.deps, Dependencies)
     assert len(dataclasses.fields(Dependencies)) == 81, (
         "82 -> 81 on 2026-11-08: `extraction`, the retired per-message extraction "
-        "worker, removed (design/unified-memory/27 §2). "
+        "worker, removed (design/unified-memory/graph.md §2). "
         "81 -> 82: `computer_lifecycle`, the shared computer startup/drain owner "
         "used by App and enabled subjects. "
         "78 -> 81 on 2026-11-04: `computer_queue_runner`, `browser_manager` "
@@ -112,7 +112,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "(DEC-308), which `nora/__main__.py` starts and the subject never does. "
         "64 -> 65 on 2026-10-16: `memory_embed`, the memory index's embedding worker "
         "the drain loop runs (None unless `[memory.index] embed`; "
-        "design/unified-memory/65-build-step-3-vectors.md V1). "
+        "design/unified-memory/graph.md V1). "
         "65 -> 66: `social_poller`, the social stream's poller, which "
         "`nora/__main__.py` starts and the subject never does (None unless "
         "`[social.poll] enabled`). "
