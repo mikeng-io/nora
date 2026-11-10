@@ -660,7 +660,7 @@ cases:
       before: {document_read: [document_publish]}
     snapshot: *room_a
 
-  # --- the room tools (design/self-awareness/07) ----------------------------------
+  # --- the room tools (design/self-awareness/rooms.md) ----------------------------------
   # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
   # from: `room_list` from `group_members` (who is HERE vs which rooms exist),
   # `room_read` from `load_transcript` (another room vs this one). The third

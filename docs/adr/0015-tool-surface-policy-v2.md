@@ -162,7 +162,7 @@ docstring.) Counts in this ADR are over that extracted text.
   bundle planned `my_rooms`, `read_room` and `room_activity`. On 2026-09-24
   its owner made them two tools, `room_list` (a room exists, and its activity:
   one scope, no message text) and `room_read` (its content, where other
-  people's words start), in `design/self-awareness/03-room-tools.md`. Both fit
+  people's words start), in `design/self-awareness/rooms.md`. Both fit
   the rule without a new verb.
 - **Existing names stay.** A rename is measured one at a time (0004), and only
   when `tool_selection` shows the name causing a misroute.

@@ -228,9 +228,9 @@ design/room-topology/30-what-reads-the-platform.md
 design/room-topology/40-verification.md
 design/room-topology/50-migration.md
 design/room-topology/_index.yaml
-design/self-awareness/00-overview.md
-design/self-awareness/01-three-layers.md
-design/self-awareness/07-room-tools-plan.md
+design/self-awareness/README.md
+design/self-awareness/README.md
+design/self-awareness/rooms.md
 design/self-growth/character.md
 design/self-growth/character.md
 design/self-growth/lessons.md

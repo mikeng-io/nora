@@ -441,43 +441,6 @@
   "date",
   "over-budget"
  ],
- "design/self-awareness/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-awareness/01-three-layers.md": [
-  "numbered-or-dated-name"
- ],
- "design/self-awareness/02-presence.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-awareness/03-room-tools.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-awareness/05-sequencing-and-measurement.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-awareness/06-implementation-plan.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/self-awareness/07-room-tools-plan.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/self-awareness/08-transcript-time.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/self-awareness/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/social-per-network/00-intent.md": [
   "numbered-or-dated-name",
   "date"
