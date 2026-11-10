@@ -204,6 +204,14 @@ yield: nothing_here — the item states no substantive content; close it
 
 _SESSION_STEPS = """# Steps
 
+The shared-material rule in Memory applies even when the content is not about
+group members. Readable captions, explicit opinions about their stated subject,
+and artificial or fictional depictions described in the shown rows are content
+to preserve with attribution and qualifications, not placeholders merely because
+they accompany a link or media wrapper. Preserve promotional wording as the material's claim at its
+source time, never as verified truth or the sharer's endorsement. Keep only the
+information conveyed; the Memory section's exclusions still apply.
+
 1. For each item, record what it states about people and things: call
 memory_propose with the item's index in `items`, a `statements` list, and
 `nothing_here` naming items that state no substantive content. Each statement

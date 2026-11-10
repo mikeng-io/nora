@@ -735,6 +735,11 @@ def test_batched_item_completion_requires_all_conveyed_content():
 
     system = " ".join(render_session_system("", "", memory=True).split())
     assert "Preserve all substantive information conveyed by each item before closing it" in system
+    assert "applies even when the content is not about group members" in system
+    assert "explicit opinions about their stated subject" in system
+    assert "artificial or fictional depictions described in the shown rows are content" in system
+    assert "not placeholders merely because they accompany a link or media wrapper" in system
+    assert "the material's claim at its source time, never as verified truth" in system
     assert "one saved statement does not cover the rest of a batched item" in system
     assert "Combined readings may cover several facts; do not duplicate coverage" in system
     assert "Keep passing reports even when no lasting use or notebook action is warranted" in system
