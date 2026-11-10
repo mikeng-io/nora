@@ -10,7 +10,7 @@ edges:
 
 # 70 · Migration
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the steps below are history up to the live cut-over (DEC-277). The forward order is [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#15-order-of-work) §15: stores and steps ①–② in shadow, the spike, one backfill, then queries and the switch.
+> The steps below are history up to the live cut-over (DEC-277). The forward delivery order is owned by [unified-memory/31](../unified-memory/31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31).
 
 ## 1. Inside the Dreamer, not beside it
 

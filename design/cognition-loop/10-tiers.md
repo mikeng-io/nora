@@ -13,9 +13,9 @@ edges:
 
 # 10 · Tiers
 
-> 2026-10-28 (operator, ruled; [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#9-profiles-are-reshaped-in-the-loop-from-the-graph)): the Character row's writer changes. The Cognition loop's step 2 writes traits and guesses; facts are rendered by code from the memory graph; the Character adaptor retires.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): the Character row's writer changes. That session writes traits and guesses; facts are rendered by code from the memory graph; the Character adaptor retires.
 
-> 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
+> Cognition is live and the one background writer of notes, events, Standing and her reminders (DEC-277); shadow-mode and clocked-adaptor wording below is history.
 
 
 > 2026-10-21 (18 / ADR 0026): [18](../unified-memory/18-extraction.md) amends the topology below: Honcho is decomposed into the existing layers; Memory no longer sits beside the flow. Statements live in Record extraction, Character entries are bounded cards, and Views retrieve over the layers.
@@ -36,7 +36,7 @@ that the operator changed on 2026-10-01 are marked «Amended by DEC-249».
 
 ## 1. The rule the layers and tiers are cut by
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): read "the Character adaptor" and "the Lessons adaptor" below as that session, which maintains profiles (traits and guesses; facts are rendered by code), culture and lessons while it orients.
 
 **Each of these answers one question, and no question is answered by two.**
 The first two rows are layers; the other four are the Notebook's tiers.
@@ -89,7 +89,7 @@ And the words that name processes, never stores:
   the per-unit wake session, writing Register and Standing and reaching rooms
   only through `remind`. There is no "cognition tier".
 - **Reflection** — the Character and Lessons work of
-  [50](50-character-and-standing.md) §6, consolidated into Cognition step ②
+  [50](50-character-and-standing.md) §6, consolidated into the one Cognition session
   by [30](30-cognition.md), rather than a separate required execution driver.
 - **Assess** — the adaptor that measures finished sessions; it writes reports
   and metrics, never a tier ([30](30-cognition.md) §6).
@@ -297,7 +297,7 @@ machinery ([05](05-data-model.md) §4).
 
 ## 6. The words
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): read "the Character adaptor" and "the Lessons adaptor" below as that session, which maintains profiles (traits and guesses; facts are rendered by code), culture and lessons while it orients.
 
 > 2026-10-21 (18 / ADR 0026): [18](../unified-memory/18-extraction.md) amends the **layer**, **Memory** and lowercase **memory** definitions in the historical table below: Honcho no longer sits beside the layers or owns what people said. Source statements live in Record extraction, bounded Character entries are Notebook judgements, and Views retrieve over readings, Rollup and entries.
 
@@ -362,7 +362,7 @@ machinery ([05](05-data-model.md) §4).
 | **session** | one run of a Dreamer adaptor for one key (a unit, or a unit and an entity); bare "session" is a Cognition session | a Honcho session (a conversation thread; always written "Honcho session") |
 | **cognition** | the subconscious work flow of [30](30-cognition.md), targeted to execute as a Dreamer adaptor under [18](18-execution-and-time.md) | a data tier; a separate execution runtime |
 | **adaptor** | one job the Dreamer runtime hosts, with its own key, wake rule and write verbs | a unit; a platform adapter |
-| **reflection** | the Character/Lessons work consolidated into Cognition step ② by [30](30-cognition.md) | a separate required execution driver |
+| **reflection** | the Character/Lessons work consolidated into the one Cognition session ([00](00-intent.md)) | a separate required execution driver |
 | **Dreamer** | the target subconscious execution owner; current Cognition hosting gap is explicit in [18](18-execution-and-time.md) | a data tier; the shared agent factory alone |
 | **write verb** | a tool that writes one tier's row, validated by code before commit; the pace verbs (`wake_at`, `wake_move`, `wake_cancel`) write the stimulus table instead | an act |
 | **act verb** | `remind`: the one tool whose row leaves through the fire path; plus `remind_move`/`remind_cancel` on her own reminder rows, which change a reminder and send nothing | a send; a self-wake |

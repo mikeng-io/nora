@@ -118,7 +118,7 @@ open, as the build fixed them:
 
 ## 3. The rollups
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): read "the Character adaptor" and "the Lessons adaptor" below as that session, which maintains profiles (traits and guesses; facts are rendered by code), culture and lessons while it orients.
 
 **Episodes** — one bounded happening, with a start, an end, participants.
 
@@ -259,7 +259,7 @@ unit's rooms was `up` throughout. Withheld deviations are counted
 
 ## 5. How it is read
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): read "the Character adaptor" and "the Lessons adaptor" below as that session, which maintains profiles (traits and guesses; facts are rendered by code), culture and lessons while it orients.
 
 - Never pushed whole into a prompt. Read with `rollup_read(kind, subject,
   interval)` ([30](30-cognition.md) §2), under lineage ([10](10-tiers.md) §3).
