@@ -1154,3 +1154,23 @@ async def test_scoped_walk_does_not_fan_out_through_a_person(graph):
     # An explicitly requested person may start a walk of their meaning relations.
     direct = await graph.walk((PERSON.key,), query)
     assert other.key in {n.key for n in direct.nodes}
+
+
+@pytest.mark.parametrize("span,accepted", [
+    ("the event, by train", True),
+    ("the event, by plane", False),
+])
+async def test_api_punctuation_span_keeps_store_provenance(graph, span, accepted):
+    source = replace(SOURCE, text="I attended the event — by train.")
+    evidence = replace(EV, span=span)
+    result = await graph.stage_and_admit(
+        entities=(PERSON, EVENT), relations=(REL,), evidence=(evidence,),
+        sources={source.key: source})
+    assert bool(result.relations) is accepted
+    if accepted:
+        assert result.evidence == (evidence,)
+        readback = await graph.walk((PERSON.key,), Walk("u1", frozenset({"p1"})))
+        assert readback.status == "ok" and readback.relations[0].evidence_count == 1
+    else:
+        assert Refusal("relation", REL.id, "span_not_in_source") in result.refused
+    assert source.text == "I attended the event — by train."
