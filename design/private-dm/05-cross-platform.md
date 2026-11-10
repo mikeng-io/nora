@@ -67,7 +67,7 @@ history or retargets queued work. Existing unit publications keep their anchor.
 ## 3. Computer, browser and export are in the first slice
 
 **Topology amendment, 2026-11-02 — NOT BUILT:** the
-[scoped browser target](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
+[scoped browser target](../browser-runtime/README.md)
 assigns this canonical person+anchor-unit DM scope its own microVM. Reuse
 `dm_scope_id` and the DM hash below; do not invent a global person-only VM or
 share the anchor unit's VM. Native tools and workers resolve that same DM VM.

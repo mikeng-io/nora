@@ -5,7 +5,7 @@ description: >
   Implemented unit-scoped group workspaces, leases, browser state and session
   reads; the live room-to-unit disk migration completed on 2026-10-21.
   Per-unit/private-DM VM routing source subsequently merged in PR 584; see
-  ../browser-runtime/00-design.md for acceptance limits. Automatic provisioning
+  ../browser-runtime/README.md for acceptance limits. Automatic provisioning
   and idle VM stop have opt-in source, pending stack review and live acceptance in ../browser-runtime/05-microvm-lifecycle.md.
   Shipped migration remains intact.
 status: implemented

@@ -16,7 +16,7 @@ description: >
   Proposal, not built. Current target: one VM per policy unit or canonical
   private-DM scope, shared by native tools and Pi/ACP; anonymous headed Chrome
   with in-memory task tabs. Routing and migration acceptance are in
-  ../browser-runtime/00-design.md; no runtime topology change is delivered.
+  ../browser-runtime/README.md; no runtime topology change is delivered.
 status: proposal
 governance: operator-directed
 timestamp: '2026-10-25'
@@ -45,4 +45,4 @@ edges:
   - {src: 50-verification-and-migration, dst: 10-worker-port, rel: measures, provenance: asserted}
   - {src: 30-sandbox-port, dst: ../sandbox-runtime/00-design.md, rel: amends, provenance: asserted}
   - {src: 10-worker-port, dst: ../subagent/00-design.md, rel: extends, provenance: asserted}
-  - {src: 30-sandbox-port, dst: ../browser-runtime/00-design.md, rel: amends, provenance: operator-directed-2026-11-02}
+  - {src: 30-sandbox-port, dst: ../browser-runtime/README.md, rel: amends, provenance: operator-directed-2026-11-02}

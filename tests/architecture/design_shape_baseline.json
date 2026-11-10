@@ -132,33 +132,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/browser-runtime/00-design.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/browser-runtime/01-vault.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/browser-runtime/02-research.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/browser-runtime/03-open-questions.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/browser-runtime/04-s1-runbook.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/browser-runtime/05-microvm-lifecycle.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
  "design/capability-drop/00-overview.md": [
   "numbered-or-dated-name",
   "date"

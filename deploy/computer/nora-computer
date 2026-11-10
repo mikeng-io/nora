@@ -64,7 +64,7 @@ COMPOSE_DIR=${NORA_COMPOSE_DIR:-$(dirname "$ENV_FILE")}
 # services out of reach: computerd's published port and OmniRoute on docker0
 # (172.16.0.0/12), Ollama on the host's loopback, the LAN and the tailnet.
 #
-# KNOWN, ACCEPTED LIMIT (measured, design/browser-runtime/04-s1-runbook.md
+# KNOWN, ACCEPTED LIMIT (measured, design/browser-runtime/security.md
 # step 4): sbx applies a CIDR deny to IP LITERALS only. A public NAME that
 # resolves to a private address (127-0-0-1.sslip.io) still passes, because the
 # proxy decides on the name and then connects to whatever it resolves to. The

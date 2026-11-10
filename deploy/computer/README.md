@@ -70,7 +70,7 @@ allowlist of DEC-260), so `nora-computer` adds these rules, **scoped to the
 **Known, accepted limit.** sbx applies a CIDR deny to **IP literals only**: a
 public NAME that resolves to a private address (`127-0-0-1.sslip.io`) still
 passes the deny and reaches the host's services. S1 measured it
-(`design/browser-runtime/04-s1-runbook.md`, step 4) and the operator accepted the
+(`design/browser-runtime/security.md`, step 4) and the operator accepted the
 risk rather than add a guard; there is none. `egress check` probes IP literals, so
 it cannot see this. The network audit is `sbx policy log`.
 

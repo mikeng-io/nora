@@ -11,10 +11,10 @@ status: partly-built
 
 > **Current topology:** per-unit/canonical private-DM VM routing and scoped
 > browser source merged in [PR #584](https://github.com/mikeng-io/nora/pull/584).
-> See the [current browser contract](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
+> See the [current browser contract](../browser-runtime/README.md)
 > for source delivery and the limits of live acceptance. Registry provisioning
 > supports manual mode and opt-in automatic lifecycle source in
-> [automatic Docker Sandbox lifecycle](../browser-runtime/05-microvm-lifecycle.md),
+> [automatic Docker Sandbox lifecycle](../browser-runtime/scope.md),
 > pending stack review, installation and live acceptance. The shared-VM observations below are historical;
 > the shipped [unit workspace cutover](../computer-unit-scope/01-migration.md)
 > remains intact. Source implementation does not install or deploy the host controller.

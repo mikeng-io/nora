@@ -5,7 +5,7 @@
 - **Reverses, in part:** [0022](0022-noras-browser-is-headed-chrome-with-a-vault-fill-broker.md)
   Decision 2's “No extra proxy”, for the target HTTP egress architecture.
   Existing deployed behavior and historical measurements remain unchanged.
-- **Design:** [browser runtime](../../design/browser-runtime/00-design.md),
+- **Design:** [browser runtime](../../design/browser-runtime/README.md),
   [sandbox runtime](../../design/sandbox-runtime/00-design.md#8-credentials-and-network-from-sbx).
 - **Tracking:** [issue #520](https://github.com/mikeng-io/nora/issues/520).
 - **Index:** none; this ADR ships no runtime behavior. Allocate a DEC row when

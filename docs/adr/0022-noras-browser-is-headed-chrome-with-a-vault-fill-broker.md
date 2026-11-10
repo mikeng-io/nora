@@ -30,7 +30,7 @@ driver faster and cheaper than browser-use, a vault for many credentials
 (OpenBao), vision from DeepSeek v4.1 Flash, a small decision model for
 steps, and a view-only stream to the portal.
 
-The research (`design/browser-runtime/02-research.md`, 2026-10-06,
+The research (`design/browser-runtime/browser.md`, 2026-10-06,
 re-verified against primary pages 2026-10-07, each claim marked) and a
 read of norty (`00-design.md` §0, 2026-10-07) found:
 
