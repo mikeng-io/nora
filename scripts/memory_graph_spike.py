@@ -590,6 +590,9 @@ def compare_reports(before: dict[str, Any], after: dict[str, Any]) -> str:
 def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     exchanges = []
     rendered: dict[str, dict[str, str]] = {}
+    tool_spans = {e["attributes"]["gen_ai.tool.call.id"]: e["span_id"] for e in events
+                  if e["kind"] == "span_finished"
+                  and "gen_ai.tool.call.id" in (e.get("attributes") or {})}
     for event in events:
         if event.get("name") == "nora.model.request":
             request = json.loads(event["attributes"]["nora.model.request.body"])
@@ -603,8 +606,12 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if event["kind"] != "tool_finished":
             continue
         use, result = event["tool"], event["result"]
+        # The tool's own span, found by the call id Strands stamps on it: from
+        # 1.64 the after-tool hook fires outside that span, so the hook event's
+        # span is the cycle's and the span the sources were recorded in is not.
+        span = tool_spans.get(use.get("toolUseId"), event.get("span_id"))
         source_events = [e for e in events if e.get("name") == "nora.proposal.sources"
-                         and e.get("span_id") == event.get("span_id")]
+                         and e.get("span_id") == span]
         source_rows = json.loads(source_events[-1]["attributes"]["body"]) if source_events else {}
         source_rows = {n: rendered.get(n, row) for n, row in source_rows.items()}
         values = []

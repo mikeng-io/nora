@@ -11,7 +11,8 @@ import time
 
 import pytest
 import uvicorn
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
+from mcp.types import PaginatedRequestParams
 
 from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
@@ -29,11 +30,11 @@ class _FakeMcpServer:
     exercise both the success and error shapes an actual server produces.
 
     ``broken_discovery=True`` replaces the server's ``tools/list`` handler
-    itself (registered via the low-level ``mcp.server.lowlevel.Server``
-    that FastMCP wraps at ``app._mcp_server``) with one that raises. That is
+    itself (registered on the low-level ``mcp.server.lowlevel.Server`` that
+    MCPServer wraps at ``app._lowlevel_server``) with one that raises. That is
     the MCP protocol's tool-*listing* call, distinct from ``pulse_broken_tool``
     above which fails only when *invoked*. In the installed `mcp`
-    (1.29.0), `Server._handle_request` catches a plain
+    (2.3.0), `Server._handle_request` catches a plain
     `Exception` raised from a request handler and turns it into a JSON-RPC
     error response (`mcp/server/lowlevel/server.py`), which the client-side
     `ClientSession.list_tools()` then raises as `mcp.shared.exceptions.McpError`
@@ -43,7 +44,7 @@ class _FakeMcpServer:
 
     def __init__(self, *, broken_discovery: bool = False) -> None:
         self.port = _free_port()
-        app = FastMCP("fake-pulse", host="127.0.0.1", port=self.port)
+        app = MCPServer("fake-pulse")
 
         @app.tool()
         def pulse_server_status() -> dict:
@@ -57,13 +58,16 @@ class _FakeMcpServer:
 
         if broken_discovery:
 
-            @app._mcp_server.list_tools()
-            async def _broken_list_tools():
+            async def _broken_list_tools(ctx, params):
                 raise RuntimeError("tool discovery exploded")
+
+            app._lowlevel_server.add_request_handler(
+                "tools/list", PaginatedRequestParams, _broken_list_tools)
 
         self._server = uvicorn.Server(
             uvicorn.Config(
-                app.streamable_http_app(), host="127.0.0.1", port=self.port, log_level="warning"
+                app.streamable_http_app(host="127.0.0.1"),
+                host="127.0.0.1", port=self.port, log_level="warning",
             )
         )
         self._thread = threading.Thread(target=self._server.run, daemon=True)
@@ -154,14 +158,15 @@ class _NamedToolsMcpServer:
 
     def __init__(self, tool_names: tuple[str, ...]) -> None:
         self.port = _free_port()
-        app = FastMCP("fake-named", host="127.0.0.1", port=self.port)
+        app = MCPServer("fake-named")
         for tool_name in tool_names:
             def _handler(reported_name: str = tool_name) -> dict:
                 return {"tool": reported_name}
             app.add_tool(_handler, name=tool_name)
         self._server = uvicorn.Server(
             uvicorn.Config(
-                app.streamable_http_app(), host="127.0.0.1", port=self.port, log_level="warning"
+                app.streamable_http_app(host="127.0.0.1"),
+                host="127.0.0.1", port=self.port, log_level="warning",
             )
         )
         self._thread = threading.Thread(target=self._server.run, daemon=True)
