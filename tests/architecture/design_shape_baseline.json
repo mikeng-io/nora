@@ -255,43 +255,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/live-threads/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/live-threads/01-evidence.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/live-threads/02-identity-and-doctrine.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/live-threads/03-note-shape.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/live-threads/04-progress-and-exits.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/live-threads/05-standing.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/live-threads/06-writer-and-measurement.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/live-threads/07-decisions-and-migration.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/live-threads/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/message-edits/00-overview.md": [
   "numbered-or-dated-name",
   "date"

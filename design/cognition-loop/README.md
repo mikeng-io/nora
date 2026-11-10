@@ -27,10 +27,12 @@ never delivers to a room itself.
 - **The data layers** separate authored law, observed Record, computed Rollup,
   judged Notebook and read-time Views. Each has one direction of authority and
   a distinct writer.
+- **Live threads** extend the Notebook with movement, expiry and two exits for
+  ongoing situations. [Live threads](threads.md) remains designed.
 
 The subjects are [execution](execution.md), [observation](observation.md),
-[the session](session.md), [the data model](data.md), and
-[proactive delivery](proactive.md).
+[the session](session.md), [the data model](data.md),
+[proactive delivery](proactive.md), and [live threads](threads.md).
 
 ## The loop
 

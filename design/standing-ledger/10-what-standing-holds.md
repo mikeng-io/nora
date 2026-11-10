@@ -1,12 +1,12 @@
 ---
 type: design
 title: "What Standing holds: only what the Record cannot give back"
-description: "Each thing Standing carries today, sorted by whether it can be re-derived from the Record, and where each one lives after this bundle. The re-derivable part becomes pointers; the rest becomes the ledger. Consistent with live-threads 05: Standing is never the accumulator of what the room said."
+description: "Each thing Standing carries today, sorted by whether it can be re-derived from the Record, and where each one lives after this bundle. The re-derivable part becomes pointers; the rest becomes the ledger. Consistent with design/cognition-loop/threads.md: Standing is never the accumulator of what the room said."
 tags: [nora, standing, record, notes, memos, transcript]
 timestamp: '2026-10-25'
 edges:
   - {dst: 20-the-ledger, rel: motivates, provenance: asserted}
-  - {dst: ../live-threads/05-standing.md, rel: extends, provenance: asserted}
+  - {dst: ../../cognition-loop/threads.md, rel: extends, provenance: asserted}
 ---
 
 # 10 · What Standing holds
@@ -37,7 +37,7 @@ losing it is losing it.
 
 ## 3. Why this is not the accumulator live-threads ruled out
 
-[live-threads 05](../live-threads/05-standing.md) §2 found Standing cannot be
+[design/cognition-loop/threads.md](../../cognition-loop/threads.md) §2 found Standing cannot be
 the accumulator of what the room SAID, and that "a chain of positions is a
 history of what she *thought*". This bundle keeps that ruling and builds on its
 second half. A decision is what she thought, with its grounds; the room's words
@@ -46,7 +46,7 @@ accumulates her judgements, which nothing else in the tree holds.
 
 The same node's §3 found that a per-room paragraph hides which of five threads
 moved. Threads here carry their own last-moved time, which is that finding's
-fix on the Standing side; [live-threads 04](../live-threads/04-progress-and-exits.md)
+fix on the Standing side; [design/cognition-loop/threads.md](../../cognition-loop/threads.md)
 §2 is the same fix on the note side, and a thread that has a note links it
 instead of repeating its age.
 

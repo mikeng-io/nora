@@ -45,5 +45,5 @@ edges:
   - {src: 50-migration, dst: 40-verification, rel: depends_on, provenance: asserted}
   - {src: 20-the-ledger, dst: ../cognition-loop/data.md, rel: amends, provenance: asserted}
   - {src: 20-the-ledger, dst: ../standing-compact/30-working-set.md, rel: supersedes, provenance: asserted}
-  - {src: 10-what-standing-holds, dst: ../live-threads/05-standing.md, rel: extends, provenance: asserted}
+  - {src: 10-what-standing-holds, dst: ../design/cognition-loop/threads.md, rel: extends, provenance: asserted}
   - {src: 30-turn-records, dst: ../standing-compact/00-intent.md, rel: extends, provenance: asserted}
