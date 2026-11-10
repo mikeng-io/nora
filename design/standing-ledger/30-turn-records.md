@@ -6,7 +6,7 @@ tags: [nora, turn-record, tag-trace, tool-call-log, provenance, lineage, recall-
 timestamp: '2026-10-25'
 edges:
   - {dst: 20-the-ledger, rel: realizes, provenance: asserted}
-  - {dst: ../standing-compact/00-intent.md, rel: extends, provenance: asserted}
+  - {dst: ../../standing-ledger/00-intent.md, rel: extends, provenance: asserted}
 ---
 
 # 30 · Turn records

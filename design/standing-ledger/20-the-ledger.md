@@ -7,7 +7,7 @@ timestamp: '2026-10-25'
 edges:
   - {dst: 30-turn-records, rel: depends_on, provenance: asserted}
   - {dst: ../cognition-loop/data.md, rel: amends, provenance: asserted}
-  - {dst: ../standing-compact/30-working-set.md, rel: supersedes, provenance: asserted}
+  - {dst: ../../standing-ledger/10-what-standing-holds.md, rel: supersedes, provenance: asserted}
 ---
 
 # 20 · The ledger

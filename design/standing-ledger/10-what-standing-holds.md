@@ -66,7 +66,7 @@ between a note's `Owed` (what members owe each other) and Standing's `I owe`
   going on" becomes threads, "what she thinks" becomes decisions. Nothing is
   folded onto an earlier fold again.
 - **The free-standing working set** (`Found, not yet given`,
-  [standing-compact 30](../standing-compact/30-working-set.md)). Its measured
+  [standing-ledger/10-what-standing-holds.md](../../standing-ledger/10-what-standing-holds.md)). Its measured
   case (a search returned several restaurants, the reply sent two) is exactly
   a decision's `Options`, with the scores the working set had no room for.
 - **`recall_lookups`**, once [30](30-turn-records.md) §5's read replaces the job

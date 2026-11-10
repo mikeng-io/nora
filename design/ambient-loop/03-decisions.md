@@ -63,7 +63,7 @@ cases. Decided by that number, not by argument. Not landing tonight.
 | seam | contract | what it takes |
 |---|---|---|
 | Decide ↔ Decide | one decision log, written by the participation turn, the proactive decide and act turns, and the tag path **at turn completion** (after the send or the silent decision — a tag landing mid-turn is a race the log does not close, and the port says so); read by the same, scoped by **unit** — not by room, because a proactive row fires into the home room about a thread that may live in another room (#199's Discord row about a Signal thread) — with `note_id` on the row so a reader matches it to the thread; rendered as writer / verdict / room label / age / note id, **never a note title**. **The gate neither reads nor writes it** | **a new store** — table, port, SQL + in-memory, contract suite. v1 said a column on an existing table; there is none. The proactive adaptor's private `_decision_log` (its own reminder rows) is a different thing and keeps its name in code; this is *the shared decision log* |
-| Act → Orient | the debrief's outcome header is turn-scoped; a `Nora:` row after the tag reads as a delivered reply; a dead turn proposes no note; her own row is admissible as a closing **citation** and excluded from discharge **grounding** (the verdict, and the deterministic room-scope check that fed it, were deleted 2026-09-24 — design/standing-compact/) | renders and a split that has exactly one place to live: one evidence tuple (`note_curator.py:691` → `message_ids` `:700` → `evidence_rows_by_note` `:793/:805`) feeds both the citation check (`:921`/`:934`) and `_discharge`'s `cited_row` (`:1210`). So her row is admitted to `message_ids` — keeping `:691` strict is dead on #199, where hers was the only row since `created_at` and `:934` drops the verdict as `no_evidence` — and the guard lives **inside `_discharge`**: `cited_row` dropped when `is_nora`, on its own refusal reason, not `:1255`'s. The mutation is «an `is_nora` citation cannot **ground** a discharge», proved by removing that guard. Conditional on A4 |
+| Act → Orient | the debrief's outcome header is turn-scoped; a `Nora:` row after the tag reads as a delivered reply; a dead turn proposes no note; her own row is admissible as a closing **citation** and excluded from discharge **grounding** (the verdict, and the deterministic room-scope check that fed it, were deleted 2026-09-24 — design/standing-ledger/00-intent.md) | renders and a split that has exactly one place to live: one evidence tuple (`note_curator.py:691` → `message_ids` `:700` → `evidence_rows_by_note` `:793/:805`) feeds both the citation check (`:921`/`:934`) and `_discharge`'s `cited_row` (`:1210`). So her row is admitted to `message_ids` — keeping `:691` strict is dead on #199, where hers was the only row since `created_at` and `:934` drops the verdict as `no_evidence` — and the guard lives **inside `_discharge`**: `cited_row` dropped when `is_nora`, on its own refusal reason, not `:1255`'s. The mutation is «an `is_nora` citation cannot **ground** a discharge», proved by removing that guard. Conditional on A4 |
 | Orient → Decide (proactive) | the decide turn can check a note against the record — the shared log first, a bounded window second | the store above, then a render |
 | Observe → Orient | a batch names its room and carries the operator's description | a bug fix and a `policy.toml` field |
 | the medium | DEC-178 | a measurement |
@@ -80,7 +80,7 @@ becoming a strike, which `record_wake` already is.
 failed, 5 passed — `3a` the header is unscoped, `3a2` her delivered row is not
 marked, `3b` the verdict returns `grounded=True`, `3c` a note is proposed from
 the dead turn, `3d` the proactive decider is shown the false premise. (`3b`
-was deleted 2026-09-24 with the verdict itself — design/standing-compact/; the
+was deleted 2026-09-24 with the verdict itself — design/standing-ledger/00-intent.md; the
 test says so where it was.) The five carried `xfail(strict=True)` citing #199,
 so the fix that landed had to flip them or the gate would go red. #158 already shows
 the decide suite cannot separate a prompt change from noise at n=5; a seam
@@ -165,7 +165,7 @@ For re-derivation. All 2026-09-11 HKT; unit `ridgeline`.
 | #159, #162 | Orient → Decide — a note's owed date is closing state | after D |
 | #173 (DEC-163) | Act → Observe, the wide half | operator |
 | #118 step 4 | the medium | DEC-178's experiment |
-| #189 | Orient's verdict — #199 is a row where it should have been false | moot: the verdict, and the deterministic half (A2) that fed it, were deleted 2026-09-24 — design/standing-compact/ |
+| #189 | Orient's verdict — #199 is a row where it should have been false | moot: the verdict, and the deterministic half (A2) that fed it, were deleted 2026-09-24 — design/standing-ledger/00-intent.md |
 | **new** | the gate and the Standing fold name no room (`01 §1`) | filed from this node |
 
 ## 7. What would show this bundle was wrong

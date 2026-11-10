@@ -69,7 +69,7 @@ last_folded_row_id bigint  -- the audit row id the last fold read up to
 - The same atomicity the `consumed_verdict_tag` watermark had
   (`26-standing.md` §4: the row carried the verdict it acted on, advanced
   only when the rebuild was WRITTEN). That watermark's trigger was deleted
-  2026-09-24 — design/standing-compact/.
+  2026-09-24 — design/standing-ledger/00-intent.md.
 
 ## The cap
 
@@ -86,7 +86,7 @@ last_folded_row_id bigint  -- the audit row id the last fold read up to
 ## Re-derivation and the watermark
 
 (The `ungrounded` / `ceiling` re-derivation trigger described below was
-deleted 2026-09-24 — design/standing-compact/. Kept as the reasoning behind
+deleted 2026-09-24 — design/standing-ledger/00-intent.md. Kept as the reasoning behind
 the watermark's atomicity, not as a live path.)
 
 Re-derivation re-read the SAME stretch — it had to NOT advance the

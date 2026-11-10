@@ -241,7 +241,7 @@ The most-used words in this repo.
 
 - **working set** — the part of Standing that holds what she found on a turn
   and has not yet given the room: options, findings, a shortlist
-  (design/standing-compact/30). Bounded (`[standing] working_set_max_items`,
+  (design/standing-ledger/10-what-standing-holds.md). Bounded (`[standing] working_set_max_items`,
   ceiling 20 items), aged out at render time (48 hours), and rendered
   wherever Standing is: the tag turn and every fire turn. Not a note: it holds her work, not the group's open
   question.

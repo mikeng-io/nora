@@ -436,31 +436,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/standing-compact/00-intent.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/standing-compact/10-changes.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/standing-compact/20-verification.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/standing-compact/30-working-set.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/standing-compact/40-open-plans.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/standing-compact/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/standing-ledger/00-intent.md": [
   "numbered-or-dated-name",
   "date"

@@ -111,7 +111,7 @@ the fold generalised it to *I have sent nothing today* with her sent row two
 lines above the tag in the same window. The verdict, which existed to catch
 unsupported claims, said `grounded: true`. The same fold proposed a note whose
 closing condition her own row had already met. (The verdict was deleted
-2026-09-24 — design/standing-compact/.)
+2026-09-24 — design/standing-ledger/00-intent.md.)
 
 Design 39 §1's brake — *nothing Nora says can create, revise or close a note* —
 holds for her **words**. It does not hold for her **turn outcomes**, which the
@@ -148,7 +148,7 @@ been a second copy of that.
 the tag is legible to the fold as a delivered reply regardless of outcome; a
 dead turn does not propose notes; her own row may be a note's closing
 citation and nothing else. (The verdict, which could see the contradiction
-from the transcript alone, was deleted 2026-09-24 — design/standing-compact/.)
+from the transcript alone, was deleted 2026-09-24 — design/standing-ledger/00-intent.md.)
 Fixes A1–A3 on #199 are landing tonight; A4 lands only if the
 citation/discharge split above can be proved by mutation inside the current
 commit path, and waits otherwise.
