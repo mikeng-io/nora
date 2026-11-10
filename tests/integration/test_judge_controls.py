@@ -183,6 +183,14 @@ def model_wire(monkeypatch):
                 content = "```json\n" + content + "\n```"
             data["choices"][0]["message"]["content"] = content + "\nGenerated trailing explanation."
             response = httpx.Response(200, json=data)
+        if mode.get("duplicate_identical") and body["model"] == "generated-b" and (
+                body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
+            data = response.json()
+            data["choices"][0]["message"]["content"] = (
+                '{"verdict":"supported","reason":"Generated cited claim",'
+                '"eligibility":"eligible","eligibility":"eligible",'
+                '"eligibility_reason":"Generated class explanation"}')
+            response = httpx.Response(200, json=data)
         if mode.get("duplicate_verdict") and body["model"] == "generated-b" and (
                 body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
             data = response.json()
@@ -219,6 +227,7 @@ def model_wire(monkeypatch):
     ("trailing_prose", "PASS", 8), ("fenced_trailing", "PASS", 8),
     ("omit_missed_proof", "PASS", 8), ("omit_covered_proof", "ERROR", 4),
     ("omit_diagnostics", "PASS", 8), ("structured_diagnostics", "PASS", 8),
+    ("duplicate_identical", "PASS", 8),
 ])
 async def test_frozen_controls_use_real_consumers_capture_and_shared_budget(
         tmp_path, job_files, model_wire, mode, expected, count):

@@ -296,7 +296,6 @@ def test_remind_passes_on_a_write() -> None:
 @pytest.mark.parametrize("fields", [
     '"score":0,"score":1,"confidence":1',
     '"score":1,"confidence":0.2,"confidence":1',
-    '"score":1,"score":1,"confidence":1',
 ])
 def test_duplicate_rating_fields_are_ungradable_not_last_value_wins(fields):
     from evals.rebuilt.judge import criterion_verdict, evaluate_raw
@@ -309,7 +308,6 @@ def test_duplicate_rating_fields_are_ungradable_not_last_value_wins(fields):
 @pytest.mark.parametrize("raw", [
     '{"eligibility":"eligible","eligibility":"Generated explanation"}',
     '{"eligibility":"ineligible","eligibility":"eligible"}',
-    '```json\n{"coverage":[],"coverage":[]}\n```',
     '{"coverage":[{"covered_by":{"reads":[],"reads":[0]}}]}',
 ])
 def test_fact_parser_rejects_duplicate_fields_at_every_object_depth(raw):
@@ -326,3 +324,29 @@ def test_sequence_parser_keeps_distinct_objects_and_rejects_duplicate_fields():
         {"id": "first"}, {"id": "second"}]
     with pytest.raises(ValueError, match="duplicate_json_field"):
         parse_json_response('{"id":"first","id":"second"}', object_sequence=True)
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ('{"eligibility":"eligible","eligibility":"eligible"}', {"eligibility": "eligible"}),
+    ('{"coverage":[],"coverage":[]}', {"coverage": []}),
+    ('{"p":{"a":1,"b":true},"p":{"b":true,"a":1}}', {"p": {"a": 1, "b": True}}),
+])
+def test_equivalent_duplicate_fields_preserve_the_single_value(raw, expected):
+    from evals.rebuilt.judge import parse_json_response
+    assert parse_json_response(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [
+    '{"x":true,"x":1}', '{"x":1,"x":1.0}',
+    '{"x":{"a":true},"x":{"a":1}}', '{"x":[false],"x":[0]}',
+])
+def test_duplicate_comparison_preserves_json_types(raw):
+    from evals.rebuilt.judge import parse_json_response
+    with pytest.raises(ValueError, match="duplicate_json_field"):
+        parse_json_response(raw)
+
+
+def test_equivalent_repeated_rating_is_the_same_vote():
+    from evals.rebuilt.judge import evaluate_raw
+    assert evaluate_raw('[{"criterion":"voice","score":1,"score":1,"confidence":1,'
+                        '"rationale":"Generated rating"}]') == "PASS"

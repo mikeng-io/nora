@@ -152,9 +152,11 @@ consumer. It verifies refusal, per-judge attribution, stop behavior and capture.
 Generated valid responses prove wiring only; they cannot prove that a live judge
 understands either the interface or the normative policy.
 
-Judge JSON objects must have unique field names, including nested objects.
-The shared reply, memory and coverage parsers reject duplicates instead of
-silently using the last value; ambiguous evidence is ERROR/REVIEW, never PASS.
+Judge output should emit each field once. The shared reply, memory and coverage
+parsers accept repeated fields only when their canonical JSON values agree,
+including nested value types. Equivalent repeats preserve the same value;
+conflicting repeats are ERROR/REVIEW, never a first/last-value vote selection.
+Raw output retains every occurrence for inspection.
 This parser contract applies to a newly bound measurement. Preserve reports
 accepted by an older parser; do not retrospectively clear or fail them.
 A valid prompt template and a successful canary do not guarantee a provider's
@@ -163,7 +165,7 @@ protocol and validate the response against strict local JSON schemas. Local sche
 validation does not require a provider-native `response_format` capability and
 does not add a second model call or an SDK tool loop.
 Validation and scoring use the same fact parser: a leading complete JSON document
-or fence is read, with trailing explanation ignored; duplicate fields are rejected.
+or fence is read, with trailing explanation ignored; conflicting fields are rejected.
 Evidence is mandatory for `covered` rows. For `missed`/`unsure`, `covered_by`
 may be absent or null. `diagnostic_misses` is an optional array whose entries are
 retained unscored. Local schema checks follow these same consumer rules; an unused

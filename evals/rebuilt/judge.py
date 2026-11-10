@@ -24,10 +24,14 @@ _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 
 def _unique_fields(items: list[tuple[str, object]]) -> dict[str, object]:
-    result = {}
+    result: dict[str, object] = {}
     for key, value in items:
         if key in result:
-            raise ValueError("duplicate_json_field")
+            if json.dumps(result[key], sort_keys=True, allow_nan=False) != json.dumps(
+                value, sort_keys=True, allow_nan=False,
+            ):
+                raise ValueError("duplicate_json_field")
+            continue
         result[key] = value
     return result
 
