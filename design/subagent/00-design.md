@@ -143,7 +143,7 @@ found the Dreamer and cognition paths stop write tools on purpose:
 - `document_publish` refuses any call whose actor is not `tag` or whose room
   has no tagger: `unavailable`, `no_requester` (`nora/agent/tools.py`).
 - `computer_export` to a link or the chat is refused for any actor but `tag`:
-  the containment line of `design/sandbox-runtime/00-design.md` §15.4,
+  the containment line of `design/sandbox-runtime/README.md` §15.4,
   decision 6 ("an effect outside the VM waits for a person who asked in THIS
   turn").
 - `create_dream_agent` takes no `skills_dir` by design (`nora/agent/factory.py`),
@@ -424,7 +424,7 @@ to the whole report.
 
 - **The two rulings in §4**: launch counts as "asked" for documents; the
   worker's own lease key and folder.
-- **The browser worker.** `design/sandbox-runtime/00-design.md` §14 plans
+- **The browser worker.** `design/sandbox-runtime/README.md` §14 plans
   `computer_browse` as a Strands sub-agent and reserves `path="subagent"` for
   it. Proposed: it is a kind of this worker (synchronous, inside a tag turn,
   browser tools only) sharing the runner, guard and actor, so the two do not

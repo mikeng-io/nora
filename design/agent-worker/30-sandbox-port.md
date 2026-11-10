@@ -5,7 +5,7 @@ description: "What SandboxRuntime lacks for a worker, the one verb it gains (spa
 tags: [nora, sandbox, sbx, computerd, port, spawn, websocket, providers]
 timestamp: '2026-10-25'
 edges:
-  - {dst: ../sandbox-runtime/00-design.md, rel: amends, provenance: asserted}
+  - {dst: ../sandbox-runtime/README.md, rel: amends, provenance: asserted}
 ---
 
 # 30 · The sandbox port

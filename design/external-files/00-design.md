@@ -285,7 +285,7 @@ log.
 
 ## 5. Into her computer, without the credential
 
-The token never enters the computer VM (`design/sandbox-runtime/00-design.md`
+The token never enters the computer VM (`design/sandbox-runtime/README.md`
 §1: no master credential in the VM). A copy fetches the bytes in Nora's
 container and writes them into `inbox/` under the same size limit
 (`import_max_bytes`) and lease `computer_import` uses. That copy is a

@@ -9,7 +9,7 @@
 
 ## Context
 
-`design/sandbox-runtime/00-design.md` studies giving Nora a coding agent's
+`design/sandbox-runtime/README.md` studies giving Nora a coding agent's
 toolkit (run commands, read and write files, and later browse and export)
 executed on a machine she can afford to lose. Four facts measured on
 2026-09-30 decide the shape:

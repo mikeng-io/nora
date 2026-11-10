@@ -3,7 +3,7 @@
 - **Status:** accepted (2026-10-07, operator); Decision 2 superseded in part for the target HTTP egress architecture by [0035](0035-shared-smokescreen-http-egress.md), implementation pending.
 - **Date:** 2026-10-07
 - **Extends:** [0019](0019-noras-computer-runs-in-an-sbx-microvm.md) and
-  `design/sandbox-runtime/00-design.md` §14 (S4, the browser), which this
+  `design/sandbox-runtime/README.md` §14 (S4, the browser), which this
   makes concrete.
 - **Supersedes, in part:** sandbox-runtime decision 3 (2026-10-01, "no
   browser logins are allowed for now"), for Nora's own accounts only, held

@@ -1,7 +1,7 @@
 # Nora's computer
 
 The persistent microVM that Nora's computer-use tools run on
-(`design/sandbox-runtime/00-design.md`). It is a Docker Sandboxes (sbx) VM
+(`design/sandbox-runtime/README.md`). It is a Docker Sandboxes (sbx) VM
 booted from `Dockerfile`, and it runs `computerd.py`, a small HTTP API with
 Nora as its only client. Nora reaches it at `http://172.17.0.1:18765`
 (docker0: reachable from the nora container, not from the LAN) with a bearer

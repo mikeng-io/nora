@@ -6,7 +6,7 @@
   Decision 2's “No extra proxy”, for the target HTTP egress architecture.
   Existing deployed behavior and historical measurements remain unchanged.
 - **Design:** [browser runtime](../../design/browser-runtime/README.md),
-  [sandbox runtime](../../design/sandbox-runtime/00-design.md#8-credentials-and-network-from-sbx).
+  [sandbox runtime](../../design/sandbox-runtime/runtime.md).
 - **Tracking:** [issue #520](https://github.com/mikeng-io/nora/issues/520).
 - **Index:** none; this ADR ships no runtime behavior. Allocate a DEC row when
   implementation lands, and reconcile DEC-289's enforcement claim then.

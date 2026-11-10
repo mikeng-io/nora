@@ -27,7 +27,7 @@ implementation:
   migration: '2026-10-21; 3 room workspaces to 2 unit workspaces; 3405 files read as new owner; 6 sessions bound (operator-verified)'
   runbook_fix: https://github.com/mikeng-io/nora/pull/168
 edges:
-  - {src: 00-contract, dst: ../sandbox-runtime/00-design.md, rel: amends, provenance: proposed}
+  - {src: 00-contract, dst: ../sandbox-runtime/README.md, rel: amends, provenance: proposed}
   - {src: 00-contract, dst: ../subagent/00-design.md, rel: amends, provenance: proposed}
   - {src: 00-contract, dst: 01-migration, rel: sequences, provenance: documented-cutover-pr-164-pr-168}
   - {src: 00-contract, dst: ../private-dm/README.md, rel: prerequisite_for, provenance: satisfied-pr-164-v6.5.0}
