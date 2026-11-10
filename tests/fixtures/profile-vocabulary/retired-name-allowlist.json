@@ -731,6 +731,12 @@
       "persona": 1
     }
   },
+  "tests/architecture/code_size_baseline.json": {
+    "reason": "Generated size baseline naming a function its source file already allowlists.",
+    "matches": {
+      "_persona": 1
+    }
+  },
   "tests/architecture/test_doc_references_resolve.py": {
     "reason": "Exact historical file citations retained after the rename; no runtime identifier alias.",
     "matches": {
