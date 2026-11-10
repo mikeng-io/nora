@@ -167,7 +167,7 @@ class FakeReminderStore:
     async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
         cutoff = ensure_utc(now, field="now")
         size = check_limit(limit)
-        # The SQL store's generated `due_tick` computed on the way through
+        # The SQL store's CHECK-bound `due_tick` computed on the way through
         # (`nora.domain.ticks`): `due_tick <= floor(now)`, the same
         # eligibility the column answers.
         tick = tick_of_at(cutoff)

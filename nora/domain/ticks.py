@@ -9,9 +9,10 @@ exactly when `due_tick <= current_tick` and never before — a reminder due at
 04:30:00.
 
 The stores write a target's real instant (`reminders.due_at`,
-`stimulus.due_ms`) and carry `due_tick` as a GENERATED column derived from it
-in SQL, so no writer can let the two disagree; `due_at`/`due_ms` stay as the
-requested instant and audit fields. The same rule is spelled here in Python
+`stimulus.due_ms`) and name `due_tick` as a stored, writable column that a
+CHECK binds to that instant, so no writer can let the two disagree (a snapshot
+restore must be able to write it); `due_at`/`due_ms` stay as the requested
+instant and audit fields. The same rule is spelled here in Python
 so the in-memory stores and every reader compute it identically.
 
 **Slots, not only ticks.** `_slot` (`nora.app.runtime`) already computed

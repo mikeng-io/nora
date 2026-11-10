@@ -46,10 +46,12 @@ down_revision = "0150_due_ticks"
 branch_labels = None
 depends_on = None
 
-#: `wake_state`'s expiry horizon (`WakePolicy.session_timeout_seconds`,
-#: hardcoded — migrations carry their own constants, never imports that can
-#: drift): a TRACKED wake older than this with no outcome row is EXPIRED.
-_STALE_MS = 900_000
+#: `wake_state`'s expiry horizon: a TRACKED wake older than this with no outcome
+#: row is EXPIRED. It is the deployed `[cognition] session_timeout_seconds`
+#: (3900 s), not `WakePolicy`'s 900 s domain default; migrations carry their own
+#: constants, and `tests/infra/test_stimulus_claims_migration.py` ties this copy
+#: to the config default so the two cannot drift again.
+_STALE_MS = 3_900_000
 
 
 def _at(ms: int) -> datetime:

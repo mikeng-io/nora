@@ -344,7 +344,7 @@ class SqlReminderStore:
         """PENDING rows whose `due_tick` has passed, `due_at` then `id` ascending.
 
         Eligibility is the tick (`nora.domain.ticks`): a row is due when its
-        `due_tick` — `ceil(due_at)`, generated — is at or under the current
+        `due_tick` — `ceil(due_at)`, CHECK-bound — is at or under the current
         tick `floor(now)`. A reminder due at :30 of a minute fires at the next
         minute boundary, never early; one due exactly on the boundary is due
         in its own tick. `due_at` remains the requested instant the answer
