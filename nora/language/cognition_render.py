@@ -728,7 +728,9 @@ def _parse_shown(
         elif stack and stack[-1]["tag"] == "item" and "n" in node["attributes"]:
             stack[-1]["rows"].append(RenderedAgendaRow(
                 node["attributes"], "".join(node["text"]), rendered))
-        elif stack and stack[-1]["tag"] == "reads" and tag == "binding":
+        elif tag == "binding" and len(stack) == 2 and stack[1]["tag"] == "reads":
+            # Only the renderer's own top-level `<reads>` block carries bindings;
+            # one nested inside an item or row is text a message put there.
             bindings.append(RenderedAgendaBinding(node["attributes"], rendered))
 
     parser.StartElementHandler = start
@@ -751,13 +753,13 @@ def shown_source_rows(agenda: str | Mapping[str, Any]) -> dict[str, dict[str, st
     by_label: dict[str, list[RenderedAgendaBinding]] = {}
     for binding in bindings:
         label = binding.attributes.get("label")
-        if label is not None:
+        if label:
             by_label.setdefault(label, []).append(binding)
     rows = {}
     for item in items:
         room = item.attributes.get("room")
         label = room[1:-1] if room and room.startswith("«") and room.endswith("»") else room
-        bound = by_label.get(label or "", [])
+        bound = by_label.get(label, []) if label else []
         carrier = bound[0].rendered if len(bound) == 1 else "unavailable"
         for row in item.rows:
             if row.attributes.get("reaction"):
@@ -768,6 +770,15 @@ def shown_source_rows(agenda: str | Mapping[str, Any]) -> dict[str, dict[str, st
                 "carrier": carrier,
             }
     return rows
+
+
+def ledger_source_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """A recorded source row as a judge may see it: its key and text only.
+
+    A row the request never showed has no carrier binding to give; nothing else
+    the ledger holds is projected beside it.
+    """
+    return {k: row[k] for k in ("key", "text") if k in row}
 
 
 def rendered_new_sources(agenda: str) -> dict[str, Any]:
@@ -1185,6 +1196,7 @@ def render_agenda(
 
 __all__ = [
     "RenderBudget", "RenderedAgendaItem", "RenderedAgendaRow", "clock_line",
-    "parse_rendered_agenda", "render_agenda", "rendered_new_sources", "returning", "room_key",
-    "room_label", "shown_source_rows", "speaker_of",
+    "ledger_source_row", "parse_rendered_agenda", "render_agenda",
+    "rendered_new_sources", "returning", "room_key", "room_label",
+    "shown_source_rows", "speaker_of",
 ]

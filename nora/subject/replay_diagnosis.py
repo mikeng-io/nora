@@ -6,7 +6,11 @@ import json
 import re
 from typing import Any
 
-from nora.language.cognition_render import parse_rendered_agenda, shown_source_rows
+from nora.language.cognition_render import (
+    ledger_source_row,
+    parse_rendered_agenda,
+    shown_source_rows,
+)
 
 OBSERVATIONS_BY_KIND = {
     "unsupported": frozenset({
@@ -155,7 +159,7 @@ def compact_trajectory(statement: dict[str, Any], events: list[dict[str, Any]]) 
     for event in events[:end + 1]:
         if event.get("name") == "nora.proposal.sources":
             rows = json.loads(event["attributes"]["body"])
-            cited.update({n: {**row, "event_id": event["event_id"]}
+            cited.update({n: {**ledger_source_row(row), "event_id": event["event_id"]}
                           for n, row in rows.items() if n in numbers})
     shown_rows = shown_source_rows(request)
     for item in selected:

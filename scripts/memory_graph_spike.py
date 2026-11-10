@@ -40,7 +40,7 @@ from nora.domain.prompt import escape
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memory_graph import WALK_SQL, walk_parameters
 from nora.infra.sql.schema import METADATA
-from nora.language.cognition_render import shown_source_rows
+from nora.language.cognition_render import ledger_source_row, shown_source_rows
 from nora.language.comprehend_render import MEMORY_CRITERIA
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
@@ -665,7 +665,8 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         source_events = [e for e in events if e.get("name") == "nora.proposal.sources"
                          and e.get("span_id") == event.get("span_id")]
         source_rows = json.loads(source_events[-1]["attributes"]["body"]) if source_events else {}
-        source_rows = {n: rendered.get(n, row) for n, row in source_rows.items()}
+        source_rows = {n: rendered.get(n, ledger_source_row(row))
+                       for n, row in source_rows.items()}
         values = []
         for part in result.get("content", []):
             if "json" in part:
