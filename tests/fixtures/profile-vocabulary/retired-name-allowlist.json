@@ -737,6 +737,12 @@
       "_persona": 1
     }
   },
+  "tests/architecture/design_shape_baseline.json": {
+    "reason": "Generated design-shape baseline naming design files whose paths the gate already allows.",
+    "matches": {
+      "persona": 2
+    }
+  },
   "tests/architecture/test_doc_references_resolve.py": {
     "reason": "Exact historical file citations retained after the rename; no runtime identifier alias.",
     "matches": {

@@ -44,6 +44,7 @@ FREEFORM_HEADINGS = [
 ]
 PR_HEADINGS = [
     "What",
+    "Architecture",
     "Also",
     "Gate on the merged tree",
     "Authored by",

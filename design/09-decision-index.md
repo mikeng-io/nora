@@ -1,45 +1,10 @@
----
-kind: design
-title: "Nora — Decision Index"
-description: "One line per decision, across all eight identifier namespaces (D*, A*, R-*, DEC-*), pointing at the document that made it and the test that enforces it."
-tags: [nora, design, decisions, index]
-timestamp: '2026-08-04'
-edges:
-  - {dst: 00-overview, rel: indexes, provenance: asserted}
-  - {dst: ../docs/superpowers/specs/2026-08-03-nora-strands-spec.md, rel: indexes, provenance: asserted}
-  - {dst: ../docs/superpowers/specs/2026-08-04-nora-architecture-design.md, rel: indexes, provenance: asserted}
----
-
 # Decision Index
 
-**Current content policy (operator, 2026-10-25):** the enumerated content and
-location-audience checks are disabled by default, retained and tested in enabled
-mode. Credential and doctrine protection always run. See
-[the reversible switch](../docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md). Historical always-on wording
-in the affected rows and their original design documents describes enabled mode.
-
-Decisions live inside long documents under eight identifier namespaces with no
-index (`D*`, `A*`, `R-*`, `S*`, `C.*`, `E.*`, `M*`, `DEC-*`), and production
-modules used to cite section numbers of a spec since superseded. Rules are
-versionless; section numbers are not. This file is the index for the four
-namespaces that carry live, enforced decisions: `D*` (topology), `A*` (audit
-amendments), `R-*` (guardrail rules), `DEC-*` (architecture). `S*`, `C.*`,
-`E.*`, `M*` are structural/procedural section labels inside
-`docs/superpowers/specs/2026-08-03-nora-strands-spec.md`, not decisions in
-their own right, and are not indexed here.
-
-See `ARCHITECTURE.md` for the map this index supports, and each identifier's
-defining document for the full rationale — this file is deliberately terse.
-
-**Deprecated rows.** A row whose subject has been deleted is **marked
-`DEPRECATED`, never renumbered and never removed** — every cross-reference in
-`design/dreamer-agent-loop/` and in the specs points at a number, so reusing or
-reflowing one silently rewrites history. As of **2026-09-07** the knowledge tier
-(the "fact tier") and the language tier are deprecated and their code deleted
-(issue #115); the rows marked below are theirs. Their database tables are **not**
-dropped by that change — the code goes, the schema stays, and dropping them is a
-separate explicit decision. The evidence is in
-`design/dreamer-agent-loop/20-knowledge-tier.md` §0.
+The decisions that hold now, one line each, with the test that enforces it.
+A decision that no longer holds is deleted; a changed one is rewritten in
+place. Numbers are never reused. The reasoning lives in the ADRs
+(`docs/adr/`) and the design bundles; the history lives in git.
+`nora-decision` owns adding, citing and reversing a row.
 
 ## D — Topology (`design/00-overview.md`)
 
