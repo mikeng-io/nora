@@ -1,8 +1,10 @@
 """Count the markers of a log in Python comments and docstrings, per file.
 
 A comment or docstring describes what the code is; the commit and the issue
-are the log (`docs/maintainers/conventions-rationale.md` «Comments describe, git records»). The two
-unambiguous markers of a log are a calendar date and an issue or PR number.
+are the log (AGENTS.md «Comments and maintained documentation»). The
+unambiguous markers of a log are a calendar date, an issue or PR number, and
+a decision citation (`DEC-n`, `R-n`, `ADR n`): the decision index maps each
+rule to its test, so a copy in the code only drifts.
 `tests/architecture/test_comments_carry_no_new_log.py` holds every tracked
 file to the count in `tests/architecture/log_marker_baseline.json`, which may
 only go down.
@@ -28,6 +30,7 @@ LOG_MARKER = re.compile(
     r"\b20\d\d-\d\d-\d\d\b"  # a calendar date
     r"|(?<![\w&/])#\d{1,5}\b"  # an issue or PR number
     r"|\b(?:PR|[Ii]ssues?)\s*#\d+"  # one glued to its word
+    r"|\b(?:DEC|R)-\d+\b|\bADR[ -]?\d{1,4}\b"  # a decision citation
 )
 
 

@@ -334,18 +334,32 @@ and in `docs/maintainers/conventions-rationale.md`, catalogued in `design/dreame
 
 ## Comments and maintained documentation
 
-Comments are minimal local descriptions or short constraints with pointers.
-Architecture, rationale and decisions belong in canonical maintained docs, never
-primarily in comments. Apply this across the repository; do not mechanically
-strip existing comments. See [configuration contract](docs/configuration.md) and
-its accepted amendment (DEC-325).
+**Git is the decision log.** Commits and PRs record what changed and why; ADRs
+and `design/09-decision-index.md` are the only decision records. Nothing else
+retells a decision.
 
-**Root documents are instructions, not logs.** `AGENTS.md`, `ORCHESTRATION.md`
-and the other root guides state what holds now, in the present tense. When a
-rule changes, rewrite it in place: no dates, "operator ruling" labels, reversal
-stories, superseded text or issue/PR links as provenance. History lives in git,
-`CHANGELOG.md`, the ADRs and `design/09-decision-index.md`; link an ADR only
-when the reader needs its reasoning.
+- **A comment says what the code cannot**: a unit, a bound, a non-obvious
+  constraint, one business fact. At most three lines. Never history, a
+  measurement, a review story, "was X, now Y", or a decision citation
+  (`DEC-n`, `R-n`, `ADR n`): the index maps each rule to its test.
+- **A docstring says what the thing is.** An internal (`_name`) function gets
+  one line or none. A model-facing tool docstring is behaviour, changed through
+  `nora-tool`.
+- **Documentation describes the architecture as it is now**, high level, in the
+  present tense. A design or root document is rewritten in place when the code
+  changes, never appended to: an appended doc drifts from the code and tells
+  the next reader a shipped feature is missing.
+- **Size limits**: a file at most 800 lines, a function at most 120. Split by
+  responsibility, not by line count. A file that grows past a limit is split in
+  the same change.
+
+`tests/architecture/test_code_stays_within_size_limits.py` (files, functions,
+comment blocks, internal docstrings) and
+`tests/architecture/test_comments_carry_no_new_log.py` (dates, issue numbers,
+decision citations) hold the existing debt to baselines that only shrink. When a
+cleanup shrinks one, rewrite it: `python -m scripts.code_size --write`,
+`python -m scripts.log_markers --write`. Touching a file means leaving its
+comments within these rules.
 
 ## Conventions (short — full text in `docs/maintainers/conventions-rationale.md`)
 
