@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.17.3](https://github.com/mikeng-io/nora/compare/v7.17.2...v7.17.3) (2026-11-10)
+
+
+### Features
+
+* materialize web_fetch pages into fetched_pages, serve offset/about ([852cc11](https://github.com/mikeng-io/nora/commit/852cc119ab5e08e07409f49c714d4ac46c6e65d2))
+
+
+### Bug Fixes
+
+* **web_fetch:** purge expired fetched pages and hedge an about miss ([92131c1](https://github.com/mikeng-io/nora/commit/92131c1d5187c016cd7fd00e255c2735c9d682cf))
+* drop env-name interpolation CodeQL flags in fetch_provider warnings ([6535791](https://github.com/mikeng-io/nora/commit/65357917aa115c13dac10cdfb2b840476ab7ad38))
+
 ## [7.17.2](https://github.com/mikeng-io/nora/compare/v7.17.1...v7.17.2) (2026-11-10)
 
 
