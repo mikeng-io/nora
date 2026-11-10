@@ -1155,3 +1155,55 @@ async def test_a_replacement_on_a_retire_refuses_with_its_reason():
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unexpected_replacement"
     assert memory.graph.relations[old_id].status == "current"
+
+
+async def test_possible_existing_registers_only_what_the_returned_cards_emit():
+    """A `possible_existing` refusal registers shown custody for exactly the
+    handles and relation ids its cards emit — a node the walk touched but
+    the card trimmed out never becomes usable state — plus the `(kind,
+    name)` refusal `new.distinct` may confirm on re-proposal."""
+    from dataclasses import replace as _replace
+
+    from nora.app.cognition_memory import WakeMemory
+    from nora.obs.metrics import Metrics
+    from nora.testing.comprehend import InMemoryComprehendRecords
+    from nora.testing.memory_graph import FakeMemoryGraph
+
+    class _WideWalk(FakeMemoryGraph):
+        """A store whose walk returns every incident edge, past fan_out."""
+        async def walk(self, seeds, query):
+            return await self._walk(seeds, _replace(query, fan_out=99, nodes=99))
+
+    memory = WakeMemory(graph=_WideWalk(), records=InMemoryComprehendRecords(),
+                        metrics=Metrics())
+    state = _state(memory)
+    at = AT + timedelta(hours=1)
+    memory.graph.entities["e1"] = Entity("e1", "event", "unit-1", "generated gala ball")
+    for i in range(4):
+        memory.graph.relations[f"r{i}"] = Relation(
+            f"r{i}", ("event", "e1"), "at", ("place", f"p{i}"),
+            "notebook", "unit-1", (), asserted_at=at - timedelta(hours=i))
+
+    def stmt(new_fields):
+        return {"type": "relation", "rel": "at",
+                "subject": {"new": {"kind": "event", **new_fields}},
+                "object": {"new": {"kind": "place", "name": "some venue"}},
+                "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
+
+    refused = await memory.propose(state, items=[0],
+                                   statements=[stmt({"name": "generated gala"})])
+    entry = refused["statements"][0]
+    assert entry["status"] == "refused" and entry["reason"] == "possible_existing"
+    emitted = entry["candidates"][0]["relations"]
+    assert len(emitted) == 3
+    emitted_ids = {r["id"] for r in emitted}
+    assert state.shown_relations == emitted_ids == {"r0", "r1", "r2"}
+    # Only what the card named is shown: the candidate handle and the
+    # endpoints of the three retained relations — never `p3`.
+    assert state.shown_keys == {
+        ("event", "e1"), ("place", "p0"), ("place", "p1"), ("place", "p2")}
+    assert state.possible_existing == {("event", "generated gala")}
+
+    saved = await memory.propose(state, items=[0], statements=[stmt({
+        "name": "generated gala", "distinct": "a different gala entirely"})])
+    assert saved["statements"][0]["status"] == "saved"
