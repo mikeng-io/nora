@@ -16,9 +16,11 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from nora.agent import factory, telemetry
 from nora.app import cli
 from nora.app import unified_backfill as ub
-from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
+from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import AdaptorBudget
 from nora.domain.stimuli import SessionLimitError
+from nora.obs.metrics import Metrics
+from tests.fakes import dreamer_runtime_for
 from tests.unit.test_unified_backfill import _FakeEngine, _patch_sql, _run_kwargs, _Runner, _s
 
 
@@ -81,8 +83,9 @@ def model_runner(monkeypatch, actual_input=110, *, unknown=False, hang=False, st
         return 100 if not calls else 10
 
     monkeypatch.setattr(model, "count_tokens", count_tokens)
-    runner = LiveCognitionAgentRunner(models=SimpleNamespace(create=lambda: model),
-        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0))
+    runner = DreamerAgentRunner(runtime=dreamer_runtime_for(
+        models=SimpleNamespace(create=lambda: model), metrics=Metrics(),
+        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0)))
     return runner, calls, client
 
 

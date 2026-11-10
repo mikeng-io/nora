@@ -307,9 +307,10 @@ class CognitionRunResult:
 
 class CognitionAgentRunner(Protocol):
     """The test seam (CLAUDE.md's policy: a constructor argument, never an
-    `_fn` hook). `nora.app.cognition_agent_runner.LiveCognitionAgentRunner`
-    is the production implementation, wrapping `nora.agent.factory.
-    create_dream_agent`; `tests/behavioral/
+    `_fn` hook). `nora.app.cognition_agent_runner.DreamerAgentRunner`
+    is the production implementation, delegating to
+    `DreamerRuntime.run_agent` — the one model-invocation route (node 30);
+    `tests/behavioral/
     test_cognition_session_writes_nothing_live.py`'s `ScriptedAgentRunner`
     drives a fixed sequence of tool calls with no model and no Strands.
 
@@ -413,8 +414,9 @@ class TokenSpend:
 
 #: The session's `TokenSpend`, set around the model loop. A context variable and
 #: not a parameter of `CognitionAgentRunner.run`, so every runner double that
-#: predates it still satisfies the Protocol; a task started by `asyncio.wait_for`
-#: copies the context, and the holder is shared by reference.
+#: predates it still satisfies the Protocol; the loop runs inside
+#: `asyncio.timeout` in this task's own context, and the holder is shared by
+#: reference.
 SESSION_TOKENS: contextvars.ContextVar[TokenSpend | None] = contextvars.ContextVar(
     "cognition_session_tokens", default=None,
 )
@@ -810,11 +812,9 @@ class CognitionSessionRunner:
         #: model's window WITH the size evidence (in memory: a restart forgets
         #: it, which fails toward `infra`). A `closed` session clears it.
         self._overflowed: dict[str, frozenset[int]] = {}
-        #: Wake id -> the task running its session, for `shutdown`.
-        self._tasks: dict[int, asyncio.Task[Any]] = {}
         #: Outcome writes shielded from a second cancel (a `shutdown` and the
-        #: evaluator's `cancel_in_flight` both cancelling one task), held so
-        #: they are not garbage-collected while they finish.
+        #: Dreamer lane's `cancel_in_flight` both cancelling one task), held
+        #: so they are not garbage-collected while they finish.
         self._finishing: set[asyncio.Task[Any]] = set()
         #: One lock per unit around a pace or remind call's read-check-write:
         #: the model may issue two in one turn, and the pending cap and the
@@ -899,9 +899,6 @@ class CognitionSessionRunner:
         did not close. Every path writes the wake's outcome (or, if that write
         fails, leaves the wake OPEN until it expires): nothing here returns
         with the wake's stimuli consumed and unseen."""
-        task = asyncio.current_task()
-        if task is not None:
-            self._tasks[wake_id] = task
         session_id: int | None = None
         #: Offered to the model loop (`SESSION_TOKENS`) and read by EVERY path
         #: that records this wake's outcome, so a failed, timed-out or cancelled
@@ -1087,8 +1084,6 @@ class CognitionSessionRunner:
                 cause=classify_failure(exc),
             )
             raise
-        finally:
-            self._tasks.pop(wake_id, None)
 
     async def replay(self, *, view: UnitView, now_ms: int, historical: bool = False) -> Any:
         """Run the recorded batch through live assembly, using sandbox collaborators."""
@@ -1221,14 +1216,14 @@ class CognitionSessionRunner:
         )
 
     async def shutdown(self) -> None:
-        """Cancel every session still in flight and wait for it to record
-        itself `cancelled`. A session must not vanish with its wake still
-        reading «in flight» when it could have said otherwise."""
-        tasks = tuple(self._tasks.values())
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        """Wait for the finishing outcome writes to land. The tasks
+        themselves are not this runner's to cancel: a live session's task is
+        admitted on the Dreamer lane (`SubconsciousExecutor` →
+        `DreamerRuntime.dispatch`), and `CognitionShutdown` cancels it there
+        before calling this — the boundary that created the task cancels it
+        (node 18). What remains here is the settlement half: a session must
+        not vanish with its wake still reading «in flight» when it could
+        have said `cancelled`."""
         if self._finishing:
             await asyncio.gather(*tuple(self._finishing), return_exceptions=True)
 
@@ -1393,9 +1388,11 @@ class CognitionSessionRunner:
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
         trace_outcome = "llm_error"
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._budget.timeout_seconds
         try:
-            result = await asyncio.wait_for(
-                self._run_agent(
+            async with asyncio.timeout_at(deadline):
+                result = await self._run_agent(
                     unit=unit, pending_ids=frozenset(s.id for s in view.pending),
                     system_prompt=system_prompt, prompt=prompt, tools=tools,
                     historical=historical,
@@ -1405,11 +1402,12 @@ class CognitionSessionRunner:
                         # scales by it: DEC-247).
                         "cognition.items": str(len(items)),
                     },
-                ),
-                timeout=self._budget.timeout_seconds,
-            )
+                )
             trace_outcome = "llm_error" if result.stop_reason in LIMIT_STOP_REASONS else "silent"
         except TimeoutError as exc:
+            # `asyncio.timeout` raises TimeoutError only after its own
+            # deadline callback fired; an external task.cancel() propagates
+            # as CancelledError, so TimeoutError here IS the wall clock.
             raise SessionTimeoutError(
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
@@ -1441,7 +1439,11 @@ class CognitionSessionRunner:
                 bound_rooms=tuple(sorted(state.rooms)),
             )
             if self._tag_trace_store is not None:
-                await asyncio.wait_for(self._tag_trace_store.save(trace), timeout=5.0)
+                save_deadline = loop.time() + 5.0
+                # TimeoutError here is the save's own deadline firing, same
+                # classification as the session clock above.
+                async with asyncio.timeout_at(save_deadline):
+                    await self._tag_trace_store.save(trace)
             # The SAME automatic completion hook the tag path holds (design
             # 20): the tools-less Standing fold runs on this session's
             # complete retained Record — including a silent or failed

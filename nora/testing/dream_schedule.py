@@ -33,4 +33,8 @@ class InMemoryDreamScheduleClock:
     async def record_fire(
         self, *, adaptor_name: str, key: str, at_ms: int
     ) -> None:
-        self._rows[(adaptor_name, key)] = at_ms
+        # `max`, mirroring `SqlDreamScheduleClock`'s `greatest(...)`: a stored
+        # fire never moves backwards. A clock that could regress would let a
+        # backward wall-clock move reopen a slot that already ran.
+        k = (adaptor_name, key)
+        self._rows[k] = max(at_ms, self._rows.get(k, at_ms))

@@ -37,6 +37,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+from nora.domain.ticks import due_tick_of_at
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.history import APPEND_ONLY, HISTORY_TABLES
 from nora.infra.sql.snapshot_at import copied_tables
@@ -162,6 +163,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _hex("rem", i), "requester_person_id": "p", "platform": "signal",
         "conversation_id": "g1", "conversation_type": "group", "text": f"r{i}",
         "created_at": T0, "due_at": T0 + timedelta(hours=1), "state": "pending",
+        "due_tick": due_tick_of_at(T0 + timedelta(hours=1)),
     },
     "compute_jobs": lambda i: {
         "id": _uuid("job", i), "backend_job_id": f"b{i}", "task": "t", "platform": "signal",
@@ -629,6 +631,9 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     },
     "stimulus_retraction": lambda n: {
         "unit": "u", "stimulus_id": n, "reason": "cancelled",
+    },
+    "stimulus_claim": lambda n: {
+        "unit": "u", "stimulus_id": n, "wake_id": n,
     },
 }
 

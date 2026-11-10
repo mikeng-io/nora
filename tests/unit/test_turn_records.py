@@ -132,11 +132,11 @@ async def test_the_real_sdk_retains_the_exchange_and_requirements(occasion):
     from nora.agent.ports import ToolSpec, adapt
     from nora.agent.turn_recording import in_room
     from nora.app.agent_runner import LiveAgentRunner
-    from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
+    from nora.app.cognition_agent_runner import DreamerAgentRunner
     from nora.app.cognition_session import AdaptorBudget
     from nora.domain.models import NormalizedMessage, TagContext
     from nora.obs.metrics import Metrics
-    from tests.fakes import FixedModelSource
+    from tests.fakes import FixedModelSource, dreamer_runtime_for
     from tests.test_agent_runner_stop_reason import RETRY, _doctrine, _StubModel
 
     async def now() -> str:
@@ -163,8 +163,11 @@ async def test_the_real_sdk_retains_the_exchange_and_requirements(occasion):
         )
         messages, requirements = trace.messages, trace.requirements
     else:
-        result = await LiveCognitionAgentRunner(
-            models=FixedModelSource(model), retry=RETRY,
+        result = await DreamerAgentRunner(
+            runtime=dreamer_runtime_for(
+                models=FixedModelSource(model), retry=RETRY,
+                metrics=Metrics(),
+            ),
         ).run(
             system_prompt="check", prompt="check", tools=[tool],
             budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=1000, timeout_seconds=5),
