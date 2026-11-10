@@ -246,7 +246,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   modules that are not occasions are the named MECHANISM, RUNNER and EXEMPT
   entries in the test, each with a written reason, reviewed in the PR that adds
   it and re-checked by the test. A new occasion follows
-  `design/context-assembly/04-every-occasion.md` «How a new occasion joins»
+  `design/context-assembly/registry.md` «How a new occasion joins»
   (DEC-273, ADR 0021).
 
 - **Never read a gate's success through a pipe.** `make gate | tail` returns

@@ -377,7 +377,7 @@ def check_the_rule(modules: dict[str, ast.Module]) -> None:
     assert not found, (
         "a module builds a model prompt outside context assembly: "
         f"{found}. Declare `_BLOCKS` and walk it with `assemble(...)` "
-        "(design/context-assembly/04-every-occasion.md, «How a new occasion "
+        "(design/context-assembly/registry.md, «How a new occasion "
         "joins»), or, if it truly is not a context, add it to MECHANISM, "
         "RUNNER or EXEMPT with a reason. There is no list of exceptions to "
         "add it to."

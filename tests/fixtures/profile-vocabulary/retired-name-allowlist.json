@@ -94,7 +94,7 @@
       "Persona": 1
     }
   },
-  "design/context-plan/10-doctrine-audit.md": {
+  "design/context-assembly/composition.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "persona": 1

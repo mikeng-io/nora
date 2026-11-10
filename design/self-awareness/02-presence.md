@@ -6,7 +6,7 @@
 Realizes the **Where** layer of `01-three-layers.md` for the facts needed on
 every turn. Replaces `_where_line` in `nora/agent/prefill.py` rather than
 sitting beside it: two sources for "which network am I on" is the drift the
-context-assembly registry (`design/context-assembly/01-the-registry.md`)
+context-assembly registry (`design/context-assembly/registry.md`)
 exists to prevent.
 
 ## What it says

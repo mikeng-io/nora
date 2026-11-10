@@ -8,7 +8,7 @@ status: measured
 edges:
   - {dst: 00-intent.md, rel: follows, provenance: asserted}
   - {dst: ../cognition-loop/data.md, rel: depends_on, provenance: asserted}
-  - {dst: ../context-assembly/04-every-occasion.md, rel: extends, provenance: asserted}
+  - {dst: ../context-assembly/registry.md, rel: extends, provenance: asserted}
 ---
 
 # Target shape: context awareness

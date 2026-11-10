@@ -216,8 +216,8 @@ Recommendation: design style. The response episodes already exist.
 | C4 | `character_read` | `tool_selection` before and after (`nora-tool`) |
 
 Step 2 (the self block, [20](20-self-block.md)) follows C3b. New blocks
-follow `_BLOCKS` and context assembly; `design/context-plan/` (on master) is
-an experiment-only selector: it classes `culture` and `character` as
+follow `_BLOCKS` and context assembly; `design/context-assembly/composition.md`
+is an experiment-only selector: it classes `culture` and `character` as
 selectable, and its experiment filter keeps Culture visible. New blocks
 declare themselves in `_BLOCKS` the same way, so the selector can see them;
 nothing here conflicts with it.

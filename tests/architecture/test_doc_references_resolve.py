@@ -325,13 +325,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ),
 
     (
-        "design/context-assembly/04-every-occasion.md",
-        "nora/app/announce.py",
-    ): (
-        "deleted 2026-10-16 with the manual release scheme and the upgrade "
-        "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
-    ),
-    (
         "design/media-read-lane/05-decisions-and-index.md",
         "scripts/render_release_notes.py",
     ): (

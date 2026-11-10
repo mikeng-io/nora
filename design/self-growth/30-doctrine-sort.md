@@ -64,7 +64,7 @@ needs a DEC row (`nora-decision`) in the PR that ships the classification.
 
 ## 4. Step 5: cut (last)
 
-> **Amended 2026-10-12** (§5's marker; [context-plan 12](../context-plan/12-the-sort-ruled.md) §1):
+> **Amended 2026-10-12** (§5's marker; [context-plan 12](../context-assembly/composition.md) §1):
 > "character text is deleted" now applies to GROWN character only. An authored
 > identity seed stays on every surface, units included, and is never cut.
 
@@ -82,7 +82,7 @@ needs a DEC row (`nora-decision`) in the PR that ships the classification.
 Cutting before the receivers exist leaves her flat. Character may only cite
 the Record and Rollup, so an authored seed account is not an option.
 
-> **Amended 2026-10-12 (operator; [context-plan 12](../context-plan/12-the-sort-ruled.md) §1).**
+> **Amended 2026-10-12 (operator; [context-plan 12](../context-assembly/composition.md) §1).**
 > An authored seed account inside Character is still not an option, but an
 > authored **identity seed in the doctrine** is required: the character bucket
 > splits into seed (who she is: name, AI, maker, form, temperament, a register
@@ -92,7 +92,7 @@ the Record and Rollup, so an authored seed account is not an option.
 > only 65% of measured turns.
 >
 > **Built 2026-10-13:** `seed` is a bucket in `classification.yaml`; the identity
-> seed is marked there ([context-plan 12](../context-plan/12-the-sort-ruled.md) §1).
+> seed is marked there ([context-plan 12](../context-assembly/composition.md) §1).
 
 
 ## Later amendment — 2026-11-04 (#575)

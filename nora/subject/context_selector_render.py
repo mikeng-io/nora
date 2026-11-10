@@ -5,7 +5,7 @@ with optional context withheld; the `flash` arm asks a small model which of
 the OPTIONAL blocks a turn needs. The prompt that model reads — its system
 text, the clock/window line and the candidate blocks — is built HERE, so the
 selector is a declared context-assembly occasion like every other prompt
-(DEC-273, ADR 0021, design/context-assembly/04-every-occasion.md «How a new
+(DEC-273, ADR 0021, design/context-assembly/registry.md «How a new
 occasion joins»). The runner only dispatches the POST and records receipts.
 
 It lives in `nora.subject`, not `nora.language`: the `<group_transcript>`

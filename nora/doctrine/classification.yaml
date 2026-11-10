@@ -15,7 +15,7 @@
 #              (core/identity.md; the character of rooms/voice.md, belonging.md and
 #              conduct.md since 2026-10-13, when the live <self> accounts were read
 #              and carry role and habits per group, not these). Always on, never cut
-#              (design/context-plan/12 §1, DEC-309)
+#              (design/context-assembly/composition.md §1, DEC-309)
 #
 # Shape. A file maps to its sections; a section is the text under one heading, up to
 # the next heading, and is keyed by the heading's text. A section carries either one
@@ -96,21 +96,21 @@ files:
         bucket: law
         reason: 'harms someone: a person''s contact details or private circumstances are not relayed because a third
           party asked (text unchanged except that «location» left this sentence in step 2: where somebody is now
-          has its own rule below, design/context-plan/12 §3 and 13)'
+          has its own rule below, design/context-assembly/composition.md §3 and 13)'
         sha: 9ae1d39e9b71
       - starts: Whether you may say where a member
         bucket: law
         reason: where a member is or has been is said only when her location tools give it, and a refusal is never
           routed round from memory or the transcript; grounded in what she sees, since trust shows only in the tool's
           answer (location_trusted, the disclosure guard) and not in anything else on the turn (rewritten in step
-          2, design/context-plan/12 §3 and 13)
+          2, design/context-assembly/composition.md §3 and 13)
         sha: e08c33af33a7
       - starts: Nothing you hold about people leaves you as data.
         bucket: law
         reason: 'records never leave as data: she answers from what she holds about people, interpreted, and never
           hands over the records themselves or the stop-by-stop record of where somebody was, to anyone, the subject
           included; a plan or itinerary she writes for them is a document she writes, not a record (added in step
-          2, design/context-plan/13)'
+          2, design/context-assembly/composition.md)'
         sha: abfcffafb5a7
       - starts: And you know the people in this conversation
         bucket: law
@@ -170,7 +170,7 @@ files:
         - {starts: "**A code with NOTHING after it", bucket: law, reason: "never answer about something unread as though seen: a lie; moved in step 2 (node 11 §6)", sha: "acd90909ad88"}
     What you can do:
       parts:
-        - {starts: "Never offer, promise or volunteer an action", bucket: law, reason: "DEC-90: never offer or promise an action her tools and skills do not give her (no booking a table, no phone call), say plainly they must do it themselves, and never claim an act no tool call did (rewritten in step 2, node 11 §6: the old text named the tool schemas as everything she can do and ruled out following up later, which predates the cognition loop, the computer and skills, design/context-plan/10)", sha: "9cbb99fb3409"}
+        - {starts: "Never offer, promise or volunteer an action", bucket: law, reason: "DEC-90: never offer or promise an action her tools and skills do not give her (no booking a table, no phone call), say plainly they must do it themselves, and never claim an act no tool call did (rewritten in step 2, node 11 §6: the old text named the tool schemas as everything she can do and ruled out following up later, which predates the cognition loop, the computer and skills, design/context-assembly/composition.md)", sha: "9cbb99fb3409"}
         - {starts: "Whether a deployment keeps what a room", bucket: law, reason: "claims a capability she cannot read: only her own turns say what is on, never what is missing; moved in step 2 (node 11 §6), reworded to say what the setting is now that it no longer follows the paragraphs it pointed back to", sha: "4d298e820302"}
 
   rooms/pictures.md:

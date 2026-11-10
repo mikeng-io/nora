@@ -6,7 +6,7 @@ tags: [nora, personalisation, presence, context, tag-path, planning, measurement
 timestamp: 2026-09-25
 status: measured-null
 edges:
-  - {dst: ../context-assembly/00-overview.md, rel: extends, provenance: asserted}
+  - {dst: ../context-assembly/registry.md, rel: extends, provenance: asserted}
   - {dst: ../proposed/27-presence-analytics.md, rel: consumes, provenance: asserted}
   - {dst: ../cognition-loop/README.md, rel: precedes, provenance: asserted}
 ---

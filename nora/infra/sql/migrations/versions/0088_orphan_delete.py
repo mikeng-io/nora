@@ -1,5 +1,5 @@
 """orphan_delete: a platform delete whose target is not on record YET, kept so the
-message is withdrawn the moment it is (design/context-assembly/04-every-occasion.md
+message is withdrawn the moment it is (design/context-assembly/registry.md
 §7 (A), DEC-276).
 
 A delete can arrive before the message it names (Discord dispatches each event as its

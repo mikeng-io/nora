@@ -168,7 +168,7 @@ answers issue #312's three open questions as follows. The row is
 lost its `participation` gate), the proactive decide pass, note-candidates, the
 note curator, and both standing folds (the tag-turn debrief, handed the account
 the turn read rather than a second read; and the event-path rollup). The
-relevance gate does NOT: `design/context-assembly/02` and #144/#147 are
+relevance gate does NOT: `design/context-assembly/registry.md` and #144/#147 are
 unchanged, and "each of the runtimes" was read as the turns and the Dreamer
 passes, not the admission check in front of them. The `note-merge` pass (DEC-202,
 #495, landed while this was in review) is not a consumer either: it puts a
