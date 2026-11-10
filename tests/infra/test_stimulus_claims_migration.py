@@ -132,3 +132,70 @@ async def test_the_0149_upgrade_replays_the_exact_old_consumption_rule(
         assert ("ops", "live", 0) in sentinels
     finally:
         await engine.dispose()
+
+
+def _migration_constant() -> int:
+    """`0151`'s expiry horizon, read from the migration file itself."""
+    import importlib.util
+    from pathlib import Path
+
+    path = (Path(__file__).parents[2] / "nora/infra/sql/migrations/versions"
+            / "0151_stimulus_claims.py")
+    spec = importlib.util.spec_from_file_location("m0151", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return int(module._STALE_MS)
+
+
+def test_the_migrations_expiry_horizon_is_the_deployed_session_timeout() -> None:
+    """A session is EXPIRED once it has been open `session_timeout_seconds`
+    (`[cognition]`); the migration cannot import config, so it carries a copy
+    and this ties the two — the copy was 900 s while the deployment ran 3900."""
+    from nora.config import CognitionConfig
+
+    default = CognitionConfig.model_fields["session_timeout_seconds"].default
+    assert _migration_constant() == int(default * 1000)
+
+
+@pytest.mark.fresh_database
+@pytest.mark.parametrize(("open_minutes", "backfilled"), [(30, True), (70, False)])
+async def test_a_session_open_inside_the_deployed_timeout_keeps_its_claims(
+    clean_pg_url: str, open_minutes: int, backfilled: bool,
+) -> None:
+    """A tracked wake with no outcome that has been open 30 minutes is OPEN
+    under the deployed 65-minute timeout: it is the unit's mark, so what its
+    range consumed is claimed. Under the old 15-minute copy it read as
+    EXPIRED, got no claims, and a later `closed` outcome had nothing to
+    delete — everything it had handled came back as pending. At 70 minutes it
+    is genuinely expired and claims nothing."""
+    from datetime import UTC, datetime
+
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
+    wake_ms = now_ms - open_minutes * 60_000
+    seen_ms = wake_ms - 60_000
+    engine = create_sql_engine(clean_pg_url)
+    try:
+        command.downgrade(alembic_config(clean_pg_url),
+                          "0149_computer_profile_merge")
+        async with engine.begin() as conn:
+            await conn.execute(sa.text(
+                "INSERT INTO stimulus (unit, kind, item, ref, at_ms, recorded_at,"
+                " platform, conversation_id, person_id, cues, waits, due_ms)"
+                " VALUES ('nora','message','message','m:1',:seen,:seen_at,"
+                "         'signal','g','p','{}',0,NULL)"
+            ), {"seen": seen_ms, "seen_at": _at(seen_ms)})
+            await conn.execute(sa.text(
+                "INSERT INTO cognition_wake (unit, mode, reason,"
+                " from_stimulus_id, through_stimulus_id, stimulus_count,"
+                " eligible_count, oldest_pending_ms, cut_cooldown, detail,"
+                " at_ms, recorded_at, tracked) VALUES"
+                " ('nora','live','settled',0,1,1,1,:seen,0,'{}',:wake,:wake_at,1)"
+            ), {"seen": seen_ms, "wake": wake_ms, "wake_at": _at(wake_ms)})
+        run_migrations(clean_pg_url)
+        claims = await _rows(
+            engine, "SELECT wake_id, stimulus_id FROM stimulus_claim",
+        )
+        assert claims == ([(1, 1)] if backfilled else [])
+    finally:
+        await engine.dispose()

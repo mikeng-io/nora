@@ -26,8 +26,9 @@ second clock model.
 Operator direction, 2026-11-09/10: restore the conscious/subconscious division;
 Cognition must actually execute as a Dreamer adaptor. A common explanation is
 required even where code is not shared. No separate cron service is required.
-This records the target and the implementation plan, **not shipped behavior**.
-No new DEC/R number is allocated for unbuilt behavior.
+The execution split and the shared clock are built and merged (the delivery
+coverage in §6 names the evidence); live runtime acceptance is a separate state
+and has not been run. The decision row is in the index (`design/09-decision-index.md`).
 
 | Execution layer | Owner | Input and result |
 |---|---|---|
@@ -40,16 +41,18 @@ Dreamer is the subconscious runtime, not the name of every background task.
 Collectors, transport reconnects and operational maintenance remain plumbing;
 two execution layers do not mean two asyncio tasks or two deployed services.
 
-### Current wiring, inspected at the design baseline
+### Wiring
 
-Baseline: `52d093d64721ebbb69d0ad45396231fd78f5cdb6`.
-These are source observations, not claims about enabled production flags.
-
-| Path | Actual ownership | Gap against the target |
+| Path | Ownership | Notes |
 |---|---|---|
-| Cognition | `nora/__main__.py` starts `wake_loop`; `WakeEvaluator._schedule_on_wake` starts the session hook. Composition binds it to `CognitionSessionRunner.wake_hook`; the session calls `LiveCognitionAgentRunner`, which directly constructs and invokes an agent through the factory. | It shares Dreamer's factory, guards, budget types, tools and instruction infrastructure, but bypasses `DreamerRuntime.run`. |
-| Other Dreamer adaptors | `dream_loop` applies eligibility and dispatches through `DreamerRuntime.run`. | Its existing interval/phase slots are reusable, but are not a universal base tick. |
-| Deferred conscious turns | `HeartbeatLoop.tick` reads due reminders and runs compatible groups through the fire path. | Timestamp eligibility and sleep-after-pass cadence, rather than aligned numbered ticks. |
+| Cognition | `WakeEvaluator` decides and records the wake, then hands it to `SubconsciousExecutor`, which submits a session-shaped `CognitionSessionAdaptor` to `DreamerRuntime.dispatch`. The Dreamer lane owns admission, single-flight occupancy, the session task and its cancellation; the session's model call goes through `DreamerRuntime.run_agent`. | The sibling `LiveCognitionAgentRunner`/`AgentFactory` route is gone. The session still writes its own outcome. |
+| Other Dreamer adaptors | `dream_loop` applies eligibility and dispatches through `DreamerRuntime.run`. | Unchanged. |
+| Deferred conscious turns | `HeartbeatLoop.tick` reads due reminders (`due_tick <= current tick`) and runs compatible groups through the fire path. | Aligned numbered ticks, not sleep-after-pass. |
+
+The wake loop, the Dreamer driver and the heartbeat each sleep to the next
+boundary of the shared grid (`nora.domain.ticks.seconds_to_boundary`); they stay
+three drivers of two execution layers, sharing the clock vocabulary rather than
+one task.
 
 Source: [startup](../../nora/__main__.py),
 [composition](../../nora/app/composition.py),
@@ -59,8 +62,9 @@ Source: [startup](../../nora/__main__.py),
 [Dreamer runtime](../../nora/agent/dreamer.py),
 [Dreamer driver](../../nora/app/runtime.py),
 [heartbeat](../../nora/app/heartbeat.py).
-The three drivers are separate today; the desired consolidation is not achieved
-by giving them the same names or by sharing only agent construction.
+Consolidation is not achieved by giving the drivers the same names or by
+sharing only agent construction; the shared clock and the single execution owner
+are what make it real.
 
 ## 2. The complete flow and the handoff
 
@@ -218,10 +222,9 @@ cannot express. Operational host jobs remain outside Nora's cognitive layers.
 
 ## 6. One integrated implementation and its acceptance
 
-**Remaining runtime work: all items below.** This documentation change delivers
-only the architectural contract and source reconciliation. The sequence is an
-implementation order inside one integrated change, not a series of unmeasured
-partial cutovers or a shadow week.
+**The items below are delivered** (delivery coverage at the end of this section).
+The sequence was an implementation order inside one integrated change, not a
+series of unmeasured partial cutovers or a shadow week.
 
 1. Map all producers and consumers listed in §3, including the current model
    call and durable state transitions. Preserve the existing context/occasion
