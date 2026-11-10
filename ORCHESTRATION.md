@@ -208,7 +208,7 @@ most six into the PR, most severe first.
 | Artifact | Owns |
 |---|---|
 | This policy | Assignment, capability, review and ownership rules |
-| Design bundle | The high-level architecture and its rationale (`nora-design`); never plan or status |
+| Design bundle | The high-level architecture and its rationale (`nora-design`); never a plan or a status report |
 | ADR | One decision, its alternatives and what it cost |
 | Issue | One bounded outcome: scope, non-goals, acceptance, dependencies |
 | Roadmap card | A capability outcome and its horizon; never an execution queue |

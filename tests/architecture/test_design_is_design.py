@@ -14,6 +14,8 @@ def test_detector_sees_each_violation() -> None:
     assert check("design/a/notes.md", "x\n" * (MAX_FILE_LINES + 1)) == ["over-budget"]
     assert check("design/a/03-decisions.md", "") == ["numbered-or-dated-name", "not-a-design-file"]
     assert check("design/a/_index.yaml", "") == ["not-a-design-file"]
+    assert check("design/a/planner.md", "") == []
+    assert check("design/a/open-items.md", "") == ["not-a-design-file"]
     assert check("design/a/x.md", "> **DEPRECATED** in part\n") == ["history-marker"]
     assert check("design/a/x.md", "---\nsupersedes: other\n---\n") == ["history-marker"]
     assert check("design/a/x.md", "Decided 2026-09-07.\n") == ["date"]

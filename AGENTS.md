@@ -58,13 +58,14 @@ stdlib, a Postgres constraint or an installed dependency do it? 4. One line?
 - **What changes together lives together.** No unrequested abstraction, no
   config for a constant. A deliberate corner gets a `# ponytail:` comment
   naming its ceiling. One check, not a suite.
+- **Ship, then harden what breaks**: one integrated change from one spec,
+  measured once; deletion over addition, the shortest working diff. Undo is a
+  config flip or a backup. A complex ask ships its small version and questions
+  the rest in the same report.
 
 Never simplified away: the egress and disclosure rules, fail-closed
 measurement, error handling that would lose input, and anything the operator
-asked for explicitly.
-
-Content filters are off by default (`[content_checks] enabled = true` and a
-restart restore them; [ADR 0030](docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md)); credential and doctrine protection always run.
+asked for. Content filters are off by default ([ADR 0030](docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md)); credentials and doctrine protection always run.
 
 ## Design, documents and comments
 
@@ -80,7 +81,7 @@ code. `nora-design` owns the procedure.
 **Git and GitHub are the log.** Commits and PRs record what changed and why;
 plans, roadmaps and open items are GitHub issues and the project. The ADRs are
 the one decision record kept as history; `design/09-decision-index.md` lists
-the decisions that hold now, each with its enforcing test (`nora-decision`).
+the decisions that hold now, each with its test or `NOT ENFORCED` (`nora-decision`).
 
 - **A document says what holds now**, high level, present tense, precise and
   concise. Revise or consolidate the section that owns the subject; never add
@@ -112,7 +113,8 @@ NEEDS YOU   only what requires the operator, with the real trade-off
 ```
 
 Lead with the conclusion; headers are subjects, not verdicts; no internal
-identifiers in prose; errors get one clause. **Proceed unless blocked**: stop
+identifiers in prose; errors get one clause; reasoning goes in the artifact,
+not the message. **Proceed unless blocked**: stop
 only for a blocker or a fact only the operator holds. Changes land by merge and the release
 pipeline deploys them; deploy by hand only on request, for host config, or to recover.
 
@@ -129,8 +131,7 @@ reversal condition when you decide. A decision the operator locked is closed.
 - Point signal-cli at another account, re-register it or unlink its device
   without an explicit decision.
 - Reference the archived legacy profile path, or reuse a Hermes gateway.
-- Assert a per-tag object was freed by checking an attribute; count live
-  `gc`-tracked objects.
+- Assert a per-tag object was freed by an attribute; count live `gc` objects.
 - Build a model prompt outside context assembly: every model call is a
   declared occasion (`test_every_model_call_is_a_declared_occasion.py`).
 - Paste production rows into a fixture. Fixtures are generated, or placeholders
@@ -148,9 +149,7 @@ reversal condition when you decide. A decision the operator locked is closed.
 
 ## Instruments
 
-Read `docs/observability.md` before adding one.
-
-- One root span per entry point; stages are its children. Spawned work does
+- Read `docs/observability.md` before adding one. One root span per entry point; stages are its children. Spawned work does
   not inherit the caller's span: attach the intended context explicitly.
 - Langfuse gets traces with a generation in them (a root declares
   `nora.trace_kind`); the rest is a counter label. Model calls use Strands'
@@ -171,7 +170,7 @@ Read `docs/observability.md` before adding one.
   Port fakes live in `nora/testing/`.
 - A test directory names what makes the test true (`tests/README.md`); the
   `tests/` root takes no new files. Tests read config from the template
-  fixtures, never the repo's `config.toml`.
+  fixtures; only a test whose subject is the deployment reads `config.toml`.
 - A new behavioural rule gets a decision-index row and a named test in
   `tests/test_acceptance_rules.py::RULE_TESTS`.
 
@@ -206,9 +205,9 @@ auth only: never `sshpass` or a password in `.env`, chat or a readable file. Eve
 
 ## Skills: the procedures
 
-Each is `.agents/skills/<name>/SKILL.md`, linked from `.claude/skills/<name>`.
-A skill is the order of the commands and the check after each. A new skill
-adds its row here and its link in the same commit.
+Each is `.agents/skills/<name>/SKILL.md`, linked from `.claude/skills/<name>`:
+the order of the commands and the check after each. A new skill adds its row
+here and its link in the same commit.
 
 | when the task is | load |
 |---|---|

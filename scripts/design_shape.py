@@ -19,7 +19,8 @@ BASELINE = ROOT / "tests" / "architecture" / "design_shape_baseline.json"
 
 MAX_README_LINES = 150
 MAX_FILE_LINES = 300
-NOT_DESIGN = ("decision", "review", "roadmap", "open-item", "draft", "plan", "migration")
+NOT_DESIGN = {"decision", "decisions", "review", "reviews", "roadmap", "items", "draft", "plan",
+              "plans", "migration"}
 
 _NAME = re.compile(r"^\d|\d{4}-\d\d-\d\d")
 _DATE = re.compile(r"(?<![\w/#-])20\d\d-\d\d-\d\d(?![\w-])")
@@ -33,7 +34,8 @@ def check(path: str, text: str) -> list[str]:
     found = []
     if _NAME.search(name):
         found.append("numbered-or-dated-name")
-    if not name.endswith(".md") or any(word in stem for word in NOT_DESIGN):
+    words = set(re.split(r"[-_.]", stem))
+    if not name.endswith(".md") or words & NOT_DESIGN or stem.startswith("_"):
         found.append("not-a-design-file")
     if _DATE.search(text):
         found.append("date")
