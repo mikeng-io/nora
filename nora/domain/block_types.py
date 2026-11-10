@@ -106,6 +106,8 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
     _t("cognition_orient", "The session's steps, the memory kinds and admitted relations "
        "it writes by, the writing rules and worked examples. These are instructions, "
        "not evidence about the group."),
+    _t("cognition_act", "Guidance for the actions offered in this session. "
+       "These are instructions, not evidence about the group."),
     _t("memory", "A scoped memory subgraph returned by a read tool. Layer words distinguish "
        "said, computed, judgement and found; evidence counts are not proof. "
        "Validity and state determine whether a relation is current. more=available "

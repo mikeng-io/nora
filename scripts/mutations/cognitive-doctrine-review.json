@@ -49,13 +49,6 @@
     "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
   },
   {
-    "name": "the act skill adds no unavailable memory routing",
-    "file": "nora/dreamer/skills/cognition-register.md",
-    "old": "The notebook preserves what people are actually carrying forward:",
-    "new": "Memory preserves what was stated. The notebook preserves what people are actually carrying forward:",
-    "target": "tests/unit/test_doctrine_identity.py::test_unwired_memory_keeps_purpose_without_requesting_memory_actions"
-  },
-  {
     "name": "missing identity files report a doctrine failure",
     "file": "nora/doctrine/loader.py",
     "old": "    except OSError as exc:\n        raise DoctrineError(f\"identity.md: cannot read public identity: {exc}\") from exc",

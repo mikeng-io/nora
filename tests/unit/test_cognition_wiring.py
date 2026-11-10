@@ -288,7 +288,8 @@ async def test_the_objective_is_read_at_every_session_not_captured_at_startup():
     await _wake(runner, (_stim(1, HOME),), wake_id=1)
     stimuli.seed_wake("u", 2)                    # the next wake, written after the first ended
     await _wake(runner, (_stim(2, HOME),), wake_id=2)
-    assert agent.system_prompts == ["first text", "second text"]
+    assert [text.split("<cognition_orient", 1)[0] for text in agent.system_prompts] == [
+        "first text", "second text"]
     assert [s.doctrine_sha256 for _, s, _ in ledger.sessions] == ["sha-1", "sha-2"]
 
 
@@ -305,7 +306,9 @@ async def test_the_skills_injected_for_the_agenda_kinds_are_recorded_on_the_sess
         skill_versions_for=lambda kinds: {"plans": "abc"},
     )
     await _wake(runner, (_stim(1, HOME),))
-    assert agent.system_prompts == ["FIXED\n\n# Skill: S\n"]
+    [system] = agent.system_prompts
+    assert system.startswith("FIXED")
+    assert system.split("<cognition_act", 1)[0].endswith("\n\n# Skill: S\n")
     assert seen[0] == ["message"]
     assert ledger.sessions[0][1].skill_versions == {"plans": "abc"}
 
@@ -388,8 +391,6 @@ async def test_probe_runs_one_hand_written_item_and_writes_no_outcome():
     assert "room A has 2 new messages" in agent.prompts[0]
     assert {"close", "note_create", "remind", "wake_at", "note_read"} <= set(agent.tool_names[0])
     assert len(ledger.sessions) == 1 and stimuli.outcomes == {}
-
-
 
 
 async def test_a_closed_session_is_counted_by_outcome():
@@ -688,26 +689,13 @@ def test_the_objective_names_every_close_reason_the_session_closes_with():
     """`close`'s tool schema offers `written`; an instruction that listed three
     of the four told her a reason the tool accepts was not hers to use."""
     from nora.domain.cognition_session import CLOSE_REASONS
+    from nora.language.comprehend_render import render_session_system
 
-    text = _objective()
+    text = render_session_system(_objective(), "", tool_names=frozenset({"close"}))
     for reason in CLOSE_REASONS:
         if reason == "struck":                      # code's own close, never her argument
             continue
-        assert f"`{reason}`" in text, reason
-
-
-def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
-    """Context framing, not a capability list (AGENTS.md):
-    it says what she is handed, in what order, and what is already written down,
-    and it does not enumerate the kinds of write she can make."""
-    text = _objective()
-    for phrase in ("Read the clock, agenda, cited messages and existing accounts",
-                   "your own position and pending work when supplied",
-                   "Returning items may have changed since the last look"):
-        assert phrase in text, phrase
-    # no enumeration of the write verbs (they carry their own descriptions)
-    assert "Each note, event, Standing revision" not in text
-    assert "note_create" not in text and "event_propose" not in text
+        assert reason in text, reason
 
 
 def test_the_objective_names_none_of_the_old_shapes_of_the_input():

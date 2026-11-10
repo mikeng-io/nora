@@ -51,8 +51,8 @@
  {
   "name": "Orient precedes Act in the actual wake input",
   "file": "nora/language/comprehend_render.py",
-  "old": "        return doctrine.replace(\"<!-- cognition-orient -->\", orient).replace(\n            \"<!-- cognition-act-skill -->\", skills)",
-  "new": "        return doctrine.replace(\"<!-- cognition-orient -->\", \"\").replace(\n            \"<!-- cognition-act-skill -->\", skills) + orient",
+  "old": "        return doctrine.replace(\"<!-- cognition-orient -->\", orient).replace(\n            \"<!-- cognition-act-skill -->\", skills + act)",
+  "new": "        return doctrine.replace(\"<!-- cognition-orient -->\", \"\").replace(\n            \"<!-- cognition-act-skill -->\", skills + act) + orient",
   "target": "tests/unit/test_orient_kind_table.py::test_assembled_session_puts_orient_before_act"
  }
 ]

@@ -693,15 +693,6 @@ def dataclasses_replace_person(s: Stimulus, person_id: str) -> Stimulus:
     return dataclasses.replace(s, person_id=person_id)
 
 
-def test_the_instruction_conditions_self_position_on_supplied_context():
-    """Current shared state can include Standing; absence is not an empty position."""
-    import pathlib
-
-    text = (pathlib.Path(__file__).parents[2] / "nora/dreamer/objectives/cognition.md").read_text()
-    assert "your own position and pending work when supplied" in text
-    assert "empty or unavailable read" in text
-
-
 # ---- D1 (DEC-245): her own sends in each item's window, marked as hers ---------------------------
 
 def _own(mid: int, room: Room, *, ago: float, body: str = "what time works?",

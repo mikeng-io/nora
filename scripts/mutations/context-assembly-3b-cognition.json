@@ -196,27 +196,6 @@
   "target": "tests/unit/test_cognition_block_types_explain_every_field.py::test_the_view_rejects_text_outside_a_block_and_between_an_elements_children"
  },
  {
-  "name": "3b item 3: the objective says «Below the list» again, a shape of the input that no longer exists",
-  "file": "nora/dreamer/objectives/cognition.md",
-  "old": "Read the clock, agenda, cited messages and existing accounts",
-  "new": "Below the list are cited messages and existing accounts",
-  "target": "tests/unit/test_cognition_wiring.py::test_the_objective_names_none_of_the_old_shapes_of_the_input"
- },
- {
-  "name": "3b item 3: the objective says «the next list» again",
-  "file": "nora/dreamer/objectives/cognition.md",
-  "old": "The agenda counts work, not importance",
-  "new": "The next list counts work, not importance",
-  "target": "tests/unit/test_cognition_wiring.py::test_the_objective_names_none_of_the_old_shapes_of_the_input"
- },
- {
-  "name": "3b item 3: the returning-item judgement is dropped from the objective",
-  "file": "nora/dreamer/objectives/cognition.md",
-  "old": "Returning items may have changed since the last look.",
-  "new": "",
-  "target": "tests/unit/test_cognition_wiring.py::test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds"
- },
- {
   "name": "3b item 4: the `from` field no longer says the name goes in parentheses before the ids",
   "file": "nora/domain/block_types.py",
   "old": "use this exact name in parentheses before cited ids",

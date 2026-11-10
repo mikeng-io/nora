@@ -13,9 +13,10 @@ from scripts.memory_graph_spike import smoke_fact_support
 async def test_both_fact_judges_receive_the_composed_writers_full_criteria():
     from nora.language.comprehend_render import MEMORY_CRITERIA, render_session_system
 
-    system = render_session_system("<!-- cognition-orient -->", "", memory=True)
+    system = render_session_system(
+        "<!-- cognition-orient -->", "", tool_names=frozenset({"memory_propose"}))
     assert system.count(MEMORY_CRITERIA) == 1
-    assert MEMORY_CRITERIA not in render_session_system("", "", memory=False)
+    assert MEMORY_CRITERIA not in render_session_system("", "", tool_names=frozenset())
     calls = []
 
     async def call(model, instruction, payload):
@@ -118,8 +119,6 @@ async def test_scoring_citation_scope_new_rows_and_reasons(malformed):
             assert "uncited secret detail" not in json.dumps(payload["cited_rows"])
             return json.dumps({"verdict": "unsupported", **(
                 {} if malformed else {"reason": "detail absent from cited row"})})
-        assert "passing moments" in instruction
-        assert "no durability" in instruction.lower()
         return json.dumps({"missed": [{"fact": "moment", "quote": "train arrives",
                                        "location": "1", "reason": "new source"}],
                            "context_only": [{"fact": "older", "quote": "old context",

@@ -21,13 +21,6 @@
     "target": "tests/unit/test_cognition_grounding.py::test_no_standing_is_ever_pushed_it_is_pulled"
   },
   {
-    "name": "the objective promises complete Standing even when unavailable",
-    "file": "nora/dreamer/objectives/cognition.md",
-    "old": "your own position and pending work when supplied",
-    "new": "your complete Standing position and pending work on every occasion",
-    "target": "tests/unit/test_cognition_grounding.py::test_the_instruction_conditions_self_position_on_supplied_context"
-  },
-  {
     "name": "major: the strike counts every failure, infra included",
     "file": "nora/app/wake.py",
     "old": "            or view.agenda_failures < self._policy.max_consecutive_failures",

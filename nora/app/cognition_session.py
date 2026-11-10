@@ -1378,7 +1378,7 @@ class CognitionSessionRunner:
         from nora.language.comprehend_render import render_session_system
 
         system_prompt = render_session_system(
-            doctrine_text, skill_text, memory=self._memory is not None)
+            doctrine_text, skill_text, tool_names=surface.admitted)
         shared_view = None
         if self._shared is not None:
             try:
@@ -3593,7 +3593,9 @@ class CognitionSessionRunner:
         )
         return [
             *read_tools,
-            *(adapt(spec) for spec in document_specs),
+            *(adapt(spec) for spec in document_specs
+              if self._documents is not None and self._documents_context is not None
+              and (not state.historical or spec.name != "document_revise")),
             *(self._counted(v.__name__, v, state=state) for v in verbs),
         ]
 

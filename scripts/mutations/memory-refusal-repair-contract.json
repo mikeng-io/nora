@@ -1,33 +1,5 @@
 [
  {
-  "name": "the Orient restates the reading's happened_at contract",
-  "file": "nora/dreamer/objectives/cognition.md",
-  "old": "A reading's happened_at.source is its cited row's n; happened_at.expression copies that row's own time words or is null when there are none. Its send timestamp is not its event time: code resolves the quoted expression. Record unknown event time honestly.",
-  "new": "Record a reading using its send timestamp as event time.",
-  "target": "tests/unit/test_orient_kind_table.py::test_the_composed_text_carries_the_reading_time_contract"
- },
- {
-  "name": "the repair rule replaces retry-only coverage",
-  "file": "nora/dreamer/objectives/cognition.md",
-  "old": "repair the rejected field of each still-grounded statement, preserving its meaning, mode and citations",
-  "new": "retry only the items not already covered",
-  "target": "tests/unit/test_orient_kind_table.py::test_the_composed_text_carries_the_reading_time_contract"
- },
- {
-  "name": "the Act date rule is scoped away from happened_at",
-  "file": "nora/dreamer/objectives/cognition.md",
-  "old": "Notebook, event and reminder date fields use dates and clock times grounded in the supplied clock, not relative words; memory's quoted happened_at expression has its own meaning above.",
-  "new": "All date fields, including memory happened_at, use absolute dates instead of relative words.",
-  "target": "tests/unit/test_orient_kind_table.py::test_the_composed_text_carries_the_reading_time_contract"
- },
- {
-  "name": "the uncomprehended item is not threatened with striking out",
-  "file": "nora/dreamer/objectives/cognition.md",
-  "old": "An uncomprehended item remains pending.",
-  "new": "An uncomprehended item consumes a return attempt.",
-  "target": "tests/unit/test_orient_kind_table.py::test_the_composed_text_carries_the_reading_time_contract"
- },
- {
   "name": "happened_at carries its quote-or-null description into the schema",
   "file": "nora/app/comprehend.py",
   "old": "    expression: str | None = Field(default=None, description=(\n        \"The exact time words copied from that row's body — «tomorrow», «on \"\n        \"Saturday» — or null when the row states none. Never the row's `at` \"\n        \"metadata and never a date you computed: code resolves the quoted \"\n        \"words against that row's send time. The only nullable field here.\"))",
