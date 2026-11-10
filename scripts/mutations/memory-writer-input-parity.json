@@ -1,0 +1,44 @@
+[
+  {
+    "name": "API punctuation remains an admissible exact source view",
+    "file": "nora/domain/prompt.py",
+    "old": "    return span in body or span in undash(body)",
+    "new": "    return span in body",
+    "target": "tests/unit/test_cognition_source_rows.py::test_api_punctuation_quotes_keep_custody_at_every_admission_gate"
+  },
+  {
+    "name": "callback failures are not excused as pre-dispatch rejections",
+    "file": "nora/agent/replay_capture.py",
+    "old": "    return frames[-2:] == [DecoratedFunctionTool.stream.__code__,\n                           FunctionToolMetadata.validate_input.__code__]",
+    "new": "    return True",
+    "target": "tests/integration/test_grading_contract.py::test_replay_recovers_only_proven_predispatch_argument_failures[coerced_runtime]"
+  },
+  {
+    "name": "native validation failures retain their typed stage",
+    "file": "nora/agent/replay_capture.py",
+    "old": "                **({\"argument_validation\": \"rejected_before_dispatch\"}\n                   if _argument_validation_failure(event.exception) else {}),\n",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_replay_recovers_only_proven_predispatch_argument_failures[arguments]"
+  },
+  {
+    "name": "known argument rejections do not masquerade as service receipts",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                            proposals = [e for e in proposals if e.get(\"argument_validation\")\n                                         != \"rejected_before_dispatch\"]\n",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_replay_recovers_only_proven_predispatch_argument_failures[arguments]"
+  },
+  {
+    "name": "saved statements expose their own coverage index",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                            {**statement, \"evidence_index\": index}\n                            if reference is not None else statement",
+    "new": "                            statement",
+    "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_wire_labels_sparse_saved_and_read_indices"
+  },
+  {
+    "name": "shown reads expose their own coverage index",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                            {**read, \"evidence_index\": index}",
+    "new": "                            read",
+    "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_wire_labels_sparse_saved_and_read_indices"
+  }
+]
