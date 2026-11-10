@@ -35,9 +35,6 @@ signal already present in this repo's own conventions, not a per-path guess:
     design node is marked — and is skipped whole, the same reasoning as the
     superpowers exemption one level down from a directory to a single file. A
     `PARTLY DEPRECATED` banner does not qualify (see `_DEPRECATED_BANNER`).
-  - `design/proposed/` names its own status in its path: a not-yet-built
-    design describing a file that does not exist yet is not dangling, it is
-    early.
   - A PARAGRAPH (not just the one line the path sits on) containing the word
     "RETIRED", "DEPRECATED", "SUPERSEDED", or "deleted", or the phrase
     "resolves in git history", is read as the same kind of deliberate
@@ -111,7 +108,7 @@ _EXEMPT_TARGET_PREFIXES = ("docs/superpowers/", ".superpowers/")
 
 # A DOC under any of these is never scanned — it is itself historical
 # provenance, or it is explicitly describing something not yet built.
-_EXEMPT_SOURCE_PREFIXES = ("docs/superpowers/", ".superpowers/", "design/proposed/")
+_EXEMPT_SOURCE_PREFIXES = ("docs/superpowers/", ".superpowers/")
 
 # A paragraph carrying any of these is read as a deliberate historical
 # citation (a RETIRED/DEPRECATED/SUPERSEDED decision-index row, or prose
@@ -321,25 +318,11 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ),
 
     (
-        "design/media-read-lane/05-decisions-and-index.md",
-        "scripts/render_release_notes.py",
-    ): (
-        "deleted 2026-10-16 with the manual release scheme and the upgrade "
-        "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
-    ),
-    (
         "design/online-status/04-consumers.md",
         "scripts/render_release_notes.py",
     ): (
         "deleted 2026-10-16 with the manual release scheme and the upgrade "
         "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
-    ),
-    (
-        "docs/adr/0014-a-tagged-place-outranks-an-auto-identified-one.md",
-        "design/proposed/27-presence-analytics.md",
-    ): (
-        "deleted in the 2026-10 PII scrub (the design held real locations). "
-        "ADR 0014 is accepted, so its text keeps naming the file as it was."
     ),
     (
         "docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
@@ -379,11 +362,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # --- the self-reference bundle, DEC-193 ---
     #
     # `scripts/ingest_self_asset.py` exists. What remains is history.
-    ("design/self-reference/00-overview.md", "design/proposed/31-self-reference.md"): (
-        "the single-file draft this bundle replaced; deleted when it was "
-        "restructured into design/self-reference/, and the line records that "
-        "history (see _index.yaml `revision`)"
-    ),
     # --- the one-path rebuild ---
     #
     # The old harness `evals/rebuilt/runner.py` and the pre-port corpus copies

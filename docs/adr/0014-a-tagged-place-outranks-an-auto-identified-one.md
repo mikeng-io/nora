@@ -7,7 +7,7 @@
   upheld for **geometry**. DEC-115's fail-closed three-state labelling is
   unchanged; it now labels a place that already exists rather than deciding
   whether one exists.
-- **Index:** DEC-190. Argument: `design/proposed/27-presence-analytics.md` §3.7.
+- **Index:** DEC-190. Argument: `design/cognition-loop/observation.md` §3.7.
   Built 2026-09-27; the regressions below are in `tests/unit/test_place_identity.py`.
 
 ## Context

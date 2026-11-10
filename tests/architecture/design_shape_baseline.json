@@ -406,58 +406,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/media-read-lane/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/media-read-lane/01-chunk-parallelism.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/media-read-lane/02-audio-in-the-video-path.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/media-read-lane/03-opencode-go-provider-lane.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/media-read-lane/04-timeout-and-models.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/media-read-lane/05-decisions-and-index.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date",
-  "history-marker"
- ],
- "design/media-read-lane/06-review-round-2.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/media-read-lane/07-timeout-derivation.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/media-read-lane/08-impl-review-round-1.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/media-read-lane/BRIEF-impl-review.md": [
-  "not-a-design-file"
- ],
- "design/media-read-lane/BRIEF-timeout-derivation.md": [
-  "date"
- ],
- "design/media-read-lane/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/message-edits/00-overview.md": [
   "numbered-or-dated-name",
   "date"
@@ -667,80 +615,6 @@
  ],
  "design/private-dm/_index.yaml": [
   "not-a-design-file",
-  "date"
- ],
- "design/proposed/14-grounding.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/proposed/15-gif-replies.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/proposed/16-multi-message-replies.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/proposed/18-context-budget-and-handles.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/proposed/19-presence-collector.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/proposed/20-postgres-migration.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/proposed/21-media-fetch.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/proposed/22-search-fetch.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/proposed/23-named-places.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/proposed/24-honcho-integration-v2.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/proposed/26-media-replies-and-signal-stickers.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/proposed/28-relevance-classifier.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/proposed/29-image-generation.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/proposed/30-media-architecture.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/proposed/31-recall-query-generation.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/proposed/32-shared-media-register.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/proposed/README.md": [
   "date"
  ],
  "design/room-topology/00-intent.md": [
