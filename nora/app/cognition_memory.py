@@ -377,6 +377,9 @@ class WakeMemory:
         result, local_refusals, aux = await self.admission._admit(
             combined.work, output, state.graph_fetched, state.session_id, scope,
             indices)
+        # Candidate handles a `possible_existing` refusal returned are shown
+        # state: naming one as an endpoint is the repair it asks for.
+        state.shown_keys.update(aux.get("candidate_keys", ()))
         report: dict[int, dict[str, Any]] = aux["report"]
         cited_items: dict[int, set[int]] = aux["cited_items"]
         claims: list[dict[str, Any]] = []

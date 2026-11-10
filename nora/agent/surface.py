@@ -337,10 +337,17 @@ def load_onto(agent: Any, shelf: ToolShelf, names: Iterable[str]) -> dict:
     return result
 
 
-def deferred_surface(tools: Iterable[Any]) -> ToolSurface:
+def deferred_surface(
+    tools: Iterable[Any], *, resident: Iterable[str] | None = None
+) -> ToolSurface:
     """A session's already-bound tools on the same shelf as reply occasions.
 
     Binding and authorization happen before shelving; loading cannot widen scope.
+    `resident` names the tools that stay in the `tools` array; every other
+    admitted tool is shelved for `load_tools`. The default keeps `close`
+    alone resident. A session that holds everything resident (a Cognition
+    session's full read surface) passes every name and gets an empty shelf:
+    no `load_tools`, no loader call cap, no catalogue block.
     """
     from nora.agent.ports import ToolSpec, adapt
     from nora.agent.shelf_hook import ShelfLoader
@@ -353,7 +360,7 @@ def deferred_surface(tools: Iterable[Any]) -> ToolSurface:
             )
         adapted[tool.tool_name] = tool
     shelf = ToolShelf()
-    resident = {name for name in adapted if name == "close"}
+    resident = {name for name in adapted if name == "close"} if resident is None else set(resident)
     shelf.stock({name: tool for name, tool in adapted.items() if name not in resident})
 
     async def load_tools(names: list[str], tool_context: Any) -> dict:
@@ -378,10 +385,10 @@ def deferred_surface(tools: Iterable[Any]) -> ToolSurface:
 
     return ToolSurface(
         scope=ToolScope(platform=None, dreamer=True, tag_turn=False),
-        tools=[*(adapted[n] for n in sorted(resident)), loader],
+        tools=[*(adapted[n] for n in sorted(resident)), *((loader,) if shelf else ())],
         resident=resident,
         shelf=shelf,
         admitted=adapted,
         render=catalogue,
-        hooks=(ShelfLoader(shelf),),
+        hooks=(ShelfLoader(shelf),) if shelf else (),
     )

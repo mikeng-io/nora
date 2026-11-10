@@ -7528,6 +7528,8 @@ Returns `status`: ok (`members`, `scope`) or unavailable (`note`)."""
         `nothing_found`: no node matched in scope.
         `unavailable`: the read could not finish.
         Depth zero returns full fields and relation evidence.
+        Use it to check an entity or statement the graph may already hold
+        before proposing it as new.
 
         Args:
             kind: The node kind shown in the graph.
@@ -7576,7 +7578,8 @@ Returns `status`: ok (`members`, `scope`) or unavailable (`note`)."""
         The other arguments narrow it to one person, a span of dates or some
         kinds of memory. Asked what you know about someone, set `person` to
         them. Reading everything said on a day or span, with no topic to look
-        for, is `record_query`.
+        for, is `record_query`. Use it to check whether the graph already
+        holds an entity or statement before proposing it as new.
 
         SHOULD: write `query` yourself, as what you are looking for, not the raw
         tag message.
