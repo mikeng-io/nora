@@ -29,6 +29,7 @@ from nora.domain.memory_graph import (
     MEMORY_KINDS,
     POINTER_KINDS,
     PROPOSED_KINDS,
+    RELATION_RULES,
     Admission,
     Correction,
     Entity,
@@ -67,10 +68,16 @@ class CitedValue(Shape):
     cite: list[Citation] = Field(default_factory=list)
 
 
+ProposedKind = Literal[tuple(PROPOSED_KINDS)]  # type: ignore[valid-type]
+ProposedRelation = Literal[tuple(
+    name for name, rule in RELATION_RULES.items() if rule.layer == "notebook"
+)]  # type: ignore[valid-type]
+
+
 class NewEntity(Shape):
     """An entity with no matching shown candidate, nested inside an endpoint."""
 
-    kind: str
+    kind: ProposedKind
     name: str
     aliases: list[str] = Field(default_factory=list)
     attributes: dict[str, CitedValue] = Field(default_factory=dict)
@@ -91,7 +98,7 @@ Endpoint = str | NewEndpoint
 
 class RelationStatement(Shape):
     type: Literal["relation"]
-    rel: str
+    rel: ProposedRelation
     subject: Endpoint = Field(description=(
         "A shown `@kind:id` handle — a preview row, an admitted relation's "
         "end, or `@person:<id>` for a person a shown row authored — or "
@@ -209,7 +216,6 @@ class Scope:
     """What one proposal may cite and name, built from the shown rows only."""
 
     catalogue: dict[int, Key] = field(default_factory=dict)
-    key_to_items: dict[Key, set[int]] = field(default_factory=dict)
     shown_keys: frozenset[Key] = frozenset()
     shown_relations: frozenset[str] = frozenset()
     shown_persons: frozenset[str] = frozenset()
@@ -237,17 +243,13 @@ def proposal_scope(
             if r.get("person_id")),
         admitted=frozenset(admitted),
     )
-    for index, item in enumerate(inputs):
+    for item in inputs:
         for n, key in item.snapshot.get("source_keys", {}).items():
             try:
                 key = tuple(key)
                 scope.catalogue[int(n)] = key
             except (TypeError, ValueError):
                 continue
-            scope.key_to_items.setdefault(key, set()).add(index)
-        for source in item.sources:
-            if source.key in fetched.sources:
-                scope.key_to_items.setdefault(source.key, set()).add(index)
     return scope
 
 
@@ -400,7 +402,6 @@ class MemoryProposalAdmission:
         corrections: list[Correction] = []
         correction_stmt: dict[Correction, int] = {}
         claims: dict[int, dict[str, Any]] = {}
-        cited_items: dict[int, set[int]] = {}
 
         async def flatten_relation(
             index: int, st: RelationStatement,
@@ -495,8 +496,6 @@ class MemoryProposalAdmission:
             for cite in st.cite:
                 key = scope.catalogue.get(cite.source) or ("message", str(cite.source))
                 evidence.append(Evidence(key, relation_id=rel_id, span=cite.quote))
-            cited_items.setdefault(index, set()).update(
-                i for key in sources for i in scope.key_to_items.get(key, ()))
             return rel_id
 
         for pos, st in enumerate(output.statements):
@@ -517,12 +516,6 @@ class MemoryProposalAdmission:
                         for c in st.cite if c.quote is not None
                     ],
                 }
-                keys = [
-                    scope.catalogue.get(c.source) or ("message", str(c.source))
-                    for c in st.cite
-                ]
-                cited_items.setdefault(index, set()).update(
-                    i for key in keys for i in scope.key_to_items.get(key, ()))
                 report[index] = {"status": "pending", "kind": "reading"}
             elif isinstance(st, CorrectionStatement):
                 if st.relation not in scope.shown_relations | scope.admitted:
@@ -581,8 +574,6 @@ class MemoryProposalAdmission:
                     continue
                 corrections.append(correction)
                 correction_stmt[correction] = index
-                cited_items.setdefault(index, set()).update(
-                    i for key in sources for i in scope.key_to_items.get(key, ()))
             else:
                 await flatten_relation(index, st)
 
@@ -705,7 +696,7 @@ class MemoryProposalAdmission:
                        else {}),
                 }
         return admission, local_refusals, {
-            "report": report, "claims": claims, "cited_items": cited_items,
+            "report": report, "claims": claims,
             "refused_by_stmt": refused_by_stmt,
             "candidate_keys": candidate_keys,
         }

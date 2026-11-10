@@ -31,7 +31,6 @@ from nora.app.cognition_session import (
 )
 from nora.app.cognition_wiring import (
     COGNITION_READ_CATALOGUE,
-    AgendaSkills,
     CognitionShutdown,
     cognition_budget,
     read_surface,
@@ -263,13 +262,13 @@ def _runner(
         store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms={"u": HOME}, read_tools_for=read_tools_for or (lambda unit, rooms: []),
         read_only_tools=frozenset({"note_read", "about"}),
-        skill_text_for=kw.pop("skill_text_for", lambda kinds: ""),
+        skill_text_for=kw.pop("skill_text_for", lambda: ""),
         grounder=grounder or EmptyGrounder(),
         doctrine_text="FIXED", doctrine_sha256="fixed-sha",
         open_note_titles=const, open_events=const, prior_standing=const,
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=30),
         cooldown_seconds=300.0, units=("u",), session_timeout_seconds=900.0,
-        max_items=12, max_strikes=3, metrics=metrics, clock=lambda: NOW / 1000, **kw,
+        max_items=12, metrics=metrics, clock=lambda: NOW / 1000, **kw,
     )
     return runner, stimuli, ledger
 
@@ -288,29 +287,11 @@ async def test_the_objective_is_read_at_every_session_not_captured_at_startup():
     await _wake(runner, (_stim(1, HOME),), wake_id=1)
     stimuli.seed_wake("u", 2)                    # the next wake, written after the first ended
     await _wake(runner, (_stim(2, HOME),), wake_id=2)
-    assert [text.split("<cognition_orient", 1)[0] for text in agent.system_prompts] == [
+    assert [text.split("<cognition_act", 1)[0] for text in agent.system_prompts] == [
         "first text", "second text"]
     assert [s.doctrine_sha256 for _, s, _ in ledger.sessions] == ["sha-1", "sha-2"]
 
 
-async def test_the_skills_injected_for_the_agenda_kinds_are_recorded_on_the_session():
-    seen: list[list[str]] = []
-
-    def text_for(kinds: Any) -> str:
-        seen.append(list(kinds))
-        return "\n\n# Skill: S\n"
-
-    agent = _Agent()
-    runner, _stimuli, ledger = _runner(
-        agent=agent, skill_text_for=text_for,
-        skill_versions_for=lambda kinds: {"plans": "abc"},
-    )
-    await _wake(runner, (_stim(1, HOME),))
-    [system] = agent.system_prompts
-    assert system.startswith("FIXED")
-    assert system.split("<cognition_act", 1)[0].endswith("\n\n# Skill: S\n")
-    assert seen[0] == ["message"]
-    assert ledger.sessions[0][1].skill_versions == {"plans": "abc"}
 
 
 async def test_an_agenda_in_one_room_binds_the_reads_to_that_room():
@@ -389,7 +370,7 @@ async def test_probe_runs_one_hand_written_item_and_writes_no_outcome():
     result = await runner.probe(unit="u", summary="room A has 2 new messages", now_ms=NOW)
     assert result.stop_reason == "end_turn"
     assert "room A has 2 new messages" in agent.prompts[0]
-    assert {"close", "note_create", "remind", "wake_at", "note_read"} <= set(agent.tool_names[0])
+    assert {"note_create", "remind", "wake_at", "note_read"} <= set(agent.tool_names[0])
     assert len(ledger.sessions) == 1 and stimuli.outcomes == {}
 
 
@@ -506,24 +487,8 @@ async def test_the_guard_holds_the_safety_checks_and_no_call_ceiling(monkeypatch
 
 # ---- skills, shutdown, the boot check -----------------------------------------
 
-def test_agenda_skills_inject_in_a_fixed_order_and_record_their_digests():
-    skills = {
-        "plans": SimpleNamespace(instructions="PLANS", sha256="p1"),
-        "places": SimpleNamespace(instructions="PLACES", sha256="q1"),
-    }
-    injected = AgendaSkills(
-        by_kind={"message": "plans", "self": "places"}, resolve=skills.get,
-    )
-    text = injected.text_for(["self", "message", "time"])   # `time` has no skill
-    assert text.index("PLACES") < text.index("PLANS")        # name order, not kind order
-    assert injected.versions_for(["message", "self"]) == {"plans": "p1", "places": "q1"}
-    assert injected.text_for(["time"]) == "" and injected.versions_for(["time"]) == {}
 
 
-def test_a_skill_the_table_names_but_nothing_installed_is_an_error_not_an_empty_string():
-    injected = AgendaSkills(by_kind={"message": "plans"}, resolve=lambda name: None)
-    with pytest.raises(LookupError, match="plans"):
-        injected.text_for(["message"])
 
 
 async def test_shutdown_cancels_the_evaluators_sessions_then_the_runners_and_only_once():
@@ -685,17 +650,6 @@ def _objective() -> str:
             / "cognition.md").read_text()
 
 
-def test_the_objective_names_every_close_reason_the_session_closes_with():
-    """`close`'s tool schema offers `written`; an instruction that listed three
-    of the four told her a reason the tool accepts was not hers to use."""
-    from nora.domain.cognition_session import CLOSE_REASONS
-    from nora.language.comprehend_render import render_session_system
-
-    text = render_session_system(_objective(), "", tool_names=frozenset({"close"}))
-    for reason in CLOSE_REASONS:
-        if reason == "struck":                      # code's own close, never her argument
-            continue
-        assert reason in text, reason
 
 
 def test_the_objective_names_none_of_the_old_shapes_of_the_input():
@@ -750,6 +704,5 @@ def test_the_objective_teaches_nothing_the_block_types_already_say():
     assert "not readable now" in fields["unreadable"]
     assert "left out to fit" in fields["earlier_not_shown"]
     assert "first and last message ids" in fields["earlier_range"]
-    assert "how many earlier looks left the item open" in fields["returning"]
     assert "what you sent" in agenda.description and "marked `own`" in agenda.description
     assert "context only, never cited" in fields["own"]

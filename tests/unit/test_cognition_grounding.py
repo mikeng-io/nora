@@ -300,12 +300,12 @@ def _runner(
         store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms={"u": HOME}, read_tools_for=lambda unit, rooms: [],
         read_only_tools=frozenset(),                # NO record_query, no read tool at all
-        skill_text_for=lambda kinds: "", grounder=grounder,
+        skill_text_for=lambda: "", grounder=grounder,
         doctrine_text="D", doctrine_sha256="sha",
         open_note_titles=_none, open_events=_none, prior_standing=_none,
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=30),
         cooldown_seconds=300.0, units=("u",), session_timeout_seconds=900.0,
-        max_items=kw.pop("max_items", 12), max_strikes=3, clock=lambda: NOW / 1000, tz=HK,
+        max_items=kw.pop("max_items", 12), clock=lambda: NOW / 1000, tz=HK,
         **kw,
     )
     return runner, stimuli, ledger
@@ -885,21 +885,6 @@ async def test_the_grounder_labels_rooms_from_the_policy_and_floors_an_unlabelle
                for i in items(prompt))
 
 
-async def test_the_windows_are_per_item_so_a_returning_item_does_not_borrow_the_fresh_ones():
-    """Two items of one room (a returning one and a fresh one, each with its own
-    strike) each get their own window: a send of hers that is inside the older
-    item's window and outside the newer one's is shown under the older only."""
-    old, fresh = _stim(1, A, ago=100, mid=101), _stim(2, A, ago=20, mid=102)
-    records = _Records([_hit(101, A), _hit(102, A)], own=[
-        _own(900, A, ago=60, body="between them"), _own(901, A, ago=21, body="just before"),
-    ])
-    sit = build_situation(unit="u", pending=[old, fresh], home_room=HOME, now_ms=NOW,
-                          last_session_ms=None, strikes={1: 1})
-    grounder = _own_grounder(records, own_send_lookback_seconds=120)
-    g = await grounder("u", sit.agenda.items, [old, fresh])
-    assert [i.stimulus_ids for i in sit.agenda.items] == [(1,), (2,)]
-    assert [r.message_id for r in g.own_sends[0]] == [900, 901]      # the older window is wide
-    assert [r.message_id for r in g.own_sends[1]] == [901]           # the fresh one opens later
 
 
 def test_a_send_of_hers_from_another_room_is_never_rendered_under_an_item():
@@ -960,7 +945,7 @@ async def test_an_unreadable_rollup_sorting_first_does_not_shift_own_sends_onto_
     assert "ASKED-IN-B" in by_room["Room B"] and "ASKED-IN-A" not in by_room["Room B"]
 
 
-async def test_two_same_room_items_after_a_skip_each_get_their_own_window():
+async def test_same_room_inputs_after_a_skip_share_one_window():
     ghost = Stimulus(id=1, unit="u", kind="rollup", item="deviation_silence",
                      ref=f"deviation|silence|nobody|{_at(60)}", at_ms=_at(30),
                      recorded_at_ms=_at(30))
@@ -977,7 +962,7 @@ async def test_two_same_room_items_after_a_skip_each_get_their_own_window():
     await runner.on_wake(unit="u", view=view, now_ms=NOW, wake_id=1)
     shown = ledger.sessions[0][1].situation["grounding"]["own_sends"]
     assert {k: [m["message_id"] for m in v] for k, v in shown.items()} == {
-        "0": [900, 901], "1": [901],
+        "0": [900, 901],
     }
 
 

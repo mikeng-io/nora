@@ -39,7 +39,7 @@ the wake evaluator makes) and the caller's own `now_ms`/`home_room`/
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from nora.domain.stimuli import Stimulus
@@ -63,16 +63,7 @@ _ROOM_BOUND_KINDS: frozenset[str] = frozenset(
 #: where the event is.
 UPCOMING_ITEM = "upcoming"
 
-#: An item closes with a write that cites it, or with one of these reasons;
-#: `struck` is code's own close at
-#: `max_strikes`, never a session's argument.
-CLOSE_REASONS: tuple[str, ...] = ("written", "no_change", "waiting", "covered", "struck")
-
-#: The default `max_items`.
 DEFAULT_MAX_ITEMS = 12
-
-#: The default `max_strikes`.
-DEFAULT_MAX_STRIKES = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,10 +81,7 @@ class AgendaItem:
     never what to conclude, enforced here by
     construction: `_summary` below never reads a stimulus's cues into a
     conclusion, only into a count.
-
-    `strike` is the session's own count on THIS item (0 on its first
-    appearance); a caller that re-derives an item still open from a prior
-    session's close row passes the strike it read forward."""
+"""
 
     kind: str
     room: Room
@@ -101,7 +89,6 @@ class AgendaItem:
     stimulus_ids: tuple[int, ...]
     cues: tuple[str, ...]
     surprise: float
-    strike: int = 0
 
     def as_dict(self) -> dict[str, object]:
         """The JSON shape written to `cognition_session.agenda` — the
@@ -114,7 +101,6 @@ class AgendaItem:
             "stimulus_ids": list(self.stimulus_ids),
             "cues": list(self.cues),
             "surprise": self.surprise,
-            "strike": self.strike,
         }
 
 
@@ -232,35 +218,22 @@ def _surprise(kind: str, cues: tuple[str, ...], count: int) -> float:
 
 def build_agenda(
     pending: Sequence[Stimulus], *, home_room: Room, max_items: int = DEFAULT_MAX_ITEMS,
-    strikes: Mapping[int, int] | None = None,
 ) -> Agenda:
-    """Group `pending` into agenda items, order by surprise (ties broken by
-    the group's oldest stimulus id, so the ordering is a pure function of its
-    input — no dict-iteration-order dependency), and cap at `max_items`.
-    `strikes` maps a stimulus id a CLOSED session returned to this agenda onto
-    its strike (`UnitView.carry`). A strike belongs to an ITEM: the
-    strike is part of the grouping key, so a returning item stays its own item
-    with its own count and a fresh stimulus of the same room never joins it
-    (it would inherit a strike it never earned, and be struck with it). The
-    caller passes `pending` as the stimuli one wake claims (its
-    `through_stimulus_id` range, already computed by
-    `nora.domain.stimuli.decide`); this function claims nothing itself.
-    """
-    carried = strikes or {}
-    groups: dict[tuple[str, Room, str, int], list[Stimulus]] = {}
+    """Group and rank pending stimuli; defer every item beyond the input budget."""
+    groups: dict[tuple[str, Room, str], list[Stimulus]] = {}
     for stimulus in pending:
-        key = (*_group_key(stimulus, home_room=home_room), carried.get(stimulus.id, 0))
+        key = _group_key(stimulus, home_room=home_room)
         groups.setdefault(key, []).append(stimulus)
 
     items: list[AgendaItem] = []
-    for (kind, room, item_key, strike), rows in groups.items():
+    for (kind, room, item_key), rows in groups.items():
         ids = tuple(sorted(s.id for s in rows))
         cues = tuple(sorted({cue for s in rows for cue in s.cues}))
         summary = _summary(kind, room, item_key, len(rows))
         surprise = _surprise(kind, cues, len(rows))
         items.append(AgendaItem(
             kind=kind, room=room, summary=summary,
-            stimulus_ids=ids, cues=cues, surprise=surprise, strike=strike,
+            stimulus_ids=ids, cues=cues, surprise=surprise,
         ))
 
     # Order by (surprise desc, oldest stimulus id asc): deterministic.
@@ -276,61 +249,14 @@ def build_agenda(
 def build_situation(
     *, unit: str, pending: Sequence[Stimulus], home_room: Room, now_ms: int,
     last_session_ms: int | None, max_items: int = DEFAULT_MAX_ITEMS,
-    strikes: Mapping[int, int] | None = None,
 ) -> Situation:
     """The one entry point: `pending` in, `Situation` out, no store, no
     model. `nora.app.cognition_session` (the async half) is the only intended caller in
     production; every other caller in this tree is a test."""
     agenda = build_agenda(
-        pending, home_room=home_room, max_items=max_items, strikes=strikes,
+        pending, home_room=home_room, max_items=max_items,
     )
     return Situation(
         unit=unit, now_ms=now_ms, last_session_ms=last_session_ms, agenda=agenda,
     )
 
-
-@dataclass(frozen=True, slots=True)
-class CloseOutcome:
-    """One agenda item's close. `reason='written'` is
-    code's own classification when the session's write cited the item — this
-    module does not decide that; the caller (which sees the write verbs
-    actually called) does and passes the reason in."""
-
-    item_index: int
-    kind: str
-    reason: str
-    strike: int = 0
-
-    def __post_init__(self) -> None:
-        if self.reason not in CLOSE_REASONS:
-            raise ValueError(f"not a close reason: {self.reason!r}")
-
-
-def close_or_strike(
-    item: AgendaItem, *, item_index: int, reason: str,
-    max_strikes: int = DEFAULT_MAX_STRIKES,
-) -> CloseOutcome:
-    """An item left open when the session ends, or closed `waiting`, returns
-    to the next agenda with a strike; at `max_strikes` code closes it
-    `struck`. `reason='written'`/`'no_change'`/
-    `'covered'` never strike (they close outright); `'waiting'` (or no close
-    at all, which the caller passes as `'waiting'`) strikes, and code
-    escalates to `'struck'` once `item.strike + 1 >= max_strikes`.
-
-    `item_index` is the item's position in the agenda that was HANDED to the
-    session (not recomputed here — an index is only meaningful against the
-    list it came from, and this function does not hold that list)."""
-    if reason not in ("written", "no_change", "waiting", "covered"):
-        raise ValueError(f"not a session close reason: {reason!r}")
-    if reason != "waiting":
-        return CloseOutcome(
-            item_index=item_index, kind=item.kind, reason=reason, strike=item.strike,
-        )
-    next_strike = item.strike + 1
-    if next_strike >= max_strikes:
-        return CloseOutcome(
-            item_index=item_index, kind=item.kind, reason="struck", strike=next_strike,
-        )
-    return CloseOutcome(
-        item_index=item_index, kind=item.kind, reason="waiting", strike=next_strike,
-    )

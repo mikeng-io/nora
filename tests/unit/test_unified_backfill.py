@@ -13,7 +13,6 @@ A table is a test plan; only admitted red/green execution supplies proof.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -213,7 +212,7 @@ def _patch_sql(monkeypatch: Any, *, stimuli: list[Stimulus],
 
     monkeypatch.setattr(ub, "enumerate_unit", _enum)
     monkeypatch.setattr(ub.sql, "failure_counts", _failures)
-    monkeypatch.setattr(ub.sql, "readings_done", _pairs)
+    monkeypatch.setattr(ub.sql, "session_inputs_done", _pairs)
     monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
     monkeypatch.setattr(ub.sql, "fail_historical", _fail)
 
@@ -278,7 +277,7 @@ async def test_done_items_are_skipped_and_changed_input_reruns(
         return {pair for pair in rows if pair[0] in set(work_ids)}
 
     _patch_sql(monkeypatch, stimuli=stimuli, pairs=pairs, covered={1, 2})
-    monkeypatch.setattr(ub.sql, "readings_done", _pairs2)
+    monkeypatch.setattr(ub.sql, "session_inputs_done", _pairs2)
 
     # After replay the receipt pair lands at the new hash (a successful
     # proposal writes it under the current input).
@@ -317,7 +316,7 @@ async def test_apply_stops_at_the_batch_bound_run_wide(monkeypatch: Any):
     async def _pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
         return {pair for pair in completed if pair[0] in set(work_ids)}
 
-    monkeypatch.setattr(ub.sql, "readings_done", _pairs)
+    monkeypatch.setattr(ub.sql, "session_inputs_done", _pairs)
     kw = _run_kwargs()
     kw["units"] = units
     kw["home_rooms"] = dict.fromkeys(units, ROOM)
@@ -471,7 +470,7 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
 
     monkeypatch.setattr(ub, "enumerate_unit", _enum)
     monkeypatch.setattr(ub.sql, "failure_counts", _failures)
-    monkeypatch.setattr(ub.sql, "readings_done", _pairs)
+    monkeypatch.setattr(ub.sql, "session_inputs_done", _pairs)
     monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
     monkeypatch.setattr(ub.sql, "still_open", _still_open)
 
@@ -498,7 +497,7 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
     async def _stale_pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
         return {(key, "hOLD") for key in work_ids}
 
-    monkeypatch.setattr(ub.sql, "readings_done", _stale_pairs)
+    monkeypatch.setattr(ub.sql, "session_inputs_done", _stale_pairs)
     # Old coverage of these SAME stimulus ids must not override a stale hash.
     monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
     appended.clear()
@@ -516,7 +515,7 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
         return dict.fromkeys(ids, ub.sql.PARK_AFTER)
 
     monkeypatch.setattr(ub.sql, "failure_counts", _parked_failures)
-    monkeypatch.setattr(ub.sql, "readings_done", _stale_pairs)
+    monkeypatch.setattr(ub.sql, "session_inputs_done", _stale_pairs)
     out3 = await ub.catch_up(
         _FakeEngine(object()), stimulus_store=_Stimuli(), runner=runner,
         units=["u1"], home_rooms={"u1": ROOM},
@@ -606,61 +605,3 @@ def test_historical_runner_shares_the_live_read_surface_and_keeps_collaborators(
 # -- per-item receipts through the real propose --------------------------------
 
 
-@pytest.mark.asyncio
-async def test_propose_writes_a_receipt_per_admitted_item():
-    """The completion contract end-to-end through `WakeMemory.propose`: a
-    multi-item call admits every named item, and each lands a `readings`
-    receipt under its OWN (work_id, input_hash) — reverting the follower
-    loop to a single combined receipt turns this red."""
-    from nora.app.cognition_memory import WakeMemory
-    from nora.domain.comprehend import ComprehendItem
-    from nora.domain.memory_graph import WorkItem
-
-    written: list[tuple[str, str]] = []
-
-    class _Records:
-        async def readings(self, work: Any, session: int, item: Any,
-                           claims: Any) -> None:
-            written.append(item.snapshot["completion"])
-
-    class _Result:
-        def __init__(self) -> None:
-            self.relations: list[Any] = []
-            self.evidence: list[Any] = []
-            self.refused: list[Any] = []
-
-    class _Admission:
-        async def _admit(self, work: Any, output: Any, fetched: Any,
-                         session: int, scope: Any, indices: Any = None) -> Any:
-            return _Result(), [], {"report": {}, "claims": {}, "cited_items": {}}
-
-    class _Graph:
-        async def walk(self, seeds: Any, scope: Any) -> Any:
-            from nora.domain.memory_graph import Subgraph
-            return Subgraph("ok")
-
-        async def aliases(self, *, unit: str) -> dict:
-            return {}
-
-    memory = WakeMemory(records=_Records(), graph=_Graph(), metrics=None,
-                        content_checks=False)
-    memory.admission = _Admission()
-
-    now = datetime.now(UTC)
-    a = WorkItem("stimuli:1", ("stimulus", "(1,)"), "u1", "ha", now)
-    b = WorkItem("stimuli:2", ("stimulus", "(2,)"), "u1", "hb", now)
-    item_a = ComprehendItem(work=a, sources=(), platform="signal",
-                            room="c1", snapshot={"messages": []})
-    item_b = ComprehendItem(work=b, sources=(), platform="signal",
-                            room="c1", snapshot={"messages": []})
-    state = SimpleNamespace(
-        memory_items={0: item_a, 1: item_b}, session_id=7, unit="u1",
-        graph_fetched=SimpleNamespace(nodes=[], relations=[], sources={}),
-        shown_keys=set(), admitted_relations={}, admitted_evidence=[],
-        admitted_indices=set(), graph_text="", historical=False)
-    out = await memory.propose(
-        state, items=[0, 1], statements=[], nothing_here=[0, 1])
-    assert out["status"] == "ok"
-    assert len(written) == 1
-    assert [(v["work_id"], v["input_hash"]) for v in written[0]] == [
-        ("stimuli:1", "ha"), ("stimuli:2", "hb")]

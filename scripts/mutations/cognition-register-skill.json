@@ -1,12 +1,5 @@
 [
  {
-  "name": "(c) only message mapped",
-  "file": "nora/app/cognition_wiring.py",
-  "old": "\"message\": REGISTER_SKILL, \"rollup\": REGISTER_SKILL, \"self\": REGISTER_SKILL,",
-  "new": "\"message\": REGISTER_SKILL,",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k test_every_agenda_with_a_mapped_kind_reads_one_system_prompt"
- },
- {
   "name": "(d) probe records {} again",
   "file": "nora/app/cognition_session.py",
   "old": "doctrine_sha256=doctrine_sha256, skill_versions=skill_versions,\n                model_id=self._model_id, model_route=self._model_route, wake_id=None,",
@@ -28,23 +21,9 @@
   "target": "tests/unit/test_dreamer_instructions.py"
  },
  {
-  "name": "(g) example misattributed",
-  "file": "nora/dreamer/skills/cognition-register.md",
-  "old": "(Ben, Cat) [5201, 5204]",
-  "new": "(Ben, Dan) [5201, 5204]",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_example_body_is_accepted_by_the_real_validator"
- },
- {
-  "name": "(g2) example weekday wrong",
-  "file": "nora/dreamer/skills/cognition-register.md",
-  "old": "2026-11-05 Thu",
-  "new": "2026-11-05 Fri",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_example_body_is_accepted_by_the_real_validator"
- },
- {
   "name": "startup check removed",
   "file": "nora/app/cognition_wiring.py",
-  "old": "    skills.resolved_for(sorted(skills.by_kind))\n",
+  "old": "    skills.resolved()",
   "new": "",
   "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_mapped_skill_that_is_not_installed_stops_the_runner_at_startup"
  },
@@ -100,23 +79,9 @@
  {
   "name": "(8c) a deleted skill is skipped, not refused",
   "file": "nora/app/cognition_wiring.py",
-  "old": "                raise SkillNotInstalledError(f\"agenda skill {name!r} is not installed\")",
-  "new": "                continue",
+  "old": "            raise SkillNotInstalledError(f\"session skill {REGISTER_SKILL!r} is not installed\")",
+  "new": "            return \"\", {}",
   "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_mapped_skill_deleted_by_a_hot_reload"
- },
- {
-  "name": "(10 R10) the production resolve is memoised",
-  "file": "nora/app/cognition_wiring.py",
-  "old": "    return AgendaSkills(by_kind=AGENDA_SKILLS, resolve=instructions.skill)",
-  "new": "    return AgendaSkills(\n        by_kind=AGENDA_SKILLS,\n        resolve=__import__(\"functools\").lru_cache(maxsize=None)(instructions.skill),\n    )",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_skill_edited_on_the_bind_mount"
- },
- {
-  "name": "(10 R17) the example holds a relative day",
-  "file": "nora/dreamer/skills/cognition-register.md",
-  "old": "- Hike on 2026-11-07 Sat, meeting 09:00",
-  "new": "- Hike this Saturday, meeting 09:00",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_example_body_holds_no_relative_day_word"
  },
  {
   "name": "(1d) an empty applies_to is accepted again",

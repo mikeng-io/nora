@@ -103,9 +103,8 @@ _SHARED: dict[str, str] = {
 #: field's meaning («`n` is the message id to cite in `message_ids`») is an
 #: annotation, not part of the description.
 BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
-    _t("cognition_orient", "The session's steps, the memory kinds and admitted relations "
-       "it writes by, the writing rules and worked examples. These are instructions, "
-       "not evidence about the group."),
+    _t("cognition_orient", "Guidance for orienting against memory and profiles. "
+       "These are instructions, not evidence."),
     _t("cognition_act", "Guidance for the actions offered in this session. "
        "These are instructions, not evidence about the group."),
     _t("memory", "A scoped memory subgraph returned by a read tool. Layer words distinguish "
@@ -790,13 +789,12 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
         "coverage",
         "object",
         **{
-            "index": "an item's number in this agenda, for closing it or writing for it",
+            "index": "an item's number in this agenda, for writing for it",
             "kind": "what sort of change (on a `rollup` element, what sort of row)",
             "room": "the room an item is about, by its label",
             "summary": "what code counted",
             "target": "yes marks an older affected message, not new speech; "
             "from/at/text are its own",
-            "returning": "how many earlier looks left the item open",
             "window": "when the item's messages were sent",
             "earlier_not_shown": "how many older messages were left out to fit",
             "earlier_range": "the first and last message ids among them",

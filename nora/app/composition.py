@@ -92,7 +92,7 @@ from nora.app.cognition_wiring import (
     upcoming_reader,
 )
 from nora.app.cognition_wiring import (
-    agenda_skills as cognition_agenda_skills,
+    session_guidance as cognition_session_guidance,
 )
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
@@ -4485,8 +4485,8 @@ async def build_dependencies(
     # The Cognition session: built inside the Dreamer block below ONLY under
     # `[cognition] enabled`; off builds nothing here, no model client and no
     # agent-runner import.
-    #: Skills injected per agenda kind (`AGENDA_SKILLS`: the Register skill).
-    agenda_skills = cognition_agenda_skills(dreamer_instructions)
+    #: Hot-loaded session guidance, gated by the offered tools during assembly.
+    session_guidance = cognition_session_guidance(dreamer_instructions)
     cognition_runner: CognitionSessionRunner | None = None
     cognition_memory = None
     if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
@@ -5357,7 +5357,7 @@ async def build_dependencies(
                     roster_of=_roster_names_of(rosters, persons, registry.self_aliases()),
                     nora_names=frozenset({cfg.doctrine.display_name}),
                     homes=homes, units=LiveSequence(lambda: tuple(allowlist.home_rooms())),
-                    skills=agenda_skills,
+                    skills=session_guidance,
                     grounder=grounder,
                     person_known=lambda person_id: persons.by_person.get(
                         persons.subject_id_for(person_id),
@@ -5392,7 +5392,7 @@ async def build_dependencies(
             session_units=(
                 None if cognition_session_units is None else (lambda: cognition_session_units)
             ),
-            floors_ready="time" in agenda_skills.by_kind,
+            floors_ready=True,
             upcoming=cognition_upcoming,
         )
         if cognition_runner is not None:

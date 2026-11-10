@@ -3,7 +3,7 @@ existing durable state it resumes on.
 
 No new persistence — no queue, no ledger, no migration. Progress is exactly
 what the one Cognition session already writes (`cognition_session` rows, and
-`comprehend_result` `readings`/`stimulus_failure`/`stimulus_requeue` rows);
+`comprehend_result` `session_complete`/`stimulus_failure`/`stimulus_requeue` rows);
 29 §5 retired the per-item work-item table as intake and nothing here revives
 it.
 
@@ -320,22 +320,33 @@ async def stimulus_keys(
     return out
 
 
-async def readings_done(
+async def session_inputs_done(
     conn: AsyncConnection, work_ids: Collection[str],
 ) -> set[tuple[str, str]]:
-    """Every `(work_id, input_hash)` PAIR that has a `readings` receipt —
-    the exact dedup key `SqlComprehendRecords.readings` writes and reads.
-    All pairs, not the newest per work id: an older pair is real completion
-    even when a newer hash also holds a receipt."""
-    if not work_ids:
+    """Read exact input hashes only from normally ended sessions."""
+    by_unit: dict[str, list[str]] = {}
+    for key in work_ids:
+        unit, sid = key.removeprefix("input:").rsplit(":", 1)
+        by_unit.setdefault(unit, []).append(sid)
+    if not by_unit:
         return set()
-    rows = (await conn.execute(
-        sa.select(RESULT.c.work_id, RESULT.c.input_hash)
-        .where(RESULT.c.part.in_(("readings", "readings_input")),
-               RESULT.c.work_id.in_(list(work_ids)))
-        .distinct()
-    )).all()
-    return {(str(r.work_id), str(r.input_hash)) for r in rows}
+    rows = (await conn.execute(sa.select(RESULT.c.payload).where(
+        RESULT.c.part == "session_complete",
+        sa.or_(*(sa.and_(RESULT.c.work_id == f"session:{unit}",
+                        RESULT.c.payload["inputs"].has_any(sa.cast(ids, sa.ARRAY(sa.Text))))
+                 for unit, ids in by_unit.items())),
+    ))).scalars()
+    wanted = set(work_ids)
+    return {(key, digest) for row in rows for sid, digest in row["inputs"].items()
+            if (key := f"input:{row['unit']}:{sid}") in wanted}
+
+
+async def completed_sessions(conn: AsyncConnection, unit: str) -> list[dict[str, str]]:
+    """Inputs of historical sessions that ended on their own, independent of writes."""
+    rows = (await conn.execute(sa.select(RESULT.c.payload).where(
+        RESULT.c.part == "session_complete", RESULT.c.work_id == f"session:{unit}",
+    ))).scalars()
+    return [row["inputs"] for row in rows]
 
 
 #: The isolated identity historical attempts write under — the SAME

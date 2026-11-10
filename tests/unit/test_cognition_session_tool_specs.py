@@ -31,28 +31,6 @@ NOW = 1_800_000_000_000
 
 #: verb -> ({param: (json type, item type or enum or None)}, required)
 EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
-    "document_list": ({"agenda_room": ("string", None)}, {"agenda_room"}),
-    "document_read": (
-        {"document_id": ("string", None), "agenda_room": ("string", None)},
-        {"document_id", "agenda_room"},
-    ),
-    "document_revise": (
-        {
-            "document_id": ("string", None),
-            "base_revision": ("integer", None),
-            "changes": ("array", {"type": "object", "additionalProperties": True}),
-            "agenda_room": ("string", None),
-        },
-        {"document_id", "base_revision", "changes", "agenda_room"},
-    ),
-    "load_tools": ({"names": ("array", {"type": "string"})}, {"names"}),
-    "close": (
-        {
-            "item_index": ("integer", None),
-            "reason": ("string", ["written", "no_change", "waiting", "covered"]),
-        },
-        {"item_index", "reason"},
-    ),
     "note_create": (
         {
             "title": ("string", None),
@@ -260,13 +238,13 @@ async def specs() -> dict[str, dict[str, Any]]:
     runner = CognitionSessionRunner(
         store=ledger, stimulus_store=stimuli,
         agent_runner=spy, home_rooms={"u": Room("signal", "home")},
-        read_tools_for=lambda unit, rooms: [], skill_text_for=lambda kinds: "",
+        read_tools_for=lambda unit, rooms: [], skill_text_for=lambda: "",
         grounder=EmptyGrounder(),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=_const(()),
         open_events=_const(()), prior_standing=_const(None),
         budget=AdaptorBudget(turns=1, total_tokens=1, output_tokens=1, timeout_seconds=5),
         cooldown_seconds=300, units=("u",), session_timeout_seconds=900.0,
-        max_items=12, max_strikes=3,
+        max_items=12,
     )
     pending = (Stimulus(
         id=1, unit="u", kind="message", item="message", ref="messages:1", at_ms=NOW,

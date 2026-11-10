@@ -1875,9 +1875,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_cognition_carry_total",
         "Stimuli a closed Cognition session returned to the next agenda, by "
-        "state (carried / released / struck): carried is an unclosed, waiting "
-        "or deferred item's stimulus with a strike; struck is code closing it "
-        "at max_strikes (30 §2).",
+        "state: carried defers unseen input; released consumes a prior carry.",
         ("state",),
     ),
     _CounterSpec(
@@ -1910,17 +1908,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # The session's own outcomes. None of the four carries a room, a person, a
     # unit or any text as a label: each label is a closed vocabulary the code
     # owns.
-    _CounterSpec(
-        "nora_cognition_item_total",
-        "Agenda items a Cognition session closed, by the item's kind and by how "
-        "it closed (written / no_change / covered / waiting / struck / unclosed). "
-        "written, no_change, covered and waiting are what the MODEL said, "
-        "self-attested, and none is evidence the item was handled; struck is code "
-        "closing an item at max_strikes; unclosed is code closing an item the "
-        "model never closed (the same `waiting` row as a model's, counted apart "
-        "here so the two are not one number).",
-        ("kind", "outcome"),
-    ),
     _CounterSpec(
         "nora_cognition_refused_total",
         "Cognition verb calls the code refused (or could not check: an "

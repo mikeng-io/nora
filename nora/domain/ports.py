@@ -1096,10 +1096,11 @@ class StimulusStore(Protocol):
 
 @dataclass(frozen=True)
 class NewCarry:
-    """A stimulus's standing after a CLOSED wake: it returns to the next agenda
-    with a strike, and at `max_strikes` code closes it `struck`. `waits`: it rides
-    the next wake and never starts one.
-    Written only with its wake's `closed` outcome (`record_outcome`)."""
+    """An unseen stimulus deferred by a closed wake, committed with its outcome.
+
+    `strike` is a legacy storage column, always zero for new carries.
+    `waits` retains unreadable input without starting a wake by itself.
+    """
 
     unit: str
     stimulus_id: int
@@ -1162,16 +1163,6 @@ class NewCognitionSession:
     wake_id: int | None = None
 
 
-@dataclass(frozen=True)
-class NewCognitionSessionClose:
-    """One agenda item's close, `nora.domain.cognition_session.CloseOutcome`
-    as stored."""
-
-    session_id: int
-    item_index: int
-    kind: str
-    reason: str
-    strike: int = 0
 
 
 @runtime_checkable
@@ -1318,11 +1309,6 @@ class CognitionStore(Protocol):
         """Append the session row and return its id."""
         ...
 
-    async def record_close(
-        self, *, close: NewCognitionSessionClose, recorded_at_ms: int,
-    ) -> int:
-        """Append one agenda item's close row and return its id."""
-        ...
 
     async def record_pace(
         self, *, pace: NewCognitionPace, recorded_at_ms: int,

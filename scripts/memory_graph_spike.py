@@ -694,8 +694,7 @@ _FACT_SUPPORT_INSTRUCTION = MEMORY_CRITERIA + (
 )
 
 _MISSED_FACT_INSTRUCTION = MEMORY_CRITERIA + (
-    "\nUse these same writer criteria, including all exclusions and readings about "
-    "passing moments. Only statements originating "
+    "\nUse these same writer criteria, including all exclusions. Only statements originating "
     "in the agenda's NEW source rows count as missed, interpreted with the shown context. "
     "A quote match and NEW source id do not establish subject, speech act, event time or "
     "eligibility. Require those too, and check whether saved content already covers it. "
@@ -1091,7 +1090,9 @@ async def session_quality(
         if exchange["name"] != "memory_propose" or not isinstance(exchange["result"], dict):
             continue
         result, proposal = exchange["result"], exchange["input"]
-        statements = proposal.get("statements", []) if result.get("admitted") else []
+        raw = proposal.get("statements", [])
+        statements = [raw[row["index"]] for row in result.get("statements", [])
+                      if row.get("status") == "saved" and 0 <= row["index"] < len(raw)]
         new_entities = [
             endpoint["new"] for st in statements if st.get("type") == "relation"
             for endpoint in (st.get("subject"), st.get("object"))
@@ -1395,14 +1396,6 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                                          != "rejected_before_dispatch"]
                             if any(not isinstance(e["result"], dict) for e in proposals):
                                 raise ValueError("unreadable admission result")
-                            admitted = {
-                                i for e in proposals for i in e["result"].get("admitted", [])
-                            }
-                            consumed = {
-                                c.item_index
-                                for c in outcome.closed
-                                if c.reason in {"written", "no_change", "covered"}
-                            }
                             tokens = (
                                 subject.deps.metrics.get("nora_cognition_unit_tokens_total")
                                 - tokens_before
@@ -1428,9 +1421,11 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                             measured.update(
                                 status="PASS",
                                 tokens=tokens if tokens > 0 else None,
-                                admitted=sum(bool(e["result"].get("admitted")) for e in proposals),
+                                admitted=sum(any(s.get("status") == "saved"
+                                                 for s in e["result"].get("statements", []))
+                                             for e in proposals),
                                 refused=sum(bool(e["result"].get("refused")) for e in proposals),
-                                refused_consumed=len(consumed - admitted),
+                                session_outcome=outcome.stop_reason,
                             )
                             scored = await smoke_fact_support(
                                 judges,

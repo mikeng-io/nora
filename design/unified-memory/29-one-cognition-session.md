@@ -1,7 +1,7 @@
 ---
 type: design
 title: "One Cognition session: what it means, what it connects to, whether to act"
-description: "The operator's 2026-10-29 ruling. Cognition is one stimulus-response session per wake that comprehends, connects and decides as one continuous act, replacing the three separate step sessions of 27 §7 and the per-item comprehend runner. The model proposes its understanding first; code admits it and answers with what it connects to; only then do the act tools work. Profiles are proposed inside the same session. Memory updates at wake time. One verb set across every kind (create, revise, set_status, read, search) and two cross-kind graph tools (memory_search, memory_read) that return a subgraph over the one new graph. Docs only, not built."
+description: "The operator's 2026-10-29 ruling. Cognition is one stimulus-response session per wake that comprehends, connects and decides as one continuous act, replacing the three separate step sessions of 27 §7 and the per-item comprehend runner. The session observes, orients, decides and acts; proposals and acts are independently available. Profiles are proposed inside the same session. Memory updates at wake time. One verb set across every kind (create, revise, set_status, read, search) and two cross-kind graph tools (memory_search, memory_read) that return a subgraph over the one new graph. Docs only, not built."
 tags: [nora, cognition, memory-graph, cms, stimulus, tools, vocabulary]
 timestamp: '2026-10-29'
 edges:
@@ -55,92 +55,47 @@ split rested on an argument, never a measurement. Read back in the code on
 
 ## 2. The session
 
-```
-stimuli accumulate ─► wake rules (settled, strong cue, batch, max_age, time, self)
-                          │
-                          ▼
-        ONE Cognition session over the unit's pending stimuli
-        ┌──────────────────────────────────────────────────────────┐
-        │ context: the batch, what is open, the graph around it     │
-        │ 1. understand + connect   → memory_propose (+ profile_*)  │
-        │      code admits, answers: admitted, refused (why),       │
-        │      and the subgraph the admitted items connect to       │
-        │ 2. decide                 → act tools, now unlocked       │
-        │      or nothing, when it connects to nothing open         │
-        └──────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-        one session record: what was understood, what was decided
-```
+One wake opens one session: observe what arrived and what remains open;
+orient by searching memory and the notebook; decide whether anything is worth
+doing, for whom and when; act through the offered tools, or remain silent.
+Memory, profiles, notebook layers, Standing, reminders and self-wakes are
+outputs of the same continuing judgment.
 
-**The trigger is stimulus and response.** The existing stimulus table and
-wake rules decide when a session starts. No per-item queue drives a model.
+All offered tools are available at the start. `memory_search` and `memory_read`
+connect the new input to held state before `memory_propose` saves statements.
+Relations come first; a reading is the fallback when no relation can hold the
+fact, and a correction addresses a contradicted shown relation. Chatter that
+adds nothing beyond the recorded chat act needs no statement. Proposals contain
+only statements, with per-statement saved/refused results and connected memory.
+They do not declare input coverage or unlock acts. The relation and entity
+vocabularies are derived from admission constants in the tool schema.
 
-**Context, assembled by code** (one `_BLOCKS` table, as every occasion):
+Act verbs are available independently of proposals. Their validators, disclosure
+checks, provenance, idempotency and budgets still apply. Profile reads and
+revisions connect changed relations to held accounts in the same session.
+The historical lane offers evidence reads and memory proposals, with no act
+verbs or current-profile access.
 
-| block | carries | exists today in |
-|---|---|---|
-| self / profile, clock | who Nora is in this unit; the time | Cognition |
-| agenda | the batch: the stimuli and their words, each with its time | Cognition |
-| note_index, events, memos | what is open | Cognition |
-| **graph** | the subgraph around the batch's people, names, places and topics, in 27 §14's format: layer word, evidence counts, state and time on every row | step 1's `graph_preview`, moved in |
+## 3. Completion, latency and the backfill
 
-**Tools**, under §4's vocabulary:
+A session that ends on its own (`end_turn`) consumes the stimuli it was handed,
+including when it writes nothing. There is no per-item close, coverage claim,
+strike or write requirement. `max_items` is an input budget: unseen stimuli
+are deferred, never dropped. A later look is scheduled with `wake_at`.
 
-| group | tools | when |
-|---|---|---|
-| read | `memory_search`, `memory_read`, `<kind>_read` / `<kind>_search`, `media_fetch`, the social reads, `web_search` / `web_fetch` (egress-screened, capped) | any time |
-| propose | `memory_propose` (readings, entities, relations, evidence, corrections), profile changes through `profile_*` | first |
-| act | `note_*`, `event_*`, `lesson_*`, `topic_*`, and the rest of §4's kind verbs; `wake_at` / `wake_move` / `wake_cancel` | only after a `memory_propose` was admitted in this session |
+Failed, timed-out and bounded sessions leave their stimuli pending and apply
+failure backoff. Saved statements and acts survive; retries use the existing
+idempotency receipts. After five failed attempts a stimulus is parked for
+operator requeue. Deferral is not failure. Cancellation preserves pending work.
+Only a normal session outcome advances the live watermark; deferred inputs
+are carried in the same transaction.
 
-**The order is enforced, not requested.** Act tools refuse until
-`memory_propose` has been admitted in the session. "Should I act" is decided
-on committed understanding, within the same continuous session.
-
-**`memory_propose` answers back.** It runs admission on the spot and returns:
-- what was admitted;
-- what was refused, each with its reason in the schema's own words, as
-  #381 does for shape;
-- the subgraph the admitted items connect to (`memory_read` of them, depth 1).
-
-That answer is the step from "connect" to "decide". It also ends the silent
-refusals that spike runs 5–6 and the 2026-10-29 smoke measured: there,
-admission ran after the session closed and the model never learned why.
-
-**Relevance is not a model-made score.** A number the model invents for "how
-relevant" is a proxy it grades itself on. The decision rests on what code
-shows it: each connection's evidence count and age; whether it reaches
-something **open** (an open note, a planned event, an unkept commitment); time
-proximity (clock, event times); topic weight per person (counted evidence,
-#379). The model decides and cites what the decision rests on.
-
-**Profiles are proposed in the same session** (operator, 2026-10-29). Noticing
-"this changes what I think of them" is part of the same act. They are
-recorded in shadow until phase 7 switches the profile surface.
-
-## 3. Completeness, latency and the backfill
-
-- **Retries move to the wake.** A session that fails, or whose
-  `memory_propose` is refused outright, leaves its stimuli unconsumed: the
-  wake's `failed` outcome already makes them pending again
-  (`nora/domain/stimuli.py`), so the next wake retries them. A Register row
-  commits in its own transaction before its links (27 §7a), so a failed link
-  write must not create the row twice: the retry re-links the existing row by
-  its id. A stimulus whose sessions fail five times is parked `failed`, with
-  the operator requeue that 25 §7 gives a failed projection. An edited item is
-  re-read because an edit raises its own stimulus; that replaces the work
-  item's input hash. The build PR names a test for each of these.
-- **Every stimulus is comprehended, never only decided on.** A wake's agenda
-  cap may defer a stimulus to a later wake (carry); it may never skip its
-  comprehension. A stimulus is consumed only by a session that admitted a
-  proposal covering it, or explicitly recorded nothing to understand ("k").
-  Social items, stays and plays are covered because they are stimuli.
-- **Memory updates at wake time** (operator, 2026-10-29), not within seconds
-  of arrival. Strong cues already wake quickly; a quiet room updates when it
-  settles.
-- **The backfill is the same session** over historical stimuli in time order,
-  in its own lane, with the act tools withheld (27 §10: no notes, reminders or
-  sends from history).
+Historical replay records one completion receipt for a normally ended session,
+with the exact inputs it observed. Resume checks those source identities and
+hashes, independently of statement writes. A failed or bounded replay writes
+no completion receipt. The historical lane keeps its own failure accounting
+and never takes a live slot. Memory updates at wake time; strong cues can wake
+quickly and quiet rooms are revisited after settling.
 
 ## 4. One vocabulary
 
@@ -224,14 +179,11 @@ sample, is clearly worse on reading or relation precision than the separate
 step 1 was. Then a separate memory step returns, with that measurement behind
 it.
 
-## Amendment 2026-11-06: the proposal contract, statement-shaped
+## 8. The proposal contract
 
-Amends §2's `memory_propose` row without touching the session shape. The model
-emits a `statements` list (relation / correction / reading), an `items` list
-and a `nothing_here` list; endpoints are shown `@kind:id` handles or inline
-`{new: …}` descriptors, and relation `persons` is derived by admission from the
-cited sources rather than authored. §2's answer-back gains the completion rule:
-an input is covered by a saved statement citing one of its rendered rows or by
-an explicit `nothing_here`; inputs neither covered nor declared stay open and
-are what the model retries. A refused statement reports one primary reason and
-no longer withholds other items' readings or completion.
+`memory_propose` accepts a `statements` list: relations, corrections and readings.
+Endpoints are shown `@kind:id` handles or inline `{new: …}` descriptors. Admission
+derives relation persons from cited sources. Each statement is saved or refused
+independently, with a primary refusal reason and repair guidance. A refusal does
+not withhold valid siblings and makes no claim about whether the session has
+finished. Session outcomes, not proposals, determine stimulus consumption.

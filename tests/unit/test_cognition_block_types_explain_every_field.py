@@ -111,7 +111,7 @@ def _everything() -> str:
     )
     agenda = (
         AgendaItem(kind="message", room=A, summary="5 new messages", cues=(), surprise=1.0,
-                   stimulus_ids=(1, 2, 3, 4, 5), strike=2),
+                   stimulus_ids=(1, 2, 3, 4, 5)),
         AgendaItem(kind="message", room=B, summary="3 new messages", cues=(), surprise=1.0,
                    stimulus_ids=(6, 7, 8)),
         AgendaItem(kind="rollup", room=A, summary="a rollup row changed", cues=(),
@@ -171,7 +171,7 @@ def test_the_fixture_makes_every_element_carry_every_attribute_it_can():
     exercise every field, or the test before it passes by not looking."""
     seen = _emitted()
     assert seen["agenda"] == {
-        "index", "kind", "room", "summary", "returning", "window", "earlier_not_shown",
+        "index", "kind", "room", "summary", "window", "earlier_not_shown",
         "earlier_range", "unreadable", "n", "at", "from", "edited", "reaction",
         "reaction_removed", "reactions", "reactions_observed",
         "withdrawn", "deleted", "own", "cues", "turn", "target",

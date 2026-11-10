@@ -184,14 +184,14 @@ async def test_historical_proposal_result_uses_safe_graph_payload():
         memory_items={0: ComprehendItem(WorkItem("s", ("stimulus", "1"), "u1", "h", AT),
             (Source(("message", "1"), "record", "u1", ("p1",), "a plan"),),
             "signal", "c1", snapshot={"messages": []})},
-        graph_fetched=GraphFetched(), shown_keys=set(), admitted_indices=set(),
+        graph_fetched=GraphFetched(), shown_keys=set(),
         admitted_relations={}, admitted_evidence=[])
     state.graph_fetched.show(
         Source(("message", "1"), "record", "u1", ("p1",), "a plan"))
     statements = [{
         "type": "relation", "rel": "plans", "subject": "@person:p1",
         "object": "@event:e1", "cite": [{"source": 1, "quote": "plan"}]}]
-    result = await memory.propose(state, items=[0], statements=statements)
+    result = await memory.propose(state,  statements=statements)
     assert result["status"] == "ok"
     assert "future-private-name" not in str(result)
     assert result["connected"]["nodes"][0]["key"] == ["event", "e1"]

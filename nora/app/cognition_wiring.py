@@ -33,7 +33,6 @@ import logging
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from types import MappingProxyType
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -341,77 +340,31 @@ class PreludeMissingError(RuntimeError):
     the start of every session, so a hot reload cannot swap it in unseen."""
 
 
-@dataclass(frozen=True)
-class AgendaSkills:
-    """Skills injected per agenda kind: after the doctrine, in a fixed
-    order, so the prefix stays cached and only the skills vary. `by_kind` maps
-    an agenda kind to a skill name; `resolve` reads a skill by name (`Skill.
-    instructions`, `.sha256`) and is NOT memoised, so an edit on the bind mount
-    is live at the next session. A kind with no entry injects nothing. The
-    production table is `AGENDA_SKILLS`, built by `agenda_skills`."""
-
-    by_kind: Mapping[str, str]
-    resolve: Callable[[str], Any]
-
-    def _names(self, kinds: Sequence[str]) -> list[str]:
-        return sorted({self.by_kind[k] for k in kinds if k in self.by_kind})
-
-    def resolved_for(self, kinds: Sequence[str]) -> tuple[str, dict[str, object]]:
-        """The text injected and the versions recorded for these kinds, from ONE
-        resolution of each skill: the hash a session row records is over the text
-        the model reads, even when the corpus hot-reloads while the session is
-        being set up."""
-        text: list[str] = []
-        versions: dict[str, object] = {}
-        for name in self._names(kinds):
-            skill = self.resolve(name)
-            if skill is None:
-                raise SkillNotInstalledError(f"agenda skill {name!r} is not installed")
-            text.append(f"\n\n# Skill: {name}\n\n{skill.instructions}\n")
-            versions[name] = skill.sha256
-        return "".join(text), versions
-
-    def text_for(self, kinds: Sequence[str]) -> str:
-        return self.resolved_for(kinds)[0]
-
-    def versions_for(self, kinds: Sequence[str]) -> dict[str, object]:
-        return self.resolved_for(kinds)[1]
-
-
-#: The prelude `cognition` reads in place of the shared Dreamer doctrine
-#: (`nora/dreamer/preludes/`); the startup check and every session hold the
-#: objective's resolved versions to name it.
 COGNITION_PRELUDE = "cognition-prelude"
-
-#: The Register skill: the note, event and reminder judgement, in
-#: `nora/dreamer/skills/`.
 REGISTER_SKILL = "cognition-register"
 
-#: Agenda kind -> the skill injected for it. ONE skill for every mapped kind, so
-#: every session that has an agenda reads the same system prompt and its prefix
-#: stays cached whichever kinds its agenda holds
-#: (`tests/unit/test_cognition_agenda_skills.py`). `time` is mapped: the daily
-#: floors wake a session that reviews the notebook (`note_set_status`, `note_merge`)
-#: and decides what to raise. `social` and `play` have no producer.
-AGENDA_SKILLS: Mapping[str, str] = MappingProxyType({
-    "message": REGISTER_SKILL, "rollup": REGISTER_SKILL, "self": REGISTER_SKILL,
-    "time": REGISTER_SKILL,
-})
+
+@dataclass(frozen=True)
+class SessionGuidance:
+    """Resolve notebook guidance once per session; context assembly gates its tools."""
+
+    resolve: Callable[[str], Any]
+
+    def resolved(self) -> tuple[str, dict[str, object]]:
+        skill = self.resolve(REGISTER_SKILL)
+        if skill is None:
+            raise SkillNotInstalledError(f"session skill {REGISTER_SKILL!r} is not installed")
+        return skill.instructions, {REGISTER_SKILL: skill.sha256}
+
+    def text(self) -> str:
+        return self.resolved()[0]
+
+    def versions(self) -> dict[str, object]:
+        return self.resolved()[1]
 
 
-def floors_ready() -> bool:
-    """True once a skill ships for the `time` agenda kind: a floor then wakes a
-    session. Read at CALL time over `AGENDA_SKILLS`, so the composition root (through
-    the `AgendaSkills` it builds) and the wake evaluator's age gauge follow the ONE
-    table, and a test that replaces it reaches both."""
-    return "time" in AGENDA_SKILLS
-
-
-def agenda_skills(instructions: Any) -> AgendaSkills:
-    """The production table over the Dreamer's instruction store: each skill is
-    read through it per session, so an edit on the bind mount is live at the
-    next session and every load is in the corpus's revision history."""
-    return AgendaSkills(by_kind=AGENDA_SKILLS, resolve=instructions.skill)
+def session_guidance(instructions: Any) -> SessionGuidance:
+    return SessionGuidance(resolve=instructions.skill)
 
 
 #: How long a stopping process lets a session that is already running finish
@@ -583,7 +536,7 @@ def build_cognition_runner(
     nora_names: frozenset[str] = frozenset(),
     homes: Mapping[str, Any],
     units: Sequence[str],
-    skills: AgendaSkills,
+    skills: SessionGuidance,
     grounder: Any,
     person_known: Callable[[str], bool] | None = None,
     render_budget: Any,
@@ -639,13 +592,13 @@ def build_cognition_runner(
         return loaded.text, loaded.sha256
 
     # Read once here so a missing or malformed objective, a missing prelude, or a
-    # mapped skill that is not installed, is a startup failure with its name, not
+    # session skill that is not installed, is a startup failure with its name, not
     # the first wake's (`DreamerInstructions` raises `InstructionError`,
-    # `doctrine` raises `PreludeMissingError`, `AgendaSkills` raises
+    # `doctrine` raises `PreludeMissingError`, `SessionGuidance` raises
     # `SkillNotInstalledError`; the composition turns all three into a
     # `StartupError`).
     text, sha = doctrine()
-    skills.resolved_for(sorted(skills.by_kind))
+    skills.resolved()
     home_rooms = LiveMapping(lambda: _by_home_room(homes))
 
     async def open_events(
@@ -665,8 +618,8 @@ def build_cognition_runner(
         agent_runner=agent_runner, home_rooms=home_rooms,
         read_tools_for=read_tools_for(tools, names=surface.wired),
         read_only_tools=surface.wired,
-        skill_text_for=skills.text_for, skill_versions_for=skills.versions_for,
-        skills_for=skills.resolved_for, grounder=grounder, render_budget=render_budget,
+        skill_text_for=skills.text, skill_versions_for=skills.versions,
+        skills_for=skills.resolved, grounder=grounder, render_budget=render_budget,
         person_known=person_known, documents=documents, documents_context=documents_context,
         doctrine_text=text, doctrine_sha256=sha, doctrine_source=doctrine,
         open_note_titles=note_titles, open_events=open_events,
@@ -675,7 +628,7 @@ def build_cognition_runner(
         standing_fold=standing_fold,
         budget=budget, cooldown_seconds=cfg.cognition.cooldown_seconds,
         units=list(units), session_timeout_seconds=cfg.cognition.session_timeout_seconds,
-        max_items=cfg.cognition.max_items, max_strikes=cfg.cognition.max_strikes,
+        max_items=cfg.cognition.max_items,
         max_self_wakes=cfg.cognition.max_self_wakes,
         max_self_wakes_per_day=cfg.cognition.max_self_wakes_per_day,
         room_proactive=room_proactive,
@@ -698,20 +651,18 @@ def build_cognition_runner(
 
 
 __all__ = [
-    "AGENDA_SKILLS",
     "COGNITION_ADAPTOR_NAME",
     "COGNITION_OBJECTIVE",
     "COGNITION_PRELUDE",
     "COGNITION_READ_CATALOGUE",
     "REGISTER_SKILL",
-    "AgendaSkills",
     "CognitionShutdown",
     "PreludeMissingError",
     "ReadSurface",
+    "SessionGuidance",
     "SkillNotInstalledError",
     "build_cognition_runner",
     "cognition_budget",
-    "floors_ready",
     "read_surface",
     "read_tools_for",
     "require_session_hook",

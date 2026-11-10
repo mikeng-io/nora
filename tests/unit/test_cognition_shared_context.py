@@ -311,7 +311,7 @@ async def test_wired_session_hands_the_shared_candidate_input_to_its_runner():
     assert {b.tag for b in candidate} == {d.name for d in _BLOCKS}
     assert candidate.find("./transcript/m").attrib["source_id"] == "1"
     assert candidate.find('./profile[@entity="person"][@of="p1"]') is not None
-    assert candidate.find("tool_catalogue").text
+    assert candidate.find("tool_catalogue").text is None  # all tools are resident
     assert candidate.find("graph").attrib["status"] == "unavailable"
 
 

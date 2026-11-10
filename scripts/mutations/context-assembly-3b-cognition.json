@@ -140,13 +140,6 @@
   "target": "tests/unit/test_cognition_render_parity.py::test_the_new_render_is_well_formed_and_loses_no_fact_of_the_old"
  },
  {
-  "name": "3b: the parity test would notice an item that loses its returning mark",
-  "file": "nora/language/cognition_render.py",
-  "old": "        (\"returning\", returning(item.strike)),",
-  "new": "        (\"returning\", None),",
-  "target": "tests/unit/test_cognition_render_parity.py::test_the_new_render_is_well_formed_and_loses_no_fact_of_the_old"
- },
- {
   "name": "3b item 2: the forced clip is measured on the raw words, not on what is rendered (escapes spend three times the share)",
   "file": "nora/language/cognition_render.py",
   "old": "            text = _shrunk(row, allowance - 1)",

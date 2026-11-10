@@ -19,12 +19,10 @@ from nora.domain.cognition_pace import PaceRow, PendingSelfWake, fold_self_wakes
 from nora.domain.ports import (
     NewCognitionPace,
     NewCognitionSession,
-    NewCognitionSessionClose,
 )
 from nora.infra.sql.schema import (
     COGNITION_SELF_WAKE,
     COGNITION_SESSION,
-    COGNITION_SESSION_CLOSE,
 )
 from nora.infra.sql.stimuli import live_stimulus
 
@@ -84,24 +82,6 @@ class SqlCognitionStore:
             row = (await conn.execute(stmt)).one()
         return int(row.id)
 
-    async def record_close(
-        self, *, close: NewCognitionSessionClose, recorded_at_ms: int,
-    ) -> int:
-        stmt = (
-            sa.insert(COGNITION_SESSION_CLOSE)
-            .values(
-                session_id=close.session_id,
-                item_index=close.item_index,
-                kind=close.kind,
-                reason=close.reason,
-                strike=close.strike,
-                recorded_at=_at(recorded_at_ms),
-            )
-            .returning(COGNITION_SESSION_CLOSE.c.id)
-        )
-        async with self._engine.begin() as conn:
-            row = (await conn.execute(stmt)).one()
-        return int(row.id)
 
     async def record_pace(
         self, *, pace: NewCognitionPace, recorded_at_ms: int,

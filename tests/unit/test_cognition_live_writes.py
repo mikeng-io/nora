@@ -35,22 +35,19 @@ async def _seed_note(stores: Stores, title: str = "dinner") -> Any:
     )
 
 
-async def test_note_create_commits_with_cognition_provenance_and_backs_a_written_close():
+async def test_note_create_commits_with_cognition_provenance():
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["close"](item_index=0, reason="written"))
         answers.append(await by["note_create"](body=GOOD_BODY, **NOTE))
-        answers.append(await by["close"](item_index=0, reason="written"))
 
     stores, outcome = await session(behave)
-    assert answers[0]["reason"] == "no_write_for_item"
-    assert answers[1]["status"] == "ok" and answers[2]["status"] == "ok"
+    assert answers[0]["status"] == "ok"
     (note,) = await stores.notes.standing(unit="u")
-    assert note.title == "dinner" and answers[1]["note_id"] == note.id
+    assert note.title == "dinner" and answers[0]["note_id"] == note.id
     (revision,) = [r for r in stores.notes.revisions.values() if r.note_id == note.id]
     assert revision.established_by == PROVENANCE
-    assert [c.reason for c in outcome.closed] == ["written"]
+    assert outcome.stop_reason == "end_turn"
 
 
 async def test_a_body_citing_a_message_the_session_was_not_shown_is_refused_and_writes_nothing():

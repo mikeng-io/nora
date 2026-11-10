@@ -11,7 +11,6 @@ from nora.domain.cognition_ground import Grounding, RecordItem
 from nora.domain.cognition_session import AgendaItem
 from nora.domain.comprehend import ComprehendItem
 from nora.domain.memory_graph import (
-    ENTRY,
     MEMORY_KINDS,
     RELATION_RULES,
     Entity,
@@ -20,13 +19,6 @@ from nora.domain.memory_graph import (
     WorkItem,
 )
 from nora.domain.stimuli import UnitView
-from nora.language.comprehend_render import (
-    _ADMITTED_RELATIONS,
-    _VOCABULARY,
-    SESSION_INSTRUCTION,
-)
-from nora.testing.cognition_grounding import StaticGrounder
-from tests.objectives import shipped_objectives
 from tests.unit.test_cognition_session_runner import (
     HOME,
     NOW,
@@ -58,7 +50,7 @@ def _state(memory, *, text=TEXT, now=AT):
     return SimpleNamespace(memory_items={0: item}, graph_fetched=fetched, session_id=1,
                            unit="unit-1", historical=False, shown_keys=set(),
                            shown_relations=set(),
-                           admitted_indices=set(), admitted_relations={}, admitted_evidence=[])
+                           admitted_relations={}, admitted_evidence=[])
 
 
 def _payload():
@@ -92,30 +84,6 @@ def _reading(quote):
             "cite": [{"source": 1, "quote": quote}]}
 
 
-def test_orient_renders_the_vocabulary_from_the_admission_constants():
-    """The entity kinds and admitted relation names in the instruction are
-    rendered from the same constants admission checks against — and for today's
-    constants that rendering is the merged rewrite's own wording."""
-    assert [row.kind for row in MEMORY_KINDS] == [
-        "event", "place", "work", "organisation", "topic", "person relation", "reading",
-        "profile line", "note", "lesson", "decision"]
-    assert MEMORY_KINDS[8].memory_type == "prospective"
-    assert "corner is still open" in MEMORY_KINDS[8].create_when
-    assert "memory_stage" not in SESSION_INSTRUCTION
-    assert _VOCABULARY in SESSION_INSTRUCTION
-    assert _VOCABULARY == (
-        "Entity kinds you may create: place, event, work, organisation, topic. "
-        "Relations, the only names admitted: about, at, attended, dislikes, features, "
-        "interested_in, likes, lives_in, member_of, plans, same_as, studies_at, "
-        "went_with, works_at — likes/dislikes is a preference for one specific thing; "
-        "interested_in is a subject. Who said, shared, asked or replied is already "
-        "recorded by code; propose only what the item establishes about the world."
-    )
-    admitted = tuple(sorted(
-        rel for rel, rule in RELATION_RULES.items()
-        if rule.layer == "notebook" and set(rule.sources) - set(ENTRY)
-    ))
-    assert admitted == _ADMITTED_RELATIONS
 
 
 @pytest.mark.parametrize("removed,part", [("work", "entity"), ("likes", "relation")])
@@ -138,13 +106,12 @@ async def test_admission_uses_the_kind_constant(monkeypatch, removed, part):
 @pytest.mark.parametrize("kind", ["note", "lesson", "reading", "profile line"])
 async def test_a_notebook_row_is_refused_as_an_entity_kind(kind):
     """A kind-table row that is not a graph entity kind refuses; it never reaches the store."""
-    memory = wake_memory()
-    state = _state(memory)
     payload = _payload()
     payload["statements"][0]["object"] = {"new": {"kind": kind, "name": "Generated"}}
-    result, local, _ = await memory.admission._admit(*_admit_args(state, payload))
-    assert {"kind": "entity", "reason": "vocabulary"} in local
-    assert not result.entities
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError, match="literal_error"):
+        Proposal.model_validate(payload)
+
 
 
 async def test_bad_reading_keeps_valid_reading_and_graph():
@@ -153,9 +120,9 @@ async def test_bad_reading_keeps_valid_reading_and_graph():
     payload = _payload()
     payload["statements"] += [
         _reading("I have a spare controller"), _reading("not in the source")]
-    result = await memory.propose(state, items=[0], statements=payload["statements"])
+    result = await memory.propose(state,  statements=payload["statements"])
     assert result["status"] == "ok", result
-    assert result["admitted"] == [0]
+    assert result["status"] == "ok"
     assert len(result["committed"]) == 1
     entity = next(e for e in memory.graph.entities.values() if e.name == "Lantern Game")
     assert entity.kind == "work"
@@ -169,7 +136,7 @@ async def test_bad_reading_keeps_valid_reading_and_graph():
 async def test_later_contradiction_supersedes_current_relation():
     memory = wake_memory()
     first = await memory.propose(
-        _state(memory), items=[0], statements=_payload()["statements"])
+        _state(memory),  statements=_payload()["statements"])
     old_id = first["committed"][0]
     state = _state(memory, text="I dislike Lantern Game now.", now=AT + timedelta(days=1))
     work_key = memory.graph.relations[old_id].dst
@@ -185,7 +152,7 @@ async def test_later_contradiction_supersedes_current_relation():
         "replacement": replacement,
         "cite": [{"source": 1, "quote": "I dislike Lantern Game now"}],
     }]
-    later = await memory.propose(state, items=[0], statements=statements)
+    later = await memory.propose(state,  statements=statements)
     assert later["status"] == "ok", later
     assert memory.graph.relations[old_id].status == "superseded"
     assert memory.graph.relations[old_id].superseded_by == later["committed"][0]
@@ -225,40 +192,17 @@ async def test_live_preview_carries_alias_candidates_with_shown_provenance(monke
     assert not withheld
 
 
-async def test_assembled_session_puts_orient_before_act():
-    class Capture(FakeCognitionAgentRunner):
-        async def run(self, **kwargs):
-            self.system_prompt = kwargs["system_prompt"]
-            return await super().run(**kwargs)
-
-    store = shipped_objectives()
-    agent = Capture(script=[("memory_propose", proposal())])
-    stimulus = _pending("unit-1")[0]
-    row = RecordItem(ref=stimulus.ref, kind="message", message_id=1, room=HOME,
-                     author="Generated", at_ms=NOW, text="nothing further")
-    runner, _, _ = _runner(agent_runner=agent, memory=wake_memory(),
-                           grounder=StaticGrounder(Grounding(records={stimulus.ref: row})))
-    runner._doctrine_text = store.for_objective("cognition").text
-    runner._skill_text_for = lambda kinds: store.skill("cognition-register").instructions
-    await runner.replay(view=UnitView(unit="unit-1", pending=(stimulus,),
-                                     last_activity_ms=None, last_wake=None), now_ms=NOW)
-    text = agent.system_prompt
-    headings = ("# Observe", "<cognition_orient",
-                "# Orient", "## Decide what to carry forward")
-    positions = [text.index(heading) for heading in headings]
-    assert positions == sorted(positions)
 
 
 async def test_only_invalid_reading_leaves_the_item_pending():
     memory = wake_memory()
     state = _state(memory)
     result = await memory.propose(
-        state, items=[0], statements=[_reading("not in the source")])
+        state,  statements=[_reading("not in the source")])
     assert result["status"] == "refused"
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "evidence_absent"
     assert result["statements"][0]["kind"] == "reading"
-    assert not state.admitted_indices
     assert not memory.records.claims
 
 
@@ -271,7 +215,7 @@ async def test_a_refusal_names_the_field_its_repair_and_the_cited_rows():
     memory = wake_memory()
     state = _state(memory)
     result = await memory.propose(
-        state, items=[0], statements=[_reading("not in the source")])
+        state,  statements=[_reading("not in the source")])
     spec = REFUSAL_REPAIR["evidence_absent"]
     entry = result["statements"][0]
     assert entry["field"] == spec["field"] and entry["repair"] == spec["repair"]
@@ -299,8 +243,8 @@ async def test_a_saved_sibling_does_not_erase_the_refused_statements_repair():
     state = _state(memory)
     payload = _payload()
     payload["statements"] += [_reading("not in the source")]
-    result = await memory.propose(state, items=[0], statements=payload["statements"])
-    assert result["status"] == "ok" and result["admitted"] == [0]
+    result = await memory.propose(state,  statements=payload["statements"])
+    assert result["status"] == "ok" and result["status"] == "ok"
     entry = result["statements"][1]
     assert entry["status"] == "refused" and entry["field"] and entry["repair"]
     assert entry["cite"] == [1]
@@ -316,7 +260,7 @@ async def test_an_endpoint_refusal_carries_its_repair():
     memory = wake_memory()
     state = _state(memory)
     statement = dict(_payload()["statements"][0], subject="generated-person")
-    result = await memory.propose(state, items=[0], statements=[statement])
+    result = await memory.propose(state,  statements=[statement])
     entry = result["statements"][0]
     assert entry["reason"] == "endpoint_not_a_handle"
     assert entry["field"] == "subject/object" and "@kind:id" in entry["repair"]
@@ -330,9 +274,9 @@ async def test_a_malformed_cite_container_returns_a_schema_refusal(cite):
     memory = wake_memory()
     state = _state(memory)
     statements = [*_payload()["statements"], {**_reading("x"), "cite": cite}]
-    result = await memory.propose(state, items=[0], statements=statements)
+    result = await memory.propose(state,  statements=statements)
     assert result["status"] == "ok", result
-    assert result["admitted"] == [0] and len(result["committed"]) == 1
+    assert result["status"] == "ok" and len(result["committed"]) == 1
     saved, refused = result["statements"]
     assert saved["status"] == "saved"
     assert refused["status"] == "refused" and refused["reason"] == "schema"
@@ -381,7 +325,7 @@ async def test_a_refused_attribute_part_carries_the_generic_message():
                             "value": "9",
                             "cite": [{"source": 2,
                                       "quote": "a fabricated quote"}]}}}})
-    result = await memory.propose(state, items=[0], statements=[statement])
+    result = await memory.propose(state,  statements=[statement])
     assert result["status"] == "ok", result
     entry = result["statements"][0]
     assert entry["status"] == "saved"
@@ -406,7 +350,7 @@ async def test_a_first_refusal_with_a_mismatched_quote_gets_the_copy_repair():
     state = _state(memory)
     statement = dict(_payload()["statements"][0],
                      cite=[{"source": 1, "quote": "a fabricated quote"}])
-    result = await memory.propose(state, items=[0], statements=[statement])
+    result = await memory.propose(state,  statements=[statement])
     entry = result["statements"][0]
     assert entry["status"] == "refused"
     assert entry["reason"] == "span_not_in_source"
@@ -434,7 +378,7 @@ async def test_a_saved_attribute_reports_no_saved_state_claim():
                             "cite": [
                                 {"source": 2, "quote": "another body"},
                                 {"source": 2, "quote": "fabricated"}]}}}})
-    result = await memory.propose(state, items=[0], statements=[statement])
+    result = await memory.propose(state,  statements=[statement])
     assert result["status"] == "ok", result
     entry = result["statements"][0]
     assert entry["status"] == "saved"
@@ -463,10 +407,10 @@ async def test_a_resubmission_makes_no_saved_state_claim():
                             "value": "9",
                             "cite": [{"source": 2,
                                       "quote": "another body"}]}}}})
-    saved = await memory.propose(state, items=[0], statements=[first])
+    saved = await memory.propose(state,  statements=[first])
     assert saved["statements"][0]["status"] == "saved"
     # Duplicate submission: the same statement recovers the relation.
-    again = await memory.propose(state, items=[0], statements=[first])
+    again = await memory.propose(state,  statements=[first])
     _assert_generic_attribute_parts(again["statements"][0])
     # Retained old value: the same attribute re-proposed with evidence that
     # cannot support it; the entity keeps what it had.
@@ -477,7 +421,7 @@ async def test_a_resubmission_makes_no_saved_state_claim():
                             "value": "9",
                             "cite": [{"source": 2,
                                       "quote": "a fabricated quote"}]}}}})
-    third = await memory.propose(state, items=[0], statements=[changed])
+    third = await memory.propose(state,  statements=[changed])
     _assert_generic_attribute_parts(third["statements"][0])
 
 
@@ -496,7 +440,7 @@ async def test_a_retry_of_a_saved_attribute_never_gets_instructed():
     first = dict(_payload()["statements"][0], object=new_object(
         {"score": {"value": "9", "cite": [{"source": 2,
                                            "quote": "a fabricated quote"}]}}))
-    result = await memory.propose(state, items=[0], statements=[first])
+    result = await memory.propose(state,  statements=[first])
     assert result["statements"][0]["status"] == "saved"
     for attrs in (
         {"score": {"value": "9", "cite": [{"source": 2,
@@ -504,7 +448,7 @@ async def test_a_retry_of_a_saved_attribute_never_gets_instructed():
         {},
     ):
         retry = dict(_payload()["statements"][0], object=new_object(attrs))
-        again = await memory.propose(state, items=[0], statements=[retry])
+        again = await memory.propose(state,  statements=[retry])
         stmt = again["statements"][0]
         assert stmt["status"] == "refused" and stmt["reason"] == "wrong_ends"
 
@@ -568,26 +512,6 @@ async def test_a_withheld_social_stimulus_is_skipped_not_a_failed_wake():
     assert fake.results and fake.results[0]["status"] == "ok"
 
 
-@pytest.mark.parametrize("wrote,closes", [(True, "ok"), (False, "refused")])
-async def test_an_admitted_memory_write_backs_a_written_close(monkeypatch, wrote, closes):
-    """Option B: memory is a write, so an item whose admitted proposal wrote
-    something closes `written`; an empty proposal still cannot claim it."""
-    memory = wake_memory()
-
-    async def admitted(state, *, items, statements, nothing_here=()):
-        state.admitted_indices.update(items)  # as WakeMemory.propose records it
-        return {"status": "ok", "admitted": items, "refused": [], "committed": [],
-                "connected": {"status": "ok", "nodes": [], "relations": []}}
-    monkeypatch.setattr(memory, "propose", admitted)
-    payload = proposal()
-    if wrote:
-        payload["statements"] = [_reading("I have a spare controller")]
-    fake = FakeCognitionAgentRunner(script=[
-        ("memory_propose", payload), ("close", {"item_index": 0, "reason": "written"})])
-    runner, _, _ = _runner(agent_runner=fake, memory=memory)
-    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
-                                      last_activity_ms=None, last_wake=None), now_ms=NOW)
-    assert fake.results[1]["status"] == closes, fake.results[1]
 
 
 @pytest.mark.parametrize("author,admitted", [("generated-person", True), ("someone-else", False)])
@@ -687,7 +611,7 @@ async def test_citing_a_message_derives_relation_persons_from_the_source():
     """persons is the union of the cited Source.persons, never model-authored."""
     memory = wake_memory()
     state = _state(memory)
-    result = await memory.propose(state, items=[0], statements=_payload()["statements"])
+    result = await memory.propose(state,  statements=_payload()["statements"])
     assert result["status"] == "ok", result
     relation = memory.graph.relations[result["committed"][0]]
     assert relation.persons == ("generated-person",)
@@ -700,7 +624,7 @@ async def test_a_cross_unit_citation_is_refused():
                                     ("generated-person",), "I like Lantern Game"))
     statements = [dict(_payload()["statements"][0],
                        cite=[{"source": 2, "quote": "I like Lantern Game"}])]
-    result = await memory.propose(state, items=[0], statements=statements)
+    result = await memory.propose(state,  statements=statements)
     assert result["status"] == "refused"
     assert result["statements"][0]["status"] == "refused"
     assert not memory.graph.relations
@@ -718,7 +642,7 @@ async def test_a_loaded_but_unshown_row_is_refused():
     state.memory_items[0] = _replace(item, sources=(*item.sources, extra))
     statements = [dict(_payload()["statements"][0],
                        cite=[{"source": 2, "quote": "hidden row"}])]
-    result = await memory.propose(state, items=[0], statements=statements)
+    result = await memory.propose(state,  statements=statements)
     assert result["statements"][0]["reason"] == "unseen_source"
     assert not memory.graph.relations
 
@@ -729,23 +653,13 @@ async def test_one_slip_isolates_the_slipping_statement():
     state = _state(memory)
     good = _payload()["statements"][0]
     bad = dict(good, cite=[{"source": 1, "quote": "never said"}])
-    result = await memory.propose(state, items=[0], statements=[good, bad])
+    result = await memory.propose(state,  statements=[good, bad])
     assert result["status"] == "ok", result
     assert [s["status"] for s in result["statements"]] == ["saved", "refused"]
     assert result["statements"][1]["reason"] == "span_not_in_source"
-    assert result["admitted"] == [0] and len(memory.graph.relations) == 1
-    assert state.admitted_indices == {0}
+    assert result["status"] == "ok" and len(memory.graph.relations) == 1
 
 
-async def test_open_and_nothing_here_completion():
-    memory = wake_memory()
-    result = await memory.propose(
-        _state(memory), items=[0], statements=[], nothing_here=[0])
-    assert result["status"] == "ok"
-    assert result["admitted"] == [0] and result["open"] == []
-    open_result = await memory.propose(_state(memory), items=[0], statements=[])
-    assert open_result["status"] == "refused"
-    assert open_result["open"] == [0] and open_result["admitted"] == []
 
 
 async def test_an_identity_pointer_is_never_a_new_entity():
@@ -753,16 +667,16 @@ async def test_an_identity_pointer_is_never_a_new_entity():
     state = _state(memory)
     statement = dict(_payload()["statements"][0],
                      object={"new": {"kind": "person", "name": "Generated"}})
-    result = await memory.propose(state, items=[0], statements=[statement])
-    assert result["statements"][0]["reason"] == "identity_pointer"
+    result = await memory.propose(state,  statements=[statement])
+    assert result["statements"][0]["reason"] == "schema"
     assert not memory.graph.relations
 
 
 async def test_replaying_the_same_statement_is_idempotent():
     memory = wake_memory()
     statements = _payload()["statements"]
-    first = await memory.propose(_state(memory), items=[0], statements=statements)
-    again = await memory.propose(_state(memory), items=[0], statements=statements)
+    first = await memory.propose(_state(memory),  statements=statements)
+    again = await memory.propose(_state(memory),  statements=statements)
     assert first["status"] == again["status"] == "ok"
     assert first["committed"] == again["committed"]
     assert again["statements"][0]["status"] == "saved"
@@ -793,9 +707,12 @@ async def test_memory_propose_schema_is_derived_from_the_proposal_types():
     assert schema["properties"]["statements"]["items"]["oneOf"]
     defs = schema["$defs"]
     assert "valid_from" in defs["RelationStatement"]["properties"]
-    assert "nothing_here" in schema["properties"]
-    assert schema["properties"]["nothing_here"]["description"] == (
-        "Agenda indices understood and holding no substantive content.")
+    assert set(schema["properties"]) == {"statements"}
+    assert set(defs["RelationStatement"]["properties"]["rel"]["enum"]) == {
+        name for name, rule in RELATION_RULES.items() if rule.layer == "notebook"}
+    from nora.domain.memory_graph import PROPOSED_KINDS
+    assert set(defs["NewEntity"]["properties"]["kind"]["enum"]) == set(PROPOSED_KINDS)
+
 
 
 async def test_a_statement_without_citations_refuses():
@@ -804,7 +721,7 @@ async def test_a_statement_without_citations_refuses():
     memory = wake_memory()
     state = _state(memory)
     statement = dict(_payload()["statements"][0], cite=[])
-    result = await memory.propose(state, items=[0], statements=[statement])
+    result = await memory.propose(state,  statements=[statement])
     assert result["status"] == "refused"
     assert result["refused"][0]["reason"] == "schema"
     assert not memory.graph.relations
@@ -819,7 +736,7 @@ async def test_an_unshown_node_handle_is_refused():
         "hidden-work", "work", "unit-1", "Hidden work")
     state = _state(memory)
     statement = dict(_payload()["statements"][0], object="@work:hidden-work")
-    result = await memory.propose(state, items=[0], statements=[statement])
+    result = await memory.propose(state,  statements=[statement])
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unshown"
     assert not memory.graph.relations
@@ -830,12 +747,12 @@ async def test_retiring_a_relation_not_shown_is_refused():
     """A correction may only name a relation this session showed or committed."""
     memory = wake_memory()
     first = await memory.propose(
-        _state(memory), items=[0], statements=_payload()["statements"])
+        _state(memory),  statements=_payload()["statements"])
     old_id = first["committed"][0]
     state = _state(memory, text="I dislike Lantern Game now.")
     correction = {"type": "correction", "relation": old_id, "change": "retire",
                   "cite": [{"source": 1, "quote": "I dislike Lantern Game now"}]}
-    result = await memory.propose(state, items=[0], statements=[correction])
+    result = await memory.propose(state,  statements=[correction])
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unshown"
     assert memory.graph.relations[old_id].status == "current"
@@ -846,11 +763,11 @@ async def test_a_correction_cannot_cite_a_fabricated_quote():
     """Correction cites carry quotes; each is checked against the shown source."""
     memory = wake_memory()
     state = _state(memory)
-    first = await memory.propose(state, items=[0], statements=_payload()["statements"])
+    first = await memory.propose(state,  statements=_payload()["statements"])
     old_id = first["committed"][0]
     correction = {"type": "correction", "relation": old_id, "change": "retire",
                   "cite": [{"source": 1, "quote": "THIS WAS NEVER SAID"}]}
-    result = await memory.propose(state, items=[0], statements=[correction])
+    result = await memory.propose(state,  statements=[correction])
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "span_not_in_source"
     assert memory.graph.relations[old_id].status == "current"
@@ -864,16 +781,16 @@ async def test_one_malformed_statement_does_not_withhold_siblings():
     state = _state(memory)
     good = _payload()["statements"][0]
     bad = dict(good, cite=[])
-    result = await memory.propose(state, items=[0], statements=[good, bad])
+    result = await memory.propose(state,  statements=[good, bad])
     report = {s["index"]: s for s in result["statements"]}
     assert report[0]["status"] == "saved"
     assert report[1]["status"] == "refused" and report[1]["reason"] == "schema"
     assert len(memory.graph.relations) == 1
-    assert result["status"] == "ok" and result["admitted"] == [0]
+    assert result["status"] == "ok" and result["status"] == "ok"
 
 
 @pytest.mark.asyncio
-async def test_a_retry_persists_and_covers_a_repaired_reading():
+async def test_a_retry_persists_a_repaired_reading():
     """Partial completion: an open item's corrected reading stores and admits."""
     memory = wake_memory()
     state = _state(memory, text="We met at Lantern Park.")
@@ -896,15 +813,15 @@ async def test_a_retry_persists_and_covers_a_repaired_reading():
                 "where": "Lantern Park", "how": "stated",
                 "cite": [{"source": n, "quote": quote}]}
     first = await memory.propose(
-        state, items=[0, 1],
+        state,
         statements=[reading(1, "We met at Lantern Park.", "met at park"),
                     reading(2, "never-said-this", "went yesterday")])
-    assert 1 in first["open"]
+    assert [r["status"] for r in first["statements"]] == ["saved", "refused"]
     retry = await memory.propose(
-        state, items=[0, 1],
+        state,
         statements=[reading(2, "We went to Lantern Park yesterday.",
                             "went yesterday")])
-    assert retry["status"] == "ok" and 1 in retry["admitted"]
+    assert retry["status"] == "ok"
     claims = next(iter(memory.records.claims.values()))
     assert len(claims) == 2
 
@@ -922,11 +839,11 @@ async def test_a_relation_returned_in_connected_can_be_corrected():
                     "notebook", "unit-1", ("generated-person",), asserted_at=AT)
     memory.graph.relations[edge.id] = edge
     state = _state(memory)
-    await memory.propose(state, items=[0], statements=_payload()["statements"])
+    await memory.propose(state,  statements=_payload()["statements"])
     assert edge.id in state.shown_relations
     correction = {"type": "correction", "relation": edge.id, "change": "retire",
                   "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
-    result = await memory.propose(state, items=[0], statements=[correction])
+    result = await memory.propose(state,  statements=[correction])
     assert result["statements"][0]["status"] == "saved"
     assert memory.graph.relations[edge.id].status == "retired"
 
@@ -982,7 +899,7 @@ async def test_a_relation_a_memory_read_emitted_can_be_corrected():
     assert edge.id in answer["preview"] and edge.id in state.shown_relations
     correction = {"type": "correction", "relation": edge.id, "change": "retire",
                   "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
-    result = await memory.propose(state, items=[0], statements=[correction])
+    result = await memory.propose(state,  statements=[correction])
     assert result["statements"][0]["status"] == "saved"
     assert memory.graph.relations[edge.id].status == "retired"
 
@@ -1006,7 +923,7 @@ async def test_a_relation_a_memory_read_filtered_out_cannot_be_corrected():
     assert edge.id not in state.shown_relations
     correction = {"type": "correction", "relation": edge.id, "change": "retire",
                   "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
-    result = await memory.propose(state, items=[0], statements=[correction])
+    result = await memory.propose(state,  statements=[correction])
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unshown"
     assert memory.graph.relations[edge.id].status == "current"
@@ -1019,7 +936,7 @@ async def test_a_bare_endpoint_id_refuses_with_the_handle_reason():
     memory = wake_memory()
     state = _state(memory)
     statement = dict(_payload()["statements"][0], subject="generated-person")
-    result = await memory.propose(state, items=[0], statements=[statement])
+    result = await memory.propose(state,  statements=[statement])
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "endpoint_not_a_handle"
 
@@ -1032,7 +949,7 @@ async def test_an_unparseable_time_refuses_with_the_field():
     state = _state(memory)
     for field in ("valid_from", "valid_to"):
         statement = dict(_payload()["statements"][0], **{field: "not a time"})
-        result = await memory.propose(state, items=[0], statements=[statement])
+        result = await memory.propose(state,  statements=[statement])
         assert result["statements"][0]["status"] == "refused"
         assert result["statements"][0]["reason"] == "unparseable_time"
         assert result["statements"][0]["detail"] == field
@@ -1044,7 +961,7 @@ async def test_a_replacement_on_a_retire_refuses_with_its_reason():
     refuses with the reason that says so."""
     memory = wake_memory()
     first = await memory.propose(
-        _state(memory), items=[0], statements=_payload()["statements"])
+        _state(memory),  statements=_payload()["statements"])
     old_id = first["committed"][0]
     state = _state(memory, text="I dislike Lantern Game now.")
     state.shown_relations = {old_id}
@@ -1053,7 +970,7 @@ async def test_a_replacement_on_a_retire_refuses_with_its_reason():
         "replacement": _payload()["statements"][0],
         "cite": [{"source": 1, "quote": "I dislike Lantern Game now"}],
     }
-    result = await memory.propose(state, items=[0], statements=[correction])
+    result = await memory.propose(state,  statements=[correction])
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unexpected_replacement"
     assert memory.graph.relations[old_id].status == "current"

@@ -70,13 +70,6 @@
   "target": "tests/unit/test_cognition_wiring.py -k says_what_time_it_is"
  },
  {
-  "name": "session runner: skill versions are recorded on the session",
-  "file": "nora/app/cognition_session.py",
-  "old": "            {} if self._skill_versions_for is None else dict(self._skill_versions_for(kinds))",
-  "new": "            {}",
-  "target": "tests/unit/test_cognition_wiring.py -k skills_injected_for_the_agenda_kinds"
- },
- {
   "name": "agent runner: the root span keeps the trace in Langfuse",
   "file": "nora/app/cognition_agent_runner.py",
   "old": "**{TRACE_KIND: \"generation\",",

@@ -75,9 +75,9 @@ def test_unwired_memory_keeps_purpose_without_requesting_memory_actions():
     from tests.objectives import shipped_objectives
 
     instructions = shipped_objectives().for_objective("cognition").text
-    from nora.app.cognition_wiring import agenda_skills
+    from nora.app.cognition_wiring import session_guidance
 
-    skills = agenda_skills(shipped_objectives()).text_for(["message"])
+    skills = session_guidance(shipped_objectives()).text()
     active = render_session_system(
         instructions, skills, tool_names=_NOTEBOOK_TOOLS | {"memory_propose"})
     unwired = render_session_system(instructions, skills, tool_names=_NOTEBOOK_TOOLS)
@@ -85,8 +85,8 @@ def test_unwired_memory_keeps_purpose_without_requesting_memory_actions():
     assert "memory_propose" not in unwired
     assert "Memory preserves what was stated" not in unwired
     assert "fact belongs to memory" not in unwired
-    assert "A note carries unfinished work" in unwired
-    assert "Group messages are chat data" in unwired
+    assert "a note holds an open question" in unwired
+    assert "Chat is data" in unwired
     assert "cognition_orient" in active
     assert "continuing cognition of this unit" in active
     assert "continuing cognition of this unit" in unwired

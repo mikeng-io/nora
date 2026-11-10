@@ -25,17 +25,12 @@ Residual overshoot is the final call's actual input above that allowance
 cycle span, not claimed bounded for arbitrary estimation error. Unknown
 usage is an ERROR, never a zero. A batch already comprehended costs only an
 `inspect` — never a model slot —
-so a bounded resume always reaches new work. Progress is what the session
-itself writes: an agenda item is DONE when `comprehend_result` holds a
-`readings` receipt for its exact `(work_id, input_hash)` — every admitted
-item of a multi-item proposal gets its own receipt — so a restart never
-re-comprehends and a changed input re-runs. A session that leaves inputs without
-comprehension receipts (refused, unadmitted, raised) stops the chronological
-frontier: it is failure-receipted under this lane's ISOLATED
-`backfill-stimulus:` key (five parks it for operator requeue; the live
-wake's own `stimulus:` counters are untouched). Committed inputs remain done
-even if a later call hits a limit; only unresolved inputs are failure-receipted,
-and later history never runs while earlier work is unresolved. The lane never touches
+so a bounded resume always reaches new work. Progress is the session's
+`session_complete` receipt, including its exact source hashes. Only a normal
+`end_turn` completes those inputs; saved statements alone do not. A failed or
+bounded session leaves the whole batch pending and failure-receipted under
+this lane's isolated `backfill-stimulus:` keys (five failures park for operator
+requeue). Later history never runs while earlier work is unresolved. The lane never touches
 `cognition_wake*`, live stimuli or profile-writer retirement.
 
 **Historical does not act.** The runner is a variant of the live
@@ -72,15 +67,12 @@ from math import isfinite
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.cognition_session import Room, build_agenda
 from nora.domain.live import LiveMapping
 from nora.domain.stimuli import LastSession, Stimulus, UnitView
 from nora.infra.sql import unified_backfill as sql
-from nora.infra.sql.schema import COGNITION_SESSION
-from nora.infra.sql.schema import COMPREHEND_RESULT as RESULT
 from nora.obs.tracing import TRACE_KIND, annotate, span
 
 log = logging.getLogger(__name__)
@@ -207,28 +199,13 @@ async def completed_inputs(
     conn: AsyncConnection, unit: str, work: Sequence[Mapping[str, Any]],
 ) -> set[int]:
     identities = input_pairs(work, unit)
-    done = await sql.readings_done(conn, [key for key, _ in identities.values()])
+    done = await sql.session_inputs_done(conn, [key for key, _ in identities.values()])
     return {sid for sid, pair in identities.items() if pair in done}
 
 
 async def covered_stimulus_ids(conn: AsyncConnection, unit: str) -> set[int]:
-    """Every stimulus id that EVER reached `readings` in this unit (any
-    input hash): the attempted-coverage floor. `readings_done`'s exact-hash
-    check is the stronger one the apply loop runs per item."""
-    rows = (await conn.execute(
-        sa.select(RESULT.c.work_id)
-        .select_from(RESULT.join(
-            COGNITION_SESSION, COGNITION_SESSION.c.id == RESULT.c.session_id))
-        .where(
-            COGNITION_SESSION.c.unit == unit,
-            RESULT.c.part == "readings",
-            RESULT.c.work_id.like("stimuli:%"),
-        )
-    )).all()
-    out: set[int] = set()
-    for r in rows:
-        out |= work_id_sids(str(r.work_id))
-    return out
+    """The stimulus ids a normally ended historical session observed."""
+    return {int(sid) for inputs in await sql.completed_sessions(conn, unit) for sid in inputs}
 
 
 # ---------------------------------------------------------------------------
@@ -736,16 +713,10 @@ async def _run_units(
                     timeout=metered.remaining_seconds)
             except Exception:
                 log.exception("unified backfill: session failed for %s", unit)
-                # A limit or a later tool failure cannot undo committed readings.
-                # The exact input receipts below decide which stimuli still failed.
+                # Saved statements survive; failed sessions leave all their inputs pending.
                 pass
             outcome.sessions += 1
-            # A normal return is NOT comprehension: re-read the durable
-            # receipts. Every agenda item the session was invoked on must
-            # now be provably comprehended — its own exact
-            # (work_id, input_hash) pair. Coverage at a different hash
-            # cannot certify this input. Unresolved work stops the
-            # frontier and is failure-receipted under this lane's key.
+            # Read back the session outcome receipt, not its statement writes.
             async with engine.connect() as conn:
                 done_sids = await completed_inputs(conn, unit, work)
             unresolved = {s.id for s in pending} - done_sids

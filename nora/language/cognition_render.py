@@ -247,16 +247,6 @@ def _window(times: Sequence[int], now_ms: int, tz: tzinfo) -> str:
     return f"from {at} to {to}, the newest {ago(now_ms - newest)}"
 
 
-def returning(strike: int) -> str:
-    """A returning item says so: without it two items of one room (the fresh
-    messages and the ones an earlier session left open) read the same. The
-    `returning` attribute's value; empty when the item is not returning."""
-    if strike <= 0:
-        return ""
-    noun = "session" if strike == 1 else "sessions"
-    return f"left open by {strike} earlier {noun}"
-
-
 def _words(text: str, limit: int) -> str:
     """A message's words as one line cut to `limit`; none at all for a limit of
     nothing (the measure of what a row costs without them).
@@ -814,7 +804,6 @@ def _item_attrs(
     return [
         ("index", str(index)), ("kind", item.kind),
         ("room", room_label(item.room, labels)), ("summary", item.summary),
-        ("returning", returning(item.strike)),
     ]
 
 
@@ -1197,6 +1186,6 @@ def render_agenda(
 __all__ = [
     "RenderBudget", "RenderedAgendaItem", "RenderedAgendaRow", "clock_line",
     "ledger_source_row", "parse_rendered_agenda", "render_agenda",
-    "rendered_new_sources", "returning", "room_key", "room_label",
+    "rendered_new_sources", "room_key", "room_label",
     "shown_source_rows", "speaker_of",
 ]

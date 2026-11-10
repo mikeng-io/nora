@@ -107,12 +107,12 @@ async def main() -> None:
     runner = CognitionSessionRunner(
         store=ledger, stimulus_store=stimuli, agent_runner=model,
         home_rooms={UNIT: Room("signal", "home")}, read_tools_for=lambda unit, rooms: [],
-        read_only_tools=frozenset(), skill_text_for=lambda kinds: "", grounder=EmptyGrounder(),
+        read_only_tools=frozenset(), skill_text_for=lambda: "", grounder=EmptyGrounder(),
         doctrine_text="DOCTRINE", doctrine_sha256="sha", open_note_titles=_empty,
         open_events=_empty, prior_standing=_none,
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=600),
         cooldown_seconds=300.0, units=(UNIT,), session_timeout_seconds=900.0, max_items=12,
-        max_strikes=3, metrics=metrics,
+        metrics=metrics,
     )
     evaluator = WakeEvaluator(
         store=stimuli, units=lambda: (UNIT,), policy=POLICY, metrics=metrics, settle_seconds=0,

@@ -8,11 +8,6 @@ from collections import Counter
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.composed import compose_body
 from nora.domain.comprehend import Preview
-from nora.domain.memory_graph import (
-    ENTRY,
-    PROPOSED_KINDS,
-    RELATION_RULES,
-)
 from nora.domain.prompt import escape, one_line
 from nora.language.computer_render import estimate_tokens
 
@@ -24,24 +19,6 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
 _ROW = {name: (order, key) for name, order, key in _BLOCKS}
 
 
-def _step_one(sources: tuple[str, ...]) -> tuple[str, ...]:
-    """Sources step one may write from; an entry writes its own links (27 §7a)."""
-    return tuple(k for k in sources if k not in ENTRY)
-
-
-# The admission check's own vocabulary: a name outside it is refused, so the
-# model is shown exactly the list code admits against — rendered, never copied.
-_ADMITTED_RELATIONS = tuple(sorted(
-    rel for rel, rule in RELATION_RULES.items()
-    if rule.layer == "notebook" and _step_one(rule.sources)
-))
-_VOCABULARY = (
-    "Entity kinds you may create: " + ", ".join(PROPOSED_KINDS) + ". "
-    "Relations, the only names admitted: " + ", ".join(_ADMITTED_RELATIONS) + " — "
-    "likes/dislikes is a preference for one specific thing; interested_in is a"
-    " subject. Who said, shared, asked or replied is already recorded by code;"
-    " propose only what the item establishes about the world."
-)
 RESHAPE = """Read this entity's committed subgraph. Propose traits and unconfirmed guesses
 for a person, culture baselines for a room or unit, or lessons for yourself from the closed
 response episode. For a topic, propose its internal topic account (part="topic"),
@@ -157,100 +134,66 @@ def memory_result_text(text: str, *, query: str, depth: int) -> str:
     )
 
 
-MEMORY_CRITERIA = """# Orient
+MEMORY_CRITERIA = (
+    "Use memory_propose for relations first, readings only when no relation holds the "
+     "fact, and corrections for contradicted shown relations. Work against the people "
+     "and entities shown. likes/dislikes concerns a specific thing; interested_in a subject. "
+     "Chatter, bare links, promotions and vague replies that add no claim need no write."
+)
 
-Keep claims about people and things, not a recap of chat events. If an item adds
-nothing beyond who said, shared, asked, replied or reacted, mark it nothing_here.
-Bare links, promo text and vague replies are nothing_here unless the rows state
-a claim beyond that act. Preserve attribution and uncertainty; shared material
-is not the sharer's endorsement, and public material cannot establish private
-facts about a person.
 
-Relations are the primary output: try the admitted relations against the people
-and entities shown in the input, matching supplied entities before creating one.
-Use a reading only when no admitted relation can hold the fact. Correct a
-contradicted shown relation by its shown id; do not guess unseen state. People
-are supplied identities, never new entities; a new entity needs an admitted
-relation. For a reading, happened_at quotes the cited row's own time words or
-null, never its send timestamp or a date you computed.
-
-Call memory_propose with the item indices, statements citing their source rows,
-and nothing_here for empty items. Cover each distinct claim once, including
-other claims in a batched item. Read refusals and repair still-grounded claims;
-a refusal is not nothing_here.
-"""
-
-_WORKED_EXAMPLES = """# Examples (synthetic)
-
-Input: Ada (shown person ada), row 5201: “I love Lantern Game.”
-Output: relation ada likes Lantern Game (reuse the shown work, or create it),
-citing 5201. No reading is needed to repeat the preference.
-
-Input: item 2, row 5230: “lol nice” with a bare link and no other claim.
-Output: memory_propose(items=[2], statements=[], nothing_here=[2]);
-close the item no_change.
-"""
-
-SESSION_INSTRUCTION = MEMORY_CRITERIA + "\n" + _VOCABULARY + "\n\n" + _WORKED_EXAMPLES
-
-# Each section requires the tools it teaches, including loadable tools.
-_TOOL_GUIDANCE = (
-    (frozenset({"memory_propose", "memory_search", "memory_read"}),
-     """Before proposing a new entity or relation, search memory with memory_search
-and inspect the relevant connections with memory_read.
-"""),
-    (frozenset({"close"}),
-     """After deciding and completing any actions, close understood items as written,
-covered, no_change or waiting according to what happened. Missing evidence is
-uncertainty, not an empty result.
-"""),
+# Tool-gated stage guidance belongs to this declared context occasion.
+_ORIENT_GUIDANCE = (
+    (frozenset({"memory_search", "memory_read"}),
+     "Search memory and read its connections before proposing a new entity or relation."),
+    (frozenset({"memory_propose"}), MEMORY_CRITERIA),
     (frozenset({"profile_read", "profile_revise"}),
-     """Reshape profiles only for entities whose relations changed this session:
-profile_read before profile_revise. Connect the new evidence to the held account,
-keeping facts, traits and tentative guesses distinct.
-"""),
+     "Use profile tools to connect changed relations to held topics, traits, lessons "
+     "and profiles; read before revising."),
 )
 _ACT_GUIDANCE = (
     (frozenset({"standing_revise"}),
-     """Standing carries your own position: use i_owe for responsibilities you actually
-accepted and hold_open for questions you are keeping open, with what would resolve
-them. Revise that position as the situation changes; noticing work is not accepting it.
-"""),
-    (frozenset({"wake_at", "wake_move", "wake_cancel"}),
-     """A wake earns another look when a concrete change or time could resolve
-something that matters. Its why is your reason; move or cancel it as that reason changes.
-"""),
+     "Standing holds your position: i_owe is what you took on; hold_open is what "
+     "you are keeping open and what would resolve it."),
     (frozenset({"remind", "remind_move", "remind_cancel"}),
-     """A reminder prepares a later room turn, not an immediate message. Write its text
-for your later self to reconsider; an inference remains a question to the room.
-Reminders set by people are theirs to change. Ground dates in the supplied clock.
-"""),
-    (frozenset({"document_read", "document_revise"}),
-     """Shared documents are an index, never evidence of what a person said. Read the
-current revision before revising from cited replacements; preserve unrelated content
-and uncertainty, and do not retry a conflict automatically.
-"""),
+     "A reminder prepares a later room turn when someone can usefully act; "
+     "continue, move or cancel it as the matter changes."),
+    (frozenset({"wake_at", "wake_move", "wake_cancel"}),
+     "A wake schedules a later look of your own when a time or change could matter."),
+    (frozenset({"document_revise"}),
+     "Revise a shared document to carry a settled change forward, preserving unrelated content."),
 )
 _NOTEBOOK_TOOLS = frozenset({
     "note_create", "note_revise", "note_set_status", "note_merge",
     "memo_create", "memo_revise", "memo_set_status",
     "event_propose", "event_revise", "event_set_status",
-    "remind", "remind_move", "remind_cancel",
 })
 
 
+def _guidance(sections: tuple, tool_names: frozenset[str]) -> list[str]:
+    return [f"{text} Tools: {', '.join(sorted(required & tool_names))}."
+            for required, text in sections if required & tool_names]
+
+
 def render_session_system(doctrine: str, skills: str, *, tool_names: frozenset[str]) -> str:
-    """Compose guidance from the same admitted surface the session can load."""
-    sections = [SESSION_INSTRUCTION] if "memory_propose" in tool_names else []
-    sections.extend(text for required, text in _TOOL_GUIDANCE if required <= tool_names)
+    """Assemble each stage from the session's actual offered tools."""
+    sections = _guidance(_ORIENT_GUIDANCE, tool_names)
+    if "memory_propose" in tool_names:
+        sections.append(
+            "Examples (synthetic): Ada says in row 5201, 'I love Lantern Game': "
+            "propose Ada likes Lantern Game, citing 5201. Row 5230 says 'lol nice' "
+            "with a bare link: no statement or action is needed.")
     orient = assemble([restamp(ContextBlock(
-        name="cognition_orient", body=compose_body("\n".join(sections))), _ROW)])
-    skills = skills if tool_names >= _NOTEBOOK_TOOLS else ""
-    actions = [text for required, text in _ACT_GUIDANCE if required <= tool_names]
+        name="cognition_orient", body=compose_body(
+            "# Orient\n\n" + "\n\n".join(sections) if sections else "")), _ROW)])
+    actions = []
+    if tool_names & _NOTEBOOK_TOOLS:
+        actions.append(skills + "\nTools: " + ", ".join(sorted(tool_names & _NOTEBOOK_TOOLS)) + ".")
+    actions.extend(_guidance(_ACT_GUIDANCE, tool_names))
     act = assemble([restamp(ContextBlock(
-        name="cognition_act", body=compose_body("# Act\n\n" + "\n".join(actions)
-                                                if actions else "")), _ROW)])
-    if "<!-- cognition-orient -->" in doctrine:
-        return doctrine.replace("<!-- cognition-orient -->", orient).replace(
-            "<!-- cognition-act-skill -->", skills + act)
-    return doctrine + orient + skills + act
+        name="cognition_act", body=compose_body(
+            "# Act\n\n" + "\n\n".join(actions) if actions else "")), _ROW)])
+    if "<!-- cognition-orient -->" not in doctrine:
+        return doctrine + orient + act
+    return doctrine.replace("<!-- cognition-orient -->", orient).replace(
+        "<!-- cognition-act-skill -->", act)

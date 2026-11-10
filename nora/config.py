@@ -3499,7 +3499,6 @@ class CognitionConfig(BaseModel):
     #: Agenda items per session; a starting value.
     max_items: int = Field(default=12, ge=1)
     #: Strikes after which an item's stimuli are struck (`struck`); a starting value.
-    max_strikes: int = Field(default=3, ge=1)
     # DEC-242: how long a TRACKED wake may stay OPEN (no outcome row) before it is
     # EXPIRED and read as failed: its unit stops being in flight and its stimuli are
     # pending again. The session's own wall clock (`AdaptorBudget.timeout_seconds`)

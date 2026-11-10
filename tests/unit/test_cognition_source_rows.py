@@ -113,7 +113,7 @@ async def wake(budget=None, seed=None, historical=False, reaction=False, reactio
     state = SimpleNamespace(
         memory=memory,
         session_id=7,
-        admitted_indices=set(),
+
         admitted_relations={},
         admitted_evidence=[],
         unit="generated-unit",
@@ -156,7 +156,7 @@ async def test_reaction_cannot_replace_message_author_or_grant_reactor_authority
     assert "person" not in reaction.attributes
     assert rendered_new_sources(prompt)["101"]["text"] == "Image attached."
     result = await state.memory.propose(
-        state, items=[0], statements=[{
+        state,  statements=[{
             "type": "reading", "about": [{"person_id": person, "reference": person}],
             "what": "Generated attachment", "how": "reported",
             "happened_at": {"source": 101, "expression": None},
@@ -186,7 +186,7 @@ async def test_reaction_alone_neither_makes_target_citable_nor_shows_reactor():
     assert "101" not in state.memory_items[0].snapshot["source_keys"]
     assert "101" not in rendered_new_sources(prompt)
     assert 'reaction="👍"' in prompt and 'person="generated-reactor"' not in prompt
-    result = await state.memory.propose(state, items=[0], statements=[{
+    result = await state.memory.propose(state,  statements=[{
         "type": "reading", "about": [], "what": "Generated attachment", "how": "reported",
         "happened_at": {"source": 101, "expression": None},
         "cite": [{"source": 101, "quote": "Image attached."}],
@@ -217,7 +217,7 @@ async def test_colliding_loader_slot_keeps_image_author_and_clock():
     )
     assert not drops
     result = await state.memory.propose(
-        state, items=[0], nothing_here=[],
+        state,
         statements=[{
             "type": "reading", "about": [], "what": "Generated pending collection",
             "happened_at": {"source": rid, "expression": None},
@@ -269,7 +269,7 @@ async def test_a_loaded_but_unemitted_row_cannot_be_cited():
     state, prompt = await wake()
     assert "Loaded but never shown." not in prompt
     result = await state.memory.propose(
-        state, items=[0], nothing_here=[],
+        state,
         statements=[{
             "type": "relation", "rel": "at",
             "subject": {"new": {"kind": "event", "name": "Generated outing"}},
@@ -311,7 +311,7 @@ async def test_a_clipped_row_tail_is_not_citable():
     tail = "Pending: collect tomorrow; not collected."
     assert tail not in row["body"]
     result = await state.memory.propose(
-        state, items=[0], nothing_here=[],
+        state,
         statements=[{
             "type": "relation", "rel": "at",
             "subject": {"new": {"kind": "event", "name": "Generated outing"}},
@@ -348,7 +348,7 @@ async def test_a_relation_clipped_from_the_preview_cannot_be_corrected():
     correction = {"type": "correction", "relation": clipped, "change": "retire",
                   "cite": [{"source": 101, "quote": "Image attached."}]}
     result = await state.memory.propose(
-        state, items=[0], nothing_here=[], statements=[correction])
+        state,   statements=[correction])
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unshown"
     assert state.memory.graph.relations[clipped].status == "current"
@@ -385,7 +385,7 @@ async def test_a_withheld_graph_keeps_no_correction_authority():
     state, prompt = await wake(seed=lambda m: _seed_key_shaped_label(m, blocked=True))
     assert state.graph_text == "" and "generated-edge:" not in prompt
     result = await state.memory.propose(
-        state, items=[0], nothing_here=[], statements=[_correction()])
+        state,   statements=[_correction()])
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unshown"
     assert state.memory.graph.relations["generated-edge"].status == "current"
@@ -398,7 +398,7 @@ async def test_an_emitted_preview_relation_can_be_corrected():
     state, prompt = await wake(seed=lambda m: _seed_key_shaped_label(m, blocked=False))
     assert "generated-edge:" in prompt
     result = await state.memory.propose(
-        state, items=[0], nothing_here=[], statements=[_correction()])
+        state,   statements=[_correction()])
     assert result["statements"][0]["status"] == "saved"
     assert state.memory.graph.relations["generated-edge"].status == "retired"
 
@@ -425,7 +425,7 @@ async def test_an_emitted_rows_author_is_handle_citable_without_source_scope(his
     for source in list(state.graph_fetched.sources.values()):
         state.graph_fetched.show(_replace(source, persons=()))
     result = await state.memory.propose(
-        state, items=[0], nothing_here=[],
+        state,
         statements=[{
             "type": "relation", "rel": "likes",
             "subject": "@person:generated-a",
@@ -452,7 +452,7 @@ async def test_a_shown_author_grounds_a_pointer_the_projection_has_not_written()
     for source in list(state.graph_fetched.sources.values()):
         state.graph_fetched.show(_replace(source, persons=()))
     result = await state.memory.propose(
-        state, items=[0], nothing_here=[],
+        state,
         statements=[{
             "type": "relation", "rel": "likes",
             "subject": "@person:generated-a",
@@ -482,7 +482,7 @@ async def test_a_clipped_rows_author_is_not_a_shown_person():
         for person in ("generated-a", "generated-b")
     ]
     result = await state.memory.propose(
-        state, items=[0], nothing_here=[], statements=statements)
+        state,   statements=statements)
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unshown"
     assert result["statements"][1]["status"] == "saved"
@@ -494,7 +494,7 @@ async def test_a_person_never_shown_is_still_unshown():
     appearing nowhere as an emitted row's `person=` refuses `unshown`."""
     state, _prompt = await wake()
     result = await state.memory.propose(
-        state, items=[0], nothing_here=[],
+        state,
         statements=[{
             "type": "relation", "rel": "likes",
             "subject": "@person:generated-stranger",
@@ -542,7 +542,7 @@ async def test_api_punctuation_quotes_keep_custody_at_every_admission_gate(
                 "availability": {"value": "spare", "cite": [citation]}}
     else:
         statement = {**_correction(), "cite": [citation]}
-    result = await state.memory.propose(state, items=[0], statements=[statement])
+    result = await state.memory.propose(state,  statements=[statement])
     assert result["statements"][0]["status"] == (
         "refused" if invented_tail and kind != "attribute" else "saved"), result
     if kind == "attribute":

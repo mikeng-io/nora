@@ -163,11 +163,11 @@ async def _wake(names: tuple[str, ...]) -> tuple[ReadingModel, InMemoryCognition
         store=store, stimulus_store=stimulus_store, agent_runner=model,
         units=("u",), session_timeout_seconds=900.0, home_rooms={"u": A},
         read_tools_for=lambda unit, rooms: [], read_only_tools=frozenset(),
-        skill_text_for=lambda kinds: "", grounder=StaticGrounder(grounding),
+        skill_text_for=lambda: "", grounder=StaticGrounder(grounding),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=none, open_events=none,
         prior_standing=none,
         budget=BUDGET, cooldown_seconds=300.0, max_items=12,
-        max_strikes=3, clock=lambda: NOW / 1000, nora_names=frozenset({"Nora"}), tz=HK,
+        clock=lambda: NOW / 1000, nora_names=frozenset({"Nora"}), tz=HK,
         notes=InMemoryNoteStore(),
     )
     view = UnitView(unit="u", pending=tuple(stimuli), last_activity_ms=None, last_wake=None)
@@ -239,11 +239,11 @@ async def test_a_reaction_is_not_citable_from_its_own_row():
         store=store, stimulus_store=stimulus_store, agent_runner=Citer(),
         units=("u",), session_timeout_seconds=900.0, home_rooms={"u": A},
         read_tools_for=lambda unit, rooms: [], read_only_tools=frozenset(),
-        skill_text_for=lambda kinds: "", grounder=StaticGrounder(grounding),
+        skill_text_for=lambda: "", grounder=StaticGrounder(grounding),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=none, open_events=none,
         prior_standing=none,
         budget=BUDGET, cooldown_seconds=300.0, max_items=12,
-        max_strikes=3, clock=lambda: NOW / 1000, nora_names=frozenset({"Nora"}), tz=HK,
+        clock=lambda: NOW / 1000, nora_names=frozenset({"Nora"}), tz=HK,
     )
     view = UnitView(unit="u", pending=(react,), last_activity_ms=None, last_wake=None)
     await runner.on_wake(unit="u", view=view, now_ms=NOW, wake_id=1)

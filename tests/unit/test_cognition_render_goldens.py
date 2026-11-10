@@ -131,12 +131,12 @@ def _g(*recs: RecordItem, **kw: Any) -> Grounding:
 
 
 def _render(
-    stimuli: list[Stimulus], grounding: Grounding | None, *, strikes: dict[int, int] | None = None,
+    stimuli: list[Stimulus], grounding: Grounding | None, *,
     items: tuple[AgendaItem, ...] | None = None, now_ms: int | None = NOW,
     last_session_ms: int | None = None, tz: Any = HK, **kw: Any,
 ) -> str:
     agenda = items if items is not None else build_agenda(
-        stimuli, home_room=HOME, strikes=strikes,
+        stimuli, home_room=HOME,
     ).items
     return cr.render_agenda(
         agenda, stimuli={s.id: s for s in stimuli}, grounding=grounding,
@@ -200,9 +200,6 @@ def _() -> str:
     return "\n".join(f"{s}: {ago(s)}" for s in spans)
 
 
-@_case("returning-wording")
-def _() -> str:
-    return "\n".join(f"{n}: {cr.returning(n)!r}" for n in (-1, 0, 1, 2, 3))
 
 
 @_case("room-label-and-key")
@@ -530,15 +527,6 @@ def _() -> str:
 # =============================================================================
 
 
-@_case("returning-items-one-and-many-sessions")
-def _() -> str:
-    s1, s2, s3, s4 = (_stim(i, A, ago=50 - i * 10, mid=i) for i in (1, 2, 3, 4))
-    return _render([s1, s2, s3, s4], _g(
-        _rec(s1, author="Ada", text="left open once"),
-        _rec(s2, author="Ben", text="left open twice"),
-        _rec(s3, author="Ada", text="also twice"),
-        _rec(s4, author="Chloe", text="fresh"),
-    ), strikes={1: 1, 2: 2, 3: 2})
 
 
 @_case("social-play-time-self-and-unknown-items")
@@ -618,9 +606,9 @@ def _() -> str:
         AgendaItem(kind="message", room=A, summary="2 new messages in this room",
                    stimulus_ids=(1, 2), cues=(), surprise=1.0),
         AgendaItem(kind="message", room=B, summary="1 new message in this room",
-                   stimulus_ids=(3,), cues=(), surprise=1.0, strike=1),
+                   stimulus_ids=(3,), cues=(), surprise=1.0),
         AgendaItem(kind="time", room=C, summary="a time stimulus is due: dinner",
-                   stimulus_ids=(4,), cues=(), surprise=1.0, strike=2),
+                   stimulus_ids=(4,), cues=(), surprise=1.0),
     )
     return cr.render_agenda(items, grounding=Grounding(
         room_labels=LABELS, notes=(NoteLine(id="n-1", title="ignored", description="ignored"),),
@@ -790,7 +778,7 @@ def _() -> str:
         events=(EventLine(id="e-9", room=A, title="Dinner", when_ms=NOW + 2 * DAY, venue="Ramen Ya",
                           status="proposed", revision="rev-3"),),
         room_labels=LABELS,
-    ), strikes={6: 1}, last_session_ms=NOW - (2 * HOUR + 10 * MIN),
+    ), last_session_ms=NOW - (2 * HOUR + 10 * MIN),
         reads_note="Your read tools look through room «Room A».")
 
 
@@ -858,10 +846,6 @@ def test_the_goldens_vary_what_this_step_is_about():
         "budget-drops-exactly-one-earlier-message": ('earlier_not_shown="',),
         "could-not-be-shown-singular-and-plural-with-readable-lines": ('unreadable="4"',),
         "could-not-be-shown-exactly-one": ('unreadable="1"',),
-        "returning-items-one-and-many-sessions": (
-            'returning="left open by 1 earlier session"',
-            'returning="left open by 2 earlier sessions"',
-        ),
         "social-play-time-self-and-unknown-items": (
             "new social items", "Ada posted 2 story frames</social>",
             "Ben posted a collab post and a reel</social>", "new play sample",
@@ -880,8 +864,7 @@ def test_the_goldens_vary_what_this_step_is_about():
         "register-events-only": ('when="no time set"', 'revision="rev-3"'),
         "register-note-and-event-line-caps": ('not_listed="4"',),
         "register-cut-at-its-character-budget": ('not_listed="',),
-        "probe-no-clock-no-grounding": ('returning="left open by 2 earlier sessions"',),
-        "a-whole-session": ('id_kind="real"', "<events>", 'own="yes"', "returning"),
+        "a-whole-session": ('id_kind="real"', "<events>", 'own="yes"'),
     }
     for name, parts in must.items():
         for part in parts:

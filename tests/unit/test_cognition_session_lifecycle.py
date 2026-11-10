@@ -35,7 +35,6 @@ from nora.obs.metrics import Metrics
 from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
-from tests.unit.cognition_view import items as agenda_items
 
 HK = ZoneInfo("Asia/Hong_Kong")
 
@@ -72,13 +71,6 @@ async def ok(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
     return CognitionRunResult(stop_reason="end_turn")
 
 
-async def close_written(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
-    """Closes every agenda item, so nothing returns to the next one. `no_change`,
-    not `written`: a `written` close needs a write of the session's own (B3)."""
-    by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
-    for i in range(len(agent.prompts[-1].splitlines())):
-        await by["close"](item_index=i, reason="no_change")
-    return CognitionRunResult(stop_reason="end_turn")
 
 
 async def boom(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
@@ -198,7 +190,7 @@ class Rig:
 
 def _rig(
     *, agent: ScriptedAgent | None = None, units: tuple[str, ...] = ("u1",),
-    timeout: float = 30.0, max_items: int = 12, max_strikes: int = 3,
+    timeout: float = 30.0, max_items: int = 12,
     policy: WakePolicy = POLICY,
     read_tools_for: Callable[[str, Sequence[Room]], list[Any]] | None = None,
     read_only_tools: frozenset[str] = frozenset(), max_self_wakes: int = 5,
@@ -222,7 +214,7 @@ def _rig(
         home_rooms=dict.fromkeys(units, HOME),
         read_tools_for=read_tools_for or (lambda unit, rooms: []),
         read_only_tools=read_only_tools,
-        skill_text_for=lambda kinds: "", grounder=grounder or EmptyGrounder(),
+        skill_text_for=lambda: "", grounder=grounder or EmptyGrounder(),
         doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=_const(()), open_events=_const(()),
         prior_standing=_const(None),
@@ -230,7 +222,7 @@ def _rig(
                              timeout_seconds=timeout),
         cooldown_seconds=300.0, units=units,
         session_timeout_seconds=policy.session_timeout_seconds,
-        max_items=max_items, max_strikes=max_strikes,
+        max_items=max_items,
         max_self_wakes=max_self_wakes, max_self_wakes_per_day=max_self_wakes_per_day,
         metrics=metrics, mint_ref=_counter(), clock=clock,
         model_window_tokens=model_window_tokens,
@@ -396,7 +388,7 @@ async def test_a_failed_sessions_stimuli_are_not_lost():
 async def test_a_closed_session_does_advance_the_watermark():
     """The control for the test above: the same flow with a session that
     closes its items leaves nothing pending."""
-    rig = _rig(agent=ScriptedAgent(script=[close_written]))
+    rig = _rig(agent=ScriptedAgent(script=[ok]))
     await rig.say()
     rig.clock.advance(1)
     await rig.tick()
@@ -502,7 +494,7 @@ async def test_a_wake_with_no_outcome_blocks_its_unit_and_no_later_wake_swallows
     SEES them (its range starts below W2's)."""
     from nora.domain.stimuli import NewWake
 
-    rig = _rig(agent=ScriptedAgent(script=[close_written]))
+    rig = _rig(agent=ScriptedAgent(script=[ok]))
     first = await rig.say()
     rig.clock.advance(1)
     await rig.tick()
@@ -548,7 +540,7 @@ async def test_record_session_raising_keeps_the_stimuli_pending_for_the_next_wak
     """M1: `record_session` failing (a ledger outage at the first write) is an
     exit before any session row. The wake is recorded `failed` — keyed by the
     wake, which needs no session — and its stimuli go to the next wake."""
-    rig = _rig(agent=ScriptedAgent(script=[close_written]))
+    rig = _rig(agent=ScriptedAgent(script=[ok]))
     rig.ledger.fail_on.add("record_session")
     for _ in range(2):
         await rig.say()
@@ -573,7 +565,7 @@ async def test_an_exit_whose_failure_cannot_be_recorded_waits_out_the_timeout():
     """The same exit with the outcome write ALSO failing: nothing is written,
     so the wake stays OPEN (the unit held) until it expires; then the same
     stimuli go to the next wake. Never consumed unseen."""
-    rig = _rig(agent=ScriptedAgent(script=[close_written]))
+    rig = _rig(agent=ScriptedAgent(script=[ok]))
     rig.ledger.fail_on.add("record_session")
     rig.stimuli.fail_on.add("record_outcome")
     await rig.say()
@@ -598,7 +590,7 @@ async def test_a_session_task_cancelled_before_its_first_step_loses_nothing():
     """M1: shutdown cancelling a hook task the loop never started runs none of
     `on_wake`, so nothing records the wake. It is OPEN, then expired, and its
     stimulus is the next wake's."""
-    rig = _rig(agent=ScriptedAgent(script=[close_written]))
+    rig = _rig(agent=ScriptedAgent(script=[ok]))
     await rig.say()
     rig.clock.advance(1)
     (wake_id,) = await rig.tick()
@@ -642,8 +634,8 @@ async def test_a_close_that_cannot_be_written_is_not_processed_twice():
     assert rig.agent.calls == 2
     _, second, _ = rig.ledger.sessions[1]
     (item,) = second.agenda["items"]  # type: ignore[misc]
-    assert item["stimulus_ids"] == [1] and item["strike"] == 0  # type: ignore[index]
-    assert rig.carried() == [(1, 1, "carried", True)]          # one strike, not two
+    assert item["stimulus_ids"] == [1]  # type: ignore[index]
+    assert rig.carried() == []          # one strike, not two
 
 
 async def test_more_than_two_units_in_flight_is_refused_on_real_sessions():
@@ -676,14 +668,8 @@ async def test_more_than_two_units_in_flight_is_refused_on_real_sessions():
 # strikes and deferred items
 # ---------------------------------------------------------------------------
 
-async def test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike():
-    async def close_all(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
-        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
-        for i in (0, 1):
-            await by["close"](item_index=i, reason="no_change")
-        return CognitionRunResult(stop_reason="end_turn")
-
-    agent = ScriptedAgent(script=[close_all, ok])
+async def test_items_past_max_items_come_back_on_the_next_agenda():
+    agent = ScriptedAgent(script=[ok, ok])
     rig = _rig(agent=agent, max_items=2)
     for room in ("room-a", "room-b", "room-c"):
         await rig.say(room=room)
@@ -694,7 +680,7 @@ async def test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike()
     _, first, _ = rig.ledger.sessions[0]
     assert first.agenda["deferred_stimulus_ids"] == [3]
     assert len(first.agenda["items"]) == 2  # type: ignore[arg-type]
-    assert rig.carried() == [(3, 1, "carried", False)]
+    assert rig.carried() == [(3, 0, "carried", False)]
 
     # The deferred one is pending again, and wakes on its own (it was never seen).
     rig.clock.advance(400)
@@ -702,66 +688,15 @@ async def test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike()
     await rig.settle()
     _, second, _ = rig.ledger.sessions[1]
     (item,) = second.agenda["items"]  # type: ignore[misc]
-    assert item["stimulus_ids"] == [3] and item["strike"] == 1  # type: ignore[index]
+    assert item["stimulus_ids"] == [3]  # type: ignore[index]
     assert item["conversation_id"] == "room-c"  # type: ignore[index]
     assert (
         'agenda_room="signal:room-c"' in rig.agent.prompts[1]
     )  # canonical tool binding beside label
 
 
-async def test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strikes():
-    rig = _rig(max_strikes=2)
-    await rig.say()
-    rig.clock.advance(1)
-    await rig.tick()
-    await rig.settle()
-    assert [(c.reason, c.strike) for _, c, _ in rig.ledger.closes] == [("waiting", 1)]
-
-    # Waiting stimuli ride the next wake and never start one.
-    rig.clock.advance(7200)
-    assert await rig.tick() == []
-
-    # A new message wakes the unit. The returning item is on the agenda WITH its
-    # strike and the fresh message is its OWN item at strike 0 (minor 7: a
-    # strike is the item's; the fresh one does not inherit it). Both are left
-    # open: code strikes the returning one out and gives the fresh one its
-    # first strike.
-    await rig.say()
-    rig.clock.advance(1)
-    await rig.tick()
-    await rig.settle()
-    _, second, _ = rig.ledger.sessions[1]
-    items = sorted(
-        (i["stimulus_ids"], i["strike"]) for i in second.agenda["items"]  # type: ignore[union-attr,index]
-    )
-    assert items == [([1], 1), ([2], 0)]
-    assert [i.attrib.get("returning") for i in agenda_items(rig.agent.prompts[1])] == [
-        "left open by 1 earlier session", None,
-    ]
-    assert sorted((c.reason, c.strike) for _, c, _ in rig.ledger.closes) == [
-        ("struck", 2), ("waiting", 1), ("waiting", 1),
-    ]
-    states = {c.stimulus_id: (c.state, c.strike) for _, _, c in rig.stimuli.carries}
-    assert states == {1: ("struck", 2), 2: ("carried", 1)}
-    # Struck is closed for good: the fresh one is still carried, alone.
-    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
-    assert [s.id for s in view.pending] == [2] and dict(view.carry) == {2: 1}
-    assert rig.metrics.get("nora_cognition_carry_total", state="struck") == 1
 
 
-async def test_a_model_close_waiting_takes_a_strike_like_an_unclosed_item():
-    async def wait_it_out(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
-        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
-        assert (await by["close"](item_index=0, reason="waiting"))["status"] == "ok"
-        assert (await by["close"](item_index=0, reason="written"))["reason"] == "already_closed"
-        return CognitionRunResult(stop_reason="end_turn")
-
-    rig = _rig(agent=ScriptedAgent(script=[wait_it_out]))
-    await rig.say()
-    rig.clock.advance(1)
-    await rig.tick()
-    await rig.settle()
-    assert [(c.reason, c.strike) for _, c, _ in rig.ledger.closes] == [("waiting", 1)]
 
 
 # ---------------------------------------------------------------------------
@@ -1108,7 +1043,6 @@ def _carried_self_wake_rig(
 
     async def first(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
         tool = tools_of(tools)
-        await tool("close")(item_index=0, reason="no_change")
         answer = await tool("wake_at")(
             subject_rows=["event:1"], at=iso(holder[0].clock.ms + 3_600_000), why="venue",
         )
@@ -1118,10 +1052,9 @@ def _carried_self_wake_rig(
     async def then(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
         tool = tools_of(tools)
         await second(tool, holder[0])
-        await tool("close")(item_index=0, reason="no_change")
         return CognitionRunResult(stop_reason="end_turn")
 
-    rig = _rig(agent=ScriptedAgent(script=[first, then, close_written]), max_items=1)
+    rig = _rig(agent=ScriptedAgent(script=[first, then, ok]), max_items=1)
     holder.append(rig)
     return rig, holder
 
@@ -1269,14 +1202,14 @@ def _runner_kwargs(
     return {
         "store": ledger, "stimulus_store": InMemoryStimulusStore(ledger=ledger),
         "agent_runner": ScriptedAgent(), "home_rooms": home_rooms or {"u1": HOME},
-        "read_tools_for": lambda unit, rooms: [], "skill_text_for": lambda kinds: "",
+        "read_tools_for": lambda unit, rooms: [], "skill_text_for": lambda: "",
         "grounder": EmptyGrounder(),
         "doctrine_text": "D", "doctrine_sha256": None, "open_note_titles": _const(()),
         "open_events": _const(()), "prior_standing": _const(None),
         "budget": AdaptorBudget(turns=1, total_tokens=1, output_tokens=1,
                                 timeout_seconds=budget_timeout),
         "cooldown_seconds": 300.0, "units": units,
-        "session_timeout_seconds": session_timeout, "max_items": 12, "max_strikes": 3,
+        "session_timeout_seconds": session_timeout, "max_items": 12,
     }
 
 
@@ -1392,5 +1325,5 @@ async def test_a_failed_close_is_recorded_failed_and_its_stimuli_return_with_no_
     assert rig.agent.calls == 2
     _, second, _ = rig.ledger.sessions[1]
     (item,) = second.agenda["items"]  # type: ignore[misc]
-    assert item["strike"] == 0  # type: ignore[index]
+    assert item["stimulus_ids"] == [1]
     assert rig.ends() == ["failed", "closed"]

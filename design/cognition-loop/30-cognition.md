@@ -31,63 +31,23 @@ edges:
 > 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
 
 
-## 0. The loop, as ruled 2026-10-28
+## 0. One background loop
 
-Cognition is the **one background driver** (operator, 2026-10-28,
-[unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §7, §9).
-Everything said and done keeps shaping memory, profiles and plans, so one loop
-owns all three, in three ordered steps. Each step is **its own bounded Strands
-session** with its own focused input and its own verbs; the steps hand off
-**only through committed state**, never by waiting on each other or passing
-prose into another prompt (§8).
+Cognition is Nora's other half: one session per wake that observes, orients,
+decides and acts. It connects new stimuli to memory and the notebook, revises
+what changed, and chooses whether anything deserves an action or another look.
+Memory is a means to continuity alongside notebook layers, profiles, Standing,
+reminders and self-wakes. Silence is a valid outcome.
 
-```
-ingestion (code) ─▶ RECORD / ROLLUP ─┬─▶ work item (every item) ─▶ ① COMPREHEND ─▶ graph
-                                     │                              (on arrival)
-                                     │                                   │
-                                     │                                   ▼
-                                     │                              ② RESHAPE ─▶ profiles, culture,
-                                     │                              (links changed)  lessons
-                                     └─▶ stimulus ─▶ wake rules ─▶ ③ DECIDE & ACT ─▶ Register, Standing,
-                                                                   (①'s readings     reminders, wake_at
-                                                                    + preview, §1)
-```
-
-| step | runs | input | holds | writes |
-|---|---|---|---|---|
-| ① comprehend | **on each arrival**, one work item (a message batch, a social item, a late media reading, a closed Rollup episode, a Register write) | the item fully read (media join, link, reply parent, a social item's caption and media) and the code-built **graph preview** of what the graph already knows (27 §7) | read tools, `memory_search` / `memory_read`, the read lanes (`media_fetch`, `instagram_read`, `instagram_search`, `x_read`, `x_search`), egress-screened web search and fetch (27 §8), one staged graph write | readings, entities, judgement relations with evidence (27 §5, §7a) |
-| ② reshape | right after a step ① that changed relations | the subgraph of each changed entity, in the order persons → their rooms and units → Nora | graph reads, `character_revise`, `lesson_write`, `lesson_retire` | traits and guesses (facts are rendered by code), a room's or unit's culture, Nora's lessons (27 §9) |
-| ③ decide and act | on the wake rules ([20](20-observe.md) §3: `settled`, `strong_cue`, `batch`, `max_age`, `time`, `self`) | the agenda, each item carrying step ①'s readings and preview (§1) | §2's verbs | Register items with their own links, Standing, reminders, `wake_at` (§2) |
-
-**Rules that hold across the steps** (27 §7):
-
-1. Step ① is complete; only step ③ is capped (`max_items`, §1).
-2. Acting is a switch: the backfill runs ① and ② in its own lane, each item
-   read as of its own time, and step ③ stays off until one catch-up wake at
-   the end (27 §10).
-3. Step ② runs only for entities whose relations changed.
-4. No step grades itself: guesses and lessons are checked by an instrument
-   other than their writer ([50](50-character-and-standing.md) §6; §6 below).
-5. A step ① work item is never dropped: retried, then parked `failed` for the
-   operator's re-queue; a wake failure only ever strikes step ③'s agenda.
-6. Each step commits on its own; a step ③ failure undoes nothing before it.
-7. The backfill has its own concurrency and never takes a live slot.
-
-**What retires into the loop:** the extraction pass (into ①); the Character,
-profile, culture and Lessons adaptors (into ②). Assess stays outside (§6).
-Sections 1-5 below are **step ③**, the session as built since DEC-277,
-amended in place where the ruling changed it.
+The stages share one bounded session and the same committed stores. Searching,
+writing and acting are available together; model judgment orders them. The
+historical lane reads as of its evidence time and has no act verbs. Assess
+remains outside the writer, and historical work never takes a live slot.
 
 ## 1. What code hands it
 
 Built once per session, in code, before any model call:
 
-- **Step ①'s reading of each item** (2026-10-28, 27 §7 rule 1): every agenda
-  item carries the readings step ① wrote for its Record items and the item's
-  graph preview, so step ③ decides on one interpretation and never re-reads
-  the raw text as a second one. The Record rows below stay as the grounding
-  and are still readable through tools. An item whose work item has not
-  settled waits for it or is marked unread.
 - **The situation.** The Record items that raised the pending stimuli, each
   with its author, its room, **its age**, its cues and its perception (what a
   photo shows, whose faces, with confidence); the Rollup rows that raised
@@ -190,7 +150,6 @@ versions injected, the config revision in force, and the model id and route
 | **write** | one family per tier: Register (`note_create`, `note_revise`, `memo_create`, `memo_set_status`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Standing (`standing_revise`); each takes `base_revision_id`, and each Register write is followed by its own graph links in the same session (27 §7a). Character's, culture's and Lessons' verbs belong to step ② and graph writes to step ① (§0) | code validates, then commits (§3) |
 | **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room. `remind_move(reminder_id, at, why)` and `remind_cancel(reminder_id, why)` for reminders Cognition itself wrote, never a person's | a reminder row; the fire path composes it when due |
 | **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's stimulus table, not a tier: a `self` stimulus due at `at` ([20](20-observe.md) §3); nothing leaves for a room |
-| **close** | `close(item, reason)` | ends one agenda item |
 
 **One time base, one room.** Every time a session verb takes (`at` on the
 pace verbs and on `remind`, `remind_move`; `when` on an event; a note's
@@ -241,14 +200,12 @@ granting named **write** verbs through `AdaptorGrant` (write verbs are not act
 verbs), and `remind_move`/`remind_cancel` by name for reminders Cognition
 wrote; `remind` stays the only verb that sends.
 
-**Closing.** An item closes only with a write that cites it (code checks that
-the session recorded a write that would commit in the item's room, refusing
-`written` with `no_write_for_item` otherwise, DEC-250), or with a reason
-from a closed list (`no_change`, `waiting`, `covered`), counted per reason. An
-item left open when the session ends, or closed `waiting`, returns to the next
-agenda with a strike; at `max_strikes` (starting at 3) code closes it
-`struck` and counts it,
-so an item that can never close does not spend every session.
+**Session outcome.** A normal `end_turn` consumes the session's observed stimuli,
+even when there is nothing to write or do. There are no per-item close calls,
+coverage declarations or strikes. Failed or bounded sessions leave their inputs
+pending with backoff; the five-failure park and operator requeue remain.
+`max_items` defers unseen input without dropping it. `wake_at` requests a later look.
+Act verbs do not depend on a prior memory proposal.
 
 **Shared with the tag path.** `note_create`/`note_revise` as today. The tag
 path's event tools (`create_event`, `update_event`, `cancel_event`,
@@ -342,78 +299,35 @@ whether a Character line is true of the Record it cites; and the re-recording
 rate (lines that only restate one Record row; a memo is a one-row
 restatement by construction, so this is a metric, never a refusal).
 
-## 4. Skills, not one long prompt
+## 4. One loop, tool-gated guidance
 
-The base prompt is Cognition's own **prelude**
-(`nora/dreamer/preludes/cognition-prelude.md`: what the runtime is, for a
-session whose verbs write), the objective, the situation and the agenda. It is
-NOT the shared Dreamer doctrine (`doctrine/dreamer.md`), which every other
-adaptor still reads and which tells a judge «nobody sees this… you look; you do
-not act»: false of a writer (operator decision D2, step 4 PR-1, 2026-10-02).
-The loader serves a prelude in place of the doctrine to the objectives its
-`applies_to` names, and startup refuses a `cognition` objective that resolved
-without it, and so does the start of every session, so a hot reload that
-deletes the prelude fails the wake instead of reading the shared doctrine. What each kind of work asks for — how to judge a note, when a plan
-has moved, when to look again — lives in a **skill**. **Code injects the text
-of the skill for each agenda kind present**, after the prelude and the
-objective and in a fixed order, so the prefix stays cached and only the skills
-vary. `create_dream_agent` (`nora/agent/factory.py`) has no `skills_dir`, by
-design, and ADR 0016 (the skill policy) is still proposed:
-the injection is code, not SDK skill loading. The replaced adaptors'
-objectives (`note-candidates.md`, `note-curation.md`, `note-merge.md`,
-`proactive.md`) become Cognition's skills; `culture.md` and the lessons objective become step ②'s skills, and step ① has its own objective (27 §7), each a declared occasion in context assembly (ADR 0021); `standing-debrief.md` stays the debrief's. As built
-(step 4 PR-1) the Register skill (about 130 lines) is the one skill, mapped to
-the `message`, `rollup` and `self` kinds, so every session with an agenda
-loads it, chatter included, and an agenda of any other kind loads none.
-`tool_selection` is measured on the cognition catalogue, on the runtime
-model, at step 3 ([70](70-migration.md) §2).
+The prelude states Cognition's purpose as Nora's subconscious: observe, orient,
+decide and act when nobody asked, with silence a valid outcome. The objective
+holds the stages and the few rules code cannot enforce. Context assembly
+injects short guidance for the actual offered tools, including the notebook
+skill whenever any tool it teaches is offered. Agenda kinds do not select skills.
+
+The prelude, objective and notebook guidance are hot-loaded, with their versions
+recorded on the session. Startup and session setup refuse a missing prelude or
+notebook skill. All tools on the session's admitted surface are resident;
+Cognition does not use `load_tools`. Historical sessions omit act sections
+because their surface has no act verbs.
 
 ## 5. Budgets
 
-Steps ① and ② have their own budgets, set in 27 §7 and measured in the spike;
-what follows is step ③'s, and the rule (rounds, tokens and time, never per
-tool, DEC-247) holds for all three. The one per-tool cap is step ①'s on paid
-outbound web lookups (27 §7).
+`AdaptorBudget` bounds rounds, total tokens, output tokens and one wall clock
+over the whole session (DEC-247). There is no per-tool call ceiling or repeat
+veto. The safety checks and result-size cap remain. The wake timeout stays above
+the session timeout by the margin checked at startup. `max_items` limits input,
+retaining every deferred stimulus for a later session.
 
-Per session, in code and never stated in the prompt (a model told of a cap
-declines work, measured on the proactive pass): `AdaptorBudget` holds turns,
-total and output tokens and the timeout, one wall clock over the whole
-session. **Those four are the only bounds (DEC-247, operator 2026-10-01): a
-session is bounded by rounds, tokens and time, never per tool**, and each of
-the four is at least 10x the tag turn's (turns 200, total tokens 10,240,000,
-output tokens 120,000, 3600 s, against the tag turn's 20, 1,024,000, 12,000
-and 360 s). There is no per-tool, memory-cluster or pass-wide call ceiling and
-no repeat veto («you already called X»): the session's `DreamGuard` keeps only
-the safety checks (R-7, R-99, the result size cap). The wake's
-`session_timeout_seconds` (3900) stays above the session's clock by the 60 s
-margin the runner checks at start. `max_items` caps the agenda.
-
-**A session that stops at a bound has not finished (DEC-247).** Strands
-RETURNS normally on `limit_turns`, `limit_total_tokens` and
-`limit_output_tokens`, so the runner reads `stop_reason` and treats the three
-as a FAILED session with cause `infra` (DEC-244): outcome `failed`, no item
-closed, no strike, no carry row, its stimuli stay pending, and the failure
-backoff applies (so a runaway agenda is held to the backoff rate, about four
-sessions a day at the 6 h cap, and never drops a person's message).
-`nora_cognition_session_limit_total{limit}` counts them. **What the stopped
-session already wrote stays as recorded**: a dry-run would-write, a mirrored
-remind, a self-wake and its stimulus are rows, not part of the close. The next
-session reads them back as pending, so a re-run does not duplicate them: its
-`wake_at` on the same subject row supersedes the earlier self-wake (one live,
-the old stimulus retracted) and its identical `remind` is refused
-`duplicate_pending`. The per-day self-wake cap counts both creations. Only a
-session that ends on its own (`end_turn`) settles its open items with a strike
-(§2).
-
-**A session whose every item closed quiet ends at the last close (DEC-279,
-2026-10-03).** When every agenda item is closed `no_change` or `covered` and no
-verb but `close` was called, `close` sets Strands' `request_state
-["stop_event_loop"]`, and the loop makes no further model call (its
-`stop_reason` is then `tool_use`, which is not a bound). Measured live: that
-follow-up call wrote nothing on every session that closed quiet. A `written` or
-`waiting` close, or any other verb called, refused or not, keeps the loop
-running as before, including a verb in the same model turn as the last close: Strands reads the
-flag only after the whole turn's tools ran, so such a verb takes the stop back.
+Only `end_turn` is normal completion. A limit, timeout, failure or unknown stop
+reason leaves the claimed stimuli pending, applies failure backoff and records
+the session outcome. Writes already committed remain available to the next
+session; existing dedupe and idempotency prevent duplicated actions. A normal
+end advances the watermark with its deferred-input carries atomically. There
+is no quiet-close stop flag: the model ends its own turn, including when it
+chooses silence.
 
 ## 6. The Assess adaptor and data quality
 

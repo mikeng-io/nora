@@ -80,6 +80,13 @@ class InMemoryComprehendRecords:
         stored.extend(c for c in claims if c not in stored)
         return list(stored)
 
+    async def complete_session(self, unit: str, session: int, inputs: dict[str, str]) -> None:
+        if "complete_session" in self.fail_on:
+            raise RuntimeError("receipt unavailable")
+        self.receipts.append({"work": f"session:{unit}", "session": session,
+                              "part": "session_complete",
+                              "payload": {"unit": unit, "inputs": inputs}})
+
     async def graph_write(self, work: WorkItem, session: int, admission: Admission) -> None:
         if "graph_write" in self.fail_on:
             raise RuntimeError("receipt unavailable")

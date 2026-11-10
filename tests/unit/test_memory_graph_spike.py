@@ -393,7 +393,7 @@ async def test_session_quality_uses_shown_input_and_only_committed_relations():
                 "name": "memory_propose",
                 "input": {"statements": [{"type": "reading", "what": "Generated claim"}]},
                 "result": {
-                    "admitted": [0],
+                    "statements": [{"index": 0, "status": "saved", "kind": "reading"}],
                     "committed": ["generated-committed", "generated-merge"],
                     "connected": connected,
                 },
@@ -435,7 +435,7 @@ async def test_session_quality_marks_unscored_committed_as_missing():
                 "name": "memory_propose",
                 "input": {},
                 "result": {
-                    "admitted": [],
+                    "statements": [],
                     "committed": ["generated-committed"],
                     "connected": {"status": "ok", "nodes": [], "relations": []},
                 },
@@ -444,7 +444,7 @@ async def test_session_quality_marks_unscored_committed_as_missing():
                 "name": "memory_propose",
                 "input": {},
                 "result": {
-                    "admitted": [],
+                    "statements": [],
                     "committed": ["generated-scored"],
                     "connected": {
                         "status": "ok",

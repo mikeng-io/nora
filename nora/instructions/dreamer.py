@@ -135,7 +135,7 @@ class InstructionSet:
 @dataclass(frozen=True)
 class DreamerSkill:
     """A skill the Cognition session injects after its instruction, per agenda
-    kind (`AgendaSkills`).
+    tool surface (`SessionGuidance`).
 
     `instructions` is exactly the text injected (the body, its leading and
     trailing blank lines dropped) and `sha256` is over exactly that, so the
@@ -287,7 +287,7 @@ class DreamerInstructions:
 
     def skill(self, name: str) -> DreamerSkill | None:
         """One skill by name, as the corpus serves it now (hot-reloaded), or
-        None when no skill of that name is loaded: `AgendaSkills` turns a None
+        None when no skill of that name is loaded: `SessionGuidance` turns a None
         into the refusal that names it."""
         doc = self._current().skills.get(name)
         if doc is None:

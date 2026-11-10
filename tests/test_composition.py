@@ -1642,24 +1642,6 @@ async def test_cognition_off_imports_no_model_machinery(cfg, tmp_path, monkeypat
     assert "nora.app.cognition_agent_runner" not in sys.modules
 
 
-async def test_the_evaluators_floors_ready_follows_the_one_agenda_table(
-    cfg, tmp_path, monkeypatch,
-):
-    """`nora.app.cognition_wiring.AGENDA_SKILLS` is the table the evaluator and the age gauge
-    both read. Production maps the `time` skill, so floors are ready; a table without it
-    must leave every floor inert (a root that hard-coded the answer would not follow it)."""
-    from types import MappingProxyType
-
-    import nora.app.cognition_wiring as wiring
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    shipped = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert shipped.wake_evaluator is not None and shipped.wake_evaluator._floors_ready is True
-    monkeypatch.setattr(wiring, "AGENDA_SKILLS", MappingProxyType(
-        {k: v for k, v in wiring.AGENDA_SKILLS.items() if k != "time"},
-    ))
-    patched = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert patched.wake_evaluator is not None and patched.wake_evaluator._floors_ready is False
 
 
 async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator(
@@ -1708,8 +1690,8 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     text, sha = runner._doctrine()
     assert text.startswith('<dreamer_doctrine name="cognition-prelude">')
     assert '<dreamer_objective name="cognition">' in text and sha
-    assert "# Skill: cognition-register" in runner._skill_text_for(["message"])
-    assert set(runner._skill_versions_for(["message"])) == {"cognition-register"}
+    assert runner._skill_text_for()
+    assert set(runner._skill_versions_for()) == {"cognition-register"}
     assert evaluator._floors_ready is True
     # Only units with a home room are woken: `wedding` names none.
     assert sorted(evaluator._units()) == ["friends"]

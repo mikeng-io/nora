@@ -135,7 +135,7 @@ async def test_a_readable_rollup_cut_by_max_items_is_deferred_and_carried_not_sk
     assert 2 in session.agenda["deferred_stimulus_ids"]
     assert session.agenda["skipped_stimulus_ids"] == []
     assert rig.metrics.get("nora_cognition_stimuli_skipped_total", reason="unreadable_rollup") == 0
-    assert (2, 1, "carried", False) in rig.carried()             # returned to the next agenda
+    assert (2, 0, "carried", False) in rig.carried()             # returned to the next agenda
     view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
     assert 2 in {x.id for x in view.pending}          # not consumed
 
