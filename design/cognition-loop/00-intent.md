@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Cognition is one OODA loop — Nora's other half"
-description: "Entry point of the Cognition bundle. Nora has two halves: the conscious turn answers when called; Cognition, her subconscious, acts when nobody asked. It is one observe-orient-decide-act loop per unit: code observes, one session orients against memory and the notebook with every read Nora has, decides whether anything is worth doing and when, and acts only through reminders and its own wakes. States the loop, what code owns and what the model owns, the brakes, the simplicity rules, the falsifier, which document owns each part, and the per-item machinery proposed for deletion (operator ruling pending)."
+description: "Entry point of the Cognition bundle. Nora has two halves: the conscious turn answers when called; Cognition, her subconscious, acts when nobody asked. It is one observe-orient-decide-act loop per unit: code observes, one session orients against memory and the notebook with every read Nora has, decides whether anything is worth doing and when, and acts only through reminders and its own wakes. States the loop, what code owns and what the model owns, the brakes, the simplicity rules, the falsifier, which document owns each part, and the per-item machinery the operator ruled deleted on 2026-11-11."
 tags: [nora, ooda, cognition, subconscious, proactive, ambient-loop, dreamer]
 timestamp: '2026-11-11'
 edges:
@@ -126,16 +126,16 @@ These keep the loop the size of the idea.
    with every read, but holds no act verb: two months of history never
    creates a reminder, a present-day note or a wake.
 
-## 5. Machinery proposed for deletion (operator ruling pending)
+## 5. Per-item machinery is deleted
 
-The loop above grew per-item machinery that turns orientation into
-transcription. Measured on the 15-case memory replay of 2026-11-10 (candidate
+The operator ruled on 2026-11-11 to delete the per-item machinery below. It
+had grown on the loop and turned orientation into transcription. Measured on the 15-case memory replay of 2026-11-10 (candidate
 `dff3cf8b2`): 16 `memory_propose` calls produced 25 readings, 0 relations and
 0 corrections, and the disputed readings were chat events ("shared a link",
 "asked for the music to be stopped"). The prompt required every agenda item
 to be covered, so the session covered each one.
 
-| machinery | where | proposal | why |
+| machinery | where | ruling | why |
 |---|---|---|---|
 | Per-input coverage: every agenda input needs a saved statement citing it or an explicit `nothing_here`, else it stays open | unified-memory/29 §2 | **delete** | Forces a statement per message, which is the noise measured above. Completeness is kept by the stimulus rule below, not by per-message bookkeeping. |
 | Per-item `close(item, reason)` with `written` / `no_change` / `waiting` / `covered`, strikes and `max_strikes` | 30 §2, DEC-250, DEC-279 | **delete** | One session outcome replaces it. A session that ends on its own consumes its stimuli; a failed or bounded session leaves them pending (kept). A matter that needs another look is a `wake_at`, which already carries a reason and a time. |

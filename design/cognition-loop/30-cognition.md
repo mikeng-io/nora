@@ -22,10 +22,10 @@ each step as the same session. [One Standing](../notebook-memory-types/20-standi
 owns Standing's input and completion; the tag-debrief writer wording in §7 is
 history where it conflicts. Cognition is live (DEC-277).
 
-[00 §5](00-intent.md#5-machinery-proposed-for-deletion-operator-ruling-pending)
-proposes deleting the per-item `close` reasons, strikes and the quiet-close stop
-of §2 and §5, and replacing the per-kind skills of §4. Until the operator rules,
-they stand as built.
+[00 §5](00-intent.md#5-per-item-machinery-is-deleted) (operator, 2026-11-11)
+deletes the per-item `close` reasons, strikes and the quiet-close stop of §2 and
+§5, and replaces the per-kind skills of §4. They run as built until that change
+lands.
 
 ## 1. What code hands it
 
