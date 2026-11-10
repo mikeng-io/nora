@@ -1,6 +1,6 @@
 package session
 
-// comments.json: the summons ledger (design/instagram-adoption/19 §Account
+// comments.json: the summons ledger (design/instagram-adoption/summons.md §Account
 // safety, rule 4), the fifth file in the session directory.
 //
 //	comments.json  every summons card the bridge received and resolved to a

@@ -1,7 +1,7 @@
 package httptransport
 
 // The ONE failure shape and the ONE status table, for every route
-// (design/instagram-adoption/16 §Resources, 17 §P14).
+// (design/instagram-adoption/bridge.md §Resources, 17 §P14).
 //
 // Before P14 there were two: `statusForError` (reads.go) with the old
 // `{"ok": false, "error": "..."}` body, which answered 500 for

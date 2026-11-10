@@ -6,7 +6,7 @@ package httptransport
 //
 // Every shape here is built from DOMAIN types (internal/domain), never from
 // Instagram's wire structs, which stay inside internal/gateway/instameow
-// (design/instagram-adoption/16 §Layers). This is where the contract the
+// (design/instagram-adoption/bridge.md §Layers). This is where the contract the
 // Python side reads is decided, once.
 //
 // No success body carries an `ok` field (P14, 16 §Resources: "success is the

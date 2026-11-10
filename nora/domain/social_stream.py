@@ -545,7 +545,7 @@ def describe_read(item: str) -> str:
 def perception_context(
     *, network: str, kind: str, collab: bool, taken_at: datetime, tz: tzinfo,
 ) -> str:
-    """What a describer is told it is reading (instagram-adoption/06: a story
+    """What a describer is told it is reading (instagram-adoption/social.md: a story
     must be SAID to be a story). Every word is a system fact (the kind the
     platform reports, the collab flag, the time it was posted), never the
     caption, which is the author's text. The time is absolute, because the

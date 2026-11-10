@@ -1,5 +1,5 @@
 // Package app is the bridge's use cases and the ports they need
-// (design/instagram-adoption/16 §Layers, 17 P8).
+// (design/instagram-adoption/bridge.md §Layers, 17 P8).
 //
 // It imports the domain and nothing else of this module: no net/http, no
 // instameow, no transport. A use case takes the caller's input as the caller
@@ -132,7 +132,7 @@ func (s *Service) ready() (domain.Session, error) {
 // thread resolves both thread ids for a room key the HTTP edge has ALREADY
 // parsed.
 //
-// The parse moved out of here in P14 (design/instagram-adoption/17 §P14):
+// The parse moved out of here in P14 (design/instagram-adoption/README.md §P14):
 // every route now parses its path ids before any use case runs, so a
 // malformed id is 400 whatever the session's state (16 §Resources: "a
 // malformed id is 400 before any use case runs"). Before P14 the parse sat
@@ -305,7 +305,7 @@ func (s *Service) SearchAccounts(ctx context.Context, query string) ([]domain.Ac
 }
 
 // LookupAccountByUsername resolves a username to at most one account
-// (design/instagram-adoption/16 §Resources, 17 P9, P10).
+// (design/instagram-adoption/bridge.md §Resources, 17 P9, P10).
 //
 // It calls the SAME search port `SearchAccounts` uses (SearchUsers, over the
 // DM contact picker's search), then filters the raw hits to an exact,

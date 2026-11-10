@@ -476,7 +476,7 @@ claiming `kind: capability` **fails to load** as an unknown kind. The files sit 
   `relevance_gate = true` in `policy.toml`). **Shadow mode** mirrors every
   determination to a review channel and holds the live send, for reading
   before the flip.
-- **summons** — a public occasion (design/instagram-adoption/19, DEC-212):
+- **summons** — a public occasion (design/instagram-adoption/summons.md, DEC-212):
   somebody in `identity.toml` tags her under a public Instagram post, and ONE
   turn on the `summons` audience answers in the comments or says nothing. It
   builds no room and writes no memory; it loads only `core/` and `public/`

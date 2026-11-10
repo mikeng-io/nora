@@ -2,7 +2,7 @@ package httptransport
 
 // GET /accounts?query= and GET /accounts?username= — the account-search and
 // account-by-username resources
-// (design/instagram-adoption/16 §Resources, 17 P9, P10, P11).
+// (design/instagram-adoption/bridge.md §Resources, 17 P9, P10, P11).
 //
 // # Why ?query= exists before P11 does
 //

@@ -1,7 +1,7 @@
 package httptransport
 
 // The write routes, as resources of a thread
-// (design/instagram-adoption/16 §Resources, 17 §P14):
+// (design/instagram-adoption/bridge.md §Resources, 17 §P14):
 //
 //	POST   /threads/{thread_fbid}/messages                          text or media
 //	DELETE /threads/{thread_fbid}/messages/{message_id}             unsend

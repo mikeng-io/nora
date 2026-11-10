@@ -100,7 +100,7 @@ one day, 2026-09-22:
 * `guards.py` said *"Under the cap of 3 (DEC-42)"* in prose while
   `NATIVE_TOOLS` said `6`. The number lived in two places and one of them
   rotted. Nobody noticed until the code was read for an unrelated reason.
-* `design/instagram-adoption/05` listed `interop_messaging_user_fbid` among
+* `design/instagram-adoption/README.md` listed `interop_messaging_user_fbid` among
   "14 measured keys" on `GetProfile`. The live wire does not send it. The claim
   was true of a different call.
 

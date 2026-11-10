@@ -1,7 +1,7 @@
 package app
 
 // The comment use cases: reading a post's comments, and the bridge's ONE
-// public write, a reply under a summons (design/instagram-adoption/19).
+// public write, a reply under a summons (design/instagram-adoption/summons.md).
 //
 // # Why every guard is here, and in this order
 //

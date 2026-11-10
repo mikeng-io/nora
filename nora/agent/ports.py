@@ -46,7 +46,7 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
                  "with several accounts on file. NOT «no entry at all»: that "
                  "sense rode this word on the Instagram rows until "
                  "2026-09-24 and now answers `nothing_found` with a note "
-                 "saying no account is on file (design/instagram-adoption/18).",
+                 "saying no account is on file (design/instagram-adoption/social.md).",
     "not_found": "the thing does not exist (R-27b) — a place a route does not "
                  "serve is not «no such place», so this is not `nothing_found`",
     "nothing_known": "no durable knowledge yet (the recall ladder)",

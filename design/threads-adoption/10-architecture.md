@@ -7,8 +7,8 @@ timestamp: 2026-09-25
 status: parked
 edges:
   - {dst: 00-intent, rel: realizes, provenance: asserted}
-  - {dst: ../instagram-adoption/08-social-adapter-architecture.md, rel: extends, provenance: asserted}
-  - {dst: ../instagram-adoption/16-bridge-architecture-and-observability.md, rel: follows, provenance: asserted}
+  - {dst: ../instagram-adoption/social.md, rel: extends, provenance: asserted}
+  - {dst: ../instagram-adoption/bridge.md, rel: follows, provenance: asserted}
 ---
 
 # Architecture
@@ -51,7 +51,7 @@ edges:
 | surface | new `SocialSurface` | Nora is summoned **on** Threads, and answers **there** | the summons occasion |
 
 They share a **session**, the one token in `threads-bridge`. They do not share
-a port. This is the same split design/instagram-adoption/08 made for the
+a port. This is the same split design/instagram-adoption/social.md made for the
 instagram-bridge, which serves both messaging and reads from one session.
 Nothing on the read axis can publish, and the surface axis never feeds a
 room.

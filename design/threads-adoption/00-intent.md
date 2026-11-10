@@ -8,7 +8,7 @@ status: parked
 edges:
   - {dst: 10-architecture, rel: sequences, provenance: asserted}
   - {dst: 20-plan-and-verification, rel: sequences, provenance: asserted}
-  - {dst: ../instagram-adoption/08-social-adapter-architecture.md, rel: extends, provenance: asserted}
+  - {dst: ../instagram-adoption/social.md, rel: extends, provenance: asserted}
   - {dst: ../social-per-network/00-intent.md, rel: supersedes-scope-note, provenance: asserted}
 ---
 
@@ -61,7 +61,7 @@ web (or draws what was asked for), and answers **in that thread, in public**.
 
 ## Why this is a third kind of surface
 
-Nora has two seams today, and design/instagram-adoption/08 drew them as two
+Nora has two seams today, and design/instagram-adoption/social.md drew them as two
 orthogonal axes:
 
 | | `PlatformAdapter` (messaging) | `SocialProvider` (reads) | **Threads summons** |
@@ -75,7 +75,7 @@ orthogonal axes:
 Threads fits neither column:
 
 - **It is not a room.** A reply chain under a stranger's post has no member
-  list, so no roster, and design/instagram-adoption/00 already ruled that a
+  list, so no roster, and design/instagram-adoption/README.md already ruled that a
   surface without one cannot carry an ambient agent. Every room-scoped
   guard assumes a bounded audience: R-21 resolves names within the room's
   membership, and the disclosure subset (`AGENTS.md`'s "R-31", which has no row in the decision index) checks the room against a trusted

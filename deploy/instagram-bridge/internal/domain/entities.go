@@ -2,7 +2,7 @@ package domain
 
 // The entities a read or a send returns. They are what crosses from the
 // gateway to the HTTP layer; Instagram's wire structs never do
-// (design/instagram-adoption/16 §Layers). No JSON tags here: the response
+// (design/instagram-adoption/bridge.md §Layers). No JSON tags here: the response
 // shapes are the HTTP layer's decision, made once, in its DTOs.
 //
 // Ids that came BACK from Instagram are carried as the strings Instagram sent,

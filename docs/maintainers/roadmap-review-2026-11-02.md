@@ -168,7 +168,7 @@ design/fit/40-feedback.md
 design/fit/50-verification.md
 design/fit/60-migration.md
 design/fit/_index.yaml
-design/instagram-adoption/18-instagram-read-and-search.md
+design/instagram-adoption/social.md
 design/media-read-lane/BRIEF-impl-review.md
 design/media-read-lane/BRIEF-timeout-derivation.md
 design/notebook-memory-types/00-design.md

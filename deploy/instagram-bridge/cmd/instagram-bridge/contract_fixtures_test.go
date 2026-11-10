@@ -1,7 +1,7 @@
 package main
 
 // Every response body Nora reads, pinned as files BOTH sides read
-// (design/instagram-adoption/17 P4, P14).
+// (design/instagram-adoption/README.md P4, P14).
 //
 // Nora's Python side is tested against `tests/fixtures/instagram_bridge/*.json`:
 // the social client (`nora/infra/social/instagram_client.py`) for the account,
@@ -295,7 +295,7 @@ const synthStoryWords = `"caption": {"text": "synthetic caption text"}, "accessi
 // A frame with NO `pk`. `storyFrame` then falls back to `id`, which Instagram
 // shapes as `<pk>_<owner igid>`, so the frame's `id` carries the story
 // OWNER's igid. The Python client must never hand that to the model
-// (design/instagram-adoption/18, R-18); this row is what it is tested against.
+// (design/instagram-adoption/social.md, R-18); this row is what it is tested against.
 var synthStoryNoPK = `{"id": "` + synthPK(3) + `_` + synthIGID + `", "taken_at": 1700007200, "expiring_at": 1700086400, "media_type": 1,
      "image_versions2": {"candidates": [{"width": 1080, "height": 1920, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-3.jpg?oh=00_D&oe=0"}]}}`
 
@@ -668,7 +668,7 @@ func readContractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{} },
 		},
 		// The three failure envelopes Nora's `instagram_search` reads as
-		// `unavailable` (design/instagram-adoption/17 P11): the session
+		// `unavailable` (design/instagram-adoption/README.md P11): the session
 		// needs a human (409), Instagram rejected the search (502), and no
 		// session to search with (503). Each is the envelope, never the old
 		// `{"ok": false}` body, so the Python client is tested against the

@@ -18,7 +18,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# The source is a TREE (design/instagram-adoption/16 §Layers): the composition
+# The source is a TREE (design/instagram-adoption/bridge.md §Layers): the composition
 # root in cmd/ and the layers in internal/. Copied as directories, because a
 # `*.go` glob at the root would copy nothing and the build would fail on an
 # import it cannot resolve.

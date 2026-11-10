@@ -1,6 +1,6 @@
 // Package httptransport is the bridge's HTTP surface: routes, request
 // parsing, response DTOs and the status mapping
-// (design/instagram-adoption/16 §Layers, 17 P8, P14). Handlers are thin: they
+// (design/instagram-adoption/bridge.md §Layers, 17 P8, P14). Handlers are thin: they
 // parse the path ids and the body, call ONE use case, and write what it
 // returned. They import the use cases and the domain, never instameow and
 // never a wire struct.

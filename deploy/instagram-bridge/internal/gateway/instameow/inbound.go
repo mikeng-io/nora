@@ -2,7 +2,7 @@ package instameow
 
 // Inbound normalization: instameow's typed delta -> the JSON on GET /events.
 //
-// The shapes here are fixed by design/instagram-adoption/03-transport-contract.md
+// The shapes here are fixed by design/instagram-adoption/bridge.md
 // and nothing else. Drift between this file and that document is a contract
 // failure, not a judgement call — the Python adapter is written against the
 // document, not against this code.
@@ -153,7 +153,7 @@ type eventShared struct {
 	// Caption is `caption_body_text`: the post's own caption, as its author
 	// wrote it, passed through when a delta carries one. It is NOT the free
 	// depth: measured 2026-09-24, a live shared reel and a live shared story
-	// carried no caption at all (design/instagram-adoption/13, the dated
+	// carried no caption at all (design/instagram-adoption/social.md, the dated
 	// section). What is free is the author and TargetURL, from which the
 	// adapter reads the kind and a clean link.
 	Caption string `json:"caption,omitempty"`

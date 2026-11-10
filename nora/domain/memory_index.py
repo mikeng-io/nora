@@ -439,7 +439,7 @@ def place_named(name: str, query: str) -> bool:
     )
 
 
-#: How a social item's kind is said (instagram-adoption/06: «a story must be
+#: How a social item's kind is said (instagram-adoption/social.md: «a story must be
 #: SAID to be a story»).
 _SOCIAL_KIND_WORDS: Mapping[str, str] = {
     "story_frame": "story", "post": "post", "reel": "reel", "thread_post": "post",

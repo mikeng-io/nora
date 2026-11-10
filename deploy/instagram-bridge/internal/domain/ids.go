@@ -1,7 +1,7 @@
 // Package domain is the bridge's vocabulary: the ids Instagram uses, the
 // closed set of ways a request can fail, and the entities a read returns.
 // It imports the standard library and nothing else
-// (design/instagram-adoption/16 §Layers).
+// (design/instagram-adoption/bridge.md §Layers).
 package domain
 
 // # Why the ids are types

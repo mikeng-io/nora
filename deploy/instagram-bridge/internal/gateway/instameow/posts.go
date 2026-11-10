@@ -1,6 +1,6 @@
 package instameow
 
-// One post by its shortcode: `GET /posts/{shortcode}` (design/instagram-adoption/17
+// One post by its shortcode: `GET /posts/{shortcode}` (design/instagram-adoption/README.md
 // P12, 13 §Depth 3).
 //
 // # What the library call really is

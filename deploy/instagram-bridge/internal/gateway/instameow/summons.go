@@ -1,6 +1,6 @@
 package instameow
 
-// The summons intake (design/instagram-adoption/19, "Intake, re-measured
+// The summons intake (design/instagram-adoption/summons.md, "Intake, re-measured
 // 2026-09-26").
 //
 // # What a summons looks like on the wire (measured 2026-09-26)

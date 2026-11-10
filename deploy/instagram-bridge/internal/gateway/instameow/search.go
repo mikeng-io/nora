@@ -1,7 +1,7 @@
 package instameow
 
 // Account search: the raw hit list behind `GET /accounts?query=`
-// (design/instagram-adoption/16 §Resources, 17 P9, P11).
+// (design/instagram-adoption/bridge.md §Resources, 17 P9, P11).
 //
 // # Why this exists now, ahead of P11
 //

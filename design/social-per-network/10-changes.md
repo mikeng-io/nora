@@ -10,7 +10,7 @@ edges:
 
 # Changes
 
-Everything here follows `../instagram-adoption/18-instagram-read-and-search.md`
+Everything here follows `../instagram-adoption/social.md`
 unless it says otherwise: the ADR 0015 Level 3 description rules, the L1
 opening paragraph gate, a `NativeTool` entry with every field, results in
 R-27's states with a `note` on every non-`ok`, content wrapped as untrusted

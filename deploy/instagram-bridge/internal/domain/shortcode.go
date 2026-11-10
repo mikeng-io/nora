@@ -1,7 +1,7 @@
 package domain
 
 // A post's shortcode and the numeric media id it encodes
-// (design/instagram-adoption/17 P12).
+// (design/instagram-adoption/README.md P12).
 //
 // # Why the decode lives here
 //

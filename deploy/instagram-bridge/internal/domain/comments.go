@@ -1,7 +1,7 @@
 package domain
 
 // The comment surface of a post, and the summons ledger that guards the ONE
-// write this bridge makes in public (design/instagram-adoption/19 §Account
+// write this bridge makes in public (design/instagram-adoption/summons.md §Account
 // safety, phases 2 and 4).
 //
 // The ledger is the bridge's own memory of two things: which summonses it

@@ -14,7 +14,7 @@ edges:
 ## The decision (operator, 2026-09-24)
 
 `social_fetch` is retired. Its reads split per network, under the naming
-`../instagram-adoption/18-instagram-read-and-search.md` fixed for every
+`../instagram-adoption/social.md` fixed for every
 network:
 
 | Tool | Takes | Reads |

@@ -751,7 +751,7 @@ cases:
     metadata: {tools: [web_search]}
     snapshot: *room_a
 
-  # --- per-network social reads (design/instagram-adoption/18, P5, P11) -------
+  # --- per-network social reads (design/instagram-adoption/social.md, P5, P11) -------
   # `instagram_read` takes a PERSON by name; `instagram_search` finds ACCOUNTS
   # from free text (P11); X is `x_read` and `x_search` (DEC-201). The names are synthetic and
   # need not be in the room: an honest `nothing_found` is still a correctly

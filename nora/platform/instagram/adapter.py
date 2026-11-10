@@ -125,7 +125,7 @@ class InstagramAdapter:
             "will neither send nor hear anything there until this is cleared and she is "
             "restarted. Signal and Discord are unaffected — this platform is allowed to "
             "start degraded precisely so one Instagram checkpoint cannot take them down "
-            "(design/instagram-adoption/01 §Degradation).",
+            "(design/instagram-adoption/bridge.md §Degradation).",
             reason,
         )
 

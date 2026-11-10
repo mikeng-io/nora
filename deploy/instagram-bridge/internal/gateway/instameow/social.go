@@ -482,7 +482,7 @@ func storyFrame(item *storyItemWire) domain.StoryItem {
 		// `id` is `<pk>_<owner igid>`: a frame with no `pk` carries the story
 		// OWNER's igid in its id. Forwarded as before (the contract fixture
 		// pins it); the Python client must never hand it to the model
-		// (design/instagram-adoption/18, R-18).
+		// (design/instagram-adoption/social.md, R-18).
 		out.ID = item.ID.String()
 	}
 	// The largest still. `image_versions2.candidates` is populated for a VIDEO

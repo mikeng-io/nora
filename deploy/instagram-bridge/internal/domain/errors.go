@@ -1,6 +1,6 @@
 package domain
 
-// The closed error set (design/instagram-adoption/16 §Domain).
+// The closed error set (design/instagram-adoption/bridge.md §Domain).
 //
 // Every failure that crosses a layer is one of these six KINDS. The gateway
 // maps what Instagram and the library say onto them; the HTTP layer maps each

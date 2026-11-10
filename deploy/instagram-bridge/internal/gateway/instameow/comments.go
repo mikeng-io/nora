@@ -1,7 +1,7 @@
 package instameow
 
 // A post's comments, read and (once per summons) written
-// (design/instagram-adoption/19, phases 2 and 4).
+// (design/instagram-adoption/summons.md, phases 2 and 4).
 //
 // # What the upstream calls really are
 //

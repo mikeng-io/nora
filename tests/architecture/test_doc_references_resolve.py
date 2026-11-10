@@ -379,12 +379,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "this decision-index prose, never as a real file); drop this entry "
         "the day that move ships"
     ),
-    (
-        "design/instagram-adoption/17-implementation-plan.md",
-        "nora/infra/social/instagram_links.py",
-    ): (
-        "planned file, created by P10 (Instagram link parsing); drop this entry in that PR"
-    ),
     # --- found once list items were split out of their list ---
     #
     # `_paragraphs` treats each list item as its own record; each of these is a

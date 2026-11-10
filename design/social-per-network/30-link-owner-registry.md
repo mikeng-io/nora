@@ -8,7 +8,7 @@ status: proposed
 edges:
   - {dst: 00-intent, rel: extends, provenance: asserted}
   - {dst: 10-changes, rel: depends_on, provenance: asserted}
-  - {dst: ../instagram-adoption/13-shared-posts-and-reels.md, rel: generalizes, provenance: asserted}
+  - {dst: ../instagram-adoption/social.md, rel: generalizes, provenance: asserted}
 ---
 
 # Link owners

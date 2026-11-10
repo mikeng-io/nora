@@ -34,5 +34,5 @@ edges:
   - {src: 00-intent, dst: 20-plan-and-verification, rel: sequences, provenance: asserted}
   - {src: 10-architecture, dst: 00-intent, rel: realizes, provenance: asserted}
   - {src: 20-plan-and-verification, dst: 10-architecture, rel: depends_on, provenance: asserted}
-  - {src: 00-intent, dst: ../instagram-adoption/08-social-adapter-architecture.md, rel: extends, provenance: asserted}
+  - {src: 00-intent, dst: ../instagram-adoption/social.md, rel: extends, provenance: asserted}
   - {src: 00-intent, dst: ../social-per-network/00-intent.md, rel: supersedes-scope-note, provenance: asserted}

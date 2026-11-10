@@ -1,6 +1,6 @@
 // Package observability is the bridge's tracer provider, W3C propagation,
 // server-span middleware and trace-joined JSON logging
-// (design/instagram-adoption/16 §Tracing and §Logging, 17 P1).
+// (design/instagram-adoption/bridge.md §Tracing and §Logging, 17 P1).
 //
 // # Where spans go
 //

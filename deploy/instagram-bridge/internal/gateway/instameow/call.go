@@ -1,5 +1,5 @@
 // Package instameow is the gateway: the ONLY code in the bridge that talks to
-// Instagram (design/instagram-adoption/16 §Layers, 17 P7).
+// Instagram (design/instagram-adoption/bridge.md §Layers, 17 P7).
 //
 // It owns the instameow client and its session supervisor, Instagram's wire
 // structs, and the mapping from those structs to domain entities. Nothing
