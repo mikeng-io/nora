@@ -189,7 +189,7 @@ one-liner, and run the humanizer over both openings.
 
 ## Not in scope
 
-- The workspace culture account (`design/culture-tier`, DEC-182, «not built»).
+- The workspace culture account (`design/self-growth/character.md`, DEC-182, «not built»).
   It is tracked there.
 - `reply_to` in tool rows naming only the speaker, not which message. It is a
   separate gap, and nothing here makes it worse.

@@ -782,7 +782,7 @@ no schema change.
 
 ## 6b. "Is the ambient path actually working?" — `nora measure participation`
 
-Four measures the rooms produce for free (`design/culture-tier/02-measurement`).
+Four measures the rooms produce for free (`design/evaluation/measurement.md`).
 No model, no behaviour change, read-only.
 
 ```bash

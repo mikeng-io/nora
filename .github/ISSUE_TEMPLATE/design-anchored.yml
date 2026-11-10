@@ -42,7 +42,7 @@ body:
     attributes:
       label: Design anchor
       description: "`design/<bundle>/<NN-name>.md` §<n> — the section this issue builds."
-      placeholder: design/culture-tier/01-the-adaptor.md §3
+      placeholder: design/self-growth/character.md §3
     validations:
       required: true
 

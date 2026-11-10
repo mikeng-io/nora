@@ -14,6 +14,10 @@ its rooms' cited cultures. Nora's session reads closed response episodes, not
 bare sends. Presence and Standing are not profile evidence, and a person
 account is never copied from a narrower room scope into the whole unit.
 
+The writer and every reader resolve the same canonical scope through policy; an
+arriving transport thread id is not silently substituted for the scheduler's key.
+Earlier account heads remain a provenance chain even though their text is re-judged.
+
 Evidence wakes the Dreamer scheduler when enough new material has accumulated
 or new material has waited long enough. Quiet entities do not wake merely
 because a clock passed. Code counts evidence, selects the key, supplies the
@@ -43,7 +47,14 @@ does not relax citation, scope or disclosure requirements.
 Declared context-assembly blocks render the room, unit, relevant-person and
 Nora accounts required by an occasion. A unit with no account renders no block.
 Accounts are bounded as prompt context, but a size limit is not a substitute
-for concise synthesis.
+for concise synthesis. Each block names its scope and derivation age so an old but
+still accurate account cannot masquerade as a fresh observation. Room-scoped blocks
+stay out of the shared global prefix, and an admission instrument receives them only
+when its own declared occasion says so.
+
+A collective account can carry the room's self-names, evolving roles and way of
+treating Nora. That understanding may support a welcome social role; it never
+supplies the action or coordination authority that the role might imply.
 
 Nora's account is the `self` block on room, proactive and Cognition occasions;
 it does not replace episodic continuity or commitments held elsewhere. Public

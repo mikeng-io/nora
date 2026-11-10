@@ -148,7 +148,7 @@ The most-used words in this repo.
   which reflection work is consolidated, rather than a fixed adaptor roster.
 
 - **culture** — her entry about what a room has BECOME: how they talk, how
-  things get decided, what they call themselves (design/culture-tier/,
+  things get decided, what they call themselves (design/self-growth/,
   DEC-207). The `culture` adaptor reads the room's own messages when it has
   said enough (DEC-288: `[culture] wake_batch` new human messages, or any new
   one once `stale_seconds` have passed; a silent room never fires) and appends

@@ -184,37 +184,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/culture-tier/00-overview.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/culture-tier/01-the-adaptor.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker",
-  "over-budget"
- ],
- "design/culture-tier/02-measurement.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker",
-  "over-budget"
- ],
- "design/culture-tier/03-decisions.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date",
-  "over-budget"
- ],
- "design/culture-tier/04-phase-two-note.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/culture-tier/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/discord-integration/00-overview.md": [
   "numbered-or-dated-name",
   "date"
