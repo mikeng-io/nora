@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.17.4](https://github.com/mikeng-io/nora/compare/v7.17.3...v7.17.4) (2026-11-10)
+
+
+### Maintenance
+
+* **conventions:** make git the decision log and ratchet code size ([99d1f96](https://github.com/mikeng-io/nora/commit/99d1f966a8c53905159b98e5ac2c86671f9946de))
+
 ## [7.17.3](https://github.com/mikeng-io/nora/compare/v7.17.2...v7.17.3) (2026-11-10)
 
 
