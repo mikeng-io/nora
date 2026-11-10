@@ -663,40 +663,5 @@
  "design/threads-adoption/_index.yaml": [
   "not-a-design-file",
   "date"
- ],
- "design/tool-concurrency/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/tool-concurrency/01-the-hole-in-the-executor.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/tool-concurrency/02-the-ceiling.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/tool-concurrency/03-sharing-and-inheritance.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/tool-concurrency/04-measurement-and-tests.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/tool-concurrency/05-decisions-and-index.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date",
-  "history-marker"
- ],
- "design/tool-concurrency/06-review-round-1.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/tool-concurrency/_index.yaml": [
-  "not-a-design-file",
-  "date"
  ]
 }
