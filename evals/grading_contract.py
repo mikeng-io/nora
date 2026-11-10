@@ -26,6 +26,7 @@ IMPLEMENTATION_FILES = tuple(
             "nora/subject/eval_evidence.py",
             "nora/subject/raw_model.py",
             "nora/subject/replay_diagnosis.py",
+            "nora/language/cognition_render.py",
             "nora/domain/blocks.py",
             "nora/domain/composed.py",
             "nora/domain/prompt.py",

@@ -411,6 +411,25 @@ def test_reaction_context_cannot_replace_the_diagnostic_cited_message():
     assert 'reaction="' not in trajectory["cited_rows"]["1"]["rendered"]
 
 
+def test_diagnostic_cited_rows_carry_the_shown_carrier_binding():
+    import json
+
+    from nora.subject.replay_diagnosis import compact_trajectory
+
+    statement, events = generated_trajectory()
+    request = next(e for e in events if e.get("name") == "nora.model.request")
+    request["attributes"]["nora.model.request.body"] = json.dumps({"messages": [{
+        "role": "user", "content": (
+            '<reads><binding agenda_room="signal:generated-room" label="Friends"/></reads>'
+            '<item index="0" room="«Friends»"><m n="1" person="generated-author">'
+            'Generated fact</m></item>'),
+    }]})
+    trajectory = compact_trajectory(statement, events)
+    row = trajectory["cited_rows"]["1"]
+    assert row["carrier"] == '<binding agenda_room="signal:generated-room" label="Friends"/>'
+    assert row["room"] == 'room="«Friends»"'
+
+
 def test_compact_statement_scope_excludes_later_absent_call():
     from nora.subject.replay_diagnosis import compact_trajectory
     statement, events = generated_trajectory(later_absent=True, failed_proposal=True)

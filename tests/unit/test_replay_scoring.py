@@ -193,6 +193,7 @@ async def test_support_uses_recorded_author_and_room():
             return '{"missed": [], "context_only": []}'
         assert payload["cited_rows"]["1"]["rendered"] == rendered.split(">", 1)[1][:-7]
         assert payload["cited_rows"]["1"]["room"] == 'room="Generated room"'
+        assert payload["cited_rows"]["1"]["carrier"] == "unavailable"
         verdict = "supported" if payload["statement"]["what"] == "aster" else "unsupported"
         return json.dumps({"verdict": verdict, "reason": "compare recorded person attribute"})
 
@@ -200,6 +201,124 @@ async def test_support_uses_recorded_author_and_room():
                                       {}, evidence_exchanges(events))
     assert result["facts_supported"] == result["facts_unsupported"] == 1
     assert result["facts_judge_errors"] == 0
+
+
+def generated_carrier_events(reads, room, *, ledger_binding=False):
+    """A generated shown request and saved proposal whose row 1 is cited."""
+    agenda = (f"<reads>{reads}</reads>" if reads else "") + (
+        f'<item index="0" kind="message" room="{room}">'
+        '<m n="1" from="Aster" person="aster" at="now">generated fact</m></item>')
+    ledger = {"text": "generated fact"}
+    source_rows = {"1": ledger}
+    if ledger_binding:
+        ledger["binding"] = "signal:generated-ledger-only"
+        source_rows["2"] = {"text": "generated uncited", "binding": "signal:generated-ledger-two"}
+    events = [
+        {"kind": "event", "name": "nora.model.request", "attributes": {
+            "nora.model.request.body": json.dumps({"messages": [
+                {"role": "user", "content": agenda}]})}},
+        {"kind": "event", "name": "nora.proposal.sources", "span_id": "generated",
+         "attributes": {"body": json.dumps(source_rows)}},
+        {"kind": "tool_finished", "span_id": "generated", "tool": {
+            "name": "memory_propose", "input": {"statements": [
+                {"what": "generated", "cite": [{"source": 1}]}]}},
+         "result": {"content": [{"json": {"statements": [
+             {"index": 0, "status": "saved"}]}}]}}]
+    return agenda, events
+
+
+async def test_support_judge_sees_the_cited_rows_shown_carrier_binding(tmp_path, monkeypatch):
+    """The real SDK-formatted judge input carries the shown carrier binding."""
+    import html
+    import re
+    from pathlib import Path
+
+    import httpx
+
+    from evals import grading_contract as binding
+    from nora.agent.structured import build_structured_model
+    from nora.language.cognition_render import rendered_new_sources
+    from scripts import memory_graph_spike as spike
+    from tests.integration.test_grading_contract import write_contract
+
+    reads = '<binding agenda_room="signal:generated-room" label="Friends"/>'
+    agenda, events = generated_carrier_events(reads, "«Friends»")
+    inspection = {"system": "generated", "agenda": agenda,
+                  "new_sources": rendered_new_sources(agenda)}
+    contract_path, contract_sha = write_contract(
+        tmp_path, judges=("generated-judge",),
+        cases={"wake": {"input_sha256": binding.digest(
+            binding.memory_scenario(inspection)), "expected_output": "",
+            "units": [{"id": "unit-a", "claim": "generated claim", "sources": [1]}]}})
+    contract = binding.load_contract(contract_path, contract_sha, entrypoint="replay",
+                                     judges=("generated-judge",), selection={})
+    requests = []
+
+    def respond(request):
+        body = json.loads(request.content)
+        assert body["model"] == "generated-judge" and body["stream"] is False
+        requests.append(body)
+        instruction = body["messages"][0]["content"]
+        if instruction.startswith("FROZEN_SUPPORT"):
+            content = {"verdict": "supported", "reason": "generated support",
+                       "eligibility": "eligible", "eligibility_reason": "generated new"}
+        else:
+            assert instruction.startswith("FROZEN_COVERAGE")
+            content = {"coverage": [{"id": "unit-a", "verdict": "covered",
+                "reason": "generated reason", "covered_by": {"statements": [0],
+                "reads": []}}], "diagnostic_misses": []}
+        return generated_completion(body, {}, content=json.dumps(content))
+
+    monkeypatch.setattr(spike.Judges, "_endpoint", lambda *args: (
+        "https://generated.invalid/v1", "generated-key", "generated-judge"))
+    original = build_structured_model
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
+        monkeypatch.setattr(spike, "build_structured_model", lambda **kwargs: original(
+            **kwargs, http_client=transport))
+        judges = spike.Judges(SimpleNamespace(llm=SimpleNamespace(timeout_seconds=5)),
+                              ["generated-judge"], Path("generated.toml"))
+        result = await spike.smoke_fact_support(
+            judges, inspection, spike.evidence_exchanges(events),
+            contract=contract, reference_key="wake")
+    support = next(b for b in requests
+                   if b["messages"][0]["content"].startswith("FROZEN_SUPPORT"))
+    content = support["messages"][1]["content"]
+    if not isinstance(content, str):
+        content = "\n".join(p.get("text", "") for p in content or [])
+    payload = json.loads(html.unescape(re.search(
+        r"<cited_sources[^>]*>\s*(\{.*\})\s*</cited_sources>", content, re.S).group(1)))
+    row = payload["cited_rows"]["1"]
+    assert row["carrier"] == '<binding agenda_room="signal:generated-room" label="Friends"/>'
+    assert row["room"] == 'room="«Friends»"'
+    assert result["measurement_version"] == "fixed-reference-v2"
+    assert result["facts_supported"] == result["coverage_units"] == 1
+
+
+@pytest.mark.parametrize("reads,room,expected", [
+    ('<binding agenda_room="signal:generated-a" label="Friends"/>'
+     '<binding agenda_room="signal:generated-b" label="Friends"/>',
+     "«Friends»", "unavailable"),
+    ('<binding agenda_room="signal:generated-other" label="Colleagues"/>',
+     "«Friends»", "unavailable"),
+    ('<binding agenda_room="whatsapp:generated-room" label="Friends"/>',
+     "«Friends»", '<binding agenda_room="whatsapp:generated-room" label="Friends"/>'),
+], ids=["shared-label", "no-shown-binding", "other-platform"])
+def test_an_unresolved_carrier_binding_stays_unavailable(reads, room, expected):
+    """A shared or missing label is never guessed; another platform is carried verbatim."""
+    from scripts.memory_graph_spike import evidence_exchanges
+    _, events = generated_carrier_events(reads, room)
+    rows = evidence_exchanges(events)[0]["source_rows"]
+    assert rows["1"]["carrier"] == expected
+
+
+def test_a_binding_only_in_the_ledger_is_never_carried():
+    """Metadata the request did not show cannot reach the judged row."""
+    from scripts.memory_graph_spike import evidence_exchanges
+    _, events = generated_carrier_events("", "«Friends»", ledger_binding=True)
+    rows = evidence_exchanges(events)[0]["source_rows"]
+    assert rows["1"]["carrier"] == "unavailable"
+    assert "generated-ledger-only" not in json.dumps(rows["1"])
+    assert "carrier" not in rows["2"]
 
 
 @pytest.mark.parametrize("wrapper", ["{}", "```json\n{}\n```", "{}\nGenerated explanation",
@@ -490,10 +609,9 @@ async def test_negative_social_source_numbers_are_scored():
     assert result["facts_judge_errors"] == 0
 
 
-def generated_completion(body, headers):
+def generated_completion(body, headers, content='{"missed":[],"context_only":[]}'):
     import httpx
 
-    content = '{"missed":[],"context_only":[]}'
     usage = {"prompt_tokens": 2, "completion_tokens": 2, "total_tokens": 4}
     if not body["stream"]:
         return httpx.Response(200, headers=headers, json={
@@ -584,7 +702,8 @@ def test_self_closing_agenda_items_keep_sources_and_rooms(consumer, position):
             {"kind": "tool_finished", "tool": {"name": "memory_propose", "input": {}},
              "result": {"content": [{"json": {"status": "ok"}}]}}]
         sources = evidence_exchanges(events)[0]["source_rows"]
-        assert sources == {"7": {"rendered": row, "room": 'room="Generated &amp; room"'}}
+        assert sources == {"7": {"rendered": row, "room": 'room="Generated &amp; room"',
+                                "carrier": "unavailable"}}
 
 
 @pytest.mark.parametrize("role", ["system", "assistant", "developer", "tool"])
@@ -605,7 +724,8 @@ def test_non_user_markup_cannot_overwrite_cited_row(role, content_blocks):
         {"kind": "tool_finished", "tool": {"name": "memory_propose", "input": {}},
          "result": {"content": [{"json": {"status": "ok"}}]}}]
     sources = evidence_exchanges(events)[0]["source_rows"]
-    assert sources == {"7": {"rendered": row, "room": 'room="Generated &amp; room"'}}
+    assert sources == {"7": {"rendered": row, "room": 'room="Generated &amp; room"',
+                                "carrier": "unavailable"}}
     assert len(_items(request)) == 2
     assert "Wrong attributed text" not in json.dumps(_items(request), default=str)
 

@@ -36,11 +36,11 @@ from nora.config import load
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.composed import compose_body
 from nora.domain.memory_graph import Walk
-from nora.domain.prompt import escape, escape_attr
+from nora.domain.prompt import escape
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memory_graph import WALK_SQL, walk_parameters
 from nora.infra.sql.schema import METADATA
-from nora.language.cognition_render import parse_rendered_agenda
+from nora.language.cognition_render import shown_source_rows
 from nora.language.comprehend_render import MEMORY_CRITERIA
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
@@ -657,14 +657,7 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for event in events:
         if event.get("name") == "nora.model.request":
             request = json.loads(event["attributes"]["nora.model.request.body"])
-            for item in parse_rendered_agenda(request):
-                room = item.attributes.get("room")
-                for row in item.rows:
-                    if row.attributes.get("reaction"):
-                        continue
-                    n = row.attributes["n"]
-                    rendered[n] = {"rendered": row.rendered,
-                                   "room": f'room="{escape_attr(room)}"' if room else "unavailable"}
+            rendered.update(shown_source_rows(request))
 
         if event["kind"] != "tool_finished":
             continue
@@ -833,7 +826,7 @@ async def smoke_fact_support(
     }
     if reference is not None:
         out.update(
-            measurement_version="fixed-reference-v1",
+            measurement_version="fixed-reference-v2",
             grading_contract_sha256=policy_sha,
             coverage_units=len(reference["units"]),
             coverage_unsure=0,

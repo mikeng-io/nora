@@ -226,6 +226,7 @@ def test_wrong_measurement_cannot_silently_run(tmp_path, change, message):
 @pytest.mark.parametrize("changed", [
     "nora/subject/eval_evidence.py", "nora/agent/telemetry.py", "nora/obs/tracing.py",
     "nora/subject/raw_model.py", "nora/agent/replay_capture.py",
+    "nora/language/cognition_render.py",
 ])
 def test_capture_or_export_change_invalidates_the_fixed_measurement(tmp_path, monkeypatch, changed):
     path, sha = write_contract(tmp_path)

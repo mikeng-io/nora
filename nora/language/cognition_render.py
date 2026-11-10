@@ -89,7 +89,7 @@ from nora.domain.context_data import TranscriptLine
 from nora.domain.external_files import render_file_links
 from nora.domain.models import REACTION_LABEL_MAX, emoji_display
 from nora.domain.observations import SourceEvent
-from nora.domain.prompt import ago, clip, escape, legal, one_line
+from nora.domain.prompt import ago, clip, escape, escape_attr, legal, one_line
 from nora.domain.shared_state import SharedView
 from nora.domain.social_stream import describe_read
 from nora.domain.stimuli import Stimulus
@@ -673,22 +673,38 @@ class RenderedAgendaItem:
     rows: tuple[RenderedAgendaRow, ...]
 
 
+@dataclass(frozen=True)
+class RenderedAgendaBinding:
+    attributes: dict[str, str]
+    rendered: str
+
+
 def parse_rendered_agenda(agenda: str | Mapping[str, Any]) -> list[RenderedAgendaItem]:
     """Read emitted item structure, retaining exact bytes and only user-role request content."""
+    return _parse_shown(agenda)[0]
+
+
+def _parse_shown(
+    agenda: str | Mapping[str, Any],
+) -> tuple[list[RenderedAgendaItem], list[RenderedAgendaBinding]]:
     if isinstance(agenda, Mapping):
-        items = []
+        items: list[RenderedAgendaItem] = []
+        bindings: list[RenderedAgendaBinding] = []
         for message in agenda.get("messages", []):
             if message.get("role") != "user":
                 continue
             content = message.get("content", "")
             if not isinstance(content, str):
                 content = "\n".join(p.get("text", "") for p in content or [])
-            items.extend(parse_rendered_agenda(content))
-        return items
+            shown_items, shown_bindings = _parse_shown(content)
+            items += shown_items
+            bindings += shown_bindings
+        return items, bindings
     payload = ("<root>" + agenda + "</root>").encode("utf-8")
     parser = expat.ParserCreate()
     stack: list[dict[str, Any]] = []
     items = []
+    bindings = []
 
     def start(tag: str, attributes: dict[str, str]) -> None:
         if stack:
@@ -712,12 +728,46 @@ def parse_rendered_agenda(agenda: str | Mapping[str, Any]) -> list[RenderedAgend
         elif stack and stack[-1]["tag"] == "item" and "n" in node["attributes"]:
             stack[-1]["rows"].append(RenderedAgendaRow(
                 node["attributes"], "".join(node["text"]), rendered))
+        elif stack and stack[-1]["tag"] == "reads" and tag == "binding":
+            bindings.append(RenderedAgendaBinding(node["attributes"], rendered))
 
     parser.StartElementHandler = start
     parser.CharacterDataHandler = text
     parser.EndElementHandler = end
     parser.Parse(payload, True)
-    return items
+    return items, bindings
+
+
+def shown_source_rows(agenda: str | Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    """The non-reaction source rows a request shows, with provenance, for judges.
+
+    Each row carries its rendered bytes, its item's room label and the `<reads>`
+    carrier binding that room's reads resolve through — how the row reached the
+    writer, not where the event physically is. Only what the request itself
+    shows is projected; a room with no shown binding, or a label shared by two
+    bindings, is `unavailable` rather than guessed or looked up elsewhere.
+    """
+    items, bindings = _parse_shown(agenda)
+    by_label: dict[str, list[RenderedAgendaBinding]] = {}
+    for binding in bindings:
+        label = binding.attributes.get("label")
+        if label is not None:
+            by_label.setdefault(label, []).append(binding)
+    rows = {}
+    for item in items:
+        room = item.attributes.get("room")
+        label = room[1:-1] if room and room.startswith("«") and room.endswith("»") else room
+        bound = by_label.get(label or "", [])
+        carrier = bound[0].rendered if len(bound) == 1 else "unavailable"
+        for row in item.rows:
+            if row.attributes.get("reaction"):
+                continue
+            rows[row.attributes["n"]] = {
+                "rendered": row.rendered,
+                "room": f'room="{escape_attr(room)}"' if room else "unavailable",
+                "carrier": carrier,
+            }
+    return rows
 
 
 def rendered_new_sources(agenda: str) -> dict[str, Any]:
@@ -1136,5 +1186,5 @@ def render_agenda(
 __all__ = [
     "RenderBudget", "RenderedAgendaItem", "RenderedAgendaRow", "clock_line",
     "parse_rendered_agenda", "render_agenda", "rendered_new_sources", "returning", "room_key",
-    "room_label", "speaker_of",
+    "room_label", "shown_source_rows", "speaker_of",
 ]

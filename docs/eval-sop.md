@@ -134,7 +134,10 @@ The private capture records the exact contract text and fingerprint before
 model work. Run metadata/report receipts identify the binding; formatted SDK
 requests retain the actual dynamic evidence and output independently. Memory
 grading records support, eligibility and finite-unit coverage separately under
-`fixed-reference-v1`. Every required unit needs a verdict; covered units must
+`fixed-reference-v2`. Each judged source row carries only what its request
+showed: the rendered row, the item's room label and the `<reads>` carrier
+binding that room's reads resolve through (unavailable when the request shows
+none or a shared label makes it ambiguous). Every required unit needs a verdict; covered units must
 identify saved statements or successful shown reads. Unknown/missing verdicts
 or unavailable read evidence are ERROR, not PASS. Unlisted possible omissions
 remain unscored diagnostics. Preserve old reports under their original

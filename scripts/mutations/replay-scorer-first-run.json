@@ -71,9 +71,9 @@
   },
   {
     "name": "negative citation rows retain attribution",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "                    rendered[n] = {\"rendered\": row.rendered,",
-    "new": "                    rendered[n.lstrip(\"-\")] = {\"rendered\": row.rendered,",
+    "file": "nora/language/cognition_render.py",
+    "old": "            rows[row.attributes[\"n\"]] = {",
+    "new": "            rows[row.attributes[\"n\"].lstrip(\"-\")] = {",
     "target": "tests/unit/test_replay_scoring.py::test_negative_social_source_numbers_are_scored"
   },
   {

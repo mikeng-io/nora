@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from nora.language.cognition_render import parse_rendered_agenda
+from nora.language.cognition_render import parse_rendered_agenda, shown_source_rows
 
 OBSERVATIONS_BY_KIND = {
     "unsupported": frozenset({
@@ -157,11 +157,12 @@ def compact_trajectory(statement: dict[str, Any], events: list[dict[str, Any]]) 
             rows = json.loads(event["attributes"]["body"])
             cited.update({n: {**row, "event_id": event["event_id"]}
                           for n, row in rows.items() if n in numbers})
+    shown_rows = shown_source_rows(request)
     for item in selected:
         for row in item["rows"]:
             n = row.attributes["n"]
             if n in numbers and not row.attributes.get("reaction"):
-                cited[n] = {"rendered": row.rendered, "event_id": events[shown]["event_id"]}
+                cited[n] = {**shown_rows[n], "event_id": events[shown]["event_id"]}
     calls = []
     active: dict[tuple[Any, Any], dict[str, Any]] = {}
     tools = []
