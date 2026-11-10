@@ -674,7 +674,7 @@ def _build_with(instructions: Any, skills: AgendaSkills) -> Any:
         reminder_caps=stub, open_events_in=stub, standing_of=stub, homes={}, units=(),
         skills=skills, grounder=stub, render_budget=stub,
         surface=SimpleNamespace(wired=frozenset()), clock=lambda: 0.0, model_id="m",
-        model_route="r", budget=stub, result_caps={},
+        model_route="r", budget=stub, result_caps={}, runtime=stub,
     )
 
 

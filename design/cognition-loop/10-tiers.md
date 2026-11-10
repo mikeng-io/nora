@@ -77,14 +77,20 @@ Outside these, and neither the Record, the Rollup nor a tier:
 
 And the words that name processes, never stores:
 
-- **The Dreamer** — the runtime that hosts four adaptors ([00](00-intent.md)
-  §3): Cognition, Character, Lessons, Assess.
-- **Cognition** — the fast adaptor ([30](30-cognition.md)): orient, decide
-  and act in one session per unit per wake; it writes Register and Standing
-  and acts only through `remind`. There is no "cognition tier".
-- **Reflection** — what the two slow adaptors do: the Character adaptor
-  writes Character, the Lessons adaptor writes Lessons
-  ([50](50-character-and-standing.md) §6).
+- **The Dreamer** — the subconscious execution runtime in the target
+  architecture ([18](18-execution-and-time.md)). The original four-adaptor
+  roster in [00](00-intent.md) §3 is amended by [30](30-cognition.md)'s
+  consolidation of reflection into Cognition. Current Cognition execution is
+  still a sibling runner sharing Dreamer's factory; hosting it through Dreamer
+  is remaining implementation work.
+- **Cognition** — the subconscious work flow ([30](30-cognition.md)), to be
+  hosted as a Dreamer adaptor under [18](18-execution-and-time.md). Its ordered
+  steps use separate bounded sessions and committed state; decide-and-act is
+  the per-unit wake session, writing Register and Standing and reaching rooms
+  only through `remind`. There is no "cognition tier".
+- **Reflection** — the Character and Lessons work of
+  [50](50-character-and-standing.md) §6, consolidated into Cognition step ②
+  by [30](30-cognition.md), rather than a separate required execution driver.
 - **Assess** — the adaptor that measures finished sessions; it writes reports
   and metrics, never a tier ([30](30-cognition.md) §6).
 
@@ -354,10 +360,10 @@ machinery ([05](05-data-model.md) §4).
 | **snapshot** | an eval sandbox holding Nora as of T ([70](70-migration.md) §2) | a Honcho export |
 | **assess pass** | the measurement of finished sessions, off any live path ([30](30-cognition.md) §6) | a gate on a write |
 | **session** | one run of a Dreamer adaptor for one key (a unit, or a unit and an entity); bare "session" is a Cognition session | a Honcho session (a conversation thread; always written "Honcho session") |
-| **cognition** | the fast adaptor: orient, decide, act | a tier; reflection |
+| **cognition** | the subconscious work flow of [30](30-cognition.md), targeted to execute as a Dreamer adaptor under [18](18-execution-and-time.md) | a data tier; a separate execution runtime |
 | **adaptor** | one job the Dreamer runtime hosts, with its own key, wake rule and write verbs | a unit; a platform adapter |
-| **reflection** | the slow adaptors' work: inducing Character and Lessons | cognition; a process name for the whole loop |
-| **Dreamer** | the runtime hosting the four adaptors | a tier; a background pass that never acts |
+| **reflection** | the Character/Lessons work consolidated into Cognition step ② by [30](30-cognition.md) | a separate required execution driver |
+| **Dreamer** | the target subconscious execution owner; current Cognition hosting gap is explicit in [18](18-execution-and-time.md) | a data tier; the shared agent factory alone |
 | **write verb** | a tool that writes one tier's row, validated by code before commit; the pace verbs (`wake_at`, `wake_move`, `wake_cancel`) write the stimulus table instead | an act |
 | **act verb** | `remind`: the one tool whose row leaves through the fire path; plus `remind_move`/`remind_cancel` on her own reminder rows, which change a reminder and send nothing | a send; a self-wake |
 | **self-wake** | a `self` stimulus Cognition writes with `wake_at`, due when it forecasts the subject next needs a look; inward, nothing leaves ([20](20-observe.md) §3) | a reminder (outward, to a room) |

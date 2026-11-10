@@ -9,22 +9,22 @@
   {
     "name": "decide: the messages a narrow wake leaves are listed as unclaimed, so the watermark never passes them",
     "file": "nora/domain/stimuli.py",
-    "old": "        unclaimed_ids=tuple(sorted(\n            {s.id for s in view.pending if s.id not in taken and s.id <= through}\n            # Carried forward from the watermark's own list, WHETHER OR NOT this\n            # read shows them: a truncated read (`limit`) cuts the newest, and a\n            # stimulus the view did not show cannot be claimed here, so dropping\n            # it from the list would consume it unseen under this wake's range.\n            | {u for u in view.watermark.unclaimed if u not in taken and u <= through}\n        )),",
+    "old": "        unclaimed_ids=tuple(sorted(\n            {s.id for s in view.pending if s.id not in taken and s.id <= through}\n        )),",
     "new": "        unclaimed_ids=(),",
-    "target": "tests/contract/test_stimulus_store_contract.py -k random_run"
+    "target": "tests/unit/test_wake_evaluator.py::test_a_floor_wake_takes_a_pending_rollup_and_leaves_an_unsettled_room_pending"
   },
   {
-    "name": "Watermark.consumed: an unclaimed id is not consumed by the range",
-    "file": "nora/domain/stimuli.py",
-    "old": "            and stimulus.id not in self.unclaimed\n        )",
-    "new": "        )",
-    "target": "tests/unit/test_wake_evaluator.py -k unclaimed_id_is_not_consumed"
+    "name": "SQL record_wake: an unclaimed id is still consumed under the range",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "                    for sid in sorted(wake.claimed_ids)",
+    "new": "                    for sid in range(\n                        wake.from_stimulus_id + 1, wake.through_stimulus_id + 1\n                    )",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_reads"
   },
   {
-    "name": "Watermark.consumed: a failing wake's strike reaches only what it claimed",
+    "name": "failure_run: a failing wake's strike reaches the whole range, not what it claimed",
     "file": "nora/domain/stimuli.py",
-    "old": "            and stimulus.id not in self.unclaimed\n        )",
-    "new": "        )",
+    "old": "            claimed.update(wake.claimed_ids)",
+    "new": "            claimed.update(range(1, wake.through_stimulus_id + 1))",
     "target": "tests/unit/test_cognition_input.py -k striking_a_failing_floor_wake"
   },
   {
@@ -32,13 +32,13 @@
     "file": "nora/infra/sql/stimuli.py",
     "old": "            missing = sorted(({*carry, *mark.unclaimed}) - have)",
     "new": "            missing = sorted(set(carry) - have)",
-    "target": "tests/contract/test_stimulus_store_contract.py -k unclaimed"
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_wake_that_names_unclaimed_stimuli_leaves_exactly_those_pending"
   },
   {
     "name": "SQL record_wake: the unclaimed list is stored on the wake row",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "    return {**wake.detail, _UNCLAIMED_KEY: sorted(wake.unclaimed_ids)}",
-    "new": "    return dict(wake.detail)",
+    "old": "    if wake.unclaimed_ids:\n        detail[_UNCLAIMED_KEY] = sorted(wake.unclaimed_ids)\n",
+    "new": "",
     "target": "tests/contract/test_stimulus_store_contract.py -k unclaimed"
   },
   {
@@ -221,20 +221,13 @@
     "file": "nora/testing/stimuli.py",
     "old": "            if s.id in carried or s.id in mark.unclaimed:",
     "new": "            if s.id in carried:",
-    "target": "tests/contract/test_stimulus_store_contract.py -k truncated_pending"
-  },
-  {
-    "name": "decide: a wake carries the watermark's unclaimed ids forward when its read did not show them",
-    "file": "nora/domain/stimuli.py",
-    "old": "            | {u for u in view.watermark.unclaimed if u not in taken and u <= through}\n",
-    "new": "",
-    "target": "tests/contract/test_stimulus_store_contract.py -k tracked_wakes"
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_wake_that_names_unclaimed_stimuli_leaves_exactly_those_pending"
   },
   {
     "name": "SQL record_wake: detail is written as an object, not a jsonb string",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "            detail=_with_unclaimed(wake),\n",
-    "new": "            detail=sa.cast(json.dumps(_with_unclaimed(wake), sort_keys=True), COGNITION_WAKE.c.detail.type),\n",
+    "old": "                detail=_with_detail(wake),\n",
+    "new": "                detail=sa.cast(json.dumps(_with_detail(wake), sort_keys=True), COGNITION_WAKE.c.detail.type),\n",
     "target": "tests/contract/test_stimulus_store_contract.py -k jsonb_object"
   },
   {

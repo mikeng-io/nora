@@ -1,0 +1,79 @@
+[
+  {
+    "name": "dreamer run: a session-shaped adaptor is no longer dispatched",
+    "file": "nora/agent/dreamer.py",
+    "old": "            if isinstance(adaptor, SessionAdaptor):",
+    "new": "            if False:",
+    "target": "tests/unit/test_subconscious_executor.py"
+  },
+  {
+    "name": "subconscious executor: the session task is wrapper-only, not lane-owned",
+    "file": "nora/app/subconscious.py",
+    "old": "        task = self._runtime.dispatch(adaptor=adaptor, key=unit)",
+    "new": "        task = self._runtime.run(adaptor=adaptor, key=unit, batch=())",
+    "target": "tests/unit/test_subconscious_executor.py"
+  },
+  {
+    "name": "decide: the watermark retreats below rows an earlier wake passed over",
+    "file": "nora/domain/stimuli.py",
+    "old": "    through = max(view.watermark.through_stimulus_id, max(s.id for s in claimed))",
+    "new": "    through = max(s.id for s in claimed)",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_row_under_an_advanced_mark_is_never_enumerated"
+  },
+  {
+    "name": "pending read: a claimed stimulus resurfaces under the mark (SQL)",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "            eligible, live_stimulus(STIMULUS.c.id), ~claimed,",
+    "new": "            eligible, live_stimulus(STIMULUS.c.id),",
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_tracked_wake_with_no_outcome_is_open_then_expired_past_the_timeout"
+  },
+  {
+    "name": "pending read: a claimed stimulus resurfaces under the mark (twin)",
+    "file": "nora/testing/stimuli.py",
+    "old": "            and s.eligible_ms <= now_ms and s.id not in claimed",
+    "new": "            and s.eligible_ms <= now_ms",
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_tracked_wake_with_no_outcome_is_open_then_expired_past_the_timeout"
+  },
+  {
+    "name": "pending read: an undated stimulus is eligible from its recorded TICK (SQL)",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "        sa.and_(\n            STIMULUS.c.due_ms.is_(None),\n            STIMULUS.c.recorded_at <= _at(now_ms),\n        ),",
+    "new": "        sa.and_(\n            STIMULUS.c.due_ms.is_(None),\n            sa.func.floor(sa.extract(\"epoch\", STIMULUS.c.recorded_at) / 60) <= now_tick,\n        ),",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_an_undated_stimulus_is_not_pending_before_its_recorded_instant"
+  },
+  {
+    "name": "pending read: an undated stimulus is pending from its recorded tick (twin)",
+    "file": "nora/testing/stimuli.py",
+    "old": "            and s.eligible_ms <= now_ms",
+    "new": "            and s.pending_tick <= tick_of_ms(now_ms)",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_an_undated_stimulus_is_not_pending_before_its_recorded_instant"
+  },
+  {
+    "name": "fake store: a mid-tick due stimulus is visible before its tick opens",
+    "file": "nora/testing/stimuli.py",
+    "old": "            and s.eligible_ms <= now_ms",
+    "new": "            and s.pending_since_ms <= now_ms",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake tests/contract/test_stimulus_store_contract.py::test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli"
+  },
+  {
+    "name": "due_tick: the CHECK's ceiling is the naive (n+59999)/60000",
+    "file": "nora/infra/sql/migrations/versions/0150_due_ticks.py",
+    "old": "    \"(CASE WHEN due_ms IS NULL THEN NULL ELSE (due_ms / 60000) + \"\n    \"CASE WHEN mod(due_ms, 60000) > 0 THEN 1 ELSE 0 END END)\"",
+    "new": "    \"(CASE WHEN due_ms IS NULL THEN NULL ELSE (due_ms + 59999) / 60000 END)\"",
+    "target": "tests/infra/test_due_tick_generated.py::test_the_stimulus_due_tick_is_the_signed_ceiling_or_refused"
+  },
+  {
+    "name": "schedule: a backward clock move reopens a consumed slot",
+    "file": "nora/app/runtime.py",
+    "old": "        if fired_at is not None and _slot(now, sched) <= _slot(fired_at, sched):",
+    "new": "        if fired_at is not None and _slot(now, sched) == _slot(fired_at, sched):",
+    "target": "tests/unit/test_runtime.py::test_a_backward_clock_move_does_not_reopen_a_consumed_slot"
+  },
+  {
+    "name": "drivers: the wait is a fixed interval after the pass, not to a boundary",
+    "file": "nora/domain/ticks.py",
+    "old": "    now = time.time() if at is None else at\n    delay = math.ceil(now / interval_seconds) * interval_seconds - now\n    return delay if delay > 0 else interval_seconds",
+    "new": "    return interval_seconds",
+    "target": "tests/unit/test_subconscious_executor.py::test_the_drivers_wait_to_a_cadence_boundary_not_a_fixed_interval"
+  }
+]

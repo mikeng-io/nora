@@ -1,133 +1,113 @@
-# Learning from what she does: every act gets an outcome
+# Revision and learning from experience
 
-Status: **proposed**, 2026-10-15. Nothing is built. Belongs before the social
-phase (cognition-loop migration step 5), so its first act is learned from.
-**Amended 2026-10-15 (operator)** on an audit: proactive sends already have
-episodes, Instagram acts need their own reader and table, feedback has a
-named writer, and the measures are made not self-attested.
+New observations, explicit corrections and outcomes can change any affected
+understanding: a relation, profile, open affair, decision or lesson. Revision is
+a process across memory kinds; a lesson is one possible result. This document
+owns that process. The [session](29-one-cognition-session.md) owns execution,
+and [acceptance](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31)
+owns delivery evidence. Their implementation/activation states remain separate.
 
-## What the operator asked
+## 1. Experience and outcome
 
-Operator, 2026-10-15: when Nora engages socially and answers summonses, she
-should learn from it, both about herself and about the person.
+Retain what Nora understood and did, what actually executed, and what followed,
+with source/act identity and time. An intention, attempted action and confirmed
+result are different states. An unavailable outcome is unknown, never silence
+or failure inferred from absence. External systems remain authoritative for
+their current state; memory does not replace a fresh action-specific read.
 
-## 1. What exists, and the gap
+Room and proactive sends use the response-episode model. Other act kinds need
+an outcome reader and stable act reference before their effects can be judged;
+a successful API write alone says nothing about what followed. Preserve quoted
+replies, reactions and inferred follows distinctly. Their evidential strength
+and ambiguity differ, as specified by [Lessons](../self-growth/40-lessons.md).
 
-- **Room sends have outcomes.** Each send is a `response` episode (the Rollup's
-  response kind, `nora.infra.sql.rollups`): the replies, reactions, edits and
-  unquoted follows inside its window, or `silent` where an answer was expected.
-- **Two adaptors learn from them.** Lessons (DEC-300, DEC-301, DEC-311) writes
-  what works in a unit; `character-nora` writes how she comes across
-  (DEC-292).
-- **Proactive sends already have outcomes.** A fire turn's send is a
-  response episode like any room send, carrying the brief's `intent`
-  (`nora/infra/sql/rollups.py:384`, `_send_intent` at `:704-712`).
-- **Social acts have no outcome.** The Instagram summons ledger
-  (`instagram_summons`, migration 0066) records that a comment-mention was
-  answered and how the write went, and nothing records what followed. The
-  social acts planned for step 5 have no episode either.
-- **Nothing learns about the person from how they answer her.** The
-  Character adaptor reads a person's own messages only.
+Explicit feedback is a Record item linked by `feedback_on` when a reply, quote,
+reaction or operator review identifies Nora's act. A model does not promote
+arbitrary conversation into explicit feedback. `outcome_of` links a computed
+episode to its act. Ordinary observations can still challenge understanding
+without being feedback on anything Nora did.
 
 ## 2. The loop
 
-> 2026-10-21 (18 / ADR 0026): the Persona labels in the loop below are historical. [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md) names these Character entries, with profile, traits and hypotheses; [18](18-extraction.md) keeps them bounded and places source statements in Record extraction.
+| Phase | Required judgement or evidence |
+|---|---|
+| Revisit | New evidence, a correction, an outcome or existing review/horizon work identifies relevant held understanding |
+| Compare | Read the eligible sources and affected current state; distinguish changed circumstances from a previously unsupported interpretation |
+| Revise | Change only what the evidence warrants, through its existing owner; retain provenance, temporal conditions and unresolved disagreement |
+| Use | A later situation retrieves the revised understanding under its current scope and conditions |
+| Evaluate | Inspect what the later turn actually read and did, and the result; separate observation, interpretation and unknowns |
 
-```
- ACT       a room send · a proactive message · an Instagram comment reply ·
-   │       a summons answer                                (Record row)
-   ▼
- OUTCOME   one episode per act, computed by code: replies, likes, reactions,
-   │       deletions, silence, explicit feedback               (Rollup)
-   ▼
- LEARN     about HERSELF   → Lessons: what works, per unit and per platform
-   │                       → Persona · Nora, character: how she comes across
-   │       about THE PERSON → Persona · person ([45](45-persona-adaptor.md)):
-   │                            induced trait, from ≥ 3 of their episodes
-   │                            hypothesis, explaining a trait, with a prediction
-   ▼
- USE       the next act reads Lessons and that person's Persona (push, pre-fetch)
-   ▼
- MEASURE   per act kind: reply rate, hypothesis confirmation rate,
-           lesson re-support rate
-```
+Cognition performs substantive revision within its existing wake/session rules.
+The [Lessons contract](../self-growth/40-lessons.md) owns outcome accumulation,
+explicit-correction fast paths, horizon, consolidation and retirement; this
+process adds no second scheduler or writer. [Disputes](35-persona.md#2-disputes-anyone-weighed-in-context-the-subjects-hides-at-once)
+retain their own immediate visibility and precedence rules.
 
-## 3. What is built
+The correction target follows the supported meaning: a changed fact may need
+only a relation revision; a recurring pattern may change a profile; an affair
+may close; a supported reusable practice may become a lesson. Neither feedback
+nor reflection automatically requires a lesson. Read relevant held state before
+creating another entry about the same matter.
 
-1. **An episode per act.** Room and proactive sends already have one
-   (`rollup_response`). Instagram acts cannot reuse it: a response episode is
-   per build and unit and keyed by an integer `message_id`; a summons writes
-   no audit row and has no unit; `instagram_summons` has a uuid `id` and a
-   nullable `person_id`; and nothing ingests replies or likes on her
-   comments. So the Instagram half needs three new parts:
+A proposed explanation of an error is itself a judgement. Keep it uncertain
+unless evidence supports it; the model's narrative of why it failed is not an
+independent causal measurement. Retain the applicable conditions of a practice,
+so an outcome in one setting does not become an unconditional rule about a person.
 
-   - **an outcome reader**: a comment poller that reads, inside the window,
-     the replies, likes and deletion on each comment she wrote;
-   - **a unit-assignment rule for a roomless act**: the unit of the
-     summoner's resolved person when `person_id` is set and that person is in
-     exactly one unit; otherwise the act has no unit, and its episode informs
-     Lessons per platform only, never a person's Persona;
-   - **its own episode table**, keyed by the summons' uuid, not
-     `rollup_response`.
+## 3. Act-specific outcome contracts
 
-   | act | window | outcomes | episode |
-   |---|---|---|---|
-   | room send | today's | today's | `rollup_response`, built |
-   | proactive message | today's room window | as a room send, with its `intent` | `rollup_response`, built |
-   | Instagram comment reply / summons answer | 72 h | reply to her comment, like on it, the thread continuing without her, deletion, nothing | new table, from the comment poller |
+These requirements extend the same loop, not the ontology or number of writers.
+They are design requirements, not claims that every platform reader is built.
 
-   An outcome that cannot be read (a platform outage, an expired token) is
-   `unknown`, never `silent` (R-27, today's rule).
+| Act | Outcome contract |
+|---|---|
+| Room send | Existing response window, replies/reactions/edits/follows, with expected-answer and platform-availability distinctions |
+| Proactive message | The same response episode, retaining the originating intent |
+| Instagram reply/summons | Its own stable act key and 72-hour outcome reader for replies, likes, deletion and no observed response; the room-send integer/build key is not interchangeable |
 
-2. **Explicit feedback as a Record item.** A `feedback` item, linked to the
-   act by `feedback_on` ([25](25-memory-graph.md) §2). **Its writer is named**
-   (2026-10-15): it is recorded only when the speaker addresses Nora's act
-   explicitly, by replying to or quoting her act ("that was weird", "good
-   one") or reacting to it, which ingestion sees in the message's own reply
-   and reaction columns; or by the operator's review of an act in the portal.
-   A model never classifies an arbitrary message into a feedback item. It is
-   the strongest evidence an episode can carry, and a lesson or a Persona
-   line resting on it says so.
+A roomless act uses the summoner's resolved person only when exactly one unit
+binds them. Otherwise it informs platform-level practice only, never a person's
+profile. Preserve scope for both the outcome read and every derived claim.
+Person evidence must satisfy the existing listed-room rule.
 
-3. **One new edge relation, `outcome_of`** (episode → act), now in the closed
-   set in [25](25-memory-graph.md) §2 and projected by the Rollup builder
-   (25 §7). "How did people react when I did this" becomes one hop.
+## 4. Limits on revision
 
-4. **The Persona adaptor reads the person's episodes** ([45](45-persona-adaptor.md)
-   §4): how they answer Nora is evidence about them, cited as `response:<id>`.
+Only eligible Record/Rollup sources independently support revisions. Prior
+Notebook understanding can guide a read and supply typed premises; repeating it
+adds no independent support. Rewording, replaying identical evidence or reading
+a claim repeatedly does not make it fresher or more reliable.
 
-5. **Lessons read social episodes**, scoped per platform as well as per unit,
-   so what works in a group chat is not applied to a public comment thread.
-
-## 4. Two limits
-
-- **Scope.** The unit is the boundary, and evidence about a person counts
-  only if it was said in a room that person is listed in
-  ([35](35-persona.md) §3). A roomless act's episode is evidence about a
-  person only when §3's unit-assignment rule gives it a unit that lists
-  them, and what follows from it renders only in that unit's rooms that list
-  them.
-- **Rewarded is not right.** Learning what a person rewards can drift into
-  saying what they want to hear (30 §8 item 5: a stored profile measurably
-  raises a model's agreeableness). The Lessons and Persona objectives say a
-  reaction measures reception, not correctness, and the eval carries a case
-  where a person rewards agreement and the expected Nora does not mirror
-  them. A lesson that says "agree with X" is refused by the doctrine check
-  (DEC-311: a lesson never goes ahead of doctrine's law).
+A reaction measures reception, not correctness. Learning must not optimize
+agreement, flattery or engagement at the expense of grounded understanding.
+Doctrine, operator rollback, attribution and disclosure rules remain binding.
+Subject disputes, third-party disagreement and changed circumstances are not
+interchangeable evidence. A source deletion does not trigger a new withdrawal
+cascade; affected judgements retain their existing revision/eligibility rules.
 
 ## 5. Measure
 
-- **Per act kind:** the reply rate and the explicit-feedback balance, before
-  and after Lessons and Persona render, read from the episodes themselves.
-- **Hypotheses:** the share confirmed, over every hypothesis ever written,
-  per adaptor, with `expired` and `unknown` reported apart
-  ([45](45-persona-adaptor.md) §3).
-- **Lessons:** the share re-supported by new episodes before their horizon.
+Distinguish three claims: **saved**, **used later**, and **supported as useful**.
+A successful write proves only persistence. Context injection proves availability,
+not use. A later good result alone does not prove the revision caused it.
 
-How each avoids self-attestation (amended 2026-10-15; the first version
-claimed none was, which was not yet true): reply rates and feedback balance
-are computed by code from the episodes, which no adaptor writes. A
-hypothesis's verdict is set by code or a separate judge when its window
-closes, never by the adaptor that wrote it (45 §3). Lesson re-support is
-decided by the Lessons adaptor itself, so it is reported as that adaptor's
-claim until a separate judge regrades a blind sample of it.
+Use the existing bounded journey and capture path to inspect original sources,
+held understanding, revision, actual later input/action and outcome. Compare
+like-for-like evidence where available; report unsupported interpretation,
+missed relevant context, stale conclusions and unknown outcomes separately.
+No new mandatory population quota or paid experiment is introduced here.
+
+Keep the existing measures, with their limits explicit:
+
+- Reply rates and feedback balance describe reception by act kind, computed
+  from episodes; they do not certify a correct fact or action.
+- Guess verdicts come from code or an independent judge, never their writer;
+  expired and unavailable outcomes stay distinct from refutation.
+- Lesson re-support measures new supporting evidence within its horizon. A
+  writer's own re-support judgement remains its claim until independently checked;
+  it is not proof that a later action applied the lesson or improved.
+
+[Assess](../cognition-loop/30-cognition.md#6-the-assess-adaptor-and-data-quality)
+reports citation quality, drift and data-quality findings without editing memory.
+Record maintenance and retrieval cost as well as quality. Reopen the smallest
+responsible contract when a measured journey exposes a failure; a growing graph
+or a new reflection paragraph is not evidence of learning.
