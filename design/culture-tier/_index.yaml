@@ -42,7 +42,7 @@ external_edges:
   - {dst: "cognition-loop/proactive.md", rel: relates_to, provenance: asserted}
   - {dst: "cognition-loop/proactive.md", rel: relates_to, provenance: asserted}
   - {dst: "cognition-loop/data.md", rel: relates_to, provenance: asserted}
-  - {dst: "proposed/24-honcho-integration-v2", rel: depends_on, provenance: asserted}
+  - {dst: "unified-memory/README.md", rel: depends_on, provenance: asserted}
 decisions:
   reserved: "DEC-182 .. DEC-185 (DEC-181 withdrawn) — CLAIMED AT MERGE, NOT NOW; DEC-163..175 is an unexplained gap, find its holder first"
   index: 03-decisions.md

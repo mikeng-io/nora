@@ -533,7 +533,7 @@ there was anything to look up, even though `load_transcript` (the renamed
 `read_buffer`, `nora/agent/tools.py:2854`, max 60 rows) already exists and
 would often reach it — the 56-row live case would have fit inside it. The
 missing piece is not a new tool; it is a reason for her to reach for the one
-that exists, or for `design/proposed/18-context-budget-and-handles.md`'s
+that exists, or for `design/context-assembly/composition.md`'s
 `read_thread(handle)` + `ContextBudget` (also never built) to replace it with
 something bounded and legible. Left for follow-up, per operator decision
 2026-09-22.

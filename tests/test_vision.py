@@ -533,7 +533,7 @@ def test_composition_hands_the_client_the_derivations_inputs_not_a_budget():
     assert "budget" not in call, (
         "a budget term is back in the vision timeout wiring — budgeted calls "
         "overlap in time and must not divide a wall-clock ceiling "
-        "(design/media-read-lane/07-timeout-derivation.md §2)"
+        "(design/media-read-lane/reading.md §2)"
     )
 
 

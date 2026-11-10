@@ -32,3 +32,14 @@ same incomplete evidence.
 The fire turn's send and silence outcomes, later responses and corrections are
 Record. They feed subsequent Rollup and Cognition work, closing the loop
 through what people actually did rather than through the session's confidence.
+
+## Ambient admission
+
+Deterministic mentions, replies and explicit tags admit first and never depend
+on a classifier. An optional relevance gate can add an offered turn when they
+do not fire; it cannot suppress one or widen the room's admission policy.
+
+The gate sees a small, closed context and returns a typed verdict with its
+reason. It runs off the ingest critical path behind a bounded queue, and its
+failure produces no engagement. Offered turns retain the right to silence and
+ordinary disclosure and delivery guards.

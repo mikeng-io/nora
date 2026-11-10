@@ -92,7 +92,7 @@ still use Mini; no live ingest or release is performed by this amendment.
    mechanical — it decides slot order, not correctness.
    **Superseded in part 2026-10-09 (DEC-307):** the three slots are now one
    `reference_images` list whose limit IS the active provider's (xAI 5,
-   Codex 16; `design/proposed/29-image-generation.md` §12). The ordering
+   Codex 16; `design/video-generation/README.md` §12). The ordering
    guidance above is unchanged.
 
 ## Authority, ordering, audiences

@@ -157,7 +157,7 @@ class ToolSpec:
     every pass, so it cannot stop by choosing not to (DEC-21). That hook used
     to decide "she has replied" by asking the DELIVERER whether it had
     delivered, which is terminality expressed as one specific tool's side
-    effect: a second terminal verb (`design/proposed/15-gif-replies.md` §1's
+    effect: a second terminal verb (`design/media-read-lane/interaction.md` §1's
     `send_gif`, or a distinct feed step on the tag path) could not be added
     without editing the guard. It is now declared here, read through
     `ToolRegistry.terminal_tools()`, so the next terminal verb is a table edit.

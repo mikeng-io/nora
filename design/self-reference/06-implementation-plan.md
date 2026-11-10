@@ -77,7 +77,7 @@ Sections, in order (as revised 2026-09-24, §9):
 
 **What it does not restate, and the boundary (revised 2026-09-24).** DEC-150
 made the tool schema the one place a tool is described. As first built, the
-docstring also carried the prompt recipe (design/proposed/29 §5.2) and several
+docstring also carried the prompt recipe (design/video-generation/README.md §5.2) and several
 lines of result interpretation. The operator drew the line on 2026-09-24: the
 docstring describes the tool (what it does, when to call it, its parameters
 and statuses, ADR 0015), and the skill carries judgement only. The recipe

@@ -6,7 +6,7 @@
 - **Index:** DEC-30 (`scan_egress` split into `scan_identifiers` /
   `scan_reply`), R-22 (a tool that could not answer says so in its return
   value), R-18 (egress guards replies), R-21 (scope enforced at assembly),
-  `design/proposed/14-grounding.md` (the document this records the reframing
+  `design/system/grounding.md` (the document this records the reframing
   of). Grounding's own rules are **R-27/R-28**, unassigned.
 
 ## Context

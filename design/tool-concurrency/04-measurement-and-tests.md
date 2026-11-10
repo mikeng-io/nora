@@ -78,7 +78,7 @@ Assert the fallback is the configured value, not `None`/`inf`.
   changing what the model emits is another.
 - **The right value above 4.** Any raise needs traffic under the ceiling first —
   that is what §3's saturation counter is for. Raising it now would be the same
-  error as picking the timeout from a projection, which `design/media-read-lane/04
+  error as picking the timeout from a projection, which `design/media-read-lane/reading.md
   §3b` records having made twice.
 - **A single global pool across parent and child.** See 03 §6; a separate decision
   with a different tradeoff (a dream run competing with a live reply).

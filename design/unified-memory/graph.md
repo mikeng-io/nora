@@ -72,6 +72,18 @@ and tools provide depth on demand. Preview rows carry kind, identity, time,
 state, layer and evidence availability so the model can tell a cancelled plan
 from a supported current fact.
 
+## Named places
+
+A household place is a persistent named entity, not a person's live position.
+Resolution checks saved local places before public lookup within the room's
+permitted circle. Unknown or unpermitted scope falls through to an ordinary
+public name search without revealing that a guarded place exists.
+
+The server may substitute a saved coordinate internally for a route the person
+requested. The model sees only the place name and its evidence. A person's live
+position never becomes a routing endpoint, and coordinates never enter model
+prose or public enrichment.
+
 ## Public enrichment
 
 A fetched public page used by the loop is retained as a Record item with its

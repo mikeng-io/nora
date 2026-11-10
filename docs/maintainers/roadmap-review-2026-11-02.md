@@ -169,8 +169,8 @@ design/fit/50-verification.md
 design/fit/60-migration.md
 design/fit/_index.yaml
 design/instagram-adoption/social.md
-design/media-read-lane/BRIEF-impl-review.md
-design/media-read-lane/BRIEF-timeout-derivation.md
+design/media-read-lane/reading.md
+design/media-read-lane/reading.md
 design/notebook-memory-types/00-design.md
 design/notebook-memory-types/10-relations.md
 design/notebook-memory-types/20-shared-cognitive-state.md
@@ -209,10 +209,10 @@ design/private-dm/04-build-and-acceptance.md
 design/private-dm/05-cross-platform.md
 design/private-dm/06-cross-unit-reads.md
 design/private-dm/_index.yaml
-design/proposed/14-grounding.md
-design/proposed/19-presence-collector.md
-design/proposed/23-named-places.md
-design/proposed/24-honcho-integration-v2.md
+design/system/grounding.md
+design/cognition-loop/observation.md
+design/unified-memory/graph.md
+design/unified-memory/README.md
 design/recommendations/00-intent.md
 design/recommendations/10-likes.md
 design/recommendations/20-ranker.md

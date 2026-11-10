@@ -107,7 +107,7 @@ _2026-08-27_ — bundle drafted from the self-reference design discussion with
 Miles, after an adversarial review (REQUEST CHANGES) of the earlier
 single-file draft; all findings addressed (operator asset added, no-guess
 rule, test list completed, authority fields specified, precedence pinned).
-Supersedes the single-file draft at `design/proposed/31-self-reference.md`
+Supersedes the single-file draft at `design/self-reference/00-overview.md`
 (removed — this bundle is the source of truth going forward). Nothing built
 yet; pending operator decision on the two canonical images (§5 questions in
 `04-tests-and-files.md`). **(Superseded by the 2026-09-16 checkpoint below: the

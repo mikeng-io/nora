@@ -5,12 +5,12 @@
 - **Index:** R-23 (a turn that ran out of budget is never reported as a turn
   that chose not to speak), R-24 (no single call or tool result may spend the
   whole turn's budget), DEC-31 (the `↳` snippet, shipped),
-  `design/proposed/18-context-budget-and-handles.md` (the proposal),
-  `design/proposed/14-grounding.md` §4 (which depends on this outcome)
+  `design/context-assembly/composition.md` (the proposal),
+  `design/system/grounding.md` §4 (which depends on this outcome)
 
 ## Context
 
-`design/proposed/18` proposes `ContextBudget`: a per-tag object that knows the
+`design/context-assembly/composition.md` proposes `ContextBudget`: a per-tag object that knows the
 turn's remaining `total_tokens` and hands every fetching tool a number, so
 `read_buffer(60)` early in a turn returns 60 rows and the same call after a
 large fetch returns 20. It is a well-argued document. An adversarial review on

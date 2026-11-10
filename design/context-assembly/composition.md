@@ -47,6 +47,14 @@ supported downstream benefit after its own latency, input and cache cost. A
 smaller first call is not sufficient: required-context recall and subsequent
 reply quality take precedence, and uncertain selection includes context.
 
+A finite per-turn intake budget can degrade further fetching as results
+accumulate, but never evicts evidence the model already saw. Truncation is
+explicit in the result, and per-turn state dies with the turn.
+
+Message handles are ephemeral labels assigned at render time and resolved back
+to canonical message identity inside that turn. They never enter durable memory
+or outgoing prose, where a moved window would make them identify another row.
+
 Selective retrieval is a different and larger change. It inserts a decision
 before currently concurrent reads and can increase total latency even when it
 saves tokens. It is not implied by exposure filtering and requires its own

@@ -185,7 +185,7 @@ nowhere.
 **Recommended:** assert it as a config-validation test spanning **both** keys
 (`[llm.budgets].media_fetch` and this ceiling), so an operator raising the budget
 gets a startup failure naming the two numbers rather than losing turns quietly.
-Cross-referenced from `design/media-read-lane/07-timeout-derivation.md` §6, which
+Cross-referenced from `design/media-read-lane/reading.md` §6, which
 records the same finding from the media side.
 
 **Status:** recommended, not yet decided. The alternative is to accept the residual
