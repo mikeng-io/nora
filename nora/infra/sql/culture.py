@@ -38,7 +38,7 @@ from nora.infra.sql.schema import CULTURE, CULTURE_REVISION, MESSAGES
 __all__ = ["SqlCultureStore"]
 
 
-def _revision(row: sa.Row[Any]) -> CultureRevision:
+def _revision(row: sa.Row[*tuple[Any, ...]]) -> CultureRevision:
     return CultureRevision(
         id=row.id,
         culture_key=row.culture_key,

@@ -30,8 +30,8 @@
   {
     "name": "range fallback does not claim a future due row",
     "file": "nora/infra/sql/cognition_replay.py",
-    "old": "            sa.func.coalesce(STIMULUS.c.due_ms,\n                sa.extract(\"epoch\", STIMULUS.c.recorded_at) * 1000) <= wake[\"at_ms\"]",
-    "new": "            sa.true()",
+    "old": "                sa.func.coalesce(STIMULUS.c.due_ms,\n                    sa.extract(\"epoch\", STIMULUS.c.recorded_at) * 1000) <= wake[\"at_ms\"]))",
+    "new": "                sa.true()))",
     "target": "tests/integration/test_cognition_wake_replay.py::test_due_floor_replay_restores_the_session_clock_and_evidence"
   }
 ]

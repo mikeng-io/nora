@@ -16,7 +16,12 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from nora.domain.ports import CARRY_STATES, NewCarry, NewWakeOutcome, RecordedOutcome
+from nora.domain.ports import (
+    CARRY_STATES,
+    NewCarry,
+    NewWakeOutcome,
+    RecordedOutcome,
+)
 from nora.domain.ports import HealthRow as DomainHealthRow
 from nora.domain.stimuli import (
     NO_CAUSE,
@@ -140,14 +145,22 @@ class InMemoryStimulusStore:
                 mark_wake = wake
                 break
         mark = Watermark.of(mark_wake)
-        # The range read: the watermark's OWN test (id and time), which does not
-        # know the wake's `unclaimed` list, limited like the SQL read.
-        pending = [
+        # Consumption is a per-row fact, as the SQL `stimulus_claim` read makes
+        # it: claimed by a wake that did not fail. The SQL store walks
+        # `stimulus_pending`, the materialized «not permanently consumed» set;
+        # here the same set is computed — committed, live, eligible, and
+        # claimed by no non-failed wake of this (unit, mode): an OPEN claim
+        # suppresses while it stands, a failed or expired one releases.
+        claimed = {
+            sid for w in mine for sid in w.claimed_ids
+            if (st := self._state(w, stale_before_ms)) is None or st.state != "failed"
+        }
+        eligible = [
             s for s in self.stimuli
             if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)
-            and s.pending_since_ms <= now_ms
-            and not (s.id <= mark.through_stimulus_id and s.pending_since_ms <= mark.through_ms)
-        ][:limit]
+            and s.eligible_ms <= now_ms and s.id not in claimed
+        ]
+        pending = eligible[:limit]
         current: dict[int, NewCarry] = {}
         for _, wake_id, carry in self.carries:
             if carry.unit == unit and self._counted(wake_id):
@@ -306,6 +319,7 @@ class InMemoryStimulusStore:
             cut_cooldown=wake.cut_cooldown, at_ms=wake.at_ms,
             recorded_at_ms=recorded_at_ms, detail=dict(wake.detail), tracked=wake.tracked,
             unclaimed_ids=tuple(sorted(wake.unclaimed_ids)),
+            claimed_ids=tuple(sorted(wake.claimed_ids)),
         )
         self.wakes.append(row_)
         return row_.id
@@ -338,7 +352,7 @@ class HealthRow:
 class InMemorySourceHealthLog:
     def __init__(self) -> None:
         self.rows: list[HealthRow] = []
-        #: Set True to make `record` answer False, as a failed INSERT does.
+        #: Set True to make every `record` answer False, as a failed INSERT does.
         self.fail = False
 
     async def record(

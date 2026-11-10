@@ -37,8 +37,13 @@ topic the same way would make five copies.
 The data model already said the Notebook is **one entry, one machinery, with a
 rule per kind** ([05](../cognition-loop/05-data-model.md) §3). This node keeps
 that and changes what the kinds ARE: the tiers were named after the items they
-held, so the items' names became the architecture. The kinds are now named
-after **what kind of memory they are**.
+held, so the items' names became the architecture. The kinds are named after
+**what kind of memory they are**. They organize
+use, writer authority and lifecycle; they do not exhaust the ontology of what
+Nora can understand. The [memory map](../unified-memory/15-memory-map.md) owns
+their place in the whole system, including profiles and graph/index ownership.
+Revision applies across kinds; a lesson is one possible result of learning,
+not a container every correction must enter.
 
 ## 2. The map: layer × memory type, with audience on the kind
 
@@ -83,8 +88,8 @@ found holding something Nora did not author.
 
 Each kind is a spec on the one entry: its test, its lifecycle, its writer, its
 lineage rule. The machinery (store, revision chain with `base_revision_id`,
-citations, withdrawal cascade, lineage, read and search verbs, Views) is
-written once.
+citations, eligibility/withdrawal rules, lineage, read and search verbs,
+Views) is written once.
 
 | kind | type | the test that places it | lifecycle | replaces |
 |---|---|---|---|---|
@@ -101,8 +106,8 @@ written once.
 - **Note or decision.** A note is the unit's open affair; a decision is Nora's
   reasoning *about* one, and links to it (the ledger's `note 118`).
 - **Lesson or profile.** A lesson prescribes her conduct; a profile describes
-  someone. A lesson may cite a topic or a profile line; it never files under a
-  topic.
+  someone. A lesson may link to a topic or a profile line; its independent
+  evidence remains Record/Rollup, as [10](10-relations.md) specifies.
 - **Memo.** "Something that has ended but still needs to be remembered"
   (operator) is the **kept** phase of a note, not a kind. A note may be born
   kept («記低 the wifi password»). DEC-306's rules for what a kept line may hold
@@ -203,8 +208,8 @@ is internal, about exactly one topic entity, cites Record/Rollup keys and has no
 links. Existing stores stay on their own machinery. Topic activity reads current
 `interested_in` evidence directly, grouped by person with asserted times and
 source keys. Step 2 can record topic-account would-writes in its existing shadow
-receipts; it does not write the entry store. No live topic writer, withdrawal
-cascade, lineage rendering, search, or migration of other kinds is built.
+receipts; it does not write the entry store. No live topic writer, lineage rendering, search, or migration of other kinds
+is built.
 
 Each kind's rules get their named tests when that kind is built on
 the entry, as [05](../cognition-loop/05-data-model.md) §3 already requires.

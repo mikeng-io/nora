@@ -1,5 +1,30 @@
 # Changelog
 
+## [7.17.2](https://github.com/mikeng-io/nora/compare/v7.17.1...v7.17.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* **cognition:** carry the deployed session timeout into the claim backfill ([bc83d10](https://github.com/mikeng-io/nora/commit/bc83d10397d9baf8adb6cc80ea5675464923fa39))
+
+## [7.17.1](https://github.com/mikeng-io/nora/compare/v7.17.0...v7.17.1) (2026-11-10)
+
+
+### Features
+
+* **cognition:** execute subconscious sessions through DreamerRuntime under one due_tick authority ([34420c0](https://github.com/mikeng-io/nora/commit/34420c00fc8a0200c1d7df735dd0eb1c16de625b))
+
+
+### Bug Fixes
+
+* **cognition:** bound the pending read by a materialized set, not a scan ([9040393](https://github.com/mikeng-io/nora/commit/9040393d8d922b7a63d2cab4e5b069b2a7dc1110))
+* **cognition:** consume stimuli by claim rows, not an enumerated watermark ([749ab17](https://github.com/mikeng-io/nora/commit/749ab172d57144e2ee6a7453fe88c776d9ebbd47))
+* **cognition:** own session tasks on the Dreamer lane; exact arrivals; lossless bounds ([30ea66f](https://github.com/mikeng-io/nora/commit/30ea66fba9cd4aabae42e4a8a379bc01d880ad07))
+* **cognition:** restore session spending, due_tick authority and bounded reads ([8ff8baa](https://github.com/mikeng-io/nora/commit/8ff8baa22803657ebf38ca674bde9f8b506513cb))
+* **cognition:** serialize pending-set seeding with concurrent appends ([19be04b](https://github.com/mikeng-io/nora/commit/19be04ba274104c513a6e5296b4404d507c73cee))
+* **cognition:** type the session dispatch and run_agent defaults; lint clean ([6e7a66e](https://github.com/mikeng-io/nora/commit/6e7a66edc4afec27293310d99dcddd643d59aeae))
+* **evals:** make the run-budget guard and evidence joins hold on openai 3 and Strands 1.64 ([53c28a8](https://github.com/mikeng-io/nora/commit/53c28a82f03f1305c61213056a24a3684b3392b9))
+
 ## [7.17.0](https://github.com/mikeng-io/nora/compare/v7.16.7...v7.17.0) (2026-11-09)
 
 

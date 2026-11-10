@@ -237,6 +237,9 @@ APPEND_ONLY: dict[str, str] = {
     "cognition_wake_outcome": "recorded_at",
     "cognition_carry": "recorded_at",
     "stimulus_retraction": "recorded_at",
+    # The stimuli a wake claimed — the pending read's consumption fact
+    # (0151). One row per claimed stimulus, never revised.
+    "stimulus_claim": "recorded_at",
 }
 
 #: Changes in place and not yet migrated. Not restorable as of T; `nora
@@ -266,6 +269,10 @@ NOT_RESTORED: dict[str, str] = {
     "presence_corridor_speed": (
         "retired writer (design/27 §4.4 M2): nothing writes or reads it; table kept"
     ),
+    # 0151: a cache of «live and not permanently consumed», deleted on
+    # closed claims and retractions; `snapshot_at.seed` rebuilds it from the
+    # restored rows exactly as `view` would lazily seed it.
+    "stimulus_pending": "derived; snapshot_at.seed rebuilds it",
     # 0105_memory_index: a projection of the stores above, so a restore leaves
     # it empty and `memory_index_state` reads `never` until a rebuild.
     "memory_node": "derived; nora memory rebuild",
@@ -293,7 +300,7 @@ NOT_RESTORED: dict[str, str] = {
         "live scope-FIFO ledger; obligations of the running deployment, not replayed as of T"
     ),
     "browser_tasks": "live CDP target bindings; no restore holds tabs on absent VMs",
-    # 0150_fetched_pages: a 24h materialization of a public page — its bytes
+    # 0152_fetched_pages: a 24h materialization of a public page — its bytes
     # live in RustFS under `blob_key`; a restore re-fetches the url rather
     # than replaying a cache, and the row's own expires_at bounds it.
     "fetched_pages": "ephemeral page materialization; refetched on demand, never restored",

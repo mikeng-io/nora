@@ -55,7 +55,7 @@ from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
 _PG_UNIQUE_VIOLATION = "23505"
 
 
-def _row_to_event(r: Row[Any]) -> Gathering:
+def _row_to_event(r: Row[*tuple[Any, ...]]) -> Gathering:
     return normalise_gathering(
         Gathering(
             id=r.id,
@@ -91,7 +91,7 @@ def _row_to_event(r: Row[Any]) -> Gathering:
     )
 
 
-def _row_to_revision(r: Row[Any]) -> EventRevision:
+def _row_to_revision(r: Row[*tuple[Any, ...]]) -> EventRevision:
     return EventRevision(
         id=r.id,
         event_id=r.event_id,
@@ -121,7 +121,7 @@ def _row_to_revision(r: Row[Any]) -> EventRevision:
     )
 
 
-def _row_to_rsvp(r: Row[Any]) -> RSVP:
+def _row_to_rsvp(r: Row[*tuple[Any, ...]]) -> RSVP:
     return RSVP(
         event_id=r.event_id,
         person_id=r.person_id,

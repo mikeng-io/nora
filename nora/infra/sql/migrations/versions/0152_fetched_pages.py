@@ -8,11 +8,11 @@ provider-side facts the served slices keep (`provider`, `saved_copy`,
 `truncated`, `images`).
 
 The composite primary key IS the dedup: a repeated fetch of the same url in
-the same conversation replaces the row. Expiry is lazy — an expired row
-reads as a miss and the next fetch writes over it.
+the same conversation replaces the row. An expired row reads as a miss and
+the next materialization deletes it with its unheld bytes.
 
-Revision ID: 0150_fetched_pages
-Revises: 0149_computer_profile_merge
+Revision ID: 0152_fetched_pages
+Revises: 0151_stimulus_claims
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0150_fetched_pages"
-down_revision = "0149_computer_profile_merge"
+revision = "0152_fetched_pages"
+down_revision = "0151_stimulus_claims"
 branch_labels = None
 depends_on = None
 

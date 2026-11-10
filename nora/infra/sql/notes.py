@@ -127,7 +127,7 @@ log = logging.getLogger("nora.infra.sql.notes")
 _PG_UNIQUE_VIOLATION = "23505"
 
 
-def _row_to_note(r: Row[Any]) -> Note:
+def _row_to_note(r: Row[*tuple[Any, ...]]) -> Note:
     return Note(
         id=r.id, unit=r.unit, title=r.title, description=r.description,
         uncertainty=r.uncertainty, closing_condition=r.closing_condition,
@@ -231,7 +231,7 @@ def _newest(*values: int | None) -> int | None:
     return max(present) if present else None
 
 
-def _row_to_revision(r: Row[Any]) -> NoteRevision:
+def _row_to_revision(r: Row[*tuple[Any, ...]]) -> NoteRevision:
     return NoteRevision(
         id=r.rev_id, note_id=r.rev_note_id, body=r.body,
         parent_revision_id=r.parent_revision_id, written_at=r.written_at,
@@ -254,14 +254,14 @@ def _is_uuid(value: str) -> bool:
 
 #: The two proactive rows `merge_into`'s `_repoint_proactive_rows` is
 #: choosing between — `id`, `state`, `due_at`, `created_at`, keyed to the one
-#: note id each names. A `Row[Any]`, not `Reminder`: this reads only the four
+#: note id each names. A `Row[*tuple[Any, ...]]`, not `Reminder`: this reads only the four
 #: columns the choice and the cancel need, never the payload's own body or a
 #: full decode `_row_to_reminder`-shaped (that decoder lives in
 #: `nora.infra.sql.reminders`, and a note store importing it would import a
 #: sibling's private helper for four columns it can select itself).
 def _keep_open_row(
-    a: Row[Any], b: Row[Any],
-) -> tuple[Row[Any], Row[Any]]:
+    a: Row[*tuple[Any, ...]], b: Row[*tuple[Any, ...]],
+) -> tuple[Row[*tuple[Any, ...]], Row[*tuple[Any, ...]]]:
     """Which of two open proactive rows on notes a fold is about to make ONE
     note survives, and which is cancelled — `(keep, drop)`.
 
@@ -1374,7 +1374,7 @@ class SqlNoteStore:
 
     @staticmethod
     async def _repoint_row(
-        conn: AsyncConnection, *, row: Row[Any], survivor_id: str,
+        conn: AsyncConnection, *, row: Row[*tuple[Any, ...]], survivor_id: str,
         revision_id: str, on_reminder_outcome: Callable[[str], None] | None,
         outcome: str,
     ) -> None:

@@ -566,8 +566,8 @@ async def test_the_generated_schema_carries_the_field_descriptions():
     """The descriptions on the statement types reach the model through the
     generated tool schema: happened_at's quote-or-null contract sits beside
     the ISO relation fields it must not be confused with."""
+    from nora.agent.dreamer import VERB_CALLS as DEFAULT_TOOL_BUDGET
     from nora.agent.ports import ToolSpec, adapt
-    from nora.app.cognition_agent_runner import DEFAULT_TOOL_BUDGET
 
     captured = {}
 
@@ -841,8 +841,8 @@ async def test_replaying_the_same_statement_is_idempotent():
 async def test_memory_propose_schema_is_derived_from_the_proposal_types():
     """The tool spec is generated from the statement types: a field on the type
     appears in the generated schema."""
+    from nora.agent.dreamer import VERB_CALLS as DEFAULT_TOOL_BUDGET
     from nora.agent.ports import ToolSpec, adapt
-    from nora.app.cognition_agent_runner import DEFAULT_TOOL_BUDGET
 
     captured = {}
 

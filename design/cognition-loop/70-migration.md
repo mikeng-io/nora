@@ -14,6 +14,13 @@ edges:
 
 ## 1. Inside the Dreamer, not beside it
 
+**Delivery:** the runtime ownership stated in this section is built.
+Cognition's session executes as a Dreamer adaptor through
+`DreamerRuntime.dispatch`; [18](18-execution-and-time.md) owns the boundary,
+the shared clock and the delivery evidence. The historical steps below do not
+establish the Character/Lessons roster, which remains subject to
+[30](30-cognition.md)'s later three-step flow.
+
 The operator asked whether this is a great refactor or stays within the
 Dreamer. It stays within: the runtime that makes a background agent safe is
 kept, and what is replaced is how it is woken and how its work is divided.

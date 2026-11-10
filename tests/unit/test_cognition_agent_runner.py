@@ -1,4 +1,5 @@
-"""`LiveCognitionAgentRunner`: a failure or a timeout is
+"""`DreamerAgentRunner` — the session's model call through
+`DreamerRuntime.run_agent`: a failure or a timeout is
 RAISED, never swallowed into a normal `CognitionRunResult`.
 
 `CognitionSessionRunner` records a session `failed`/`timeout` only when the
@@ -6,7 +7,7 @@ model loop raises; a runner that returned `stop_reason=None` on an exception
 made a dead session read as one that ran, closed its items `waiting` with a
 strike, and moved the watermark past stimuli nobody looked at. Strands is not
 run: `factory.create_dream_agent` and `factory.invoke` are replaced, which is
-the seam the runner reaches the SDK through.
+the seam the runtime reaches the SDK through.
 """
 
 from __future__ import annotations
@@ -17,9 +18,11 @@ from typing import Any
 import pytest
 
 from nora.agent import factory
-from nora.app.cognition_agent_runner import LiveCognitionAgentRunner, as_strands_tools
+from nora.agent.dreamer import as_strands_tools
+from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import AdaptorBudget
 from nora.obs.metrics import Metrics
+from tests.fakes import dreamer_runtime_for
 
 
 class _Models:
@@ -27,9 +30,13 @@ class _Models:
         return object()
 
 
-def _runner(metrics: Metrics) -> LiveCognitionAgentRunner:
-    return LiveCognitionAgentRunner(
-        models=_Models(), retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+def _runner(metrics: Metrics) -> DreamerAgentRunner:
+    return DreamerAgentRunner(
+        runtime=dreamer_runtime_for(
+            models=_Models(),
+            retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+            metrics=metrics,
+        ),
         metrics=metrics,
     )
 
@@ -43,7 +50,7 @@ async def _tool(x: str) -> dict[str, object]:
     return {"status": "ok"}
 
 
-async def _run(runner: LiveCognitionAgentRunner, *, budget_seconds: float = 5.0) -> Any:
+async def _run(runner: DreamerAgentRunner, *, budget_seconds: float = 5.0) -> Any:
     return await runner.run(
         system_prompt="s", prompt="p", tools=[_tool],
         budget=AdaptorBudget(
@@ -154,7 +161,7 @@ def _raises(exc: BaseException) -> Any:
     return invoke
 
 
-async def _spent_by(runner: LiveCognitionAgentRunner) -> tuple[Any, Any]:
+async def _spent_by(runner: DreamerAgentRunner) -> tuple[Any, Any]:
     from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
     spend = TokenSpend()
     token = SESSION_TOKENS.set(spend)
@@ -179,6 +186,40 @@ async def test_a_loop_that_failed_timed_out_or_was_cut_off_leaves_what_it_spent(
     _spend_patch(monkeypatch, usage, _raises(exc))
     total, outcome = await _spent_by(_runner(Metrics()))
     assert total == 7500 and isinstance(outcome, type(exc))      # raised, not swallowed
+
+
+async def test_a_cancelled_loop_leaves_its_partial_record_and_its_spend(
+    monkeypatch,
+):
+    """The CANCELLED positive control: a loop cut off mid-turn has usage in
+    the agent and a PARTIAL retained Record — both must reach `spend`, or a
+    cancelled session writes no trace and no token count at all."""
+    usage = {"inputTokens": 7000, "outputTokens": 500, "totalTokens": 7500}
+    agent = _Agent(usage)
+    agent.messages = [{"role": "user", "content": [{"text": "the agenda"}]}]
+    monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: agent)
+
+    async def invoke(*args: Any, **kwargs: Any) -> Any:
+        # The partial turn: produced inside the loop, after the baseline.
+        agent.messages.append(
+            {"role": "assistant", "content": [{"text": "half a"}]}
+        )
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(factory, "invoke", invoke)
+
+    from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
+    spend = TokenSpend()
+    token = SESSION_TOKENS.set(spend)
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await _run(_runner(Metrics()))
+    finally:
+        SESSION_TOKENS.reset(token)
+    assert spend.total == 7500
+    assert spend.messages == (
+        {"role": "assistant", "content": [{"text": "half a"}]},
+    ), "the partial turn survived the cancel, not just its token count"
 
 
 async def test_a_loop_that_failed_with_no_usage_leaves_none_and_a_broken_reading_never_raises(

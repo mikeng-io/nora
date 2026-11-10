@@ -19,7 +19,7 @@ from nora.infra.sql.schema import SELF_TENSION
 __all__ = ["SqlTensionStore"]
 
 
-def _tension(row: sa.Row[Any]) -> Tension:
+def _tension(row: sa.Row[*tuple[Any, ...]]) -> Tension:
     return Tension(
         id=row.id, unit=row.unit, source=row.source, doctrine_file=row.doctrine_file,
         doctrine_line=row.doctrine_line, doctrine_text=row.doctrine_text,

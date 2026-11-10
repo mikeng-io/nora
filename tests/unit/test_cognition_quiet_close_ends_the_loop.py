@@ -19,8 +19,9 @@ import pytest
 from strands.models import Model
 
 from nora.agent import factory
-from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
+from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.obs.metrics import Metrics
+from tests.fakes import dreamer_runtime_for
 from tests.unit.cognition_rig import GOOD_BODY, NOTE, A, B, session
 from tests.unit.test_dream_memory_budget import _ScriptedModel
 
@@ -41,9 +42,11 @@ async def _run(
     script: list[str | None], inputs: list[str], *, rooms: tuple[Any, ...] = (A,),
 ) -> tuple[_ScriptedModel, Any]:
     model = _ScriptedModel(script, inputs=inputs)
-    runner = LiveCognitionAgentRunner(
-        models=_Models(model), metrics=Metrics(),
-        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+    runner = DreamerAgentRunner(
+        runtime=dreamer_runtime_for(
+            models=_Models(model), metrics=Metrics(),
+            retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+        ),
     )
 
     async def unused(by: dict[str, Any], tools: list[Any]) -> None:
@@ -142,10 +145,12 @@ class _BatchModel(Model):
 
 async def _run_batch(turns: list[Any]) -> tuple[_BatchModel, Any]:
     model = _BatchModel(turns)
-    runner = LiveCognitionAgentRunner(
-        models=_Models(model),  # type: ignore[arg-type]
-        metrics=Metrics(),
-        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+    runner = DreamerAgentRunner(
+        runtime=dreamer_runtime_for(
+            models=_Models(model),  # type: ignore[arg-type]
+            metrics=Metrics(),
+            retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+        ),
     )
 
     async def unused(by: dict[str, Any], tools: list[Any]) -> None:

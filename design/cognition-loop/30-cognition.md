@@ -33,6 +33,13 @@ edges:
 
 ## 0. The loop, as ruled 2026-10-28
 
+The execution owner is the subconscious Dreamer runtime; the target handoff,
+current sibling-runner gap and shared time contract are canonical in
+[18](18-execution-and-time.md). A wake policy makes Cognition eligible; it is
+not a second executor. The three-step work below retains its own agenda and
+committed-state handoffs. Runtime consolidation is unimplemented; sharing an
+agent factory today does not establish Dreamer ownership.
+
 Cognition is the **one background driver** (operator, 2026-10-28,
 [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §7, §9).
 Everything said and done keeps shaping memory, profiles and plans, so one loop

@@ -63,7 +63,13 @@ class SqlDreamScheduleClock:
                     DREAM_SCHEDULE_STATE.c.scope_id,
                 ],
                 set_={
-                    "last_fired_at": stmt.excluded.last_fired_at,
+                    # `greatest` keeps the stamp monotone: a backward
+                    # wall-clock move must not regress a recorded fire — a
+                    # slot the design marks consumed stays consumed (node 18).
+                    "last_fired_at": sa.func.greatest(
+                        stmt.excluded.last_fired_at,
+                        DREAM_SCHEDULE_STATE.c.last_fired_at,
+                    ),
                     "updated_at": sa.func.now(),
                 },
             ))

@@ -5405,6 +5405,11 @@ async def build_dependencies(
                     budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
                     result_caps=TOOL_RESULT_CAPS,
                     observations=observation_store,
+                    # Cognition hosted as a Dreamer adaptor (node 30): every
+                    # admitted wake is dispatched onto this runtime's lane —
+                    # the same instance `dream_loop` runs the other adaptors
+                    # through.
+                    runtime=dreamer_runtime,
                 )
             except (InstructionError, PreludeMissingError, SkillNotInstalledError) as exc:
                 # A missing or malformed `cognition` objective, a prelude it resolved

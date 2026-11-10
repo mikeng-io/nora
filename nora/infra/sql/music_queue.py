@@ -36,7 +36,7 @@ _PG_UNIQUE_VIOLATION = "23505"
 _MAX_ENQUEUE_ATTEMPTS = 20
 
 
-def _row_to_track(row: Row[Any]) -> QueuedTrack:
+def _row_to_track(row: Row[*tuple[Any, ...]]) -> QueuedTrack:
     return QueuedTrack(
         id=row.id, guild_id=row.guild_id, position=row.position, source=row.source,
         url=row.url, title=row.title, added_by_person_id=row.added_by_person_id,

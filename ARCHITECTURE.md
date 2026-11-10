@@ -66,6 +66,15 @@ room, including when queued work is delivered.
 
 Cognition processes stimuli and maintains working state, notes, events and
 reminders. The Dreamer supplies background research, including culture work.
+Cognition currently has a separate wake evaluator and session runner; it
+shares Dreamer's agent factory, tools and instruction infrastructure but does
+not execute through `DreamerRuntime.run`. The
+[execution and time design](design/cognition-loop/18-execution-and-time.md)
+consolidates subconscious execution under Dreamer and defines the shared clock
+beneath it and conscious turns. That runtime consolidation is not implemented.
+The reminder heartbeat drives deferred conscious fire turns; addressed turns
+continue through engagement.
+
 Voice and asynchronous compute are additional paths into this runtime, not
 independent copies of Nora's policy or memory.
 

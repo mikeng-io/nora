@@ -271,7 +271,7 @@ class LimitsConfig(BaseModel):
     `nora.agent.factory.build_limits`.
 
     None of the three is optional. A missing `output_tokens` would silently mean
-    "unbounded" to Strands (`_check_limits` skips a cap it cannot find).
+    "unbounded" to Strands (`_reached_own_limit` skips a cap it cannot find).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -3089,7 +3089,7 @@ class DreamBudgetConfig(BaseModel):
 
     `turns`/`total_tokens`/`output_tokens` are `LimitsConfig`'s three caps —
     R-8's, applied to a Dreamer run instead of a tag turn — and are three
-    fields for `LimitsConfig`'s own reason: Strands' `_check_limits` SKIPS a
+    fields for `LimitsConfig`'s own reason: Strands' `_reached_own_limit` SKIPS a
     cap it cannot find, so a missing one means "unbounded" rather than
     "default".
 

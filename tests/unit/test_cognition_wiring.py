@@ -22,7 +22,7 @@ from nora.agent import factory
 from nora.agent.dreamer import AdaptorGrant, cognition_grant
 from nora.agent.tools import NATIVE_TOOLS
 from nora.app import cognition_agent_runner as agent_runner_module
-from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
+from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import (
     AdaptorBudget,
     CognitionRunResult,
@@ -47,6 +47,7 @@ from nora.obs.metrics import Metrics
 from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder
 from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
+from tests.fakes import dreamer_runtime_for
 from tests.unit.cognition_view import blocks, items, named
 
 NOW = 1_790_000_000_000
@@ -435,14 +436,16 @@ def _patch_agent(monkeypatch: pytest.MonkeyPatch, invoke: Any) -> list[dict[str,
     return spans
 
 
-def _live(**kw: Any) -> LiveCognitionAgentRunner:
-    return LiveCognitionAgentRunner(
-        models=_Models(),
-        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0), **kw,
+def _live(**kw: Any) -> DreamerAgentRunner:
+    return DreamerAgentRunner(
+        runtime=dreamer_runtime_for(
+            models=_Models(), metrics=kw.pop("metrics", Metrics()),
+            retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+        ), **kw,
     )
 
 
-async def _go(runner: LiveCognitionAgentRunner) -> Any:
+async def _go(runner: DreamerAgentRunner) -> Any:
     return await runner.run(
         system_prompt="s", prompt="p", tools=[_tool("note_read"), _tool("close")],
         budget=AdaptorBudget(

@@ -98,7 +98,7 @@ async def test_extra_body_cannot_enlarge_the_ceiling():
     token = active_run_budget.set(budget)
     try:
         async with _client(requests) as client:
-            with pytest.raises(openai.APIConnectionError):
+            with pytest.raises(RunBudgetError):
                 await client.chat.completions.create(
                     model="m", max_tokens=200, messages=[{"role": "user", "content": "hi"}],
                     extra_body={"max_tokens": 50_000})
@@ -124,7 +124,7 @@ async def test_schema_expansion_counts_the_final_wire_bytes():
     token = active_run_budget.set(budget)
     try:
         async with _client(requests) as client:
-            with pytest.raises(openai.APIConnectionError):
+            with pytest.raises(RunBudgetError):
                 await client.beta.chat.completions.parse(
                     model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}],
@@ -146,7 +146,7 @@ async def test_negative_usage_is_terminal_never_credit():
         async with _client(requests, usage={
                 "prompt_tokens": -50, "completion_tokens": -30,
                 "total_tokens": -80}) as client:
-            with pytest.raises(openai.APIConnectionError):
+            with pytest.raises(RunBudgetError):
                 await client.chat.completions.create(
                     model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}])
@@ -246,7 +246,7 @@ async def test_sdk_owned_provider_dispatches_through_the_budget():
             model_id="m", max_tokens=100, temperature=0.0,
             http_client=httpx.AsyncClient(transport=transport))
         async with model._get_client() as client:   # the SDK-owned AsyncOpenAI
-            with pytest.raises(openai.APIConnectionError):
+            with pytest.raises(RunBudgetError):
                 await client.chat.completions.create(
                     model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}])
@@ -313,7 +313,7 @@ async def test_a_request_without_an_output_ceiling_refuses_before_http():
         client = factory.create_client(
             base_url="https://generated.invalid/v1", api_key="generated-key",
             http_client=httpx.AsyncClient(transport=transport))
-        with pytest.raises(openai.APIConnectionError):
+        with pytest.raises(RunBudgetError):
             await client.chat.completions.create(
                 model="m",
                 messages=[{"role": "user", "content": "hi"}])

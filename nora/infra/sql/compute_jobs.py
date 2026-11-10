@@ -21,7 +21,7 @@ from nora.domain.compute import (
 from nora.infra.sql.schema import COMPUTE_JOBS
 
 
-def _row_to_job(r: Row[Any]) -> ComputeJob:
+def _row_to_job(r: Row[*tuple[Any, ...]]) -> ComputeJob:
     return normalise_compute_job(
         ComputeJob(
             id=r.id, backend_job_id=r.backend_job_id, task=r.task,
