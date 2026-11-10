@@ -870,7 +870,7 @@ def test_the_goldens_vary_what_this_step_is_about():
         for part in parts:
             assert part in GOLDEN[name], (name, part)
     assert '<notes id_kind="real"/>' in GOLDEN["register-none-has-no-trailing-block"]
-    assert GOLDEN["register-none-has-no-trailing-block"].endswith("<tool_catalogue/>")
+    assert GOLDEN["register-none-has-no-trailing-block"].endswith("<documents/>")
     assert '<clock status="unavailable"/>' in GOLDEN["probe-no-clock-no-grounding"]
     assert "<m " not in GOLDEN["probe-no-clock-with-grounding-ignored"]
     assert "<notes/>" in GOLDEN["register-never-shown-in-a-probe"]

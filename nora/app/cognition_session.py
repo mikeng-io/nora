@@ -1367,7 +1367,6 @@ class CognitionSessionRunner:
             graph=state.graph_text if self._memory is not None else None,
             memory_items=state.memory_items,
             shared=shared_view,
-            tool_catalogue=surface.prompt_catalogue,
         )
         # Citation custody follows the actual emitted elements, never loaded rows.
         from xml.etree import ElementTree

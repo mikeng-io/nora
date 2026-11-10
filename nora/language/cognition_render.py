@@ -145,7 +145,6 @@ _BLOCKS: tuple[BlockDeclaration, ...] = (
         "detect documentation superseded by agenda evidence; "
         "read its current revision and revise it",
     ),
-    BlockDeclaration("tool_catalogue", 80, "which tool to reach for"),
 )
 
 #: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
@@ -1041,7 +1040,6 @@ def render_agenda(
     graph: str | None = None,
     memory_items: Mapping[int, Any] | None = None,
     shared: SharedView | None = None,
-    tool_catalogue: str = "",
 ) -> str:
     """The session's prompt. `stimuli` is the claimed stimuli by id (an item
     names its own by id), `grounding` what code read for them.
@@ -1057,7 +1055,7 @@ def render_agenda(
         else {
             d.name
             for d in _BLOCKS
-            if d.name not in {"agenda", "clock", "reads", "graph", "tool_catalogue"}
+            if d.name not in {"agenda", "clock", "reads", "graph"}
         }
     )
     if now is not None:
@@ -1176,10 +1174,6 @@ def render_agenda(
         failed.add("graph")
     elif graph:
         blocks.append(restamp(ContextBlock(name="graph", body=compose_body(escape(graph))), _ROW))
-    if tool_catalogue:
-        from nora.language.catalogue_render import render_tool_catalogue
-
-        blocks.append(render_tool_catalogue(tool_catalogue))
     return assemble_declared(_BLOCKS, blocks, unavailable=failed, sep=_SEP)
 
 

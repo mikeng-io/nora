@@ -305,7 +305,7 @@ def test_hostile_words_names_titles_labels_and_summaries_write_no_element():
     top = blocks(prompt)                                     # raises if not well-formed
     assert [b.tag for b in top] == [
         "profile", "clock", "reads", "rooms", "members", "transcript", "agenda",
-        "notes", "standing", "events", "memos", "graph", "lessons", "documents", "tool_catalogue",
+        "notes", "standing", "events", "memos", "graph", "lessons", "documents",
     ]
     agenda = items(prompt)
     assert len(agenda) == n_items and [i.attrib["index"] for i in agenda] == ["0", "1"]

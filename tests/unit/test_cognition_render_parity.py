@@ -262,7 +262,6 @@ def new_facts(text: str) -> Facts:
             "graph",
             "lessons",
             "documents",
-            "tool_catalogue",
         }:
             # This corpus predates the added sources: it supplies none of them.
             assert not list(block) and not (block.text or "").strip(), block.tag
