@@ -61,6 +61,15 @@ def expectation_verdict(answers: tuple[JudgeAnswer, ...]) -> ExpectationVerdict:
     if any(a.verdict == "error" for a in answers):
         return ExpectationVerdict(verdict=ERROR, answers=answers,
                                   detail="a judge could not answer")
+    if any(
+        a.verdict in ("met", "not_met")
+        and (not a.reason.strip() or not a.entry_ids)
+        for a in answers
+    ):
+        return ExpectationVerdict(
+            verdict=ERROR, answers=answers,
+            detail="a decidable answer needs a reason and a cited entry",
+        )
     verdicts = {a.verdict for a in answers}
     if verdicts == {"met"}:
         return ExpectationVerdict(verdict=PASS, answers=answers)

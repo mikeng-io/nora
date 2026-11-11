@@ -98,7 +98,7 @@ async def judge_one(
         identities = judges.served.get(model) or []
         served = (identities[-1].get("x-omniroute-model") if identities else None)
         expected = judges._endpoint(model)[2]
-        if served is not None and served != expected:
+        if served != expected:
             raise EvidenceError(
                 f"judge alias {model} was served by {served}, expected {expected}"
             )

@@ -12,11 +12,13 @@ import argparse
 import asyncio
 import json
 import sys
+import tomllib
 import uuid
 from pathlib import Path
 from tempfile import TemporaryFile
 from typing import Any
 
+from evals.subject_config import materialise
 from nora.config import load
 from nora.infra.sql.engine import create_sql_engine
 from nora.policy import load_policy
@@ -30,6 +32,7 @@ from nora.subject.eval_evidence import (
 )
 from scripts.cognition_loop.cases import Case, load_case
 from scripts.cognition_loop.run import run_case
+from scripts.cognition_loop.verdicts import ERROR, PASS, rollup
 from scripts.memory_graph_spike import (
     Judges,
     measured_run_budget,
@@ -56,6 +59,32 @@ def token_budget(cases: list[Case], per_wake: int) -> int:
     return sum(len(c.wakes) for c in cases) * per_wake
 
 
+def parse_overrides(pairs: list[str]) -> dict[str, Any]:
+    """`--override key=value` pairs, values TOML-typed (`a.b = 1` parses 1,
+    not "1")."""
+    out: dict[str, Any] = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep or not key.strip():
+            raise ValueError(f"--override takes key=value, got {pair!r}")
+        out[key.strip()] = tomllib.loads(f"x = {value}")["x"]
+    return out
+
+
+def run_status(cases: list[dict[str, Any]], evidence: dict[str, Any]) -> str:
+    """The run's verdict: the cases' own PASS/FAIL/REVIEW/ERROR rolled up
+    fail-closed, plus ERROR for unreadable or invalid evidence — never a
+    collapsed "done"."""
+    statuses = [
+        c.get("status") if c.get("status") in {PASS, "FAIL", "REVIEW", ERROR}
+        else ERROR
+        for c in cases
+    ]
+    if evidence.get("status") != PASS:
+        statuses.append(ERROR)
+    return rollup(*statuses) if statuses else ERROR
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     cases = [load_case(args.case)] if args.case else cases_in(args.case_dir)
     if args.smoke:
@@ -67,6 +96,16 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             f"wake(s) at {args.per_wake_tokens}/wake; the budget is "
             f"{args.token_budget} — refuse rather than start"
         )
+
+    # The config under test is the run's --config: materialise it into the
+    # `config.evaluation.toml` every subject composes, refusing when the
+    # generated file would differ from what the deployment runs — the same
+    # drift-check the standard eval entry runs before any case.
+    generated = materialise(
+        example=_REPO / "config.example.toml",
+        deployment=args.config,
+        target=_REPO / "config.evaluation.toml",
+    )
 
     from opentelemetry import trace
 
@@ -82,6 +121,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     judges = None if args.inspect_only else Judges(
         cfg, [args.judge_a, args.judge_b], args.config,
     )
+    args.deployment_workspace = cfg.honcho.workspace_id
+    args.run_id = f"cl-{uuid.uuid4().hex[:8]}"
     export = evaluation_export_for(args.config)
     _prefill_capture()
     with TemporaryFile() as lock:
@@ -90,6 +131,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             metadata={
                 **revision(_REPO),
                 "config_sha256": fingerprint(args.config),
+                "subject_config_sha256": fingerprint(generated),
+                "honcho_workspace": "per-case draw",
                 "token_budget": budget,
             },
             lock_fd=lock.fileno(),
@@ -111,19 +154,14 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                         ]
                 finally:
                     await source.dispose()
-            report["status"] = (
-                "ERROR"
-                if any(c["status"] == "ERROR" for c in report["cases"])
-                else "PASS"
-                if all(c["status"] == "PASS" for c in report["cases"])
-                else "DONE"
-            )
         finally:
             try:
                 receipt = validate_events(read_events(evidence.path))
             except Exception:  # noqa: BLE001 — unreadable evidence is an ERROR receipt
                 receipt = {"status": "ERROR", "causes": ["unreadable_record"]}
             report["evidence"] = {**receipt, "ref": evidence.path.name}
+            report["status"] = run_status(
+                report.get("cases", []), report["evidence"])
     (output / "report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n"
     )
@@ -150,7 +188,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--token-budget", type=int, default=4_000_000)
     parser.add_argument("--stop-after-tokens", type=int)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--override", action="append", default=[],
+                        metavar="KEY=VALUE",
+                        help="arm override applied to the composed subject's config")
     args = parser.parse_args(argv)
+    try:
+        args.overrides = parse_overrides(args.override)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.case is None and args.case_dir is None:
         parser.error("one of --case or --case-dir is required")
     report = asyncio.run(run(args))
