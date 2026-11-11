@@ -150,8 +150,7 @@ def speaker(cfg, doctrine_store, metrics) -> SpeakerWiring:
             log.warning(
                 "[speech.tts] enabled but provider=%r or %s unset — no speaker "
                 "is wired; voice answers stay text-only",
-                cfg.speech.tts.provider,
-                cfg.speech.tts.api_key_env,
+                cfg.speech.tts.provider, cfg.speech.tts.api_key_env,
             )
     return SpeakerWiring(speaker=speaker)
 

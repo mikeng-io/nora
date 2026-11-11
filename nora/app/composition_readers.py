@@ -140,8 +140,7 @@ def google_credentials(cfg: Config, *, metrics: Any)-> GoogleCredentials | None:
     if missing:
         log.warning(
             "[google] %s unset; every Google service answers unavailable (run "
-            "scripts/google_auth.py, put the values in .env)",
-            ", ".join(missing),
+            "scripts/google_auth.py, put the values in .env)", ", ".join(missing),
         )
         return None
     client_id, client_secret, refresh_token = values
