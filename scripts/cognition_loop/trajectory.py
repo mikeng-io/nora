@@ -1,12 +1,13 @@
 """One wake's full trajectory, sliced out of the run's evidence events.
 
-The subject's session records `nora.session.started` (the assembled
-system prompt, agenda, items, stimuli and instruction text), every
-`nora.model.request`/`transport_response` (request body, response,
-usage, reasoning availability), every `tool_started`/`tool_finished`
-(arguments, result, refusal), and `nora.session.terminal` (stop
-reason). The trajectory serialises those events per wake — the verdict's
-evidence — without re-deriving them from logs.
+Production serialises each session event's fields inside the JSON
+`attributes.body` — `nora.session.started` (system prompt, agenda,
+items, stimuli), `nora.session.instructions` (doctrine and skill
+versions), `nora.session.terminal` (outcome, error, bound) — while a
+`nora.model.request` carries `nora.model.request.body`. A trajectory is
+bound to its session: the window opens at the `started` whose body
+names this session and wake, and closes at its `terminal`. A wake with
+no session produces an empty trajectory — never the previous wake's.
 """
 
 from __future__ import annotations
@@ -16,17 +17,43 @@ from typing import Any
 
 from scripts.memory_graph_spike import evidence_exchanges
 
-SESSION_EVENT_NAMES = {
-    "nora.session.started", "nora.model.request", "nora.session.terminal",
-}
+
+def _body(event: dict[str, Any]) -> dict[str, Any]:
+    attrs = event.get("attributes") or {}
+    raw = attrs.get("body") or attrs.get("nora.model.request.body")
+    if not raw:
+        return {}
+    try:
+        out = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return out if isinstance(out, dict) else {}
 
 
-def session_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The events of the last session on the record."""
-    starts = [
-        i for i, e in enumerate(events) if e.get("name") == "nora.session.started"
-    ]
-    return events[starts[-1]:] if starts else []
+def session_events(
+    events: list[dict[str, Any]], *, session_id: str | None,
+    wake_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """The events from the `started` naming `session_id`/`wake_id` to its
+    `terminal`, inclusive. No matching session: empty."""
+    start = None
+    for i, event in enumerate(events):
+        if event.get("name") != "nora.session.started":
+            continue
+        body = _body(event)
+        if body.get("session_id") == session_id and (
+            wake_id is None or body.get("wake_id") == wake_id
+        ):
+            start = i
+    if start is None:
+        return []
+    out: list[dict[str, Any]] = []
+    for event in events[start:]:
+        out.append(event)
+        if (event.get("name") == "nora.session.terminal"
+                and _body(event).get("session_id") == session_id):
+            break
+    return out
 
 
 def wake_trajectory(
@@ -34,15 +61,21 @@ def wake_trajectory(
     session_id: str | None, tokens: int | None,
 ) -> dict[str, Any]:
     """The session's events for one wake, grouped for a judge to read."""
-    started = _last(events, "nora.session.started")
-    terminal = _last(events, "nora.session.terminal")
+    started: dict[str, Any] = {}
+    instructions: dict[str, Any] = {}
+    terminal: dict[str, Any] = {}
     model: list[dict[str, Any]] = []
     tools: list[dict[str, Any]] = []
     for entry in events:
         name = entry.get("name")
-        attrs = entry.get("attributes") or {}
-        if name == "nora.model.request":
-            model.append(json.loads(attrs["nora.model.request.body"]))
+        if name == "nora.session.started":
+            started = _body(entry)
+        elif name == "nora.session.instructions":
+            instructions = _body(entry)
+        elif name == "nora.session.terminal":
+            terminal = _body(entry)
+        elif name == "nora.model.request":
+            model.append(_body(entry))
         elif entry.get("kind") == "tool_finished":
             use = entry.get("tool") or {}
             tools.append({
@@ -56,29 +89,15 @@ def wake_trajectory(
         "wake_id": wake_id,
         "session_id": session_id,
         "blocks": {
-            "system": _attr(started, "system"),
-            "agenda": _attr(started, "agenda"),
-            "items": _attr(started, "items"),
-            "stimuli": _attr(started, "stimuli"),
-            "instructions": _attr(started, "instructions"),
+            "system": started.get("system"),
+            "agenda": started.get("agenda"),
+            "items": started.get("items"),
+            "stimuli": started.get("stimuli"),
+            "instructions": instructions or None,
         },
         "model_calls": model,
         "exchanges": evidence_exchanges(events),
         "tool_calls": tools,
-        "stop_reason": _attr(terminal, "stop_reason") or _attr(terminal, "outcome"),
+        "stop_reason": terminal.get("outcome") or terminal.get("stop_reason"),
         "usage": {"tokens": tokens},
     }
-
-
-def _last(events: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
-    found = None
-    for entry in events:
-        if entry.get("name") == name:
-            found = entry
-    return found
-
-
-def _attr(entry: dict[str, Any] | None, key: str) -> Any:
-    if entry is None:
-        return None
-    return (entry.get("attributes") or {}).get(key)

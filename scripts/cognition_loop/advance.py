@@ -60,11 +60,15 @@ class AdvanceReport:
 
     at_ms: int
     written: dict[str, int] = field(default_factory=dict)
+    #: The `table_name` of every `row_history` row copied — the receipt
+    #: checks each one, never the aggregate "row_history" key alone.
+    history_tables: frozenset[str] = frozenset()
 
     def wrote_only_record(self) -> bool:
         record = {*RECORD_HISTORY_TABLES, *RECORD_APPEND_TABLES,
                   "stimulus", "row_history"}
-        return set(self.written) <= record
+        return (set(self.written) <= record
+                and self.history_tables <= set(RECORD_HISTORY_TABLES))
 
 
 async def bump_sequences(source: AsyncEngine, target: AsyncEngine) -> None:
@@ -105,12 +109,15 @@ async def advance_record(
         ))
         for table in RECORD_HISTORY_TABLES:
             written[table] = await _replay_history(src, dst, table, prev, at)
-        written["row_history"] = await _copy_history(src, dst, prev, at)
+        copied, tables = await _copy_history(src, dst, prev, at)
+        written["row_history"] = copied
         for table in RECORD_APPEND_TABLES:
             written[table] = await _copy_appended(src, dst, table, at)
         written["stimulus"] = await _copy_stimuli(src, dst, at)
         await snapshot_at._rebuild_derived(dst)
-    return AdvanceReport(at_ms=at_ms, written={k: v for k, v in written.items() if v})
+    return AdvanceReport(
+        at_ms=at_ms, history_tables=tables,
+        written={k: v for k, v in written.items() if v})
 
 
 def _dt(ms: int) -> datetime:
@@ -151,18 +158,28 @@ async def _replay_history(
     return touched
 
 
+async def _history_window(
+    src: AsyncConnection, prev: datetime, at: datetime,
+) -> list[Any]:
+    """Record-table history rows in the window — derived stores' chains
+    are never a candidate's to copy."""
+    return list((await src.execute(
+        sa.select(ROW_HISTORY).where(
+            ROW_HISTORY.c.recorded_at > prev,
+            ROW_HISTORY.c.recorded_at <= at,
+            ROW_HISTORY.c.table_name.in_(RECORD_HISTORY_TABLES),
+        ).order_by(ROW_HISTORY.c.id)
+    )).mappings().all())
+
+
 async def _copy_history(
     src: AsyncConnection, dst: AsyncConnection, prev: datetime, at: datetime,
-) -> int:
-    rows = (await src.execute(
-        sa.select(ROW_HISTORY).where(
-            ROW_HISTORY.c.recorded_at > prev, ROW_HISTORY.c.recorded_at <= at,
-        ).order_by(ROW_HISTORY.c.id)
-    )).mappings().all()
+) -> tuple[int, frozenset[str]]:
+    rows = await _history_window(src, prev, at)
     stmt = pg_insert(ROW_HISTORY).on_conflict_do_nothing(index_elements=["id"])
     for chunk in (rows[i:i + 2000] for i in range(0, len(rows), 2000)):
         await dst.execute(stmt, [dict(r) for r in chunk])
-    return len(rows)
+    return len(rows), frozenset(r["table_name"] for r in rows)
 
 
 async def _copy_appended(
