@@ -1,4 +1,4 @@
-"""presence_fixes — the presence collector's record (design/self-awareness/presence.md, §8)
+"""presence_fixes — the presence collector's record (design/self-awareness/presence.md)
 
 A second table in the SAME `nora` database as `messages` (design/cognition-loop/data.md), PLAINTEXT
 (DEC-54). It joins everything else on `person_id`, which is why presence lives
