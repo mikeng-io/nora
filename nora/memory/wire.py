@@ -21,12 +21,17 @@ from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.standing_ledger import SqlStandingLedger
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
+from nora.memory.adapters.tools.session import session_verbs as _session_verbs
 
 """Compose this area's tool adapters from shared dependencies."""
 
 
 def tool_specs(deps):
     return _build(deps)
+
+
+def session_verbs(deps):
+    return _session_verbs(deps)
 
 
 def make_resolve(deps):

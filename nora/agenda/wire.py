@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from nora.agenda.adapters.tools import build as _build
+from nora.agenda.adapters.tools.session import session_verbs as _session_verbs
 from nora.app.composition_helpers import _room_claims
 from nora.app.gatherings import GatheringService
 from nora.domain.live import LiveMapping
@@ -14,6 +15,10 @@ from nora.infra.sql.reminders import SqlReminderStore
 
 def tool_specs(deps):
     return _build(deps)
+
+
+def session_verbs(deps):
+    return _session_verbs(deps)
 
 
 @dataclass(frozen=True)
