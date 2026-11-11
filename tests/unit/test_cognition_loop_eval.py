@@ -7,6 +7,7 @@ contract suite binds to the real SQL stores.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -52,27 +53,43 @@ def _case() -> Any:
 
 
 def test_both_judges_met_is_pass():
-    v = expectation_verdict((JudgeAnswer("met"), JudgeAnswer("met")))
+    v = expectation_verdict((
+        JudgeAnswer("met", reason="the note is there", entry_ids=("note:1",)),
+        JudgeAnswer("met", reason="created this wake", entry_ids=("note:1",)),
+    ))
     assert v.verdict == PASS
 
 
 def test_both_judges_not_met_is_fail():
-    v = expectation_verdict((JudgeAnswer("not_met"), JudgeAnswer("not_met")))
+    v = expectation_verdict((
+        JudgeAnswer("not_met", reason="the note is absent",
+                    entry_ids=("note:1",)),
+        JudgeAnswer("not_met", reason="no created entry",
+                    entry_ids=("note:1",)),
+    ))
     assert v.verdict == FAIL
 
 
 def test_disagreement_is_review():
-    assert expectation_verdict(
-        (JudgeAnswer("met"), JudgeAnswer("not_met"))).verdict == REVIEW
-    assert expectation_verdict(
-        (JudgeAnswer("met"), JudgeAnswer("cannot_tell"))).verdict == REVIEW
+    cited = ("note:1",)
+    assert expectation_verdict((
+        JudgeAnswer("met", reason="a", entry_ids=cited),
+        JudgeAnswer("not_met", reason="b", entry_ids=cited),
+    )).verdict == REVIEW
+    assert expectation_verdict((
+        JudgeAnswer("met", reason="a", entry_ids=cited),
+        JudgeAnswer("cannot_tell"),
+    )).verdict == REVIEW
     assert expectation_verdict(
         (JudgeAnswer("cannot_tell"), JudgeAnswer("cannot_tell"))
     ).verdict == REVIEW
 
 
 def test_a_judge_error_is_error_and_error_never_passes():
-    v = expectation_verdict((JudgeAnswer("met"), JudgeAnswer("error")))
+    v = expectation_verdict((
+        JudgeAnswer("met", reason="a", entry_ids=("note:1",)),
+        JudgeAnswer("error"),
+    ))
     assert v.verdict == ERROR
     assert rollup(ERROR, PASS, PASS) == ERROR
     assert rollup(PASS, REVIEW, FAIL) == FAIL
@@ -321,7 +338,7 @@ def test_a_live_sender_is_a_refusal():
 
 def test_a_bridge_runtime_is_a_refusal():
     from scripts.cognition_loop.egress import assert_no_egress
-    with pytest.raises(EvidenceError, match="bridge runtime"):
+    with pytest.raises(EvidenceError, match="bridge_runtime"):
         assert_no_egress(_subject(bridge_runtime=object()))
 
 
@@ -363,3 +380,452 @@ async def test_over_budget_refuses_before_starting(monkeypatch, tmp_path):
     )
     with pytest.raises(ValueError, match="refuse rather than start"):
         await cli.run(args)
+
+
+# --------------------------------------------------------------------------
+# no-egress guard is fail-closed
+# --------------------------------------------------------------------------
+
+
+def test_the_egress_guard_refuses_every_delivery_worker():
+    from scripts.cognition_loop.egress import assert_no_egress
+
+    for worker in ("fire_path", "dispatcher", "social_poller",
+                   "computer_lifecycle", "bridge_runtime"):
+        subject = _subject(**{worker: object()})
+        with pytest.raises(EvidenceError, match=worker):
+            assert_no_egress(subject)
+
+
+def test_the_egress_guard_refuses_a_real_sender_on_any_platform():
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop.egress import assert_no_egress
+
+    class RealSender:
+        pass
+
+    for platform in ("signal", "discord", "instagram", "whatsapp", "anychat"):
+        subject = _subject(
+            adapters={platform: SimpleNamespace(_sender=RealSender())})
+        with pytest.raises(EvidenceError, match="senders"):
+            assert_no_egress(subject)
+
+
+def test_the_egress_guard_passes_only_when_everything_is_landed():
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop.egress import assert_no_egress
+
+    class LandedSignalSender:
+        pass
+
+    subject = _subject(
+        adapters={"signal": SimpleNamespace(_sender=LandedSignalSender())})
+    report = assert_no_egress(subject)
+    assert not any(report["workers"].values())
+
+
+# --------------------------------------------------------------------------
+# advance copies Record history only
+# --------------------------------------------------------------------------
+
+
+def test_the_advance_receipt_checks_each_history_table_name():
+    from scripts.cognition_loop.advance import (
+        RECORD_HISTORY_TABLES,
+        AdvanceReport,
+    )
+
+    assert AdvanceReport(
+        at_ms=1, written={"row_history": 3},
+        history_tables=frozenset(RECORD_HISTORY_TABLES[:2]),
+    ).wrote_only_record()
+    assert not AdvanceReport(
+        at_ms=1, written={"row_history": 4},
+        history_tables=frozenset({"messages", "note"}),
+    ).wrote_only_record()
+
+
+async def test_the_history_window_skips_derived_tables(pg_url):
+    from datetime import UTC, datetime
+
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from scripts.cognition_loop.advance import _history_window
+
+    engine = create_async_engine(pg_url)
+    try:
+        moment = datetime(2025, 1, 2, tzinfo=UTC)
+        async with engine.begin() as conn:
+            for table_name, row_key in (
+                ("messages", {"id": 1}),
+                ("note", {"id": 2}),
+                ("platform_observation", {"id": 3}),
+                ("relation", {"id": 4}),
+            ):
+                await conn.execute(sa.text(
+                    "INSERT INTO row_history (table_name, row_key, op, image,"
+                    " recorded_at) VALUES (:t, CAST(:k AS jsonb), 'insert',"
+                    " '{}'::jsonb, :ts)"
+                ), {"t": table_name, "k": __import__("json").dumps(row_key),
+                    "ts": moment})
+        async with engine.connect() as conn:
+            rows = await _history_window(
+                conn,
+                datetime(2025, 1, 1, tzinfo=UTC),
+                datetime(2025, 1, 3, tzinfo=UTC),
+            )
+        assert {r["table_name"] for r in rows} == {
+            "messages", "platform_observation",
+        }
+    finally:
+        await engine.dispose()
+
+
+# --------------------------------------------------------------------------
+# the config under test is bound
+# --------------------------------------------------------------------------
+
+
+def test_overrides_parse_key_value_pairs_with_toml_types():
+    from scripts.cognition_loop.__main__ import parse_overrides
+
+    assert parse_overrides(
+        ["cognition.enabled=false", "llm.model=\"claude-test\"", "wake.x=1.5"]
+    ) == {
+        "cognition.enabled": False, "llm.model": "claude-test", "wake.x": 1.5,
+    }
+    with pytest.raises(ValueError, match="key=value"):
+        parse_overrides(["not-a-pair"])
+
+
+async def test_compose_binds_arm_overrides_and_disables_delivery(
+    monkeypatch, tmp_path,
+):
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop import run as run_mod
+
+    captured = {}
+
+    async def fake_obtain(spec):
+        captured["spec"] = spec
+        return SimpleNamespace(spec=spec)
+
+    monkeypatch.setattr(run_mod, "obtain", fake_obtain)
+    args = SimpleNamespace(
+        workdir=str(tmp_path),
+        overrides={"llm.model": "claude-arm"},
+    )
+    room = SimpleNamespace(platform="signal", primary_id="room-1")
+    await run_mod._compose(
+        args, "postgresql+asyncpg://x", 1_700_000_000_000, room,
+        "policy", "identity", workspace="nora-eval-run-case-abc",
+    )
+    overrides = captured["spec"].overrides
+    assert overrides["llm.model"] == "claude-arm"
+    assert overrides["computer.enabled"] is False
+    assert overrides["computer.scoped.enabled"] is False
+    assert overrides["honcho.workspace_id"] == "nora-eval-run-case-abc"
+
+
+# --------------------------------------------------------------------------
+# trajectories bind to their own wake
+# --------------------------------------------------------------------------
+
+
+def _session(name: str, **body):
+    import json
+
+    return {
+        "kind": "event",
+        "name": name,
+        "attributes": {"body": json.dumps(body)},
+    }
+
+
+def test_a_trajectory_binds_to_its_own_session_not_the_last_one():
+    from scripts.cognition_loop.trajectory import (
+        session_events,
+        wake_trajectory,
+    )
+
+    events = [
+        _session("nora.session.started", session_id="s-old", wake_id=10,
+                 system="OLD PROMPT", agenda={"a": 1}),
+        _session("nora.session.terminal", session_id="s-old", wake_id=10,
+                 outcome="session_end"),
+        _session("nora.session.started", session_id="s-new", wake_id=11,
+                 system="NEW PROMPT", agenda={"a": 2}),
+        _session("nora.session.instructions", doctrine_sha256="abc"),
+        _session("nora.session.terminal", session_id="s-new", wake_id=11,
+                 outcome="budget"),
+    ]
+    bound = session_events(events, session_id="s-new", wake_id=11)
+    trajectory = wake_trajectory(
+        bound, wake_id=11, session_id="s-new", tokens=None)
+    assert trajectory["blocks"]["system"] == "NEW PROMPT"
+    assert trajectory["blocks"]["instructions"] == {"doctrine_sha256": "abc"}
+    assert trajectory["stop_reason"] == "budget"
+
+
+def test_an_empty_agenda_wake_gets_an_empty_trajectory():
+    from scripts.cognition_loop.trajectory import (
+        session_events,
+        wake_trajectory,
+    )
+
+    events = [
+        _session("nora.session.started", session_id="s-old", wake_id=10,
+                 system="OLD PROMPT"),
+        _session("nora.session.terminal", session_id="s-old", wake_id=10,
+                 outcome="session_end"),
+    ]
+    bound = session_events(events, session_id=None, wake_id=None)
+    assert bound == []
+    trajectory = wake_trajectory(
+        bound, wake_id=11, session_id=None, tokens=None)
+    assert trajectory["blocks"]["system"] is None
+    assert trajectory["model_calls"] == []
+    assert trajectory["stop_reason"] is None
+
+
+# --------------------------------------------------------------------------
+# run verdicts are fail-closed
+# --------------------------------------------------------------------------
+
+
+def test_run_status_keeps_fail_and_review_and_folds_evidence_error():
+    from scripts.cognition_loop.__main__ import run_status
+
+    ok = {"status": "PASS"}
+    assert run_status([{"status": "FAIL"}, {"status": "PASS"}], ok) == "FAIL"
+    assert run_status(
+        [{"status": "REVIEW"}, {"status": "PASS"}], ok) == "REVIEW"
+    assert run_status([{"status": "PASS"}], ok) == "PASS"
+    assert run_status(
+        [{"status": "PASS"}], {"status": "ERROR"}) == "ERROR"
+    assert run_status([{"status": "DONE"}, {"status": "PASS"}], ok) == "ERROR"
+    assert run_status([], ok) == "ERROR"
+
+
+# --------------------------------------------------------------------------
+# a pass needs grounded, identified judges
+# --------------------------------------------------------------------------
+
+
+class _FakeJudges:
+    def __init__(self, *, text: str, header: str | None, routed: str):
+        self._text = text
+        self._header = header
+        self._routed = routed
+        self.served: dict[str, list[dict[str, str]]] = {}
+
+    def _endpoint(self, model: str):
+        return ("http://x", "key", self._routed)
+
+    async def call(self, model, instruction, payload):
+        if self._header is not None:
+            self.served.setdefault(model, []).append(
+                {"x-omniroute-model": self._header})
+        return self._text
+
+
+async def test_a_missing_served_header_is_an_error_answer():
+    from scripts.cognition_loop.judges import judge_one
+
+    judges = _FakeJudges(
+        text='{"verdict": "met", "reason": "x", "entry_ids": ["note:1"]}',
+        header=None, routed="routed-model",
+    )
+    answer = await judge_one(judges, "alias", {})
+    assert answer.verdict == "error"
+
+
+async def test_a_wrong_served_header_is_an_error_answer():
+    from scripts.cognition_loop.judges import judge_one
+
+    judges = _FakeJudges(
+        text='{"verdict": "met", "reason": "x", "entry_ids": ["note:1"]}',
+        header="different-model", routed="routed-model",
+    )
+    answer = await judge_one(judges, "alias", {})
+    assert answer.verdict == "error"
+
+
+def test_an_ungrounded_met_is_error_never_pass():
+    assert expectation_verdict((
+        JudgeAnswer("met", reason="because", entry_ids=()),
+        JudgeAnswer("met", reason="because", entry_ids=("note:1",)),
+    )).verdict == ERROR
+    assert expectation_verdict((
+        JudgeAnswer("met", reason="", entry_ids=("note:1",)),
+        JudgeAnswer("met", reason="because", entry_ids=("note:1",)),
+    )).verdict == ERROR
+    assert expectation_verdict((
+        JudgeAnswer("met"), JudgeAnswer("met"),
+    )).verdict == ERROR
+
+
+# --------------------------------------------------------------------------
+# the graph-only scorer stays retired
+# --------------------------------------------------------------------------
+
+
+def test_the_graph_only_scorer_and_its_entries_stay_retired():
+    from scripts import memory_graph_spike as spike
+
+    for name in ("run", "run_rescore", "run_diagnostic",
+                 "spike_contract", "report_exit"):
+        assert not hasattr(spike, name), name
+    with pytest.raises(SystemExit, match="retired"):
+        spike.main()
+
+
+# --------------------------------------------------------------------------
+# state diffs scope to the unit's rooms
+# --------------------------------------------------------------------------
+
+
+def test_reminders_scope_to_the_units_rooms_not_a_unit_fallback():
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop.state import reminder_in_rooms
+
+    rooms = [("signal", "room-a")]
+    ours = SimpleNamespace(platform="signal", conversation_id="room-a")
+    foreign = SimpleNamespace(platform="signal", conversation_id="room-b")
+    no_unit = SimpleNamespace(platform="discord", conversation_id="room-a")
+    assert reminder_in_rooms(ours, rooms)
+    assert not reminder_in_rooms(foreign, rooms)
+    assert not reminder_in_rooms(no_unit, rooms)
+
+
+def test_profile_keys_cover_every_room_of_the_unit():
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop.run import _profile_keys
+
+    convos = [
+        SimpleNamespace(unit="u1", platform="signal", persons={"alice"}),
+        SimpleNamespace(unit="u1", platform="discord", persons={"bob"}),
+        SimpleNamespace(unit="u2", platform="signal", persons={"carol"}),
+    ]
+    allowlist = SimpleNamespace(rooms=lambda: convos)
+    subject = SimpleNamespace(
+        deps=SimpleNamespace(config_reload=SimpleNamespace(policy=allowlist),
+                             persons=SimpleNamespace(by_person={})),
+    )
+    keys = _profile_keys(subject, "u1")
+    assert any(k.endswith(":alice") for k in keys)
+    assert any(k.endswith(":bob") for k in keys)
+    assert not any(k.endswith(":carol") for k in keys)
+
+
+# --------------------------------------------------------------------------
+# recorded wakes validate unit and order
+# --------------------------------------------------------------------------
+
+
+def test_recorded_wakes_must_be_the_cases_unit_and_ordered():
+    from scripts.cognition_loop.run import validate_recorded_wakes
+
+    assert validate_recorded_wakes(
+        [(1, "u1", 100), (2, "u1", 200)], "u1") is None
+    assert "u2" in validate_recorded_wakes(
+        [(1, "u1", 100), (2, "u2", 200)], "u1")
+    assert "does not follow" in validate_recorded_wakes(
+        [(1, "u1", 200), (2, "u1", 200)], "u1")
+    assert "does not follow" in validate_recorded_wakes(
+        [(1, "u1", 300), (2, "u1", 200)], "u1")
+
+
+def test_run_materialises_the_config_and_folds_the_status(
+    monkeypatch, tmp_path,
+):
+    import sys
+    import types
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    import scripts.cognition_loop.__main__ as cli
+
+    case_file = tmp_path / "case.json"
+    write_case(generated_case(), case_file)
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("x = 1\n")
+    materialised: dict[str, Any] = {}
+
+    def fake_materialise(**kwargs):
+        materialised.update(kwargs)
+        out = tmp_path / "config.evaluation.toml"
+        out.write_text("x = 1\n")
+        return out
+
+    monkeypatch.setattr(cli, "materialise", fake_materialise)
+    monkeypatch.setattr(cli, "load", lambda path: SimpleNamespace(
+        store=SimpleNamespace(database_url_env="E"),
+        honcho=SimpleNamespace(workspace_id="deploy-ws"),
+    ))
+    monkeypatch.setattr(cli, "snapshot_only", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "private_directory", lambda p: p)
+    monkeypatch.setattr(cli, "Judges", lambda *a, **k: SimpleNamespace())
+    monkeypatch.setattr(cli, "evaluation_export_for", lambda p: None)
+    monkeypatch.setattr(cli, "load_policy", lambda p: SimpleNamespace())
+    monkeypatch.setattr(cli, "read_events", lambda p: [])
+    monkeypatch.setattr(cli, "validate_events", lambda e: {"status": "PASS"})
+    monkeypatch.setattr(
+        cli, "create_sql_engine",
+        lambda url: SimpleNamespace(dispose=_async_noop()))
+    monkeypatch.setitem(
+        sys.modules, "nora.secret",
+        SimpleNamespace(credentials=lambda: {"E": "cred"}))
+    backbone = types.ModuleType("evals.backbone")
+    backbone._prefill_capture = lambda: None
+    monkeypatch.setitem(sys.modules, "evals.backbone", backbone)
+
+    @contextmanager
+    def _noop_ctx(*a, **k):
+        yield
+
+    class _Evidence:
+        def __init__(self, **kwargs):
+            self.path = tmp_path / "events.jsonl"
+            self.path.write_text("")
+
+        capture = staticmethod(_noop_ctx)
+
+    monkeypatch.setattr(cli, "RunEvidence", _Evidence)
+    monkeypatch.setattr(cli, "measured_run_budget",
+                        lambda *a, **k: _noop_ctx())
+    monkeypatch.setattr(cli, "run_case", _async_result({"status": "FAIL"}))
+
+    args = SimpleNamespace(
+        case=case_file, case_dir=None, smoke=False,
+        per_wake_tokens=1, token_budget=10,
+        config=config_file, policy=None, identity=None,
+        database_url="postgresql+asyncpg://x", snapshot=True,
+        output=tmp_path, judge_a="a", judge_b="b",
+        inspect_only=False, overrides={},
+    )
+    report = asyncio.run(cli.run(args))
+    # A different --config is a different subject: it is what gets
+    # materialised into the config every case composes.
+    assert materialised["deployment"] == config_file
+    assert materialised["target"].name == "config.evaluation.toml"
+    # The case's own verdict reaches the report unchanged — never "done".
+    assert report["status"] == "FAIL"
+
+
+def _async_noop():
+    async def _noop(*a, **k):
+        return None
+    return _noop
+
+
+def _async_result(value):
+    async def _call(*a, **k):
+        return value
+    return _call
