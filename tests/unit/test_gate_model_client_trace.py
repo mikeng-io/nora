@@ -27,6 +27,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from nora.app import raw_clients
+from nora.app.raw_clients import _RelevanceGateModelClient
+
 pytestmark = pytest.mark.anyio
 
 
@@ -82,9 +85,7 @@ class _FakeClient:
 
 
 def _gate_client(client):
-    from nora.app import composition
-
-    return composition._RelevanceGateModelClient(
+    return _RelevanceGateModelClient(
         client=client, model="nora-gate", max_tokens=512,
         temperature=0.0, timeout_seconds=20.0, reasoning_effort="none",
     )
@@ -107,8 +108,6 @@ async def test_the_gate_client_annotates_what_the_provider_returned(monkeypatch)
     the test that DOES read back a real Strands span, against a patched
     provider.
     """
-    from nora.app import composition
-
     captured: dict = {}
 
     def _fake_start(**kwargs):
@@ -117,8 +116,8 @@ async def test_the_gate_client_annotates_what_the_provider_returned(monkeypatch)
     def _fake_end(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr(composition, "start_raw_model_span", _fake_start)
-    monkeypatch.setattr(composition, "end_raw_model_span", _fake_end)
+    monkeypatch.setattr(raw_clients, "start_raw_model_span", _fake_start)
+    monkeypatch.setattr(raw_clients, "end_raw_model_span", _fake_end)
 
     client = _FakeClient()
     gate_client = _gate_client(client)
@@ -138,11 +137,9 @@ async def test_a_provider_that_reports_no_usage_now_records_zero(monkeypatch):
     one. `Tracer.end_model_invoke_span` has no "provider reported nothing, so
     write nothing" branch — see this file's own module docstring for why
     this is accepted rather than fixed."""
-    from nora.app import composition
-
     captured: dict = {}
-    monkeypatch.setattr(composition, "start_raw_model_span", lambda **kw: object())
-    monkeypatch.setattr(composition, "end_raw_model_span", lambda **kw: captured.update(kw))
+    monkeypatch.setattr(raw_clients, "start_raw_model_span", lambda **kw: object())
+    monkeypatch.setattr(raw_clients, "end_raw_model_span", lambda **kw: captured.update(kw))
 
     client = _FakeClient(usage=None)
     gate_client = _gate_client(client)
@@ -187,7 +184,7 @@ async def test_a_broken_tracer_never_costs_a_verdict_already_obtained():
     own guard (which would prove nothing about whether that guard works).
 
     Breaks the underlying `strands.telemetry.tracer` singleton instead —
-    `nora.app.composition._RelevanceGateModelClient.complete` calls the real
+    `nora.app._RelevanceGateModelClient.complete` calls the real
     `nora.agent.telemetry.start_raw_model_span`/`end_raw_model_span`, which
     call the real (now broken) `get_tracer()` internally, and must swallow
     the failure THEMSELVES.

@@ -158,13 +158,14 @@ async def test_unknown_usage_stops_before_another_call(monkeypatch):
 async def test_cli_root_contains_session_and_generation_spans(
         monkeypatch, exported, example_config):
     import nora.app.composition as composition
+    from nora.app import composition_social
     cfg = example_config.model_copy(update={"obs": example_config.obs.model_copy(update={
         "tracing": example_config.obs.tracing.model_copy(update={"enabled": True,
             "exporter": "otlp_http", "endpoint": "http://generated.invalid/traces"})})})
     monkeypatch.setattr(cli, "_config", lambda args: cfg)
     policy = SimpleNamespace(home_rooms=lambda: {}, rooms=lambda: [])
     monkeypatch.setattr(cli, "_policy", lambda cfg: policy)
-    monkeypatch.setattr(composition, "social_person_rooms", lambda p: {})
+    monkeypatch.setattr(composition_social, "social_person_rooms", lambda p: {})
     runner, calls, client = model_runner(monkeypatch)
     deps = SimpleNamespace(client=client, model_clients=[],
         registry=SimpleNamespace(self_aliases=lambda: ()))

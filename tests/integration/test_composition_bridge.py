@@ -23,7 +23,7 @@ from aiohttp import ClientSession, web
 
 from nora.__main__ import build_app
 from nora.app.bridge_queue import BridgeRuntime, stream_name
-from nora.app.composition import _build_media_custody
+from nora.app.composition_media import _build_media_custody
 from nora.config import load as load_config
 from nora.domain.media import MediaRef
 from nora.platform.bridge.client import BridgeAdapter

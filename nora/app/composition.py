@@ -15,1231 +15,155 @@ function, construct `App`.
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import functools
+import importlib
 import logging
-import uuid
-from collections.abc import Awaitable, Callable, Collection, Coroutine, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
-from zoneinfo import ZoneInfo
+from typing import TYPE_CHECKING, Any
 
-import boto3
-import redis.asyncio as aioredis
 from openai import AsyncOpenAI
-from openai.types.shared.reasoning_effort import ReasoningEffort
-from opentelemetry.util.types import AttributeValue
 
-from nora.agent import factory, tool_choice
-from nora.agent.browse import BrowseAgentRunner, BrowseSettings
-from nora.agent.catalog.groups import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
-from nora.agent.dream_screen import offence as dream_offence
-from nora.agent.dream_screen import text_offence
 from nora.agent.dreamer import (
-    TOOL_RESULT_CAPS,
-    AdaptorBudget,
-    AdaptorGrant,
     AdaptorSchedule,
     DreamerRuntime,
-    HomeRoom,
-    RegistryToolSource,
-    culture_grant,
-    verify_tool_subsets,
 )
-from nora.agent.egress import scan_identifiers, scan_reply
-from nora.agent.mcp import McpMount, build_mcp_tools
-from nora.agent.memory_search import MemorySearch
-from nora.agent.registry import ToolRegistry
-from nora.agent.relay import Relay
-from nora.agent.room import Room
-from nora.agent.security import looks_like_coordinate
-from nora.agent.shared_state import shared_reader
-from nora.agent.structured import ask_text, build_structured_model
-from nora.agent.subagent_desk import SubagentDesk
-from nora.agent.telemetry import (
-    RawSpanRecorder,
-    end_raw_model_span,
-    end_raw_model_span_with_error,
-    start_raw_model_span,
-)
-from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.video_desk import VideoDesk
-from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
-from nora.app.bridge_queue import BridgeRuntime, DbSpeakingLocks, StreamReader, WorkRunner
-from nora.app.cognition_grounding import (
-    build_grounder,
-    place_release,
-    stay_context_reader,
-    unit_self_profile_reader,
-    unit_self_reader,
-)
+from nora.agent.whereis import Circle
+from nora.app.bridge_queue import BridgeRuntime
 from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
-    COGNITION_ADAPTOR_NAME,
-    SESSION_SHUTDOWN_GRACE_SECONDS,
     CognitionShutdown,
-    SkillNotInstalledError,
-    build_cognition_runner,
-    cognition_budget,
-    open_events_reader,
-    read_surface,
-    require_session_hook,
-    shared_document_room,
-    units_with_home_rooms,
-    upcoming_reader,
 )
-from nora.app.cognition_wiring import build_context_reader as cognition_context_reader
-from nora.app.cognition_wiring import context_screen as cognition_context_screen_fn
-from nora.app.cognition_wiring import session_guidance as cognition_session_guidance
-from nora.app.computer_metrics import ComputerMetrics
-from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
+from nora.app.composition_agent import (
+    backend,
+    backends,
+    backends_check,
+    desk,
+    mcp,
+)
+from nora.app.composition_bridge import runtime
+from nora.app.composition_documents import service
+from nora.app.composition_dreamer import cognition_inits, enabled, guidance, preamble, wake
+from nora.app.composition_fire import (
+    build_gate,
+    build_recover,
+    compute_poller,
+    heartbeat,
+    path,
+    trigger,
+)
+from nora.app.composition_models import build_runner, lane, runners, source
+from nora.app.composition_pipelines import (
+    build_dispatcher,
+    build_engagement,
+    build_ingest,
+    build_shared,
+    standing,
+)
+from nora.app.composition_platforms import adapters, channels, policies, presence_preflight
+from nora.app.composition_runtime import build_slots, stimulus, tasks
+from nora.app.composition_social import expiry, inbox, poller, summons
+from nora.app.composition_stores import (
+    build_audit,
+    build_decision_log,
+    build_doctrine,
+    build_language_scopes,
+    build_language_store,
+    build_otp,
+    database,
+    identity,
+    instructions,
+    obs_stores,
+    observation,
+    readers,
+    runtime_stores,
+)
+from nora.app.computer_sweeper import ComputerSessionSweeper
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.graph_batches import GraphBatchProducer
 from nora.app.memory_routing import (
-    MemoryRoutingError,
-    build_workspace_router,
     profile_scopes_of_person,
     workspaces_of_person,
 )
-from nora.app.oauth_keepalive import KeepaliveTiming, KeptLane, OAuthKeepalive
+from nora.app.oauth_keepalive import OAuthKeepalive
 from nora.app.otp import OtpService
 from nora.app.social_expiry import StoryMediaExpiry
 from nora.app.social_perception import SocialPerception
 from nora.app.social_poller import SocialPoller
 from nora.app.source_health import AdapterHealthRecorder
+from nora.app.startup import StartupError  # noqa: F401 — boot surface for __main__
 from nora.app.subagent_backend import SubagentBackend
-from nora.app.subagent_wiring import build_subagent_backend
-from nora.app.summons_inbox import SummonsInbox
 from nora.app.voice_events import VoiceEventConsumer
-from nora.app.wake import Floor, WakeEvaluator
-from nora.config import Config, DreamBudgetConfig
+from nora.app.wake import WakeEvaluator
+from nora.config import Config
 from nora.config_reload import ReloadFiles
-from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
-from nora.domain.compute import ComputeJobStore
-from nora.domain.computer import ComputerToolSettings
-from nora.domain.computer_context import ComputerContextCaps
-from nora.domain.computer_events import ComputerEvent, ComputerEventStore
+from nora.doctrine.loader import Doctrine, DoctrineStore
 from nora.domain.computer_exports import ComputerExportStore
-from nora.domain.computer_leases import ComputerLeases
-from nora.domain.computer_sessions import ComputerSessionStore
-from nora.domain.culture import character_key, nora_character_key, unit_culture_key
-from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
-from nora.domain.live import LiveMapping, LiveSequence, LiveSet
 from nora.domain.media_join import MediaJoin
 from nora.domain.memory_index import IndexState
 from nora.domain.ports import (
     BlobStore,
-    ChannelDirectory,
-    ComputeBackend,
     ContextAssembler,
-    CultureReader,
-    DiscordPresenceSource,
     DreamAdaptor,
     EngagePolicy,
-    ExternalFilesSource,
-    ImageGenerator,
     MemoryStore,
-    PlatformAdapter,
     RecordStore,
-    ReverseGeocoder,
-    RosterSource,
-    SandboxRuntime,
-    SearchProvider,
-    SocialProvider,
     Speaker,
-    SteamPresenceProvider,
-    VoicePresenceSource,
 )
-from nora.domain.quote_window import QuoteWindow
-from nora.domain.reminders import ReminderCaps, ReminderStore
-from nora.domain.speech_markup import normalise as normalise_for_speech
-from nora.domain.stimuli import WakeHook, WakePolicy
-from nora.domain.subagent import SUBAGENT_KIND
-from nora.domain.tool_call_log import ToolCallLogStore
-from nora.domain.video import VIDEO_KIND
-from nora.engagement.computer_context import ComputerContextReader
-from nora.engagement.documents_context import DocumentsContextReader
+from nora.domain.reminders import ReminderStore
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
-from nora.engagement.slots import ConversationSlots
-from nora.engagement.stages.debrief import Completion as DebriefCompletion
-from nora.engagement.stages.debrief import Wiring as DebriefWiring
-from nora.engagement.subagents_context import SubagentsContextReader
-from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
-from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.computer.probe import ComputerdProbe
-from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
-from nora.infra.google.auth import GoogleCredentials
-from nora.infra.honcho import HonchoClient
-from nora.infra.music import YtDlpSource
-from nora.infra.releases import GithubReleases
-from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
-from nora.infra.sql.bridge_store import WORK_KINDS, SqlBridgeStore
+from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
 from nora.infra.sql.character import SqlCharacterEvidence
-from nora.infra.sql.cognition_store import SqlCognitionStore
-from nora.infra.sql.compute_jobs import SqlComputeJobStore
-from nora.infra.sql.computer_events import SqlComputerEventStore
-from nora.infra.sql.computer_exports import SqlComputerExportStore
-from nora.infra.sql.computer_sessions import SqlComputerSessionStore
-from nora.infra.sql.culture import SqlCultureStore
-from nora.infra.sql.decision_log import SqlDecisionLogStore
-from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
-from nora.infra.sql.fetched_pages import SqlFetchedPageStore
-from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
-from nora.infra.sql.lessons import SqlLessonStore
-from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
-from nora.infra.sql.media_objects import SqlMediaObjectStore
-from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_embed import MemoryEmbedWorker
-from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.mobility import SqlMobilityStore
-from nora.infra.sql.music_queue import SqlMusicQueueStore
-from nora.infra.sql.music_session import SqlMusicSessionStore
-from nora.infra.sql.notes import SqlNoteStore
-from nora.infra.sql.observations import SqlObservationStore
-from nora.infra.sql.otp import SqlOtpStore
-from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.profile import SqlProfileStore
-from nora.infra.sql.profile_inputs import SqlProfileInputs
-from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
-from nora.infra.sql.record_query import SqlRecordQuery
-from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.revisions import SqlRevisionStore
-from nora.infra.sql.rollup_read import SqlRollupRead
-from nora.infra.sql.social_stream import SqlSocialStreamStore, readable_social_store
 from nora.infra.sql.source_health import SqlSourceHealthLog
-from nora.infra.sql.standing import SqlStandingStore
-from nora.infra.sql.standing_ledger import SqlStandingLedger
-from nora.infra.sql.stimuli import SqlStimulusStore
-from nora.infra.sql.tag_debounce import SqlTagDebounceStore
-from nora.infra.sql.tag_traces import SqlTagTraceStore
-from nora.infra.sql.tension import SqlTensionStore
-from nora.infra.sql.tool_call_log import SqlToolCallLogStore
-from nora.infra.sql.video_readings import SqlVideoReadingStore
-from nora.infra.tts import TextFormatter as SpeechTextFormatter
-from nora.infra.version import VersionManifest
-from nora.infra.vision import MediaComprehender, VisionClient
-from nora.infra.voice.http_controller import VoiceControllerClient
 from nora.infra.voice.hub import VoiceControllerHub
-from nora.ingest.comprehension import MediaComprehension
 from nora.ingest.pipeline import IngestPipeline
-from nora.ingest.policy import (
-    CompositePolicy,
-    MentionPolicy,
-    RelevanceGatePolicy,
-    ReplyToNoraPolicy,
-    TriggerTextPolicy,
-    VoiceNotePolicy,
-    VoiceWakePolicy,
-)
-from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.ingest.relevance_gate import RelevanceGate
-from nora.ingest.stages import stimulus as stimulus_stage
-from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
-from nora.instructions.frontmatter import InstructionError
-from nora.language.character import (
-    CHARACTER_NORA_ADAPTOR_NAME,
-    CHARACTER_PERSON_ADAPTOR_NAME,
-    CHARACTER_UNIT_ADAPTOR_NAME,
-    CharacterNoraAdaptor,
-    CharacterPersonAdaptor,
-    CharacterRoom,
-    CharacterUnitAdaptor,
-    NoraEvidence,
-    NoraKey,
-    PersonEvidence,
-    PersonKey,
-    UnitEvidence,
-    UnitKey,
-)
-from nora.language.cognition_render import RenderBudget
-from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
-from nora.language.doctrine_check import CHECK_OBJECTIVE, DoctrineCheck
-from nora.language.lesson_book import LessonBook
-from nora.language.lesson_render import ActiveLessons
-from nora.language.lessons import (
-    CognitionLessons,
-    LessonEvidence,
-    LessonsKey,
-)
-from nora.language.profile import (
-    PROFILE_PERSON_ADAPTOR_NAME,
-    ProfileEvidence,
-    ProfilePersonAdaptor,
-)
-from nora.language.profile_collective import (
-    PROFILE_COLLECTIVE_ADAPTOR_NAMES,
-    PROFILE_NORA_ADAPTOR_NAME,
-    PROFILE_ROOM_ADAPTOR_NAME,
-    PROFILE_UNIT_ADAPTOR_NAME,
-    CollectiveEvidence,
-    CollectiveKey,
-    ProfileCollectiveAdaptor,
-)
-from nora.language.profile_render import ProfileHeads
-from nora.language.profile_verdict import (
-    PROFILE_VERDICT_ADAPTOR_NAME,
-    DocketAccount,
-    ProfileVerdictAdaptor,
-)
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
-from nora.persons import DIRECT_PLATFORMS, Persons, PersonsError
+from nora.persons import Persons
 from nora.platform.bridge.client import (
     BridgeAdapter,
-    BridgeEndpoint,
-    BridgeMediaSource,
-    BridgeRoster,
 )
-from nora.platform.bridge.inspection import (
-    QueueInspector,
-)
-from nora.platform.bridge.inspection import (
-    prime as prime_queue_metrics,
-)
-from nora.platform.discord.adapter import DiscordAdapter
-from nora.platform.discord.bridge_control import (
-    BridgeChannelDirectory,
-    BridgeControlClient,
-    BridgeDiscordAdapter,
-    BridgeDiscordPresence,
-    BridgeDiscordRoster,
-    BridgeMusicTool,
-    BridgeVoicePresence,
-)
-from nora.platform.discord.channels import ClientChannelDirectory
-from nora.platform.discord.media import DiscordMediaSource
-from nora.platform.discord.music_manager import MusicPlayerManager
-from nora.platform.discord.music_tool_bridge import DiscordMusicToolBridge
-from nora.platform.instagram.adapter import InstagramAdapter
-from nora.platform.instagram.media import InstagramMediaSource
-from nora.platform.registry import AdapterRegistry, AdapterRegistryError, MediaSourceRegistry
+from nora.platform.registry import AdapterRegistry
 from nora.platform.signal.adapter import SignalAdapter
-from nora.platform.signal.media import SignalMediaSource
-from nora.platform.signal.roster import SignalRoster
-from nora.policy import Policy, PolicyError
+from nora.policy import Policy
 from nora.tag import Debounce
-from nora.web.games import PULSE_API_BASE, PulseGamesClient
+from nora.web.games import PulseGamesClient
 
-from .agent_runner import LiveAgentRunner
-from .assembler import build_assembler, lineage_policy
-from .compute_poller import ComputeJobPoller
-from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
 from .fire import (
-    FAILED_POLICY,
     FirePath,
-    lost_job_occasion,
-    proactive_occasion,
-    relay_occasion,
-    reminder_occasion,
 )
-from .gatherings import GatheringService, room_event_shown, screened_area
-from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
+from .gatherings import GatheringService, room_event_shown
 from .participation import ParticipationTrigger
 from .proactive_screen import ProactiveScreen
 from .runtime import BackgroundTasks, ComputerLifecycle
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncEngine
+    pass
 
 log = logging.getLogger("nora.app.composition")
-
-
-class StartupError(Exception):
-    """A fatal startup validation failure — refuse to start, with a readable
-    message. Each site below wraps one operator-diagnosable condition."""
-
-
-_REASONING_EFFORTS: frozenset[str] = frozenset(
-    {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
-)
-
-
-def search_provider(cfg: Config) -> SearchProvider | None:
-    """The configured web search backend, or None when it is off or has no key."""
-    search_client: SearchProvider | None = None
-    if cfg.search.enabled:
-        search_key = cfg.credentials.get(cfg.search.api_key_env, "")
-        if search_key and cfg.search.provider == "exa":
-            from nora.infra.search import ExaSearchProvider
-            search_client = ExaSearchProvider(
-                api_key=search_key,
-                url=cfg.search.exa.url,
-                contents_url=cfg.search.exa.contents_url,
-                search_type=cfg.search.exa.type,
-                max_results=cfg.search.max_results,
-                content_max_chars=cfg.search.content_max_chars,
-                extract_max_chars=cfg.search.extract_max_chars,
-                fetch_max_age_hours=cfg.search.exa.fetch_max_age_hours,
-                timeout_seconds=cfg.search.timeout_seconds,
-            )
-        elif search_key:
-            from nora.infra.search import TavilySearchProvider
-            search_client = TavilySearchProvider(
-                api_key=search_key,
-                url=cfg.search.tavily.url,
-                max_results=cfg.search.max_results,
-                search_depth=cfg.search.tavily.search_depth,
-                content_max_chars=cfg.search.content_max_chars,
-                timeout_seconds=cfg.search.timeout_seconds,
-                extract_url=cfg.search.tavily.extract_url,
-                extract_depth=cfg.search.tavily.extract_depth,
-                extract_max_chars=cfg.search.extract_max_chars,
-                min_score=cfg.search.tavily.min_score,
-            )
-        else:
-            log.warning(
-                "search enabled on provider %s but %s is unset — web_search "
-                "stays unavailable",
-                cfg.search.provider,
-                cfg.search.api_key_env,
-            )
-    return search_client
-
-
-def fetch_provider(cfg: Config) -> SearchProvider | None:
-    """The backend `web_fetch` extracts through, or `None` to reuse `provider`.
-
-    `None` is the un-configured state (`fetch_provider` unset or equal to
-    `provider`): the composition then hands the ONE search client to both
-    verbs, exactly as before. A keyless configured backend warns and falls
-    back the same way, so a wiring gap degrades to the search backend's own
-    ceiling rather than to `unavailable`.
-    """
-    name = cfg.search.fetch_provider
-    if not cfg.search.enabled or not name or name == cfg.search.provider:
-        return None
-    if name == "exa":
-        key_env = cfg.search.exa.api_key_env
-        key = cfg.credentials.get(key_env, "")
-        if not key:
-            log.warning(
-                "fetch_provider exa configured but its key env is unset — "
-                "falling back to the search backend")
-            return None
-        from nora.infra.search import ExaSearchProvider
-        return ExaSearchProvider(
-            api_key=key,
-            url=cfg.search.exa.url,
-            contents_url=cfg.search.exa.contents_url,
-            search_type=cfg.search.exa.type,
-            max_results=cfg.search.max_results,
-            content_max_chars=cfg.search.content_max_chars,
-            extract_max_chars=cfg.search.extract_max_chars,
-            fetch_max_age_hours=cfg.search.exa.fetch_max_age_hours,
-            timeout_seconds=cfg.search.timeout_seconds,
-        )
-    key_env = cfg.search.tavily.api_key_env
-    key = cfg.credentials.get(key_env, "")
-    if not key:
-        log.warning(
-            "fetch_provider tavily configured but its key env is unset — "
-            "falling back to the search backend")
-        return None
-    from nora.infra.search import TavilySearchProvider
-    return TavilySearchProvider(
-        api_key=key,
-        url=cfg.search.tavily.url,
-        max_results=cfg.search.max_results,
-        search_depth=cfg.search.tavily.search_depth,
-        content_max_chars=cfg.search.content_max_chars,
-        timeout_seconds=cfg.search.timeout_seconds,
-        extract_url=cfg.search.tavily.extract_url,
-        extract_depth=cfg.search.tavily.extract_depth,
-        extract_max_chars=cfg.search.extract_max_chars,
-        min_score=cfg.search.tavily.min_score,
-    )
-
-
-def _room_claims(allowlist: Policy) -> dict[str, frozenset[tuple[str, str]]]:
-    """Conversation id -> every `(unit, platform)` pair policy.toml assigns it,
-    across every id form the room has had. Events store the conversation id
-    and the unit but never the platform, so this is the record that tells a
-    legacy `unit_id=""` row (or an id two units share) who owns it."""
-    out: dict[str, set[tuple[str, str]]] = {}
-    for conv in allowlist.rooms():
-        for cid in conv.ids:
-            out.setdefault(cid, set()).add((conv.unit, conv.platform))
-    return {cid: frozenset(owners) for cid, owners in out.items()}
-
-
-def _collective_members(
-    policy: Policy, keys: Mapping[str, CollectiveKey],
-) -> dict[str, tuple[str, ...]]:
-    return {k: tuple(sorted({pid for r in ck.rooms
-            for convo in policy.rooms() if convo.primary_id == r.key
-            for pid in convo.persons or ()})) for k, ck in keys.items()}
-
-
-def _presence_reader(
-    cfg: Config, allowlist: Policy, registry: AdapterRegistry,
-    rosters: Mapping[str, RosterSource] | None = None,
-) -> PresenceReader:
-    """The one `PresenceReader`.
-
-    Her handles come from two places and the order matters: `[agent.handles]`
-    is the DECLARED fallback, and any adapter that can report its own handle
-    overrides it. Instagram's `own_handle` reads its bridge's `/health` live,
-    per call. Discord's reuses the ONE `/users/@me` response
-    `resolve_identity()` fetched at startup instead of a second call per turn
-    (`DiscordAdapter.own_handle` answers from that cache). Signal derives an id
-    and drops the username by design, and WhatsApp's bridge exposes none, so
-    theirs stay declared until an adapter can say.
-    """
-    live: dict[str, Callable[[], Awaitable[str | None]]] = {}
-    instagram = registry.adapters.get("instagram")
-    if isinstance(instagram, InstagramAdapter):
-        live["instagram"] = instagram.own_handle
-    discord_adapter = registry.adapters.get("discord")
-    if isinstance(discord_adapter, (DiscordAdapter, BridgeDiscordAdapter)):
-        live["discord"] = discord_adapter.own_handle
-    return PresenceReader(
-        policy=allowlist, adapters=dict(registry.adapters),
-        handles=cfg.agent.handles, live_handles=live,
-        # The room tools' member counts: the SAME
-        # roster map `Room` reads, and her own ids so she is never counted as
-        # a member of a room she is in. `<presence>` reads neither.
-        rosters=rosters, self_ids=registry.self_aliases(),
-    )
-
-
-def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
-    """Narrow a config string to the provider's closed set, or refuse to start.
-
-    `[standing] reasoning_effort` is already typed as this set, so it cannot
-    arrive wrong. `[llm] reasoning_effort` — which it INHERITS when empty — is
-    a bare `str` and can: a typo there reaches the provider and comes back a
-    400 during a fold, inside the conversation's slot, on a turn that had
-    already replied.
-
-    Narrowed HERE rather than by retyping `LLMConfig`, which is the tag path's
-    own field with its own callers. Gives the boot-failure property for the
-    debrief's use of it.
-    """
-    if value not in _REASONING_EFFORTS:
-        raise StartupError(
-            f"{source} = {value!r} is not a reasoning effort the provider "
-            f"accepts ({', '.join(sorted(_REASONING_EFFORTS))}) — refusing to "
-            f"start rather than failing on the first call that uses it"
-        )
-    return cast(ReasoningEffort, value)
-
-
-def _require_a_sendable_public_url(public_url: str, *, content_checks: bool = True) -> None:
-    """Refuse to start when egress would block the link she is told to send.
-
-    `[documents] public_url` is validated as an origin, but an origin can still be one the
-    identifier scan blocks whole (a UUID-shaped, `+digits` or key-shaped host): she would be
-    told to paste the link verbatim and every such reply would be swallowed. The scan used
-    is egress's own, on the longest link the handle can make, so nothing is duplicated."""
-    if not public_url:
-        return
-    link = f"{public_url}/documents/{'0' * 12}"
-    kind = scan_reply(link, content_checks=content_checks)
-    if kind is not None:
-        raise StartupError(
-            f"[documents] public_url = {public_url!r}: egress would block the link she "
-            f"sends ({kind}) — refusing to start rather than silently dropping every reply "
-            f"that carries a document link"
-        )
-
-
-def _build_wake_evaluator(
-    cfg: Config, *, store: SqlStimulusStore, units: Callable[[], Sequence[str]],
-    metrics: Metrics, on_wake: WakeHook | None,
-    session_units: Callable[[], Collection[str]] | None = None,
-    floors_ready: bool = True,
-    upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None,
-) -> WakeEvaluator:
-    """The cognition loop's wake evaluator: every
-    wake starts a session through `on_wake`."""
-    return WakeEvaluator(
-        store=store,
-        units=units,
-        policy=WakePolicy(
-            quiet_seconds=cfg.cognition.quiet_seconds,
-            cue_quiet_seconds=cfg.cognition.cue_quiet_seconds,
-            batch_max=cfg.cognition.batch_max,
-            max_age_seconds=cfg.cognition.max_age_seconds,
-            cooldown_seconds=cfg.cognition.cooldown_seconds,
-            max_concurrent_sessions=cfg.cognition.max_concurrent_sessions,
-            session_timeout_seconds=cfg.cognition.session_timeout_seconds,
-            backoff_max_seconds=cfg.cognition.backoff_max_seconds,
-            max_consecutive_failures=cfg.cognition.max_consecutive_failures,
-        ),
-        metrics=metrics,
-        floors=tuple(Floor.parse(f) for f in cfg.cognition.time_floors),
-        tz=ZoneInfo(cfg.cognition.timezone),
-        floor_grace_seconds=cfg.cognition.floor_grace_seconds,
-        mode="live",
-        store_timeout_seconds=cfg.cognition.store_timeout_seconds,
-        on_wake=on_wake,
-        session_units=session_units,
-        floors_ready=floors_ready,
-        upcoming=upcoming,
-    )
-
-
-def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
-    """`DreamBudgetConfig` -> `AdaptorBudget`: the one place the two shapes meet.
-
-    They are two types carrying the same numbers because `nora.agent` may not
-    import `nora.config` (the layer contract), and this file is one of only two
-    allowed to read config — so the conversion has to happen here. Some fields
-    (`max_memory_calls`) are DEFAULTED on both sides, so a site that forgot one
-    would not raise a `TypeError`; it would quietly hand the runtime a number
-    the operator did not choose.
-
-    One function serves every site, and `tests/unit/test_dream_memory_budget.py`
-    walks `DreamBudgetConfig`'s own field list to assert every one of them
-    arrives.
-    """
-    return AdaptorBudget(
-        turns=b.turns,
-        total_tokens=b.total_tokens,
-        output_tokens=b.output_tokens,
-        timeout_seconds=b.timeout_seconds,
-        max_memory_calls=b.max_memory_calls,
-        # Copied, not aliased: `DreamBudgetConfig` is frozen but its `dict`
-        # field is not, and an `AdaptorBudget` handed the same object would
-        # share it with the config tree for the process's life.
-        tool_calls=dict(b.tool_calls),
-        max_tool_calls=b.max_tool_calls,
-    )
-
-
-
-
-class _RelevanceGateModelClient:
-    """Satisfies `nora.ingest.relevance_gate.ModelClient` — ONE RAW
-    `json_object` COMPLETION.
-
-    **The gate is the exception `nora/agent/structured.py` warns about.** Its
-    verdict decides whether Nora may speak into a room she was not invited
-    into, so it does not go through the SDK's `structured_output`: Strands
-    converts the schema into a TOOL SPECIFICATION and feeds the result back, so
-    one logical call becomes three messages, and against OmniRoute's Chat
-    Completions transport the SDK drops the assistant turn's reasoning before
-    the verdict is formed. A member who can forge Nora's side of a transcript
-    (a `[assistant]:` row inside a message) would then steer the admission
-    decision, which is an unauthenticated turn. The gate is
-    `tests/architecture/test_the_gate_does_not_form_its_verdict_through_the_sdk.py`.
-
-    The instruction goes in the SYSTEM role and the room in the USER role.
-
-    **`tool_choice` is not declared here and must not be.** A raw `json_object`
-    completion sends no tools at all, so there is nothing for a tool_choice to
-    select and the field never reaches the wire. The shape is
-    `tests/offline_eval_support.py::_MeasuringGateClient`'s, argument for
-    argument, with one difference: the eval's client sends `NO_CACHE_HEADERS`
-    and this one sends no such header. Eval readings are therefore
-    cache-bypassed; a comparison between eval arms holds, but an absolute eval
-    reading does not transfer to production unqualified.
-
-    What a raw client owes
-    (`tests/architecture/test_raw_model_calls_carry_their_own_machinery.py` is
-    the gate): an explicit `asyncio.wait_for`, because the bare `AsyncOpenAI`
-    default is 600s x retries and this call runs while the conversation's slot
-    is HELD, so an unbounded one is a room that stops answering; a
-    `finish_reason` read, because a raw completion does not raise on a cut-off
-    the way `MaxTokensReachedException` does, it returns `"length"` and a
-    silently truncated body that can still parse as JSON into something shorter
-    and wrong; and a usage annotation, because Strands emits `gen_ai.usage.*`
-    itself and a raw call emits nothing, so without it the call exports to
-    Langfuse costing zero.
-
-    It PINS `reasoning_effort` rather than leaving it to the route: a setting
-    left to the route is a setting nobody chose. `max_tokens` and
-    `temperature` are the gate's own — a gate with room to write paragraphs
-    has room to start drafting the reply it must never draft — and its model
-    is its OWN combo (`nora-gate`), never the tag lane's.
-    """
-
-    def __init__(
-        self, *, client: AsyncOpenAI, model: str, max_tokens: int,
-        temperature: float, timeout_seconds: float,
-        reasoning_effort: ReasoningEffort,
-    ) -> None:
-        self._client = client
-        self._model = model
-        self._max_tokens = max_tokens
-        self._temperature = temperature
-        self._timeout_seconds = timeout_seconds
-        self._reasoning_effort = reasoning_effort
-
-    @property
-    def model(self) -> str:
-        return self._model
-
-    async def complete(self, *, system: str, prompt: str) -> GateCompletion:
-        # A span of its own — `start_raw_model_span`/`end_raw_model_span`
-        # (`nora.agent.telemetry`, thin wrappers around Strands'
-        # `Tracer.start_model_invoke_span`/`end_model_invoke_span`) — nested
-        # under whatever `nora.ingest.relevance_gate.decide` has open
-        # (a plain `span()`, not a `generation()`: the decision procedure
-        # itself is not one model call). The docstring's constraints bind
-        # `messages`/`response_format`/`reasoning_effort` below.
-        span = start_raw_model_span(
-            messages=[{"role": "user", "content": [{"text": prompt}]}],
-            model_id=self._model, system_prompt=system,
-        )
-        with telemetry_timed() as elapsed:
-            try:
-                response = await asyncio.wait_for(
-                    self._client.chat.completions.create(
-                        model=self._model,
-                        messages=[
-                            # The instruction in the SYSTEM role, the room in
-                            # the USER role. Concatenated into one user
-                            # string, a member typing `[assistant]:` would sit
-                            # in exactly the role the operator's rules
-                            # occupy, and nothing downstream could tell them
-                            # apart.
-                            {"role": "system", "content": system},
-                            {"role": "user", "content": prompt},
-                        ],
-                        response_format={"type": "json_object"},
-                        max_tokens=self._max_tokens,
-                        temperature=self._temperature,
-                        reasoning_effort=self._reasoning_effort,
-                    ),
-                    timeout=self._timeout_seconds,
-                )
-            except Exception as exc:
-                end_raw_model_span_with_error(
-                    span=span, error_message=str(exc) or type(exc).__name__,
-                    exception=exc,
-                )
-                raise
-            latency_seconds = elapsed()
-        choice = response.choices[0]
-        content = (choice.message.content or "").strip()
-        # `or ""` and not a `"stop"` default: a provider that omits the
-        # field has told us nothing, and inventing `"stop"` would assert
-        # the call completed.
-        finish_reason = choice.finish_reason or ""
-        usage = getattr(response, "usage", None)
-        end_raw_model_span(
-            span=span, content=content, finish_reason=finish_reason,
-            input_tokens=getattr(usage, "prompt_tokens", None),
-            output_tokens=getattr(usage, "completion_tokens", None),
-            total_tokens=getattr(usage, "total_tokens", None),
-            latency_seconds=latency_seconds,
-        )
-        return GateCompletion(content=content, finish_reason=finish_reason)
-
-
-class _DebriefModelClient:
-    """Satisfies `nora.engagement.stages.debrief.ModelClient` — a raw one-shot
-    text completion over the process-wide OmniRoute client, with three things
-    on it that every other raw `chat.completions.create` in this repo needs.
-
-    **`finish_reason` comes back with the content.** A raw
-    `chat.completions.create` does not raise on a cut-off the way a Strands
-    agent's `MaxTokensReachedException` does — it returns
-    `finish_reason="length"` and a **silently truncated body**, which can still
-    parse as JSON into something shorter and wrong. That is the R-27
-    substitution (an ERROR reported as a PASS) one layer down from where this
-    repo usually enforces it, and the only way to keep it out is to hand the
-    caller the field it must check.
-
-    **`response_format={"type": "json_object"}`**, because prompt-only JSON
-    enforcement is insufficient: nothing on the wire would ask the provider to
-    honour it.
-
-    **An explicit `asyncio.wait_for`**, because the bare `AsyncOpenAI` default
-    is 600s x retries — and this call HOLDS THE CONVERSATION'S SLOT, so an
-    unbounded one is not a slow background job, it is a room that stops
-    answering.
-    """
-
-    def __init__(
-        self, *, base_url: str, api_key: str, model: str, timeout_seconds: float,
-        reasoning_effort: ReasoningEffort, max_tokens: int, temperature: float,
-        agent_name: str = "debrief",
-    ) -> None:
-        self._model_id = model
-        self._timeout_seconds = timeout_seconds
-        # `agent_name` becomes the Strands agent span (`invoke_agent <name>`)
-        # inside `ask_text` — without it every debrief/standing-fold Strands
-        # agent falls back to the SDK default "Strands Agents", so the call
-        # under `engagement.debrief.fold` would be indistinguishable from any
-        # other unnamed agent.
-        self._agent_name = agent_name
-        self._provider = build_structured_model(
-            base_url=base_url, api_key=api_key, model_id=model,
-            max_tokens=max_tokens, temperature=temperature,
-            reasoning_effort=str(reasoning_effort),
-        )
-
-    @property
-    def model(self) -> str:
-        return self._model_id
-
-    async def complete(
-        self, *, system: str, prompt: str,
-        trace_attributes: Mapping[str, AttributeValue] | None = None,
-    ) -> DebriefCompletion:
-        got = await ask_text(
-            model=self._provider, prompt=prompt,
-            timeout_seconds=self._timeout_seconds, system_prompt=system,
-            agent_name=self._agent_name, trace_attributes=trace_attributes,
-        )
-        # No usage annotation here: this is a real Strands `Agent`
-        # invocation (`ask_text`), and Strands emits `gen_ai.usage.*` on its
-        # own model-invoke span itself.
-        return DebriefCompletion(
-            content=got.content, finish_reason=got.finish_reason,
-        )
-
-
-def _speech_formatter(
-    cfg: Config, prompts: DoctrineStore, metrics: Metrics,
-) -> SpeechTextFormatter | None:
-    """`[speech.tts.format]`'s formatter, or None.
-
-    `off` is None, so the speaker sends her reply exactly as written. The
-    `model` mode's client is the reaction picker's shape, `_DebriefModelClient`
-    over the same OmniRoute base URL: one `ask_text` call, its own Strands
-    agent span (`invoke_agent speech-format`) under the turn that is speaking.
-    """
-    fmt = cfg.speech.tts.format
-    if fmt.mode == "off":
-        return None
-    if fmt.mode == "normalise":
-        return _NormaliseOnly()
-    from nora.agent.speech_format import SpeechFormatter
-    return SpeechFormatter(
-        client=_DebriefModelClient(
-            base_url=cfg.endpoint("speech_format")[0],
-            api_key=cfg.endpoint("speech_format")[1],
-            max_tokens=fmt.max_tokens,
-            temperature=0.0,
-            model=cfg.endpoint("speech_format", fmt.model or cfg.llm.model)[2],
-            # The client's own bound sits above the formatter's so the
-            # formatter's `wait_for` is the one that fires and is counted.
-            timeout_seconds=fmt.timeout_seconds + 1.0,
-            reasoning_effort=_reasoning_effort(
-                fmt.reasoning_effort or cfg.llm.reasoning_effort,
-                source="[speech.tts.format] reasoning_effort",
-            ),
-            agent_name="speech-format",
-        ),
-        prompts=prompts, metrics=metrics,
-        timeout_seconds=fmt.timeout_seconds,
-        min_chars=fmt.min_chars, max_chars=fmt.max_chars,
-    )
-
-
-class _NormaliseOnly:
-    """`[speech.tts.format] mode = "normalise"`: the deterministic half only,
-    no model call (`nora.domain.speech_markup.normalise`)."""
-
-    async def format(self, *, text: str) -> str:
-        return normalise_for_speech(text)
-
-
-def _describe_models(cfg: Config) -> dict[str, str]:
-    """Modality → the model that describes it, for every modality that CAN.
-
-    The two config states an operator can reach — «switched off» and «no model
-    named» — are collapsed to one thing the tool can read: absence. A modality
-    appears here only when it is enabled AND names a model, so `media_fetch`
-    needs no second flag and cannot accidentally call a describer that was only
-    half-configured.
-
-    This is also where the resolution of `vision_model`'s legacy alias lands,
-    via `describer_for`, so `nora.agent` never learns the alias existed.
-    """
-    resolved = {}
-    for modality in ("image", "audio", "video"):
-        describer = cfg.media.describer_for(modality)
-        if describer is not None and describer.enabled and describer.model:
-            if describer.provider == "omniroute" and "vision" in cfg.model_routes:
-                resolved[modality] = cfg.endpoint("vision", describer.model)[2]
-            else:
-                resolved[modality] = describer.model
-    return resolved
-
-
-def _describe_providers(cfg: Config) -> dict[str, str]:
-    """Modality → the provider its describer travels through.
-
-    The same enable+model gate as `_describe_models` — a modality only appears
-    when it can actually describe — so the two maps cannot disagree about which
-    modalities are live. The provider DEFAULT is `"omniroute"` everywhere: an
-    unset provider describes through the process-wide gateway client. Only a
-    modality whose config names a DIRECT provider (`"kimi"`, `"opencode-go"`)
-    routes direct.
-    """
-    resolved: dict[str, str] = {}
-    for modality in ("image", "audio", "video"):
-        describer = cfg.media.describer_for(modality)
-        if describer is not None and describer.enabled and describer.model:
-            resolved[modality] = describer.provider
-    return resolved
-
-
-@dataclass(frozen=True)
-class _DirectLane:
-    """One DIRECT describer transport: where it goes, and whose key it reads.
-
-    `session_header` is OpenCode Go's mandatory `x-opencode-session` (DEC-197):
-    its endpoint answers `400 MissingSessionID` without one, so its client is
-    built on `opencode_go_http_client`, which stamps a fresh id per request.
-    """
-
-    base_url: str
-    default_key_env: str
-    session_header: bool = False
 
 
 # Provider name (`DescriberConfig.provider`) → its direct lane. `"omniroute"`
 # is NOT here: it is the process-wide gateway client, built once above for
 # every model call, not a describer lane.
-_DIRECT_LANES = {
-    # OmniRoute drops `video_url` content blocks, so video
-    # needs a lane of its own; Kimi's endpoint serves K3 with base64 video.
-    "kimi": _DirectLane(
-        base_url="https://api.kimi.com/coding/v1",
-        default_key_env="KIMI_CODE_API_KEY",
-    ),
-    # MiMo v2.6 Flash, which Kimi's endpoint does not serve and OmniRoute
-    # cannot carry video to.
-    "opencode-go": _DirectLane(
-        base_url="https://opencode.ai/zen/go/v1",
-        default_key_env="OPENCODE_GO_API_KEY",
-        session_header=True,
-    ),
-}
-
-
-def _direct_lane_key_env(cfg: Config, provider: str) -> str:
-    """The env var name `provider`'s direct lane reads its key from.
-
-    `DescriberConfig.api_key_env` NAMES the variable (DEC-8 — the value never
-    lands in config.toml); empty falls back to the lane's own default exactly as
-    the field's docstring promises. When several modalities select the same
-    provider, the first enabled one's name wins — one direct client per lane,
-    one key source.
-    """
-    for modality in ("image", "audio", "video"):
-        describer = cfg.media.describer_for(modality)
-        if (
-            describer is not None
-            and describer.enabled
-            and describer.model
-            and describer.provider == provider
-        ):
-            return describer.api_key_env or _DIRECT_LANES[provider].default_key_env
-    return _DIRECT_LANES[provider].default_key_env
-
-
-def _direct_describer_clients(cfg: Config) -> dict[str, AsyncOpenAI]:
-    """Provider → its direct client, for every lane some live describer selects.
-
-    Built only for a lane something USES, so a deployment that stays on
-    omniroute builds nothing new and needs no extra key. A selected lane whose
-    key is unset is left OUT, and `VisionClient._create` refuses a provider it
-    has no client for — the modality answers `unavailable`, never a silent
-    OmniRoute fallback that would drop the video and answer anyway.
-    """
-    from nora.agent.factory import create_client
-    from nora.infra.vision.client import opencode_go_http_client
-
-    clients: dict[str, AsyncOpenAI] = {}
-    for provider in sorted(
-        (set(_describe_providers(cfg).values()) & set(_DIRECT_LANES)) - set(cfg.providers)
-    ):
-        lane = _DIRECT_LANES[provider]
-        key_env = _direct_lane_key_env(cfg, provider)
-        api_key = cfg.credentials.get(key_env, "")
-        if not api_key:
-            log.warning(
-                "media describer provider %r selected but %s is unset — "
-                "its modalities answer unavailable",
-                provider, key_env,
-            )
-            continue
-        clients[provider] = create_client(
-            base_url=lane.base_url,
-            api_key=api_key,
-            http_client=opencode_go_http_client() if lane.session_header else None,
-        )
-    for name in sorted(set(_describe_providers(cfg).values()) & set(cfg.providers)):
-        endpoint = cfg.providers[name]
-        api_key = cfg.credentials.get(endpoint.api_key_env, "")
-        if not api_key:
-            log.warning(
-                "media describer provider %r has no configured credential — "
-                "its modalities answer unavailable", name,
-            )
-            continue
-        clients[name] = create_client(
-            base_url=endpoint.base_url, api_key=api_key,
-            http_client=(opencode_go_http_client() if name == "opencode-go" else None),
-        )
-    return clients
-
-
-def _describe_max_bytes(cfg: Config) -> dict[str, int]:
-    """Modality → the byte ceiling ITS describer is allowed to send.
-
-    Present only when the modality's `DescriberConfig.max_bytes` is non-zero —
-    absence (0) means "inherit the VisionClient's shared `vision_max_bytes`".
-    Same enable+model gate as `_describe_models`/`_describe_providers`, so the
-    three maps cannot disagree about which modalities are live; the ceiling is
-    the one field that is allowed to vary per modality because video bytes are
-    routinely larger than any still image (an image-sized ceiling would turn
-    every real clip into `too_large`).
-    """
-    resolved: dict[str, int] = {}
-    for modality in ("image", "audio", "video"):
-        describer = cfg.media.describer_for(modality)
-        if (
-            describer is not None
-            and describer.enabled
-            and describer.model
-            and describer.max_bytes
-        ):
-            resolved[modality] = describer.max_bytes
-    return resolved
-
-
-def _otp_secrets(cfg: Config) -> tuple[bytes, str]:
-    """The HMAC key and the API bearer token, checked at BOOT when `[otp]
-    enabled`, for `_computer_token`'s reason: an empty key would hash every
-    code under nothing, and an empty token would leave the sign-in endpoint
-    open to anything on the network. Refuse to start instead."""
-    values = []
-    for name in (cfg.otp.secret_env, cfg.otp.api_token_env):
-        value = cfg.credentials.get(name, "").strip()
-        if not value:
-            raise StartupError(
-                f"[otp] enabled = true but {name} is unset or empty (the value "
-                "lives in .env, DEC-8); refusing to start"
-            )
-        values.append(value)
-    return values[0].encode(), values[1]
-
-
-def _computer_token(cfg: Config) -> str:
-    """computerd's bearer token, checked at BOOT when `[computer] enabled`:
-    the R-5 discipline (refuse to start rather than
-    run in a state that looks like working). Without it an empty token would
-    start the daemon cleanly and then answer every computer call
-    `unavailable` (computerd's 401), in front of the group, for a fault only
-    the operator can fix."""
-    token = cfg.credentials.get(cfg.computer.token_env, "")
-    if not token.strip():
-        raise StartupError(
-            f"[computer] enabled = true but {cfg.computer.token_env} is unset or "
-            "empty: it is computerd's bearer token (the value lives in .env, "
-            "DEC-8). Starting without it would fail every computer call; "
-            "refusing to start"
-        )
-    return token
-
-
-def google_credentials(cfg: Config, *, metrics: Any) -> GoogleCredentials | None:
-    """Nora's ONE Google identity (`[google]`), or
-    None. Built when a Google service is switched on (shared files today) and
-    all three values `[google]` names are in the environment (DEC-8). A value
-    missing is None and a warning naming the variable, never its value: the
-    Google services then answer `unavailable`, never the boot. Every service
-    gets THIS object and asks it for a token for its own scope; none sees the
-    secrets."""
-    if not cfg.external_files.enabled:
-        return None
-    names = (cfg.google.client_id_env, cfg.google.client_secret_env,
-             cfg.google.refresh_token_env)
-    values = [cfg.credentials.get(name, "").strip() for name in names]
-    missing = [name for name, value in zip(names, values, strict=True) if not value]
-    if missing:
-        log.warning(
-            "[google] %s unset; every Google service answers unavailable (run "
-            "scripts/google_auth.py, put the values in .env)", ", ".join(missing),
-        )
-        return None
-    client_id, client_secret, refresh_token = values
-    return GoogleCredentials(
-        client_id=client_id, client_secret=client_secret,
-        refresh_token=refresh_token, metrics=metrics,
-    )
-
-
-def external_files_source(
-    cfg: Config, *, google: GoogleCredentials | None,
-) -> ExternalFilesSource | None:
-    """The shared-file source the open tool reads through, or None:
-    `[external_files]` off, or no Google identity (`google_credentials`). None answers the open
-    `unavailable`; recording a link as a handle needs none of this."""
-    if not cfg.external_files.enabled or google is None:
-        return None
-    from nora.infra.external_files.google_drive import GoogleDriveSource
-
-    return GoogleDriveSource(credentials=google)
 
 
 #: Every Character adaptor that is not the room fold, by name (budgets, grants).
-CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (
-    CHARACTER_PERSON_ADAPTOR_NAME, CHARACTER_UNIT_ADAPTOR_NAME,
-    CHARACTER_NORA_ADAPTOR_NAME,
-)
-
-
-def _now_ms() -> int:
-    """Wall-clock epoch milliseconds, the Lessons book's and evidence's clock."""
-    return int(datetime.now(UTC).timestamp() * 1000)
-
-
-def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
-    """One key per unit, with its rooms in policy order."""
-    rooms_of: dict[str, list[CharacterRoom]] = {}
-    for conv in allowlist.rooms():
-        if conv.primary_id and conv.unit and conv.absorbed:
-            rooms_of.setdefault(conv.unit, []).append(CharacterRoom(
-                key=conv.primary_id, platform=conv.platform, label=conv.label,
-            ))
-    return {
-        unit_culture_key(unit): UnitKey(unit=unit, rooms=tuple(rooms))
-        for unit, rooms in rooms_of.items()
-    }
-
-
-def scope_home_rooms(allowlist: Any) -> dict[str, HomeRoom]:
-    """`conversation id -> the room it names`, for every id form in policy.
-
-    A scope-keyed adaptor's key IS a conversation id, so this map is the whole
-    authorization context for its home-room grant. Two rooms can answer to the
-    same string (numeric ids are one id space per platform, but policy is not):
-    silently keeping the last one would run one unit's adaptor in another's
-    room. Refuse the collision at startup instead; a legacy policy that needs
-    both rooms must disambiguate them in `policy.toml` first.
-    """
-    out: dict[str, HomeRoom] = {}
-    seen: dict[str, tuple[str, str, str]] = {}
-    for conv in allowlist.rooms():
-        home = HomeRoom(
-            unit=conv.unit, platform=conv.platform,
-            conversation_id=conv.primary_id, conversation_type="group",
-            location_trusted=conv.location,
-        )
-        identity = (conv.unit, conv.platform, conv.primary_id)
-        for cid in conv.ids:
-            prior = seen.get(cid)
-            if prior is not None and prior != identity:
-                raise StartupError(
-                    "two policy rooms share a conversation id "
-                    f"({prior[1]} in {prior[0]!r} and {conv.platform} in "
-                    f"{conv.unit!r}); an id must name one room"
-                )
-            seen[cid] = identity
-            out[cid] = home
-    return out
-
-
-def social_person_units(allowlist: Any) -> dict[str, tuple[str, ...]]:
-    """Each person LISTED by id in a room, and the units of the rooms that list
-    them, in policy order: the units a social item of theirs is charged to and
-    announced in. A `*` room lists nobody, the rule `SocialSubjectIndex.members`
-    applies to who is polled."""
-    out: dict[str, list[str]] = {}
-    # ponytail: a person's units are a FILE fact — a guild entry's `persons`
-    # lists them for every channel it expands into — so `conversations` is the
-    # source here; `rooms()` would drop them whenever the directory cannot
-    # enumerate the guild.
-    for conv in allowlist.conversations:
-        if conv.persons is None or not conv.unit:
-            continue
-        for person in sorted(conv.persons):
-            units = out.setdefault(person, [])
-            if conv.unit not in units:
-                units.append(conv.unit)
-    return {person: tuple(units) for person, units in out.items()}
-
-
-def social_person_rooms(allowlist: Any) -> dict[tuple[str, str], tuple[str, str]]:
-    """`(person, unit) -> (platform, conversation_id)`: the room a social
-    stimulus of theirs binds in that unit, the unit's home room when it lists
-    them and otherwise the first room of the unit that does, in policy order.
-    A social item is shown only in a room that lists its author (the `social`
-    lineage predicate), so the session reads it through a room that may be
-    shown it."""
-    homes = allowlist.home_rooms()
-    out: dict[tuple[str, str], tuple[str, str]] = {}
-    listing = [
-        c for c in allowlist.rooms() if c.persons is not None and c.unit and c.absorbed
-    ]
-    for conv in sorted(listing, key=lambda c: homes.get(c.unit) is not c):
-        for person in conv.persons:
-            out.setdefault((person, conv.unit), (conv.platform, conv.primary_id))
-    return out
-
-
-
-
-def social_unit_rooms(allowlist: Any) -> dict[str, tuple[tuple[str, str], ...]]:
-    """`unit -> every (platform, conversation_id)` of its rooms, sorted: the
-    rooms the social poller may read an item through. `rooms()`, not
-    `conversations`, so a channel discovered through a server entry counts."""
-    return {
-        unit: tuple((c.platform, rid)
-                    for c in allowlist.rooms()
-                    if c.unit == unit for rid in sorted(c.ids))
-        for unit in {c.unit for c in allowlist.rooms() if c.unit}
-    }
-
-
-def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
-    """One key per (unit, person listed in any of that unit's rooms), from
-    `policy.toml` and `identity.toml`. A
-    person's evidence and room cultures are the unit's rooms, in policy order;
-    their read tools stand in the first of those that lists them. A `*` room
-    lists nobody by name and adds no person."""
-    rooms_of: dict[str, list[CharacterRoom]] = {}
-    listing: dict[tuple[str, str], list[str]] = {}
-    refs: dict[str, Any] = {}
-    for conv in allowlist.rooms():
-        if not conv.primary_id or not conv.unit:
-            continue
-        rooms_of.setdefault(conv.unit, []).append(CharacterRoom(
-            key=conv.primary_id, platform=conv.platform, label=conv.label,
-        ))
-        for ref in persons.room_members(conv.persons):
-            refs[ref.person_id] = ref
-            listing.setdefault((conv.unit, ref.person_id), []).append(conv.primary_id)
-    return {
-        character_key(unit, person_id): PersonKey(
-            unit=unit, person=refs[person_id], rooms=tuple(rooms_of[unit]),
-            home=homes[0], listed=tuple(homes),
-        )
-        for (unit, person_id), homes in listing.items()
-    }
-
-
-def _profile_room_keys(allowlist: Any) -> dict[str, CollectiveKey]:
-    """Room `primary_id` -> the room's CollectiveKey, for every room policy
-    admits — `rooms()`, so a channel discovered through a server entry gets a
-    Profile account under its own key too."""
-    return {
-        conv.primary_id: CollectiveKey(
-            unit=conv.unit,
-            rooms=(CharacterRoom(key=conv.primary_id, platform=conv.platform,
-                                 label=conv.label),),
-            label=conv.label or "", description=conv.description or "",
-        )
-        for conv in allowlist.rooms() if conv.primary_id and conv.unit
-    }
 
 
 @dataclass(frozen=True)
@@ -1538,119 +462,15 @@ class Dependencies:
     story_expiry: StoryMediaExpiry | None = None
 
 
-def _image_gen_wiring(
-    cfg: Config,
-    metrics: Metrics,
-    environ: Mapping[str, str],
-    *,
-    state_dir: Path,
-) -> tuple[ImageGenerator | None, OAuthKeepalive | None]:
-    """The `generate_image` provider and the OAuth keepalive ([image_gen]).
-
-    Off: `(None, None)`, and the tool answers `unavailable` (R-5/R-27). On,
-    EVERY OAuth lane whose bootstrap token is set gets one lane object
-    (DEC-308), whichever `provider` is selected; the selected one is also
-    the adapter's, the SAME object, so the keeper and a call share one
-    refresh lock and never both spend a rotating token. Each lane with
-    `keepalive = true` is registered with the one keeper, which
-    `nora/__main__.py` starts (the eval subject composes this graph too and
-    must not refresh the deployment's tokens). The state files live in the
-    repo-tree state dir `./state/signal-cli` already uses (container-
-    writable; the host-immutable `.env` holds only the bootstrap tokens).
-    """
-    if not cfg.image_gen.enabled:
-        return None, None
-    from nora.infra.image_gen import (
-        OpenAICodexOAuth,
-        XaiOAuth,
-        build_image_generator,
-    )
-
-    image_generator: ImageGenerator | None
-    xai_cfg = cfg.image_gen.xai
-    codex_cfg = cfg.image_gen.openai_codex
-    xai_token = environ.get(xai_cfg.refresh_token_env, "")
-    codex_token = environ.get(codex_cfg.refresh_token_env, "")
-    xai_lane = XaiOAuth(
-        refresh_token=xai_token,
-        state_file=state_dir / "xai-oauth.json",
-        timeout_seconds=xai_cfg.timeout_seconds,
-    ) if xai_token else None
-    # DEC-304: the env var holds only the BOOTSTRAP token; the rotating
-    # one lives in the state file beside xAI's.
-    codex_lane = OpenAICodexOAuth(
-        bootstrap_refresh_token=codex_token,
-        state_file=state_dir / "openai-codex-oauth.json",
-    ) if codex_token else None
-    if cfg.image_gen.provider == "openai_codex":
-        token_env = codex_cfg.refresh_token_env
-        image_generator = build_image_generator(
-            provider="openai_codex",
-            oauth=codex_lane,
-            model=codex_cfg.model,
-            responses_model=codex_cfg.responses_model,
-            standard_quality=codex_cfg.standard_quality,
-            high_quality=codex_cfg.high_quality,
-            timeout_seconds=codex_cfg.timeout_seconds,
-            max_reference_images=codex_cfg.max_reference_images,
-        ) if codex_lane is not None else None
-        selected_token = codex_token
-    else:
-        token_env = xai_cfg.refresh_token_env
-        image_generator = build_image_generator(
-            provider=cfg.image_gen.provider,
-            oauth=xai_lane,
-            model=xai_cfg.model,
-            quality_model=xai_cfg.quality_model,
-            timeout_seconds=xai_cfg.timeout_seconds,
-            max_reference_images=xai_cfg.max_reference_images,
-        ) if xai_lane is not None else None
-        selected_token = xai_token
-    if not selected_token:
-        log.warning(
-            "image_gen enabled but %s is unset — generate_image stays unavailable",
-            token_env,
-        )
-    elif image_generator is None:
-        # An unknown provider (or unconstructable lane) degrades
-        # the tool, never crashes the daemon.
-        log.warning(
-            "image_gen enabled but provider %r could not be built — "
-            "generate_image stays unavailable",
-            cfg.image_gen.provider,
-        )
-    keeper = OAuthKeepalive(metrics)
-    kept: tuple[tuple[KeptLane | None, bool, float], ...] = (
-        (xai_lane, xai_cfg.keepalive, xai_cfg.refresh_interval_hours),
-        (codex_lane, codex_cfg.keepalive, codex_cfg.refresh_interval_hours),
-    )
-    for lane, wanted, hours in kept:
-        if lane is not None and wanted:
-            keeper.register(lane, KeepaliveTiming(interval_seconds=hours * 3600.0))
-    return image_generator, (keeper if keeper.lanes else None)
-
-
 def wall_clock() -> datetime:
     """The deployment's clock. THE default, and the only one production uses."""
     return datetime.now(UTC)
 
 
-def _story_frames_embedded(
-    engine: AsyncEngine, model: str,
-) -> Callable[[Sequence[tuple[str, str]]], Awaitable[set[tuple[str, str]]]]:
-    """The memory index's answer to which story frames are embedded under the
-    deployed embedder, for the story expiry pass."""
-    from nora.infra.sql.memory_index import story_frame_embedded
-
-    async def embedded(frames: Sequence[tuple[str, str]]) -> set[tuple[str, str]]:
-        async with engine.connect() as conn:
-            return await story_frame_embedded(conn, frames, model=model)
-
-    return embedded
-
-
 async def build_dependencies(
-    cfg: Config, *, clock: Callable[[], datetime] = wall_clock,
+    cfg: Config,
+    *,
+    clock: Callable[[], datetime] = wall_clock,
     operational_clock: Callable[[], datetime] | None = None,
 ) -> Dependencies:
     """Build the object graph from `cfg`.
@@ -1684,3792 +504,869 @@ async def build_dependencies(
     op_clock = operational_clock or clock
     content_checks = cfg.content_checks.enabled
     metrics = Metrics()
-    # The ONE channel directory a `guild` server entry expands through. The
-    # adapter does not exist yet (the registry is built below), so the getter
-    # resolves a box that composition fills once it does — between now and
-    # then, and whenever there is no Discord adapter, every read answers
-    # unknown and a server entry admits nothing rather than guessing.
-    discord_box: dict[str, Any] = {}
-    # Discord bridge mode: the standalone discord-bridge owns
-    # the Gateway, the music manager, the voice-controller hub and the
-    # controller-event consumer. This process builds ONLY the proxy side —
-    # `BridgeControlClient` + the `BridgeDiscordAdapter` the registry wires
-    # — and never constructs a `discord.Client`, `MusicPlayerManager` or
-    # `VoiceControllerHub` of its own. `discord_control` is the ONE client
-    # every app-side proxy (directory, roster, music tool, presence)
-    # shares; its lazy aiohttp session dies with the process like every
-    # adapter's.
-    _discord_bridge = (
-        cfg.platforms.discord.enabled
-        and getattr(cfg.platforms.discord, "mode", "direct") == "bridge")
-    discord_control: BridgeControlClient | None = (
-        BridgeControlClient(BridgeEndpoint(
-            cfg.platforms.discord.base_url,
-            cfg.credentials.get(cfg.bridges.token_env, "")))
-        if _discord_bridge else None)
-    channel_directory: ChannelDirectory
-    if discord_control is not None:
-        # `guild_ids` reads the LIVE policy each refresh — a reloaded file
-        # that names a new server entry starts enumerating it on the next
-        # pass. `reload_files` binds below; the callable is lazy by design.
-        channel_directory = BridgeChannelDirectory(
-            control=discord_control,
-            guild_ids=lambda: {
-                c.guild for c in reload_files.policy.conversations if c.guild})
-    else:
-        channel_directory = ClientChannelDirectory(
-            lambda: (
-                a.current_client()
-                if isinstance(a := discord_box.get("adapter"), DiscordAdapter)
-                else None
-            )
-        )
-    try:
-        reload_files = ReloadFiles(
-            policy_path=cfg.policy_file, identity_path=cfg.identity_file,
-            ai_peer=cfg.honcho.ai_peer, default_workspace=cfg.honcho.workspace_id,
-            metrics=metrics, policy_channels=channel_directory,
-        )
-    except (PersonsError, PolicyError, ValueError, MemoryRoutingError) as exc:
-        raise StartupError(f"identity/policy error: {exc}") from exc
-    persons, allowlist = reload_files.persons, reload_files.policy
-    if allowlist.dm_persons:
-        log.warning(
-            "policy.toml lists %d DM principal(s), but the Signal parser still "
-            "drops every non-group message — this section does nothing yet",
-            len(allowlist.dm_persons),
-        )
-
-    database_url = cfg.credentials.get(cfg.store.database_url_env, "")
-    if not database_url:
-        raise StartupError(
-            f"environment variable {cfg.store.database_url_env} is not set — "
-            "the PostgreSQL URL (postgresql+asyncpg://…) must be injected by the "
-            "host (DEC-8); refusing to start"
-        )
-    try:
-        run_migrations(database_url)
-    except Exception as exc:
-        raise StartupError(f"migration error: {exc}") from exc
-    # ONE engine (one pool) shared by the record store and the presence reader —
-    # the shape `PresenceStore`'s own docstring asks for. `audit.aclose()` (in
-    # `nora.__main__.App.shutdown`) disposes it for both; `PresenceStore.aclose`
-    # is deliberately NOT also called on this shared engine.
-    engine = create_sql_engine(database_url)
-    if cfg.memory.graph.enabled:
-        from nora.app.graph_project import projection_context
-        # produce=False: the session reads stimuli; nothing drains work items now.
-        engine.update_execution_options(memory_graph=projection_context(
-            allowlist, persons, nora_name=cfg.doctrine.display_name, metrics=metrics,
-            produce=False))
-    audit = SqlRecordStore(
-        engine,
-        max_per_conversation=cfg.store.max_per_conversation,
-        metrics=metrics,
-    )
-    # The dashboard consumer reads the derived analytics tables through the
-    # same pool as every other Nora store. A second engine would fork the pool
-    # and violate the one-pool, one-lifecycle composition rule.
-    mobility = SqlMobilityStore(engine)
-    # The reminders store, REUSING `engine` for the reason above: a second
-    # `create_sql_engine` forks the pool and its `aclose()` would dispose the
-    # engine the record store and the presence reader are still using.
-    #
-    # Built HERE, beside the other stores, rather than down beside the heartbeat
-    # loop it feeds — because it has TWO consumers and only one of them is
-    # gated. `ToolRegistry` (below) needs it whether or not `[heartbeat] enabled`
-    # is true: the model may set, list and cancel reminders on a deployment with
-    # the tick switched off, and `remind` answering `unavailable` there would be
-    # a wiring accident that no test catches (every test builds its own registry
-    # with the fake). The tick is the only part behind the flag.
-    reminders: ReminderStore = SqlReminderStore(engine)
-    # The compute-job outbox, REUSING `engine` for the same reason `reminders`
-    # does above. Built HERE, unconditionally, beside the other stores: boot
-    # recovery a few hundred lines down (beside `reminders`' own unconditional
-    # sweep) must find a store to sweep even when the poller itself is off. It
-    # is the generic deferred-delivery outbox. Only the poller's tick loop
-    # (`compute_backends`, further down) is behind the flag.
-    compute_jobs: ComputeJobStore = SqlComputeJobStore(engine)
-    tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
-    # The computer audit log (DEC-243). Built
-    # UNCONDITIONALLY, like `tool_call_log_store`: the computer tools write a
-    # row on every call, `unavailable` included, so a call made while
-    # `[computer]` is off is audited too. Only the runtime is behind the flag.
-    computer_events: ComputerEventStore = SqlComputerEventStore(engine)
-    # Computer sessions, derived by code on
-    # every computer call, and the process's ONE lease table: one
-    # instance shared by every turn and the sweeper, which is what makes an
-    # in-process lock a lock (one Nora process; `ComputerLeases` says so).
-    computer_sessions: ComputerSessionStore = SqlComputerSessionStore(engine)
-    computer_leases = ComputerLeases()
-    # The runtime: `ComputerdRuntime`, built ONLY when `[computer] enabled`
-    # (see the settings below for the rest of `[computer]`). Built here,
-    # before the assembler, because `<computer>` reads it on every turn.
-    computer: SandboxRuntime | None = None
-    computer_probe: ComputerdProbe | None = None
-    if cfg.computer.enabled:
-        from nora.infra.computer.client import ComputerdRuntime
-
-        computer_token = _computer_token(cfg)
-        # The computer as a metric (DEC-261): built ONLY here, so with
-        # `[computer] enabled = false` there is no `nora_computer_up` series at
-        # all (not applicable, which is not down) and no zero-valued calls
-        # series either. `prime()` creates them at zero, so a rare `unavailable`
-        # after a restart is not a series whose first sample is already 1.
-        computer_metrics = ComputerMetrics(metrics, audit_tools=COMPUTER_TOOLS)
-        computer_metrics.prime()
-        computer = ComputerdRuntime(
-            base_url=cfg.computer.base_url, token=computer_token,
-            timeout_seconds=cfg.computer.request_timeout_seconds,
-            max_output_chars=cfg.computer.max_output_chars,
-            observer=computer_metrics,
-        )
-        computer_probe = ComputerdProbe(
-            base_url=cfg.computer.base_url, token=computer_token,
-            observer=computer_metrics,
-        )
-    # The scoped computer ([computer.scoped], design/browser-runtime): one microVM per
-    # computer scope, resolved through the `nora-computer scope provision`
-    # registry — built INSTEAD of the shared-VM client, so a call for a scope
-    # with no record answers `unavailable`, never the shared VM. The probe
-    # stays None in this mode: `nora_computer_up` measures the configured
-    # shared endpoint, and there is none here (a scope's health is the
-    # binding check, made on every call).
-    computer_admission: Any = None
-    browser_manager: Any = None
-    computer_queue_runner: Any = None
-    computer_task_backend: Any = None
-    computer_tasks: Any = None
-    browser_tabs: Any = None
-    #: The canonical scope resolvers ([computer.scoped]); `None` in the
-    #: shared-VM shape, where nothing scoped may resolve.
-    computer_scope_for: Any = None
-    computer_dm_scope_for: Any = None
-    if cfg.computer.enabled and cfg.computer.scoped.enabled:
-        scoped_cfg = cfg.computer.scoped
-        if not scoped_cfg.registry:
-            raise StartupError(
-                "[computer.scoped] enabled but `registry` is empty: it must "
-                "name the directory `nora-computer scope provision` writes.")
-        computer_redis_url = cfg.credentials.get(scoped_cfg.redis_url_env, "")
-        if not computer_redis_url:
-            raise StartupError(
-                f"[computer.scoped] enabled but ${scoped_cfg.redis_url_env} "
-                "(the dedicated nq:computer:* streams) is not set.")
-        from nora.app.computer_queue import (
-            ComputerAdmission,
-            ComputerQueueRunner,
-            ComputerTaskBackend,
-            SegmentRegistry,
-            deliver_computer_task,
-        )
-        from nora.domain.computer import (
-            anything_running,
-            computer_dm_scope,
-            computer_unit_scope,
-            dm_scope_id,
-        )
-        from nora.domain.computer_vms import FileScopeEndpoints
-        from nora.infra.computer.lifecycle import HostLifecycleClient
-        from nora.infra.computer.manager import ScopeBrowserManager
-        from nora.infra.computer.scoped import ScopedComputerdRuntime
-        from nora.infra.sql.browser_tabs import SqlBrowserTabStore
-        from nora.infra.sql.computer_tasks import SqlComputerTaskStore
-
-        lifecycle = (HostLifecycleClient(socket=scoped_cfg.lifecycle_socket,
-                                      token=computer_token)
-                     if scoped_cfg.lifecycle_socket else None)
-        computer_redis = aioredis.from_url(computer_redis_url)
-        computer = ScopedComputerdRuntime(
-            endpoints=FileScopeEndpoints(scoped_cfg.registry),
-            token=computer_token,
-            timeout_seconds=cfg.computer.request_timeout_seconds,
-            max_output_chars=cfg.computer.max_output_chars,
-            observer=computer_metrics,
-        )
-        computer_probe = None
-        computer_tasks = SqlComputerTaskStore(engine)
-        browser_tabs = SqlBrowserTabStore(engine)
-        # ONE registry of live executors, shared by the submitter side
-        # (admission) and the granter side (runner): a `running` row with no
-        # executor here is owner-lost, and a cancel can reach the real work.
-        # `pending_dir` journals retained results/consumed markers to
-        # `/app/state/computer` — the same app-owned private persistent root
-        # OAuth state uses — so an application restart cannot lose them or
-        # re-deliver. The read-only provisioner scope registry is untouched;
-        # one process owns the store for its lifetime (exclusive flock).
-        computer_segments = SegmentRegistry(
-            pending_dir=Path(cfg.computer.state_dir) / "computer")
-
-        async def _deliver_computer_task(row: Any) -> None:
-            await deliver_computer_task(
-                row, jobs=compute_jobs, tasks=computer_tasks, clock=op_clock)
-
-        async def _reconcile_scope(scope: str) -> str:
-            """Is work REALLY running on the scope's VM? Read through
-            `state` — quiet/busy/unknown, never a guess (an idle timeout is
-            not proof the old command stopped)."""
-            state = await computer.state(scope=scope)
-            verdict = anything_running(state)
-            if verdict is None and lifecycle is not None:
-                observed = await lifecycle.request("observe", scope, str(uuid.uuid4()))
-                if observed.get("status") == "ok" and observed.get("state") == "stopped":
-                    return "quiet"  # host positively confirmed this owned VM is stopped
-            return ("busy" if verdict is True
-                    else "quiet" if verdict is False else "unknown")
-
-        async def _queue_audit(task: Any, transition: str) -> None:
-            """A queue lifecycle transition (granted/cancelled/interrupted/
-            delivered) as its own audit row — the executor's own calls audit
-            inside the segment; this records the QUEUE's acts."""
-            if computer_events is None:
-                return
-            origin = dict(task.origin or {})
-            await computer_events.append(ComputerEvent(
-                id=uuid.uuid4(), operation_id=task.id, phase="finished",
-                created_at=clock(),
-                started_at=task.started_at or task.created_at,
-                finished_at=clock(), actor="sweeper",
-                requester_person_id=str(origin.get("requester_person_id") or "")
-                or None,
-                platform=str(origin.get("platform") or ""),
-                conversation_id=str(origin.get("conversation_id") or ""),
-                conversation_type=str(origin.get("conversation_type") or "group"),
-                tag_id=str(origin.get("tag_id") or ""),
-                scope=task.scope, tool="computer_queue", path="direct",
-                trace_id="", span_id="", status=transition,
-                result={"task": str(task.id), "kind": task.kind,
-                        "transition": transition}))
-
-        def _browser_event(scope: str, transition: str, subject: Any) -> Any:
-            """A browser lifecycle transition (tab expired, browser stopped)
-            as its own audit row — the sweep's guest effect, not a guess.
-            A transition the room can see dirties its `<computer>` block's
-            cached read too, so the next turn re-observes."""
-            if computer_context is not None:
-                computer_context.invalidate(scope)
-            if computer_events is None:
-                return
-
-            async def _write() -> None:
-                await computer_events.append(ComputerEvent(
-                    id=uuid.uuid4(), operation_id=uuid.uuid4(), phase="finished",
-                    created_at=clock(), started_at=clock(), finished_at=clock(),
-                    actor="sweeper", requester_person_id=None,
-                    platform="", conversation_id="", conversation_type="",
-                    tag_id="", scope=scope, tool="computer_browser",
-                    path="direct", trace_id="", span_id="", status=transition,
-                    result={"transition": transition,
-                            "subject": str(subject or "")}))
-            with contextlib.suppress(Exception):
-                return background.spawn(_write())
-
-        computer_admission = ComputerAdmission(
-            tasks=computer_tasks, redis=computer_redis, clock=op_clock,
-            executors=computer_segments, reconcile=_reconcile_scope,
-            audit=_queue_audit, lifecycle=lifecycle)
-        browser_manager = ScopeBrowserManager(
-            runtime=computer, tabs=browser_tabs, tasks=computer_tasks,
-            segments=computer_admission,
-            token=computer_token, clock=op_clock,
-            idle_after=timedelta(seconds=scoped_cfg.browser_idle_seconds),
-            on_event=_browser_event, lifecycle=lifecycle)
-        computer_task_backend = ComputerTaskBackend(tasks=computer_tasks)
-        computer_queue_runner = ComputerQueueRunner(
-            tasks=computer_tasks, redis=computer_redis, clock=op_clock,
-            metrics=metrics, on_terminal=_deliver_computer_task,
-            reconcile=_reconcile_scope, executors=computer_segments,
-            audit=_queue_audit, lifecycle=lifecycle)
-
-        # The canonical scope resolver the WHOLE feature shares — native
-        # tools, the context block and worker jobs must land on the same VM:
-        # a group room to its policy unit's scope, a private-DM room to its
-        # `(person, anchor unit)` scope — the DM's own unit anchors it, the
-        # room's single admitted person names it, anything else has no scope.
-        def computer_dm_scope_for(platform: str, conversation_id: str) -> str | None:
-            convo = allowlist.conversation(platform, conversation_id)
-            if convo is None or convo.persons is None or len(convo.persons) != 1:
-                return None
-            return dm_scope_id(next(iter(convo.persons)), convo.unit)
-
-        def computer_scope_for(
-            platform: str, conversation_id: str, conversation_type: str,
-        ) -> str:
-            if conversation_type == "group":
-                unit = _note_unit_of(allowlist)(platform, conversation_id)
-                return computer_unit_scope(unit) if unit else ""
-            scope_id = computer_dm_scope_for(platform, conversation_id)
-            return computer_dm_scope(scope_id) if scope_id else ""
-    # `<computer>`: the one reader the tag
-    # path and the fire path share. `None` while `[computer]` is off, so no
-    # room renders the block.
-    computer_context: ComputerContextReader | None = None
-    if computer is not None:
-        computer_context = ComputerContextReader(
-            sessions=computer_sessions, events=computer_events, runtime=computer,
-            caps=ComputerContextCaps(
-                **cfg.computer.context.model_dump(),
-                idle_after=timedelta(minutes=cfg.computer.sessions.idle_after_minutes),
-                lapsed_visible=timedelta(hours=cfg.computer.sessions.lapsed_visible_hours),
-            ),
-            clock=lambda: datetime.now(UTC), metrics=metrics,
-            unit_for=_note_unit_of(allowlist),
-            # The scoped runtime's canonical resolver wins over `unit_for`
-            # when wired: a DM room's block reads ITS scope, a group's its
-            # unit — the same resolution the tools and the queue share.
-            scope_for=computer_scope_for,
-            # The scoped runtime's queue/tab state in the same block: wired
-            # only in scoped mode, so the shared-VM block is unchanged.
-            tasks=computer_tasks, tabs=browser_tabs,
-            browser_idle_after=(timedelta(
-                seconds=cfg.computer.scoped.browser_idle_seconds)
-                if cfg.computer.scoped.enabled else None),
-        )
-    # The durable half of the reasoning-strip counter (`reasoning_strip_log`,
-    # ADR 0013), REUSING `engine` for the same reason the three stores above do.
-    # UNCONDITIONAL and behind no flag: an instrument that is off by default
-    # answers nothing, and the question it exists to answer -- how often the
-    # transport throws a turn's reasoning away, per unit of OPPORTUNITY, and
-    # whether that moved when the model or the effort did -- spans deploys,
-    # which is exactly what a Prometheus counter in this process cannot hold.
-    # All three consumers take it: the tag path and the participation occasion
-    # through `deliver.build`, and the Dreamer through `DreamerRuntime`.
-    reasoning_strip_store = SqlReasoningStripStore(engine)
-    # The reasoning-continuity retention store,
-    # REUSING `engine` for the same reason `reminders`/`compute_jobs`/
-    # `tool_call_log_store` do above. UNCONDITIONAL, unlike the Dreamer's own
-    # stores just below: the `[debrief]` flag gates the FOLD, not the
-    # raw retention write.
-    tag_trace_store = SqlTagTraceStore(engine)
-    # Standing. The STORE is built unconditionally, REUSING
-    # `engine` for the same reason its four neighbours above do — the read half
-    # feeds `TranscriptInjection`, whose own `_standing` returns `None` for a
-    # `None` store, so an always-built store costs one attribute on a
-    # deployment with the flag off and removes a whole class of "wired the
-    # writer, forgot the reader" mistake. What the flag gates is the FOLD,
-    # which is the part that spends a model call inside the reply slot.
-    standing_store = SqlStandingStore(engine)
-    # The typed platform-observation Record (design/platform-observations
-    # 02): persisted whenever a bridge ingests typed source evidence.
-    # Cognition OFF still retains the rows — they simply wake no session
-    # (the obligation enqueued in the append's transaction is answered
-    # "stimulus off"). ONE instance: the bridge writes it, the assembler
-    # reads the room's events/objects, the grounder and `record_query`'s
-    # kind branch read the same store.
-    observation_store = SqlObservationStore(engine)
-    ledger_store = SqlStandingLedger(engine, metrics=metrics)
-    # The unified media index (DEC-138), built HERE rather than beside the
-    # vision client below because THREE readers now hold it and the earliest is
-    # the context assembler: ingest writes the custody row, the comprehension
-    # job writes the read, the assembler joins it into the transcript and
-    # `media_fetch` serves it. One instance, `engine` reused for the reason
-    # every other store here reuses it (one pool, one lifecycle).
-    media_objects = SqlMediaObjectStore(engine, metrics=metrics)
-    documents_store: DocumentStore = SqlDocumentStore(engine)
-    # The window scanned for a picture's marker code is the one `media_fetch` scans: the
-    # prefill plus `load_transcript`'s reach, so any picture she can still see resolves
-    # and an older one is honestly not found.
-    # `route` (Google, DEC-46) is wired ONLY when [route] enabled AND its key
-    # env var holds a value — the same enabled-AND-key gate as media custody.
-    # Off (or keyless) leaves the registry without a RouteClient, so `route`
-    # answers `unavailable` and never reaches Google (a legitimate three-state,
-    # not a leak). R-28 screens person names before any call regardless.
-    route_client = None
-    if cfg.route.enabled:
-        route_key = cfg.credentials.get(cfg.route.api_key_env, "")
-        if route_key:
-            from nora.infra.routes.client import RouteClient
-            route_client = RouteClient(api_key=route_key)
-        else:
-            log.warning(
-                "route enabled but %s is unset — routing stays unavailable",
-                cfg.route.api_key_env,
-            )
-    _require_a_sendable_public_url(cfg.documents.public_url, content_checks=content_checks)
-    cognition_context_screen = cognition_context_screen_fn(
-        content_checks=content_checks, doctrine_store=lambda: doctrine_store,
-        canary=cfg.doctrine.canary,
-    )
-    cognition_shared_document_room = shared_document_room(allowlist=allowlist, persons=persons)
-
-    document_service = DocumentService(
-        store=documents_store, records=audit, media=media_objects,
-        media_window=cfg.store.context_window + LOAD_TRANSCRIPT_MAX,
-        room_ids=_room_ids_of(allowlist),
-        is_person=lambda person: person in persons.by_person,
-        public_url=cfg.documents.public_url,
-        # A Map names its places and the service looks them up. The same
-        # client `route` and `place_info` use, so `[route]` off means a Map is `unavailable`.
-        place_locator=route_client,
-        # The read grant, from the same policy.toml the portal reads with (8765_44827).
-        rooms_of=functools.partial(rooms_named, allowlist),
-        content_checks=content_checks, shared_room=cognition_shared_document_room,
-        autonomous_screen=cognition_context_screen,
-    )
-    # `<documents>`: the one reader the tag path and the fire path
-    # share. `None` while `[documents]` is off, so no room renders the block (the same
-    # flag that withholds the document tools).
-    documents_context: DocumentsContextReader | None = None
-    if cfg.documents.enabled:
-        documents_context = DocumentsContextReader(
-            store=documents_store, room_ids=_room_ids_of(allowlist),
-            clock=clock, metrics=metrics,
-            rooms_of=functools.partial(rooms_named, allowlist),
-            shared_room=cognition_shared_document_room,
-            autonomous_screen=cognition_context_screen,
-        )
-    # `<subagents>`: this room's sub-agent jobs, tag turn only. `None`
-    # while `[subagent]` is off. The worker is attached where the desk's is, once built.
-    subagents_context: SubagentsContextReader | None = None
-    if cfg.subagent.enabled:
-        subagents_context = SubagentsContextReader(
-            jobs=compute_jobs, clock=lambda: datetime.now(UTC), metrics=metrics,
-            documents=document_service if cfg.documents.enabled else None,
-        )
-    # ONE media join for the whole process, handed to every transcript builder
-    # there is: the tag assembler, the fire path, the tag-path debrief, the
-    # Cognition session and lazy adoption, so none renders bare handles where
-    # another renders the comprehension.
-    #
-    # `scan_identifiers` is INJECTED because `nora/language/` sits two layers
-    # below `nora/agent/` in the import contract and could not otherwise reach
-    # it — see `nora.domain.media_join`'s docstring.
-    media_join = MediaJoin(
-        store=media_objects,
-        screen=functools.partial(scan_identifiers, content_checks=content_checks),
-        metrics=metrics,
-        render_chars=cfg.media.comprehension_render_chars,
-        # The per-QUERY timeout, on every path. The two slot-held callers wrap
-        # `enrich` in their own `wait_for` as well; this is what bounds the
-        # store read for the six that do not, and it is deliberately shorter
-        # than `[standing] store_timeout_seconds` so the inner bound is the one
-        # that fires and the outer stays the backstop.
-        timeout_seconds=cfg.media.join_timeout_seconds,
-    )
-    # ONE quote-aware window resolver for the whole process (DEC-195), handed
-    # to every transcript
-    # read that can grow past `context_window` to resolve a reply's quote:
-    # the tag assembler AND the fire path's `build_context` — the same
-    # `MediaJoin` precedent immediately above, for the same reason. Built
-    # from `audit` (this process's ONE `RecordStore`) rather than each
-    # caller constructing its own, so `quote_margin`/`quote_window_multiplier`
-    # cannot drift between the two paths the way nothing else here is allowed
-    # to.
-    quote_window = QuoteWindow(
-        audit=audit, metrics=metrics,
-        quote_margin=cfg.store.quote_margin,
-        quote_window_multiplier=cfg.store.quote_window_multiplier,
-    )
-    # The shared decision log. Built unconditionally beside
-    # `standing_store` for its reason — it costs one
-    # attribute where nothing reads it — and there is a second reason here: the
-    # log has FOUR writers on three different paths, so a flag gating it would
-    # be four places to forget rather than one, and a half-wired log is worse
-    # than no log at all (a block that says «nothing happened in this room»
-    # while the gate has been deciding about it all day).
-    #
-    # ONE recorder for the whole process, handed to all four writers. That is
-    # not only tidiness: `DecisionLogRecorder._next_id` breaks a
-    # same-millisecond tie with a counter, and the counter is per recorder, so
-    # four recorders would be four independent sequences and one pass's own
-    # rows could still order arbitrarily. It is also the single place the
-    # fail-soft rule and the wall clock live, which is what makes «can a log
-    # write fail a turn?» a question about one method.
-    #
-    # `unit_of` is the SAME `Policy` read `FirePath._unit_for` and
-    # `TranscriptInjection._notes` make (DEC-105): two readers each carrying
-    # their own idea of a room's unit disagree the first time a deployment
-    # runs two social units. A room with no entry leaves the column empty
-    # rather than guessing — the recorder's own refusal.
-    decision_log = DecisionLogRecorder(
-        store=SqlDecisionLogStore(engine),
-        metrics=metrics,
+    _agenda_wire = importlib.import_module("nora.agenda").wire
+    _computer_wire = importlib.import_module("nora.computer").wire
+    _conversation_wire = importlib.import_module("nora.conversation").wire
+    _documents_wire = importlib.import_module("nora.documents").wire
+    _location_wire = importlib.import_module("nora.location").wire
+    _media_wire = importlib.import_module("nora.media").wire
+    _memory_wire = importlib.import_module("nora.memory").wire
+    _people_wire = importlib.import_module("nora.people").wire
+    _social_wire = importlib.import_module("nora.social").wire
+    _subagents_wire = importlib.import_module("nora.subagents").wire
+    _voice_wire = importlib.import_module("nora.voice").wire
+    _platforms_channels = channels(cfg=cfg)
+    _discord_bridge = _platforms_channels._discord_bridge
+    channel_directory = _platforms_channels.channel_directory
+    discord_box = _platforms_channels.discord_box
+    discord_control = _platforms_channels.discord_control
+    _stores_identity = identity(cfg=cfg, channel_directory=channel_directory, metrics=metrics)
+    allowlist = _stores_identity.allowlist
+    persons = _stores_identity.persons
+    reload_files = _stores_identity.reload_files
+    _stores_database = database(allowlist=allowlist, cfg=cfg, metrics=metrics, persons=persons)
+    engine = _stores_database.engine
+    _stores_audit = build_audit(cfg=cfg, engine=engine, metrics=metrics)
+    audit = _stores_audit.audit
+    _location_stores = _location_wire.stores(engine=engine)
+    mobility = _location_stores.mobility
+    _agenda_reminders = _agenda_wire.reminders(engine=engine)
+    reminders = _agenda_reminders.reminders
+    _stores_runtime_stores = runtime_stores(engine=engine)
+    compute_jobs = _stores_runtime_stores.compute_jobs
+    tool_call_log_store = _stores_runtime_stores.tool_call_log_store
+    _computer_stores = _computer_wire.stores(cfg=cfg, engine=engine, metrics=metrics)
+    computer = _computer_stores.computer
+    computer_events = _computer_stores.computer_events
+    computer_leases = _computer_stores.computer_leases
+    computer_metrics = _computer_stores.computer_metrics
+    computer_probe = _computer_stores.computer_probe
+    computer_sessions = _computer_stores.computer_sessions
+    computer_token = _computer_stores.computer_token
+    _computer_queue = _computer_wire.queue()
+    browser_manager = _computer_queue.browser_manager
+    browser_tabs = _computer_queue.browser_tabs
+    computer_admission = _computer_queue.computer_admission
+    computer_dm_scope_for = _computer_queue.computer_dm_scope_for
+    computer_queue_runner = _computer_queue.computer_queue_runner
+    computer_scope_for = _computer_queue.computer_scope_for
+    computer_task_backend = _computer_queue.computer_task_backend
+    computer_tasks = _computer_queue.computer_tasks
+    _computer_scoped = await _computer_wire.scoped(
+        allowlist=allowlist,
+        browser_tabs=browser_tabs,
+        cfg=cfg,
         clock=clock,
-        unit_of=lambda platform, conversation_id: (
-            convo.unit
-            if (convo := allowlist.conversation(platform, conversation_id))
-            is not None else None
-        ),
-    )
-    # The Dreamer's CURSOR, REUSING `engine` for the same reason
-    # `reminders`/`compute_jobs`/`tool_call_log_store` do above. UNLIKE those,
-    # this one IS gated on the feature flag: `SqlLanguageStore` owns
-    # `consolidation_watermark` — `(consolidator_name, scope_id) -> how far
-    # this adaptor has read` — so the Dreamer's clock cannot persist a
-    # watermark for ANY adaptor without this object, and `__main__` spawns the
-    # loop only where it exists. Off, `dream_loop` is never spawned.
-    #
-    # `SqlLanguageStore` keeps its name though it is the Dreamer's cursor: the
-    # watermark table belongs to the Dreamer and lives in a module called
-    # `language`; extracting it is its own port change with its own migration.
-    language_store: SqlLanguageStore | None = (
-        SqlLanguageStore(engine, metrics=metrics) if cfg.dreamer.enabled else None
-    )
-    # The note tier's store, REUSING `engine`
-    # like every store above, and gated on its OWN flag. Off,
-    # `TranscriptInjection` gets `notes=None` and `_notes` answers `()`
-    # without a query. No `metrics=`:
-    # `SqlNoteStore.__init__` takes an engine and nothing else on purpose (its
-    # own docstring), and the one read on the critical path is counted by
-    # `_notes` instead.
-    note_store: SqlNoteStore | None = SqlNoteStore(engine) if cfg.notes.enabled else None
-    # The memo tier (DEC-306): what a unit settled and keeps. No flag: only a
-    # Cognition session writes a memo (`[cognition] enabled`), and with none
-    # kept every read renders nothing. ONE instance for the tag and fire
-    # `<memos>`, `memo_read` and the session's verbs.
-    memo_store = SqlMemoStore(engine)
-
-    # Resolved here, not inside AdapterRegistry — the same convention every
-    # other `*_env` secret (the LLM key, the route key) follows: composition.py
-    # reads the environment once and hands the already-resolved value to
-    # whatever constructs the client that needs it.
-    discord_token = cfg.credentials.get(cfg.platforms.discord.token_env, "")
-    # The audio-controllers: ONE PER GUILD, because
-    # Discord's limit is one voice connection per bot token per guild and each
-    # connection stays single. `[speech.tts] sidecars` lists a
-    # controller endpoint per guild — usually the SAME one, since a single
-    # sidecar serves them all — and IS the join allow-list: a guild with no
-    # entry has no voice at all. Empty (the default) leaves the
-    # whole seam unwired: no hub, no speech playout, and every `/music` or
-    # `/discord join` failing CLOSED (the join-failed reply), never a local
-    # connection attempt.
-    #
-    # Built BEFORE the music manager: the manager's staleness probes
-    # (`playback_probe`, `generation_probe`) and its hub-session drop/exit
-    # seams read and mutate the hub from construction.
-    voice_hub: VoiceControllerHub | None = None
-    if cfg.speech.tts.sidecars and not _discord_bridge:
-        # In Discord bridge mode the sidecar mapping belongs to the
-        # standalone bridge (`deploy/discord-bridge/entry.py` reads this
-        # same `[speech.tts] sidecars` through the mounted config.toml) —
-        # the app forwards voice work to the bridge and never owns a
-        # controller session.
-        voice_hub = VoiceControllerHub({
-            guild_id: VoiceControllerClient(endpoint)
-            for guild_id, endpoint in cfg.speech.tts.sidecars_by_guild.items()
-        })
-    # `spawn=asyncio.ensure_future`
-    # rather than the `BackgroundTasks` instance built further down this
-    # function — safe because `MusicPlayerManager`
-    # already holds its own strong reference to every task it spawns
-    # (`self._idle_tasks`), the exact GC-mid-flight bug `BackgroundTasks`
-    # exists to prevent for tasks nobody else references.
-    music_manager = (
-        MusicPlayerManager(
-            queue_store=SqlMusicQueueStore(engine), session_store=SqlMusicSessionStore(engine),
-            track_source=YtDlpSource(), idle_timeout_seconds=cfg.music.idle_timeout_seconds,
-            spawn=asyncio.ensure_future, autoplay_enabled=cfg.music.autoplay_enabled,
-            autoplay_prewarm_seconds=cfg.music.autoplay_prewarm_seconds,
-            playback_probe=voice_hub.expected_playback_id if voice_hub is not None else None,
-            # The liveness watch: without it nora asks the controller for
-            # status exactly twice in her life (boot, and after a version
-            # conflict) and otherwise believes a track is playing until an
-            # event says otherwise — which a wedged controller never sends.
-            read_playback=voice_hub.read_playback if voice_hub is not None else None,
-            metrics=metrics,
-            generation_probe=voice_hub.generation_for if voice_hub is not None else None,
-            drop_voice_session=voice_hub.drop if voice_hub is not None else None,
-            exit_voice_session=voice_hub.exit if voice_hub is not None else None,
-        )
-        if cfg.music.enabled and not _discord_bridge
-        # Bridge mode: the standalone bridge owns THE manager (`entry.py`
-        # builds it over the same SQL stores); the app's music surface is
-        # the `BridgeMusicTool` proxy, so no second mutation path exists.
-        else None
-    )
-    # A room marked `voice = true` with NO controller for its guild is the one
-    # combination that is neither useful nor refused: the join fails, so the
-    # sidecar never connects, so no utterance is ever produced — and nothing
-    # anywhere says why. The other three combinations are either a working
-    # path or a loud 400 at the first wake.
-    _joinable = voice_hub.guild_ids if voice_hub is not None else frozenset()
-    for _convo in allowlist.rooms():
-        if not _convo.voice or _discord_bridge:
-            # Bridge mode: the join allow-list lives on the bridge; the
-            # app's read of it is `BridgeDiscordAdapter.send`, and this
-            # warning's premise ("the app has no controller") is false.
-            continue
-        _guild = _convo.primary_id.partition("/")[0]
-        if _guild not in _joinable:
-            log.warning(
-                "policy.toml marks %s (guild %s) `voice = true`, but no "
-                "audio-controller is configured for that guild in "
-                "[speech.tts] sidecars — nothing can join it, so no spoken "
-                "utterance will ever be recorded there",
-                _convo.label or _convo.primary_id, _guild,
-            )
-    if music_manager is not None and voice_hub is None:
-        log.warning(
-            "[music] enabled but [speech.tts] sidecars is empty — no "
-            "audio-controller is wired for any guild, so every /music join "
-            "will fail closed (the join-failed reply); music stays silent "
-            "until a guild is mapped to its controller"
-        )
-    # `[speech.tts]`'s speaker: wired ONLY when
-    # enabled AND a provider is named AND that provider's key is present —
-    # the same inert-ship rule as the transcriber above, plus the keyless-
-    # `route`/`search` shape. Off (or providerless, or keyless) leaves no
-    # speaker and nothing about Nora's behaviour changes. Built BEFORE the
-    # adapter registry (below) because DiscordAdapter's voice playout seam
-    # receives this same instance — the registry's
-    # `discord_speaker=` keyword is the one place that knows MiniMax is real;
-    # everything downstream receives `Speaker | None`.
-    # Built before the speaker (below) because the speech formatter reads its
-    # instruction from it.
-    try:
-        doctrine_store = DoctrineStore(
-            cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
-            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-            trigger=cfg.engagement.trigger.text,
-            language_hint=cfg.doctrine.language_hint,
-            tool_names=ToolRegistry(content_checks=content_checks).tool_names(),
-            metrics=metrics,
-        )
-        doctrine = doctrine_store.get(applies_to="tag")
-    except DoctrineError as exc:
-        raise StartupError(f"doctrine error: {exc}") from exc
-
-    speaker: Speaker | None = None
-    if cfg.speech.tts.enabled:
-        tts_key = cfg.credentials.get(cfg.speech.tts.api_key_env, "")
-        if cfg.speech.tts.provider == "minimax_cn" and tts_key:
-            from nora.infra.tts import MiniMaxTtsSpeaker
-            speaker = MiniMaxTtsSpeaker(
-                api_key=tts_key,
-                voice=cfg.speech.tts.voice or "Cantonese_CuteGirl",
-                speed=cfg.speech.tts.speed,
-                pitch=cfg.speech.tts.pitch,
-                vol=cfg.speech.tts.vol,
-                emotion=cfg.speech.tts.emotion or None,
-                text_normalization=cfg.speech.tts.text_normalization,
-                pronunciation=tuple(cfg.speech.tts.pronunciation),
-                formatter=_speech_formatter(cfg, doctrine_store, metrics),
-            )
-        else:
-            log.warning(
-                "[speech.tts] enabled but provider=%r or %s unset — no speaker "
-                "is wired; voice answers stay text-only",
-                cfg.speech.tts.provider, cfg.speech.tts.api_key_env,
-            )
-    # The join allow-list IS the set of guilds a controller exists for — one
-    # source of truth, so the gate and the client map can never disagree.
-    voice_guild_ids = voice_hub.guild_ids if voice_hub is not None else frozenset()
-    # The controller → nora callback consumer (`POST /app/v1/voice/event`) —
-    # only when BOTH halves it glues exist:
-    # the hub (whose event-id dedupe and expected-playback bookkeeping it
-    # reads) and the music manager (whose per-guild-locked methods it
-    # drives). `nora/__main__.py` registers the route only when this is
-    # not None.
-    voice_event_consumer = (
-        VoiceEventConsumer(music_manager, voice_hub)
-        if music_manager is not None and voice_hub is not None
-        # Bridge mode: the controller posts to the bridge's
-        # `/v1/voice/event`, whose sink is the bridge's own consumer —
-        # there is no app-side session for an event to reconcile.
-        else None
-    )
-    # Where a guild's music ANNOUNCEMENTS go.
-    # Built from the room policy, not from
-    # `cfg.music`: the answer is about a room's people, so it belongs beside
-    # the room's trust flags. The channel it names is a DESTINATION, not a
-    # room — see `Conversation.music_channel` for why a room entry was wrong.
-    resolve_music_channel = _music_channel_of(allowlist)
-    # A `music_channel` named for a guild that has no audio-controller is DEAD
-    # CONFIGURATION: `[speech.tts] sidecars` — not `policy.toml` — is what
-    # gates `/music play` (`voice_gate`), so nothing will ever announce for
-    # that guild. A warning rather than a startup
-    # error: the two files legitimately change on different cadences, and an
-    # operator who names the channel before wiring the sidecar has written
-    # something correct-but-early, not something wrong.
-    for convo in allowlist.rooms():
-        if convo.music_channel is None or _discord_bridge:
-            # Bridge mode: `[speech.tts] sidecars` maps on the BRIDGE, not
-            # here — `voice_guild_ids` is empty by design and this warning
-            # would announce a dead channel that is not dead.
-            continue
-        music_guild, _, _ = convo.primary_id.partition("/")
-        if music_guild not in voice_guild_ids:
-            log.warning(
-                "%s names music_channel %s but guild %s has no audio-controller "
-                "in [speech.tts] sidecars — music cannot play there, so the "
-                "channel will never be announced into",
-                convo.label or convo.primary_id, convo.music_channel, music_guild,
-            )
-    # The public Instagram summons' intake: the Instagram adapter hands every `summons` SSE event
-    # here. ALWAYS built, so a card that arrives while the summons is off is
-    # counted `disabled` rather than silently absent; `enabled` only under BOTH
-    # `[social.instagram] enabled` and `[social.instagram.summons] enabled`,
-    # exactly when the consumer below is spawned to drain it.
-    summons_wired = bool(cfg.social.instagram.enabled and cfg.social.instagram.summons.enabled)
-    summons_inbox = SummonsInbox(enabled=summons_wired, metrics=metrics)
-    try:
-        registry = await AdapterRegistry.from_config(
-            cfg.platforms, metrics=metrics, discord_token=discord_token,
-            music_manager=music_manager,
-            discord_speaker=speaker,
-            voice_hub=voice_hub,
-            voice_guild_ids=voice_guild_ids,
-            resolve_music_channel=resolve_music_channel,
-            instagram_summons=summons_inbox,
-            bridge_token=cfg.credentials.get(cfg.bridges.token_env, ""),
-            # A 1:1 message goes only to somebody in identity.toml; the
-            # senders hold this set and refuse the rest.
-            dm_recipients={
-                p: LiveSet(functools.partial(persons.direct_addresses, p)) for p in DIRECT_PLATFORMS
-            },
-        )
-    except AdapterRegistryError as exc:
-        raise StartupError(str(exc)) from exc
-    if "signal" not in registry:
-        # The rest of this function (the engagement pipeline, delivery) has no
-        # code path that runs without an adapter — a disabled Signal with
-        # nothing else enabled is not a valid startup state, even though
-        # AdapterRegistry itself tolerates zero enabled platforms.
-        raise StartupError("no platform adapter is enabled (platforms.signal.enabled = false)")
-    # The directory's adapter, now that one exists — see the declaration by
-    # `reload_files` above. `registry.get` answers the port type, so the
-    # getter's isinstance check is also the narrowing.
-    discord_box["adapter"] = registry.adapters.get("discord")
-    signal_adapter = registry.get("signal")
-    # `AdapterRegistry.get` returns the port type — narrowed back to the
-    # concrete class here because `Dependencies.adapter` stays SignalAdapter
-    # (nora.app only builds Signal-specific tool wiring around it;
-    # see that field's own docstring). An internal invariant violation, not a
-    # config error, so it fails loudly rather than via a silent type lie.
-    if not isinstance(signal_adapter, (SignalAdapter, BridgeAdapter)):
-        raise StartupError("internal error: registry's 'signal' entry is not a SignalAdapter")
-    adapter = signal_adapter
-    # Static conformance proof (DEC-12): `isinstance` against a `runtime_checkable`
-    # `Protocol` only checks method/attribute NAMES, not signatures
-    # (tests/contract/test_port_conformance.py::
-    # test_runtime_checkable_protocols_only_check_method_names` demonstrates the
-    # false-confidence trap directly) — this assignment is what mypy actually
-    # checks SHAPES against, inside its strict `nora.app` override. If
-    # `SignalAdapter` ever drifted from `PlatformAdapter`'s real signatures, this
-    # line — not the isinstance test — is what would catch it.
-    _adapter_satisfies_platform_adapter: PlatformAdapter = adapter
-    account = registry.identity_for("signal").primary
-
-    # The Dreamer's own instruction corpus — its doctrine plus one objective
-    # per adaptor. Bind-mounted read-only the
-    # way `nora/doctrine` is, so an operator edit is live on the next Dreamer
-    # tick with no rebuild. Built unconditionally rather than under
-    # `[language].enabled` so a malformed objective is a STARTUP failure with a
-    # filename in the message, not a silent Dreamer that stops writing rows
-    # three hours later.
-    dreamer_instructions = DreamerInstructions(
-        cfg.dreamer.dir,
-        reload=cfg.dreamer.reload, strict=cfg.dreamer.strict, metrics=metrics,
-    )
-    try:
-        dreamer_instructions.objective_names()
-    except InstructionError as exc:
-        raise StartupError(f"Dreamer instruction error: {exc}") from exc
-
-    # Two machine ids for one agent: `[agent].name` (trace lineage) and
-    # `[honcho].ai_peer` (the Honcho observer peer). A clone ("delia") must set
-    # BOTH; if they diverge, the agent traces under one name but builds its
-    # memory under another — a silent split. Warn rather than fail: a deliberate
-    # divergence is rare but conceivable, and this is a config smell, not an
-    # invariant.
-    if cfg.agent.name != cfg.honcho.ai_peer:
-        log.warning(
-            "agent.name (%r) != honcho.ai_peer (%r): traces and Honcho memory "
-            "will use different agent identities — set both to the same value "
-            "unless this split is intended",
-            cfg.agent.name, cfg.honcho.ai_peer,
-        )
-    # workspace > unit > room (DEC-214): every Honcho call is routed from its
-    # room or unit to the Honcho workspace its Nora workspace is bound to, and
-    # to the unit's named scope inside it. Resolved ONCE, here, from the three
-    # files that each hold one part of it (`nora.app.memory_routing`); a
-    # disagreement between them refuses startup rather than guessing where a
-    # person's speech goes.
-    try:
-        router = build_workspace_router(
-            policy=allowlist, bindings=persons.honcho_workspaces,
-            default_workspace=cfg.honcho.workspace_id,
-        )
-    except MemoryRoutingError as exc:
-        raise StartupError(f"memory routing error: {exc}") from exc
-    memory = HonchoClient(
-        cfg.honcho.base_url, cfg.honcho.workspace_id, ai_peer=cfg.honcho.ai_peer,
-        workspace_router=router,
-    )
-    # Best-effort, never fatal — no try/except. Every bound Honcho workspace,
-    # the Nora aiPeer in each (her replies feed under it to build her
-    # self-model; peers are per Honcho workspace), and every unit's scope.
-    await memory.ensure_workspace()
-    # EXCEPT a bound Honcho workspace that belongs to another application:
-    # that is a wrong line in identity.toml, and running on it would write
-    # people's speech into someone else's peers. The client has already
-    # refused every call to it; this makes the refusal loud (R-5). An
-    # unreachable Honcho is not this — it is re-checked on the first call.
-    foreign = memory.foreign_workspaces()
-    if foreign:
-        raise StartupError(
-            f"memory routing error: Honcho workspace(s) {list(foreign)} hold "
-            "sessions and are not marked as this Nora's. Another application "
-            "uses them — bind the Nora workspace to a different "
-            "honcho_workspace in identity.toml."
-        )
-
-    llm_state = LLMState()
-    background = BackgroundTasks()
-    background.spawn(reload_files.run())
-    if isinstance(channel_directory, BridgeChannelDirectory):
-        # The bridge-mode directory's TTL snapshot only stays live while
-        # its refresh loop runs — a real registered loop, not lazy reads.
-        background.spawn(channel_directory.run())
-    # R-9's rate limiter, with its window persisted so a force-recreate does
-    # not empty it (a duplicate tag arriving seconds after a restart would
-    # otherwise run a second turn). `spawn` is REQUIRED alongside the store, not
-    # optional: `Debounce.allow` is synchronous by design (an await between
-    # admission's QUEUED verdict and the enqueue would break FIFO order), so
-    # the row is written fire-and-forget on the loop.
-    debounce = Debounce(
-        cfg.engagement.trigger.min_interval_seconds,
-        store=SqlTagDebounceStore(engine),
-        spawn=background.spawn,
-    )
-    # ONCE, here, before any adapter is listening — `allow` cannot do it for
-    # itself. It also prunes the rows whose window has already elapsed, which
-    # is what bounds the table without a sweep loop of its own.
-    await debounce.hydrate()
-
-    # First match wins, deterministic text first. The mention policy uses the
-    # same alias set R-12 uses to refuse self-tags — an @-mention arrives as
-    # U+FFFC in the body plus a `mentions` array, so a substring trigger can
-    # never see it.
-    # EVERY platform's aliases, not just Signal's. These two policies match a
-    # mention/quote against "is this Nora?", and on Discord an @mention carries
-    # her SNOWFLAKE, which a match set of a phone number and a UUID never holds:
-    # the obvious way to address her would produce ingest, attribution and
-    # silence, the exact failure `MentionPolicy` exists to end.
-    #
-    # A UNION rather than a per-platform lookup: these id spaces are disjoint by
-    # construction (a Signal phone is `+…`, its ACI a hyphenated UUID, a Discord
-    # id a bare 17-19 digit snowflake), so no cross-platform false positive is
-    # reachable, and the alternative — threading `message.platform` into every
-    # policy — buys nothing here. R-12's self-tag check is the one that must
-    # stay strictly per-platform, and it does: it reads the resolved identity
-    # for the tag's own platform (DEC-102).
-    #
-    # Every id form Nora answers to, on every enabled platform — see
-    # `AdapterRegistry.self_aliases`.
-    self_aliases = registry.self_aliases()
-    # `[engagement.trigger].enabled` (default True — see TriggerConfig) gates
-    # ONLY the spoken/typed trigger phrase out of the composite: a real
-    # `@mention` or a reply to one of her own messages still engage her when
-    # this is off, so turning it off narrows the ways IN, it does not silence
-    # her outright the way `policy.toml` denying a room does.
-    engage_policies: list[EngagePolicy] = []
-    if cfg.engagement.trigger.enabled:
-        engage_policies.append(TriggerTextPolicy(cfg.engagement.trigger.text))
-    engage_policies.append(MentionPolicy(self_aliases))
-    engage_policies.append(ReplyToNoraPolicy(self_aliases))
-    # Any voice note engages her, independent of trigger text — the
-    # transcription is conversation content in the
-    # body by the time the gate runs. Last so the deterministic text paths
-    # keep their reasons, but it fires on any note regardless.
-    engage_policies.append(VoiceNotePolicy())
-    # Any transcript that arrived via the voice-wake channel engages her too:
-    # the wake service only POSTs after the
-    # operator said 「喂 Nora」, which is the voice channel's closest thing to
-    # an explicit tag — without this, a transcript lands in the audit row and
-    # the engage gate says `no_trigger`. Same position as VoiceNotePolicy: after
-    # the text paths, fired by content-shape rather than words.
-    engage_policies.append(VoiceWakePolicy())
-    # The participation occasion's room gate:
-    # LAST, and only when the occasion is enabled at all. It never
-    # engages — it marks an untagged message in an opted-in room with
-    # `EngageDecision.relevance_gate`, which the dispatcher NOTES with the
-    # quiescence trigger instead of admitting it. With the flag off, no
-    # room's untagged traffic is even considered.
-    if cfg.relevance_gate.enabled:
-        engage_policies.append(RelevanceGatePolicy(allowlist))
-    policy = CompositePolicy(tuple(engage_policies))
-    # The room-scoped tools' one platform dependency, built BEFORE the presence
-    # reader because the room tools read member counts through it. Built here
-    # rather than
-    # taken off the adapter because membership is a read-only DIRECTORY query
-    # (`nora.platform.signal.directory`'s two-method allowlist), not part of the
-    # send/receive/react lifecycle — see `nora.domain.ports.RosterSource`.
-    # ONE PER PLATFORM, not one for all of them: signal-cli has never heard of
-    # a Discord conversation id and answers `available=False`, so `where_is`
-    # and every other room-scoped tool would answer «I could not look» on
-    # Discord. Fail-closed and therefore harmless, but invisible: nothing
-    # errors and the honest refusal is indistinguishable from the guard doing
-    # its job.
-    #
-    # Keyed the same way the adapter map is (DEC-102), and built only for
-    # platforms that are actually enabled — a roster for a platform with no
-    # adapter would be a client nothing can use.
-    rosters: dict[str, RosterSource] = {}
-    if "signal" in registry:
-        rosters["signal"] = (
-            BridgeRoster("signal", BridgeEndpoint(
-                cfg.platforms.signal.base_url,
-                cfg.credentials.get(cfg.bridges.token_env, "")))
-            if cfg.platforms.signal.mode == "bridge"
-            else SignalRoster(
-                base_url=cfg.platforms.signal.base_url,
-                account=cfg.platforms.signal.account))
-    if "discord" in registry:
-        if discord_control is not None:
-            # Bridge mode: the roster read crosses the bridge's `/v1/reads`
-            # surface — the app holds no Discord client for a live answer.
-            rosters["discord"] = BridgeDiscordRoster(control=discord_control)
-        else:
-            from nora.platform.discord.roster import DiscordRoster
-            rosters["discord"] = DiscordRoster(discord_token)
-    if "instagram" in registry:
-        # Built for a DEGRADED adapter too, and that is deliberate: the registry registers
-        # an Instagram adapter that could not authenticate rather than refusing
-        # to start (`nora.platform.registry`), and a checkpoint clears without a
-        # restart. A roster withheld on the startup state would then stay
-        # withheld for the life of the process — the room-scoped tools silently
-        # unavailable long after the session came back. The read itself is what
-        # fails closed: a checkpointed bridge answers 409 and the roster is
-        # `available=False` for exactly as long as that is true.
-        from nora.platform.instagram.roster import InstagramRoster
-        rosters["instagram"] = InstagramRoster(cfg.platforms.instagram.base_url)
-    # `<presence>`: ONE reader, handed to the tag
-    # path's assembler and the fire path, so none of the
-    # two holds its own idea of which rooms exist or which networks are up.
-    # Over the SAME allowlist ingest admits against and the SAME adapter map
-    # the tag path sends through.
-    presence_reader = _presence_reader(cfg, allowlist, registry, rosters)
-    # THE CULTURE TIER'S READ HALF (DEC-207): ONE
-    # read-only reader, handed to the tag path's assembler, the fire path and
-    # every Dreamer adaptor whose prompt carries `<culture>`. `None` while
-    # `[culture] enabled = false`, the shipped default, so no occasion renders
-    # the block — the flag gates the fold and every read together
-    # (`CultureConfig`).
-    culture_reader: CultureReader | None = (
-        SqlCultureStore(engine) if cfg.culture.enabled else None
-    )
-    # `<lessons>` on tag and fire turns: read-only,
-    # bodies of active lessons. `None` while `[lessons] render` is off.
-    lessons_reader: ActiveLessons | None = (
-        ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
-    )
-    # THE SWITCH (design/unified-memory/45 §5, 00 «Sequence» step 8): the
-    # Profile accounts' read half — one store, read-only by the Protocol the
-    # readers are typed against (`ProfileHeads` has `account_heads` and nothing
-    # else), handed to the tag assembler, the fire path, the Cognition
-    # grounder and the debrief fold. Wired only when `[memory.profile] write` AND
-    # `[memory.profile] read` are both on: `write` alone is the shadow (the
-    # sessions write, nothing reads), and `read` without `write` has no
-    # store to read. Flipping `read` back off is the whole rollback.
-    # `profile_store_reader` keeps the concrete type for the portal, whose
-    # page reads the open disputes too (`ProfileHeads` has no such read).
-    profile_store_reader = (
-        SqlProfileStore(
-            engine, screen=functools.partial(text_offence, content_checks=content_checks),
-        )
-        if cfg.memory.profile.write and cfg.memory.profile.read else None
-    )
-    profile_reader: ProfileHeads | None = profile_store_reader
-    # The same gate, for the writers (the dream sessions and the graph
-    # surface's `remember`): on, a profile write projects its lines into the
-    # memory index in its own transaction (45 §1, 25 §7); off is the shadow,
-    # and the shadow's lines join at the flip through `nora memory rebuild`.
-    profile_index = cfg.memory.profile.write and cfg.memory.profile.read
-    # The join from a note to its room's account (DEC-207):
-    # EVERY id a room is known by — `Note.established_in` holds whichever one
-    # the note was born under — within the note's UNIT, since ids are unique
-    # per platform and a note carries no platform.
-    note_rooms: Mapping[tuple[str, str], tuple[str, str | None]] = LiveMapping(lambda: {
-        (cid, conv.unit): (conv.primary_id, conv.label or None)
-        for conv in allowlist.rooms()
-        if conv.primary_id and conv.unit
-        for cid in conv.ids
-    })
-
-    def note_room_for(cid: str, unit: str) -> tuple[str, str | None] | None:
-        return note_rooms.get((cid, unit))
-
-    # THE SAME JOIN, for the name resolver: every
-    # id a room is known by, within the note's unit, to the room's platform —
-    # what `Persons.name_transcript` needs and `Note.established_in` alone
-    # cannot supply, since a note carries no platform of its own.
-    note_platforms: Mapping[tuple[str, str], str] = LiveMapping(lambda: {
-        (cid, conv.unit): conv.platform
-        for conv in allowlist.rooms()
-        if conv.primary_id and conv.unit
-        for cid in conv.ids
-    })
-
-    def note_platform_for(cid: str, unit: str) -> str | None:
-        return note_platforms.get((cid, unit))
-
-    # `[memory.index] read` (ships off): the one retrieval service, held
-    # by the tag path's pre-fetch (`<recalled>`) and by the tool registry's
-    # `memory_search` below, one instance for both; `None` keeps the Honcho
-    # surface and no pre-fetch. The same SqlMemoryIndex answers /health's
-    # `index` block either way (the projection runs whether or not the search
-    # surface is on).
-    from nora.infra.sql.memory_graph import SqlMemoryGraph
-    memory_index_reader = SqlMemoryIndex(engine)
-    memory_search = (
-        MemorySearch(
-            memory_index_reader, metrics,
-            graph=SqlMemoryGraph(engine, metrics=metrics),
-            profile_render=cfg.memory.profile.write and cfg.memory.profile.read,
-            # `[memory.index] embed`: dense and exact seeds, the
-            # lexical seed only as the fallback; off, every answer is
-            # the fallback's `partial`.
-            embedder=LlamaEmbedder(
-                cfg.memory.index.embedder_url,
-                timeout_seconds=QUERY_TIMEOUT_SECONDS,
-                query_model_file=model_file(cfg.memory.index.embedder_model),
-            ) if cfg.memory.index.embed else None,
-            model=(
-                fingerprint(cfg.memory.index.embedder_model)
-                if cfg.memory.index.embed else None
-            ),
-            # The embedding worker's tick: a node waiting less than a
-            # few of them is fresh, not a backlog that answers `partial`.
-            drain_seconds=cfg.memory.index.refresh_seconds,
-        )
-        if cfg.memory.index.read else None
-    )
-    # The one Standing view (design/notebook-memory-types/20-standing.md):
-    # ONE reader over the canonical stores, held by the tag assembler, the
-    # fire path and the cognition session — a second copy per path would be
-    # the second store the design rules out. `unit → rooms` comes from the
-    # same `allowlist` `home_rooms` is derived from, live-reloaded with it.
-    unit_rooms = LiveMapping(lambda: {
-        unit: [(c.platform, c.primary_id) for c in allowlist.rooms()
-               if c.unit == unit]
-        for unit in {c.unit for c in allowlist.rooms() if c.unit}
-    })
-    shared = shared_reader(
-        ledger=ledger_store, reminders=reminders,
-        record_query=SqlRecordQuery(engine),
-        standing=standing_store if cfg.standing.enabled else None,
-        traces=tag_trace_store,
-        ai_peer=cfg.honcho.ai_peer,
-        rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
-    )
-    assembler = build_assembler(
-        cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
-        memory_search=memory_search, clock=clock,
-        rosters=rosters, self_ids=registry.self_aliases(),
-        # `None` while `[notes] enabled = false`. `policy=allowlist` is the
-        # SAME policy.toml instance the ingest pipeline and `EngagementPipeline`
-        # are given below — the assembler needs it for one thing only, naming
-        # the unit a room belongs to (`Conversation.unit`, DEC-105),
-        # which is what the note index is scoped by. Handing it a different
-        # Policy would scope the read to a unit ingest never admitted.
-        notes=note_store,
-        memos=memo_store,
-        policy=allowlist,
-        # Standing's READ half. `None` while `[standing] enabled = false`, the
-        # shipped default, so `<standing>` renders nothing. Unlike `notes`
-        # beside it this needs no `policy=` at all: a position is keyed
-        # `(platform, conversation_id)` and is NOT shared across a
-        # unit's rooms — two rooms in one social unit share what the
-        # unit knows, not where a conversation had got to.
-        #
-        # It is the WHOLE store rather than a read-only narrowing, and the same
-        # instance the debrief's `Wiring` gets below: the fold's non-negotiable
-        # is that the read and the write are the same row seen twice, and two
-        # objects for one row is how that stops being structurally true.
-        shared=shared,
-        # The media join. The same instance every other
-        # transcript builder holds — the comprehension a spawned job wrote is
-        # the one the transcript renders, the one the note tier reads and the
-        # one `media_fetch` serves, and separate copies of that decision would
-        # be chances to disagree about what a picture shows.
-        media_join=media_join,
-        # The shared quote-window resolver (DEC-195). Same instance
-        # `FirePath` below is given — the point of building it once.
-        quote_window=quote_window,
-        presence=presence_reader,
-        culture=culture_reader,
-        # `<profile>`, the switch (45 §5): `None` until `[memory.profile] read` is
-        # on beside `[memory.profile] write`, and the same reader the fire path,
-        # the Cognition grounder and the debrief fold hold.
-        profile=profile_reader,
-        # `<lessons>`: `None` while `[lessons]
-        # render` is off. The same reader the fire path gets.
-        lessons=lessons_reader,
-        # `<computer>`: `None` while
-        # `[computer]` is off; the same reader the fire path gets.
-        computer=computer_context,
-        documents=documents_context,
-        # `<subagents>`: `None` while `[subagent]` is off. The worker is
-        # attached below, beside the desk's. Not given to the fire path.
-        subagents=subagents_context,
-        # The typed source events of the transcript window and the room's
-        # folded object heads for the standing slot (design 04): the ONE
-        # store the bridge writes.
-        observations=observation_store,
-    )
-
-    def _spawn(coro: Coroutine[Any, Any, None]) -> None:
-        # IngestPipeline's `spawn` is `Callable[[Coroutine], None]` — it never
-        # needs the Task back. `BackgroundTasks.spawn` returns one (callers that
-        # DO want it, like Dispatcher, call it directly), so this drops the
-        # return value rather than widening the pipeline's port to match.
-        background.spawn(coro)
-
-    media_sources, blobs = await _build_media_custody(cfg)
-
-    tier = cfg.llm
-    url, api_key, _ = cfg.endpoint("tag")
-    client = factory.create_client(base_url=url, api_key=api_key)
-    routed_clients: dict[str, AsyncOpenAI] = {}
-    extra_model_clients: list[AsyncOpenAI] = []
-
-    def model_client_for(purpose: str) -> AsyncOpenAI:
-        url, key, _ = cfg.endpoint(purpose)
-        if (url, key) == cfg.endpoint("tag")[:2]:
-            return client
-        route = cfg.model_routes.get(purpose)
-        name = route.provider if route and route.provider else cfg.llm.provider
-        if name not in routed_clients:
-            routed_clients[name] = factory.create_client(base_url=url, api_key=key)
-            extra_model_clients.append(routed_clients[name])
-        return routed_clients[name]
-
-    def route_model(purpose: str, model: str = "") -> str:
-        return cfg.endpoint(purpose, model)[2]
-
-    # `dream_loop`'s `scopes` callable — the policy.toml conversations,
-    # re-evaluated fresh each tick through the live policy holder.
-    # No platform filter: this loop only READS
-    # `RecordStore.since`, which needs no adapter for the platform.
-    language_scopes: Callable[[], Sequence[str]] = lambda: tuple(  # noqa: E731
-        conv.primary_id for conv in allowlist.rooms()
-        if conv.primary_id and conv.absorbed
-    )
-    # The same closure over the OTHER key. Sorted and de-duplicated: two rooms
-    # of one unit are one unit of work, and a set would reorder the tick
-    # between runs of the same build — which turns "did adaptor X run for
-    # unit Y this tick" into a question you cannot answer from a log.
-    unit_scopes: Callable[[], Sequence[str]] = lambda: tuple(sorted(  # noqa: E731
-        {conv.unit for conv in allowlist.rooms() if conv.unit}
-    ))
-    # One CLIENT (DEC-13), MANY MODELS — one per tag, built by this
-    # source. The model carries `tool_choice`, which `ReplyGuard` flips
-    # mid-turn from `required` to `auto`, so it is per-turn
-    # mutable state and two concurrent conversations must not share it.
-    models = factory.ModelSource(
-        client=client,
-        spec=factory.ModelSpec(
-            model=route_model("tag", tier.model), max_tokens=tier.max_tokens,
-            temperature=tier.temperature,
-            reasoning_effort=tier.reasoning_effort,
-        ),
-    )
-    # `computer_browse` (ADR 0022): a sub-agent
-    # in the room's own browser, with a model source of its own (one model per
-    # task, the tag path's reason above). `None` unless `[computer]` AND
-    # `[computer.browse]` are on, so the registry withholds the tool.
-    browser: BrowseAgentRunner | None = None
-    if computer is not None and cfg.computer.browse.enabled:
-        browse_cfg = cfg.computer.browse
-        browser = BrowseAgentRunner(
-            model_source=factory.ModelSource(
-                client=model_client_for("browse"), spec=factory.ModelSpec(
-                model=route_model("browse", browse_cfg.model), max_tokens=browse_cfg.max_tokens,
-                temperature=browse_cfg.temperature, tool_choice=tool_choice.AFTER_SPEAKING,
-            )),
-            retry=factory.build_retry_policy(timeout_seconds=browse_cfg.timeout_seconds),
-            base_url=cfg.computer.base_url, token=_computer_token(cfg),
-            # Task-owned tabs ([computer.scoped]): `acquire` binds the task's
-            # own target on the scope's VM; `base_url` is only the shared-VM
-            # fallback used when no manager is wired.
-            manager=browser_manager,
-            settings=BrowseSettings(
-                max_steps=browse_cfg.max_steps, timeout_seconds=browse_cfg.timeout_seconds,
-                read_chars=browse_cfg.read_chars, turns=browse_cfg.turns,
-                output_tokens=browse_cfg.output_tokens, total_tokens=browse_cfg.total_tokens,
-            ),
-        )
-    runner = LiveAgentRunner(
-        models=models,
-        # Derived from the same `timeout_seconds` the invoke stage enforces, so
-        # a throttle can never be misreported as a timeout (see
-        # `factory.build_retry_policy`).
-        retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
-        # The on-demand skill layer, ON (DEC-50, activating DEC-48). Skills sit
-        # beside doctrine under `nora/` — `cfg.doctrine.dir` is the resolved
-        # absolute doctrine path, so its sibling `skills/` is the operator skill
-        # directory (`nora/skills`). It is baked into the image (Dockerfile
-        # `COPY nora/`), so — unlike the mtime-hot-reloaded doctrine mount — it
-        # needs no bind mount: skills load once per tag, never re-read from the
-        # host. `AgentSkills` is built per tag inside `factory.create_agent`.
-        skills_dir=cfg.doctrine.dir.parent / "skills",
-        agent_name=cfg.agent.name,
-        # The process-wide registry, not a private one — `nora_tagtrace_
-        # truncations_total` has to land where `/metrics` reads it.
-        metrics=metrics,
-    )
-    # The participation occasion's runner —
-    # a SECOND `ModelSource`, the shape the Dreamer below uses, and for
-    # the same reason: `tool_choice` lives on `ModelSpec`. The determination
-    # must be able to end in SILENCE, and the tag runner's `FIRST_CALL`
-    # (`required`) pin makes that inexpressible — under it the model must call
-    # something on the first pass, and the only terminal call is `send_reply`.
-    # So this runner composes `auto`: `ReplyGuard.relax` mid-turn then releases
-    # BACK to auto (`tool_choice.require`'s initial-value release), never to
-    # required. None while the occasion is disabled; `FirePath` refuses a
-    # participation turn that arrives with no runner composed.
-    #
-    # The proactive occasion (DEC-162)
-    # needs the SAME runner shape for the same reason — its act turn may end
-    # in silence — so both are built by `_auto_runner` below, each with its own
-    # reasoning effort. The act turn is wired when `policy.toml` names a home
-    # room; its rows are written by the Cognition session's `remind`
-    # (DEC-277).
-    proactive_homes = LiveMapping(lambda: allowlist.home_rooms())
-
-    def _auto_runner(
-        effort: str, source: str, *, max_tokens: int | None = None,
-    ) -> LiveAgentRunner:
-        return LiveAgentRunner(
-            models=factory.ModelSource(
-                client=model_client_for(source.split("]")[0].lstrip("[")),
-                spec=factory.ModelSpec(
-                    model=route_model(source.split("]")[0].lstrip("["), tier.model),
-                    max_tokens=max_tokens or tier.max_tokens,
-                    temperature=tier.temperature,
-                    reasoning_effort=str(_reasoning_effort(effort, source=source)),
-                    tool_choice=tool_choice.AFTER_SPEAKING,
-                ),
-            ),
-            retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
-            skills_dir=cfg.doctrine.dir.parent / "skills",
-            agent_name=cfg.agent.name,
-            metrics=metrics,
-        )
-
-    # `[participation]`'s own effort, never the tag lane's — see the field's
-    # note: silence is this occasion's default, and more reasoning
-    # produces more of it.
-    participation_runner: LiveAgentRunner | None = None
-    if cfg.participation.enabled:
-        participation_runner = _auto_runner(
-            cfg.participation.reasoning_effort, "[participation] reasoning_effort",
-        )
-    # The proactive act turn's runner: the same `auto` shape, its OWN effort
-    # (`ProactiveConfig`). It is not shared with the participation runner
-    # because the two fail in opposite directions: at `none` a proactive turn
-    # spoke on every case where silence was right.
-    proactive_runner = _auto_runner(
-        cfg.proactive.reasoning_effort, "[proactive] reasoning_effort",
-        max_tokens=cfg.proactive.max_tokens,
-    )
-    # The public Instagram summons' runner
-    # (`nora.app.summons`): the SAME `AFTER_SPEAKING` shape as the
-    # participation runner above, for the same reason — a summons may end in
-    # silence, which the tag runner's `FIRST_CALL` pin makes inexpressible.
-    # Its own, not the participation one, because it is wired on its own
-    # flags and its reasoning effort is the tag lane's (she was asked).
-    # `skills_dir=None`: runtime skills are a tool outside `PUBLIC_GRANT`.
-    summons_runner: LiveAgentRunner | None = None
-    if summons_wired:
-        summons_runner = LiveAgentRunner(
-            models=factory.ModelSource(
-                client=model_client_for("summons"),
-                spec=factory.ModelSpec(
-                    model=route_model("summons", tier.model), max_tokens=tier.max_tokens,
-                    temperature=tier.temperature,
-                    reasoning_effort=tier.reasoning_effort,
-                    tool_choice=tool_choice.AFTER_SPEAKING,
-                ),
-            ),
-            retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
-            skills_dir=None,
-            agent_name=cfg.agent.name,
-            metrics=metrics,
-        )
-    # `output_tokens` comes from `[llm.limits]`, NOT from `tier.max_tokens`:
-    # the two are separate values, and tying them would make the whole
-    # loop's output budget equal to one call's ceiling — see
-    # `factory.build_limits`.
-    limits = factory.build_limits(
-        output_tokens=tier.limits.output_tokens,
-        turns=tier.limits.turns,
-        total_tokens=tier.limits.total_tokens,
-    )
-
-    # The reminder caps as the DOMAIN value, built once so every reminder writer (the
-    # tag path's `ToolRegistry` and the Cognition session) holds the exact SAME
-    # `ReminderCaps`, not two instances equal only by both reading `cfg.reminders`.
-    reminder_caps = ReminderCaps(**cfg.reminders.model_dump())
-    # `GatheringService`: the ONE use-case layer for
-    # Gathering business rules. `event_store` REUSES `engine` for the same reason
-    # `reminders`/`compute_jobs`/`tool_call_log_store` do above — a second
-    # `create_sql_engine` would fork the pool. `route_source=route_client` is
-    # the SAME `RouteClient` (or `None`) `place_info`/`route` already use —
-    # a second instance would be a second, unrelated key check and a second
-    # client the composition root has no other reason to own. `honcho=memory`
-    # and `ai_peer=cfg.honcho.ai_peer` are the SAME Honcho client and id
-    # already threaded to `TranscriptInjection`/`ToolRegistry` below.
-    event_store = SqlGatheringStore(engine)
-    # Events stored before units existed carry `unit_id=""` — units live in
-    # `policy.toml`, not the DB, so the column cannot be filled — and policy
-    # also knows the platform each id belongs to, which the row does not. The
-    # service admits a legacy row only when this map names exactly one owner.
-    event_room_claims = LiveMapping(lambda: _room_claims(allowlist))
-
-    # A venue's district and city come from the Geocoding API by the place id
-    # `place_info` resolved it to, with the route key (a Places id is that
-    # key's project's, and the key is restricted to Routes + Places +
-    # Geocoding). No route client, no venue area.
-    place_areas = None
-    if route_client is not None:
-        from nora.infra.geocode import GoogleGeocoder
-        place_areas = GoogleGeocoder(api_key=cfg.credentials.get(cfg.route.api_key_env, ""))
-    events = GatheringService(
-        store=event_store,
-        route_source=route_client,
-        honcho=memory,
-        ai_peer=cfg.honcho.ai_peer,
-        place_areas=place_areas,
-        content_checks=content_checks,
-    )
-    # `media_fetch` (DEC-56) reads a stored blob back through MiMo. Its two
-    # collaborators are wired together: the blob store (already built above,
-    # `None` while `[media] enabled=false` or unkeyed) and a `VisionClient` over
-    # the process-wide OmniRoute client. The vision call gets its OWN timeout,
-    # DERIVED from the same `timeout_seconds` the invoke stage enforces so it is
-    # provably shorter than the loop's `asyncio.wait_for` — a hung MiMo becomes
-    # the tool's `unavailable`, never the loop's silent `invocation_timeout`
-    # (the way `factory.build_retry_policy` derives its backoff). The client is
-    # always present (the LLM key is required to start); `media_fetch` still
-    # answers `unavailable` whenever `blobs` is None, the inert-by-config shape.
-    # The durable half of media dedup: `VisionCache`
-    # becomes a read-through in front of THIS store rather than a second,
-    # disagreeing copy — REUSING `engine` for the reason `reminders`/
-    # `compute_jobs`/`tool_call_log_store` all do above (one pool, one
-    # lifecycle; a second `create_sql_engine` would fork the pool and its own
-    # `aclose()` would dispose the engine everything else is still using).
-    media_descriptions = SqlMediaDescriptionStore(engine, metrics=metrics)
-    # The per-modality DIRECT lanes (DEC-197): a describer configured with a direct
-    # provider travels through its own client, NOT the process-wide OmniRoute
-    # client — OmniRoute drops `video_url` content blocks, so a
-    # video described through it would reach the model as text only.
-    vision_client = VisionClient(
-        client=model_client_for("vision"),
-        direct_clients=_direct_describer_clients(cfg),
-        model=route_model("vision", cfg.media.vision_model),
-        max_tokens=cfg.media.vision_max_tokens,
-        reasoning_effort=cfg.media.vision_reasoning_effort,
-        max_bytes=cfg.media.vision_max_bytes,
-        # THE DERIVATION'S INPUTS, NOT ITS RESULT. The divisor is the SERIAL
-        # factor — how many 90-second windows one invocation reads in
-        # sequence — and `cut_video` only produces that per request, at read
-        # time, a process after this line runs. The client derives per call
-        # (`VisionClient._call_timeout`).
-        #
-        # No budget is passed: budgeted calls run CONCURRENTLY and occupy
-        # `max(their durations)` of wall clock, never their sum, so a budget
-        # divisor would be the wrong quantity. `budget` still bounds refusals
-        # — R-7's ceiling comes from `budgets()`, at `tool_registry` below —
-        # it does not bound elapsed time.
-        timeout_seconds=cfg.media.vision_timeout_seconds,
-        loop_timeout_seconds=tier.timeout_seconds,
-        # The model-span seam (ADR 0034): the raw vision call gets its own
-        # per-call span with usage, served model and provider — injected
-        # because `nora.infra` may not reach `nora.agent`.
-        span_recorder=RawSpanRecorder(),
-    )
-    # The sticker IDENTITY ladder — custody, not description. Its
-    # model rung is the spawned comprehension job below, so this needs no
-    # interpreter and no second `VisionClient`: what it buys is a repeat
-    # sighting costing zero platform RPC, decided at parse time before any
-    # bytes move.
-    # Built whenever custody is on, and NOT gated on `sticker_descriptions`:
-    # this ladder is pure custody and reads nothing, so gating it on the READ
-    # switch would throw away the dedup. `sticker_descriptions` gates the
-    # comprehension job's sticker subjects instead (`stickers_enabled` below).
-    sticker_reader = None
-    if blobs is not None:
-        sticker_reader = StickerReader(
-            blobs=blobs,
-            descriptions=media_descriptions,
-            metrics=metrics,
-        )
-    # THE COMPREHENSION JOB — one model pass per medium into
-    # title/description/content, spawned off the ingest path. Wired only when
-    # custody is on AND `[media] comprehension` is set: with either off, every
-    # attachment keeps its bare handle and nothing anywhere claims a
-    # description it does not have. It reuses `vision_client` — one connection,
-    # one budget, the modality picking the model — for `derive_vision_timeout`'s
-    # reason (three clients would be three budgets, and three hung calls could
-    # outlast the loop).
-    comprehension: MediaComprehension | None = None
-    if cfg.media.comprehension and blobs is not None:
-        comprehension = MediaComprehension(
-            blobs=blobs,
-            store=media_objects,
-            interpreter=MediaComprehender(
-                client=vision_client,
-                describe_models=_describe_models(cfg),
-                describe_providers=_describe_providers(cfg),
-                describe_max_bytes=_describe_max_bytes(cfg),
-                text_model=(cfg.endpoint("vision", cfg.media.comprehension_text_model)[2]
-                            if cfg.media.comprehension_text_model else ""),
-                chunk_seconds=cfg.media.describe.video.chunk_seconds,
-                max_chunks=cfg.media.describe.video.chunk_max,
-            ),
-            memory=memory,
-            metrics=metrics,
-            spawn=_spawn,
-            stickers_enabled=cfg.media.sticker_descriptions,
-            max_concurrent=cfg.media.comprehension_max_concurrent,
-            content_checks=content_checks,
-        )
-    # `[speech.stt]`'s transcriber: wired ONLY when enabled — the same
-    # inert-ship rule as `stickers`. Off leaves the ingest stage without a
-    # transcriber and a voice note is recorded with a bare handle. On, the
-    # local `stt` service transcribes voice notes inline during custody (audio
-    # stays on the box — the endpoint is reachable only on the private `nora`
-    # network).
-    transcriber = None
-    if cfg.speech.stt.enabled:
-        from nora.infra.speech import SenseVoiceTranscriber
-        transcriber = SenseVoiceTranscriber(
-            endpoint=cfg.speech.stt.endpoint,
-            language=cfg.speech.stt.language,
-            timeout_seconds=cfg.speech.stt.timeout_seconds,
-            model=cfg.speech.stt.model,
-        )
-    # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here.
-    # Every path that may speak into a conversation holds this same instance —
-    # two would be two locks and no serialisation at all. Built HERE, above the
-    # registry, because the relay below needs it and the registry needs the
-    # relay.
-    slots = ConversationSlots(maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn)
-
-    # The cognition loop's stimuli: OFF
-    # under `[cognition] enabled = false`, the shipped default. On, the ingest
-    # pipeline appends one stimulus per recorded person-authored item, and the
-    # evaluator reads them and starts sessions. The evaluator is built after the
-    # Dreamer block below (`_build_wake_evaluator`): it is handed the session
-    # runner's hook, and the runner needs the Dreamer's model and tool sources.
-    stimulus_wiring: stimulus_stage.Wiring | None = None
-    stimulus_store: SqlStimulusStore | None = None
-    if cfg.cognition.enabled:
-        stimulus_store = SqlStimulusStore(engine)
-        stimulus_wiring = stimulus_stage.Wiring(
-            store=stimulus_store,
-            unit_of=_note_unit_of(allowlist),
-            self_ids=registry.self_aliases(),
-            reply_quiet_seconds=cfg.cognition.reply_quiet_seconds,
-            timeout_seconds=cfg.cognition.store_timeout_seconds,
-        )
-    ingest = IngestPipeline(
-        audit=audit, memory=memory, persons=persons,
-        policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
-        media_sources=media_sources, blobs=blobs,
-        media_store=media_objects,
-        stickers=sticker_reader, transcriber=transcriber,
-        comprehension=comprehension,
-        language=cfg.speech.stt.language,
-        stimulus_wiring=stimulus_wiring,
-    )
-    # `web_search`/`web_fetch` (DEC-73/DEC-116) are wired ONLY when `[search]
-    # enabled` AND the SELECTED backend's key is present — the `route`-keyless
-    # gate. Off (or keyless) leaves the registry without a provider and both
-    # tools answer `unavailable` (R-5), never a silent empty. The key is
-    # resolved from the environment here (DEC-8), never read inside an adapter.
-    #
-    # DEC-157 makes the backend an operator choice (`provider`), which is the
-    # port doing what DEC-73 (4) said it was for. The branch is HERE and only
-    # here: one provider, one key, both verbs, and everything downstream —
-    # the tools, their egress screen, their budgets, their tier — is handed a
-    # `SearchProvider` and cannot tell which vendor it got. Neither backend
-    # needs an SSRF gate: each crawls from its OWN servers, never Nora's,
-    # whether it is handed a query or a url.
-    search_client = search_provider(cfg)
-    # `web_fetch`'s OWN backend (`[search] fetch_provider`): None means the
-    # one search client serves both verbs, the pre-split shape.
-    fetch_client = fetch_provider(cfg)
-    # `x_read`, `x_search` (DEC-201), `instagram_read` and `instagram_search`
-    # get ONE `SocialProvider` — `SocialRouter`
-    # — and the registry stays unaware that there are two backends under it.
-    # Each backend is wired independently and there is NO credential on
-    # either, so `enabled` alone is the gate (the `[preview]` shape); an
-    # unwired backend answers `unavailable` for ITS OWN rows (R-5) and never
-    # widens or narrows the other's reach.
-    #
-    # The DEFAULT is OpenCLI, reaching the host-side bridge over loopback; its
-    # read-only (site, command) allowlist is re-enforced THERE
-    # (`nora.infra.social.bridge_server`), outside the container.
-    social_client: SocialProvider | None = None
-    opencli_client = None
-    if cfg.social.enabled:
-        from nora.infra.social import OpenCliBridgeClient
-        opencli_client = OpenCliBridgeClient(
-            bridge_url=cfg.social.bridge_url,
-            timeout_seconds=cfg.social.timeout_seconds,
-            content_max_chars=cfg.social.content_max_chars,
-        )
-    # The INSTAGRAM backend serves every Instagram read the bridge has a route
-    # for — `instagram/story` and `instagram/profile`, `instagram_read`'s two,
-    # `instagram/post`, its read of a pasted post or reel link, and
-    # `instagram/search`, `instagram_search`'s, which takes free text and needs
-    # no index.
-    # The two read rows take a PERSON, so the router needs a
-    # `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
-    # person -> igid off `identity.toml` (kind-aware; none or several is
-    # `ambiguous`) and answers Tier 0 off `policy.toml`'s group rooms (a `*`
-    # room and `[dm]` never count). `SocialRouter` refuses to be constructed
-    # with that backend and no index, so the pairing is not a discipline to
-    # remember.
-    #
-    # Its own `enabled`, because the two backends are provisioned and fail
-    # independently: turning Instagram on must not need the host's OpenCLI
-    # service, and a checkpointed Instagram session must not take X with it.
-    instagram_social = None
-    social_subjects = None
-    if cfg.social.instagram.enabled:
-        from nora.infra.social import InstagramSocialClient, PersonsSubjectIndex
-        instagram_social = InstagramSocialClient(
-            base_url=cfg.social.instagram.base_url,
-            timeout_seconds=cfg.social.instagram.timeout_seconds,
-            content_max_chars=cfg.social.content_max_chars,
-        )
-        social_subjects = PersonsSubjectIndex(persons, allowlist)
-    if opencli_client is not None or instagram_social is not None:
-        from nora.infra.social import EXCEPTION_ROUTES, SocialRouter
-        social_client = SocialRouter(
-            default=opencli_client,
-            exceptions=(
-                dict.fromkeys(EXCEPTION_ROUTES, instagram_social)
-                if instagram_social is not None else {}
-            ),
-            subjects=social_subjects,
-            # A typed handle or a pasted link names a USERNAME, and the
-            # bridge's exact lookup is the only thing that turns one into an
-            # igid. The same client:
-            # the lookup is a GET on the same bridge.
-            accounts=instagram_social,
-        )
-    # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
-    # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
-    # off leaves the registry without a provider and `weather` answers
-    # `unavailable` (R-5). `provider` selects the adapter — "hko" today.
-    weather_client = None
-    if cfg.weather.enabled:
-        if cfg.weather.provider == "hko":
-            from nora.infra.weather import HkoWeatherProvider
-            weather_client = HkoWeatherProvider(
-                url=cfg.weather.url, lang=cfg.weather.lang,
-                timeout_seconds=cfg.weather.timeout_seconds,
-            )
-        else:
-            log.warning(
-                "weather enabled but provider %r is unknown — weather stays unavailable",
-                cfg.weather.provider,
-            )
-    # `online_now`'s Steam half is wired ONLY when
-    # `[online] enabled` AND the key the section NAMES is present — the
-    # enabled-AND-keyed gate `search` uses. Off, or keyless, leaves the
-    # registry without a provider and the `online`/`playing` arms answer
-    # `unavailable` (R-5's honest «not configured»), never a 403 per call.
-    # The `voice` arm is NOT gated here — see its own block at the registry
-    # build below.
-    steam_client: SteamPresenceProvider | None = None
-    if cfg.online.enabled:
-        steam_key = cfg.credentials.get(cfg.online.api_key_env, "")
-        if steam_key:
-            from nora.infra.steam import SteamPresenceClient
-            steam_client = SteamPresenceClient(
-                api_key=steam_key,
-                timeout_seconds=cfg.online.timeout_seconds,
-            )
-        else:
-            log.warning(
-                "online enabled but %s is unset — online_now's Steam arms "
-                "stay unavailable",
-                cfg.online.api_key_env,
-            )
-    # `whereis` (DEC-59) is wired ONLY when
-    # `[presence] enabled` AND identity.toml yields at least one circle — the
-    # enabled-AND-configured gate `route` and media custody use. Off, or
-    # circle-less, leaves the registry without a reader and `whereis` answers
-    # `unavailable` (R-5's honest «not configured»). The reader shares the
-    # `audit` engine (one pool, one lifecycle); the COLLECTOR process, not this
-    # one, owns writing/pruning `presence_fixes` — Nora only ever reads it.
-    presence_store: PresenceStore | None = None
-    presence_circles: Sequence[Circle] = LiveSequence(lambda: circles_from_persons(persons))
-    if cfg.presence.enabled:
-        presence_store = PresenceStore(
-            engine, retention_days=cfg.presence.retention_days, metrics=metrics,
-        )
-    # Image generation ([image_gen], DEC-137): enabled AND refresh token
-    # present → build the lane (the same keyless-`enabled` gate `route` uses).
-    # Off (or tokenless) leaves the `generate_image` tool answering
-    # `unavailable` — never a crash, never `nothing_found` (R-5/R-27). The
-    # state files live in the same repo-tree state dir `./state/signal-cli`
-    # already uses (container-writable, host-immutable `.env` holds only the
-    # bootstrap refresh tokens).
-    #
-    # DEC-308: EVERY OAuth lane whose token is set gets its lane object, not
-    # only the selected provider's, and each is registered with the one
-    # keepalive so no login dies idle. The selected lane's object is the SAME
-    # one the adapter holds: one asyncio lock, so the keeper and a call never
-    # both spend a rotating token. `nora/__main__.py` starts the keeper; the
-    # eval subject composes the same graph and never does.
-    image_refs_allowed = cfg.image_gen.enabled and cfg.image_gen.allow_reference_images
-    # Image custody: generated images are stored in Nora's
-    # OWN blob_store (rustfs) and sent as platform attachments.
-    image_generator, oauth_keepalive = _image_gen_wiring(
-        cfg, metrics, cfg.credentials, state_dir=Path("/app/state"),
-    )
-    # Sender-generated link previews ([preview]). Keyless, so `enabled` is the
-    # whole gate. Off is the shipped default and is not a
-    # degradation: a reply carrying a link goes out with no card. It is ONE instance for the
-    # process (it holds no per-turn state), handed to the pipeline and the fire
-    # path, which hand it to each turn's `OutboundComposer`.
-    preview_source = None
-    if cfg.preview.enabled:
-        from nora.infra.preview import OpenGraphPreviewSource
-        preview_source = OpenGraphPreviewSource(
-            timeout_seconds=cfg.preview.timeout_seconds,
-            max_bytes=cfg.preview.max_bytes,
-            fetch_image=cfg.preview.image,
-            image_max_bytes=cfg.preview.image_max_bytes,
-        )
-    # The on-demand LIVE-refresh client (DEC-67): when `[presence].refresh_url` is
-    # set AND presence is wired, `where_is` asks the collector to force a fresh
-    # reading before it reads the store. Unset → `where_is` stays read-only
-    # (offline/eval, or an operator who leaves it off).
-    refresher = None
-    if cfg.presence.refresh_url and presence_store is not None:
-        from nora.infra.presence_refresh import HttpLocationRefresher
-        refresher = HttpLocationRefresher(
-            base_url=cfg.presence.refresh_url,
-            # A margin over the collector's poll deadline, not a guarantee: the
-            # collector's TOTAL time is request_location + read_circle (each up to
-            # the Life360 client's own timeout) + the poll, so a slow network can
-            # still exceed this and Nora cuts it off. Harmless — the path is never
-            # load-bearing, so a cut-off just falls back to the stored fix.
-            timeout_seconds=cfg.presence.refresh_timeout_seconds + 2.0,
-        )
-    # The on-demand reverse-geocoder: `Whereis.locate` (nora/agent/whereis.py)
-    # calls it ONLY when a fix has no address and someone actually asked
-    # `where_is` about it. The collector talks to Life360 alone, never Google:
-    # geocoding every fix for every tracked person on every cadence tick would
-    # bill Google for addresses nobody reads. Switchable behind the SAME
-    # `ReverseGeocoder` port (`[presence] geocode_provider`, "google" default
-    # or "hkgov").
-    # The durable half of the cache: survives a restart, and is
-    # what `nora.analytics` reads (READ-ONLY — it never calls a geocoder
-    # itself) to label a derived place. REUSES `engine` for the same reason
-    # `presence_store` above does — a second `create_sql_engine` would fork
-    # the pool.
-    from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
-    geocode_cache_store = SqlGeocodeCacheStore(engine)
-    geocoder = reverse_geocoder(cfg, cfg.credentials, cache_store=geocode_cache_store)
-    # The generic deferred-delivery path: the `ComputeBackend` port,
-    # `ComputeJobPoller`, `compute_jobs` and boot recovery. The poller below is
-    # never built while no backend is registered.
-    # `kind -> ComputeBackend`: the poller resolves a row's backend by its `kind`.
-    # `[video_gen]` registers the video backend just below; the
-    # sub-agent worker is registered once the tool registry exists.
-    compute_backends: dict[str, ComputeBackend] = {}
-    # Video generation ([video_gen]): enabled AND the key named by
-    # `[video_gen.minimax_cn] api_key_env` present builds the MiniMax CN backend, registered
-    # under `VIDEO_KIND` for the poller, and the desk `video_create` calls. The config refuses
-    # `enabled` without `[compute] enabled`. Enabled without the key builds nothing: the
-    # registry withholds the tool and this warns, never a crash (R-5/R-27).
-    video_desk: VideoDesk | None = None
-    if cfg.video_gen.enabled:
-        video_cfg = cfg.video_gen.minimax_cn
-        video_key = cfg.credentials.get(video_cfg.api_key_env, "")
-        if video_key:
-            from nora.infra.video_gen import MiniMaxVideoBackend
-            video_backend = MiniMaxVideoBackend(
-                api_key=video_key, model=video_cfg.model,
-                resolution=cfg.video_gen.resolution,
-                duration_seconds=cfg.video_gen.duration_seconds, ratio=cfg.video_gen.ratio,
-                metrics=metrics, host=video_cfg.host,
-                timeout_seconds=video_cfg.timeout_seconds,
-                reference_seconds=cfg.video_gen.reference_seconds,
-            )
-            compute_backends[VIDEO_KIND] = video_backend
-            video_desk = VideoDesk(
-                jobs=compute_jobs, backend=video_backend, clock=clock,
-                tz=cfg.analytics.tz_name,
-                max_per_room_per_day=cfg.video_gen.max_clips_per_room_per_day,
-            )
-        else:
-            log.warning(
-                "[video_gen] enabled but %s is unset; video_create is withheld",
-                video_cfg.api_key_env,
-            )
-    # Nora's computer (DEC-243): `ComputerdRuntime`,
-    # built ONLY when `[computer] enabled`. Off leaves it `None` and every
-    # computer tool answers `unavailable` (R-5). `ComputerToolSettings` is the
-    # conversion point from config to a domain value (`nora.agent` may not
-    # read `nora.config`), the `ReminderCaps` shape.
-    # (`computer`, the runtime, is built above, beside its session store.)
-    computer_settings = ComputerToolSettings(
-        run_timeout_seconds=cfg.computer.run_timeout_seconds,
-        max_run_timeout_seconds=cfg.computer.max_run_timeout_seconds,
-        max_output_chars=cfg.computer.max_output_chars,
-        max_read_chars=cfg.computer.max_read_chars,
-        export_max_bytes=cfg.computer.export_max_bytes,
-        import_max_bytes=cfg.computer.import_max_bytes,
-        limits=cfg.computer.limits.as_pairs(),
-        idle_after_minutes=cfg.computer.sessions.idle_after_minutes,
-        lapsed_visible_hours=cfg.computer.sessions.lapsed_visible_hours,
-    )
-    # `computer_export`: its record of what left the
-    # computer, built unconditionally like the audit store. The same store is the
-    # portal's Artifacts read (ADR 0023), and a link is the portal's
-    # `<[documents] public_url>/artifacts/<artifact_id>`: without a `public_url` a
-    # link export answers `unavailable`, never the boot (`chat` and `keep` need none).
-    computer_exports: ComputerExportStore = SqlComputerExportStore(engine)
-    # `nora.agent` may not import `nora.config` (import-linter's "only app and
-    # __main__ read config") — this is the conversion point, the same shape
-    # `ReminderCaps(**cfg.reminders.model_dump())` already uses just below.
-    mcp_mounts = {
-        name: McpMount(
-            name=name, base_url=mount.base_url, token_env=mount.token_env, budget=mount.budget,
-        )
-        for name, mount in cfg.tools.mcp.items()
-        if mount.enabled
-    }
-    mcp_tool_groups = build_mcp_tools(mcp_mounts, credentials=cfg.credentials)
-    # Running identity and release history share the immutable build snapshot.
-    version_manifest = VersionManifest()
-    giphy_client = None
-    if giphy_key := cfg.credentials.get("GIPHY_API_KEY"):
-        from nora.infra.giphy import GiphyClient
-        giphy_client = GiphyClient(api_key=giphy_key)
-    reaction_picker = None
-    if cfg.reaction.enabled and giphy_client is not None:
-        from nora.agent.reaction import ReactionPicker
-        reaction_picker = ReactionPicker(
-            client=_DebriefModelClient(
-                base_url=cfg.endpoint("reaction")[0],
-                api_key=cfg.endpoint("reaction")[1],
-                max_tokens=cfg.reaction.max_tokens,
-                temperature=0.3,
-                model=cfg.endpoint("reaction", cfg.reaction.model or cfg.llm.model)[2],
-                timeout_seconds=cfg.reaction.timeout_seconds,
-                reasoning_effort=_reasoning_effort(
-                    cfg.reaction.reasoning_effort or cfg.llm.reasoning_effort,
-                    source="[reaction] reasoning_effort",
-                ),
-                agent_name="reaction",
-            ),
-            prompts=doctrine_store, gifs=giphy_client, metrics=metrics,
-            timeout_seconds=cfg.reaction.timeout_seconds,
-            content_checks=content_checks,
-        )
-    games_client = None
-    if pulse_api_token := cfg.credentials.get("PULSE_API_TOKEN"):
-        # The base URL names a private tailnet host, so the deployment states it
-        # in `.env` (`PULSE_API_BASE`); the source holds only a placeholder.
-        games_client = PulseGamesClient(
-            token=pulse_api_token,
-            base_url=cfg.credentials.get("PULSE_API_BASE") or PULSE_API_BASE,
-        )
-    # DEC-105: the cross-room relay. It does NOT send — it occasions a fire
-    # turn into the destination (DEC-99's ruling), so R-1b's three links hold
-    # and the relayed message is audited into the room it lands in.
-    #
-    # `fire_path` is genuinely circular: `FirePath` takes the tool registry,
-    # and the registry takes this relay. Python resolves a closure's free
-    # variables at CALL time and a relay can only be called inside a live turn
-    # — long after both exist — so the cycle is closed by deferring rather than
-    # by a mutable attribute nobody can see being set.
-    async def _relay_speak(occasion: Any) -> str:
-        if fire_path is None:
-            # Every occasion needs a fire path, and this deployment has none
-            # (heartbeat, participation and compute all off). `failed_error` is
-            # what `send_to` turns into an honest «I couldn't».
-            log.warning("relay asked to speak with no fire path wired")
-            return "failed_error"
-        return await fire_path.speak(occasion)
-
-    relay = Relay(
-        policy=allowlist, speak=_relay_speak, slots=slots,
-        occasion_for=relay_occasion, metrics=metrics,
-        # The SAME reader `<presence>` renders from,
-        # so «Discord is down» in the block and `send_to` refusing into Discord
-        # are one read of one mapping, never two opinions.
-        transport=presence_reader.state,
-        content_checks=content_checks,
-    )
-    # `DiscordMusicToolBridge` — the
-    # four music agent tools' own collaborator. Built ONLY when BOTH a
-    # Discord adapter and a music manager exist: `music_manager` is already
-    # `None` under `cfg.music.enabled = false` (its own construction above),
-    # and `"discord" in registry` is the same narrowing `rosters["discord"]`
-    # below uses. Shares the SAME `music_manager` and Discord adapter every
-    # slash command already uses — never a second mutation path.
-    music_bridge: DiscordMusicToolBridge | BridgeMusicTool | None = None
-    if _discord_bridge and "discord" in registry:
-        # Bridge mode: the app holds NO manager — the deterministic music
-        # surface forwards to the bridge's `/v1/music/{op}`, which executes
-        # against the bridge's own manager and voice cache.
-        if cfg.music.enabled and discord_control is not None:
-            music_bridge = BridgeMusicTool(control=discord_control)
-    elif music_manager is not None and "discord" in registry:
-        discord_adapter = registry.get("discord")
-        # The same defensive narrowing `signal_adapter` above needs, for the
-        # identical reason: `AdapterRegistry.get` returns the port type, and
-        # the bridge needs `DiscordAdapter.current_client()`, which the port
-        # does not declare.
-        if isinstance(discord_adapter, DiscordAdapter):
-            music_bridge = DiscordMusicToolBridge(
-                adapter=discord_adapter, manager=music_manager,
-                hub=voice_hub, voice_guild_ids=voice_guild_ids,
-                resolve_music_channel=resolve_music_channel,
-            )
-        else:
-            log.error(
-                "internal error: registry's 'discord' entry is not a DiscordAdapter "
-                "— music agent tools stay unavailable"
-            )
-    # `DiscordVoicePresence` — `online_now`'s voice
-    # arm. Built whenever a Discord adapter exists: it reads the live
-    # client's guild cache (`voice_states` is already in the default
-    # intents), so unlike the Steam half there is no `[online]` gate and
-    # no key — the same narrowing `music_bridge` above needs, for the same
-    # `current_client()` reason.
-    voice_presence: VoicePresenceSource | None = None
-    # `DiscordPresence` — the `online` arm's Discord half: per-person presence
-    # (status + rich presence), NOT voice membership. Same construction rule as
-    # `voice_presence`: it reads the live Discord client (with the
-    # `presences` intent enabled), so no `[online]` gate and no key.
-    discord_presence: DiscordPresenceSource | None = None
-    if "discord" in registry:
-        discord_adapter = registry.get("discord")
-        if _discord_bridge and discord_control is not None:
-            # Bridge mode: both presence reads cross `/v1/reads` — a dead
-            # bridge answers `unavailable`, never a stale live-cache read.
-            voice_presence = BridgeVoicePresence(control=discord_control)
-            discord_presence = BridgeDiscordPresence(control=discord_control)
-        elif isinstance(discord_adapter, DiscordAdapter):
-            from nora.platform.discord.discord_presence import DiscordPresence
-            from nora.platform.discord.voice_presence import DiscordVoicePresence
-            voice_presence = DiscordVoicePresence(adapter=discord_adapter)
-            discord_presence = DiscordPresence(adapter=discord_adapter)
-        else:
-            log.error(
-                "internal error: registry's 'discord' entry is not a DiscordAdapter "
-                "— online_now's Discord arms stay unavailable"
-            )
-    # LINEAGE: the
-    # ONE value that says who each room of the policy is, held by the fire
-    # path below and by `record_query` through the registry. The tag path's
-    # assembler builds the same value from the same three inputs
-    # (`build_assembler`).
-    lineage = lineage_policy(cfg, policy=allowlist, persons=persons)
-    # The sub-agent desk the four `subagent_*` tools call: built ONLY under
-    # `[subagent] enabled`, so off the registry withholds the tools. The worker is attached below,
-    # once built, because its closed tool list is built from this registry.
-    subagent_desk = SubagentDesk(
-        jobs=compute_jobs, clock=clock,
-        documents=document_service if cfg.documents.enabled else None,
-    ) if cfg.subagent.enabled else None
-    tool_registry = ToolRegistry(
-        display_name=cfg.doctrine.display_name,
-        # `[external_files]` (ships off): the source a shared file link is
-        # opened through; None answers the open `unavailable`.
-        external_files=external_files_source(cfg, google=google_credentials(cfg, metrics=metrics)),
-        google_account=cfg.google.account,
-        subagent=subagent_desk,
-        video=video_desk,
-        video_ref_kinds=frozenset(
-            kind for kind, allowed in (
-                ("image", cfg.video_gen.allow_reference_images),
-                ("video", cfg.video_gen.allow_reference_video),
-                ("audio", cfg.video_gen.allow_reference_audio),
-            ) if allowed
-        ),
-        # `[record_query] enabled` (ships off): without the read the registry
-        # withholds the tool from every turn.
-        record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
-        # `record_query`'s typed `kind` branch (design/platform-observations
-        # 05): the same store the bridge writes; `None` only in a harness.
-        observations=observation_store,
-        # `[memory.index] read` (ships off):
-        # one memory surface: `memory_search` over the index; off, the Honcho
-        # verbs as before (DEC-316, `nora.agent.tools.GRAPH_MEMORY_TOOLS`).
-        # Built once above: the assembler's pre-fetch holds the same one.
-        memory_search=memory_search,
-        # The graph surface's `remember` writes a Profile `told` line
-        # (design/unified-memory/45); wired with `memory_search`, never alone.
-        profile=(SqlProfileStore(
-                    engine, screen=functools.partial(text_offence, content_checks=content_checks),
-                    index=profile_index)
-                 if memory_search is not None else None),
-        # THE SWITCH (45 §5): while `[memory.profile] read` is on, `character_read`
-        # answers from the Profile accounts — the same reader the tag
-        # assembler and the fire path hold, so tool and prompt cannot disagree.
-        profile_read=profile_reader,
-        lineage=lineage,
-        # The current Rollup build's rows and the Standing head. SELECTs, so no
-        # flag. The Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the
-        # Rollup read is also a tag turn's (`TAG_READABLE_LOOP_TOOLS`), under
-        # the same lineage as the session's.
-        rollup=SqlRollupRead(engine),
-        standing_head=standing_store,
-        ledger=ledger_store,
-        # `character_read`: withheld while `[culture]` is off.
-        culture=culture_reader,
-        # `social_read`: the social stream's recorded items, a SELECT, so no
-        # flag (an empty Record answers `nothing_found`). Its store leaves out
-        # every item of a person whose `identity.toml` block sets `social =
-        # false`, the same set the poller's store is given.
-        social_items=readable_social_store(engine, persons),
-        # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
-        memos=memo_store,
-        route=route_client, vision=vision_client,
-        describe_models=_describe_models(cfg),
-        describe_providers=_describe_providers(cfg),
-        # `[media.describe.video]`'s chunk geometry: the SAME two
-        # numbers the comprehension pass is built with just above, so
-        # `media_fetch`'s deliberate look reads a clip exactly as far as the
-        # automatic read did.
-        video_chunk_seconds=cfg.media.describe.video.chunk_seconds,
-        video_max_chunks=cfg.media.describe.video.chunk_max,
-        media_join=media_join,
-        describe_max_bytes=_describe_max_bytes(cfg),
-        blobs=blobs, descriptions=media_descriptions,
-        video_readings=SqlVideoReadingStore(engine), search=search_client,
-        # `web_fetch`'s own backend ([search] fetch_provider) and the page
-        # index its offset/about reads answer from; the store is unconditional
-        # like `tool_call_log_store` (one pool, one lifecycle).
-        fetch=fetch_client, fetched_pages=SqlFetchedPageStore(engine),
-        social=social_client,
-        # The same router, for the two LinkedIn tools, only when LinkedIn is
-        # switched on. The config
-        # refuses `[social.linkedin]` without `[social]`, so a router exists.
-        linkedin=social_client if cfg.social.linkedin.enabled else None,
-        weather=weather_client,
-        presence=presence_store, circles=presence_circles,
-        # `where_been`'s read seam (DEC-155): the SAME `SqlMobilityStore` the
-        # web dashboards read through, built once above on the shared engine —
-        # no second store, no new lifecycle (one pool, one lifecycle).
-        mobility=mobility,
-        relay=relay,
-        # `room_list`/`room_read` read through the
-        # SAME presence reader `<presence>` renders from: one model of which
-        # rooms exist, not a second one for the tools.
-        rooms=presence_reader,
-        refresher=refresher,
-        geocoder=geocoder,
-        ai_peer=cfg.honcho.ai_peer,
-        mcp_tools=mcp_tool_groups,
-        # The SAME store the tick reads from — two would be two queues, and the
-        # rows `remind` wrote would sit in one while the heartbeat watched the
-        # other.
-        reminders=reminders,
-        # The unified media index store — same engine, same lifecycle.
-        media_store=media_objects,
-        # The document tools: ships OFF, and off the
-        # registry withholds all three from every turn.
-        documents=document_service if cfg.documents.enabled else None,
-        # the six event tools (`create_event`/`update_event`/`rsvp_event`/
-        # `cancel_event`/`list_events`/`suggest_venue`) answer `unavailable`
-        # (R-5) whenever a composition has not wired one; every deployment
-        # here has, since it needs nothing this file does not already build.
-        events=events,
-        # The third consumer of `tool_call_log_store` (the first two are
-        # EngagementPipeline/FirePath, via `deliver.build`) —
-        # `recall_lookups`'s own collaborator.
-        tool_call_log_store=tool_call_log_store,
-        # Nora's computer: `computer` is `None` whenever `[computer] enabled`
-        # is false; the audit store is always wired (see where it is built).
-        computer=computer, computer_events=computer_events,
-        computer_settings=computer_settings,
-        computer_sessions=computer_sessions, computer_leases=computer_leases,
-        computer_exports=computer_exports,
-        artifact_link_base=cfg.documents.public_url,
-        browser=browser,
-        # The scoped computer ([computer.scoped]): the per-scope FIFO the
-        # write-path tools queue through, and the task-owned tab manager
-        # `computer_capture` calls. Both `None` in the shared-VM shape.
+        compute_jobs=compute_jobs,
+        computer=computer,
         computer_admission=computer_admission,
-        browser_manager=browser_manager,
-        # The canonical-DM resolver and the context cache's invalidation —
-        # the SAME scope resolution the queue and the context block use, so
-        # tools, block and worker jobs land on one VM.
         computer_dm_scope_for=computer_dm_scope_for,
-        computer_context_invalidate=(
-            computer_context.invalidate if computer_context is not None else None),
-        # The reminder caps as the DOMAIN value, the SAME `reminder_caps` instance the
-        # Cognition session is built with — see that variable's own comment for
-        # why they must not be two separately constructed copies.
-        # `nora.agent` may not import `nora.config` (import-linter's "only app
-        # and __main__ read config"), so THAT construction is the conversion
-        # point: `RemindersConfig`'s fields are `ReminderCaps`'s fields, and
-        # `model_dump()` keeps them one edit rather than three. A field added
-        # to one and not the other is a `TypeError` there, at startup, which
-        # is the failure worth having.
-        reminder_caps=reminder_caps,
-        # The same wall clock the tick runs on. `remind` compares `when` against
-        # it for three of its six refusals, and a registry clock that disagreed
-        # with the tick's would let a row be accepted as "two minutes out" and
-        # then be found already due.
+        computer_events=computer_events,
+        computer_metrics=computer_metrics,
+        computer_tasks=computer_tasks,
+        computer_token=computer_token,
+        engine=engine,
+        metrics=metrics,
+        op_clock=op_clock,
+    )
+    browser_manager = _computer_scoped.browser_manager
+    browser_tabs = _computer_scoped.browser_tabs
+    computer = _computer_scoped.computer
+    computer_admission = _computer_scoped.computer_admission
+    computer_dm_scope_for = _computer_scoped.computer_dm_scope_for
+    computer_probe = _computer_scoped.computer_probe
+    computer_queue_runner = _computer_scoped.computer_queue_runner
+    computer_scope_for = _computer_scoped.computer_scope_for
+    computer_task_backend = _computer_scoped.computer_task_backend
+    computer_tasks = _computer_scoped.computer_tasks
+    _computer_context = _computer_wire.context(
+        allowlist=allowlist,
+        browser_tabs=browser_tabs,
+        cfg=cfg,
+        computer=computer,
+        computer_events=computer_events,
+        computer_scope_for=computer_scope_for,
+        computer_sessions=computer_sessions,
+        computer_tasks=computer_tasks,
+        metrics=metrics,
+    )
+    computer_context = _computer_context.computer_context
+    _stores_obs_stores = obs_stores(engine=engine)
+    reasoning_strip_store = _stores_obs_stores.reasoning_strip_store
+    tag_trace_store = _stores_obs_stores.tag_trace_store
+    _memory_stores = _memory_wire.stores(engine=engine)
+    standing_store = _memory_stores.standing_store
+    _stores_observation = observation(engine=engine)
+    observation_store = _stores_observation.observation_store
+    _memory_ledger = _memory_wire.ledger(engine=engine, metrics=metrics)
+    ledger_store = _memory_ledger.ledger_store
+    _media_stores = _media_wire.stores(engine=engine, metrics=metrics)
+    media_objects = _media_stores.media_objects
+    _documents_stores = _documents_wire.stores(engine=engine)
+    documents_store = _documents_stores.documents_store
+    _location_route = _location_wire.route(cfg=cfg)
+    route_client = _location_route.route_client
+    _documents_ground = _documents_wire.ground(
+        allowlist=allowlist,
+        cfg=cfg,
+        content_checks=content_checks,
+        doctrine_store=lambda: doctrine_store,
+        persons=persons,
+    )
+    cognition_context_screen = _documents_ground.cognition_context_screen
+    cognition_shared_document_room = _documents_ground.cognition_shared_document_room
+    _documents_service = service(
+        allowlist=allowlist,
+        audit=audit,
+        cfg=cfg,
         clock=clock,
-        # The note tier's four tools. `None` while `[notes] enabled = false`,
-        # so all four answer `unavailable` (R-5) rather than a guessed empty
-        # result — the same optional-collaborator shape `events` and
-        # `reminders` above use. `note_unit` resolves a room to its
-        # `Conversation.unit` (DEC-105), because a note is unit-keyed
-        # while every tool argument the model can name is room-scoped; without
-        # it the tools would have no way to reach the right notebook. The
-        # SAME `allowlist` the assembler is given, for the reason stated there.
-        notes=note_store,
-        # RESOLVER, not a constant — see `build_tools`' own note. This
-        # deployment has two units (`ridgeline`, `friends`) that
-        # `policy.toml` says are never paired, so a fixed string would hand one
-        # room the other's notebook. `None` for a room policy cannot name, which
-        # the note verbs report as `unavailable` rather than guessing a
-        # notebook. Same `allowlist` instance the assembler and ingest hold.
-        note_unit=_note_unit_of(allowlist),
-        # ONE resolver for every unit-keyed verb, so a verb outside the
-        # note tier does not silently depend on the NOTE tier being wired —
-        # two absences covering for each other.
-        unit_for=_note_unit_of(allowlist),
-        versions=version_manifest, releases=GithubReleases(),
-        giphy=giphy_client,
-        reaction=reaction_picker,
-        music=music_bridge,
-        # `online_now`'s two live-state reads. Either
-        # None leaves its arms answering `unavailable` (R-5), never
-        # `nothing_found` — the same optional-collaborator shape `mobility`
-        # above uses.
-        online=steam_client,
-        voice=voice_presence,
+        cognition_context_screen=cognition_context_screen,
+        cognition_shared_document_room=cognition_shared_document_room,
+        content_checks=content_checks,
+        documents_store=documents_store,
+        media_objects=media_objects,
+        metrics=metrics,
+        persons=persons,
+        route_client=route_client,
+    )
+    document_service = _documents_service.document_service
+    documents_context = _documents_service.documents_context
+    _subagents_subjects = _subagents_wire.subjects(
+        cfg=cfg, compute_jobs=compute_jobs, document_service=document_service, metrics=metrics
+    )
+    subagents_context = _subagents_subjects.subagents_context
+    _media_join = _media_wire.join(
+        cfg=cfg, content_checks=content_checks, media_objects=media_objects, metrics=metrics
+    )
+    media_join = _media_join.media_join
+    _conversation_quote = _conversation_wire.quote(audit=audit, cfg=cfg, metrics=metrics)
+    quote_window = _conversation_quote.quote_window
+    _stores_decision_log = build_decision_log(
+        allowlist=allowlist, clock=clock, engine=engine, metrics=metrics
+    )
+    decision_log = _stores_decision_log.decision_log
+    _stores_language_store = build_language_store(cfg=cfg, engine=engine, metrics=metrics)
+    language_store = _stores_language_store.language_store
+    _memory_notes = _memory_wire.notes(cfg=cfg, engine=engine)
+    memo_store = _memory_notes.memo_store
+    note_store = _memory_notes.note_store
+    _voice_speech = _voice_wire.speech(
+        _discord_bridge=_discord_bridge,
+        allowlist=allowlist,
+        cfg=cfg,
+        engine=engine,
+        metrics=metrics,
+    )
+    discord_token = _voice_speech.discord_token
+    music_manager = _voice_speech.music_manager
+    voice_hub = _voice_speech.voice_hub
+    _stores_doctrine = build_doctrine(cfg=cfg, content_checks=content_checks, metrics=metrics)
+    doctrine = _stores_doctrine.doctrine
+    doctrine_store = _stores_doctrine.doctrine_store
+    _voice_speaker = _voice_wire.speaker(cfg=cfg, doctrine_store=doctrine_store, metrics=metrics)
+    speaker = _voice_speaker.speaker
+    _voice_rooms = _voice_wire.rooms(
+        _discord_bridge=_discord_bridge,
+        allowlist=allowlist,
+        music_manager=music_manager,
+        voice_hub=voice_hub,
+    )
+    resolve_music_channel = _voice_rooms.resolve_music_channel
+    voice_event_consumer = _voice_rooms.voice_event_consumer
+    voice_guild_ids = _voice_rooms.voice_guild_ids
+    _social_inbox = inbox(cfg=cfg, metrics=metrics)
+    summons_inbox = _social_inbox.summons_inbox
+    summons_wired = _social_inbox.summons_wired
+    _platforms_adapters = await adapters(
+        cfg=cfg,
+        discord_box=discord_box,
+        discord_token=discord_token,
+        metrics=metrics,
+        music_manager=music_manager,
+        persons=persons,
+        resolve_music_channel=resolve_music_channel,
+        speaker=speaker,
+        summons_inbox=summons_inbox,
+        voice_guild_ids=voice_guild_ids,
+        voice_hub=voice_hub,
+    )
+    account = _platforms_adapters.account
+    adapter = _platforms_adapters.adapter
+    registry = _platforms_adapters.registry
+    _stores_instructions = instructions(cfg=cfg, metrics=metrics)
+    dreamer_instructions = _stores_instructions.dreamer_instructions
+    _memory_honcho = await _memory_wire.honcho(allowlist=allowlist, cfg=cfg, persons=persons)
+    memory = _memory_honcho.memory
+    _runtime_tasks = await tasks(
+        cfg=cfg, channel_directory=channel_directory, engine=engine, reload_files=reload_files
+    )
+    background = _runtime_tasks.background
+    debounce = _runtime_tasks.debounce
+    llm_state = _runtime_tasks.llm_state
+    _platforms_policies = policies(
+        allowlist=allowlist,
+        cfg=cfg,
+        discord_control=discord_control,
+        discord_token=discord_token,
+        registry=registry,
+    )
+    policy = _platforms_policies.policy
+    presence_reader = _platforms_policies.presence_reader
+    rosters = _platforms_policies.rosters
+    _stores_readers = readers(cfg=cfg, content_checks=content_checks, engine=engine)
+    culture_reader = _stores_readers.culture_reader
+    lessons_reader = _stores_readers.lessons_reader
+    profile_index = _stores_readers.profile_index
+    profile_reader = _stores_readers.profile_reader
+    profile_store_reader = _stores_readers.profile_store_reader
+    _people_note_maps = _people_wire.note_maps(allowlist=allowlist)
+    _memory_search = _memory_wire.search(cfg=cfg, engine=engine, metrics=metrics)
+    memory_index_reader = _memory_search.memory_index_reader
+    memory_search = _memory_search.memory_search
+    _people_unit_rooms = _people_wire.unit_rooms(allowlist=allowlist)
+    unit_rooms = _people_unit_rooms.unit_rooms
+    _pipelines_shared = build_shared(
+        allowlist=allowlist,
+        audit=audit,
+        background=background,
+        cfg=cfg,
+        clock=clock,
+        computer_context=computer_context,
+        culture_reader=culture_reader,
+        documents_context=documents_context,
+        engine=engine,
+        ledger_store=ledger_store,
+        lessons_reader=lessons_reader,
+        media_join=media_join,
+        memo_store=memo_store,
+        memory=memory,
+        memory_search=memory_search,
+        metrics=metrics,
+        note_store=note_store,
+        observation_store=observation_store,
+        persons=persons,
+        presence_reader=presence_reader,
+        profile_reader=profile_reader,
+        quote_window=quote_window,
+        registry=registry,
+        reminders=reminders,
+        rosters=rosters,
+        standing_store=standing_store,
+        subagents_context=subagents_context,
+        tag_trace_store=tag_trace_store,
+        unit_rooms=unit_rooms,
+    )
+    _spawn = _pipelines_shared._spawn
+    assembler = _pipelines_shared.assembler
+    shared = _pipelines_shared.shared
+    _media_sources = await _media_wire.sources(cfg=cfg)
+    blobs = _media_sources.blobs
+    media_sources = _media_sources.media_sources
+    _models_lane = lane(cfg=cfg)
+    client = _models_lane.client
+    extra_model_clients = _models_lane.extra_model_clients
+    model_client_for = _models_lane.model_client_for
+    route_model = _models_lane.route_model
+    tier = _models_lane.tier
+    _stores_language_scopes = build_language_scopes(allowlist=allowlist)
+    language_scopes = _stores_language_scopes.language_scopes
+    _people_unit_scopes = _people_wire.unit_scopes(allowlist=allowlist)
+    unit_scopes = _people_unit_scopes.unit_scopes
+    _models_source = source(client=client, route_model=route_model, tier=tier)
+    models = _models_source.models
+    _computer_browse = _computer_wire.browse(
+        browser_manager=browser_manager,
+        cfg=cfg,
+        computer=computer,
+        model_client_for=model_client_for,
+        route_model=route_model,
+    )
+    browser = _computer_browse.browser
+    _models_runner = build_runner(cfg=cfg, metrics=metrics, models=models, tier=tier)
+    runner = _models_runner.runner
+    _people_homes = _people_wire.homes(allowlist=allowlist)
+    proactive_homes = _people_homes.proactive_homes
+    _models_runners = runners(
+        cfg=cfg,
+        metrics=metrics,
+        model_client_for=model_client_for,
+        route_model=route_model,
+        summons_wired=summons_wired,
+        tier=tier,
+    )
+    limits = _models_runners.limits
+    participation_runner = _models_runners.participation_runner
+    proactive_runner = _models_runners.proactive_runner
+    summons_runner = _models_runners.summons_runner
+    _agenda_reminder_caps = _agenda_wire.reminder_caps(cfg=cfg)
+    reminder_caps = _agenda_reminder_caps.reminder_caps
+    _agenda_event_store = _agenda_wire.event_store(allowlist=allowlist, engine=engine)
+    event_room_claims = _agenda_event_store.event_room_claims
+    event_store = _agenda_event_store.event_store
+    _location_place_areas = _location_wire.place_areas(cfg=cfg, route_client=route_client)
+    place_areas = _location_place_areas.place_areas
+    _agenda_events = _agenda_wire.events(
+        cfg=cfg,
+        content_checks=content_checks,
+        event_store=event_store,
+        memory=memory,
+        place_areas=place_areas,
+        route_client=route_client,
+    )
+    events = _agenda_events.events
+    _media_describers = _media_wire.describers(
+        _spawn=_spawn,
+        blobs=blobs,
+        cfg=cfg,
+        content_checks=content_checks,
+        engine=engine,
+        media_objects=media_objects,
+        memory=memory,
+        metrics=metrics,
+        model_client_for=model_client_for,
+        route_model=route_model,
+        tier=tier,
+    )
+    comprehension = _media_describers.comprehension
+    media_descriptions = _media_describers.media_descriptions
+    sticker_reader = _media_describers.sticker_reader
+    transcriber = _media_describers.transcriber
+    vision_client = _media_describers.vision_client
+    _runtime_slots = build_slots(background=background, cfg=cfg)
+    slots = _runtime_slots.slots
+    _runtime_stimulus = stimulus(allowlist=allowlist, cfg=cfg, engine=engine, registry=registry)
+    stimulus_store = _runtime_stimulus.stimulus_store
+    stimulus_wiring = _runtime_stimulus.stimulus_wiring
+    _pipelines_ingest = build_ingest(
+        _spawn=_spawn,
+        allowlist=allowlist,
+        audit=audit,
+        blobs=blobs,
+        cfg=cfg,
+        comprehension=comprehension,
+        media_objects=media_objects,
+        media_sources=media_sources,
+        memory=memory,
+        metrics=metrics,
+        persons=persons,
+        policy=policy,
+        sticker_reader=sticker_reader,
+        stimulus_wiring=stimulus_wiring,
+        transcriber=transcriber,
+    )
+    ingest = _pipelines_ingest.ingest
+    _media_search = _media_wire.search(cfg=cfg)
+    fetch_client = _media_search.fetch_client
+    search_client = _media_search.search_client
+    _social_clients = _social_wire.clients(allowlist=allowlist, cfg=cfg, persons=persons)
+    social_client = _social_clients.social_client
+    social_subjects = _social_clients.social_subjects
+    _location_weather = _location_wire.weather(cfg=cfg)
+    weather_client = _location_weather.weather_client
+    _people_steam = _people_wire.steam(cfg=cfg)
+    steam_client = _people_steam.steam_client
+    _location_presence = _location_wire.presence(
+        cfg=cfg, engine=engine, metrics=metrics, persons=persons
+    )
+    presence_circles = _location_presence.presence_circles
+    presence_store = _location_presence.presence_store
+    _media_images = _media_wire.images(cfg=cfg, metrics=metrics)
+    image_generator = _media_images.image_generator
+    image_refs_allowed = _media_images.image_refs_allowed
+    oauth_keepalive = _media_images.oauth_keepalive
+    preview_source = _media_images.preview_source
+    _location_refresh = _location_wire.refresh(cfg=cfg, presence_store=presence_store)
+    refresher = _location_refresh.refresher
+    _location_geocoder = _location_wire.geocoder(cfg=cfg, engine=engine)
+    geocoder = _location_geocoder.geocoder
+    _agent_backends = backends()
+    compute_backends = _agent_backends.compute_backends
+    _media_video = _media_wire.video(
+        cfg=cfg,
+        clock=clock,
+        compute_backends=compute_backends,
+        compute_jobs=compute_jobs,
+        metrics=metrics,
+    )
+    video_desk = _media_video.video_desk
+    _computer_settings = _computer_wire.settings(cfg=cfg)
+    computer_settings = _computer_settings.computer_settings
+    _computer_exports = _computer_wire.exports(engine=engine)
+    computer_exports = _computer_exports.computer_exports
+    _agent_mcp = mcp(cfg=cfg)
+    mcp_tool_groups = _agent_mcp.mcp_tool_groups
+    version_manifest = _agent_mcp.version_manifest
+    _conversation_reactions = _conversation_wire.reactions(
+        cfg=cfg, content_checks=content_checks, doctrine_store=doctrine_store, metrics=metrics
+    )
+    giphy_client = _conversation_reactions.giphy_client
+    reaction_picker = _conversation_reactions.reaction_picker
+    _people_games = _people_wire.games(cfg=cfg)
+    games_client = _people_games.games_client
+    _conversation_relay = await _conversation_wire.relay(
+        allowlist=allowlist,
+        content_checks=content_checks,
+        metrics=metrics,
+        presence_reader=presence_reader,
+        slots=slots,
+    )
+    relay = _conversation_relay.relay
+    _voice_platforms = _voice_wire.platforms(
+        _discord_bridge=_discord_bridge,
+        cfg=cfg,
+        discord_control=discord_control,
+        music_manager=music_manager,
+        registry=registry,
+        resolve_music_channel=resolve_music_channel,
+        voice_guild_ids=voice_guild_ids,
+        voice_hub=voice_hub,
+    )
+    discord_presence = _voice_platforms.discord_presence
+    music_bridge = _voice_platforms.music_bridge
+    voice_presence = _voice_platforms.voice_presence
+    _people_lineage = _people_wire.lineage(allowlist=allowlist, cfg=cfg, persons=persons)
+    lineage = _people_lineage.lineage
+    _agent_desk = desk(
+        cfg=cfg, clock=clock, compute_jobs=compute_jobs, document_service=document_service
+    )
+    subagent_desk = _agent_desk.subagent_desk
+    _agent_registry = registry(
+        allowlist=allowlist,
+        blobs=blobs,
+        browser=browser,
+        browser_manager=browser_manager,
+        cfg=cfg,
+        clock=clock,
+        computer=computer,
+        computer_admission=computer_admission,
+        computer_context=computer_context,
+        computer_dm_scope_for=computer_dm_scope_for,
+        computer_events=computer_events,
+        computer_exports=computer_exports,
+        computer_leases=computer_leases,
+        computer_sessions=computer_sessions,
+        computer_settings=computer_settings,
+        content_checks=content_checks,
+        culture_reader=culture_reader,
         discord_presence=discord_presence,
+        document_service=document_service,
+        engine=engine,
+        events=events,
+        fetch_client=fetch_client,
+        geocoder=geocoder,
+        giphy_client=giphy_client,
         image_generator=image_generator,
         image_refs_allowed=image_refs_allowed,
-        # `[llm.budgets]`, the per-deployment delta over the table. Threaded
-        # here for the same reason `reminder_caps` is: `nora.agent` may not
-        # import `nora.config`, so the composition root is the conversion
-        # point. Names are validated at config load, so anything arriving here
-        # is a tool that exists.
-        budget_overrides=cfg.llm.budgets,
-        content_checks=content_checks,
-    )
-    # The sub-agent worker, registered under its kind for the poller below.
-    # OFF by default: nothing is built and `compute_backends` stays empty. It needs the tool
-    # registry (its closed tool list is built from it), which is why it sits here.
-    subagent_backend: SubagentBackend | None = None
-    if cfg.subagent.enabled:
-        subagent_backend = build_subagent_backend(
-            cfg=cfg, client=model_client_for("subagent"),
-            tier=tier.model_copy(update={"model": route_model("subagent", tier.model)}),
-            registry=tool_registry, store=audit,
-            persons=persons, honcho=memory, metrics=metrics, rosters=rosters,
-            self_ids=registry.self_aliases(), clock=clock, result_caps=TOOL_RESULT_CAPS,
-            reasoning_effort=str(_reasoning_effort(
-                cfg.subagent.reasoning_effort, source="[subagent] reasoning_effort",
-            )),
-            jobs=compute_jobs,
-            # The scoped computer's FIFO: when it is wired AND the job's room
-            # resolves a scope, the job runs AS a `worker` segment — its own
-            # durable row the queue can grant, cancel and drain, never a
-            # computer caller outside the FIFO it calls into.
-            admission=computer_admission,
-            scope_for=computer_scope_for,
-        )
-        compute_backends[SUBAGENT_KIND] = subagent_backend
-        if subagent_desk is not None:
-            subagent_desk.attach(subagent_backend)
-        if subagents_context is not None:
-            subagents_context.attach(subagent_backend)
-    if computer_queue_runner is not None:
-        # The queue's executor for durable `native`/`browse`/`capture`
-        # rows: each is re-entered through the registry surface built for
-        # its ORIGIN room (`nora.app.computer_dispatch`) — fresh policy
-        # admission, never a replayed closure.
-        from nora.app.computer_dispatch import ComputerToolDispatch
-        _computer_dispatch = ComputerToolDispatch(
-            registry=tool_registry, store=audit, persons=persons,
-            honcho=memory, metrics=metrics, rosters=rosters,
-            self_ids=registry.self_aliases(),
-            # Re-admission is decided at EXECUTION time: current policy and
-            # the live scope resolver, never the queue-time row's word.
-            policy=allowlist, scope_for=computer_scope_for)
-        for _kind in ("native", "browse", "capture"):
-            computer_queue_runner.set_dispatch(_kind, _computer_dispatch)
-    if computer_task_backend is not None:
-        # The scoped computer's deferred-delivery half ([computer.scoped]):
-        # a `computer_tasks` row that closed while its room was not waiting
-        # is delivered through the same outbox every other kind uses.
-        compute_backends["computer"] = computer_task_backend
-    if cfg.compute.enabled and not compute_backends:
-        log.warning(
-            "[compute] enabled = true but no ComputeBackend is registered (the "
-            "per-job container backend was retired, design/sandbox-runtime "
-            "decision 4; `[subagent] enabled` registers the sub-agent worker, `[video_gen]` "
-            "the video backend); the "
-            "compute-job poller stays idle. Set enabled = false."
-        )
-    if presence_store is not None and content_checks:
-        # The R-21/R-31 startup invariant (DEC-54(4)): alarm the day a policy
-        # conversation is no longer a subset of a circle. A BACKGROUND task, not
-        # a startup gate — it needs the signal-cli roster, and an unreadable
-        # roster must not stop Nora
-        # (the AUTHORITATIVE fail-closed check is per-call in `Whereis.locate`;
-        # this is the belt-and-braces pre-flight its docstring names).
-        background.spawn(_presence_preflight(
-            allowlist=allowlist, rosters=rosters, persons=persons,
-            circles=presence_circles, metrics=metrics,
-            # Without her aliases Nora HERSELF is the «1 unmapped account»: her
-            # own membership resolves to nobody in identity.toml, exactly the
-            # stranger-shape the warning exists for. The tag path's Room gets
-            # the same set (`EngagementPipeline._run_admitted`).
-            #
-            # EVERY platform's aliases, not Signal's alone: this pre-flight
-            # walks Discord rooms too, and Nora's SNOWFLAKE is what identifies
-            # her there. Signal-only would count her own bot account as one of
-            # the room's unmapped strangers.
-            self_ids=registry.self_aliases(),
-        ))
-    # The debrief's collaborators, as ONE object that is either present or
-    # absent (`debrief.Wiring` — the shape is deliberate: four optional
-    # parameters would let a deployment wire the store and forget the client,
-    # which runs the stage, finds nothing to do, and reports nothing).
-    #
-    # `[standing] model` empty means `[llm] model`, the defaulting every
-    # per-subsystem model key in this file uses. A separate name is
-    # available because the fold is a different job from replying — one
-    # structured output, no tools, no audience — and may want a cheaper or a
-    # more literal model; empty is the honest default rather than a guess.
-    #
-    # `objective=dreamer_instructions` is the SAME hot-reloading instruction
-    # substrate every Dreamer adaptor holds, read through `objective_body` and
-    # NOT `for_objective`: the latter prepends the Dreamer's own doctrine,
-    # which is research-framed, and a research-framed doctrine on a task with
-    # no research makes the model run away with output.
-    # under `nora/dreamer/objectives/` says nothing about Standing being a
-    # Dreamer adaptor — it is a tag-path stage; that directory is simply where
-    # the bind-mounted, hot-reloading instruction text lives.
-    debrief_wiring: DebriefWiring | None = None
-    if cfg.standing.enabled:
-        debrief_wiring = DebriefWiring(
-            store=standing_store,
-            media_join=media_join,
-            client=_DebriefModelClient(
-                base_url=cfg.endpoint("standing")[0],
-                api_key=cfg.endpoint("standing")[1],
-                max_tokens=cfg.llm.max_tokens,
-                temperature=cfg.llm.temperature,
-                model=cfg.endpoint("standing", cfg.standing.model or cfg.llm.model)[2],
-                timeout_seconds=cfg.standing.timeout_seconds,
-                # Empty means inherit `[llm] reasoning_effort` — the same
-                # defaulting `model` above uses.
-                reasoning_effort=_reasoning_effort(
-                    cfg.standing.reasoning_effort or cfg.llm.reasoning_effort,
-                    source=(
-                        "[standing] reasoning_effort"
-                        if cfg.standing.reasoning_effort
-                        else "[llm] reasoning_effort (inherited)"
-                    ),
-                ),
-            ),
-            objective=dreamer_instructions,
-            record_store=audit,
-            max_chars=cfg.standing.max_chars,
-            fold_batch=cfg.standing.fold_batch,
-            timeout_seconds=cfg.standing.timeout_seconds,
-            store_timeout_seconds=cfg.standing.store_timeout_seconds,
-            working_set_max_items=cfg.standing.working_set_max_items,
-            working_set_max_chars=cfg.standing.working_set_max_chars,
-            content_checks=content_checks,
-        )
-    # The Cognition session's completion hook (design/notebook-memory-types/
-    # 20-standing.md §3): the SAME tools-less Standing fold the tag path runs
-    # after every admitted turn, run once per room the finished session
-    # actually bound, with the session's whole retained Record as its input.
-    # `None` when `[standing] enabled = false`, exactly like `debrief_wiring`
-    # it reuses — the same wiring absence, the same inert state.
-    standing_fold = None
-    if debrief_wiring is not None:
-        async def standing_fold(
-            *, trace: Any, unit: str, rooms: tuple[tuple[str, str], ...],
-        ) -> None:
-            from nora.engagement.stages import debrief as _debrief_stage
-            if not rooms:
-                return
-            target = lineage.render_room(
-                platform=rooms[0][0], conversation_id=rooms[0][1])
-            await _debrief_stage.fold_unit(
-                trace=trace, unit=unit, rooms=rooms,
-                ledger=ledger_store, target=target,
-                tag_traces=tag_trace_store,
-                client=debrief_wiring.client,
-                objective=debrief_wiring.objective,
-                metrics=metrics, display_name=cfg.doctrine.display_name,
-                timeout_seconds=debrief_wiring.timeout_seconds,
-                store_timeout_seconds=debrief_wiring.store_timeout_seconds,
-                now_ms=int(clock().timestamp() * 1000),
-            )
-
-    engagement = EngagementPipeline(
-        # EVERY built adapter, not just Signal's: a tag is answered on the
-        # platform it arrived from, and `registry.adapters` is exactly the set
-        # of platforms this process can both hear and speak on.
-        adapters=dict(registry.adapters),
-        audit=audit, memory=memory, persons=persons,
-        doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
-        tool_registry=tool_registry,
-        # `allowlist` — policy.toml, the SAME instance the ingest pipeline
-        # already checked this conversation is admitted under (DEC-18). This
-        # is the second read of it: which MCP servers, not whether to engage
-        # at all (DEC-71).
-        policy=allowlist,
-        debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        ai_peer=cfg.honcho.ai_peer,
-        context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
-        limits=limits, defer_tools=cfg.llm.defer_tools,
-        metrics=metrics, spawn=background.spawn, llm_state=llm_state,
-        reactions=cfg.engagement.reactions.enabled,
-        rosters=rosters,
-        preview_source=preview_source,
-        slots=slots,
-        clock=clock,
+        ledger_store=ledger_store,
+        lineage=lineage,
+        mcp_tool_groups=mcp_tool_groups,
+        media_descriptions=media_descriptions,
+        media_join=media_join,
+        media_objects=media_objects,
+        memo_store=memo_store,
+        memory_search=memory_search,
+        metrics=metrics,
+        mobility=mobility,
+        music_bridge=music_bridge,
+        note_store=note_store,
+        observation_store=observation_store,
+        persons=persons,
+        presence_circles=presence_circles,
+        presence_reader=presence_reader,
+        presence_store=presence_store,
+        profile_index=profile_index,
+        profile_reader=profile_reader,
+        reaction_picker=reaction_picker,
+        refresher=refresher,
+        relay=relay,
+        reminder_caps=reminder_caps,
+        reminders=reminders,
+        route_client=route_client,
+        search_client=search_client,
+        social_client=social_client,
+        standing_store=standing_store,
+        steam_client=steam_client,
+        subagent_desk=subagent_desk,
         tool_call_log_store=tool_call_log_store,
-        reasoning_strip_store=reasoning_strip_store,
+        version_manifest=version_manifest,
+        video_desk=video_desk,
+        vision_client=vision_client,
+        voice_presence=voice_presence,
+        weather_client=weather_client,
+    )
+    tool_registry = _agent_registry.tool_registry
+    _agent_subagent_backend = backend(
+        audit=audit,
+        cfg=cfg,
+        clock=clock,
+        compute_backends=compute_backends,
+        compute_jobs=compute_jobs,
+        computer_admission=computer_admission,
+        computer_scope_for=computer_scope_for,
+        memory=memory,
+        metrics=metrics,
+        model_client_for=model_client_for,
+        persons=persons,
+        registry=registry,
+        rosters=rosters,
+        route_model=route_model,
+        subagent_desk=subagent_desk,
+        subagents_context=subagents_context,
+        tier=tier,
+        tool_registry=tool_registry,
+    )
+    subagent_backend = _agent_subagent_backend.subagent_backend
+    _computer_dispatch = _computer_wire.dispatch(
+        allowlist=allowlist,
+        audit=audit,
+        compute_backends=compute_backends,
+        computer_queue_runner=computer_queue_runner,
+        computer_scope_for=computer_scope_for,
+        computer_task_backend=computer_task_backend,
+        memory=memory,
+        metrics=metrics,
+        persons=persons,
+        registry=registry,
+        rosters=rosters,
+        tool_registry=tool_registry,
+    )
+    _agent_backends_check = backends_check(cfg=cfg, compute_backends=compute_backends)
+    _platforms_presence_preflight = presence_preflight(
+        allowlist=allowlist,
+        background=background,
+        content_checks=content_checks,
+        metrics=metrics,
+        persons=persons,
+        presence_circles=presence_circles,
+        presence_store=presence_store,
+        registry=registry,
+        rosters=rosters,
+    )
+    _pipelines_standing = await standing(
+        audit=audit,
+        cfg=cfg,
+        clock=clock,
+        content_checks=content_checks,
+        dreamer_instructions=dreamer_instructions,
+        ledger_store=ledger_store,
+        lineage=lineage,
+        media_join=media_join,
+        metrics=metrics,
+        standing_store=standing_store,
         tag_trace_store=tag_trace_store,
+    )
+    debrief_wiring = _pipelines_standing.debrief_wiring
+    standing_fold = _pipelines_standing.standing_fold
+    _pipelines_engagement = build_engagement(
+        allowlist=allowlist,
+        assembler=assembler,
+        audit=audit,
+        background=background,
+        cfg=cfg,
+        clock=clock,
+        debounce=debounce,
         debrief_wiring=debrief_wiring,
-        # The shared decision log. The tag path only
-        # WRITES: somebody addressed her, so it is never in doubt about
-        # whether to speak. What it writes is what the other two
-        # deciders could not see.
-        decisions=decision_log,
+        decision_log=decision_log,
+        doctrine_store=doctrine_store,
+        limits=limits,
+        llm_state=llm_state,
+        memory=memory,
+        metrics=metrics,
+        persons=persons,
+        preview_source=preview_source,
+        reasoning_strip_store=reasoning_strip_store,
+        registry=registry,
+        rosters=rosters,
+        runner=runner,
+        slots=slots,
+        tag_trace_store=tag_trace_store,
+        tier=tier,
+        tool_call_log_store=tool_call_log_store,
+        tool_registry=tool_registry,
     )
-    # The Dispatcher is built LATE, below the fire path — the participation
-    # trigger it may carry needs `fire_path.speak`, which does not exist yet
-    # here. Nothing between here and there consumes it.
-
-    # Boot recovery, UNCONDITIONALLY — deliberately NOT behind
-    # `cfg.heartbeat.enabled`. A crash leaves rows FIRING, and a heartbeat that
-    # has been switched off is exactly the state in which a stranded row would
-    # otherwise sit there forever: at-most-once would silently stop applying on
-    # the very config that looks safest. Only the LOOP is gated.
-    #
-    # `recover` counts what it sweeps, so a crash that ate reminders is visible
-    # to dashboards.
-    await recover(store=reminders, metrics=metrics, now=clock())
-    # Compute-job boot recovery, ALSO unconditional, and for the SAME reason —
-    # deliberately NOT behind `cfg.compute.enabled`: a deployment that crashes
-    # mid-delivery and then flips `[compute] enabled=false` would otherwise
-    # leave any `FIRING` `ComputeJob` row stranded forever.
-    # The rows are RETURNED so the people waiting on them can be told. Sweeping
-    # them terminal is right and not claiming they failed is right, but without
-    # a delivery nobody would be told ANYTHING: the requester heard «I'm
-    # working on it» and then nothing, ever. Delivered below, once `fire_path`
-    # exists.
-    lost_jobs = await compute_poller_recover(
-        store=compute_jobs, metrics=metrics, now=clock(),
-        # A video row's handle is the provider's task id, not memory: when the video backend
-        # is wired its pending rows are polled again rather than swept as lost.
-        durable_kinds=(
-            frozenset({VIDEO_KIND}) if VIDEO_KIND in compute_backends else frozenset()
-        ),
+    engagement = _pipelines_engagement.engagement
+    _fire_recover = await build_recover(
+        clock=clock,
+        compute_backends=compute_backends,
+        compute_jobs=compute_jobs,
+        metrics=metrics,
+        reminders=reminders,
     )
-    # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
-    # otherwise every deployment on the shipped default (`enabled = false`)
-    # exports 0.0 forever, which reads identically to "ticked a moment ago".
-    publish_idle_gauge(metrics)
-    # Three occasions need a fire turn: a reminder coming due, a compute job
-    # that has finished and needs delivering, and a participation decision.
-    fire_path: FirePath | None = None
-    # `or cfg.compute.enabled`: without this, a deployment that enables
-    # `[compute]` alone (heartbeat off) would build
-    # `compute_backends` and accept deferred jobs, but the poller below —
-    # which needs `fire_path` to deliver a finished job — would never spawn,
-    # and every such job would sit `pending` forever with no path to ever
-    # reach the group it was asked into.
-    if cfg.heartbeat.enabled or cfg.compute.enabled or cfg.participation.enabled:
-        # The real fire turn. It holds the SAME collaborators the tag path does
-        # — one record store, one Honcho client, one runner, one tool registry —
-        # because a fire turn is a turn in the same conversation and a second
-        # set would be a second Nora with her own memory and her own budgets.
-        # It reads doctrine at `applies_to="heartbeat"` itself.
-        fire_path = FirePath(
-            tag_trace_store=tag_trace_store,
-            persons=persons, records=audit, memory=memory,
-            lineage=lineage,
-            shared=shared,
-            self_ids=registry.self_aliases(),
-            media_join=media_join,
-            # The shared quote-window resolver (DEC-195). The SAME instance
-            # `build_assembler` above holds — a fire turn reads the same
-            # `context_window`-sized transcript a tag reply does, and a reply
-            # INSIDE that window can still quote a parent outside it, whether
-            # or not this particular turn was triggered by one message in
-            # particular.
-            quote_window=quote_window,
-            doctrine_store=doctrine_store, metrics=metrics,
-            runner=runner, adapters=dict(registry.adapters), registry=tool_registry,
-            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-                ai_peer=cfg.honcho.ai_peer,
-            context_window=cfg.store.context_window,
-            limits=limits, defer_tools=cfg.llm.defer_tools,
-            # `[heartbeat]`, not `[llm]`: nobody is waiting on a fire turn, so
-            # the 60s chosen for a person staring at a group chat is the wrong
-            # bound.
-            timeout_seconds=cfg.heartbeat.timeout_seconds,
-            clock=clock,
-            rosters=rosters,
-            # The SAME preview source the tag path holds. A fire turn is a
-            # message into the same group, so a link in it earns the same card.
-            preview_source=preview_source,
-            llm_state=llm_state,
-            tool_call_log_store=tool_call_log_store,
-            reasoning_strip_store=reasoning_strip_store,
-            # The reminder-derived Event registry (DEC-139): kind -> factory, wired here at
-            # the composition root so the domain type stays free of app
-            # wiring. The registry holds the kinds whose Events are PRODUCED
-            # BY a due Reminder row; compute/relay/lost-job call speak
-            # directly and are not registry entries. An event does not own
-            # a reminder (DEC-303): a reminder is a person's or Nora's own.
-            event_registry={
-                "reminder": reminder_occasion,
-                # The proactive act turn: a row the Cognition session's
-                # `remind` writes, built `person_id=None`. Registered
-                # unconditionally — a row of this kind can only exist if a writer
-                # was once wired, and an unregistered kind fails the
-                # row `failed_error` with no way to say why.
-                "proactive": proactive_occasion,
-            },
-            # `<standing>` renders on the fire path too. A fire turn
-            # speaks into a room UNPROMPTED, so «where had this conversation
-            # got to» is the context she is least likely to have any other
-            # way: there is no tagging message to infer it from. Reads only;
-            # the fire path writes no position (see `FirePath.__init__`).
-            # THE CULTURE HEAD (DEC-207) — the SAME reader
-            # the tag assembler holds. Keyed on `primary_id`, which is why this
-            # path resolves the occasion through the policy it already holds
-            # before reading (`FirePath._read_culture`).
-            culture=culture_reader,
-            # THE SWITCH (45 §5): the SAME profile reader the tag assembler
-            # holds; `None` until `[memory.profile] read` is on.
-            profile=profile_reader,
-            lessons=lessons_reader,
-            standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
-            # The participation turn's memory reads. ONE knob set,
-            # read at the composition root exactly as the tag assembler reads
-            # `tagger_card_conclusions` — two readers each carrying their own idea
-            # of how much memory a prompt may hold is how the fire path came to
-            # render none at all. Not gated on `[participation] enabled`: every
-            # read is gated on `occasion.kind == "participation"` in
-            # `_read_memory`, which is a condition no other occasion can meet,
-            # and a second gate here would be a place for the two to disagree.
-            people_in_window_conclusions=cfg.honcho.people_in_window_conclusions,
-            people_in_window_speakers=cfg.honcho.people_in_window_speakers,
-            memory_read_timeout_seconds=cfg.honcho.read_timeout_seconds,
-            # The shared decision log, written from
-            # `_determined` — the one method all four determination
-            # exits already converge on. Participation and proactive
-            # act turns only; a reminder firing is not a decision
-            # about whether to speak.
-            decisions=decision_log,
-            # `<presence>` — the SAME reader the tag path's assembler holds, so
-            # a participation turn or a reminder knows where it is the way a
-            # tag does.
-            # `<computer>`, the reader the tag
-            # path's assembler holds; `None` while `[computer]` is off.
-            computer=computer_context,
-            documents=documents_context,
-            presence=presence_reader,
-            # The note tier: the participation determination grounds
-            # on «transcript + standing/notes». Wired for every
-            # fire occasion, gated exactly like the assembler's reads above:
-            # the SAME store instance (already `None` while the tier's
-            # `enabled = false`), and the SAME `allowlist` the assembler scopes
-            # its unit reads through — two readers each carrying their own
-            # idea of a room's unit is the DEC-105 violation.
-            notes=note_store,
-            memos=memo_store,
-            policy=allowlist,
-            # The participation occasion's own runner — None whenever the
-            # occasion is disabled, which is also exactly when no participation
-            # Event can reach `speak` (no policy marks one, no trigger exists).
-            participation_runner=participation_runner,
-            # The proactive act turn's runner: the same auto-runner,
-            # under its own name. Gated on a HOME ROOM existing, not on the
-            # adaptor being wired: a proactive row written
-            # yesterday still comes due after `[dreamer] enabled` is flipped
-            # off, the screen below admits it, and a fire path with no runner
-            # would fail every such row `failed_error`. The row's existence
-            # condition is the home room; so is the runner's.
-            proactive_runner=proactive_runner,
-            # The shadow mirror: wired only when the operator turned BOTH
-            # the occasion AND the review surface on — a mirrored determination
-            # always cleared the room opt-in and the enabled gate first. The
-            # channel id is validated non-empty by `ParticipationConfig` when
-            # `shadow = true`.
-            shadow_channel=(
-                cfg.participation.shadow_channel
-                if cfg.participation.enabled and cfg.participation.shadow else None
-            ),
-            shadow_platform=cfg.participation.shadow_platform,
-            # The Relevance Gate's OWN review channel, wired
-            # only when the gate is on AND in shadow. Separate from the
-            # mirror above because the two report different things: that one
-            # carries what she WOULD HAVE SAID, this one carries what the
-            # gate ADMITTED with no turn behind it at all.
-            gate_shadow_channel=(
-                cfg.relevance_gate.shadow_channel
-                if cfg.relevance_gate.enabled and cfg.relevance_gate.shadow else None
-            ),
-            gate_shadow_platform=cfg.relevance_gate.shadow_platform,
-        )
-    if lost_jobs and fire_path is not None:
-        # Spawned, never awaited — a boot must not wait on a model call, and
-        # `BackgroundTasks` holds the strong reference, exactly as the
-        # heartbeat and the poller do.
-        background.spawn(_tell_about_lost_jobs(
-            jobs=lost_jobs, speak=fire_path.speak, slots=slots, metrics=metrics,
-            policy=allowlist,
-        ))
-    elif lost_jobs:
-        # No fire path on this deployment, so there is no way to say it. Loud
-        # rather than silent: somebody is still waiting on each of these.
-        log.error(
-            "%d compute job(s) lost across the restart and NOBODY CAN BE TOLD — "
-            "this deployment wires no fire path (heartbeat, participation and "
-            "compute all off)", len(lost_jobs),
-        )
-
-    # THE FIRE-TIME SCREEN for a `kind="proactive"` row, built
-    # unconditionally. It is a pure value with no side effects. The screen
-    # belongs to the ROW, not to the loop, so asking "would this row be
-    # refused" should not require turning the loop on.
-    proactive_screen = ProactiveScreen(policy=allowlist, notes=note_store)
-
-    if cfg.heartbeat.enabled and fire_path is not None:
-        heartbeat = HeartbeatLoop(
-            store=reminders,
-            # The SAME `slots` the engagement pipeline holds. Two instances
-            # would be two locks and no serialisation at all.
-            slots=slots,
-            # `allowlist` — policy.toml — NOT `policy`, which is the
-            # CompositePolicy deciding whether a message is a tag and has no
-            # `is_allowed` at all. Re-checking the ALLOWLIST at fire time is the
-            # whole point of this parameter: the live policy may change while
-            # a row remains pending for thirty days.
-            policy=allowlist,
-            clock=clock,
-            metrics=metrics,
-            tick_seconds=cfg.heartbeat.tick_seconds,
-            fire=fire_path.run,
-            # The `kind="proactive"` screen: the room's flag and
-            # the note's state, read through the SAME allowlist and the SAME
-            # note store every other reader holds. Wired whenever the
-            # heartbeat is, not only when the adaptor is: a proactive row
-            # written yesterday must be screened today even if the adaptor
-            # was switched off in between — and with no screen the loop
-            # fails such a row rather than firing it unscreened.
-            proactive=proactive_screen,
-        )
-        background.spawn(heartbeat.run())
-
-    # The compute-job poller: a background
-    # loop, gated on BOTH the feature flag and a live `fire_path` (a compute
-    # job is delivered as a fire turn into the same conversation, exactly as
-    # a reminder is). `compute_backends` is only non-empty
-    # when `cfg.compute.enabled` is true (see its construction above), so
-    # this condition is really `cfg.compute.enabled and fire_path is not
-    # None` restated — spelled out with the third check anyway so the
-    # relationship holds even if `compute_backends`' own gate ever moves.
-    if cfg.compute.enabled and fire_path is not None and compute_backends:
-        compute_poller = ComputeJobPoller(
-            store=compute_jobs, backends=compute_backends,
-            documents=document_service if cfg.documents.enabled else None,
-            # A finished clip's bytes are kept where a generated image's are (DEC-138): the
-            # same blob store and media index, so `media_search` / `media_send` reach it.
-            blobs=blobs, media=media_objects,
-            # `speak`, NOT `run`: `run` is the heartbeat's reminder-shaped
-            # adapter and would need rows this occasion does not have.
-            speak=fire_path.speak,
-            # The SAME `slots` every other path into a conversation holds.
-            # Two would be two locks and no serialisation at all.
-            slots=slots,
-            metrics=metrics,
-            tick_seconds=cfg.compute.poll_tick_seconds,
-            clock=clock,
-            policy=allowlist,
-        )
-        # Spawned, never awaited — the same reason `heartbeat.run()` above
-        # is: a boot must not wait on a background
-        # loop, and `BackgroundTasks` holds the strong reference.
-        background.spawn(compute_poller.run())
-
-    # The public Instagram summons consumer, gated on BOTH
-    # `[social.instagram] enabled` and its own `summons.enabled` (the config
-    # refuses the second without the first) — the same `summons_wired` that
-    # enabled the inbox above, so a
-    # queued card always has a consumer. It takes cards off the inbox the
-    # Instagram adapter fills from the bridge's SSE stream, one at a time;
-    # there is no poll (the notification feed never carries these mentions),
-    # so `summons.poll_seconds` is read by nothing. It needs no
-    # `fire_path`: a summons speaks into no room. Spawned, never awaited;
-    # `cancel_all` stops it at shutdown with every other background loop.
-    if summons_wired and summons_runner is not None and social_subjects is not None:
-        from nora.app.summons import SummonsOccasion
-        from nora.app.summons_consumer import SummonsConsumer
-        from nora.infra.social.summons_client import InstagramSummonsClient
-        from nora.infra.sql.summons import SqlSummonsLedger
-
-        summons_cfg = cfg.social.instagram.summons
-        summons_client = InstagramSummonsClient(
-            base_url=cfg.social.instagram.base_url,
-            timeout_seconds=cfg.social.instagram.timeout_seconds,
-        )
-        summons_ledger = SqlSummonsLedger(engine)
-        summons_consumer = SummonsConsumer(
-            inbox=summons_inbox,
-            occasion=SummonsOccasion(
-                client=summons_client, ledger=summons_ledger,
-                summoners=social_subjects, persons=persons,
-                doctrine_store=doctrine_store, registry=tool_registry,
-                runner=summons_runner, metrics=metrics,
-                canary=cfg.doctrine.canary, handle=summons_cfg.handle,
-                mode=summons_cfg.mode,
-                max_age=timedelta(minutes=summons_cfg.max_age_minutes),
-                limits=limits, timeout_seconds=tier.timeout_seconds, clock=clock,
-                content_checks=content_checks,
-            ),
-            ledger=summons_ledger, metrics=metrics, clock=clock,
-        )
-        background.spawn(summons_consumer.run())
-        log.info("instagram summons consumer wired (mode=%s)", summons_cfg.mode)
-        if "instagram" not in registry:
-            # The cards arrive on the MESSAGING adapter's SSE stream, so a
-            # summons needs `[platforms.instagram]` too. Said loudly rather
-            # than refused at load: the consumer idles harmlessly without it.
-            log.error(
-                "[social.instagram.summons] is enabled but [platforms.instagram] "
-                "is not: summons cards arrive on the Instagram adapter's event "
-                "stream, so no summons will ever be received",
-            )
-
-    # The social stream's poller (design/cognition-loop/22-social-stream.md):
-    # built here, started by `nora/__main__.py`, because the eval subject
-    # composes this graph too and must not read members' accounts through the
-    # deployment's login. `[social.poll] enabled` needs `[social.instagram]`
-    # (refused at load), so `social_subjects` is set whenever it is on.
-    social_poller: SocialPoller | None = None
-    social_perception: SocialPerception | None = None
-    if cfg.social.poll.enabled and social_subjects is not None:
-        from nora.infra.social.instagram_source import InstagramSocialSource
-        from nora.infra.social.subjects import instagram_roster
-
-        # ONE store for the poller and every reader, holding who opted out:
-        # the read-side exclusion lives in the store's reads (§2).
-        social_store = readable_social_store(engine, persons, metrics=metrics)
-        social_poller = SocialPoller(
-            source=InstagramSocialSource(
-                base_url=cfg.social.instagram.base_url,
-                timeout_seconds=cfg.social.instagram.timeout_seconds,
-            ),
-            store=social_store,
-            health=SqlSourceHealthLog(engine),
-            roster=functools.partial(instagram_roster, social_subjects),
-            settings=cfg.social.poll, metrics=metrics,
-            units=LiveMapping(lambda: social_person_units(allowlist)),
-            rooms=LiveMapping(lambda: social_unit_rooms(allowlist)),
-            timezone=cfg.cognition.timezone,
-            # The same custody every room's media goes through; `None` while
-            # media custody is off, and then items are recorded without bytes.
-            media=media_sources.for_platform("instagram") if media_sources else None,
-            blobs=blobs, media_objects=media_objects,
-        )
-        # Perception needs `[media] comprehension` (`comprehension` is None
-        # without it, and then items stay unperceived and their reads are
-        # announced as recorded); the stimulus needs `[cognition] enabled`.
-        social_perception = SocialPerception(
-            store=social_store, media_objects=media_objects,
-            comprehension=comprehension, stimuli=stimulus_store,
-            units=LiveMapping(lambda: social_person_units(allowlist)),
-            rooms=LiveMapping(lambda: social_person_rooms(allowlist)),
-            daily_cap=cfg.social.poll.perception_daily_cap,
-            tz=ZoneInfo(cfg.cognition.timezone),
-            chunk_seconds=cfg.media.describe.video.chunk_seconds,
-            chunk_max=cfg.media.describe.video.chunk_max,
-            tick_seconds=cfg.social.poll.tick_seconds, metrics=metrics,
-        )
-        log.info("social poller wired (instagram)")
-    # The bound is on bytes the poller already kept, so it holds while the
-    # poller is off; it reads every person's frames, opted out or not.
-    story_expiry = StoryMediaExpiry(
-        store=SqlSocialStreamStore(engine), blobs=blobs,
-        keep_days=cfg.social.story_media_keep_days,
-        max_days=cfg.social.story_media_keep_max_days,
-        tick_seconds=cfg.social.poll.tick_seconds, metrics=metrics,
-        embedded=_story_frames_embedded(engine, fingerprint(cfg.memory.index.embedder_model)),
-    ) if blobs is not None and cfg.social.story_expiry_enabled else None
-
-    # The participation occasion: trigger, then
-    # dispatcher. Gated on BOTH the flag and a live `fire_path` — the same
-    # shape as the poller above. The trigger holds `fire_path.speak` as a
-    # BOUND METHOD (`tests/test_composition.py` asserts the same of the
-    # heartbeat's `_fire`), and the SAME `slots` every other path into a
-    # conversation holds — two would be two locks and no serialisation at all.
-    #
-    # The LOOP (`nora.app.runtime.participation_loop`) is spawned in
-    # `nora/__main__.py` from `deps.participation_trigger`, like every other
-    # background clock — this section only builds the trigger itself.
-    participation_trigger: ParticipationTrigger | None = None
-    # Bound in the branch below, beside the trigger that holds it.
-    gate: RelevanceGate | None = None
-    if cfg.relevance_gate.enabled and fire_path is not None:
-        # The gate is built HERE and not beside the other model clients,
-        # because it is the only one whose absence would change behaviour
-        # silently: a trigger with `gate=None` admits every closed window.
-        # Constructed in the same branch that constructs the trigger, so the
-        # two cannot come apart.
-        gate = RelevanceGate(
-            client=_RelevanceGateModelClient(
-                # The process-wide `AsyncOpenAI` (DEC-13), not a second
-                # transport of its own: the gate's model is its own combo, but
-                # the connection pool, the retry policy and the base url are
-                # the deployment's one client.
-                client=model_client_for("relevance_gate"),
-                model=route_model("relevance_gate", cfg.relevance_gate.model),
-                max_tokens=cfg.relevance_gate.max_tokens,
-                temperature=cfg.relevance_gate.temperature,
-                timeout_seconds=cfg.relevance_gate.timeout_seconds,
-                reasoning_effort=_reasoning_effort(
-                    cfg.relevance_gate.reasoning_effort,
-                    source="[relevance_gate] reasoning_effort",
-                ),
-            ),
-            # The SAME store the turn reads, at a DIFFERENT audience. The gate
-            # gets `participation.md` and nothing else; Nora never sees that
-            # file and the gate never sees hers. Hot-reloads on mtime, which
-            # is what makes the shadow soak a tuning loop instead of a
-            # rebuild-per-edit loop.
-            prompts=doctrine_store,
-            records=audit,
-            metrics=metrics,
-            # DEC-80's projection, the SAME `Persons` the fire path and the
-            # tag path use. Without it `person_name` is None on every row and
-            # the gate labels speakers by their self-set platform profile
-            # name — the two-name-space bug, on the one call that reads every
-            # opted-in room.
-            persons=persons,
-            # The SAME standing store the fire path reads (`None` while
-            # `[standing] enabled = false`), so the gate and the turn behind
-            # it see one room and not two.
-            standing=standing_store if cfg.standing.enabled else None,
-            transcript_limit=cfg.relevance_gate.transcript_rows,
-            # The SAME number the client above is built with, handed to the
-            # gate as well. Not belt-and-braces: the client's
-            # `wait_for` is a property of THIS wiring, and the gate's own
-            # `decide` promise — never raise, never hang — has to hold against
-            # whatever satisfies `ModelClient`. Whichever fires first produces
-            # the same `timeout` verdict, so a single configured ceiling still
-            # describes the deployment.
-            call_timeout_seconds=cfg.relevance_gate.timeout_seconds,
-            # The SAME join the turn behind it runs. Without it the gate reads
-            # an image-only message as an EMPTY BODY, `render_context` drops
-            # the row, and the window a photo prompted is the one the gate is
-            # least able to see — a systematic under-admission exactly where
-            # the room is most likely to be asking something.
-            media_join=media_join,
-            # NO `capabilities`: giving the gate her derived read-only tool
-            # surface made it STRICTER and worse on the eval suite (more false
-            # NO_GO, no capability improved) and adds prompt tokens on every
-            # quiet window in every opted-in room.
-            #
-            # `ToolRegistry.capability_digest()` and `--capabilities` on the
-            # suite are kept so the comparison can be re-run.
-        )
-        participation_trigger = ParticipationTrigger(
-            speak=fire_path.speak,
-            slots=slots,
-            # Still `[participation]`'s: the quiescence window
-            # belongs to the TRIGGER, which is shared, and the gate is what
-            # runs when a window closes — not what defines one.
-            settle_seconds=cfg.participation.settle_seconds,
-            max_window_messages=cfg.participation.max_window_messages,
-            cooldown_seconds=cfg.participation.cooldown_minutes * 60,
-            gate=gate,
-            # Shadow is DECIDED here, once: passing the poster IS shadow mode.
-            # A boolean flag plus a poster would admit a fourth state (shadow
-            # on, nowhere to post) that silently behaves like live.
-            gate_shadow=(
-                fire_path.post_gate_verdict if cfg.relevance_gate.shadow else None
-            ),
-            # The per-room watermarks, persisted so the SEND cooldown survives
-            # a force-recreate: otherwise she could speak again at once however
-            # recently she had spoken, and the cooldown's whole job is to cap
-            # what a room HEARS.
-            store=SqlParticipationStateStore(engine),
-        )
-    elif cfg.participation.enabled:
-        # The CONVERSE of `_the_gate_needs_something_behind_it` (nora/config.py),
-        # and it cannot live there: that validator refuses a gate with no turn
-        # behind it, which is a config error. This is a turn with no gate in
-        # FRONT of it, which is a legal config that simply does nothing — the
-        # room policy and the trigger are both keyed on `[relevance_gate]
-        # enabled`, so participation alone notes no message, closes no window
-        # and runs no turn. Loud rather than inert, so an operator reading
-        # `[participation]` has a way to learn this.
-        log.error(
-            "participation.enabled = true but relevance_gate.enabled = false — "
-            "NOTHING will happen: since design/dreamer-agent-loop/36 the "
-            "quiescence trigger and the room policy are the gate's, so with the "
-            "gate off no window is ever noted, judged or turned into a turn. "
-            "Set [relevance_gate] enabled = true (it ships in shadow mode)."
-        )
-    elif cfg.relevance_gate.enabled:
-        # Reachable only if the fire-path gate above stopped including
-        # `cfg.participation.enabled` — loud rather than inert, because a
-        # trigger-less participation flag would otherwise look healthy.
-        log.error(
-            "relevance_gate.enabled = true but no fire path was built — no "
-            "window can ever be judged and no turn can ever run. Check the "
-            "FirePath gate."
-        )
-    dispatcher = Dispatcher(
-        ingest=ingest, engagement=engagement, background=background,
-        participation=participation_trigger,
+    lost_jobs = _fire_recover.lost_jobs
+    _fire_path = path(
+        allowlist=allowlist,
+        audit=audit,
+        background=background,
+        cfg=cfg,
+        clock=clock,
+        computer_context=computer_context,
+        culture_reader=culture_reader,
+        decision_log=decision_log,
+        doctrine_store=doctrine_store,
+        documents_context=documents_context,
+        lessons_reader=lessons_reader,
+        limits=limits,
+        lineage=lineage,
+        llm_state=llm_state,
+        lost_jobs=lost_jobs,
+        media_join=media_join,
+        memo_store=memo_store,
+        memory=memory,
+        metrics=metrics,
+        note_store=note_store,
+        participation_runner=participation_runner,
+        persons=persons,
+        presence_reader=presence_reader,
+        preview_source=preview_source,
+        proactive_runner=proactive_runner,
+        profile_reader=profile_reader,
+        quote_window=quote_window,
+        reasoning_strip_store=reasoning_strip_store,
+        registry=registry,
+        rosters=rosters,
+        runner=runner,
+        shared=shared,
+        slots=slots,
+        tag_trace_store=tag_trace_store,
+        tool_call_log_store=tool_call_log_store,
+        tool_registry=tool_registry,
     )
-
-    # ---- platform bridges (design/platform-bridges) -------------------------
-    # Any platform with `mode = "bridge"` consumes inbound over Redis Streams
-    # instead of its live listener, and its adapter is a BridgeAdapter client
-    # of that bridge's action API. The readers and the work runner are built
-    # here and spawned from `nora/__main__.py` like every other loop; a
-    # missing Redis URL is a StartupError, never a quietly-deaf deployment.
-    bridge_platforms = [
-        p for p in ("signal", "discord", "whatsapp", "instagram")
-        if getattr(cfg.platforms, p).enabled
-        and getattr(cfg.platforms, p).mode == "bridge"
-    ]
-    bridge_runtime: BridgeRuntime | None = None
-    if bridge_platforms:
-        redis_url = cfg.credentials.get(cfg.bridges.redis_url_env, "")
-        if not redis_url:
-            raise StartupError(
-                f"bridge mode is enabled for {bridge_platforms} but "
-                f"${cfg.bridges.redis_url_env} (bridges.redis_url_env) is not "
-                "set — refusing to start deaf")
-        bridge_store = SqlBridgeStore(engine)
-        bridge_redis = aioredis.from_url(redis_url)
-        bridge_locks = DbSpeakingLocks(bridge_store)
-        if participation_trigger is not None:
-            # The durable window close lives in the same work ledger as every
-            # other obligation: watermark + candidate folds + fire row in ONE
-            # commit, so a force-recreate never finds a judged window whose
-            # turn nobody owns.
-            async def close_participation_window(
-                platform: str, conversation_id: str, window_end_ms: int,
-                conversation_type: str,
-            ) -> None:
-                await bridge_store.close_participation_window(
-                    platform, conversation_id, window_end_ms,
-                    conversation_type)
-
-            participation_trigger.set_close_handoff(close_participation_window)
-        bridge_runner = WorkRunner(
-            store=bridge_store, redis=bridge_redis, ingest=ingest,
-            engagement=engagement, slots=slots, db_locks=bridge_locks,
-            adapters=dict(registry.adapters), gate=policy, metrics=metrics,
-            participation=participation_trigger,
-            # Absorption is a PER-MESSAGE admission fact, never a wiring
-            # constant: each obligation carries the value canonical policy
-            # computed at ingest, and the deferred executor rechecks the
-            # allowlist as it stands when the work actually runs.
-            memory_feed={"memory": memory},
-            stimulus=stimulus_wiring,
-            lease_seconds=cfg.bridges.lease_seconds,
-            allowlist=allowlist, persons=persons,
-            fire_speak=fire_path.speak if fire_path else None,
-            participation_state=SqlParticipationStateStore(engine),
-            observations=observation_store,
-        )
-        # The inspector reads the REAL redis client + engine the runtime
-        # runs on — a second connection would measure a different world.
-        queue_inspector = QueueInspector(
-            bridge_redis, engine=engine, metrics=metrics)
-        bridge_runtime = BridgeRuntime(
-            redis=bridge_redis, store=bridge_store,
-            readers=[
-                StreamReader(
-                    platform=p,
-                    account_key=getattr(cfg.platforms, p).account_key,
-                    redis=bridge_redis, store=bridge_store,
-                    metrics=metrics)
-                for p in bridge_platforms
-            ],
-            runner=bridge_runner,
-            inspector=queue_inspector,
-        )
-        # Zero-series for the counters the runtime increments — the REAL
-        # work-kind and action-op tuples, so `increase()` over a series the
-        # first event creates does not lose it.
-        prime_queue_metrics(metrics, bridge_platforms, work_kinds=sorted(WORK_KINDS))
-
-    # ---- the Dreamer runtime --------------------
-    #
-    # Constructed only when `[dreamer] enabled` is true, the shape every
-    # gated subsystem in this file uses: a
-    # subsystem that is off builds NOTHING, so a wiring mistake in it cannot
-    # cost a deployment that never turned it on.
-    #
-    # `dream_adaptors` is empty unless `[culture]` turns its pass on:
-    # `dream_loop` with an empty tuple ticks the cursor and runs nothing.
-    dream_adaptors: tuple[DreamAdaptor, ...] = ()
-    dreamer_runtime: DreamerRuntime | None = None
-    dream_schedules: Mapping[str, AdaptorSchedule] = {}
-    # ONE schedule-state store, shared by the loop's slots and
-    # any other schedule clock: two instances would be two
-    # engines over one table for no reason.
-    dream_schedule_clock = SqlDreamScheduleClock(engine)
-    # The Cognition session: built inside the Dreamer block below ONLY under
-    # `[cognition] enabled`; off builds nothing here, no model client and no
-    # agent-runner import.
-    #: Hot-loaded session guidance, gated by the offered tools during assembly.
-    session_guidance = cognition_session_guidance(dreamer_instructions)
-    cognition_runner: CognitionSessionRunner | None = None
-    cognition_memory = None
-    # The lesson evidence seam the session reads and settles (`[lessons]
-    # enabled` fills it inside the Dreamer block below; Cognition needs the
-    # Dreamer anyway — `_lessons_need_cognition`).
-    cognition_lessons: CognitionLessons | None = None
-    if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
-        from nora.infra.sql.memory_graph import SqlMemoryGraph
-        memory_graph = SqlMemoryGraph(engine, metrics=metrics)
-        from nora.app.cognition_memory import WakeMemory
-        from nora.infra.sql.comprehend import SqlComprehendRecords
-
-        rooms_by_unit = LiveMapping(lambda: {
-            u: [(c.platform, c.primary_id) for c in allowlist.rooms()
-                if c.unit == u and c.primary_id] for u in unit_scopes()
-        })
-        graph_records = SqlComprehendRecords(
-            engine, media_join=media_join, model_id=route_model("tag", tier.model),
-            rooms_by_unit=rooms_by_unit,
-            persons_by_unit=LiveMapping(lambda: {
-                u: {p for c in allowlist.rooms() if c.unit == u
-                    for p in (c.persons or ())} for u in unit_scopes()
-            }),
-            social_off_ids=persons.social_off_ids(),
-            can_release_place=place_release(
-                rooms_of=lambda u: [(c.platform, c.primary_id, c.location)
-                    for c in allowlist.rooms() if c.unit == u and c.primary_id],
-                room_view=lambda platform, conversation_id: Room(
-                    platform=platform, conversation_id=conversation_id,
-                    roster_source=rosters.get(platform), persons=persons,
-                    self_ids=registry.self_aliases()).members(),
-                circles=presence_circles, content_checks=content_checks))
-        # THE PROMOTED PROFILE WRITER (27 §9, 31 §5): the same
-        # `[memory.profile] write && read` switch (`profile_index`) as the
-        # read surface and index projection; `None` under every other flag
-        # combination, where `profile_revise` keeps recording shadow
-        # receipts and the Dreamer profile adaptors stay the account writers.
-        wake_profile_store = (
-            SqlProfileStore(
-                engine, screen=functools.partial(text_offence, content_checks=content_checks),
-                index=profile_index)
-            if _unified_profile_writers_retired(
-                profile_index=profile_index, graph_comprehend=True,
-                cognition_enabled=cfg.cognition.enabled,
-                units=frozenset(unit_scopes()),
-                home_units=frozenset(allowlist.home_rooms())) else None)
-        wake_listed_rooms = LiveMapping(lambda: {
-            (u, p): tuple(c.primary_id for c in allowlist.rooms()
-                          if c.unit == u and c.primary_id
-                          and c.persons and p in c.persons)
-            for u in unit_scopes()
-            for p in {x for c in allowlist.rooms()
-                      if c.unit == u for x in (c.persons or ())}
-        })
-        cognition_memory = WakeMemory(graph=memory_graph, records=graph_records, metrics=metrics,
-            content_checks=content_checks,
-            profile=wake_profile_store,
-            listed_rooms=(lambda u, p: wake_listed_rooms.get((u, p))),
-            private_names=tuple({name for p in persons.by_person.values()
-                for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases) if name}
-                | {value for (_, value) in persons.index}
-                | set(persons._instagram_handles.values()) | set(persons._instagram_usernames)))
-    #: The units a session can run for (a home room each); only they are woken.
-    cognition_session_units: Collection[str] | None = None
-    cognition_upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None
-    if cfg.dreamer.enabled:
-        # THE CULTURE TIER (DEC-182..185). An account of
-        # how each room works and why, folded from that room's own messages
-        # when it has said enough (DEC-288) and appended to a chain.
-        #
-        # READ BY THE PROMPT AND BY THE CHARACTER SESSIONS: `<culture>` renders
-        # a room's account on tag and fire turns (DEC-207), and the person and
-        # unit sessions below read it as evidence (cited accounts only,
-        # DEC-290). The chain is the contribution: a tier judged on its first
-        # snapshot is judged on the one thing it does not contribute.
-        #
-        # Gated on `[culture] enabled` alone — no note-tier dependency: the
-        # corpus is `messages`, which every deployment has.
-        if cfg.culture.enabled or cfg.memory.profile.write:
-            dream_schedules = {
-                **dream_schedules,
-                "culture": AdaptorSchedule(
-                    # DEC-288: fire on
-                    # `wake_batch` new human messages, or on any new one once
-                    # the last fold is `stale_seconds` old. A SILENT ROOM STILL
-                    # NEVER FIRES, which is correct rather than a defect:
-                    # nothing in this tier retires, so a quiet room's account
-                    # is accurate and there is nothing to refresh it against.
-                    min_interval_seconds=cfg.culture.stale_seconds,
-                    wake_batch=cfg.culture.wake_batch,
-                    # THE BATCH IS THE CORPUS — see `CultureConfig.batch_limit`.
-                    # This is how much of the room the model gets to see, not a
-                    # throttle.
-                    batch_limit=cfg.culture.batch_limit,
-                    # START FROM WHAT THE ROOM HAS BEEN SAYING LATELY, not from
-                    # its origin story. `seed_watermarks` inherits from the
-                    # `language` cursor, and that tier is DELETED — so a room it
-                    # never covered would seed at 0 and spend days walking a
-                    # backlog, installing an account derived from the room's
-                    # past as the current head each time.
-                    seed_at_head=True,
-                ),
-            }
-            dream_adaptors = (
-                *dream_adaptors,
-                CultureAdaptor(
-                    culture=SqlCultureStore(engine),
-                    # THE NOTE INDEX: an account of how a room works that cannot see
-                    # what the room has OPEN is inferring a thing the note
-                    # index already states. `None` for the tier being off is
-                    # a real configuration and renders no block, not an empty
-                    # one. NOT `standing`: it is folded from raw tool results
-                    # (a presence read among them) and this account is input
-                    # to ones shown in every room of the unit (R-31).
-                    notes=note_store if cfg.notes.enabled else None,
-                    # The THREE policy resolutions, every one of them the same
-                    # `.get` over the allowlist keyed on `conv.primary_id` —
-                    # which is this adaptor's own key, because a Dreamer
-                    # adaptor is handed `scopes()` (GLOSSARY.md). Built here, in
-                    # one place, so they cannot disagree about which room a key
-                    # names. LIVE reads (`LiveMapping`): a room a policy reload
-                    # admits after boot resolves here too.
-                    unit_for=LiveMapping(lambda: {
-                        conv.primary_id: conv.unit
-                        for conv in allowlist.rooms()
-                        if conv.primary_id and conv.unit
-                    }).get,
-                    # What the room is CALLED and what the operator says it IS
-                    # (`Conversation.label` / `.description`), for the `<room>`
-                    # block. A room with neither is simply absent from the map
-                    # and the block falls back without ever rendering an id.
-                    label_for=LiveMapping(lambda: {
-                        conv.primary_id: conv.label
-                        for conv in allowlist.rooms()
-                        if conv.primary_id and conv.label
-                    }).get,
-                    description_for=LiveMapping(lambda: {
-                        conv.primary_id: conv.description
-                        for conv in allowlist.rooms()
-                        if conv.primary_id and conv.description
-                    }).get,
-                    metrics=metrics,
-                    # THE ROOM'S PLATFORM and A NAME RESOLVER,
-                    # off the SAME allowlist read `label_for`/`description_for`
-                    # already are, plus `persons` — the one instance every
-                    # other write path in this file already holds. This is
-                    # what lets `inputs()` fill a mapped sender's canonical
-                    # name into `<room_messages>` before it renders.
-                    platform_for=LiveMapping(lambda: {
-                        conv.primary_id: conv.platform
-                        for conv in allowlist.rooms()
-                        if conv.primary_id
-                    }).get,
-                    resolve_names=(
-                        lambda rows, platform:
-                            persons.name_transcript(rows, platform=platform)
-                    ),
-                ),
-            )
-            # CHARACTER · PERSON: one session
-            # per (unit, person listed in that unit's rooms), woken by that
-            # person's own messages across the unit's rooms. Same store,
-            # same chain, the stale rule `[culture] stale_seconds` shares.
-            person_keys = LiveMapping(lambda: character_person_keys(allowlist, persons))
-            culture_store = SqlCultureStore(engine)
-            dream_schedules = {
-                **dream_schedules,
-                CHARACTER_PERSON_ADAPTOR_NAME: AdaptorSchedule(
-                    min_interval_seconds=cfg.culture.stale_seconds,
-                    wake_batch=cfg.memory.profile.person.update_every_messages,
-                    # THE WAKE BATCH, as Nora's session reads its own: a
-                    # person's session reads its own message wake threshold
-                    # messages, not a room's `batch_limit`, which sizes a room's
-                    # whole corpus.
-                    batch_limit=cfg.memory.profile.person.update_every_messages,
-                ),
-            }
-            dream_adaptors = (
-                *dream_adaptors,
-                CharacterPersonAdaptor(
-                    culture=culture_store,
-                    evidence=PersonEvidence(
-                        store=SqlCharacterEvidence(engine), keys=person_keys,
-                        # Their social items are evidence too (design/
-                        # cognition-loop/22 §6), read whether or not the poller
-                        # runs, opted-out persons left out by the store.
-                        social=readable_social_store(engine, persons),
-                        former_ids=persons.former_ids_for,
-                    ),
-                    keys=person_keys, metrics=metrics,
-                    screen=functools.partial(scan_identifiers, content_checks=content_checks),
-                    render_chars=cfg.media.comprehension_render_chars,
-                    # A caption keeps only the author's own @handle.
-                    handle_owners=persons.instagram_username_owners,
-                ),
-            )
-
-            # CHARACTER · UNIT: one session per unit, woken by new
-            # revisions of its rooms' cultures.
-            unit_keys = LiveMapping(lambda: character_unit_keys(allowlist))
-            dream_schedules = {
-                **dream_schedules,
-                CHARACTER_UNIT_ADAPTOR_NAME: AdaptorSchedule(
-                    min_interval_seconds=cfg.culture.stale_seconds,
-                    wake_batch=cfg.memory.profile.unit.update_every_room_profile_changes,
-                    batch_limit=cfg.culture.batch_limit,
-                ),
-            }
-            # CHARACTER · NORA: her own account per unit, from closed
-            # response episodes; read back as the `self` block.
-            nora_keys = LiveMapping(lambda: {
-                nora_character_key(uk.unit): NoraKey(unit=uk.unit, rooms=uk.rooms)
-                for uk in unit_keys.values()
-            })
-            dream_schedules = {
-                **dream_schedules,
-                CHARACTER_NORA_ADAPTOR_NAME: AdaptorSchedule(
-                    min_interval_seconds=cfg.culture.stale_seconds,
-                    wake_batch=cfg.memory.profile.nora.update_every_replies,
-                    batch_limit=cfg.memory.profile.nora.update_every_replies,
-                ),
-            }
-            dream_adaptors = (
-                *dream_adaptors,
-                CharacterNoraAdaptor(
-                    culture=culture_store,
-                    evidence=NoraEvidence(
-                        store=SqlCharacterEvidence(engine), keys=nora_keys,
-                    ),
-                    keys=nora_keys, metrics=metrics,
-                    name_of=lambda pid: (
-                        ref.name if pid and (ref := persons.by_person.get(pid)) is not None
-                        else "someone"
-                    ),
-                ),
-            )
-            dream_adaptors = (
-                *dream_adaptors,
-                CharacterUnitAdaptor(
-                    culture=culture_store,
-                    evidence=UnitEvidence(
-                        store=SqlCharacterEvidence(engine), keys=unit_keys,
-                    ),
-                    keys=unit_keys, metrics=metrics,
-                ),
-            )
-
-            # PROFILE · COLLECTIVES' keys (45 §1's key forms): a room's
-            # account under its `primary_id`, the unit's and Nora's under the
-            # culture keys — the same key the prose head they backfill from
-            # is written under.
-            profile_room_keys = LiveMapping(lambda: _profile_room_keys(allowlist))
-            profile_unit_keys = LiveMapping(lambda: {
-                key: CollectiveKey(unit=uk.unit, rooms=uk.rooms, label=uk.unit)
-                for key, uk in unit_keys.items()
-            })
-            profile_nora_keys = LiveMapping(lambda: {
-                key: CollectiveKey(unit=nk.unit, rooms=nk.rooms, label=cfg.doctrine.display_name)
-                for key, nk in nora_keys.items()
-            })
-            profile_collective_keys = LiveMapping(lambda: {
-                **profile_room_keys, **profile_unit_keys, **profile_nora_keys,
-            })
-
-            # PROFILE · PERSON, in shadow (design/unified-memory/45 §4): one
-            # session per (unit, listed person), on the person's Character
-            # wake plus a turn's `told` line; it writes `profile_line`, which
-            # nothing renders until the switch. Inside the culture block: it
-            # reads the Character head and the rooms' cultures.
-            if cfg.memory.profile.write:
-                profile_store = SqlProfileStore(
-                    engine, screen=functools.partial(text_offence, content_checks=content_checks),
-                    index=profile_index)
-                profile_reads = SqlCharacterEvidence(engine)
-                # The person accounts' social input (45 §4): the readable
-                # store's (opted-out, gone and hidden left out there), the
-                # same store the social cursor and the counts come from.
-                profile_social = readable_social_store(engine, persons)
-                dream_schedules = {
-                    **dream_schedules,
-                    PROFILE_PERSON_ADAPTOR_NAME: AdaptorSchedule(
-                        min_interval_seconds=cfg.memory.profile.update_every_seconds,
-                        wake_batch=cfg.memory.profile.person.update_every_messages,
-                        batch_limit=cfg.memory.profile.person.update_every_messages,
-                    ),
-                    # The verdict judge (45 §3): one unit's docket of
-                    # window-closed open hypotheses, fired the tick one is due
-                    # (wake_batch 1), never by its writer.
-                    PROFILE_VERDICT_ADAPTOR_NAME: AdaptorSchedule(
-                        min_interval_seconds=cfg.memory.profile.update_every_seconds,
-                        wake_batch=1,
-                        batch_limit=cfg.memory.profile.person.update_every_messages,
-                    ),
-                }
-                dream_adaptors = (
-                    *dream_adaptors,
-                    ProfilePersonAdaptor(
-                        profile=profile_store, culture=culture_store, render=profile_index,
-                        media_join=media_join,
-                        evidence=ProfileEvidence(
-                            store=profile_reads, profile=profile_store, keys=person_keys,
-                            wake_batch=cfg.memory.profile.person.update_every_messages,
-                            source_inputs=SqlProfileInputs(engine, social=profile_social),
-                            source_timeout_seconds=cfg.standing.store_timeout_seconds,
-                            social=profile_social,
-                            former_ids=persons.former_ids_for,
-                        ),
-                        reads=profile_reads, keys=person_keys,
-                        name_of=lambda pid: (
-                            ref.name if pid and (ref := persons.by_person.get(pid)) is not None
-                            else "someone"
-                        ),
-                        clock_ms=lambda: int(clock().timestamp() * 1000),
-                        clock=clock, metrics=metrics,
-                        # The social items' render (45 §4): screened like the
-                        # Character session's, captions redacted to the author's
-                        # own handle, each reading clipped as the media reads.
-                        social=profile_social,
-                        coordinate_screen=looks_like_coordinate if content_checks else None,
-                        screen=functools.partial(scan_identifiers, content_checks=content_checks),
-                        render_chars=cfg.media.comprehension_render_chars,
-                        handle_owners=persons.instagram_username_owners,
-                    ),
-                    ProfileVerdictAdaptor(
-                        store=profile_store, reads=profile_reads,
-                        rollup=SqlRollupRead(engine),
-                        # The docket covers every account of the unit, a
-                        # collective's included: each mapped to who the judge
-                        # says it is about and the rooms its window covers.
-                        keys=LiveMapping(lambda: {
-                            **{key: DocketAccount(
-                                about=(ref.name if (ref := persons.by_person.get(
-                                    pk.person.person_id)) is not None else "someone"),
-                                rooms=tuple((r.platform, r.key) for r in pk.rooms
-                                            if r.key in pk.listed),
-                            ) for key, pk in person_keys.items()},
-                            **{key: DocketAccount(
-                                about=ck.label or key,
-                                rooms=tuple((r.platform, r.key) for r in ck.rooms),
-                            ) for key, ck in profile_collective_keys.items()},
-                        }),
-                        name_of=lambda pid: (
-                            ref.name if pid and (ref := persons.by_person.get(pid)) is not None
-                            else "someone"
-                        ),
-                        clock_ms=_now_ms, metrics=metrics,
-                    ),
-                )
-
-            # PROFILE · COLLECTIVES, in shadow (45 §4): a room's, the unit's
-            # and Nora's own account, each woken by its own evidence — the
-            # room's messages, the rooms' culture revisions, the unit's
-            # closed response episodes.
-            if cfg.memory.profile.write:
-                dream_schedules = {
-                    **dream_schedules,
-                    PROFILE_ROOM_ADAPTOR_NAME: AdaptorSchedule(
-                        min_interval_seconds=cfg.memory.profile.update_every_seconds,
-                        wake_batch=cfg.culture.wake_batch,
-                        batch_limit=cfg.culture.batch_limit,
-                    ),
-                    PROFILE_UNIT_ADAPTOR_NAME: AdaptorSchedule(
-                        min_interval_seconds=cfg.memory.profile.update_every_seconds,
-                        wake_batch=cfg.memory.profile.unit.update_every_room_profile_changes,
-                        batch_limit=cfg.culture.batch_limit,
-                    ),
-                    PROFILE_NORA_ADAPTOR_NAME: AdaptorSchedule(
-                        min_interval_seconds=cfg.memory.profile.update_every_seconds,
-                        wake_batch=cfg.memory.profile.nora.update_every_replies,
-                        batch_limit=cfg.memory.profile.nora.update_every_replies,
-                    ),
-                }
-                collective_kinds: tuple[
-                    tuple[Literal["room", "unit", "nora"], Mapping[str, CollectiveKey]], ...,
-                ] = (
-                    ("room", profile_room_keys), ("unit", profile_unit_keys),
-                    ("nora", profile_nora_keys),
-                )
-                dream_adaptors = (
-                    *dream_adaptors,
-                    *(ProfileCollectiveAdaptor(
-                        kind=kind, profile=profile_store, culture=culture_store,
-                        render=profile_index, media_join=media_join,
-                        screen=functools.partial(text_offence, content_checks=content_checks),
-                        coordinate_screen=looks_like_coordinate if content_checks else None,
-                        evidence=CollectiveEvidence(
-                            store=profile_reads, keys=keys, kind=kind, render=profile_index,
-                            source_inputs=SqlProfileInputs(engine, social=profile_social),
-                            members=LiveMapping(functools.partial(
-                                _collective_members, allowlist, keys,
-                            ))),
-                        reads=profile_reads, keys=keys,
-                        name_of=lambda pid: (
-                            ref.name if pid and (ref := persons.by_person.get(pid)) is not None
-                            else "someone"
-                        ),
-                        clock_ms=_now_ms, metrics=metrics,
-                    ) for kind, keys in collective_kinds),
-                )
-
-        # One account writer per subject at cutover; render=false restores legacy writers.
-        if profile_index or not cfg.culture.enabled:
-            retired = {CULTURE_ADAPTOR_NAME, CHARACTER_PERSON_ADAPTOR_NAME,
-                       CHARACTER_UNIT_ADAPTOR_NAME, CHARACTER_NORA_ADAPTOR_NAME}
-            retired |= _unified_profile_writers_retired(
-                profile_index=profile_index,
-                graph_comprehend=(cfg.memory.graph.enabled
-                                  and cfg.memory.graph.comprehend.enabled),
-                cognition_enabled=cfg.cognition.enabled,
-                units=frozenset(unit_scopes()),
-                home_units=frozenset(allowlist.home_rooms()))
-            dream_adaptors = tuple(a for a in dream_adaptors if a.name not in retired)
-            dream_schedules = {k: v for k, v in dream_schedules.items() if k not in retired}
-
-        # LESSONS: written by the unit's Cognition session (design
-        # `cognition-loop/50 §6`), not by a session of their own; gated on
-        # `[lessons] enabled` alone (off by default).
-        if cfg.lessons.enabled:
-            lessons_keys = LiveMapping(lambda: {
-                uk.unit: LessonsKey(unit=uk.unit, rooms=uk.rooms)
-                for uk in character_unit_keys(allowlist).values()
-            })
-            # THE DOCTRINE CHECK: every lesson is read against the law by a
-            # separate call before it is written; a conflict is a tension row.
-            # Its instruction is read once HERE so a missing file stops startup
-            # instead of refusing every lesson as `check_unavailable`.
-            if not dreamer_instructions.objective_body(CHECK_OBJECTIVE).strip():
-                raise StartupError(f"the {CHECK_OBJECTIVE} objective is empty")
-            lesson_check = DoctrineCheck(
-                # The relevance gate's raw JSON completion, not the Strands
-                # `_DebriefModelClient`: the Strands path returns an EMPTY
-                # answer (`end_turn`) on a live lesson, while the same request
-                # raw returns `{"verdict": "consistent"}`. Empty is an `error`,
-                # so every such lesson would be refused.
-                client=_RelevanceGateModelClient(
-                    client=model_client_for("lesson_check"),
-                    model=route_model("lesson_check", cfg.lessons.check_model),
-                    max_tokens=cfg.lessons.check_max_tokens, temperature=0.0,
-                    timeout_seconds=cfg.lessons.check_timeout_seconds + 1.0,
-                    reasoning_effort=_reasoning_effort(
-                        cfg.lessons.check_reasoning_effort or "low",
-                        source="[lessons] check_reasoning_effort",
-                    ),
-                ),
-                law=doctrine_store.law_rules,
-                instruction=lambda: dreamer_instructions.objective_body(CHECK_OBJECTIVE),
-                timeout_seconds=cfg.lessons.check_timeout_seconds,
-                metrics=metrics,
-            )
-            lesson_book = LessonBook(
-                store=SqlLessonStore(engine),
-                law=lambda: [r.text for r in doctrine_store.law_rules()],
-                screen=functools.partial(dream_offence, content_checks=content_checks),
-                clock_ms=_now_ms,
-                check=lesson_check, tensions=SqlTensionStore(engine), metrics=metrics,
-            )
-            cognition_lessons = CognitionLessons(
-                evidence=LessonEvidence(
-                    store=SqlCharacterEvidence(engine), book=lesson_book,
-                    keys=lessons_keys, clock_ms=_now_ms,
-                    correction_quiet_seconds=(
-                        cfg.lessons.correction_quiet_seconds or None),
-                    stale_seconds=cfg.lessons.stale_seconds,
-                    self_ids=frozenset(registry.self_aliases()),
-                ),
-                book=lesson_book, keys=lessons_keys,
-                # The `lessons` row of the consolidation watermark table: the
-                # cursor the retired adaptor wrote, read and advanced from
-                # here so a deployment's progress carries over.
-                cursor=SqlLanguageStore(engine),
-                batch_limit=cfg.lessons.batch_limit,
-                horizon_seconds=cfg.lessons.horizon_seconds,
-                name_of=lambda pid: (
-                    ref.name if pid and (ref := persons.by_person.get(pid)) is not None
-                    else "someone"
-                ),
-                clock_ms=_now_ms, metrics=metrics,
-            )
-
-        # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
-        # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
-        # model must call something on every pass, and the only thing that ends
-        # a turn is a guard observing a TERMINAL call (DEC-21/DEC-32) — which
-        # the Dreamer has none of by construction. Its loop ends when the model
-        # declines to call anything, inside a wall clock.
-        dream_model = route_model("dreamer", cfg.dreamer_model())
-        # VALIDATED here for its refusal, then passed as the plain string
-        # `ModelSpec` declares. `_reasoning_effort` raises `StartupError` on
-        # anything the provider will not accept and returns a narrowed literal
-        # that `ModelSpec.reasoning_effort: str` does not want; the refusal is
-        # the part that matters and it happens either way.
-        dream_effort = cfg.dreamer.reasoning_effort or tier.reasoning_effort
-        _reasoning_effort(
-            dream_effort,
-            source="[dreamer] reasoning_effort (or [llm]'s, inherited)",
-        )
-        dream_models = factory.ModelSource(
-            client=model_client_for("dreamer"),
-            spec=factory.ModelSpec(
-                # `cfg.dreamer_max_tokens()` and NOT `tier.max_tokens`. The
-                # tier's number is sized for a TAG TURN; a batch pass whose
-                # objective asks for one verdict per message has an output that
-                # scales with the batch, and a tag-sized ceiling fails every run
-                # with `PartialReplyError` — held watermark, re-read batch, one
-                # retry per hour forever. The accessor folds the `[llm]`
-                # fallback in, so an unset `[dreamer] max_tokens` falls back
-                # to it.
-                model=dream_model, max_tokens=cfg.dreamer_max_tokens(),
-                temperature=tier.temperature,
-                # `[dreamer] reasoning_effort` where set, else the tier's. At
-                # the tier's "low" this model reasons its way to
-                # `{"candidates": []}` on a transcript that plainly contains
-                # claims, and to `MaxTokensReachedException` on a real one —
-                # reasoning is billed as completion and it spends the ceiling.
-                # The key is the Dreamer's own so her replies keep theirs.
-                # WRAPPED, and the wrap is the point rather than a tidy-up.
-                # `[dreamer] reasoning_effort` is typed, but `""` is its
-                # default and its documented inherit value, and what it
-                # inherits is `[llm] reasoning_effort`, a bare `str`.
-                # Unwrapped, `[llm] = "hgh"` with `[dreamer] = ""` LOADS and
-                # resolves to `"hgh"`, which reaches the provider as a 400
-                # mid-tick and surfaces as one more `unavailable` in a
-                # background pass nobody watches.
-                #
-                # `_reasoning_effort` exists for this case; the debrief's
-                # `standing-or-llm` expression is the same shape.
-                reasoning_effort=dream_effort,
-                tool_choice=tool_choice.AFTER_SPEAKING,
-            ),
-        )
-        # ONE tool source, shared by the runtime and the startup check below —
-        # two would be two ceilings, and the check would be measuring something
-        # other than what the runtime enforces.
-        dream_tools = RegistryToolSource(
-            registry=tool_registry, store=audit, persons=persons,
-            honcho=memory, metrics=metrics, ai_peer=cfg.honcho.ai_peer,
-            # The home rooms, from the SAME allowlist read the
-            # adaptor's room map came from, with each room's `location`
-            # flag threaded as DEC-74 threads it on a tag. Passed whether or
-            # not the proactive adaptor is wired: the map is inert for an
-            # adaptor with no home-room grant, and a grant with no map fails
-            # closed inside `build`.
-            home_rooms=LiveMapping(lambda: {
-                ws: HomeRoom(
-                    unit=ws, platform=conv.platform,
-                    conversation_id=conv.primary_id, conversation_type="group",
-                    location_trusted=conv.location,
-                )
-                for ws, conv in proactive_homes.items()
-            }),
-            # EVERY policy conversation, keyed by every id form it answers to
-            # — the SCOPE-keyed half of a home-room grant
-            # (`AdaptorGrant.home_room`). A scope-keyed adaptor's key already
-            # IS a conversation, so there is no room to choose and no
-            # `home_room = true` to read: the grant resolves the adaptor's own
-            # room, and this map is what carries the platform (the roster
-            # source), the id to bind and the `location` flag DEC-74 threads.
-            # Read off the SAME allowlist as `home_rooms` above so the two cannot
-            # disagree about which room an id names.
-            # Inert for an adaptor with no home-room grant, exactly as
-            # `home_rooms` is.
-            scope_rooms=LiveMapping(lambda: scope_home_rooms(allowlist)),
-            rosters=rosters,
-            # EVERY platform's aliases, for `_presence_preflight`'s reason: a
-            # home room's roster must skip Nora's own account rather than
-            # count it as one unnamed stranger — which alone makes `where_is`
-            # refuse in a location-trusted room.
-            self_ids=registry.self_aliases(),
-        )
-        # Each adaptor's room grant, by NAME, handed to the runtime AND to the
-        # startup check below so the two measure the same grant. No adaptor
-        # holds an act verb.
-        dream_grants: dict[str, AdaptorGrant] = {
-            # The culture adaptor's own room, and no act verb
-            # (`culture_grant`). SCOPE-keyed, so this resolves through
-            # `scope_rooms` above rather than through `home_rooms`: its key
-            # already names the conversation, so the grant is an identity and
-            # there is nothing for the operator to choose. Passed
-            # unconditionally, the same way `home_rooms` is: a grant for an
-            # adaptor that is not wired is never read, and `[culture] enabled
-            # = false` is what keeps the adaptor out of `dream_adaptors`.
-            CULTURE_ADAPTOR_NAME: culture_grant(),
-            # A person session's read tools stand in the first of its unit's
-            # rooms that lists the person (`CharacterPersonAdaptor.tool_room`),
-            # resolved through `scope_rooms` exactly as the room fold's are.
-            CHARACTER_PERSON_ADAPTOR_NAME: culture_grant(),
-            # The Profile session stands where the person's Character session
-            # does (`ProfilePersonAdaptor.tool_room`), with the same reads.
-            PROFILE_PERSON_ADAPTOR_NAME: culture_grant(),
-            # A room's Profile session holds Culture's read tools, scoped to
-            # its own room (`ProfileCollectiveAdaptor.tool_room`).
-            PROFILE_ROOM_ADAPTOR_NAME: culture_grant(),
-            # The verdict judge holds no read tool (its windows are in the
-            # prompt) and writes only through `record_verdict`; the default
-            # grant (nothing) is its ceiling, kept here by omission.
-        }
-        # `DreamBudgetConfig` -> `AdaptorBudget`, through the ONE named
-        # converter (`_adaptor_budget` above): the same five numbers across the
-        # `nora.agent` may-not-import-`nora.config` boundary, carried in one
-        # place rather than written out at each construction site.
-        dream_budgets = {name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()}
-        # A Character session with no block of its own runs on the room
-        # fold's numbers when the deployment set them: the same loop shape (a
-        # handed batch, a few reads, one account written), and a live config
-        # needs no new block for it.
-        if "culture" in dream_budgets:
-            for name in (*CHARACTER_ADAPTOR_NAMES,
-                         PROFILE_PERSON_ADAPTOR_NAME, PROFILE_VERDICT_ADAPTOR_NAME,
-                         *PROFILE_COLLECTIVE_ADAPTOR_NAMES):
-                dream_budgets.setdefault(name, dream_budgets["culture"])
-        # An adaptor with no block of its own. `budget_for` returns a freshly
-        # constructed default rather than a shared constant (DEC-13 forbids a
-        # module-level instance), so an adaptor added later is BOUNDED by
-        # omission rather than unbounded by it.
-        fallback = cfg.dreamer.budget_for("")
-        dreamer_runtime = DreamerRuntime(
-            models=dream_models,
-            instructions=dreamer_instructions,
-            tools=dream_tools,
-            budgets=dream_budgets,
-            default_budget=_adaptor_budget(fallback),
-            # The SAME derivation the tag path uses, so a throttle can never be
-            # misreported as a timeout (`factory.build_retry_policy`).
-            retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
-            metrics=metrics,
-            model_name=dream_model,
-            schedules=dream_schedules,
-            # The SAME `[llm.budgets]` the tag path applies through
-            # `ToolRegistry(budget_overrides=...)`, so one number in
-            # `config.toml` is one ceiling whichever loop asks.
-            tool_budget_overrides=cfg.llm.budgets,
-            grants=dream_grants,
-            # The per-CALL-SITE allowance for `inputs`/`commit`,
-            # multiplied by each adaptor's own declared `store_calls_per_tick`.
-            store_timeout_seconds=cfg.dreamer.store_timeout_seconds,
-            # The Dreamer's reasoning-strip store: a tool-using run at
-            # `[dreamer] reasoning_effort = low` is the multi-turn shape the
-            # transport strips. Low-traffic and judgement-forming, so a
-            # discarded reasoning there is both closer to being the verdict
-            # and harder to notice than on a reply somebody reads.
-            reasoning_strip_store=reasoning_strip_store,
-            content_checks=content_checks,
-        )
-        # R-5's refuse-to-start shape, and the one check that must run at
-        # STARTUP rather than at the first tick: an adaptor holding an act verb
-        # is not a condition to discover at 3am from a metric. Since DEC-162
-        # it refuses everything but the one grant it is handed.
-        verify_tool_subsets(
-            dream_adaptors, tools=dream_tools, grants=dream_grants,
-            # The per-adaptor per-tool ceilings, read off the SAME budgets the
-            # runtime got above — so «this ceiling names a tool the adaptor
-            # does not hold» is a boot failure rather than a raise the
-            # operator made that quietly does nothing.
-            tool_calls={
-                name: b.tool_calls for name, b in cfg.dreamer.budgets.items()
-            },
-        )
-
-        if cfg.cognition.enabled and stimulus_store is not None:
-            # Sessions ride the Dreamer's model, tool source and objective
-            # corpus (the config validator refuses sessions without
-            # `[dreamer] enabled`), and write through the tag path's stores.
-            surface = read_surface(
-                read_only=dream_tools.read_only(),
-                enabled_flags=(
-                    *(("record_query.enabled",) if cfg.record_query.enabled else ()),
-                    *(("culture.enabled",) if cfg.culture.enabled else ()),
-                ),
-                # The memory surface the registry selected (DEC-316), read
-                # from the registry that builds the tools, not from config.
-                registry_withheld=tool_registry.withheld_tools(),
-            )
-            log.info(
-                "cognition sessions: read tools wired=%s missing=%s withheld=%s",
-                sorted(surface.wired), sorted(surface.missing), sorted(surface.withheld),
-            )
-            homes = LiveMapping(lambda: allowlist.home_rooms())
-            cognition_wakeable, cognition_skipped = units_with_home_rooms(
-                list(unit_scopes()), homes,
-            )
-            cognition_session_units = LiveSet(lambda: frozenset(allowlist.home_rooms()))
-            # ponytail: boot-time snapshot; a live home_room edit moves
-            # `cognition_session_units` but not this gauge until restart
-            # (the apply path has no consumer hook to re-set it through).
-            metrics.gauge(
-                "nora_cognition_session_units", float(len(cognition_wakeable)),
-                state="runnable",
-            )
-            metrics.gauge(
-                "nora_cognition_session_units", float(len(cognition_skipped)),
-                state="no_home_room",
-            )
-            if cognition_skipped:
-                log.error(
-                    "cognition sessions: unit(s) %s name no home room in policy.toml, so no "
-                    "session can start for them and they are not woken "
-                    "(nora_cognition_session_units{state=no_home_room}). Set `home_room = "
-                    "true` on one of their rooms to cover them",
-                    cognition_skipped,
-                )
-            if note_store is None:
-                raise StartupError(
-                    "[cognition] enabled needs [notes] enabled: a session writes the notebook",
-                )
-
-            async def _note_titles(unit: str) -> Sequence[str]:
-                if note_store is None:
-                    return ()
-                return [n.title for n in await note_store.standing(unit=unit)]
-
-            async def _note_index(unit: str) -> Sequence[Any]:
-                if note_store is None:
-                    return ()
-                return await note_store.standing(unit=unit)
-
-            _open_events = open_events_reader(event_store)
-
-            # The unit -> its rooms' every id form, for the grounding read: a
-            # stimulus naming a room outside its unit is never read (DEC-231).
-            cognition_unit_rooms = LiveMapping(lambda: {
-                unit: {(c.platform, cid) for c in allowlist.rooms()
-                       if c.unit == unit and c.absorbed for cid in c.ids}
-                for unit in unit_scopes()
-            })
-            if cfg.cognition.upcoming_days > 0:
-                upcoming_rooms = LiveMapping(lambda: {
-                    unit: [(c.platform, c.primary_id, c.ids) for c in allowlist.rooms()
-                           if c.unit == unit and c.absorbed]
-                    for unit in unit_scopes()
-                })
-                cognition_upcoming = upcoming_reader(
-                    _open_events, lambda unit: upcoming_rooms.get(unit, []),
-                    days=cfg.cognition.upcoming_days,
-                    room_proactive=lambda platform, cid: allowlist.proactive_allowed(
-                        platform=platform, conversation_id=cid,
-                    ),
-                )
-            # The policy's label for each of those ids: the prompt calls a
-            # room by it and never by the conversation id.
-            cognition_room_labels: Mapping[tuple[str, str], str] = LiveMapping(lambda: {
-                (conv.platform, cid): conv.label
-                for conv in allowlist.rooms() for cid in conv.ids})
-
-            cognition_context = cognition_context_reader(
-                engine=engine, allowlist=allowlist, persons=persons,
-                lineage=lineage, presence_reader=presence_reader, audit=audit,
-                rosters=rosters, registry=registry, media_join=media_join,
-                record_chars=cfg.cognition.record_chars,
-                documents_context=documents_context,
-                screen=cognition_context_screen, content_checks=content_checks,
-            )
-            grounder = build_grounder(
-                # NOT `tool_registry`'s `record`, which is None unless `[record_query]
-                # enabled`: the rows that raised a stimulus are code's own input, and a
-                # session must be grounded with the tool off.
-                records=SqlRecordQuery(engine), persons=persons, media_join=media_join,
-                context=cognition_context,
-                note_index=_note_index, events_in=_open_events,
-                memo_index=lambda unit: memo_store.kept(unit=unit),
-                pending_reminds=lambda: reminders.pending_of(cfg.honcho.ai_peer),
-                lineage=lineage,
-                unit_rooms=lambda unit: cognition_unit_rooms.get(unit, set()),
-                ai_display_name=cfg.doctrine.display_name,
-                room_label=lambda platform, cid: cognition_room_labels.get((platform, cid), ""),
-                clock=lambda: clock().timestamp(),
-                own_send_lookback_seconds=cfg.cognition.own_send_lookback_seconds,
-                own_sends_max=cfg.cognition.own_sends_max,
-                tz=ZoneInfo(cfg.cognition.timezone),
-                # A deviation line says where the stay was and what is usual
-                # for the person (DEC-279), scored with the analytics process's
-                # own thresholds, as the rollup that raised it was.
-                stay_context=stay_context_reader(
-                    mobility, tz_name=cfg.analytics.tz_name,
-                    min_samples=cfg.analytics.anomaly_min_samples,
-                    z_threshold=cfg.analytics.anomaly_z_threshold,
-                    novelty_radius_m=cfg.analytics.cluster_eps_m,
-                ),
-                # ...but names a place only where `where_been` would (R-35):
-                # every room of the unit, read live, a subset of a circle the
-                # person is in, or location-trusted (DEC-79).
-                place_release=place_release(
-                    rooms_of=lambda unit: [
-                        (conv.platform, conv.primary_id, conv.location)
-                        for conv in allowlist.rooms()
-                        if conv.unit == unit and conv.primary_id
-                    ],
-                    room_view=lambda platform, conversation_id: Room(
-                        platform=platform, conversation_id=conversation_id,
-                        roster_source=rosters.get(platform), persons=persons,
-                        self_ids=registry.self_aliases(),
-                    ).members(),
-                    circles=presence_circles,
-                    content_checks=content_checks,
-                ),
-                # Her own account in the unit, under
-                # `[culture] enabled` like every Character read.
-                # Her own account in the unit, shown only where every room of the
-                # unit agrees on `location` (R-31; `unit_self_reader`).
-                self_account=unit_self_reader(culture_reader, allowlist),
-                # THE SWITCH (45 §5): when `[memory.profile] read` is on, her
-                # Profile account replaces the prose one; the SAME reader the
-                # tag and fire paths hold.
-                self_profile=unit_self_profile_reader(
-                    profile_reader, allowlist, lineage=lineage,
-                    room_for=lambda platform, conversation_id: Room(
-                        platform=platform, conversation_id=conversation_id,
-                        roster_source=rosters.get(platform), persons=persons,
-                        self_ids=registry.self_aliases(),
-                    ),
-                ),
-                metrics=metrics,
-                # The agenda's observation stimuli and the Standing block's
-                # source objects read through the one store the bridge wrote.
-                observations=observation_store,
-            )
-
-            try:
-                cognition_runner = build_cognition_runner(
-                    memory=cognition_memory,
-                    documents=document_service if cfg.documents.enabled else None,
-                    documents_context=documents_context,
-                    tag_trace_store=tag_trace_store,
-                    cfg=cfg, models=dream_models,
-                    retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
-                    metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
-                    store=SqlCognitionStore(engine), stimulus_store=stimulus_store,
-                    note_titles=_note_titles, open_events_in=_open_events,
-                    notes=note_store, events=events, standing=standing_store,
-                    memos=memo_store,
-                    reminders=reminders, ai_peer=cfg.honcho.ai_peer,
-                    ledger=ledger_store, shared=shared,
-                    standing_fold=standing_fold,
-                    rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
-                    reminder_caps=reminder_caps,
-                    room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
-                        platform=platform, conversation_id=conversation_id,
-                    ),
-                    # The HEAD with its `standing_revision` id: the token a
-                    # `standing_revise` base is checked against (DEC-250).
-                    standing_of=lambda platform, conversation_id: standing_store.read_head(
-                        platform=platform, conversation_id=conversation_id,
-                    ),
-                    roster_of=_roster_names_of(rosters, persons, registry.self_aliases()),
-                    nora_names=frozenset({cfg.doctrine.display_name}),
-                    homes=homes, units=LiveSequence(lambda: tuple(allowlist.home_rooms())),
-                    skills=session_guidance,
-                    grounder=grounder,
-                    person_known=lambda person_id: persons.by_person.get(
-                        persons.subject_id_for(person_id),
-                    ) is not None,
-                    render_budget=RenderBudget(
-                        record_chars=cfg.cognition.record_chars,
-                        message_chars=cfg.cognition.message_chars,
-                        register_lines=cfg.cognition.register_lines,
-                    ),
-                    surface=surface, clock=lambda: clock().timestamp(),
-                    model_id=dream_model, model_route=cfg.endpoint("dreamer")[0],
-                    budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
-                    result_caps=TOOL_RESULT_CAPS,
-                    observations=observation_store,
-                    # Cognition hosted as a Dreamer adaptor (node 30): every
-                    # admitted wake is dispatched onto this runtime's lane —
-                    # the same instance `dream_loop` runs the other adaptors
-                    # through.
-                    runtime=dreamer_runtime,
-                    lessons=cognition_lessons,
-                )
-            except (InstructionError, SkillNotInstalledError) as exc:
-                # A missing or malformed `cognition` objective, or a mapped skill that
-                # is not installed: named at startup, not the first wake's failure and
-                # never a raw `LookupError`.
-                raise StartupError(f"Cognition session error: {exc}") from exc
-
-    # The wake evaluator, after the Dreamer block so it can be handed the
-    # runner's hook. The boot check below refuses `enabled` with no runner or
-    # no hook. Only units a session can run for are woken.
-    wake_evaluator: WakeEvaluator | None = None
-    cognition_shutdown: CognitionShutdown | None = None
-    if stimulus_store is not None:
-        wake_evaluator = _build_wake_evaluator(
-            cfg, store=stimulus_store,
-            units=lambda: sorted(cognition_session_units or ()), metrics=metrics,
-            on_wake=cognition_runner.wake_hook if cognition_runner is not None else None,
-            session_units=(
-                None if cognition_session_units is None else (lambda: cognition_session_units)
-            ),
-            floors_ready=True,
-            upcoming=cognition_upcoming,
-        )
-        if cognition_runner is not None:
-            cognition_shutdown = CognitionShutdown(
-                evaluator=wake_evaluator, runner=cognition_runner,
-                grace_seconds=SESSION_SHUTDOWN_GRACE_SECONDS,
-            )
-    try:
-        require_session_hook(
-            enabled=cfg.cognition.enabled, runner=cognition_runner,
-            evaluator=wake_evaluator, session_units=cognition_session_units,
-        )
-    except RuntimeError as exc:
-        raise StartupError(str(exc)) from exc
-
-    otp: OtpService | None = None
-    otp_api_token = ""
-    if cfg.otp.enabled:
-        otp_secret, otp_api_token = _otp_secrets(cfg)
-        otp = OtpService(
-            store=SqlOtpStore(engine), persons=persons, adapters=dict(registry.adapters),
-            records=audit, doctrine_store=doctrine_store, canary=cfg.doctrine.canary,
-            metrics=metrics, secret=otp_secret,
-            ttl=timedelta(seconds=cfg.otp.ttl_seconds),
-            max_attempts=cfg.otp.max_attempts, max_per_hour=cfg.otp.max_per_hour,
-            max_per_day=cfg.otp.max_per_day,
-            clock=lambda: datetime.now(UTC),
-        )
-    computer_sweeper = (
-            ComputerSessionSweeper(
-                sessions=computer_sessions, events=computer_events,
-                runtime=computer, leases=computer_leases,
-                rules=SweepRules(
-                    idle_expiry=timedelta(hours=cfg.computer.sessions.idle_expiry_hours),
-                    max_running=timedelta(days=cfg.computer.sessions.max_running_days),
-                    idle_after=timedelta(minutes=cfg.computer.sessions.idle_after_minutes),
-                ),
-                clock=lambda: datetime.now(UTC), metrics=metrics,
-            ) if computer is not None else None
-            )
+    fire_path = _fire_path.fire_path
+    _fire_heartbeat = heartbeat(
+        allowlist=allowlist,
+        background=background,
+        cfg=cfg,
+        clock=clock,
+        fire_path=fire_path,
+        metrics=metrics,
+        note_store=note_store,
+        reminders=reminders,
+        slots=slots,
+    )
+    proactive_screen = _fire_heartbeat.proactive_screen
+    _fire_compute_poller = compute_poller(
+        allowlist=allowlist,
+        background=background,
+        blobs=blobs,
+        cfg=cfg,
+        clock=clock,
+        compute_backends=compute_backends,
+        compute_jobs=compute_jobs,
+        document_service=document_service,
+        fire_path=fire_path,
+        media_objects=media_objects,
+        metrics=metrics,
+        slots=slots,
+    )
+    _social_summons = summons(
+        background=background,
+        cfg=cfg,
+        clock=clock,
+        content_checks=content_checks,
+        doctrine_store=doctrine_store,
+        engine=engine,
+        limits=limits,
+        metrics=metrics,
+        persons=persons,
+        registry=registry,
+        social_subjects=social_subjects,
+        summons_inbox=summons_inbox,
+        summons_runner=summons_runner,
+        summons_wired=summons_wired,
+        tier=tier,
+        tool_registry=tool_registry,
+    )
+    _social_poller = poller(
+        allowlist=allowlist,
+        blobs=blobs,
+        cfg=cfg,
+        comprehension=comprehension,
+        engine=engine,
+        media_objects=media_objects,
+        media_sources=media_sources,
+        metrics=metrics,
+        persons=persons,
+        social_subjects=social_subjects,
+        stimulus_store=stimulus_store,
+    )
+    social_perception = _social_poller.social_perception
+    social_poller = _social_poller.social_poller
+    _social_expiry = expiry(blobs=blobs, cfg=cfg, engine=engine, metrics=metrics)
+    story_expiry = _social_expiry.story_expiry
+    _fire_trigger = trigger()
+    participation_trigger = _fire_trigger.participation_trigger
+    _fire_gate = build_gate(
+        audit=audit,
+        cfg=cfg,
+        doctrine_store=doctrine_store,
+        engine=engine,
+        fire_path=fire_path,
+        media_join=media_join,
+        metrics=metrics,
+        model_client_for=model_client_for,
+        persons=persons,
+        route_model=route_model,
+        slots=slots,
+        standing_store=standing_store,
+    )
+    gate = _fire_gate.gate
+    participation_trigger = _fire_gate.participation_trigger
+    _pipelines_dispatcher = build_dispatcher(
+        background=background,
+        engagement=engagement,
+        ingest=ingest,
+        participation_trigger=participation_trigger,
+    )
+    dispatcher = _pipelines_dispatcher.dispatcher
+    _bridge_runtime = await runtime(
+        allowlist=allowlist,
+        cfg=cfg,
+        engagement=engagement,
+        engine=engine,
+        fire_path=fire_path,
+        ingest=ingest,
+        memory=memory,
+        metrics=metrics,
+        observation_store=observation_store,
+        participation_trigger=participation_trigger,
+        persons=persons,
+        policy=policy,
+        registry=registry,
+        slots=slots,
+        stimulus_wiring=stimulus_wiring,
+    )
+    bridge_runtime = _bridge_runtime.bridge_runtime
+    _dreamer_preamble = preamble(engine=engine)
+    dream_adaptors = _dreamer_preamble.dream_adaptors
+    dream_schedule_clock = _dreamer_preamble.dream_schedule_clock
+    dream_schedules = _dreamer_preamble.dream_schedules
+    dreamer_runtime = _dreamer_preamble.dreamer_runtime
+    _dreamer_guidance = guidance(dreamer_instructions=dreamer_instructions)
+    cognition_lessons = _dreamer_guidance.cognition_lessons
+    cognition_memory = _dreamer_guidance.cognition_memory
+    cognition_runner = _dreamer_guidance.cognition_runner
+    session_guidance = _dreamer_guidance.session_guidance
+    _memory_graph = _memory_wire.graph(
+        allowlist=allowlist,
+        cfg=cfg,
+        content_checks=content_checks,
+        engine=engine,
+        media_join=media_join,
+        metrics=metrics,
+        persons=persons,
+        presence_circles=presence_circles,
+        profile_index=profile_index,
+        registry=registry,
+        rosters=rosters,
+        route_model=route_model,
+        tier=tier,
+        unit_scopes=unit_scopes,
+    )
+    cognition_memory = _memory_graph.cognition_memory
+    _dreamer_cognition_inits = cognition_inits()
+    cognition_session_units = _dreamer_cognition_inits.cognition_session_units
+    cognition_upcoming = _dreamer_cognition_inits.cognition_upcoming
+    _dreamer_enabled = await enabled(
+        allowlist=allowlist,
+        audit=audit,
+        cfg=cfg,
+        clock=clock,
+        cognition_context_screen=cognition_context_screen,
+        cognition_lessons=cognition_lessons,
+        cognition_memory=cognition_memory,
+        content_checks=content_checks,
+        culture_reader=culture_reader,
+        doctrine_store=doctrine_store,
+        document_service=document_service,
+        documents_context=documents_context,
+        dream_adaptors=dream_adaptors,
+        dream_schedules=dream_schedules,
+        dreamer_instructions=dreamer_instructions,
+        dreamer_runtime=dreamer_runtime,
+        engine=engine,
+        event_store=event_store,
+        events=events,
+        ledger_store=ledger_store,
+        lineage=lineage,
+        media_join=media_join,
+        memo_store=memo_store,
+        memory=memory,
+        metrics=metrics,
+        mobility=mobility,
+        model_client_for=model_client_for,
+        note_store=note_store,
+        observation_store=observation_store,
+        persons=persons,
+        presence_circles=presence_circles,
+        presence_reader=presence_reader,
+        proactive_homes=proactive_homes,
+        profile_index=profile_index,
+        profile_reader=profile_reader,
+        reasoning_strip_store=reasoning_strip_store,
+        registry=registry,
+        reminder_caps=reminder_caps,
+        reminders=reminders,
+        rosters=rosters,
+        route_model=route_model,
+        session_guidance=session_guidance,
+        shared=shared,
+        standing_fold=standing_fold,
+        standing_store=standing_store,
+        stimulus_store=stimulus_store,
+        tag_trace_store=tag_trace_store,
+        tier=tier,
+        tool_registry=tool_registry,
+        unit_rooms=unit_rooms,
+        unit_scopes=unit_scopes,
+    )
+    cognition_runner = _dreamer_enabled.cognition_runner
+    cognition_session_units = _dreamer_enabled.cognition_session_units
+    cognition_upcoming = _dreamer_enabled.cognition_upcoming
+    dream_adaptors = _dreamer_enabled.dream_adaptors
+    dream_schedules = _dreamer_enabled.dream_schedules
+    dreamer_runtime = _dreamer_enabled.dreamer_runtime
+    _dreamer_wake = wake(
+        cfg=cfg,
+        cognition_runner=cognition_runner,
+        cognition_session_units=cognition_session_units,
+        cognition_upcoming=cognition_upcoming,
+        metrics=metrics,
+        stimulus_store=stimulus_store,
+    )
+    cognition_shutdown = _dreamer_wake.cognition_shutdown
+    wake_evaluator = _dreamer_wake.wake_evaluator
+    _stores_otp = build_otp(
+        audit=audit,
+        cfg=cfg,
+        doctrine_store=doctrine_store,
+        engine=engine,
+        metrics=metrics,
+        persons=persons,
+        registry=registry,
+    )
+    otp = _stores_otp.otp
+    otp_api_token = _stores_otp.otp_api_token
+    _computer_sweeper = _computer_wire.sweeper(
+        cfg=cfg,
+        computer=computer,
+        computer_events=computer_events,
+        computer_leases=computer_leases,
+        computer_sessions=computer_sessions,
+        metrics=metrics,
+    )
+    computer_sweeper = _computer_sweeper.computer_sweeper
 
     return Dependencies(
         config_reload=reload_files,
-        audit=audit, memory=memory, persons=persons, metrics=metrics,
+        audit=audit,
+        memory=memory,
+        persons=persons,
+        metrics=metrics,
         media_join=media_join,
-        policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
+        policy=policy,
+        assembler=assembler,
+        ingest=ingest,
+        engagement=engagement,
         resolve_voice_room=_voice_room_of(allowlist),
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
         # The portal's Profile reads (45): wired with the switch's reader, so
@@ -5477,18 +1374,21 @@ async def build_dependencies(
         profile_portal=profile_store_reader,
         profile_scopes_of=(
             functools.partial(profile_scopes_of_person, allowlist)
-            if profile_store_reader is not None else None
+            if profile_store_reader is not None
+            else None
         ),
-        profile_cited=(
-            SqlCharacterEvidence(engine) if profile_store_reader is not None else None
-        ),
+        profile_cited=(SqlCharacterEvidence(engine) if profile_store_reader is not None else None),
         index_state=memory_index_reader.index_state,
-        documents=documents_store, document_service=document_service,
+        documents=documents_store,
+        document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
         room_event_shown=functools.partial(room_event_shown, lineage, event_room_claims),
         room_label=functools.partial(room_label, allowlist),
-        blobs=blobs, artifacts=computer_exports,
-        dispatcher=dispatcher, adapter=adapter, registry=registry,
+        blobs=blobs,
+        artifacts=computer_exports,
+        dispatcher=dispatcher,
+        adapter=adapter,
+        registry=registry,
         bridge_runtime=bridge_runtime,
         participation_trigger=participation_trigger,
         relevance_gate=gate,
@@ -5496,12 +1396,18 @@ async def build_dependencies(
         self_presence=presence_reader,
         clock=clock,
         proactive_screen=proactive_screen,
-        account=account, doctrine=doctrine,
-        doctrine_store=doctrine_store, debounce=debounce, background=background,
-        llm_state=llm_state, client=client, model_clients=extra_model_clients,
+        account=account,
+        doctrine=doctrine,
+        doctrine_store=doctrine_store,
+        debounce=debounce,
+        background=background,
+        llm_state=llm_state,
+        client=client,
+        model_clients=extra_model_clients,
         reminders=reminders,
         games_client=games_client,
-        presence=presence_store, presence_circles=presence_circles,
+        presence=presence_store,
+        presence_circles=presence_circles,
         mobility=mobility,
         skills_dir=cfg.doctrine.dir.parent / "skills",
         language_store=language_store,
@@ -5529,16 +1435,20 @@ async def build_dependencies(
         browser_sweep_seconds=cfg.computer.scoped.browser_sweep_seconds,
         computer_lifecycle=(
             ComputerLifecycle(
-                runner=computer_queue_runner, manager=browser_manager,
+                runner=computer_queue_runner,
+                manager=browser_manager,
                 sessions=computer_sweeper,
                 session_seconds=cfg.computer.sessions.sweep_interval_seconds,
                 metrics=metrics,
                 sweep_seconds=cfg.computer.scoped.browser_sweep_seconds,
-            ) if computer_queue_runner is not None else None
+            )
+            if computer_queue_runner is not None
+            else None
         ),
         computer_probe=computer_probe,
         health_recorder=AdapterHealthRecorder(
-            log=SqlSourceHealthLog(engine), metrics=metrics,
+            log=SqlSourceHealthLog(engine),
+            metrics=metrics,
             timeout_seconds=cfg.cognition.store_timeout_seconds,
         ),
         otp=otp,
@@ -5547,406 +1457,24 @@ async def build_dependencies(
         social_poller=social_poller,
         social_perception=social_perception,
         story_expiry=story_expiry,
-        graph_batches=(GraphBatchProducer(engine, metrics=metrics)
-                       if cfg.memory.graph.enabled else None),
+        graph_batches=(
+            GraphBatchProducer(engine, metrics=metrics) if cfg.memory.graph.enabled else None
+        ),
         memory_embed=(
             MemoryEmbedWorker(
-                engine, LlamaEmbedder(cfg.memory.index.embedder_url), blobs,
+                engine,
+                LlamaEmbedder(cfg.memory.index.embedder_url),
+                blobs,
                 model=fingerprint(cfg.memory.index.embedder_model),
                 model_file=model_file(cfg.memory.index.embedder_model),
                 batch=cfg.memory.index.embed_batch,
                 images_per_hour=cfg.memory.index.embed_images_per_hour,
                 metrics=metrics,
-            ) if cfg.memory.index.embed else None
+            )
+            if cfg.memory.index.embed
+            else None
         ),
     )
-
-
-async def _tell_about_lost_jobs(
-    *, jobs: list[Any], speak: Any, slots: ConversationSlots, metrics: Metrics,
-    policy: Policy,
-) -> None:
-    """Close the promise each lost job left open, one room at a time.
-
-    Never fatal and never raised: this runs detached at boot, and a room that
-    cannot be spoken into must not take the process down with it. Each failure
-    is logged and counted — the whole point of this function is that somebody
-    is waiting, so a delivery that silently did not happen would be the very
-    defect it exists to fix.
-
-    A job whose room or requester was removed while it was pending is not told
-    about at all: the grant that launched it no longer stands, and the row is
-    already terminal (8765_44864).
-    """
-    for job in jobs:
-        if not policy.is_allowed(
-            platform=job.platform, conversation_id=job.conversation_id,
-            person_id=job.requester_person_id,
-        ):
-            log.warning(
-                "lost compute job %s not told: %s is no longer allowed in %s",
-                job.id, job.requester_person_id, job.conversation_id,
-            )
-            metrics.inc("nora_compute_lost_told_total", outcome=FAILED_POLICY)
-            continue
-        key = (job.platform, job.conversation_id)
-        # `try_acquire`, the heartbeat's rule: a room already mid-turn is not
-        # one to interrupt, and this is the least urgent thing the process does.
-        if not slots.try_acquire(key):
-            log.warning(
-                "could not tell %s about a lost job: the room is mid-turn",
-                job.conversation_id,
-            )
-            metrics.inc("nora_compute_lost_told_total", outcome="busy")
-            continue
-        try:
-            outcome = await speak(lost_job_occasion(job))
-            metrics.inc("nora_compute_lost_told_total", outcome=outcome)
-        except Exception:
-            log.exception("failed to tell %s about a lost job", job.conversation_id)
-            metrics.inc("nora_compute_lost_told_total", outcome="failed_error")
-        finally:
-            slots.release_and_dispatch(key)
-
-
-def _roster_names_of(
-    rosters: Mapping[str, RosterSource], persons: Persons, self_ids: frozenset[str],
-) -> Callable[[str, str], Awaitable[Mapping[str, str] | None]]:
-    """A cognition session's roster seam: the room's roster NAMES with their
-    person ids, read through the same `Room` the tag path resolves a room with
-    (Nora's own accounts are not members: `self_ids`). `None` when the roster
-    cannot be read, so a note write can say `unavailable` instead of refusing
-    every owner against an empty room."""
-
-    async def roster_of(platform: str, conversation_id: str) -> Mapping[str, str] | None:
-        view = await Room(
-            platform=platform, conversation_id=conversation_id,
-            roster_source=rosters.get(platform), persons=persons, self_ids=self_ids,
-        ).members()
-        if not view.available:
-            return None
-        return {p.name: p.person_id for p in view.people}
-
-    return roster_of
-
-
-def reverse_geocoder(
-    cfg: Config, environ: Mapping[str, str], *, cache_store: Any,
-) -> ReverseGeocoder | None:
-    """The on-demand reverse-geocoder `[presence] geocode_provider` names, or
-    `None` when that backend's credential (read from `environ` under the env
-    var the config names) or endpoint is absent. Independent of `[presence]
-    enabled`: `reverse_geocode` holds it whatever the reader's state. A name of
-    its own so a composition's geocoder can be checked without driving a turn
-    (`tests/unit/test_eval_full_restore.py`)."""
-    if cfg.presence.geocode_provider == "hkgov":
-        hkgov_token = environ.get(cfg.presence.hkgov_token_env, "")
-        if hkgov_token and cfg.presence.hkgov_geocode_url:
-            from nora.infra.geocode_hkgov import HKGovGeocoder
-            return HKGovGeocoder(
-                service_url=cfg.presence.hkgov_geocode_url, token=hkgov_token,
-                lang_zh=cfg.presence.hkgov_lang_zh, lang_en=cfg.presence.hkgov_lang_en,
-                cache_store=cache_store,
-                area_screen=functools.partial(
-                    screened_area, content_checks=cfg.content_checks.enabled),
-            )
-        return None
-    maps_key = environ.get(cfg.presence.geocode_api_key_env, "")
-    if maps_key:
-        from nora.infra.geocode import GoogleGeocoder
-        return GoogleGeocoder(
-            api_key=maps_key, cache_store=cache_store,
-                area_screen=functools.partial(
-                    screened_area, content_checks=cfg.content_checks.enabled),
-        )
-    return None
-
-
-async def _presence_preflight(
-    *,
-    allowlist: Policy,
-    rosters: Mapping[str, RosterSource],
-    persons: Persons,
-    circles: Sequence[Circle],
-    metrics: Metrics,
-    self_ids: frozenset[str] = frozenset(),
-) -> None:
-    """The R-21/R-31 disclosure pre-flight: for every policy
-    conversation, is its resolved membership a SUBSET of each circle?
-
-    `check_disclosure_invariant` publishes `nora_presence_circle_subset_ok` and
-    logs an ERROR on the day the answer is no — the operator's tell that a
-    stranger joined the group (or someone left the circle) and `whereis` is now
-    refusing there. Belt-and-braces over the KNOWN person_ids only; the per-call
-    guard in `Whereis.locate` is authoritative and sees unmapped accounts
-    (`view.unnamed`) that a person_id subset cannot — so this logs those as a
-    warning rather than pretending the gauge covers them.
-
-    **In a location-TRUSTED room that per-call guard does not refuse on
-    `view.unnamed` (DEC-79), so do not read the warning below as a block.** What
-    still holds there: the roster must READ (a degraded room answers
-    `unavailable`), the target must resolve inside it, and every waiver is
-    counted on `nora_presence_disclosure_waived_total` — which is the runtime
-    tell this once-at-boot warning cannot be, since an account that joins after
-    startup never reaches this code again.
-
-    Never fatal, never raises: an unreadable roster leaves the invariant
-    UNVERIFIED (warned, not alarmed), and the per-call guard refuses on exactly
-    that unverifiability."""
-    for conv in allowlist.rooms():
-        # Every platform that HAS a roster, not just Signal. Skipping a
-        # platform here does not make it safe — the authoritative check is
-        # per-call in `Whereis.locate` — but the gauge and the operator's
-        # boot-time warning would silently cover only part of the rooms.
-        roster_source = rosters.get(conv.platform)
-        if roster_source is None:
-            continue
-        try:
-            view = None
-            # `ids` is the id plus its aliases; the first readable one is the room.
-            for conversation_id in sorted(conv.ids):
-                candidate = await Room(
-                    platform=conv.platform, conversation_id=conversation_id,
-                    roster_source=roster_source, persons=persons, self_ids=self_ids,
-                ).members()
-                if candidate.available:
-                    view = candidate
-                    break
-            if view is None:
-                log.warning(
-                    "presence pre-flight: roster unreadable for %s conversation "
-                    "%r (%s) — subset invariant unverified there; whereis's "
-                    "per-call guard still refuses anything unverifiable",
-                    conv.platform, conv.label or conv.primary_id, conv.primary_id,
-                )
-                continue
-            if view.unnamed:
-                log.warning(
-                    "presence pre-flight: %d unmapped account(s) in %s "
-                    "conversation %r (%s) — whereis refuses there until "
-                    "identity.toml names them (`nora persons pending`)",
-                    view.unnamed, conv.platform,
-                    conv.label or conv.primary_id, conv.primary_id,
-                )
-            if conv.location:
-                # DEC-74: this room is location-TRUSTED, so its group is
-                # DELIBERATELY not a subset of the circle. Running the subset
-                # invariant here would log a permanent false «R-21 FAILED …
-                # whereis must refuse» and pin `nora_presence_circle_subset_ok=0`
-                # for the circle — masking a REAL subset failure in another,
-                # non-trusted room mapped to the same circle. Skip it: `where_is`
-                # discloses here on purpose.
-                #
-                # What remains in a trusted room (DEC-79) is the roster READ
-                # (degraded → `unavailable`), the target resolving inside it,
-                # and the waiver counter. Skipping this gauge is correct (it
-                # would be a permanent false alarm), but it is the only
-                # pre-flight this room gets.
-                log.info(
-                    "presence pre-flight: %s conversation %r is location-trusted "
-                    "(DEC-74) — the circle-subset invariant is intentionally "
-                    "skipped here",
-                    conv.platform, conv.label or conv.primary_id,
-                )
-                continue
-            group_person_ids = frozenset(p.person_id for p in view.people)
-            for circle in circles:
-                check_disclosure_invariant(
-                    circle=circle, group_person_ids=group_person_ids, metrics=metrics,
-                    # WHICH room, so the gauge is per-conversation: circle alone
-                    # would be last-writer-wins across every allowlisted room,
-                    # and a failing room could be overwritten by a passing one
-                    # and the alarm lost.
-                    platform=conv.platform,
-                    conversation=conv.primary_id or "",
-                )
-        except Exception:
-            log.exception("presence pre-flight failed for a policy conversation")
-
-
-async def _build_media_custody(
-    cfg: Config,
-) -> tuple[MediaSourceRegistry | None, BlobStore | None]:
-    """The `(sources, blobs)` pair the ingest pipeline takes for byte custody, or
-    `(None, None)` when custody is OFF (DEC-43 wiring, DEC-47 encryption).
-
-    Custody turns ON only when `[media] enabled` is true AND a valid encryption
-    key is present — the bytes on disk are ciphertext, and there is deliberately
-    no plaintext-on-disk mode. Every way it can be off returns `(None, None)`,
-    which is the one wiring state `nora.ingest.stages.media` reads as
-    `not_configured`: it records every attachment as a placeholder with
-    no handle, and counts each one, so custody being off is visible in the
-    metrics rather than silent.
-
-    A MISSING or MALFORMED key is off, not fatal — warned and degraded, never a
-    crash. This is the deliberate asymmetry with the LLM key (`config.load`
-    refuses to start without that one): media is a bonus laid down beside the
-    record, and losing it must never take the daemon down or, worse, write
-    plaintext by accident. `config.load` therefore does not check this variable.
-
-    The blob root is `store.data_dir / "media"`, with no media-specific config key
-    (see `MediaConfig`): the row and the blob it names are one custody boundary,
-    backed up and deleted together.
-    """
-    media = cfg.media
-    if not media.enabled:
-        return None, None
-    if not media.encryption_key_env:
-        log.warning(
-            "media.enabled is true but media.encryption_key_env is unset — media "
-            "custody is OFF (attachments recorded without custody). Set it to the "
-            "name of an env var holding a base64 32-byte key to turn custody on."
-        )
-        return None, None
-    raw = cfg.credentials.get(media.encryption_key_env, "")
-    if not raw:
-        log.warning(
-            "media custody is OFF: %s (media.encryption_key_env) is not set in the "
-            "environment. Attachments are recorded without custody until it is.",
-            media.encryption_key_env,
-        )
-        return None, None
-    try:
-        cipher = BlobCipher.from_base64(raw)
-    except ValueError as exc:
-        log.warning(
-            "media custody is OFF: the key in %s is not a valid base64 32-byte "
-            "AES-256 key (%s). Attachments are recorded without custody until it is.",
-            media.encryption_key_env, exc,
-        )
-        return None, None
-    bridge_token = cfg.credentials.get(cfg.bridges.token_env, "")
-    sources = MediaSourceRegistry([
-        (BridgeMediaSource(
-            "signal", BridgeEndpoint(cfg.platforms.signal.base_url, bridge_token))
-            if cfg.platforms.signal.mode == "bridge"
-            else SignalMediaSource(
-                base_url=cfg.platforms.signal.base_url,
-                timeout_seconds=media.timeout_seconds,
-                max_bytes=media.max_bytes)),
-        (BridgeMediaSource(
-            "discord", BridgeEndpoint(cfg.platforms.discord.base_url, bridge_token))
-            if cfg.platforms.discord.mode == "bridge"
-            else DiscordMediaSource(
-                timeout_seconds=media.timeout_seconds,
-                max_bytes=media.max_bytes)),
-        *(
-            [BridgeMediaSource(
-                "whatsapp", BridgeEndpoint(cfg.platforms.whatsapp.base_url, bridge_token))]
-            if cfg.platforms.whatsapp.mode == "bridge" else []
-        ),
-        (BridgeMediaSource(
-            "instagram", BridgeEndpoint(cfg.platforms.instagram.base_url, bridge_token))
-            if cfg.platforms.instagram.mode == "bridge"
-            else InstagramMediaSource(
-                timeout_seconds=media.timeout_seconds,
-                max_bytes=media.max_bytes)),
-    ])
-    blobs = await _build_blob_store(cfg, cipher=cipher)
-    return sources, blobs
-
-
-async def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
-    """The filesystem default, or RustFS when `[media.rustfs]` is on and its
-    credentials resolve (DEC-136).
-
-    A misconfigured RustFS backend — `enabled = true` with a blank endpoint,
-    or an `access_key_env`/`secret_key_env` that names an unset variable —
-    degrades to the filesystem default rather than to custody OFF, the same
-    posture `_build_media_custody`'s own encryption-key handling takes: the
-    existing, always-working behaviour is the fallback for a bonus feature,
-    never a startup failure and never a silent capability loss beyond the one
-    that was already being configured.
-    """
-    rustfs = cfg.media.rustfs
-    fallback = FilesystemBlobStore(cfg.store.data_dir / "media", cipher=cipher)
-    if not rustfs.enabled:
-        return fallback
-    if not rustfs.endpoint:
-        log.warning(
-            "media.rustfs.enabled is true but media.rustfs.endpoint is unset — "
-            "falling back to the filesystem blob store."
-        )
-        return fallback
-    access_key = cfg.credentials.get(rustfs.access_key_env, "")
-    secret_key = cfg.credentials.get(rustfs.secret_key_env, "")
-    if not access_key or not secret_key:
-        log.warning(
-            "media.rustfs is on but %s/%s did not both resolve in the "
-            "environment — falling back to the filesystem blob store.",
-            rustfs.access_key_env, rustfs.secret_key_env,
-        )
-        return fallback
-    s3 = boto3.client(
-        "s3", endpoint_url=rustfs.endpoint,
-        aws_access_key_id=access_key, aws_secret_access_key=secret_key,
-    )
-    store = RustfsBlobStore(s3_client=s3, bucket=rustfs.bucket, cipher=cipher)
-    try:
-        await asyncio.to_thread(store.ensure_bucket)
-    except Exception:
-        # RustFS unreachable, or misconfigured beyond what the checks above
-        # catch (wrong credentials, wrong bucket permissions). This runs at
-        # STARTUP, before build_dependencies' own per-message protection
-        # (nora.ingest.stages.media._take already degrades a `put` failure to
-        # `store_failed` per message) exists — an unhandled exception HERE
-        # would crash the whole daemon over a bonus feature, exactly what
-        # this section's own "must never take the daemon down" rule forbids.
-        log.exception(
-            "media.rustfs is configured but the bucket could not be reached "
-            "or created — falling back to the filesystem blob store."
-        )
-        return fallback
-    return store
-
-
-def _unified_profile_writers_retired(
-    *, profile_index: bool, graph_comprehend: bool, cognition_enabled: bool,
-    units: frozenset[str], home_units: frozenset[str],
-) -> frozenset[str]:
-    """The Dreamer profile writers the unified Cognition session replaces —
-    only where the replacement is actually wired (`[memory.profile] write &&
-    read` AND `[memory.graph] comprehend`, the same condition `WakeMemory`
-    gets its store under). The verdict judge never retires (45 §3), and the
-    tag path's told/dispute writes are untouched. Retirement is global, so
-    incomplete unit home coverage keeps every old writer and disables the
-    unified writer too; mixed ownership would write the same account twice."""
-    return (
-        frozenset({PROFILE_PERSON_ADAPTOR_NAME, PROFILE_ROOM_ADAPTOR_NAME,
-                   PROFILE_UNIT_ADAPTOR_NAME, PROFILE_NORA_ADAPTOR_NAME})
-        if (profile_index and graph_comprehend and cognition_enabled
-            and units and units <= home_units) else frozenset())
-
-
-def _note_unit_of(policy: Policy) -> Callable[[str, str], str | None]:
-    """`(platform, conversation_id)` → the room's unit, or `None`.
-
-    A free function rather than a lambda so the `None` branch is nameable: a
-    room `policy.toml` does not list has no unit, and the note verbs must
-    answer `unavailable` for it. Guessing one — defaulting to "nora", or to
-    whichever unit happens to be first — would write a note into a
-    notebook the room is not part of, and `standing` would then render it to
-    people who never saw the conversation it came from.
-    """
-
-    def _resolve(platform: str, conversation_id: str) -> str | None:
-        convo = policy.conversation(platform, conversation_id)
-        return convo.unit if convo is not None else None
-
-    return _resolve
-
-
-def _room_ids_of(policy: Policy) -> Callable[[str, str], frozenset[str]]:
-    """Every id the room `(platform, conversation_id)` answers to (`Conversation.ids`),
-    or just the id itself for a room the policy does not list. A room with an alias is
-    one room to `DocumentService`: for reading its pictures and for revising its own
-    document."""
-
-    def room_ids(platform: str, conversation_id: str) -> frozenset[str]:
-        convo = policy.conversation(platform, conversation_id)
-        return convo.ids if convo is not None else frozenset({conversation_id})
-
-    return room_ids
 
 
 def _voice_room_of(policy: Policy) -> Callable[[str], str | None]:
@@ -5965,21 +1493,5 @@ def _voice_room_of(policy: Policy) -> Callable[[str], str | None]:
     def _resolve(guild_id: str) -> str | None:
         convo = policy.voice_room("discord", guild_id)
         return convo.primary_id if convo is not None else None
-
-    return _resolve
-
-
-def _music_channel_of(policy: Policy) -> Callable[[str], str | None]:
-    """A Discord `guild_id` → the CHANNEL id its music announcements are
-    posted in, or `None`.
-
-    A thin bind of `Policy.music_channel_for`, for `_voice_room_of`'s reason:
-    the platform layer must not learn that `nora.policy` exists, and the
-    `None` branch has to be nameable. `None` means something different here
-    than in `_voice_room_of` — not a refusal but the fallback to where the
-    session started, which `music_notify.make_notify` holds."""
-
-    def _resolve(guild_id: str) -> str | None:
-        return policy.music_channel_for("discord", guild_id)
 
     return _resolve

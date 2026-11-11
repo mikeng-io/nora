@@ -740,7 +740,7 @@ async def test_the_client_built_by_composition_sends_the_session_header(mimo, mo
 
     The client is repointed at the fake with `with_options(base_url=…)`, which
     keeps the transport (and so the hook) composition gave it."""
-    from nora.app.composition import _direct_describer_clients
+    from nora.app.composition_media import _direct_describer_clients
     from nora.config import Config, MediaConfig
 
     monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-key")
@@ -850,7 +850,7 @@ async def test_a_direct_lane_with_no_key_sends_nothing_anywhere(mimo, monkeypatc
     UNSET, then a read through that lane — `unavailable`, and ZERO requests
     reach the gateway client (an OmniRoute fallback would drop the video and
     answer about the text it did receive)."""
-    from nora.app.composition import _direct_describer_clients
+    from nora.app.composition_media import _direct_describer_clients
     from nora.config import Config, MediaConfig
 
     monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)

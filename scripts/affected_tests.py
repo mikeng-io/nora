@@ -593,7 +593,7 @@ def _testmon_targets(repo: Path) -> set[str] | None:
     if not (repo / _TESTMON_DB).is_file():
         return None
     try:
-        done = subprocess.run(  # noqa: S603 - this interpreter, fixed pytest argv
+        done = subprocess.run(
             [
                 sys.executable, "-m", "pytest", "-q", "--collect-only", "tests",
                 "--testmon", "--testmon-nocollect", "--testmon-forceselect",

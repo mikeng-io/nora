@@ -32,7 +32,7 @@ import sys
 
 from nora.agent.ports import adapt
 from nora.agent.registry import ToolRegistry
-from nora.testing import FakeBrowserRunner, FakeMemoryStore, FakeSandboxRuntime
+from nora.testing import FakeBrowserRunner, FakeSandboxRuntime
 
 
 def _specs() -> list[dict]:
@@ -70,7 +70,7 @@ def _specs() -> list[dict]:
             params = None
         try:
             strands_spec = adapt(spec).tool_spec
-        except Exception:
+        except Exception:  # noqa: BLE001
             strands_spec = None
         out.append(
             {

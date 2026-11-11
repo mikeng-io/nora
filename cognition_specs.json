@@ -1,0 +1,2335 @@
+[
+  {
+    "doc": "List shared document revisions. Call this when checking documentation.\n\nReturns status ok with the accessible index, nothing_found if empty, or\nunavailable when authority or the shared source cannot be checked.\n",
+    "name": "document_list",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "agenda_room"
+      }
+    ],
+    "tool_spec": {
+      "description": "List shared document revisions. Call this when checking documentation.\n\nReturns status ok with the accessible index, nothing_found if empty, or\nunavailable when authority or the shared source cannot be checked.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "agenda_room": {
+              "description": "Parameter agenda_room",
+              "type": "string"
+            }
+          },
+          "required": [
+            "agenda_room"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "document_list"
+    }
+  },
+  {
+    "doc": "Read a shared document revision. Call this before revising documentation.\n\nReturns status ok with document_id, revision and spec; nothing_found\nwithout private metadata when absent, or unavailable when the source or\nauthority cannot be checked.\n",
+    "name": "document_read",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "document_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "agenda_room"
+      }
+    ],
+    "tool_spec": {
+      "description": "Read a shared document revision. Call this before revising documentation.\n\nReturns status ok with document_id, revision and spec; nothing_found\nwithout private metadata when absent, or unavailable when the source or\nauthority cannot be checked.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "agenda_room": {
+              "description": "Parameter agenda_room",
+              "type": "string"
+            },
+            "document_id": {
+              "description": "Parameter document_id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "document_id",
+            "agenda_room"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "document_read"
+    }
+  },
+  {
+    "doc": "Revise shared documentation. Call this when evidence supersedes its revision.\n\nEach change has path (JSON pointer), old, new and sources (shown message ids).\nMUST preserve unrelated content and uncertainty; new text quotes cited evidence.\nA conflict needs a fresh read and decision, never an automatic overwrite.\nReturns status ok with saved revision, refused when evidence or the base\nrevision fails validation, or unavailable when authority/readback fails.\n",
+    "name": "document_revise",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "document_id"
+      },
+      {
+        "annotation": "'int'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "base_revision"
+      },
+      {
+        "annotation": "'list[dict]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "changes"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "agenda_room"
+      }
+    ],
+    "tool_spec": {
+      "description": "Revise shared documentation. Call this when evidence supersedes its revision.\n\nEach change has path (JSON pointer), old, new and sources (shown message ids).\nMUST preserve unrelated content and uncertainty; new text quotes cited evidence.\nA conflict needs a fresh read and decision, never an automatic overwrite.\nReturns status ok with saved revision, refused when evidence or the base\nrevision fails validation, or unavailable when authority/readback fails.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "agenda_room": {
+              "description": "Parameter agenda_room",
+              "type": "string"
+            },
+            "base_revision": {
+              "description": "Parameter base_revision",
+              "type": "integer"
+            },
+            "changes": {
+              "description": "Parameter changes",
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "document_id": {
+              "description": "Parameter document_id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "document_id",
+            "base_revision",
+            "changes",
+            "agenda_room"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "document_revise"
+    }
+  },
+  {
+    "doc": "Propose a NEW gathering in a room, returning its id. Call this\nwhen a room wants to arrange something that is not open yet. If an\nevent is already open (proposed) there, revise it with event_revise\ninstead of creating a second one.\n\nEvery field you give rests on the rows you cite. An `abduced` value\n(your best explanation of something nobody said) is written as\nabduced and is put to the room as a question, and a yes to it later\ndoes not make it told.\n\nReturns `status`: ok (with the event's `id`), refused or unavailable,\nwith a `reason` and `detail` when it is not ok.\n\nArgs:\n    title: What the gathering is, in their words.\n    reasoning: How you reached what you give: `told` (a person said\n        it, or members agreed among themselves), `deduced` (it\n        follows from rows you hold) or `abduced`.\n    confidence: How sure you are: low, medium or high.\n    cited_ids: The rows it rests on, at least one: message ids you\n        were shown or read, as digits, and Rollup rows you read, as\n        rollup(kind|subject|from/to).\n    when: Optional. ISO 8601 with an offset, the first moment it is\n        for. Work out relative time yourself.\n    venue_text: Optional. The place, the way it was said.\n    status: `proposed` when the room is settling it, `staged` when\n        you only suspect it is an event.\n    room: Optional when the agenda is one room, required when it\n        spans several. The room the gathering is in, as\n        `platform:conversation_id`, which the reads block\n        shows beside each room's label.\n    item: Optional. The agenda item this write is for, by its\n        number.\n    associations: Optional. Existing matters this entry concerns, as\n        [kind, id] node keys from the graph you were shown.\n",
+    "name": "event_propose",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "title"
+      },
+      {
+        "annotation": "\"Literal['told', 'deduced', 'abduced']\"",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "reasoning"
+      },
+      {
+        "annotation": "\"Literal['low', 'medium', 'high']\"",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "confidence"
+      },
+      {
+        "annotation": "'list[str]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "cited_ids"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "when"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "venue_text"
+      },
+      {
+        "annotation": "\"Literal['staged', 'proposed']\"",
+        "default": "'proposed'",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "status"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      },
+      {
+        "annotation": "'list[list[str]] | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "associations"
+      }
+    ],
+    "tool_spec": {
+      "description": "Propose a NEW gathering in a room, returning its id. Call this\nwhen a room wants to arrange something that is not open yet. If an\nevent is already open (proposed) there, revise it with event_revise\ninstead of creating a second one.\n\nEvery field you give rests on the rows you cite. An `abduced` value\n(your best explanation of something nobody said) is written as\nabduced and is put to the room as a question, and a yes to it later\ndoes not make it told.\n\nReturns `status`: ok (with the event's `id`), refused or unavailable,\nwith a `reason` and `detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "associations": {
+              "default": null,
+              "description": "Optional. Existing matters this entry concerns, as\n[kind, id] node keys from the graph you were shown.",
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "cited_ids": {
+              "description": "The rows it rests on, at least one: message ids you\nwere shown or read, as digits, and Rollup rows you read, as\nrollup(kind|subject|from/to).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "confidence": {
+              "description": "How sure you are: low, medium or high.",
+              "enum": [
+                "high",
+                "low",
+                "medium"
+              ],
+              "type": "string"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its\nnumber.",
+              "type": "integer"
+            },
+            "reasoning": {
+              "description": "How you reached what you give: `told` (a person said\nit, or members agreed among themselves), `deduced` (it\nfollows from rows you hold) or `abduced`.",
+              "enum": [
+                "abduced",
+                "deduced",
+                "told"
+              ],
+              "type": "string"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several. The room the gathering is in, as\n`platform:conversation_id`, which the reads block\nshows beside each room's label.",
+              "type": "string"
+            },
+            "status": {
+              "default": "proposed",
+              "description": "`proposed` when the room is settling it, `staged` when\nyou only suspect it is an event.",
+              "enum": [
+                "proposed",
+                "staged"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "description": "What the gathering is, in their words.",
+              "type": "string"
+            },
+            "venue_text": {
+              "default": "",
+              "description": "Optional. The place, the way it was said.",
+              "type": "string"
+            },
+            "when": {
+              "default": "",
+              "description": "Optional. ISO 8601 with an offset, the first moment it is\nfor. Work out relative time yourself.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "reasoning",
+            "confidence",
+            "cited_ids"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "event_propose"
+    }
+  },
+  {
+    "doc": "Change the time or venue of an event that is still open in a\nroom (staged, proposed or confirmed). Call this when an open\nevent's details are settled or change.\n\nWhat you change rests on the rows you cite, and an `abduced` value\nis written as abduced and put as a question. One write has one\nreasoning: if the time and the place rest on different evidence,\nmake two writes.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.\n\nArgs:\n    event_id: The event's id.\n    reasoning: How you reached what you change: `told`, `deduced`\n        or `abduced`, as event_propose says.\n    confidence: How sure you are: low, medium or high.\n    cited_ids: The rows it rests on, at least one: message ids as\n        digits, Rollup rows as rollup(kind|subject|from/to), each\n        one you were shown or read.\n    when: Optional. ISO 8601 with an offset.\n    venue_text: Optional. The place, the way it was said.\n    base_revision_id: Optional. The event's `head_revision_id` your\n        last read of it showed. Leave it out to write regardless\n        of what changed since.\n    room: Optional when the agenda is one room, required when it\n        spans several. The event's room, as\n        `platform:conversation_id`, which the reads block\n        shows beside each room's label.\n    item: Optional. The agenda item this write is for, by its\n        number.\n    associations: Optional. The matters this entry now concerns, as\n        [kind, id] node keys from the graph you were shown; they\n        replace its current semantic links.\n",
+    "name": "event_revise",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "event_id"
+      },
+      {
+        "annotation": "\"Literal['told', 'deduced', 'abduced']\"",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "reasoning"
+      },
+      {
+        "annotation": "\"Literal['low', 'medium', 'high']\"",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "confidence"
+      },
+      {
+        "annotation": "'list[str]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "cited_ids"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "when"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "venue_text"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "base_revision_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      },
+      {
+        "annotation": "'list[list[str]] | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "associations"
+      }
+    ],
+    "tool_spec": {
+      "description": "Change the time or venue of an event that is still open in a\nroom (staged, proposed or confirmed). Call this when an open\nevent's details are settled or change.\n\nWhat you change rests on the rows you cite, and an `abduced` value\nis written as abduced and put as a question. One write has one\nreasoning: if the time and the place rest on different evidence,\nmake two writes.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "associations": {
+              "default": null,
+              "description": "Optional. The matters this entry now concerns, as\n[kind, id] node keys from the graph you were shown; they\nreplace its current semantic links.",
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "base_revision_id": {
+              "default": "",
+              "description": "Optional. The event's `head_revision_id` your\nlast read of it showed. Leave it out to write regardless\nof what changed since.",
+              "type": "string"
+            },
+            "cited_ids": {
+              "description": "The rows it rests on, at least one: message ids as\ndigits, Rollup rows as rollup(kind|subject|from/to), each\none you were shown or read.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "confidence": {
+              "description": "How sure you are: low, medium or high.",
+              "enum": [
+                "high",
+                "low",
+                "medium"
+              ],
+              "type": "string"
+            },
+            "event_id": {
+              "description": "The event's id.",
+              "type": "string"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its\nnumber.",
+              "type": "integer"
+            },
+            "reasoning": {
+              "description": "How you reached what you change: `told`, `deduced`\nor `abduced`, as event_propose says.",
+              "enum": [
+                "abduced",
+                "deduced",
+                "told"
+              ],
+              "type": "string"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several. The event's room, as\n`platform:conversation_id`, which the reads block\nshows beside each room's label.",
+              "type": "string"
+            },
+            "venue_text": {
+              "default": "",
+              "description": "Optional. The place, the way it was said.",
+              "type": "string"
+            },
+            "when": {
+              "default": "",
+              "description": "Optional. ISO 8601 with an offset.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "reasoning",
+            "confidence",
+            "cited_ids"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "event_revise"
+    }
+  },
+  {
+    "doc": "Move an event that is still open in a room (staged, proposed or\nconfirmed) to a new state. Call this when the room confirms it,\nsays it happened, or says it is off.\n\nThe move rests on the rows you cite; an `abduced` one is written as\nabduced and put as a question (\"did it happen?\"). A move to `lapsed`\n(the date passed with nothing agreed) may cite nothing, since the\nevidence is the clock. Only a status before `happened` moves: an\nevent that happened, was cancelled or lapsed stays as it is.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.\n\nArgs:\n    event_id: The event's id.\n    status: The state to move it to.\n    reasoning: How you reached it: `told`, `deduced` or `abduced`,\n        as event_propose says.\n    confidence: How sure you are: low, medium or high.\n    cited_ids: The rows it rests on: message ids as digits, Rollup\n        rows as rollup(kind|subject|from/to), each one you were\n        shown or read.\n    base_revision_id: Optional. The event's `head_revision_id` your\n        last read of it showed. Leave it out to write regardless\n        of what changed since.\n    room: Optional when the agenda is one room, required when it\n        spans several. The event's room, as\n        `platform:conversation_id`, which the reads block\n        shows beside each room's label.\n    item: Optional. The agenda item this write is for, by its\n        number.\n",
+    "name": "event_set_status",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "event_id"
+      },
+      {
+        "annotation": "\"Literal['confirmed', 'cancelled', 'happened', 'lapsed']\"",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "status"
+      },
+      {
+        "annotation": "\"Literal['told', 'deduced', 'abduced']\"",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "reasoning"
+      },
+      {
+        "annotation": "\"Literal['low', 'medium', 'high']\"",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "confidence"
+      },
+      {
+        "annotation": "'list[str]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "cited_ids"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "base_revision_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      }
+    ],
+    "tool_spec": {
+      "description": "Move an event that is still open in a room (staged, proposed or\nconfirmed) to a new state. Call this when the room confirms it,\nsays it happened, or says it is off.\n\nThe move rests on the rows you cite; an `abduced` one is written as\nabduced and put as a question (\"did it happen?\"). A move to `lapsed`\n(the date passed with nothing agreed) may cite nothing, since the\nevidence is the clock. Only a status before `happened` moves: an\nevent that happened, was cancelled or lapsed stays as it is.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "base_revision_id": {
+              "default": "",
+              "description": "Optional. The event's `head_revision_id` your\nlast read of it showed. Leave it out to write regardless\nof what changed since.",
+              "type": "string"
+            },
+            "cited_ids": {
+              "description": "The rows it rests on: message ids as digits, Rollup\nrows as rollup(kind|subject|from/to), each one you were\nshown or read.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "confidence": {
+              "description": "How sure you are: low, medium or high.",
+              "enum": [
+                "high",
+                "low",
+                "medium"
+              ],
+              "type": "string"
+            },
+            "event_id": {
+              "description": "The event's id.",
+              "type": "string"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its\nnumber.",
+              "type": "integer"
+            },
+            "reasoning": {
+              "description": "How you reached it: `told`, `deduced` or `abduced`,\nas event_propose says.",
+              "enum": [
+                "abduced",
+                "deduced",
+                "told"
+              ],
+              "type": "string"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several. The event's room, as\n`platform:conversation_id`, which the reads block\nshows beside each room's label.",
+              "type": "string"
+            },
+            "status": {
+              "description": "The state to move it to.",
+              "enum": [
+                "cancelled",
+                "confirmed",
+                "happened",
+                "lapsed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "status",
+            "reasoning",
+            "confidence",
+            "cited_ids"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "event_set_status"
+    }
+  },
+  {
+    "doc": null,
+    "name": "lesson_retire",
+    "signature": [
+      {
+        "annotation": "'Any'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "VAR_KEYWORD",
+        "name": "kw2"
+      }
+    ],
+    "tool_spec": {
+      "description": "lesson_retire",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "kw2": {
+              "description": "Parameter kw2"
+            }
+          },
+          "required": [
+            "kw2"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "lesson_retire"
+    }
+  },
+  {
+    "doc": null,
+    "name": "lesson_write",
+    "signature": [
+      {
+        "annotation": "'Any'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "VAR_KEYWORD",
+        "name": "kw2"
+      }
+    ],
+    "tool_spec": {
+      "description": "lesson_write",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "kw2": {
+              "description": "Parameter kw2"
+            }
+          },
+          "required": [
+            "kw2"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "lesson_write"
+    }
+  },
+  {
+    "doc": "Keep something the group has settled and will need again. Call\nthis when a room settles a fact about the group, someone else or the\nworld (a password, a deposit split, a booking reference), or asks you\nto keep one. Most settled things need no memo.\n\nA person's explicit ask to keep something about the group is\nwritten, not weighed. A fact about the speaker alone is not a memo,\nnor is anything still open (a note) or dated and attended (an\nevent). A memo never closes; it is revised or withdrawn. A `##\nKept` line holds what was said exactly as said; the title names\nthe thing, never its value, and a title or condition carrying a\nvalue, a phone, an email or a key-like string is refused.\n\nReturns `status`: ok (with the `memo_id`), refused or unavailable,\nwith a `reason` and `detail` when it is not ok. A memo already kept\nunder that title is refused `duplicate`, naming it: revise that one.\n\nArgs:\n    title: A short handle, at most 80 characters, that names the\n        thing (wifi password, door code), never its value.\n    body: `## Kept`, then optionally `## Conditions` (when it holds,\n        its exceptions). Each line is one \"- \" item ending in the\n        ids of the messages it rests on, as [<id>, <id>]: a message\n        you were shown or read, your own included (cite the\n        person's message asking to keep it too, when there is one).\n    mode: `told` when a person said it, `deduced` when it follows\n        from what you were shown, `abduced` as a best explanation.\n    room: Optional when the agenda is one room, required when it\n        spans several. The room it was settled in, as\n        `platform:conversation_id`.\n    item: Optional. The agenda item this write is for, by its\n        number.\n    associations: Optional. Existing matters this memo settles, as\n        [kind, id] node keys from the graph you were shown.\n",
+    "name": "memo_create",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "title"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "body"
+      },
+      {
+        "annotation": "\"Literal['told', 'deduced', 'abduced']\"",
+        "default": "'told'",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "mode"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      },
+      {
+        "annotation": "'list[list[str]] | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "associations"
+      }
+    ],
+    "tool_spec": {
+      "description": "Keep something the group has settled and will need again. Call\nthis when a room settles a fact about the group, someone else or the\nworld (a password, a deposit split, a booking reference), or asks you\nto keep one. Most settled things need no memo.\n\nA person's explicit ask to keep something about the group is\nwritten, not weighed. A fact about the speaker alone is not a memo,\nnor is anything still open (a note) or dated and attended (an\nevent). A memo never closes; it is revised or withdrawn. A `##\nKept` line holds what was said exactly as said; the title names\nthe thing, never its value, and a title or condition carrying a\nvalue, a phone, an email or a key-like string is refused.\n\nReturns `status`: ok (with the `memo_id`), refused or unavailable,\nwith a `reason` and `detail` when it is not ok. A memo already kept\nunder that title is refused `duplicate`, naming it: revise that one.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "associations": {
+              "default": null,
+              "description": "Optional. Existing matters this memo settles, as\n[kind, id] node keys from the graph you were shown.",
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "body": {
+              "description": "`## Kept`, then optionally `## Conditions` (when it holds,\nits exceptions). Each line is one \"- \" item ending in the\nids of the messages it rests on, as [<id>, <id>]: a message\nyou were shown or read, your own included (cite the\nperson's message asking to keep it too, when there is one).",
+              "type": "string"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its\nnumber.",
+              "type": "integer"
+            },
+            "mode": {
+              "default": "told",
+              "description": "`told` when a person said it, `deduced` when it follows\nfrom what you were shown, `abduced` as a best explanation.",
+              "enum": [
+                "abduced",
+                "deduced",
+                "told"
+              ],
+              "type": "string"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several. The room it was settled in, as\n`platform:conversation_id`.",
+              "type": "string"
+            },
+            "title": {
+              "description": "A short handle, at most 80 characters, that names the\nthing (wifi password, door code), never its value.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "body"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "memo_create"
+    }
+  },
+  {
+    "doc": "Revise a kept memo. Call this when what the group settled has\nchanged or gained a detail. Give back the WHOLE memo with your change\nfolded in: `body` replaces it, and the old revision is kept.\n\nReturns `status`: ok (with the new `revision_id`), refused or\nunavailable, with a `reason` and `detail` when it is not ok\n(`stale_base` when the memo changed since you read it).\n\nArgs:\n    memo_id: The memo's id, as <memos> shows it.\n    base_revision_id: The `revision_id` memo_read last showed.\n    body: The whole memo after your change, in memo_create's\n        sections, every line ending in the ids it rests on.\n    title: Optional. A new title; left out, the title stays.\n    mode: How you reached the change: `told`, `deduced` or `abduced`.\n    room: Optional when the agenda is one room, required when it\n        spans several, as for memo_create.\n    item: Optional. The agenda item this write is for, by its number.\n    associations: Optional. The matters this memo now settles, as\n        [kind, id] node keys from the graph you were shown; they\n        replace the memo's current semantic links.\n",
+    "name": "memo_revise",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "memo_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "base_revision_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "body"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "title"
+      },
+      {
+        "annotation": "\"Literal['told', 'deduced', 'abduced']\"",
+        "default": "'told'",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "mode"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      },
+      {
+        "annotation": "'list[list[str]] | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "associations"
+      }
+    ],
+    "tool_spec": {
+      "description": "Revise a kept memo. Call this when what the group settled has\nchanged or gained a detail. Give back the WHOLE memo with your change\nfolded in: `body` replaces it, and the old revision is kept.\n\nReturns `status`: ok (with the new `revision_id`), refused or\nunavailable, with a `reason` and `detail` when it is not ok\n(`stale_base` when the memo changed since you read it).",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "associations": {
+              "default": null,
+              "description": "Optional. The matters this memo now settles, as\n[kind, id] node keys from the graph you were shown; they\nreplace the memo's current semantic links.",
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "base_revision_id": {
+              "description": "The `revision_id` memo_read last showed.",
+              "type": "string"
+            },
+            "body": {
+              "description": "The whole memo after your change, in memo_create's\nsections, every line ending in the ids it rests on.",
+              "type": "string"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its number.",
+              "type": "integer"
+            },
+            "memo_id": {
+              "description": "The memo's id, as <memos> shows it.",
+              "type": "string"
+            },
+            "mode": {
+              "default": "told",
+              "description": "How you reached the change: `told`, `deduced` or `abduced`.",
+              "enum": [
+                "abduced",
+                "deduced",
+                "told"
+              ],
+              "type": "string"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several, as for memo_create.",
+              "type": "string"
+            },
+            "title": {
+              "default": "",
+              "description": "Optional. A new title; left out, the title stays.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "memo_id",
+            "base_revision_id",
+            "body"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "memo_revise"
+    }
+  },
+  {
+    "doc": "Withdraw a kept memo for good. Call this only when someone in the\ngroup says it no longer holds (the password changed, the booking was\ncancelled). It leaves <memos>; its revisions are kept.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.\n\nArgs:\n    memo_id: The memo's id, as <memos> shows it.\n    base_revision_id: The `revision_id` memo_read last showed.\n    cited_ids: The ids of the messages saying it no longer holds, at\n        least one, each one you were shown or read.\n    room: Optional when the agenda is one room, required when it\n        spans several, as for memo_create.\n    item: Optional. The agenda item this write is for, by its number.\n",
+    "name": "memo_set_status",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "memo_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "base_revision_id"
+      },
+      {
+        "annotation": "'list[str]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "cited_ids"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      }
+    ],
+    "tool_spec": {
+      "description": "Withdraw a kept memo for good. Call this only when someone in the\ngroup says it no longer holds (the password changed, the booking was\ncancelled). It leaves <memos>; its revisions are kept.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "base_revision_id": {
+              "description": "The `revision_id` memo_read last showed.",
+              "type": "string"
+            },
+            "cited_ids": {
+              "description": "The ids of the messages saying it no longer holds, at\nleast one, each one you were shown or read.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its number.",
+              "type": "integer"
+            },
+            "memo_id": {
+              "description": "The memo's id, as <memos> shows it.",
+              "type": "string"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several, as for memo_create.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "memo_id",
+            "base_revision_id",
+            "cited_ids"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "memo_set_status"
+    }
+  },
+  {
+    "doc": "Save grounded relations, corrections and readings from shown evidence.\nCall this when a shown row changes what you understand.\n\nReturns each statement's saved/refused result and connected memory.\nRefusals explain what failed and how to repair a grounded statement;\nvalid siblings are saved independently.\n\nArgs:\n    statements: The facts to carry forward, with their citations.\n",
+    "name": "memory_propose",
+    "signature": [
+      {
+        "annotation": "'list[Statement]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "statements"
+      }
+    ],
+    "tool_spec": {
+      "description": "Save grounded relations, corrections and readings from shown evidence.\nCall this when a shown row changes what you understand.\n\nReturns each statement's saved/refused result and connected memory.\nRefusals explain what failed and how to repair a grounded statement;\nvalid siblings are saved independently.",
+      "inputSchema": {
+        "json": {
+          "$defs": {
+            "Citation": {
+              "additionalProperties": false,
+              "description": "One shown source row: its `n` and an exact quote from its body.",
+              "properties": {
+                "quote": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Words copied exactly from that row's shown body, or null only where the statement kind allows an unquoted citation: a reading requires a quote covering every cited row; a relation or correction may cite a row without one.",
+                  "title": "Quote"
+                },
+                "source": {
+                  "description": "The `n` of a shown source row.",
+                  "title": "Source",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "source"
+              ],
+              "title": "Citation",
+              "type": "object"
+            },
+            "CitedValue": {
+              "additionalProperties": false,
+              "description": "A public attribute value with the citations that establish it.",
+              "properties": {
+                "cite": {
+                  "items": {
+                    "$ref": "#/$defs/Citation"
+                  },
+                  "title": "Cite",
+                  "type": "array"
+                },
+                "value": {
+                  "title": "Value"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "title": "CitedValue",
+              "type": "object"
+            },
+            "CorrectionStatement": {
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "An ISO datetime the change takes effect, or null to mean now; a resolved value like valid_from, not quoted time words.",
+                  "title": "At"
+                },
+                "change": {
+                  "enum": [
+                    "close",
+                    "dispute",
+                    "retire",
+                    "supersede"
+                  ],
+                  "title": "Change",
+                  "type": "string"
+                },
+                "cite": {
+                  "items": {
+                    "$ref": "#/$defs/Citation"
+                  },
+                  "minItems": 1,
+                  "title": "Cite",
+                  "type": "array"
+                },
+                "relation": {
+                  "title": "Relation",
+                  "type": "string"
+                },
+                "replacement": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/RelationStatement"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "type": {
+                  "const": "correction",
+                  "title": "Type",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "relation",
+                "change",
+                "cite"
+              ],
+              "title": "CorrectionStatement",
+              "type": "object"
+            },
+            "HappenedAt": {
+              "additionalProperties": false,
+              "description": "When what a reading describes happened; the object is required even\nwhen the event time is unknown \u2014 only `expression` may be null.",
+              "properties": {
+                "expression": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "The exact time words copied from that row's body \u2014 \u00abtomorrow\u00bb, \u00abon Saturday\u00bb \u2014 or null when the row states none. Never the row's `at` metadata and never a date you computed: code resolves the quoted words against that row's send time. The only nullable field here.",
+                  "title": "Expression"
+                },
+                "source": {
+                  "description": "The `n` of one of this statement's cited rows \u2014 the row its time words come from.",
+                  "title": "Source",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "source"
+              ],
+              "title": "HappenedAt",
+              "type": "object"
+            },
+            "NewEndpoint": {
+              "additionalProperties": false,
+              "properties": {
+                "new": {
+                  "$ref": "#/$defs/NewEntity"
+                }
+              },
+              "required": [
+                "new"
+              ],
+              "title": "NewEndpoint",
+              "type": "object"
+            },
+            "NewEntity": {
+              "additionalProperties": false,
+              "description": "An entity with no matching shown candidate, nested inside an endpoint.",
+              "properties": {
+                "aliases": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Aliases",
+                  "type": "array"
+                },
+                "attributes": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/CitedValue"
+                  },
+                  "title": "Attributes",
+                  "type": "object"
+                },
+                "distinct": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Why this entity is not one of the candidates a `possible_existing` refusal listed, or null; honoured only to re-propose an endpoint the session already refused possible_existing for the same name and kind \u2014 it never skips the lookup.",
+                  "title": "Distinct"
+                },
+                "kind": {
+                  "enum": [
+                    "event",
+                    "organisation",
+                    "place",
+                    "topic",
+                    "work"
+                  ],
+                  "title": "Kind",
+                  "type": "string"
+                },
+                "name": {
+                  "title": "Name",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "name"
+              ],
+              "title": "NewEntity",
+              "type": "object"
+            },
+            "ReadingStatement": {
+              "additionalProperties": false,
+              "properties": {
+                "about": {
+                  "items": {
+                    "$ref": "#/$defs/ReadingSubject"
+                  },
+                  "title": "About",
+                  "type": "array"
+                },
+                "cite": {
+                  "items": {
+                    "$ref": "#/$defs/Citation"
+                  },
+                  "minItems": 1,
+                  "title": "Cite",
+                  "type": "array"
+                },
+                "happened_at": {
+                  "$ref": "#/$defs/HappenedAt",
+                  "description": "When what the reading describes happened; required as an object even when the event time is unknown."
+                },
+                "how": {
+                  "enum": [
+                    "asked",
+                    "planned",
+                    "reported",
+                    "said_by_another",
+                    "stated"
+                  ],
+                  "title": "How",
+                  "type": "string"
+                },
+                "type": {
+                  "const": "reading",
+                  "title": "Type",
+                  "type": "string"
+                },
+                "what": {
+                  "title": "What",
+                  "type": "string"
+                },
+                "where": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "A place copied exactly from a cited row's body, or null when no place was stated; never expanded into a canonical place name.",
+                  "title": "Where"
+                }
+              },
+              "required": [
+                "type",
+                "what",
+                "happened_at",
+                "how",
+                "cite"
+              ],
+              "title": "ReadingStatement",
+              "type": "object"
+            },
+            "ReadingSubject": {
+              "additionalProperties": false,
+              "properties": {
+                "person_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "A shown canonical person id \u2014 a `person=` a rendered row carried \u2014 or null when the subject's identity is unresolved.",
+                  "title": "Person Id"
+                },
+                "reference": {
+                  "description": "The subject as the source wrote them \u2014 \u00abshe\u00bb, \u00abBen's sister\u00bb; required whether or not person_id resolves.",
+                  "title": "Reference",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reference"
+              ],
+              "title": "ReadingSubject",
+              "type": "object"
+            },
+            "RelationStatement": {
+              "additionalProperties": false,
+              "properties": {
+                "cite": {
+                  "items": {
+                    "$ref": "#/$defs/Citation"
+                  },
+                  "minItems": 1,
+                  "title": "Cite",
+                  "type": "array"
+                },
+                "object": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/$defs/NewEndpoint"
+                    }
+                  ],
+                  "description": "An endpoint in the same grammar as `subject`.",
+                  "title": "Object"
+                },
+                "rel": {
+                  "enum": [
+                    "about",
+                    "at",
+                    "attended",
+                    "cancels",
+                    "concerns",
+                    "dislikes",
+                    "features",
+                    "fulfils",
+                    "interested_in",
+                    "likes",
+                    "lives_in",
+                    "member_of",
+                    "plans",
+                    "records",
+                    "same_as",
+                    "serves",
+                    "settles",
+                    "studies_at",
+                    "went_with",
+                    "works_at"
+                  ],
+                  "title": "Rel",
+                  "type": "string"
+                },
+                "subject": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/$defs/NewEndpoint"
+                    }
+                  ],
+                  "description": "A shown `@kind:id` handle \u2014 a preview row, an admitted relation's end, or `@person:<id>` for a person a shown row authored \u2014 or {new:{kind,name,...}} for a new non-person entity.",
+                  "title": "Subject"
+                },
+                "type": {
+                  "const": "relation",
+                  "title": "Type",
+                  "type": "string"
+                },
+                "valid_from": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "An ISO date or datetime the relation begins to hold, or null; unlike a reading's happened_at.expression this is a resolved calendar value you write yourself, never quoted words.",
+                  "title": "Valid From"
+                },
+                "valid_to": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "An ISO date or datetime the relation stops holding, or null; the same resolved-value contract as valid_from.",
+                  "title": "Valid To"
+                }
+              },
+              "required": [
+                "type",
+                "rel",
+                "subject",
+                "object",
+                "cite"
+              ],
+              "title": "RelationStatement",
+              "type": "object"
+            }
+          },
+          "properties": {
+            "statements": {
+              "description": "The facts to carry forward, with their citations.",
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "correction": "#/$defs/CorrectionStatement",
+                    "reading": "#/$defs/ReadingStatement",
+                    "relation": "#/$defs/RelationStatement"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/RelationStatement"
+                  },
+                  {
+                    "$ref": "#/$defs/CorrectionStatement"
+                  },
+                  {
+                    "$ref": "#/$defs/ReadingStatement"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "statements"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "memory_propose"
+    }
+  },
+  {
+    "doc": "Start carrying an open question that nothing here settles yet.\nCall this when a room is chewing on something that outlives this\npass.\n\nA note is tracked uncertainty (whose wedding is when, what the trip\nstill lacks, who has not paid), never a settled fact or a\ndescription of a person. If a note already covers it, update that\none instead. It MUST have a `closing_condition` (what would settle\nit) and an anchor (`anchor_date`, `anchor_entities` or both), or it\nis refused.\n\nReturns `status`: ok (with the `note_id`), refused or unavailable,\nwith a `reason` and `detail` when it is not ok.\n\nArgs:\n    title: A short handle, at most 60 characters, that names the\n        thing.\n    description: One line, at most 200 characters: what is\n        undecided and what would settle it.\n    uncertainty: What exactly is not known yet, in a sentence.\n    closing_condition: What would settle it.\n    body: What is known so far, in sections: ## Decided and ## Open\n        always, then ## Owed, ## Proposed or ## Ruled out when one\n        has a line. Each line is one \"- \" item ending in the ids of\n        the messages it rests on, as [<id>, <id>]: a message you\n        were shown or read, or a Rollup row you read, cited by\n        rollup(kind|subject|from/to) from its row. A body that\n        breaks this is refused with the rule it broke.\n    anchor_date: Optional. The calendar day it is about, as an ISO\n        date (year-month-day).\n    anchor_entities: Optional. The people or things it is about,\n        named the way the room names them.\n    room: Optional when the agenda is one room, required when it\n        spans several. The room this note is about, as\n        `platform:conversation_id`, which the reads block\n        shows beside each room's label.\n    item: Optional. The agenda item this write is for, by its\n        number.\n    associations: Optional. Existing matters this note concerns, as\n        [kind, id] node keys from the graph you were shown.\n    object_refs: Optional. Up to 8 `object` handles shown in this\n        session. Keep these source objects in view while this matter\n        remains open. Their room scope is resolved by the server;\n        current state is read fresh, never copied into the note.\n",
+    "name": "note_create",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "title"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "description"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "uncertainty"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "closing_condition"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "body"
+      },
+      {
+        "annotation": "'str | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "anchor_date"
+      },
+      {
+        "annotation": "'list[str] | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "anchor_entities"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      },
+      {
+        "annotation": "'list[list[str]] | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "associations"
+      },
+      {
+        "annotation": "'list[str] | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "object_refs"
+      }
+    ],
+    "tool_spec": {
+      "description": "Start carrying an open question that nothing here settles yet.\nCall this when a room is chewing on something that outlives this\npass.\n\nA note is tracked uncertainty (whose wedding is when, what the trip\nstill lacks, who has not paid), never a settled fact or a\ndescription of a person. If a note already covers it, update that\none instead. It MUST have a `closing_condition` (what would settle\nit) and an anchor (`anchor_date`, `anchor_entities` or both), or it\nis refused.\n\nReturns `status`: ok (with the `note_id`), refused or unavailable,\nwith a `reason` and `detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "anchor_date": {
+              "default": null,
+              "description": "Optional. The calendar day it is about, as an ISO\ndate (year-month-day).",
+              "type": "string"
+            },
+            "anchor_entities": {
+              "default": null,
+              "description": "Optional. The people or things it is about,\nnamed the way the room names them.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "associations": {
+              "default": null,
+              "description": "Optional. Existing matters this note concerns, as\n[kind, id] node keys from the graph you were shown.",
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "body": {
+              "description": "What is known so far, in sections: ## Decided and ## Open\nalways, then ## Owed, ## Proposed or ## Ruled out when one\nhas a line. Each line is one \"- \" item ending in the ids of\nthe messages it rests on, as [<id>, <id>]: a message you\nwere shown or read, or a Rollup row you read, cited by\nrollup(kind|subject|from/to) from its row. A body that\nbreaks this is refused with the rule it broke.",
+              "type": "string"
+            },
+            "closing_condition": {
+              "description": "What would settle it.",
+              "type": "string"
+            },
+            "description": {
+              "description": "One line, at most 200 characters: what is\nundecided and what would settle it.",
+              "type": "string"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its\nnumber.",
+              "type": "integer"
+            },
+            "object_refs": {
+              "default": null,
+              "description": "Optional. Up to 8 `object` handles shown in this\nsession. Keep these source objects in view while this matter\nremains open. Their room scope is resolved by the server;\ncurrent state is read fresh, never copied into the note.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several. The room this note is about, as\n`platform:conversation_id`, which the reads block\nshows beside each room's label.",
+              "type": "string"
+            },
+            "title": {
+              "description": "A short handle, at most 60 characters, that names the\nthing.",
+              "type": "string"
+            },
+            "uncertainty": {
+              "description": "What exactly is not known yet, in a sentence.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "description",
+            "uncertainty",
+            "closing_condition",
+            "body"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "note_create"
+    }
+  },
+  {
+    "doc": "Fold a duplicate note into the one that keeps the question. Call\nthis when two open notes track the same uncertainty. The survivor\ngets `body` as its new contents, the duplicate is retired pointing\nat it, and a reminder held on either note follows the survivor.\nSource references from both notes survive; if their combined set\nexceeds 8, revise the references before merging.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.\n\nArgs:\n    survivor_id: The note that keeps the question.\n    duplicate_id: The note folded into it.\n    body: The survivor's whole note after the fold, in note_create's\n        sections, with what the duplicate knew and the survivor did\n        not folded in. Every line ends in the ids it rests on, which\n        may be any id either note already cites.\n    room: Optional when the agenda is one room, required when it\n        spans several, as for note_revise.\n    item: Optional. The agenda item this write is for, by its number.\n",
+    "name": "note_merge",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "survivor_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "duplicate_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "body"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      }
+    ],
+    "tool_spec": {
+      "description": "Fold a duplicate note into the one that keeps the question. Call\nthis when two open notes track the same uncertainty. The survivor\ngets `body` as its new contents, the duplicate is retired pointing\nat it, and a reminder held on either note follows the survivor.\nSource references from both notes survive; if their combined set\nexceeds 8, revise the references before merging.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "body": {
+              "description": "The survivor's whole note after the fold, in note_create's\nsections, with what the duplicate knew and the survivor did\nnot folded in. Every line ends in the ids it rests on, which\nmay be any id either note already cites.",
+              "type": "string"
+            },
+            "duplicate_id": {
+              "description": "The note folded into it.",
+              "type": "string"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its number.",
+              "type": "integer"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several, as for note_revise.",
+              "type": "string"
+            },
+            "survivor_id": {
+              "description": "The note that keeps the question.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "survivor_id",
+            "duplicate_id",
+            "body"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "note_merge"
+    }
+  },
+  {
+    "doc": "Revise a note. Call this when a note's content changes: a detail\nsettles, a plan moves. Give back the WHOLE note with your change\nfolded in: `body` replaces the current contents, and the old\nrevision is kept.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.\n\nArgs:\n    note_id: The note's id.\n    body: The whole note after your change, in note_create's\n        sections, every line ending in the message ids it rests on,\n        as [<id>, <id>], or a Rollup row you read, as\n        rollup(kind|subject|from/to).\n    parent_revision_id: The note's head revision id your last read\n        of it showed. A stale one is refused.\n    room: Optional when the agenda is one room, required when it\n        spans several. The room this note is about, as\n        `platform:conversation_id`, which the reads block\n        shows beside each room's label.\n    item: Optional. The agenda item this write is for, by its\n        number.\n    associations: Optional. The matters this note now concerns, as\n        [kind, id] node keys from the graph you were shown; they\n        replace the note's current semantic links.\n    object_refs: Optional. Shown object handles the matter now\n        tracks; a supplied list replaces the current refs, an\n        omitted one keeps them. An empty list clears them.\n",
+    "name": "note_revise",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "note_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "body"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "parent_revision_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      },
+      {
+        "annotation": "'list[list[str]] | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "associations"
+      },
+      {
+        "annotation": "'list[str] | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "object_refs"
+      }
+    ],
+    "tool_spec": {
+      "description": "Revise a note. Call this when a note's content changes: a detail\nsettles, a plan moves. Give back the WHOLE note with your change\nfolded in: `body` replaces the current contents, and the old\nrevision is kept.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "associations": {
+              "default": null,
+              "description": "Optional. The matters this note now concerns, as\n[kind, id] node keys from the graph you were shown; they\nreplace the note's current semantic links.",
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "body": {
+              "description": "The whole note after your change, in note_create's\nsections, every line ending in the message ids it rests on,\nas [<id>, <id>], or a Rollup row you read, as\nrollup(kind|subject|from/to).",
+              "type": "string"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its\nnumber.",
+              "type": "integer"
+            },
+            "note_id": {
+              "description": "The note's id.",
+              "type": "string"
+            },
+            "object_refs": {
+              "default": null,
+              "description": "Optional. Shown object handles the matter now\ntracks; a supplied list replaces the current refs, an\nomitted one keeps them. An empty list clears them.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "parent_revision_id": {
+              "description": "The note's head revision id your last read\nof it showed. A stale one is refused.",
+              "type": "string"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several. The room this note is about, as\n`platform:conversation_id`, which the reads block\nshows beside each room's label.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id",
+            "body",
+            "parent_revision_id"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "note_revise"
+    }
+  },
+  {
+    "doc": "Close a note for good. Call this when its question is settled\n(what would close it has happened) or its day has passed and\nnothing is left open about it. A retired note leaves the index; its\nrevisions are kept.\n\nIf the group will need the answer again, keep it with memo_create\nfirst, then retire the note.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.\n\nArgs:\n    note_id: The note's id.\n    reason: `settled` when its closing condition is met,\n        `anchor_passed` when the day it was about has gone by and\n        nothing about it is still open.\n    base_revision_id: Optional. The note's head revision id your\n        last read of it showed; a note changed since is not retired.\n    room: Optional when the agenda is one room, required when it\n        spans several, as for note_revise.\n    item: Optional. The agenda item this write is for, by its number.\n",
+    "name": "note_set_status",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "note_id"
+      },
+      {
+        "annotation": "\"Literal['settled', 'anchor_passed']\"",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "reason"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "base_revision_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      }
+    ],
+    "tool_spec": {
+      "description": "Close a note for good. Call this when its question is settled\n(what would close it has happened) or its day has passed and\nnothing is left open about it. A retired note leaves the index; its\nrevisions are kept.\n\nIf the group will need the answer again, keep it with memo_create\nfirst, then retire the note.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "base_revision_id": {
+              "default": "",
+              "description": "Optional. The note's head revision id your\nlast read of it showed; a note changed since is not retired.",
+              "type": "string"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its number.",
+              "type": "integer"
+            },
+            "note_id": {
+              "description": "The note's id.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "`settled` when its closing condition is met,\n`anchor_passed` when the day it was about has gone by and\nnothing about it is still open.",
+              "enum": [
+                "anchor_passed",
+                "settled"
+              ],
+              "type": "string"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several, as for note_revise.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id",
+            "reason"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "note_set_status"
+    }
+  },
+  {
+    "doc": "Read one profile account's lines, open disputes and revision before revising it.\n\nReturns `status`: ok with handled lines, disputes and revision, refused or unavailable.\n\nArgs:\n    entity: The profile subject kind and id: person, room, unit or nora.\n",
+    "name": "profile_read",
+    "signature": [
+      {
+        "annotation": "'list[str]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "entity"
+      }
+    ],
+    "tool_spec": {
+      "description": "Read one profile account's lines, open disputes and revision before revising it.\n\nReturns `status`: ok with handled lines, disputes and revision, refused or unavailable.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "entity": {
+              "description": "The profile subject kind and id: person, room, unit or nora.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "entity"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "profile_read"
+    }
+  },
+  {
+    "doc": "Change a profile account you read this session. Call this on new admitted evidence.\n\nReturns `status`: ok, refused with `refusals`, conflict or unavailable.\n\nArgs:\n    entity: The profile subject kind and id: person, room, unit or nora.\n    ops: The changes, each an object with `op`: add (part, kind,\n        text, mode, citations, and draws_on, told_by, prediction,\n        prediction_observable, prediction_window_end or\n        conflicts_with where they apply), keep (line, citations),\n        revise (line, citations, text, mode, draws_on,\n        conflicts_with) or retire (line, why). A held line is\n        named by its `handle` from profile_read; a relation the\n        line generalises is `relation:<id>` in draws_on; a shown\n        source is cited as `<kind>:<id>`.\n",
+    "name": "profile_revise",
+    "signature": [
+      {
+        "annotation": "'list[str]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "entity"
+      },
+      {
+        "annotation": "'list[dict[str, Any]]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "ops"
+      }
+    ],
+    "tool_spec": {
+      "description": "Change a profile account you read this session. Call this on new admitted evidence.\n\nReturns `status`: ok, refused with `refusals`, conflict or unavailable.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "entity": {
+              "description": "The profile subject kind and id: person, room, unit or nora.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "ops": {
+              "description": "The changes, each an object with `op`: add (part, kind,\ntext, mode, citations, and draws_on, told_by, prediction,\nprediction_observable, prediction_window_end or\nconflicts_with where they apply), keep (line, citations),\nrevise (line, citations, text, mode, draws_on,\nconflicts_with) or retire (line, why). A held line is\nnamed by its `handle` from profile_read; a relation the\nline generalises is `relation:<id>` in draws_on; a shown\nsource is cited as `<kind>:<id>`.",
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "entity",
+            "ops"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "profile_revise"
+    }
+  },
+  {
+    "doc": "Reach a room at a time: when the moment comes you get a turn in\nthat room to say something to it or ask it something, and you may\nstill stay silent then. Call this when a room should hear from you\nand not before.\n\n`subject` names the open entry the act is about, as `kind:id`\n(`note:`, `decision:`, `commitment:`, `thread:` or `event:` plus the\nid the note index and ledger read show). It must resolve to an\nopen entry or the call is `unresolved`, never scheduled on a\ncitation alone. `action` is YOUR short key for the act\n(`confirm-dinner-date`, `ask-vote-deadline`): two questions about\nthe same subject are different actions, and the same\nsubject+action already pending somewhere you did not name is\nrefused `conflict_other_room`. `also_rooms` is how you mean the\nsame act in several rooms at once.\n\nReturns `status`: ok (with `reminder_ids`), refused or\nunavailable, plus `unresolved` when `subject` does not resolve to\nthe open entry the act is about, each with a `reason` and `detail`\nwhen it is not ok.\n\nArgs:\n    intent: `tell` to say something, `ask` to ask something.\n    text: What to raise, in a sentence, as you will read it when it\n        comes due.\n    subject: The open entry the act is about, as `kind:id`.\n    action: Your key for this act on this subject: same act again\n        is the same key, a different question is a different one.\n    subject_rows: The evidence rows it rests on, at least one.\n    at: When to reach the room, ISO 8601 with an offset.\n    room: Optional when the agenda is one room, required when it\n        spans several. The room to reach, as\n        `platform:conversation_id`, which the reads block\n        shows beside each room's label.\n    also_rooms: Optional. Every other room this same act should\n        reach, each as `platform:conversation_id`. An act the unit\n        already has pending somewhere else is refused unless you\n        name that room here or in `room`.\n    new_action: Optional. Required, a short why, only when this is\n        a DIFFERENT act on a subject an `intent` act already\n        waits on: a pending act's action key is the stable name\n        of what is pending, so a second act needs a recorded\n        reason, not a fresh spelling. The why is kept on the row.\n",
+    "name": "remind",
+    "signature": [
+      {
+        "annotation": "\"Literal['tell', 'ask']\"",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "intent"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "text"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "subject"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "action"
+      },
+      {
+        "annotation": "'list[str]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "subject_rows"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "at"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'list[str] | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "also_rooms"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "new_action"
+      }
+    ],
+    "tool_spec": {
+      "description": "Reach a room at a time: when the moment comes you get a turn in\nthat room to say something to it or ask it something, and you may\nstill stay silent then. Call this when a room should hear from you\nand not before.\n\n`subject` names the open entry the act is about, as `kind:id`\n(`note:`, `decision:`, `commitment:`, `thread:` or `event:` plus the\nid the note index and ledger read show). It must resolve to an\nopen entry or the call is `unresolved`, never scheduled on a\ncitation alone. `action` is YOUR short key for the act\n(`confirm-dinner-date`, `ask-vote-deadline`): two questions about\nthe same subject are different actions, and the same\nsubject+action already pending somewhere you did not name is\nrefused `conflict_other_room`. `also_rooms` is how you mean the\nsame act in several rooms at once.\n\nReturns `status`: ok (with `reminder_ids`), refused or\nunavailable, plus `unresolved` when `subject` does not resolve to\nthe open entry the act is about, each with a `reason` and `detail`\nwhen it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "action": {
+              "description": "Your key for this act on this subject: same act again\nis the same key, a different question is a different one.",
+              "type": "string"
+            },
+            "also_rooms": {
+              "default": null,
+              "description": "Optional. Every other room this same act should\nreach, each as `platform:conversation_id`. An act the unit\nalready has pending somewhere else is refused unless you\nname that room here or in `room`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "at": {
+              "description": "When to reach the room, ISO 8601 with an offset.",
+              "type": "string"
+            },
+            "intent": {
+              "description": "`tell` to say something, `ask` to ask something.",
+              "enum": [
+                "ask",
+                "tell"
+              ],
+              "type": "string"
+            },
+            "new_action": {
+              "default": "",
+              "description": "Optional. Required, a short why, only when this is\na DIFFERENT act on a subject an `intent` act already\nwaits on: a pending act's action key is the stable name\nof what is pending, so a second act needs a recorded\nreason, not a fresh spelling. The why is kept on the row.",
+              "type": "string"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several. The room to reach, as\n`platform:conversation_id`, which the reads block\nshows beside each room's label.",
+              "type": "string"
+            },
+            "subject": {
+              "description": "The open entry the act is about, as `kind:id`.",
+              "type": "string"
+            },
+            "subject_rows": {
+              "description": "The evidence rows it rests on, at least one.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "text": {
+              "description": "What to raise, in a sentence, as you will read it when it\ncomes due.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "intent",
+            "text",
+            "subject",
+            "action",
+            "subject_rows",
+            "at"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "remind"
+    }
+  },
+  {
+    "doc": "Cancel a reminder you set. Call this when the room no longer\nneeds to hear it. Only your own.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.\n\nArgs:\n    reminder_id: The id `remind` returned.\n    why: The reason you cancel it.\n",
+    "name": "remind_cancel",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "reminder_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "why"
+      }
+    ],
+    "tool_spec": {
+      "description": "Cancel a reminder you set. Call this when the room no longer\nneeds to hear it. Only your own.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "reminder_id": {
+              "description": "The id `remind` returned.",
+              "type": "string"
+            },
+            "why": {
+              "description": "The reason you cancel it.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reminder_id",
+            "why"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "remind_cancel"
+    }
+  },
+  {
+    "doc": "Move a reminder you set to a new time. Call this when the time\nyou chose no longer fits. Only your own.\n\nReturns `status`: ok (with the new `reminder_id`), refused or\nunavailable, with a `reason` and `detail` when it is not ok.\n\nArgs:\n    reminder_id: The id `remind` returned.\n    at: The new time, ISO 8601 with an offset.\n    why: The reason you move it.\n",
+    "name": "remind_move",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "reminder_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "at"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "why"
+      }
+    ],
+    "tool_spec": {
+      "description": "Move a reminder you set to a new time. Call this when the time\nyou chose no longer fits. Only your own.\n\nReturns `status`: ok (with the new `reminder_id`), refused or\nunavailable, with a `reason` and `detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "at": {
+              "description": "The new time, ISO 8601 with an offset.",
+              "type": "string"
+            },
+            "reminder_id": {
+              "description": "The id `remind` returned.",
+              "type": "string"
+            },
+            "why": {
+              "description": "The reason you move it.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reminder_id",
+            "at",
+            "why"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "remind_move"
+    }
+  },
+  {
+    "doc": "Revise a room's Standing: where it stands right now. Call this\nwhen what a room has settled, or is holding open, has changed. Give\nthe whole position, not a delta.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.\n\nArgs:\n    where_it_stands: The position, in a short paragraph. Required.\n    hold_open: Optional. What you are deliberately holding open.\n    i_owe: Optional. What you owe the room.\n    mode: How you came to it: `deduced` from what was said,\n        `abduced` as a best guess, `said` when it rests only on\n        your own earlier words.\n    base_revision_id: Optional. The `revision` standing_read showed\n        for this room's Standing. A stale one is refused.\n    room: Optional when the agenda is one room, required when it\n        spans several. The room, as `platform:conversation_id`,\n        which the reads block shows beside each room's label.\n    item: Optional. The agenda item this write is for, by its\n        number.\n",
+    "name": "standing_revise",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "where_it_stands"
+      },
+      {
+        "annotation": "'str | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "hold_open"
+      },
+      {
+        "annotation": "'str | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "i_owe"
+      },
+      {
+        "annotation": "\"Literal['deduced', 'abduced', 'said']\"",
+        "default": "'deduced'",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "mode"
+      },
+      {
+        "annotation": "'str | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "base_revision_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "''",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "room"
+      },
+      {
+        "annotation": "'int | None'",
+        "default": "None",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "item"
+      }
+    ],
+    "tool_spec": {
+      "description": "Revise a room's Standing: where it stands right now. Call this\nwhen what a room has settled, or is holding open, has changed. Give\nthe whole position, not a delta.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "base_revision_id": {
+              "default": null,
+              "description": "Optional. The `revision` standing_read showed\nfor this room's Standing. A stale one is refused.",
+              "type": "string"
+            },
+            "hold_open": {
+              "default": null,
+              "description": "Optional. What you are deliberately holding open.",
+              "type": "string"
+            },
+            "i_owe": {
+              "default": null,
+              "description": "Optional. What you owe the room.",
+              "type": "string"
+            },
+            "item": {
+              "default": null,
+              "description": "Optional. The agenda item this write is for, by its\nnumber.",
+              "type": "integer"
+            },
+            "mode": {
+              "default": "deduced",
+              "description": "How you came to it: `deduced` from what was said,\n`abduced` as a best guess, `said` when it rests only on\nyour own earlier words.",
+              "enum": [
+                "abduced",
+                "deduced",
+                "said"
+              ],
+              "type": "string"
+            },
+            "room": {
+              "default": "",
+              "description": "Optional when the agenda is one room, required when it\nspans several. The room, as `platform:conversation_id`,\nwhich the reads block shows beside each room's label.",
+              "type": "string"
+            },
+            "where_it_stands": {
+              "description": "The position, in a short paragraph. Required.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "where_it_stands"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "standing_revise"
+    }
+  },
+  {
+    "doc": "Ask for your own next look at some rows, at a time you name. Call\nthis at the end of a pass when something will be worth checking\nagain later (\"the event is at 20:00, look at 19:40\"). Nothing is\nsent: it only wakes you. A new one that shares a subject row with a\npending one replaces it.\n\nReturns `status`: ok (with the `wake_id` to move or cancel it), refused\nor unavailable, with a `reason` and `detail` when it is not ok.\n\nArgs:\n    subject_rows: The rows to look at again, at least one.\n    at: When, ISO 8601 with an offset.\n    why: The reason you ask, in a sentence.\n",
+    "name": "wake_at",
+    "signature": [
+      {
+        "annotation": "'list[str]'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "subject_rows"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "at"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "why"
+      }
+    ],
+    "tool_spec": {
+      "description": "Ask for your own next look at some rows, at a time you name. Call\nthis at the end of a pass when something will be worth checking\nagain later (\"the event is at 20:00, look at 19:40\"). Nothing is\nsent: it only wakes you. A new one that shares a subject row with a\npending one replaces it.\n\nReturns `status`: ok (with the `wake_id` to move or cancel it), refused\nor unavailable, with a `reason` and `detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "at": {
+              "description": "When, ISO 8601 with an offset.",
+              "type": "string"
+            },
+            "subject_rows": {
+              "description": "The rows to look at again, at least one.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "why": {
+              "description": "The reason you ask, in a sentence.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "subject_rows",
+            "at",
+            "why"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "wake_at"
+    }
+  },
+  {
+    "doc": "Cancel a self-wake you set. Call this when there is no longer\nanything to look at. It will not wake you.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.\n\nArgs:\n    wake_id: The id `wake_at` returned.\n    why: The reason you cancel it.\n",
+    "name": "wake_cancel",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "wake_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "why"
+      }
+    ],
+    "tool_spec": {
+      "description": "Cancel a self-wake you set. Call this when there is no longer\nanything to look at. It will not wake you.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "wake_id": {
+              "description": "The id `wake_at` returned.",
+              "type": "string"
+            },
+            "why": {
+              "description": "The reason you cancel it.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "wake_id",
+            "why"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "wake_cancel"
+    }
+  },
+  {
+    "doc": "Move a self-wake you set to a new time. Call this when the time\nyou chose no longer fits. The old time no longer wakes you.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.\n\nArgs:\n    wake_id: The id `wake_at` returned.\n    at: The new time, ISO 8601 with an offset.\n    why: The reason you move it.\n",
+    "name": "wake_move",
+    "signature": [
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "wake_id"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "at"
+      },
+      {
+        "annotation": "'str'",
+        "default": "<class 'inspect._empty'>",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "why"
+      }
+    ],
+    "tool_spec": {
+      "description": "Move a self-wake you set to a new time. Call this when the time\nyou chose no longer fits. The old time no longer wakes you.\n\nReturns `status`: ok, refused or unavailable, with a `reason` and\n`detail` when it is not ok.",
+      "inputSchema": {
+        "json": {
+          "properties": {
+            "at": {
+              "description": "The new time, ISO 8601 with an offset.",
+              "type": "string"
+            },
+            "wake_id": {
+              "description": "The id `wake_at` returned.",
+              "type": "string"
+            },
+            "why": {
+              "description": "The reason you move it.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "wake_id",
+            "at",
+            "why"
+          ],
+          "type": "object"
+        }
+      },
+      "name": "wake_move"
+    }
+  }
+]

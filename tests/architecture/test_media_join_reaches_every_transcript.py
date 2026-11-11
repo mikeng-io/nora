@@ -516,7 +516,7 @@ def test_the_join_is_constructed_exactly_once() -> None:
     """ONE instance for the process. Per-builder copies would each be a chance to
     disagree about what a picture shows, with their own render bounds and
     screens."""
-    composition = _source("nora/app/composition.py")
+    composition = _source("nora/media/wire.py")
     assert composition.count("MediaJoin(") == 1, (
         "the composition root builds more than one MediaJoin; every consumer "
         "must hold the same instance"
@@ -539,13 +539,13 @@ def test_the_screen_is_injected_rather_than_imported_by_the_join() -> None:
                 "nora.domain.media_join imports from nora.agent; the note tier "
                 "cannot reach that layer, so the screen must stay injected"
             )
-    assert "MediaJoin(" in _source("nora/app/composition.py")
+    assert "MediaJoin(" in _source("nora/media/wire.py")
     # By AST, not substring. `"screen=scan_identifiers" in source` is satisfied
     # by the words appearing ANYWHERE — including in a comment — so replacing
     # the screen with `lambda text: text` and mentioning the old name in the
     # line above would keep this green while every model-authored description
     # reached the prompts unscreened.
-    tree = ast.parse(_source("nora/app/composition.py"))
+    tree = ast.parse(_source("nora/media/wire.py"))
     screened = any(
         isinstance(node, ast.Call)
         and getattr(node.func, "id", None) == "MediaJoin"

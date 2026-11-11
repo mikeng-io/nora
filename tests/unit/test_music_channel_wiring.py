@@ -3,7 +3,7 @@
 Both ENDS are tested elsewhere — `tests/test_policy.py` pins
 `Policy.music_channel_for` and `tests/unit/test_music_notify.py` pins
 `make_notify` — and this file covers the four hops that connect them
-(`composition._music_channel_of` → `AdapterRegistry.from_config` →
+(`_music_channel_of` → `AdapterRegistry.from_config` →
 `DiscordAdapter` → `music_commands.register` / `resume_persisted_sessions`,
 and separately `DiscordMusicToolBridge`).
 
@@ -20,7 +20,7 @@ import inspect
 
 import pytest
 
-from nora.app.composition import _music_channel_of
+from nora.app.composition_helpers import _music_channel_of
 from nora.platform.discord import music_commands
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.music_notify import no_music_channel

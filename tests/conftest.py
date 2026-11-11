@@ -237,7 +237,7 @@ def rustfs_container() -> Iterator[DockerContainer]:
 @pytest.fixture(scope="session")
 def rustfs_client(rustfs_container: DockerContainer) -> Any:
     """A `boto3` S3 client against the session's `rustfs_container` — the same
-    client shape `nora.app.composition._build_blob_store` constructs, so a
+    client shape `nora.app._build_blob_store` constructs, so a
     test using this fixture is exercising the real wire protocol, not an
     approximation of it."""
     return boto3.client(

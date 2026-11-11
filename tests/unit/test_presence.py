@@ -16,7 +16,7 @@ from aiohttp.test_utils import TestServer
 
 import nora.agent.prefill as prefill
 from nora.agent.prefill import _BLOCKS, build_prefill
-from nora.app.composition import _presence_reader
+from nora.app.composition_helpers import _presence_reader
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.domain.ports import AdapterHealth
 from nora.domain.self_presence import Presence, PresenceRoom
