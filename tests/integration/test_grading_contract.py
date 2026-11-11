@@ -423,33 +423,9 @@ def test_scenario_binding_matches_actual_transport_without_trusting_work_metadat
         contract.memory_reference("1", {**actual, "agenda": "Different shown context"})
 
 
-@pytest.mark.parametrize("drift", [False, True])
-async def test_real_replay_preflight_refuses_cohort_drift_before_writer(
-        tmp_path, monkeypatch, drift):
-    from tests.unit.memory_graph_env import generated_replay_environment
-    env = generated_replay_environment(tmp_path, monkeypatch)
-    monkeypatch.setattr(spike, "evaluation_export_for", lambda _: None)
-    env.args.config.write_text("# generated configuration\n")
-    attach_replay_contract(env.args, tmp_path, env.runner.inspect.return_value, wakes=[
-        {"id": 1, "at_ms": 1, "strata": ["text"]},
-        {"id": 2, "at_ms": 2, "strata": ["attachment"]}])
-    if drift:
-        path = env.args.grading_contract
-        data = json.loads(path.read_text())
-        data["sample_sha256"] = "b" * 64
-        path.write_text(json.dumps(data))
-        env.args.grading_contract_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
-        with pytest.raises(EvidenceError, match="cohort differs"):
-            await spike.run(env.args)
-        env.runner.replay.assert_not_awaited()
-        env.runner.inspect.assert_not_awaited()
-    else:
-        report = await spike.run(env.args)
-        assert env.runner.replay.await_count == 2
-        assert report["grading_contract"]["sha256"] == env.args.grading_contract_sha256
 
 
-@pytest.mark.parametrize("entrypoint", ["run", "run_rescore", "run_diagnostic"])
+@pytest.mark.parametrize("entrypoint", ["run_rescore", "run_diagnostic"])
 async def test_paid_spike_entrypoints_require_contract_before_export(
         tmp_path, monkeypatch, entrypoint):
     def forbidden(_):
@@ -532,17 +508,6 @@ def test_standard_cli_does_not_ignore_contract_on_listing(tmp_path, monkeypatch)
     assert exc.value.code == 2
 
 
-def test_replay_cli_explains_missing_contract_before_any_dispatch(tmp_path, monkeypatch, capsys):
-    def forbidden(_):
-        pytest.fail("missing contract reached export setup")
-    monkeypatch.setattr(spike, "evaluation_export_for", forbidden)
-    monkeypatch.setattr("sys.argv", [
-        "memory_graph_spike", "--config", "generated.toml", "--output", str(tmp_path / "out"),
-        "--policy", "generated-policy.toml", "--identity", "generated-identity.toml",
-        "--database-url", "postgresql+asyncpg://127.0.0.1:9/generated", "--snapshot"])
-    assert spike.main() == 2
-    result = json.loads(capsys.readouterr().out)
-    assert result["status"] == "ERROR" and "requires --grading-contract" in result["reason"]
 
 
 @pytest.mark.parametrize("outside_proof", [False, True])
@@ -617,101 +582,3 @@ async def test_fixed_coverage_wire_labels_sparse_saved_and_read_indices(
     assert exchanges == original_exchanges
 
 
-@pytest.mark.parametrize("failure", [
-    "arguments", "no_retry", "unrecovered_after_success", "legacy", "coerced_runtime",
-    "returned_error",
-])
-async def test_replay_recovers_only_proven_predispatch_argument_failures(
-        tmp_path, monkeypatch, failure):
-    import contextvars
-
-    from opentelemetry import context
-    from pydantic import TypeAdapter, ValidationError
-    from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent
-
-    from nora.agent.ports import ToolSpec, adapt
-    from nora.agent.replay_capture import ReplayHooks
-    from nora.agent.structured import build_structured_model
-    from nora.obs.tracing import EVAL_EVIDENCE_KEY
-    from nora.subject.eval_evidence import current
-    from tests.unit.memory_graph_env import generated_replay_environment
-
-    env = generated_replay_environment(tmp_path, monkeypatch)
-    monkeypatch.setattr(spike, "evaluation_export_for", lambda _: None)
-    env.args.config.write_text("# generated configuration\n")
-    attach_replay_contract(env.args, tmp_path, env.runner.inspect.return_value, wakes=[
-        {"id": 1, "at_ms": 1, "strata": ["text"]},
-        {"id": 2, "at_ms": 2, "strata": ["attachment"]}])
-    effects = []
-
-    async def memory_propose(items: list[int], statements: list[dict[str, str]]) -> dict:
-        effects.append(items)
-        mode = statements[0]["what"]
-        if mode == "coerced_runtime":
-            try:
-                TypeAdapter(int).validate_python("generated-invalid-integer")
-            except ValidationError as error:
-                raise ValueError("generated handler failed after effect") from error
-        if mode == "returned_error":
-            return {"status": "error", "content": [{"text": "Generated opaque failure"}]}
-        return {"status": "ok", "admitted": items, "refused": [],
-                "statements": [{"index": 0, "status": "saved"}]}
-
-    tool = adapt(ToolSpec(name="memory_propose", description="", schema={}, call=memory_propose))
-    model = build_structured_model(base_url="http://127.0.0.1:1", api_key="generated-key",
-                                   model_id="generated-model", max_tokens=10, temperature=0)
-
-    async def replay(**kwargs):
-        evidence = current()
-        evidence.record("event", name="nora.session.started", attributes={"body": "{}"})
-        model.format_request([{"role": "user", "content": [{"text": "generated"}]}],
-                             [tool.tool_spec], "generated")
-        evidence.record("transport_started")
-        evidence.record("transport_finished", reasoning_availability="absent")
-        hook = ReplayHooks()
-        bad = {"items": "not-a-list", "statements": [{"what": "generated"}]}
-        if failure in {"coerced_runtime", "returned_error"}:
-            bad = {"items": ["0"] if failure == "coerced_runtime" else [0],
-                   "statements": [{"what": failure}]}
-        good = {"items": [0], "statements": [{"what": "generated"}]}
-        calls = ((bad,) if failure == "no_retry" else
-                 (good, bad) if failure == "unrecovered_after_success" else (bad, good))
-        for index, args in enumerate(calls):
-            use = {"toolUseId": f"generated-{index}", "name": "memory_propose", "input": args}
-            contextvars.copy_context().run(hook.capture, BeforeToolCallEvent(
-                agent=SimpleNamespace(), selected_tool=tool, tool_use=use, invocation_state={}))
-            events = [event async for event in tool.stream(use, {})]
-            terminal = events[-1]
-            after = AfterToolCallEvent(
-                agent=SimpleNamespace(), selected_tool=tool, tool_use=use, invocation_state={},
-                result=terminal.tool_result, exception=terminal.exception)
-            if failure == "legacy" and index == 0:
-                def legacy_record(kind, **payload):
-                    payload.pop("argument_validation", None)
-                    evidence.record(kind, **payload)
-                token = context.attach(context.set_value(EVAL_EVIDENCE_KEY, legacy_record))
-                try:
-                    contextvars.copy_context().run(hook.capture, after)
-                finally:
-                    context.detach(token)
-            else:
-                contextvars.copy_context().run(hook.capture, after)
-        evidence.record("event", name="nora.session.terminal", attributes={"body": "{}"})
-        return SimpleNamespace(session_id="generated-session", stop_reason="end_turn")
-
-    env.runner.replay.side_effect = replay
-    report = await spike.run(env.args)
-    batches = list(report["cost_per_batch"]["batches"].values())
-    assert len(batches) == 2
-    expected_effects = (0 if failure == "no_retry" else
-                        2 if failure in {"arguments", "legacy", "unrecovered_after_success"} else 4)
-    assert len(effects) == expected_effects
-    assert all(items == [0] for items in effects)  # SDK coercion can precede a handler error.
-    if failure == "arguments":
-        assert all(b["status"] == "PASS" and b["proposal_argument_errors"] == 1 for b in batches)
-        assert spike.smoke_fact_support.await_count == 2
-    else:
-        argument_errors = 1 if failure in {"no_retry", "unrecovered_after_success"} else 0
-        assert all(b["status"] == "ERROR" and b["proposal_argument_errors"] == argument_errors
-                   for b in batches)
-        assert spike.smoke_fact_support.await_count == 0

@@ -172,7 +172,7 @@
  },
  "nora/agent/dreamer.py": {
   "comment_blocks": 57,
-  "file_lines": 2201,
+  "file_lines": 2190,
   "functions": {
    "DreamerRuntime._run_body": 310
   },
@@ -419,13 +419,13 @@
  },
  "nora/app/cognition_session.py": {
   "comment_blocks": 29,
-  "file_lines": 3527,
+  "file_lines": 3526,
   "functions": {
-   "CognitionSessionRunner.__init__": 135,
-   "CognitionSessionRunner._build_tools": 1678,
-   "CognitionSessionRunner._build_tools.remind": 224,
+   "CognitionSessionRunner.__init__": 124,
+   "CognitionSessionRunner._build_tools": 1672,
+   "CognitionSessionRunner._build_tools.remind": 222,
    "CognitionSessionRunner._run_session": 160,
-   "CognitionSessionRunner.on_wake": 196
+   "CognitionSessionRunner.on_wake": 190
   },
   "internal_docstrings": 28
  },
@@ -437,9 +437,9 @@
  },
  "nora/app/composition.py": {
   "comment_blocks": 222,
-  "file_lines": 5991,
+  "file_lines": 5985,
   "functions": {
-   "build_dependencies": 3916
+   "build_dependencies": 3911
   },
   "internal_docstrings": 30
  },
@@ -600,7 +600,7 @@
  },
  "nora/config.py": {
   "comment_blocks": 109,
-  "file_lines": 4759,
+  "file_lines": 4755,
   "internal_docstrings": 23
  },
  "nora/doctrine/loader.py": {
@@ -701,7 +701,7 @@
   "internal_docstrings": 1
  },
  "nora/domain/lessons.py": {
-  "comment_blocks": 7
+  "comment_blocks": 6
  },
  "nora/domain/lineage.py": {
   "comment_blocks": 1,
@@ -781,7 +781,7 @@
  },
  "nora/domain/ports.py": {
   "comment_blocks": 18,
-  "file_lines": 3363
+  "file_lines": 3348
  },
  "nora/domain/profile.py": {
   "comment_blocks": 4,
@@ -1560,7 +1560,7 @@
  },
  "nora/language/cognition_render.py": {
   "comment_blocks": 5,
-  "file_lines": 1044,
+  "file_lines": 1042,
   "internal_docstrings": 16
  },
  "nora/language/computer_render.py": {
@@ -1590,7 +1590,7 @@
   "internal_docstrings": 2
  },
  "nora/language/lessons.py": {
-  "internal_docstrings": 2
+  "internal_docstrings": 1
  },
  "nora/language/note_render.py": {
   "comment_blocks": 1,
@@ -2064,10 +2064,8 @@
   "internal_docstrings": 4
  },
  "scripts/memory_graph_spike.py": {
-  "comment_blocks": 1,
-  "file_lines": 1598,
+  "file_lines": 877,
   "functions": {
-   "_run": 232,
    "age_comparison": 158
   }
  },
@@ -3182,7 +3180,7 @@
  },
  "tests/unit/test_dreamer_runtime.py": {
   "comment_blocks": 17,
-  "file_lines": 2397,
+  "file_lines": 2370,
   "functions": {
    "test_every_read_only_tool_is_classified_unit_safe_or_room_scoped": 154
   },
@@ -3321,10 +3319,6 @@
   "internal_docstrings": 1
  },
  "tests/unit/test_memory_backfill.py": {
-  "internal_docstrings": 1
- },
- "tests/unit/test_memory_graph_spike.py": {
-  "file_lines": 812,
   "internal_docstrings": 1
  },
  "tests/unit/test_memory_search.py": {

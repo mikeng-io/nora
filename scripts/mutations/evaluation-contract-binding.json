@@ -21,13 +21,6 @@
     "target": "tests/integration/test_grading_contract.py::test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unscored"
   },
   {
-    "name": "the exact cohort is verified before the writer",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "            contract.verify_sample(sample_sha256, list(selected.values()))",
-    "new": "            pass",
-    "target": "tests/integration/test_grading_contract.py::test_real_replay_preflight_refuses_cohort_drift_before_writer"
-  },
-  {
     "name": "judges cannot silently replace the required units",
     "file": "scripts/memory_graph_facts.py",
     "old": "                    or {row[\"id\"] for row in rows} != expected",
@@ -54,13 +47,6 @@
     "old": "    token = active_run_budget.set(budget) if budget else None",
     "new": "    token = None",
     "target": "tests/integration/test_spike_visibility.py::test_scoring_entrypoints_share_the_measured_budget_and_persist_it"
-  },
-  {
-    "name": "normal replay replaces the failure placeholder",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "                    report.clear()\n",
-    "new": "",
-    "target": "tests/integration/test_spike_visibility.py::test_memory_graph_replay_exports_writer_and_judges[False]"
   },
   {
     "name": "final budget trace survives budget file failure",
