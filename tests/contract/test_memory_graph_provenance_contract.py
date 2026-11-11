@@ -13,6 +13,7 @@ from tests.contract.test_memory_graph_contract import (
     REL,
     SOURCE,
 )
+from tests.contract.test_memory_graph_contract import _graph_db as _graph_db
 from tests.contract.test_memory_graph_contract import (
     graph as graph,
 )

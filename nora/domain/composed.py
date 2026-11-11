@@ -10,6 +10,7 @@ from types import FrameType
 COMPOSERS = frozenset(
     {
         "nora.language.register_render:render_register",
+        "nora.language.cognition_render:_grounded_blocks",
         "nora.language.cognition_render:_item_blocks",
         "nora.language.lesson_render:lesson_evidence_blocks",
         "nora.language.cognition_render:render_agenda",

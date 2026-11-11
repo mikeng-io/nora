@@ -164,7 +164,7 @@ def test_agenda_is_a_dataclass_not_a_mutable_list():
 
     item = AgendaItem("message", HOME, "generated", (1,), (), 0.0)
     with pytest.raises(dataclasses.FrozenInstanceError):
-        item.strike = 5  # type: ignore[misc]
+        item.surprise = 5  # type: ignore[misc]
 
 
 def test_deferred_ids_are_sorted():
