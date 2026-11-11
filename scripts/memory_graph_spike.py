@@ -454,9 +454,9 @@ async def age_comparison(
             server = int((await conn.execute(sa.text("SHOW server_version_num"))).scalar_one())
             if version != "1.8.0" or server // 10000 != 18:
                 raise ValueError("AGE 1.8.0 on Postgres 18 required")
-            for number, q in enumerate(questions):
+            for n, q in enumerate(questions):
                 # One fresh graph per CODE-selected unit/person scope; model text cannot name it.
-                graph = "spike_" + hashlib.sha256((digest + str(number)).encode()).hexdigest()[:24]
+                graph = "spike_" + hashlib.sha256((digest + str(n)).encode()).hexdigest()[:24]
                 await conn.execute(sa.text("SELECT create_graph(:name)"), {"name": graph})
                 scoped = scope_edges(edges, q)
                 keys = sorted(
@@ -494,9 +494,9 @@ async def age_comparison(
                 start = perf_counter()
                 answer = sorted(await cypher(conn, graph, walk_query(q["relations"])))
                 age_ms.append((perf_counter() - start) * 1000)
-                receipts.append({"question": number, "templated_age_correct": answer == q["gold"]})
+                receipts.append({"question": n, "templated_age_correct": answer == q["gold"]})
                 # Both writers see identical CODE-generated questions, never the gold answer.
-                public_question = {k: v for k, v in q.items() if k not in {"gold", "unit", "persons"}}
+                public = {k: v for k, v in q.items() if k not in {"gold", "unit", "persons"}}
                 for arm in correct:
                     try:
                         instruction = (
@@ -509,7 +509,7 @@ async def age_comparison(
                             )
                         )
                         raw = parse_json_response(
-                            await judges.call(judges.cfg.llm.model, instruction, public_question)
+                            await judges.call(judges.cfg.llm.model, instruction, public)
                         )
                         if arm == "sql":
                             rels = raw["relations"]
@@ -524,7 +524,7 @@ async def age_comparison(
                                 await cypher(conn, graph, query.replace("$seed", json.dumps(seed)))
                             )
                         correct[arm].append("supported" if got == q["gold"] else "unsupported")
-                        receipts.append({"question": number, "arm": arm, "query": raw, "answer": got})
+                        receipts.append({"question": n, "arm": arm, "query": raw, "answer": got})
                     except Exception:  # noqa: BLE001 - fail closed without private exception text
                         correct[arm].append("ERROR")
                 await conn.execute(sa.text("SELECT drop_graph(:name, true)"), {"name": graph})

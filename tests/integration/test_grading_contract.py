@@ -353,8 +353,10 @@ async def test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unsco
     monkeypatch.setattr(spike, "build_structured_model", lambda **kwargs: original(
         **kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond))))
     from scripts import memory_graph_facts
-    monkeypatch.setattr(memory_graph_facts, "_FACT_SUPPORT_INSTRUCTION", "CHANGED_CANDIDATE_SUPPORT")
-    monkeypatch.setattr(memory_graph_facts, "_MISSED_FACT_INSTRUCTION", "CHANGED_CANDIDATE_COVERAGE")
+    monkeypatch.setattr(
+        memory_graph_facts, "_FACT_SUPPORT_INSTRUCTION", "CHANGED_CANDIDATE_SUPPORT")
+    monkeypatch.setattr(
+        memory_graph_facts, "_MISSED_FACT_INSTRUCTION", "CHANGED_CANDIDATE_COVERAGE")
     judges = spike.Judges(SimpleNamespace(llm=SimpleNamespace(timeout_seconds=5)),
                           ["generated-a", "generated-b"], Path("generated.toml"))
     result = await spike.smoke_fact_support(judges, inspection, [exchange],
