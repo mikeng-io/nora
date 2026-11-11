@@ -71,6 +71,27 @@ _NOT_A_BUILDER = {
         "hands rows straight back to its caller (context.py or fire.py), "
         "which is already a listed builder and joins them itself"
     ),
+    # ADR 0037 split `nora/agent/tools.py` into per-area modules; the reads
+    # below moved with their tools. `_transcript_messages` is the shared renderer:
+    # callers join the rows through `deps.media_join` BEFORE it runs.
+    "nora/agent/toolkit/transcript.py": (
+        "the shared `_transcript_messages` renderer; every caller's rows are "
+        "already joined through the injected MediaJoin before it runs"
+    ),
+    # `generate_image`'s `_held_media` custody check reads rows for their
+    # `media_json` markers only — no message body reaches a model.
+    "nora/media/adapters/tools/create.py": (
+        "reads rows for media_json custody markers (reference images), hands "
+        "no message body to a model"
+    ),
+    # `recall_lookups` reads the tool-call log, not message rows.
+    "nora/memory/adapters/tools/meta.py": (
+        "reads the tool-call log store, not message bodies"
+    ),
+    # `subagent_list` reads the subagent job store, not message rows.
+    "nora/subagents/adapters/tools.py": (
+        "reads the subagent job store, not message bodies"
+    ),
 }
 
 #: Modules that BUILD a transcript and that `_discovered_readers` structurally
@@ -252,7 +273,10 @@ PATHS = {
     "nora/app/runtime.py": "dreamer",
     "nora/app/cognition_context.py": "cognition",
     "nora/app/adoption.py": "adoption",
-    "nora/agent/tools.py": "load_transcript",
+    # The conversation tools' record_query hit render (`query.py`); record.py/
+    # rooms.py share the label — the discovery sees only the toolkit's
+    # `_transcript_messages` store read (in `_NOT_A_BUILDER` above).
+    "nora/conversation/adapters/tools/query.py": "load_transcript",
     "nora/ingest/relevance_gate.py": "relevance_gate",
     # The eval seam's dream pass. Its OWN label: this
     # test's control refuses a reused one, and it is right to — nothing here is
@@ -292,8 +316,19 @@ def test_every_transcript_builder_awaits_the_shared_join(rel: str) -> None:
         and any(alias.name == "MediaJoin" for alias in node.names)
         for node in ast.walk(tree)
     )
-    assert imports_join, (
-        f"{rel} builds a transcript for a model but does not import the "
+    # The tool adapters (ADR 0037) hold the shared join as an injected
+    # `media_join` attribute (ToolDeps) rather than an import — `X.media_join
+    # .enrich` is the same instance.
+    injected_join = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "enrich"
+        and isinstance(node.func.value, ast.Attribute)
+        and node.func.value.attr == "media_join"
+        for node in ast.walk(tree)
+    )
+    assert imports_join or injected_join, (
+        f"{rel} builds a transcript for a model but does not use the "
         f"shared MediaJoin. Either it joins the media or it renders bare "
         f"handles where master rendered the description."
     )

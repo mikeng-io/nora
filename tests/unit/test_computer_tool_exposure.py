@@ -19,10 +19,10 @@ from datetime import UTC, datetime
 
 import pytest
 
+from nora.agent.catalog.groups import COMPUTER_TOOLS, LOADER_TOOL
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.surface import load_onto
-from nora.agent.tools import COMPUTER_TOOLS, LOADER_TOOL
 from nora.app.computer_queue import ComputerAdmission
 from nora.domain.computer import (
     ComputerToolSettings,

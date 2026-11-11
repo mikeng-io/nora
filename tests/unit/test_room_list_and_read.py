@@ -20,8 +20,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.catalog.groups import HOT_TOOLS
 from nora.agent.room import Room
-from nora.agent.tools import HOT_TOOLS, NATIVE_TOOLS, build_tools
+from nora.agent.tools import build_tools
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import AdapterHealth
 from nora.engagement.self_presence import PresenceReader

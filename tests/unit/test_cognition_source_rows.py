@@ -142,7 +142,7 @@ async def wake(budget=None, seed=None, historical=False, reaction=False, reactio
 
 @pytest.mark.parametrize("historical", [False, True])
 async def test_reaction_cannot_replace_message_author_or_grant_reactor_authority(historical):
-    from nora.language.cognition_render import parse_rendered_agenda, rendered_new_sources
+    from nora.language.cognition_parse import parse_rendered_agenda, rendered_new_sources
     from scripts.memory_graph_spike import evidence_exchanges
 
     state, prompt = await wake(historical=historical, reaction=True)
@@ -180,7 +180,7 @@ async def test_reaction_cannot_replace_message_author_or_grant_reactor_authority
 
 
 async def test_reaction_alone_neither_makes_target_citable_nor_shows_reactor():
-    from nora.language.cognition_render import rendered_new_sources
+    from nora.language.cognition_parse import rendered_new_sources
 
     state, prompt = await wake(historical=True, reaction=True, reaction_only=True)
     assert "101" not in state.memory_items[0].snapshot["source_keys"]
@@ -510,7 +510,7 @@ async def test_a_person_never_shown_is_still_unshown():
 async def test_api_punctuation_quotes_keep_custody_at_every_admission_gate(
         monkeypatch, kind, invented_tail):
     from nora.agent.structured import build_structured_model
-    from nora.language.cognition_render import parse_rendered_agenda
+    from nora.language.cognition_parse import parse_rendered_agenda
 
     raw = "Generated A likes Generated work — spare copy available. 準備——可以。"
     monkeypatch.setitem(globals(), "NOTICE", raw)

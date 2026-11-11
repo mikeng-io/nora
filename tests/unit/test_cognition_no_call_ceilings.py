@@ -16,9 +16,10 @@ from dataclasses import replace
 
 from nora.agent import factory
 from nora.agent.dream_guard import DreamGuard
-from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
+from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import AdaptorBudget
 from nora.obs.metrics import Metrics
+from tests.fakes import dreamer_runtime_for
 from tests.unit.test_dream_memory_budget import (
     BUDGET,
     _Adaptor,
@@ -40,10 +41,13 @@ class _Models:
         return self._model
 
 
-def _runner(model: _ScriptedModel, metrics: Metrics) -> LiveCognitionAgentRunner:
-    return LiveCognitionAgentRunner(
-        models=_Models(model), metrics=metrics,
-        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+def _runner(model: _ScriptedModel, metrics: Metrics) -> DreamerAgentRunner:
+    return DreamerAgentRunner(
+        runtime=dreamer_runtime_for(
+            models=_Models(model), metrics=metrics,
+            retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+        ),
+        metrics=metrics,
         param_names={"about": frozenset({"person"}), "note_read": frozenset({"person"})},
     )
 

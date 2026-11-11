@@ -71,6 +71,7 @@ from nora.domain.reminders import (
     plan_successor,
     proactive_subject,
 )
+from nora.domain.ticks import due_tick_of_at, tick_of_at
 from nora.infra.sql.schema import REMINDERS
 
 # PostgreSQL SQLSTATE 23505, unique_violation. Matched EXACTLY rather than
@@ -83,7 +84,7 @@ _PG_UNIQUE_VIOLATION = "23505"
 log = logging.getLogger("nora.infra.sql.reminders")
 
 
-def _row_to_series(r: Row[Any]) -> Series | None:
+def _row_to_series(r: Row[*tuple[Any, ...]]) -> Series | None:
     """The seven recurrence columns, back as the one optional value object.
 
     `recurrence = 'none'` is the ONLY thing read to decide: the all-or-nothing
@@ -109,7 +110,7 @@ def _row_to_series(r: Row[Any]) -> Series | None:
     )
 
 
-def _row_to_reminder(r: Row[Any]) -> Reminder:
+def _row_to_reminder(r: Row[*tuple[Any, ...]]) -> Reminder:
     """A row, normalised on the way OUT.
 
     `timestamptz` already comes back UTC-aware from asyncpg, so
@@ -156,6 +157,9 @@ def _insert_values(row: Reminder) -> dict[str, Any]:
         "text": row.text,
         "created_at": row.created_at,
         "due_at": row.due_at,
+        # The writable eligibility authority (node 18): every writer names
+        # the tick its instant means; `ck_reminders_due_tick` binds it.
+        "due_tick": due_tick_of_at(row.due_at),
         "state": row.state.value,
         "fired_at": row.fired_at,
         "outcome": row.outcome,
@@ -337,7 +341,15 @@ class SqlReminderStore:
         return None if row is None else _row_to_reminder(row)
 
     async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
-        """PENDING rows whose `due_at` has passed, `due_at` then `id` ascending.
+        """PENDING rows whose `due_tick` has passed, `due_at` then `id` ascending.
+
+        Eligibility is the tick (`nora.domain.ticks`): a row is due when its
+        `due_tick` — `ceil(due_at)`, CHECK-bound — is at or under the current
+        tick `floor(now)`. A reminder due at :30 of a minute fires at the next
+        minute boundary, never early; one due exactly on the boundary is due
+        in its own tick. `due_at` remains the requested instant the answer
+        orders by (monotone in the tick, so the order is unchanged) and the
+        audit field.
 
         `limit` is the tick's batch size and is always positive in production,
         but the guard is not optional: unguarded, `LIMIT -1` raises
@@ -356,7 +368,7 @@ class SqlReminderStore:
             sa.select(REMINDERS)
             .where(
                 REMINDERS.c.state == ReminderState.PENDING.value,
-                REMINDERS.c.due_at <= ensure_utc(now, field="now"),
+                REMINDERS.c.due_tick <= tick_of_at(ensure_utc(now, field="now")),
             )
             .order_by(REMINDERS.c.due_at.asc(), REMINDERS.c.id.asc())
             .limit(check_limit(limit))

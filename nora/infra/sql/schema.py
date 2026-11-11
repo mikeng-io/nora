@@ -1010,6 +1010,24 @@ REMINDERS = sa.Table(
     sa.Column("text", sa.Text, nullable=False),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("due_at", sa.DateTime(timezone=True), nullable=False),
+    # The eligibility authority (node 18, `nora.domain.ticks`): the first
+    # minute tick at or after `due_at` — `ceil(epoch_ms / 60_000)` — the ONE
+    # writable deadline the `due()` predicate reads. `due_at` stays the
+    # requested instant — provenance, and the ordering the answer returns in
+    # — never a second deadline: the CHECK binds the tick to the instant, so
+    # a writer names the tick it means and can still never let the two
+    # disagree (a derived GENERATED column would make restores unable to
+    # write it — the contract wants it stored).
+    sa.Column("due_tick", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        # `extract(epoch from timestamptz)` is STABLE; the epoch's interval
+        # arithmetic is IMMUTABLE, so the same microseconds come through
+        # `due_at - epoch` — and CHECK requires only immutability.
+        "due_tick IS NOT DISTINCT FROM "
+        "((ceil((extract(epoch from (due_at - '1970-01-01 00:00:00+00'::timestamptz)) "
+        "* 1000) / 60000))::bigint)",
+        name="ck_reminders_due_tick",
+    ),
     sa.Column("state", sa.Text, nullable=False),
     # NULL until the row fires, and NULL forever on one that is cancelled.
     sa.Column("fired_at", sa.DateTime(timezone=True), nullable=True),
@@ -1092,6 +1110,15 @@ REMINDERS = sa.Table(
 # because the CHECK constraint on the same table is.
 IDX_REMINDERS_DUE = sa.Index(
     "idx_reminders_due", REMINDERS.c.state, REMINDERS.c.due_at
+)
+
+#: The due predicate's index (node 18): `state = 'pending' AND due_tick <=
+#: current_tick` is what the heartbeat's `due()` reads every tick, so the
+#: eligible set is a prefix scan over it rather than a walk of every pending
+#: row. `idx_reminders_due` stays for the pending-ordering reads
+#: (`all_pending`, `pending_for`), whose order `due_at` still carries.
+IDX_REMINDERS_DUE_TICK = sa.Index(
+    "idx_reminders_due_tick", REMINDERS.c.state, REMINDERS.c.due_tick
 )
 
 #: ONE OPEN PROACTIVE ROW PER NOTE (migration 0064). Without it nothing below
@@ -1315,6 +1342,28 @@ TOOL_CALL_LOG = sa.Table(
 IDX_TOOL_CALL_LOG_CONV_TS = sa.Index(
     "idx_tool_call_log_conv_ts", TOOL_CALL_LOG.c.conversation_id,
     sa.text("created_at DESC"),
+)
+
+
+# `fetched_pages` — one conversation's materialized copy of one url. `web_fetch`
+# fetches a page once, seals the text into the shared `blob_store` (rustfs) and
+# writes this index row; `offset`/`about` reads then answer from the stored copy,
+# never a second provider call. The composite key IS the dedup. `provenance`
+# carries the provider-side facts the served slices keep (`provider`,
+# `saved_copy`, `truncated`, `images`). Its own namespace: a page's words are a
+# stranger's, so fetched text never indexes into memory or documents.
+FETCHED_PAGES = sa.Table(
+    "fetched_pages",
+    METADATA,
+    sa.Column("conversation_id", sa.Text, primary_key=True),
+    sa.Column("url", sa.Text, primary_key=True),
+    sa.Column("blob_key", sa.Text, nullable=False),
+    sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column(
+        "provenance", pg.JSONB, nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    ),
 )
 
 
@@ -3523,6 +3572,22 @@ STIMULUS = sa.Table(
     sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("at_ms", sa.BigInteger, nullable=False),
     sa.Column("due_ms", sa.BigInteger),
+    # The due TICK of `due_ms` (`nora.domain.ticks`): `ceil(due_ms / 60_000)`
+    # — the ONE writable deadline the pending read's due branch ranges over;
+    # `due_ms` stays the requested instant (provenance), never a second
+    # deadline: the CHECK binds them, so a writer names the tick it means
+    # and can still never let the two disagree. The ceiling is spelled
+    # `due_ms / 60000 + (mod(due_ms, 60000) > 0)`, not `(due_ms + 59999) /
+    # 60000`: Postgres integer division truncates toward zero, so the naive
+    # spelling gives the wrong tick for negative `due_ms` (a pre-epoch
+    # deadline) and can overflow for very large ones. NULL when `due_ms`
+    # is — an undated stimulus is pending once recorded.
+    sa.Column("due_tick", sa.BigInteger),
+    sa.CheckConstraint(
+        "due_tick IS NOT DISTINCT FROM (CASE WHEN due_ms IS NULL THEN NULL "
+        "ELSE (due_ms / 60000) + CASE WHEN mod(due_ms, 60000) > 0 THEN 1 ELSE 0 END END)",
+        name="ck_stimulus_due_tick",
+    ),
     # System time (`_recorded_at`). The stimulus store states it
     # from the same clock the wake arithmetic runs on; the default covers a
     # writer that does not.
@@ -3543,8 +3608,8 @@ IDX_STIMULUS_UNIT_ID = sa.Index("idx_stimulus_unit_id", STIMULUS.c.unit, STIMULU
 #: view`): a stimulus due after the watermark's time bound; an undated one
 #: recorded after it; a unit's newest person-authored item.
 IDX_STIMULUS_UNIT_DUE = sa.Index(
-    "idx_stimulus_unit_due", STIMULUS.c.unit, STIMULUS.c.due_ms,
-    postgresql_where=STIMULUS.c.due_ms.isnot(None),
+    "idx_stimulus_unit_due", STIMULUS.c.unit, STIMULUS.c.due_tick,
+    postgresql_where=STIMULUS.c.due_tick.isnot(None),
 )
 IDX_STIMULUS_UNIT_UNDATED_RECORDED = sa.Index(
     "idx_stimulus_unit_undated_recorded", STIMULUS.c.unit, STIMULUS.c.recorded_at,
@@ -3833,6 +3898,56 @@ STIMULUS_RETRACTION = sa.Table(
 
 UQ_STIMULUS_RETRACTION_STIMULUS = sa.Index(
     "uq_stimulus_retraction_stimulus", STIMULUS_RETRACTION.c.stimulus_id, unique=True,
+)
+
+# `stimulus_claim`: the stimuli a recorded wake claimed — its `claimed_ids`,
+# one row each — the append-only fact the pending read consumes by: a stimulus
+# is consumed exactly when a wake that did not fail claimed it
+# (`nora.infra.sql.stimuli.pending_query`, the ONE probe). The wake row's
+# `detail.claimed` is the same set as provenance; this table is what the read
+# can index. Append-only, like `stimulus_retraction`.
+STIMULUS_CLAIM = sa.Table(
+    "stimulus_claim",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("stimulus_id", sa.BigInteger, nullable=False),
+    sa.Column("wake_id", sa.BigInteger, nullable=False),
+    _recorded_at(),
+)
+
+IDX_STIMULUS_CLAIM_STIMULUS = sa.Index(
+    "idx_stimulus_claim_stimulus", STIMULUS_CLAIM.c.stimulus_id,
+)
+
+IDX_STIMULUS_CLAIM_WAKE = sa.Index(
+    "idx_stimulus_claim_wake", STIMULUS_CLAIM.c.wake_id,
+)
+
+# `stimulus_pending`: the materialized "not permanently consumed" set the
+# pending read walks — one row per `(unit, mode, stimulus_id)` while the
+# stimulus can still be offered. `append` writes a row for every mode the
+# unit has seeded; `view` lazily seeds a `(unit, mode)`'s set on first read
+# (the `stimulus_id = 0` sentinel marks the seed so a fully-consumed mode
+# does not re-seed every read); a `closed` outcome deletes its wake's claims
+# and a retraction deletes the stimulus — open and failed claims keep their
+# rows, and the `stimulus_claim` probe still excludes the open ones while the
+# failed ones release. Consumed history is never visited: the read's row
+# count IS the genuine backlog, bounded by itself. Derived state — rebuilt,
+# never copied, at `snapshot_at.seed`.
+STIMULUS_PENDING = sa.Table(
+    "stimulus_pending",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("mode", sa.Text, nullable=False),
+    sa.Column("stimulus_id", sa.BigInteger, nullable=False),
+    _recorded_at(),
+)
+
+UQ_STIMULUS_PENDING = sa.Index(
+    "uq_stimulus_pending", STIMULUS_PENDING.c.unit, STIMULUS_PENDING.c.mode,
+    STIMULUS_PENDING.c.stimulus_id, unique=True,
 )
 
 SOURCE_HEALTH = sa.Table(

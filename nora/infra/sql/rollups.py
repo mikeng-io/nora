@@ -422,29 +422,29 @@ class SqlRollupStore:
             else:
                 unquoted.append((r, person, parse_mentions_json(r.mentions_json) or frozenset()))
         reactions: list[ReactionFact] = []
-        for r in reaction_rows:
-            person = subject_of.get(r.person_id)
+        for rx in reaction_rows:
+            person = subject_of.get(rx.person_id)
             if person is None or person not in members:
                 continue
-            if r.target_is_nora:
+            if rx.target_is_nora:
                 evidence.append(ResponseEvidence(
-                    send_id=r.message_id, person_id=person, ts=r.ts, kind="reaction",
+                    send_id=rx.message_id, person_id=person, ts=rx.ts, kind="reaction",
                 ))
                 continue
-            target_person = subject_of.get(r.target_person) if r.target_person else None
+            target_person = subject_of.get(rx.target_person) if rx.target_person else None
             if target_person is None:
                 continue
             reactions.append(ReactionFact(
-                id=r.id, person_id=person, target_person=target_person,
-                room=room_key(r.platform, r.conversation_id), ts=r.ts,
+                id=rx.id, person_id=person, target_person=target_person,
+                room=room_key(rx.platform, rx.conversation_id), ts=rx.ts,
             ))
         by_reply = {m.id: m for m in messages}
-        for r in edit_rows:
-            send_id = reply_to_send.get(r.message_id)
+        for ed in edit_rows:
+            send_id = reply_to_send.get(ed.message_id)
             if send_id is not None:
                 evidence.append(ResponseEvidence(
-                    send_id=send_id, person_id=by_reply[r.message_id].person_id,
-                    ts=r.ts, kind="edit",
+                    send_id=send_id, person_id=by_reply[ed.message_id].person_id,
+                    ts=ed.ts, kind="edit",
                 ))
         candidates = [
             FollowCandidate(

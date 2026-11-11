@@ -5,6 +5,11 @@
 <!-- Original outcome/scope/non-goals and revisioned acceptance source (or direct
      operator brief), then concrete changes and evidence. Amendments are explicit. -->
 
+## Architecture
+
+<!-- The design bundle this change edits (nora-design), or `none` and why: a
+     code-level change (hotfix, refactor, threshold, prompt wording, eval). -->
+
 ## Also
 
 <!-- Findings left outside this change. Delete if none. -->

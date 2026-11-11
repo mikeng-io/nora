@@ -4,9 +4,11 @@ The evaluator records would-wakes. For it to START anything — a Cognition
 session, a Dreamer adaptor, a turn, a send — it would first have to import
 something that can: the fire path, an adapter, the agent, the Dreamer
 runtime, the engagement pipeline. So the module's `nora` imports are pinned
-to the two it needs: the stimulus port and the pure wake policy. Adding any
-other is a design change that must come with the step that makes the
-evaluator live, and this test is where that change is noticed.
+to the three it needs: the stimulus port, the pure wake policy and the pure
+tick arithmetic (`nora.domain.ticks` — the due_tick eligibility clock; it
+computes and cannot act). Adding any other is a design change that must
+come with the step that makes the evaluator live, and this test is where
+that change is noticed.
 
 The behavioural half — a tick writes one shadow wake row and nothing else —
 is `tests/unit/test_wake_evaluator.py::test_a_shadow_tick_writes_a_would_wake_and_nothing_else`.
@@ -29,4 +31,6 @@ def test_the_evaluator_imports_nothing_that_acts():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module)
     nora_imports = {m for m in imported if m.startswith("nora")}
-    assert nora_imports == {"nora.domain.ports", "nora.domain.stimuli"}, nora_imports
+    assert nora_imports == {
+        "nora.domain.ports", "nora.domain.stimuli", "nora.domain.ticks",
+    }, nora_imports

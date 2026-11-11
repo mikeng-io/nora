@@ -22,7 +22,7 @@ from nora.testing.gatherings import FakeGatheringStore
 
 pytestmark = pytest.mark.asyncio
 
-# This repo's own downstream clock is +08:00 (`nora.agent.tools._HKT`,
+# This repo's own downstream clock is +08:00 (`nora.agent.toolkit.clock._HKT`,
 # `ReminderCaps.timezone` default is Asia/Hong_Kong), so an offset that is
 # NOT UTC is the realistic input, not an exotic one.
 HKT = timezone(timedelta(hours=8), "HKT")

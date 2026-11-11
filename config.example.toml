@@ -453,6 +453,10 @@ api_key_env = "GOOGLE_MAPS_API_KEY"
 [search]
 enabled = false
 provider = "tavily"              # "tavily" | "exa"
+# fetch_provider = "tavily"       # "" = same as provider; the backend web_fetch
+                                # extracts through. Tavily returns full pages
+                                # (materialized into fetched_pages); Exa caps
+                                # at 10k chars and reads as truncated.
 # max_results = 5                 # at most 20
 # content_max_chars = 1500        # per-result snippet clamp
 # extract_max_chars = 3000        # fetched-page clamp
@@ -582,6 +586,7 @@ enabled = false
 # enabled = false               # one microVM per scope instead of one shared VM
 # registry = ""                 # the directory `nora-computer scope provision` writes
 # redis_url_env = "NORA_COMPUTER_REDIS_URL" # the dedicated nq:computer:* streams' Redis
+# lifecycle_socket = ""         # empty: manual VM provisioning; installed Unix controller socket enables demand
 # browser_idle_seconds = 600    # a tab idle this long expires (10 min)
 # browser_sweep_seconds = 30    # the expiry sweep's tick
 #
@@ -609,6 +614,8 @@ sources = ["google_drive"]
 client_id_env = "GOOGLE_OAUTH_CLIENT_ID"
 client_secret_env = "GOOGLE_OAUTH_CLIENT_SECRET"
 refresh_token_env = "GOOGLE_OAUTH_REFRESH_TOKEN"
+# her own Google account: the NOT_SHARED note tells the owner who to share with
+account = "nora@example.org"
 
 [subagent]
 enabled = false

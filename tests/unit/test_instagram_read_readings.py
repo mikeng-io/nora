@@ -554,7 +554,7 @@ def world(bridge, tmp_path, monkeypatch):
     identity.write_text(_IDENTITY)
     persons = load_persons(identity)
     downloads = Downloads()
-    monkeypatch.setattr("nora.agent.tools._download_media", downloads)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", downloads)
     # ffmpeg's stand-in at the seam `cut_video` calls: a 12.5 s clip, one
     # window, so a video is read WHOLE and is cacheable, as a real one is.
     monkeypatch.setattr(_preprocess, "_run_video", _one_window_clip)

@@ -23,7 +23,7 @@
   {
     "name": "the scope lifecycle events join the closed vocabulary",
     "file": "deploy/computer/lifecycle_event.py",
-    "old": "    \"scope_create\", \"scope_provision\", \"scope_computerd_start\", \"scope_observe\",\n    \"scope_manifest\", \"scope_verify\", \"scope_backup\", \"scope_restore\",\n    \"scope_revoke\",\n",
+    "old": "    \"scope_create\", \"scope_provision\", \"scope_computerd_start\", \"scope_observe\",\n    \"scope_manifest\", \"scope_verify\", \"scope_backup\", \"scope_restore\",\n    \"scope_revoke\", \"scope_start\", \"scope_stop\", \"scope_service_start\",\n",
     "new": "",
     "target": "tests/unit/test_lifecycle_event.py::test_every_event_the_script_records_is_in_the_vocabulary"
   },

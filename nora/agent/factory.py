@@ -28,8 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from strands import Agent, ModelRetryStrategy
 from strands.agent.conversation_manager import (
     NullConversationManager,
@@ -71,7 +70,7 @@ RETRY_BACKOFF_FRACTION = 0.25
 
 
 def create_client(
-    *, base_url: str, api_key: str, http_client: httpx.AsyncClient | None = None,
+    *, base_url: str, api_key: str, http_client: DefaultAsyncHttpxClient | None = None,
 ) -> AsyncOpenAI:
     """`http_client` is the transport seam for an endpoint that wants something
     on EVERY request that the SDK does not send, e.g. OpenCode Go's mandatory
@@ -746,7 +745,7 @@ async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limi
     """Run one turn and return Strands' `AgentResult`, `stop_reason` included.
 
     The return value must not be dropped (R-23). When one of `limits`' three caps
-    binds, Strands' `_check_limits` yields an `EventLoopStopEvent` carrying
+    binds, Strands' limit check (`_reached_own_limit`) yields an `EventLoopStopEvent` carrying
     `stop_reason="limit_total_tokens"` (or `limit_turns` / `limit_output_tokens`)
     and returns normally: no exception, no log line, no warning anywhere in the
     SDK. `AgentResult.stop_reason` is the only channel that says a turn was cut
@@ -842,10 +841,8 @@ async def draft_from_exhausted_loop(
     only on this `agent`.
 
     A second `invoke_async` is not instantly re-cut: Strands' caps are
-    per-invocation. `_check_limits` reads
-    `event_loop_metrics.latest_agent_invocation`, documented in the SDK as
-    "scoped to the current invocation so caps don't fire prematurely on the
-    second invoke against a reused agent". So this call gets a fresh budget.
+    per request: usage starts from zero on each top-level call
+    (`strands.types.agent.Limits`). So this call gets a fresh budget.
     `limits` is still passed, since an unbounded call on a turn that just proved
     it can run away is not acceptable.
 
@@ -905,9 +902,8 @@ def remaining_limits(agent: Agent, limits: dict) -> dict | None:
     second `invoke_async` on the same agent starts from zero. A continuation that
     must count against the SAME turn's ceilings (the summons' one follow-up,
     `nora.app.agent_runner.LiveAgentRunner.invoke`'s `follow_up`) is therefore
-    handed the remainder, read off the metrics `_check_limits` reads
-    (`latest_agent_invocation`: its cycle count and its
-    `outputTokens`/`totalTokens`). A cap absent from `limits` stays absent.
+    handed the remainder, read off `event_loop_metrics.latest_agent_invocation`
+    (its cycle count and its `outputTokens`/`totalTokens`). A cap absent from `limits` stays absent.
     Fail-closed: metrics the SDK did not keep read as None, never as a full
     fresh budget."""
     invocation = getattr(

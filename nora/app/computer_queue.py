@@ -384,6 +384,30 @@ class SegmentRegistry:
         return self._spill()
 
 
+async def _lifecycle_work(lifecycle: Any, task: ComputerTask,
+                          work: Awaitable[Mapping[str, Any]]) -> Mapping[str, Any]:
+    """Both executor entry points share this boundary; observations never enter."""
+    if lifecycle is None or task.kind == "maintenance":
+        return await work
+    acquired = False
+    started = False
+    try:
+        result = await lifecycle.request("acquire", task.scope, str(task.id))
+        if result.get("status") != "ok":
+            return {"status": "unavailable", "reason": result.get("reason"),
+                    "no_guest_effect": True}
+        acquired = True
+        started = True
+        return await work
+    finally:
+        if not started and hasattr(work, "close"):
+            work.close()
+        if acquired:
+            # The controller only releases after positive drain; failure leaves
+            # durable exclusion for elected recovery rather than lease expiry.
+            await asyncio.shield(lifecycle.request("release", task.scope, str(task.id)))
+
+
 class ComputerAdmission:
     def deadline_after(self, seconds: float) -> datetime:
         return self._clock() + timedelta(seconds=seconds)
@@ -394,6 +418,7 @@ class ComputerAdmission:
         executors: SegmentRegistry | None = None,
         reconcile: Callable[[str], Awaitable[str]] | None = None,
         audit: Callable[[ComputerTask, str], Awaitable[None]] | None = None,
+        lifecycle: Any = None,
     ) -> None:
         self._tasks = tasks
         self._redis = redis
@@ -404,6 +429,7 @@ class ComputerAdmission:
         # confirm a cancelled command really stopped on the guest.
         self._reconcile = reconcile
         self._audit = audit
+        self._lifecycle = lifecycle
 
     async def _note(self, task: ComputerTask, transition: str) -> None:
         if self._audit is None:
@@ -515,7 +541,7 @@ class ComputerAdmission:
         async def _run() -> None:
             token = current_segment.set(task.id)
             try:
-                reply = dict(await work)
+                reply = dict(await _lifecycle_work(self._lifecycle, task, work))
             except asyncio.CancelledError:
                 reply = {"status": "cancelled",
                          "note": "The computer task was stopped while it ran."}
@@ -829,6 +855,7 @@ class ComputerQueueRunner:
         | None = None,
         executors: SegmentRegistry | None = None,
         audit: Callable[[ComputerTask, str], Awaitable[None]] | None = None,
+        lifecycle: Any = None,
     ) -> None:
         self._tasks = tasks
         self._redis = redis
@@ -840,6 +867,7 @@ class ComputerQueueRunner:
         self._dispatch = dict(dispatch or {})
         self._executors = executors or SegmentRegistry()
         self._audit = audit
+        self._lifecycle = lifecycle
         self._watch_seconds = watch_seconds
         self._group_ready: set[str] = set()
         self._watchers: set[asyncio.Task[Any]] = set()
@@ -1143,7 +1171,7 @@ class ComputerQueueRunner:
             executor = self._dispatch[task.kind]
             token = current_segment.set(task.id)
             try:
-                reply = dict(await executor(task))
+                reply = dict(await _lifecycle_work(self._lifecycle, task, executor(task)))
             except asyncio.CancelledError:
                 reply = {"status": "cancelled",
                          "note": "The computer task was stopped while it ran."}

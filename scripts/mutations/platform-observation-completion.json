@@ -37,8 +37,8 @@
   {
     "name": "Cognition grounds delivery independently from the affected target",
     "file": "nora/app/cognition_grounding.py",
-    "old": "                event.delivered_message_id, event.target_message_id,",
-    "new": "                event.target_message_id, event.target_message_id,",
+    "old": "            for message_id in (event.delivered_message_id, event.target_message_id):",
+    "new": "            for message_id in (event.target_message_id, event.target_message_id):",
     "target": "tests/unit/test_platform_observation_wired.py::test_the_session_runner_assembles_and_consumes_an_observation_stimulus"
   },
   {
@@ -57,15 +57,15 @@
   },
   {
     "name": "typed query does not mislabel current-room data as all rooms",
-    "file": "nora/agent/tools.py",
-    "old": "        if (kind is not None or object is not None) and scope != \"this_room\":",
+    "file": "nora/conversation/adapters/tools/query.py",
+    "old": "if (c.kind is not None or c.object is not None) and c.scope != \"this_room\":",
     "new": "        if False:",
     "target": "tests/unit/test_platform_observation_wired.py::test_typed_tools_refuse_wrong_handle_kind_and_unsupported_room_scope"
   },
   {
     "name": "Discord roster result does not claim channel audience",
-    "file": "nora/agent/tools.py",
-    "old": "                if room.platform == \"discord\" else \"this conversation\"",
+    "file": "nora/people/adapters/tools.py",
+    "old": "if room.platform == \"discord\"\n                else \"this conversation\"",
     "new": "                if False else \"this conversation\"",
     "target": "tests/test_room_tools.py::test_group_members_on_discord_labels_the_guild_scope_not_the_channel"
   }

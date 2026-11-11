@@ -183,7 +183,7 @@ async def resolution_candidates(
     text = item.text.casefold()
     named = (*item.urls, *item.accounts, item.place)
     persons = frozenset(p for s in item.sources for p in s.persons)
-    resolved = []
+    resolved: list[Subgraph] = []
     # ponytail: known aliases and explicit item labels seed resolution; novel names
     # remain the model's memory tools' job until the recall spike measures a gap.
     for name in dict.fromkeys(

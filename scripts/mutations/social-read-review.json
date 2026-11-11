@@ -1,7 +1,7 @@
 [
  {
   "name": "1 social_read: a name matches the roster name exactly, not by find_by_name",
-  "file": "nora/agent/tools.py",
+  "file": "nora/social/adapters/tools/stream.py",
   "old": "        matches = find_by_name(listed, str(person)) or tuple(\n",
   "new": "        matches = tuple(r for r in listed if r.name == str(person).strip()) or tuple(\n",
   "target": "tests/infra/test_social_read.py::test_a_name_resolves_by_the_one_matching_rule_aliases_included"
@@ -71,7 +71,7 @@
  },
  {
   "name": "5 social_read: the retired ids are not passed",
-  "file": "nora/agent/tools.py",
+  "file": "nora/social/adapters/tools/stream.py",
   "old": "        ids = tuple(dict.fromkeys((who.person_id, current, *persons.former_ids_for(current))))\n",
   "new": "        ids = (who.person_id,)\n",
   "target": "tests/infra/test_social_read.py::test_items_recorded_under_a_retired_id_are_read_with_the_current_ones"
@@ -85,37 +85,37 @@
  },
  {
   "name": "6 social_read: the cut item is not noted",
-  "file": "nora/agent/tools.py",
+  "file": "nora/social/adapters/tools/stream.py",
   "old": "        if any(\"more_seen\" in i for i in shown):\n            notes.append(_SOCIAL_ITEM_CUT)\n",
   "new": "",
   "target": "tests/infra/test_social_read.py::test_a_long_carousel_is_cut_to_the_item_bound_and_says_so"
  },
  {
   "name": "7 social_read: namesakes offered by bare name",
-  "file": "nora/agent/tools.py",
+  "file": "nora/social/adapters/tools/stream.py",
   "old": "            return _ambiguous_person(matches, listed, by_id=by_id)\n",
   "new": "            return {\"status\": \"ambiguous\", \"could_be\": [p.name for p in matches]}\n",
   "target": "tests/infra/test_social_read.py::test_two_people_with_one_name_are_offered_by_what_tells_them_apart"
  },
  {
   "name": "7 social_read: a person id does not resolve",
-  "file": "nora/agent/tools.py",
+  "file": "nora/social/adapters/tools/stream.py",
   "old": "        matches = find_by_name(listed, str(person)) or tuple(\n            ref for ref in listed if by_id and ref.person_id == str(person).strip()\n        )\n",
   "new": "        matches = find_by_name(listed, str(person))\n",
   "target": "tests/infra/test_social_read.py::test_two_people_with_one_name_are_offered_by_what_tells_them_apart"
  },
  {
   "name": "7 rollup_read: namesakes offered by bare name",
-  "file": "nora/agent/tools.py",
-  "old": "                return _ambiguous_person(matches, view.people, by_id=by_id)\n",
-  "new": "                return {\"status\": \"ambiguous\", \"could_be\": [p.name for p in matches]}\n",
+  "file": "nora/memory/adapters/tools/standing.py",
+  "old": "return (True, None, _ambiguous_person(c.matches, c.view.people, by_id=c.by_id)",
+  "new": "                return {'status': 'ambiguous', 'could_be': [p.name for p in c.matches]}\n",
   "target": "tests/unit/test_rollup_read_namesakes.py::test_in_cognition_namesakes_are_offered_by_what_tells_them_apart"
  },
  {
   "name": "7 rollup_read: a person id does not resolve",
-  "file": "nora/agent/tools.py",
-  "old": "            matches = view.find(name) or tuple(\n                p for p in view.people if by_id and p.person_id == name\n            )\n",
-  "new": "            matches = view.find(name)\n",
+  "file": "nora/memory/adapters/tools/standing.py",
+  "old": "\n        c.matches = c.view.find(c.name) or tuple(\n            p for p in c.view.people if c.by_id and p.person_id == c.name\n        )\n        ",
+  "new": "            c.matches = c.view.find(c.name)\n",
   "target": "tests/unit/test_rollup_read_namesakes.py::test_in_cognition_namesakes_are_offered_by_what_tells_them_apart"
  },
  {
@@ -141,8 +141,8 @@
  },
  {
   "name": "9 tag turn: an indistinguishable namesake is offered by person id",
-  "file": "nora/agent/tools.py",
-  "old": "    by_id = dream_adaptor == COGNITION_ADAPTOR\n",
+  "file": "nora/agent/tool_deps.py",
+  "old": "    by_id = self.dream_adaptor == COGNITION_ADAPTOR\n",
   "new": "    by_id = True\n",
   "target": "tests/unit/test_rollup_read_namesakes.py::test_on_a_tag_turn_no_person_id_is_offered_or_taken tests/infra/test_social_read.py::test_outside_cognition_no_person_id_is_offered_or_taken"
  },
@@ -155,7 +155,7 @@
  },
  {
   "name": "9 ambiguous: could_be offers the names it has and drops the rest",
-  "file": "nora/agent/tools.py",
+  "file": "nora/agent/toolkit/rooms.py",
   "old": "    if any(label is None for label in labels):\n        return {\"status\": \"ambiguous\", \"note\": _AMBIGUOUS_ASK}\n",
   "new": "    labels = [label for label in labels if label is not None]\n",
   "target": "tests/unit/test_rollup_read_namesakes.py::test_on_a_tag_turn_no_person_id_is_offered_or_taken"

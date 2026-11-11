@@ -388,8 +388,7 @@ class ProfileEvidence:
         if source is None:
             return []
         pk = self._keys[key]
-        args: dict[str, Any] = {"key": key, "rooms": _listed(pk),
-                                "person": pk.person.person_id}
+        args: dict[str, Any] = {"key": key, "rooms": _listed(pk), "person": pk.person.person_id}
         out: list[PersonSourceRevision] = []
         readers: tuple[tuple[str, Callable[[], Awaitable[list[PersonSourceRevision]]]], ...] = (
             ("message", lambda: source.messages(

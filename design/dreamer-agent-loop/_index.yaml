@@ -97,6 +97,8 @@ members:
   - 42-note-format.md
   - 43-note-dreamers-are-research-loops.md
 edges:
+  - {src: 06-trigger, dst: ../cognition-loop/18-execution-and-time.md, rel: relates_to, provenance: asserted}
+  - {src: 07-loop, dst: ../cognition-loop/18-execution-and-time.md, rel: relates_to, provenance: asserted}
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}

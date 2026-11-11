@@ -9,49 +9,29 @@ edges:
   - {dst: ../notebook-memory-types/00-design.md, rel: amends, provenance: asserted}
   - {dst: ../cognition-loop/30-cognition.md, rel: amends, provenance: asserted}
   - {dst: 28-provenance, rel: depends_on, provenance: asserted}
+  - {dst: 50-learning-from-acts, rel: depends_on, provenance: asserted}
 ---
 
-# 29 · One Cognition session
+# One Cognition session
 
-Status: **ruled** by the operator, 2026-10-29. Docs only: no code, tool or
-schema changes until this node is read and the build is briefed.
+One stimulus-response session per wake comprehends, connects and decides as
+one continuous act. This replaces separate arrival/comprehension, reshape and
+act sessions. The [memory map](15-memory-map.md) owns the objects; the
+[graph contract](27-the-memory-is-a-graph.md) owns admission and traversal;
+[revision and learning](50-learning-from-acts.md) owns what new evidence changes.
+This is the design contract, not a claim of live activation.
 
-This supersedes [27](27-the-memory-is-a-graph.md) §7 (three separate step
-sessions) and its "comprehend on arrival" ruling of 2026-10-28. It also
-supersedes §14's tool names and the verbs [notebook-memory-types/00](../notebook-memory-types/00-design.md)
-§7 left open. The graph stores, layers, vocabulary, admission rules and
-evidence of 27 stand.
+## 1. What the session answers
 
-## 1. What the operator ruled, and why
+What changed? What does it connect to? Does it change an existing understanding,
+a profile, an open affair or Nora's position? Is there a reason to act or return?
+Understanding can change without a send, reminder, new task or new lesson.
 
-> "The overall cognition runner answers questions that are already clear.
-> For this batch of stimuli: what does this mean, what does it connect to,
-> should I do something? This is an integrated whole." (operator, 2026-10-29)
-
-The worked example: someone arrives downstairs. *What it means:* they are
-nearby. *What it connects to:* the gifts bought for them on a trip, an open
-thing. *Whether to act:* message them; get the gifts ready. If it connects to
-nothing open, do nothing.
-
-27 §7 split this into three bounded sessions ("never one prompt asked to read,
-profile and plan at once"), and the code built two drivers: a per-item
-comprehend runner (steps 1 and 2) and the Cognition runner (step 3). That
-split rested on an argument, never a measurement. Read back in the code on
-2026-10-29, it had three costs:
-
-1. **The same words were interpreted twice.** Step 3's agenda block renders
-   the stimulus messages' own words (`nora/language/cognition_render.py`), and
-   step 1 read the same words separately. Step 3's input had no block for what
-   step 1 understood.
-2. **Two intakes for one arrival.** Projection queues comprehend work for
-   message batches, media, social items, Register entries, profile lines,
-   co-locations, closed outings, closed response episodes and reminders
-   (`nora/infra/sql/graph_projection.py`); ingest separately raises the
-   stimulus Cognition wakes on (`nora/domain/stimuli.py`). Nothing ties the
-   two, so step 3 can act on an item step 1 has not read. Individual stays and
-   plays raise stimuli but no work item.
-3. **Comprehension without a reason.** A lone "k" became work for a model on
-   its own, out of the context that gives it meaning.
+Stimuli accumulate under the existing settled, strong-cue, batch, max-age,
+time and self-wake rules. Memory updates at wake time. Code supplies related
+state before the session; the model can read further through existing scoped
+tools. A lone item is interpreted in its conversation, not in a second isolated
+per-item model pass.
 
 ## 2. The session
 
@@ -60,6 +40,19 @@ orient by searching memory and the notebook; decide whether anything is worth
 doing, for whom and when; act through the offered tools, or remain silent.
 Memory, profiles, notebook layers, Standing, reminders and self-wakes are
 outputs of the same continuing judgment.
+
+| Phase | Responsibility | Result |
+|---|---|---|
+| Assemble | Fixed agenda sources, clock, members, related profiles, graph and open/current state | One declared context-assembly occasion |
+| Understand and connect | Read, resolve, enrich where useful, propose supported statements and corrections | Code admits each statement and returns saved/refused results plus connected subgraph |
+| Maintain understanding | Read affected held profiles before revising; weigh new evidence against existing understanding | Governed profile/Notebook revisions or honest no-change/unknown |
+| Decide | Consider grounded open work, current situation and own position | Permitted acts, return scheduling, or no act |
+
+[The Cognition context](../context-assembly/05-the-cognition-context.md) owns
+block selection, shared renderers, room binding and adaptive budgets. Every
+model block explains its subject, author, time and state; empty and unavailable
+remain distinct. The graph preview includes structural anchors and resolution
+candidates within the current scope and budget, with truncation stated.
 
 All offered tools are available at the start. `memory_search` and `memory_read`
 connect the new input to held state before `memory_propose` saves statements.
@@ -70,9 +63,24 @@ only statements, with per-statement saved/refused results and connected memory.
 They do not declare input coverage or unlock acts. The relation and entity
 vocabularies are derived from admission constants in the tool schema.
 
+Only source bodies actually rendered, after clipping/dropping, or explicitly
+returned by reads are citable. A graph label alone grants neither the underlying
+source body nor correction authority over an unseen relation. Each saved
+statement keeps its evidence; each refused statement returns a primary reason
+without suppressing valid siblings. A proposal's evidence scope is the union of
+its named inputs; completion remains per input.
+
 Act verbs are available independently of proposals. Their validators, disclosure
 checks, provenance, idempotency and budgets still apply. Profile reads and
 revisions connect changed relations to held accounts in the same session.
+Proposed in this same session, with held profiles read first and shown
+evidence/premises retained. Relations changing about a person may warrant
+reconsidering their profile and relevant room/unit context; an outcome of Nora's
+act may warrant revising her profile or practice. Relevance is judged from
+actual connections, age, evidence and open state, not a model-invented score.
+The [profile-surface handoff](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31)
+owns promotion, writer retirement and acceptance; shadow receipts are not live
+profile changes.
 The historical lane offers evidence reads and memory proposals, with no act
 verbs or current-profile access.
 
@@ -99,72 +107,40 @@ quickly and quiet rooms are revisited after settling.
 
 ## 4. One vocabulary
 
-Every Notebook kind (note, topic, lesson, profile, decision; memo as a note's
-kept phase) sits on the one entry machinery (#379), so every kind gets the
-same five verbs, all already in ADR 0015's verb list:
+Each Notebook kind uses `create`, `revise`, `set_status`, `read`, `search`.
+Revision names the current base (`stale_base` refuses an old one); lifecycle
+moves retain history. Existing distinct acts such as `event_propose`,
+`event_rsvp` and `profile_dispute` keep their contracts. Legacy verbs/stores
+remain only until their explicit migration; a documentation rewrite does not
+rename runtime tools.
 
-| verb | means | replaces |
-|---|---|---|
-| `<kind>_create` | a new entry | `note_create`, `memo_write`, `lesson_write` without a `lesson_id` |
-| `<kind>_revise` | a new revision of the latest version (`stale_base`) | `note_update`, `memo_revise`, `event_revise`, `standing_revise`, `lesson_write` with a `lesson_id` |
-| `<kind>_set_status` | any lifecycle move: end, keep, retire, withdraw, dormant | `note_retire`, `memo_withdraw`, `lesson_retire`, `event_set_status` |
-| `<kind>_read` | one entry by id | `note_read`, `memo_read`, `standing_read`; `profile_read` replaces `about` |
-| `<kind>_search` | find entries of that kind | `note_search`, `event_search` |
+| Cross-kind tool | Responsibility |
+|---|---|
+| `memory_search(query, depth=2, kinds?, person?, since?, until?)` | Find seeds and return the connected scoped subgraph |
+| `memory_read(kind, id, depth=1)` | Read connections; depth zero reads full eligible fields/evidence |
+| `memory_propose(...)` | Admit understanding, report refusals and connected state |
 
-Three distinct acts the verb list already defines stay: `event_propose`,
-`event_rsvp`, `profile_dispute`. `note_merge` stays until the routing
-measurement shows `set_status` can carry it without losing merge's behaviour.
-
-**Cross-kind graph tools** read the one new graph (27's entities, relations
-and evidence), using the old index's hybrid search only to find where to start:
-
-| tool | answers | returns |
-|---|---|---|
-| `memory_search(query, depth=2, kinds?, person?, since?, until?)` | what is relevant to this question, of any kind | a subgraph in 27 §14's format |
-| `memory_read(kind, id, depth=1)` | what does this one thing connect to | the same format, seeded from one node; with depth 0, the full fields and evidence text |
-| `memory_propose(...)` | here is what I understood | admitted, refused (why), connected subgraph |
-
-Depth is the model's to choose: default 2, ceiling 4 (27 §12), with node and
-per-relation fan-out caps. A capped walk answers `partial`, never silently
-short. The scope rules of 25 §4 apply inside the walk. The memory tools
-discover and connect across kinds; the kind tools act on one kind's entries.
-
-**Retired names:** `memory_stage` and `profile_stage` (become
-`memory_propose` and `profile_*`); step 1's local `memory_search` (the
-registered one moves onto the new graph); the phantom `memory_read` listing,
-until the real one exists. The Honcho-era `about`, `ask_memory`,
-`search_memory`, `search_memory_workspace`, `who_said`, `lookup_person` and
-`recall_lookups` retire with Honcho (phase 8); until then `profile_read` is
-the profile read.
-
-**The naming gate covers session-built tools.**
-`tests/architecture/test_tool_names.py` checked only `NATIVE_TOOLS`, so every
-tool a session built for itself escaped it. That is how `stage`, `write`,
-`withdraw`, `retire` and `merge` drifted in. It extends to them.
+Store-specific tools perform their typed reads and operations. All session-built
+names fall under the same naming policy as registry-built tools. Tools retain
+the graph depth/node/fan-out limits and explicit partial/unavailable results.
 
 ## 5. What is retired, and what stays
 
-| retired | why |
-|---|---|
-| the per-item comprehend runner as a driver | the wake is the driver (§2) |
-| `memory_work_item` as the intake of understanding | stimuli are the intake; a Register write links itself in its own session (27 §7a); retries and parking move to the wake (§3) |
-| the separate reshape session | profiles are proposed in the session (§2) |
-| "comprehend on arrival" (2026-10-28) | memory updates at wake time (§3) |
-
-**Stays:** the graph stores, projection and Rollup; admission and the
-relation vocabulary (#375); shape errors returned to the model (#381);
-person-pointer mapping and evidence targets (#383); the topic kind and the
-entry store (#379); the PROV reference (28).
+The per-item comprehend driver/intake, separate reshape session and
+comprehend-on-arrival schedule are retired design paths. Stimuli and wakes own
+intake/retries. Stores, Rollup, projection, reviewed vocabularies, admission,
+source provenance and identity mapping remain. [One Standing](../notebook-memory-types/20-standing.md)
+organizes completed Records and canonical results automatically; its updater
+cannot invent decisions or take over Cognition's judgement authority.
 
 ## 6. The spike, re-scoped
 
-The spike measured per-item step 1 on its own, the unit this node retires.
-It now measures **the integrated session**, replayed over the snapshot's
-stimulus batches with the act tools withheld. The 27 §11 rows and their marks
-carry over (reading and relation precision, wrong merges, egress, acts, lost
-and failed work, query p95), and so do the judges (`cx/gpt-6.1-sol`,
-`kmc/k3-256k`). A smoke with fixed marks (#383) runs first, from the
-projected dump, before any full run.
+[Build and acceptance](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31)
+owns the integrated-session acceptance and delivery order. [Replay evidence](34-the-replay-records-why.md)
+owns exact requests, tool trajectories, persistence evidence and judge inputs.
+Evaluate supported understanding, later retrieval/correction and cost on the
+same frozen chronological journey. Missing evidence is ERROR/unavailable, never
+a semantic pass. Historical separate-step quotas are not new switch conditions.
 
 ## 7. What this node does not decide
 
@@ -187,3 +163,8 @@ derives relation persons from cited sources. Each statement is saved or refused
 independently, with a primary refusal reason and repair guidance. A refusal does
 not withhold valid siblings and makes no claim about whether the session has
 finished. Session outcomes, not proposals, determine stimulus consumption.
+
+Instruction wording and runtime tool migrations require their own impact-based
+validation. This document grants no new authority, model spend or deployment.
+An integrated session measured worse than a separate comprehension step on the
+same frozen sample reopens that design choice; argument alone does not.

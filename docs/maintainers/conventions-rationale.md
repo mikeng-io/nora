@@ -275,7 +275,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
 
 ## Reaching the deployment — the detail
 
-The terse rule is in `AGENTS.md` («Reaching the deployment»); this is the why.
+The terse rule is in `AGENTS.md` («Deployment and releases»); this is the why.
 
 **Checkout-era history:** the following explains the earlier checkout deployment
 model. The installed Komodo release stack now owns application deployment;
@@ -889,18 +889,11 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
   If a module feels too big, count what it is responsible for.
 - **Comments describe, git records.** A comment says what the code or key IS
   and the constraint a reader cannot see from it: units, bounds, the default,
-  what it requires, when to change it. It is never a log: no dates, issue or PR
-  numbers, measurements, review stories or "was X, now Y" — the commit, the
-  issue and the ADR hold those, and a comment copy drifts from them. A decision
-  is cited as a bare pointer (`DEC-123`, `ADR 0023`), never retold. The same
-  holds for docstrings, including a test's: it says what the test guards, not
-  how the bug was found. Gated on these markers, never on length: example TOMLs
-  by `tests/architecture/test_example_toml_comments_are_reference.py`, Python
-  by `tests/architecture/test_comments_carry_no_new_log.py` (dates and issue
-  numbers; the baseline in `log_marker_baseline.json` only goes down, and
-  `python scripts/log_markers.py --write` records a cleanup). A model-facing
-  docstring (a tool's) is behaviour: change it through the nora-tool skill,
-  not as a comment edit.
+  what it requires. It is never a log or a decision citation; the commit, the
+  ADR and the decision index hold those, and a copy in a comment drifts from
+  them. The gates and limits are in `AGENTS.md` «Comments and maintained
+  documentation»; example TOMLs are held by
+  `tests/architecture/test_example_toml_comments_are_reference.py`.
 - Test-seam policy: production classes take collaborators through `__init__`
   only — no `*_fn` hooks, no `_for_test` params, no module-level mutable
   singletons.

@@ -21,6 +21,7 @@ from typing import Any
 
 import pytest
 
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
 from nora.agent.dreamer import (
     HomeRoom,
     RegistryToolSource,
@@ -31,7 +32,7 @@ from nora.agent.memory_search import MemorySearch
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.subagent_tools import SubagentToolSource
-from nora.agent.tools import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS, build_tool_specs
+from nora.agent.tools import build_tool_specs
 from nora.app.cognition_wiring import read_surface, read_tools_for
 from nora.domain.cognition_session import Room as AgendaRoom
 from nora.language.character import CHARACTER_PERSON_ADAPTOR_NAME, CHARACTER_PERSON_TOOLS

@@ -22,10 +22,10 @@ import httpx
 import pytest
 
 from nora.agent import factory
+from nora.agent.catalog.groups import COMPUTER_TOOLS, LOADER_TOOL
 from nora.agent.guards import ReplyGuard
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import COMPUTER_TOOLS, LOADER_TOOL
 from nora.app.computer_queue import ComputerAdmission
 from nora.domain.computer import ComputerToolSettings, computer_unit_scope
 from nora.domain.computer_leases import ComputerLeases

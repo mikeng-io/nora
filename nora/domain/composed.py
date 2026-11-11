@@ -24,7 +24,7 @@ COMPOSERS = frozenset(
         "nora.agent.prefill:_transcript_block",
         "nora.agent.reaction:ReactionPicker._pick",
         "nora.domain.blocks:wrap_outside_text",
-        "nora.domain.blocks:assemble_declared",
+        "nora.domain.blocks_declared:assemble_declared",
         "nora.domain.decision_log:render_decisions",
         "nora.domain.summons:_social_post",
         "nora.engagement.debrief_render:_standing_ledger_prior",

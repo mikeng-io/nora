@@ -70,7 +70,7 @@ from nora.agent.ports import ToolSpec
 from nora.agent.punctuation import undash
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import media_look
+from nora.agent.toolkit.media import media_look
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.audience import SUMMONS
 from nora.domain.models import ConversationTarget, NormalizedMessage, TagContext

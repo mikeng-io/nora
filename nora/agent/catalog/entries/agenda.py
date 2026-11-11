@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+from nora.agent.catalog.model import NativeTool
+
+TOOLS = {
+    "remind": NativeTool(
+        2,
+        side_effect_state="unknown",
+        idempotency="non_idempotent",
+        retry="never",
+        output_contract="three_state",
+        level=3,
+    ),
+    "list_reminders": NativeTool(
+        2,
+        read_only=True,
+        side_effect_state="none",
+        idempotency="idempotent",
+        retry="safe",
+        output_contract="three_state",
+        level=1,
+    ),
+    "cancel_reminder": NativeTool(
+        2,
+        side_effect_state="unknown",
+        idempotency="non_idempotent",
+        retry="never",
+        output_contract="three_state",
+        level=2,
+    ),
+    "event_propose": NativeTool(
+        3,
+        side_effect_state="unknown",
+        idempotency="non_idempotent",
+        retry="never",
+        output_contract="three_state",
+        level=2,
+    ),
+    "event_revise": NativeTool(
+        2,
+        side_effect_state="unknown",
+        idempotency="non_idempotent",
+        retry="never",
+        output_contract="three_state",
+        level=1,
+    ),
+    "event_rsvp": NativeTool(
+        1,
+        side_effect_state="unknown",
+        idempotency="non_idempotent",
+        retry="never",
+        output_contract="three_state",
+        level=1,
+    ),
+    "event_set_status": NativeTool(
+        2,
+        side_effect_state="unknown",
+        idempotency="non_idempotent",
+        retry="never",
+        output_contract="three_state",
+        level=1,
+    ),
+    "event_search": NativeTool(
+        1,
+        read_only=True,
+        side_effect_state="none",
+        idempotency="idempotent",
+        retry="safe",
+        output_contract="three_state",
+        level=1,
+    ),
+    "suggest_venue": NativeTool(
+        4,
+        read_only=True,
+        side_effect_state="none",
+        idempotency="idempotent",
+        retry="safe",
+        output_contract="three_state",
+        level=1,
+    ),
+}

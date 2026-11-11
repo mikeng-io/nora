@@ -102,8 +102,8 @@ unavailable, never a pass. `nora-prove-fix` owns the bounded table procedure.
 
 ## Issues
 
-Deferred work needs a durable home, not a duplicate ticket. First update an
-existing design's build sequence/open questions or an existing issue. File a
+Deferred work needs a durable home, not a duplicate ticket. First update the
+existing issue that owns it. File a
 GitHub issue on `mikeng-io/nora` only for actionable deferred work with no home;
 small residues belong in PR limitations. Never leave work only in chat or memory.
 When an issue is used, scope and task-specific deltas live there; evidence links
@@ -112,11 +112,10 @@ the run/review record; task readiness stays with that issue.
 (`.github/ISSUE_TEMPLATE/`); blank issues are disabled.
 
 [ORCHESTRATION.md](../../ORCHESTRATION.md) owns engineering assignment and artifact
-boundaries. Design docs own architecture, rationale, requirements and acceptance,
-with links showing delivery coverage. Each issue owns one bounded outcome,
-scope/non-goals/delta and acceptance, or references revisioned design acceptance
-sections. “What's specified” below is an anchor plus the task's delta, never a
-copy of the full design. Roadmap cards expose capability/outcome issues, their horizon and lifecycle.
+boundaries. Design bundles own the architecture and its rationale
+(`nora-design`), never plans or status. Each issue owns one bounded outcome:
+scope, non-goals and acceptance; it links the bundle it builds and never copies
+it. Roadmap cards expose capability/outcome issues, their horizon and lifecycle.
 Task readiness, required execution/review tiers and run/evidence/unblock links
 stay with the issue and run. Keep
 assignees, milestones, relationships and Development links native. Run/review
@@ -143,13 +142,13 @@ content on close"*, not *"Add discharge pipeline"*.
 *Design-anchored*, when a design document already specified this:
 
 ```
-**Design:** `design/<bundle>/<NN-name>.md` §<n> (<what it covers>).
+**Design:** `design/<topic>/<file>.md` (<what it covers>).
 
 ## The gap
 <what is broken or missing today, with file:line references>
 
 ## What's specified (decided, not open)
-<revisioned design acceptance anchors and only this task's scope/delta>
+<the design this builds to, by link, and this task's acceptance>
 
 ## Not built
 <what does not exist yet — "nothing" is a valid answer>
@@ -202,7 +201,7 @@ idea in a session
    │
    └─ deferred or needs scoping? ──▶ UPDATE EXISTING HOME; OTHERWISE ISSUE
                                                    │
-                    design document written? ──────┤  (large or contested work only)
+            architecture change? bundle first ─────┤  (nora-design)
                                                    ▼
                                           worktree + branch (`<type>/<slug>`)
                                                    ▼
@@ -215,8 +214,7 @@ idea in a session
 
 **When to create an issue.** File actionable work deferred from the present
 slice only after looking for its existing design/issue home (`nora-decision`).
-A design sequence can own unassigned future work; an issue provides a bounded
-outcome when separate assignment/tracking is needed. Do not copy the design.
+Future work lives in issues, never in a design bundle.
 Work being completed in the same sitting needs no issue; its PR is the record.
 
 **When to update an issue.** When the scope changes, when a dependency gets
@@ -243,8 +241,7 @@ reading would have caught it sooner.
 
 **When NOT to close.** A multi-PR design track stays open across incremental
 landings. Reference it as "issue #N" in those PR bodies, without the closing
-keyword. The design's delivery coverage links each requirement to its issue and
-accepted PR/evidence; the issue carries its remaining slice and task readiness,
+keyword. The issue carries its remaining slice and task readiness,
 and the roadmap carries outcome lifecycle. The issue closes when the last piece lands, not the first.
 
 **Linking, in both directions.** Each link exists so someone standing at one
@@ -254,7 +251,7 @@ artifact can reach the others:
 |---|---|---|
 | PR | issue | `Closes #N` when it finishes it, plain `issue #N` when it does not |
 | commit body | issue | `issue #N` — so `git log` alone reaches the reasoning |
-| issue | design doc | `**Design:** design/<bundle>/<file>.md §n` at the top of the body |
+| issue | design bundle | `**Design:** design/<topic>/<file>.md` at the top of the body |
 | issue | dependent issue | `#TBD` until it exists, then edited in |
 | ADR | issue / decision row | the `Index:` line names the DEC row, or `none` with a reason |
 | decision row | test | the enforcing test's path, in the row's last column |

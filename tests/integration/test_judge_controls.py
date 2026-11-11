@@ -88,6 +88,45 @@ def job_files(tmp_path, example_config_path):
     return cfg, job, Path(job_ref["path"]), job_ref["sha256"]
 
 
+def _corrupt_response(mode, body, response, observed):
+    """The fixture's failure modes, applied after the canned answer."""
+    if mode.get("empty_failure") in {"length", "invalid_json"} and len(observed) == 6:
+        data = response.json()
+        data["choices"][0]["finish_reason"] = (
+            "length" if mode["empty_failure"] == "length" else "stop")
+        data["choices"][0]["message"]["content"] = '{"coverage":['
+        response = httpx.Response(200, json=data)
+    if (mode.get("trailing_prose") or mode.get("fenced_trailing")) and (
+            len(body["messages"]) > 1):
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        if mode.get("fenced_trailing"):
+            content = "```json\n" + content + "\n```"
+        data["choices"][0]["message"]["content"] = content + "\nGenerated trailing explanation."
+        response = httpx.Response(200, json=data)
+    if mode.get("duplicate_identical") and body["model"] == "generated-b" and (
+            body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
+        data = response.json()
+        data["choices"][0]["message"]["content"] = (
+            '{"verdict":"supported","reason":"Generated cited claim",'
+            '"eligibility":"eligible","eligibility":"eligible",'
+            '"eligibility_reason":"Generated class explanation"}')
+        response = httpx.Response(200, json=data)
+    if mode.get("duplicate_verdict") and body["model"] == "generated-b" and (
+            body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
+        data = response.json()
+        data["choices"][0]["message"]["content"] = (
+            '{"verdict":"supported","reason":"Generated cited claim",'
+            '"eligibility":"ineligible","eligibility":"eligible",'
+            '"eligibility_reason":"Generated class explanation"}')
+        response = httpx.Response(200, json=data)
+    if mode["unknown_usage"]:
+        answer = response.json()
+        answer.pop("usage")
+        return httpx.Response(200, json=answer)
+    return response
+
+
 @pytest.fixture
 def model_wire(monkeypatch):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-key")
@@ -169,40 +208,8 @@ def model_wire(monkeypatch):
                 body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
             answer["unexpected"] = "Generated field outside the requested schema"
         response = completion(request, answer)
-        if mode.get("empty_failure") in {"length", "invalid_json"} and len(observed) == 6:
-            data = response.json()
-            data["choices"][0]["finish_reason"] = (
-                "length" if mode["empty_failure"] == "length" else "stop")
-            data["choices"][0]["message"]["content"] = '{"coverage":['
-            response = httpx.Response(200, json=data)
-        if (mode.get("trailing_prose") or mode.get("fenced_trailing")) and (
-                len(body["messages"]) > 1):
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-            if mode.get("fenced_trailing"):
-                content = "```json\n" + content + "\n```"
-            data["choices"][0]["message"]["content"] = content + "\nGenerated trailing explanation."
-            response = httpx.Response(200, json=data)
-        if mode.get("duplicate_identical") and body["model"] == "generated-b" and (
-                body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
-            data = response.json()
-            data["choices"][0]["message"]["content"] = (
-                '{"verdict":"supported","reason":"Generated cited claim",'
-                '"eligibility":"eligible","eligibility":"eligible",'
-                '"eligibility_reason":"Generated class explanation"}')
-            response = httpx.Response(200, json=data)
-        if mode.get("duplicate_verdict") and body["model"] == "generated-b" and (
-                body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
-            data = response.json()
-            data["choices"][0]["message"]["content"] = (
-                '{"verdict":"supported","reason":"Generated cited claim",'
-                '"eligibility":"ineligible","eligibility":"eligible",'
-                '"eligibility_reason":"Generated class explanation"}')
-            response = httpx.Response(200, json=data)
-        if mode["unknown_usage"]:
-            answer = response.json()
-            answer.pop("usage")
-            return httpx.Response(200, json=answer)
+        if (corrupted := _corrupt_response(mode, body, response, observed)) is not None:
+            return corrupted
         return response
 
     original = structured.build_structured_model

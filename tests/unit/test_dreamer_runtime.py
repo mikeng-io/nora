@@ -778,9 +778,8 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
     room_scoped = {
         "transit", "route", "where_is", "place_info", "saved_places",
         # `where_been` (DEC-155) answers from the derived substrate but is
-        # gated by the SAME R-31 room/circle seam as `where_is` — the guard is
-        # the room, which a unit-keyed Dreamer tick does not have, so
-        # room-scoped is the fail-closed side and the correct one. (It is
+        # gated by the SAME R-31 room/circle seam as `where_is` — a unit-keyed
+        # Dreamer tick has no room, so room-scoped is fail-closed. (It is
         # deliberately NOT in UNIT_SAFE_TOOLS.)
         "where_been",
         # `routine_read`: the same substrate behind the SAME
@@ -1597,17 +1596,17 @@ def test_the_dreamer_applies_the_configured_tool_budget_over_the_table():
     Falsification: drop the `overrides` lookup in `_tool_budgets` and this
     returns the table's 2.
     """
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     from nora.agent.dreamer import _tool_budgets
-    from nora.agent.tools import NATIVE_TOOLS
 
     adaptor = _Adaptor(sink=_Sink())
     tools = [_named_tool("web_fetch")]
 
-    assert NATIVE_TOOLS["web_fetch"].budget == 2, (
+    assert NATIVE_TOOLS["web_fetch"].budget == 5, (
         "the table's own value — if this changes, the test below is comparing "
         "against the wrong baseline and says nothing"
     )
-    assert _tool_budgets(tools, adaptor) == {"web_fetch": 2}, "no override"
+    assert _tool_budgets(tools, adaptor) == {"web_fetch": 5}, "no override"
     assert _tool_budgets(tools, adaptor, {"web_fetch": 6}) == {"web_fetch": 6}
 
 
@@ -1646,8 +1645,8 @@ def test_an_adaptors_own_tool_ceiling_wins_over_the_table_and_the_deployment():
     the last assertion returns the deployment's 5, or the table's 3 with the
     `[llm.budgets]` layer gone too.
     """
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     from nora.agent.dreamer import _tool_budgets
-    from nora.agent.tools import NATIVE_TOOLS
 
     adaptor = _Adaptor(sink=_Sink())
     tools = [_named_tool("note_read")]

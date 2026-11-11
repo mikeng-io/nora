@@ -121,7 +121,7 @@ def build_structured_model(
     (notes, the standing position, a reaction pick) is read back into her
     prompt, so a dash here reappears there (`nora.agent.punctuation`).
     """
-    client_args = {"api_key": api_key, "base_url": base_url,
+    client_args: dict[str, Any] = {"api_key": api_key, "base_url": base_url,
                    **({"default_headers": default_headers} if default_headers else {})}
     # A bounded run gates the SDK-owned client too: `bounded_http_client`
     # wraps whatever transport is present (a real one when unset) so the

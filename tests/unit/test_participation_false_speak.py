@@ -35,9 +35,9 @@ import json
 
 import pytest
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.guards import ReplyGuard
 from nora.agent.registry import ToolRegistry
-from nora.agent.tools import NATIVE_TOOLS
 from nora.obs.metrics import Metrics
 from nora.testing import ScriptedTurn
 from tests.offline_eval_evaluators import ParticipationVerdict

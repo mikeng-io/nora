@@ -50,7 +50,7 @@ import pytest
 
 from nora.agent.prefill import render_transcript
 from nora.agent.reaction import RECENT_LINES, ReactionPicker, render_recent
-from nora.agent.tools import _transcript_messages
+from nora.agent.toolkit.transcript import _transcript_messages
 from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.blocks import wrap_outside_text
 from nora.domain.media import GifCandidate

@@ -43,7 +43,7 @@
  },
  {
   "name": "partial coverage renders as a complete state",
-  "file": "nora/agent/tools.py",
+  "file": "nora/agent/toolkit/transcript.py",
   "old": "            if r.reactions.coverage == \"partial\":",
   "new": "            if False:",
   "target": "tests/unit/test_reaction_annotations.py::test_a_partial_state_is_marked_never_read_as_complete"
@@ -57,9 +57,9 @@
  },
  {
   "name": "the result note stops explaining the counts",
-  "file": "nora/agent/tools.py",
-  "old": "        if any(\"reactions_source\" in m for m in out):\n            notes.append(_REACTIONS_NOTE)\n        if older:\n            notes.append(_older_note(rows))\n        if not out and before_ts is not None:",
-  "new": "        if older:\n            notes.append(_older_note(rows))\n        if not out and before_ts is not None:",
+  "file": "nora/conversation/adapters/tools/record.py",
+  "old": "if any(\"reactions_source\" in m for m in c.out):\n        c.notes.append(_REACTIONS_NOTE)\n    if c.older:\n        c.notes.append(_older_note(c.rows))\n    if not c.out and c.before_ts is not None:",
+  "new": "        if c.older:\n            c.notes.append(_older_note(c.rows))\n        if not c.out and c.before_ts is not None:",
   "target": "tests/unit/test_reaction_annotations.py::test_the_tool_result_note_explains_the_counts_are_recorded_only"
  },
  {

@@ -15,6 +15,7 @@ from nora.domain.cognition_ground import Grounding
 from nora.domain.cognition_session import AgendaItem
 from nora.domain.context_data import MembersView, RoomLine, TranscriptLine
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
+from nora.domain.documents import DocumentAuthority
 from nora.domain.lineage import message
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
@@ -117,6 +118,66 @@ class CognitionContextReader:
                         label, unavailable=True, binding=f"{r.platform}:{r.conversation_id}"
                     )
                 )
+        related = self._related(members, agenda_rows)
+        profiles, profile_failed = await self._profiles_read(
+            unit, agenda, related, targets, bindings, now_ms=now_ms
+        )
+        room_lines, transcript, more, read_failed = await self._rooms_and_transcript(
+            unit, items, agenda, agenda_rows, related, visible, withheld, now_ms=now_ms
+        )
+        failed |= read_failed
+
+        lessons: tuple[str, ...] = ()
+        try:
+            if self._lessons is None:
+                raise RuntimeError("lesson source unavailable")
+            if self._policy.shows_self_to_unit(unit):
+                lessons = tuple(
+                    x
+                    for x in await self._lessons.bodies(unit=unit, as_of_ms=now_ms)
+                    if not self._screen(x)
+                )
+        except Exception:
+            log.exception("cognition context source read failed")
+            failed.add("lessons")
+        documents, document_rooms, doc_failed = await self._documents_read(
+            unit, agenda, visible, now_ms=now_ms
+        )
+        failed |= doc_failed
+
+        # A partly failed unit read is unavailable, never an apparently complete slice.
+        if "transcript" in failed:
+            transcript = []
+        if "rooms" in failed:
+            room_lines = []
+        return replace(
+            grounding,
+            profiles=tuple(profiles),
+            profile_unavailable=tuple(profile_failed),
+            members=tuple(members),
+            rooms=tuple(room_lines),
+            transcript=tuple(sorted(transcript, key=lambda x: (x.row.ts, x.room, x.row.id))),
+            transcript_more=more,
+            context_withheld=tuple(sorted(withheld.items())),
+            documents=tuple(documents),
+            document_rooms=frozenset(document_rooms),
+            lessons=lessons,
+            unavailable=grounding.unavailable | failed,
+            room_labels={
+                **grounding.room_labels,
+                **{f"{x.room.platform}:{x.room.conversation_id}": x.room.label for x in room_lines},
+            },
+            profile_names={pid: f"{p.name} ({pid})" for pid, p in self._persons.by_person.items()},
+        )
+
+
+
+    def _related(
+        self,
+        members: Sequence[MembersView],
+        agenda_rows: Sequence[tuple[str, str, TranscriptRow, int]],
+    ) -> tuple[str, ...]:
+        """The agenda's mentioned and active people, most-mentioned first."""
         frequencies: Counter[str] = Counter()
         eligible = {p.person_id: p for v in members for p in v.people}
         # An alias is resolved only among the agenda's identified members.
@@ -138,7 +199,20 @@ class CognitionContextReader:
                     r"(?<!\w)" + re.escape(alias) + r"(?!\w)", text, flags=re.ASCII
                 ):
                     frequencies.setdefault(next(iter(ids)), 0)
-        related = tuple(sorted(frequencies, key=lambda pid: (-frequencies[pid], pid)))
+        return tuple(sorted(frequencies, key=lambda pid: (-frequencies[pid], pid)))
+
+
+    async def _profiles_read(
+        self,
+        unit: str,
+        agenda: Sequence[Any],
+        related: Sequence[str],
+        targets: Sequence[Any],
+        bindings: Sequence[Any],
+        *,
+        now_ms: int,
+    ) -> tuple[list[ProfileView], list[tuple[str, str]]]:
+        """The profile blocks the agenda names, each fail-closed."""
         profiles: list[ProfileView] = []
         profile_failed: list[tuple[str, str]] = []
         subjects: list[tuple[str, str, str, tuple[str, ...]]] = [
@@ -175,9 +249,26 @@ class CognitionContextReader:
             except Exception:
                 log.exception("cognition context source read failed")
                 profile_failed.append((entity, of))
+        return profiles, profile_failed
+
+
+    async def _rooms_and_transcript(
+        self,
+        unit: str,
+        items: Sequence[AgendaItem],
+        agenda: Sequence[Any],
+        agenda_rows: Sequence[tuple[str, str, TranscriptRow, int]],
+        related: Sequence[str],
+        visible: Callable[[str, str], bool],
+        withheld: Counter[str],
+        *,
+        now_ms: int,
+    ) -> tuple[list[RoomLine], list[TranscriptLine], int, set[str]]:
+        """Room lines and related rows outside the agenda, per room binding."""
         room_lines: list[RoomLine] = []
         transcript: list[TranscriptLine] = []
         more = 0
+        failed: set[str] = set()
         try:
             if not agenda or self._directory is None:
                 raise RuntimeError("room source unavailable")
@@ -274,22 +365,21 @@ class CognitionContextReader:
         except Exception:
             log.exception("cognition context source read failed")
             failed.update(("rooms", "transcript"))
-        lessons: tuple[str, ...] = ()
-        try:
-            if self._lessons is None:
-                raise RuntimeError("lesson source unavailable")
-            if self._policy.shows_self_to_unit(unit):
-                lessons = tuple(
-                    x
-                    for x in await self._lessons.bodies(unit=unit, as_of_ms=now_ms)
-                    if not self._screen(x)
-                )
-        except Exception:
-            log.exception("cognition context source read failed")
-            failed.add("lessons")
-        from nora.domain.documents import DocumentAuthority
+        return room_lines, transcript, more, failed
+
+
+    async def _documents_read(
+        self,
+        unit: str,
+        agenda: Sequence[Any],
+        visible: Callable[[str, str], bool],
+        *,
+        now_ms: int,
+    ) -> tuple[list[Any], frozenset[tuple[str, str]], set[str]]:
+        """The document surfaces the agenda rooms may read, fail-closed."""
 
         documents: list[Any] = []
+        failed: set[str] = set()
         document_rooms: set[tuple[str, str]] = set()
         agenda_document_rooms = frozenset(
             (r.platform, cid)
@@ -324,27 +414,4 @@ class CognitionContextReader:
                 for cid in self._policy.conversation(r.platform, r.conversation_id).ids
                 | {r.conversation_id}
             )
-        # A partly failed unit read is unavailable, never an apparently complete slice.
-        if "transcript" in failed:
-            transcript = []
-        if "rooms" in failed:
-            room_lines = []
-        return replace(
-            grounding,
-            profiles=tuple(profiles),
-            profile_unavailable=tuple(profile_failed),
-            members=tuple(members),
-            rooms=tuple(room_lines),
-            transcript=tuple(sorted(transcript, key=lambda x: (x.row.ts, x.room, x.row.id))),
-            transcript_more=more,
-            context_withheld=tuple(sorted(withheld.items())),
-            documents=tuple(documents),
-            document_rooms=frozenset(document_rooms),
-            lessons=lessons,
-            unavailable=grounding.unavailable | failed,
-            room_labels={
-                **grounding.room_labels,
-                **{f"{x.room.platform}:{x.room.conversation_id}": x.room.label for x in room_lines},
-            },
-            profile_names={pid: f"{p.name} ({pid})" for pid, p in self._persons.by_person.items()},
-        )
+        return documents, frozenset(document_rooms), failed

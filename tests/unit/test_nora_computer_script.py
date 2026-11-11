@@ -458,3 +458,98 @@ def test_status_reads_egress_unknown_when_sbx_will_not_say(host: Host) -> None:
     for shape in ("empty", "allowed-exit-1", "crash"):
         result = host.run("status", STUB_CHECK_SHAPE=shape, **_status_env())
         assert _egress_field(result.stdout) == "unknown", (shape, result.stdout)
+
+
+def test_scope_partial_policy_failure_reuses_owned_create_and_refuses_foreign(tmp_path):
+    import json
+
+    from tests.unit.nora_computer_harness import _SBX
+
+    scope = "1234567890abcdef"
+    box = "nora-computer-" + scope[:12]
+    host = Host(tmp_path, sandbox=False)
+    stub = _SBX.replace("nora-computer", box).replace('  exec)\n', '''  exec)
+      if [ "${6:-}" = /proc/sys/kernel/random/boot_id ]; then
+          echo "${STUB_BOOT_ID:-boot-generated}"; exit 0
+      fi
+''')
+    host._install("sbx", stub)
+    refused = host.run("scope", "provision", scope, STUB_DENY_FAILS="1")
+    assert refused.returncode != 0
+    assert len(host.sbx_calls("run")) == 1
+    record = host.state_dir / "scope-endpoints" / f"{scope}.json"
+    assert not record.exists()
+    foreign = host.run("scope", "provision", scope, STUB_BOOT_ID="foreign-boot")
+    assert foreign.returncode != 0
+    assert not record.exists()
+    recovered = host.run("scope", "provision", scope)
+    assert recovered.returncode == 0, recovered.stderr
+    assert len(host.sbx_calls("run")) == 1
+    assert json.loads(record.read_text())["instance"] == ""
+    assert host.run("scope", "provision", scope).returncode == 0
+    assert len(host.sbx_calls("run")) == 1
+    # Without either the registry or successful-create receipt, the SAME live
+    # name is foreign. A reservation or failed create alone grants nothing.
+    record.unlink()
+    assert not (host.state_dir / f"scope-owned-{scope}").exists()
+    assert host.run("scope", "provision", scope).returncode != 0
+    assert len(host.sbx_calls("run")) == 1
+
+
+def test_scope_start_stop_preserve_disk_and_stop_supervisor_first(tmp_path):
+    import json
+
+    from tests.unit.nora_computer_harness import _SBX
+
+    scope = "1234567890abcdef"
+    box = "nora-computer-" + scope[:12]
+    host = Host(tmp_path)
+    stub = _SBX.replace("nora-computer", box).replace('case "$1" in', '''case "$1" in
+  start) echo running > "$STUB_DIR/sandbox"; exit 0 ;;
+  stop) echo stopped > "$STUB_DIR/sandbox"; exit 0 ;;''')
+    host._install("sbx", stub)
+    host._install("systemctl", '''#!/bin/bash
+[ "$1" = --user ] && [ "$2" = stop ] || exit 7
+echo "systemctl stop $3" >> "$STUB_DIR/calls.log"
+''')
+    directory = host.state_dir / "scope-endpoints"
+    directory.mkdir(parents=True)
+    record = directory / f"{scope}.json"
+    record.write_text(json.dumps({"scope": scope, "name": box}))
+    host.make_room(scope, {"kept.txt": "generated retained data"})
+    assert host.run("scope", "stop", scope).returncode == 0
+    assert host.run("scope", "start", scope).returncode == 0
+    assert (host.vm / "workspace" / scope / "kept.txt").read_text() == "generated retained data"
+    calls = host.calls()
+    assert next(i for i,c in enumerate(calls) if c.startswith("systemctl stop")) < next(
+        i for i,c in enumerate(calls) if c.startswith("sbx stop"))
+    assert not host.sbx_calls("run") and not host.sbx_calls("rm")
+
+
+def test_stopped_partial_provision_restarts_only_with_successful_create_receipt(tmp_path):
+    from tests.unit.nora_computer_harness import _SBX
+
+    scope = "1234567890abcdef"
+    box = "nora-computer-" + scope[:12]
+    host = Host(tmp_path, sandbox=False)
+    stub = _SBX.replace("nora-computer", box).replace('case "$1" in', """case \"$1\" in
+  start) echo running > \"$STUB_DIR/sandbox\"; exit 0 ;;""").replace('  exec)\n', """  exec)
+      if [ \"${6:-}\" = /proc/sys/kernel/random/boot_id ]; then
+          echo \"${STUB_BOOT_ID:-boot-generated}\"; exit 0
+      fi
+""")
+    host._install("sbx", stub)
+    assert host.run("scope", "provision", scope, STUB_DENY_FAILS="1").returncode != 0
+    assert len(host.sbx_calls("run")) == 1
+    record = host.state_dir / "scope-endpoints" / f"{scope}.json"
+    (host.dir / "sandbox").write_text("stopped")
+    # A retained disk may get a fresh boot on start; the private successful-create
+    # receipt authorizes that start just as the published registry does later.
+    recovered = host.run("scope", "provision", scope, STUB_BOOT_ID="restarted-boot")
+    assert recovered.returncode == 0, recovered.stderr
+    assert record.exists()
+    assert len(host.sbx_calls("start")) == 1 and len(host.sbx_calls("run")) == 1
+    record.unlink()
+    (host.dir / "sandbox").write_text("stopped")
+    assert host.run("scope", "provision", scope).returncode != 0
+    assert len(host.sbx_calls("start")) == 1  # no receipt: no effect on a foreign disk

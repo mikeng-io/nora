@@ -37,17 +37,15 @@ what was made there.
 
 from __future__ import annotations
 
-import asyncio
 import copy
-import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
-from nora.agent.egress import scan_identifiers
-from nora.agent.security import PlaceLocator, screen_and_locate_place
+from nora.agent.security import PlaceLocator
+from nora.app.documents_media import document_maps, ground_maps, resolve_media
 from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding, check_document
 from nora.domain.documents import (
@@ -62,13 +60,9 @@ from nora.domain.documents import (
     is_handle,
     may_read,
 )
-from nora.domain.media import code_matches, parse_media_type, resolve_room_media, room_sightings
 from nora.domain.ports import MediaObjectStore, RecordStore
 from nora.policy import Policy
 
-_HEX = re.compile(r"^[0-9a-f]{6,64}$")
-_SHA = re.compile(r"^[0-9a-f]{64}$")
-_HANDLES_SHOWN = 5
 _HANDLE_TRIES = 5
 
 
@@ -157,45 +151,6 @@ def room_label(policy: Policy, platform: str, conversation_id: str) -> str:
     return ""
 
 
-def _images(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    """Every Image node and its JSON Pointer. Iterative: the document has passed the
-    checker, so depth is bounded, but nothing here needs to rely on that."""
-    found: list[tuple[str, dict[str, Any]]] = []
-    stack: list[tuple[dict[str, Any], str]] = [(document["root"], "/root")]
-    while stack:
-        node, where = stack.pop()
-        if node.get("type") == "Image":
-            found.append((where, node))
-        for index, child in enumerate(node.get("children") or []):
-            stack.append((child, f"{where}/children/{index}"))
-    return sorted(found, key=lambda pair: pair[0])
-
-
-def _maps(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    """Every Map node and its JSON Pointer, in document order (see `_images`)."""
-    found: list[tuple[str, dict[str, Any]]] = []
-    stack: list[tuple[dict[str, Any], str]] = [(document["root"], "/root")]
-    while stack:
-        node, where = stack.pop()
-        if node.get("type") == "Map":
-            found.append((where, node))
-        for index, child in enumerate(node.get("children") or []):
-            stack.append((child, f"{where}/children/{index}"))
-    return sorted(found, key=lambda pair: pair[0])
-
-
-#: How many places one publish looks up at once. Each is a billed Places call, so the
-#: fan-out is bounded even though a Map may name up to 50.
-_LOCATE_CONCURRENCY = 5
-
-#: How many DISTINCT places one publish may look up, over every Map in it. Each is a billed
-#: Places call, and the schema bounds a Map at 50 but not how many Maps a document holds.
-_MAX_PLACES_PER_PUBLISH = 50
-
-#: Findings a Map can return, like the checker's own cap, so 50 unknown names are not 50 lines.
-_MAX_PLACE_FINDINGS = 10
-
-
 class DocumentService:
     def __init__(
         self,
@@ -242,91 +197,6 @@ class DocumentService:
         self._place_locator = place_locator
 
     # ------------------------------------------------------------------ media
-    async def _sightings(self, platform: str, conversation_id: str, code: str) -> set[str] | None:
-        """The distinct full sha256 of every picture in this room whose sha256
-        starts with `code`, or `None` when the room could not be read, or when the
-        scan was cut short and found nothing (`could not check that far` is never
-        `no such picture`)."""
-        found: set[str] = set()
-        truncated = False
-        try:
-            ids = self._room_ids(platform, conversation_id) | {conversation_id}
-            now = self._now_ms()
-            for cid in sorted(ids):
-                # The one resolver the sandbox session shares (DEC-251): the recent window
-                # plus the room's last 90 days of message rows, keyed by the message row.
-                seen = await room_sightings(
-                    self._records, conversation_id=cid, now_ms=now, window=self._window
-                )
-                truncated = truncated or seen.truncated
-                for sha, sighting in code_matches(seen.sightings, code).items():
-                    # Images only (this block's own rule): a clip or a voice note is not a
-                    # picture, and a shared item's cover is a preview of someone else's post.
-                    if (
-                        _SHA.match(sha)
-                        and not sighting.cover
-                        and parse_media_type(sighting.media_type)[0] == "image"
-                    ):
-                        found.add(sha)
-                # What Nora made or kept in this room is in the index, not in a message row.
-                look = await resolve_room_media(
-                    self._media, code=code, platform=platform, conversation_id=cid
-                )
-                if not look.available:
-                    return None
-                found.update(sha for sha in look.objects if _SHA.match(sha))
-        except Exception:  # noqa: BLE001 - a store that is down is `unavailable`, not a guess
-            return None
-        if truncated and not found:
-            return None
-        return found
-
-    async def _resolve(
-        self, platform: str, conversation_id: str, document: dict[str, Any]
-    ) -> tuple[dict[str, Any], tuple[str, ...], list[Finding], bool]:
-        """Rewrite every Image's code to its full sha256. Returns the rewritten
-        document, the shas it names, the findings, and whether a store was down."""
-        rewritten = copy.deepcopy(document)
-        findings: list[Finding] = []
-        named: list[str] = []
-        cache: dict[str, str | None] = {}
-        for where, node in _images(rewritten):
-            code = str(node["props"].get("media", ""))
-            path = f"{where}/props/media"
-            if not _HEX.match(code):
-                findings.append(
-                    Finding(path, "media_code", "must be a media code: 6 to 64 hex characters")
-                )
-                continue
-            if code not in cache:
-                seen = await self._sightings(platform, conversation_id, code)
-                if seen is None:
-                    return document, (), [], True
-                if len(seen) == 1:
-                    cache[code] = next(iter(seen))
-                else:
-                    cache[code] = None
-                    shown = ", ".join(sorted(s[:8] for s in seen)[:_HANDLES_SHOWN])
-                    if not seen:
-                        message = f"no picture with code {code} in this room's recent messages"
-                        findings.append(Finding(path, "media_unknown", message))
-                    else:
-                        message = (
-                            f"{code} matches {len(seen)} pictures in this room ({shown}); "
-                            "use a longer code"
-                        )
-                        findings.append(Finding(path, "media_ambiguous", message))
-                    continue
-            sha = cache[code]
-            if sha is None:
-                findings.append(
-                    Finding(path, "media_unknown", f"no single picture for code {code}")
-                )
-            else:
-                node["props"]["media"] = sha
-                named.append(sha)
-        return rewritten, tuple(sorted(set(named))), findings, False
-
     @property
     def link_base(self) -> str:
         """The public origin a document link is built under; `""` while none is configured."""
@@ -368,96 +238,6 @@ class DocumentService:
                 ),
             )
         return None
-
-    async def _ground_maps(
-        self, document: dict[str, Any], person_names: frozenset[str] | None,
-        live_addresses: frozenset[str] | None = None,
-    ) -> tuple[dict[str, Any], list[Finding], bool]:
-        """Fill every Map place's coordinate from its NAME.
-
-        The model writes names and never a coordinate (DEC-24), so whatever `lat`, `lng` or
-        `route` a spec carries is DISCARDED and the pair is looked up here, through the same
-        outbound and return-path screens `place_info` runs: a person's name, an identifier or a
-        coordinate in the name is refused before any call. A place that does not resolve to
-        exactly one is a finding that names it, never a guess. Returns the document, the
-        findings, and whether the locator was down."""
-        rewritten = copy.deepcopy(document)
-        maps = _maps(rewritten)
-        if not maps:
-            return rewritten, [], False
-        findings: list[Finding] = []
-        resolved: dict[str, dict[str, Any] | None] = {}
-        gate = asyncio.Semaphore(_LOCATE_CONCURRENCY)
-        live = {a.strip().casefold() for a in (live_addresses or ()) if a.strip()}
-
-        def key(name: str) -> str:
-            return " ".join(name.split()).casefold()
-
-        async def look(name: str) -> None:
-            folded = key(name)
-            if any(a in folded or folded in a for a in live):
-                # R-57: an address `reverse_geocode` gave out THIS turn is a live position, the
-                # one `route` already refuses; naming it on a Map would pin it in a document.
-                resolved[key(name)] = {"status": "refused", "reason": "live_position"}
-                return
-            async with gate:
-                got = await screen_and_locate_place(
-                    name, place_locator=self._place_locator, person_names=person_names,
-                    content_checks=self._content_checks,
-                )
-            resolved[key(name)] = got.data if got.status == "resolved" else {"status": got.status}
-            if got.status == "refused":
-                resolved[key(name)] = {"status": "refused", "reason": got.reason}
-
-        first_spelling: dict[str, str] = {}
-        for _, m in maps:
-            for p in m["props"]["places"]:
-                first_spelling.setdefault(key(str(p.get("name", ""))), str(p.get("name", "")))
-        if len(first_spelling) > _MAX_PLACES_PER_PUBLISH:
-            return rewritten, [Finding(
-                "", "place_limit",
-                f"a document may map at most {_MAX_PLACES_PER_PUBLISH} different places in total, "
-                f"and this one names {len(first_spelling)}; keep the ones that matter",
-            )], False
-        await asyncio.gather(*(look(n) for n in first_spelling.values()))
-        if any((resolved[k] or {}).get("status") == "unavailable" for k in first_spelling):
-            return document, [], True
-        for where, node in maps:
-            props = node["props"]
-            props.pop("route", None)
-            for index, place in enumerate(props["places"]):
-                got = resolved[key(str(place.get("name", "")))] or {}
-                path = f"{where}/props/places/{index}"
-                status = got.get("status")
-                if status == "ok" and "lat" in got and "lng" in got:
-                    place["lat"], place["lng"] = got["lat"], got["lng"]
-                    continue
-                place.pop("lat", None)
-                place.pop("lng", None)
-                name = str(place.get("name", ""))
-                if status == "ambiguous":
-                    could = ", ".join(
-                        c
-                        for c in (str(c) for c in got.get("could_be", [])[:3])
-                        if scan_identifiers(c, content_checks=self._content_checks)
-                        is None  # as `place_info` screens its candidates
-                    )
-                    findings.append(Finding(
-                        path, "place_ambiguous",
-                        f"{name!r} matches several places ({could}); name it more fully",
-                    ))
-                elif status == "refused":
-                    findings.append(Finding(
-                        path, "place_refused",
-                        "a Map shows public places by name; a person's home or position, an "
-                        "identifier or a coordinate cannot be mapped",
-                    ))
-                else:
-                    findings.append(Finding(
-                        path, "place_unknown",
-                        f"no place found for {name!r}; name a place a map knows",
-                    ))
-        return rewritten, findings[:_MAX_PLACE_FINDINGS], False
 
     # ------------------------------------------------------------ catalog, read
     def catalog(self) -> str:
@@ -673,6 +453,116 @@ class DocumentService:
         )
 
     # ---------------------------------------------------------------- publish
+    async def _autonomous_revise(
+        self, *, platform: str, conversation_id: str, person_id: DocumentAuthority,
+        raw: bytes | str | dict[str, Any], document_id: UUID | None,
+        base_revision: int | None,
+    ) -> PublishResult | tuple[dict[str, Any], str]:
+        """The `DocumentAuthority` publish path: cited replacements on the stored spec,
+        answered with `(spec, written_by)` so the common path stores what was judged."""
+        if person_id.read_only:
+            return PublishResult("refused", note="Historical sessions cannot revise documents.")
+        if (
+            document_id is None
+            or not person_id.evidence
+            or (platform, conversation_id) not in self._named(person_id)
+        ):
+            return _no_such_document()
+        current = await self._in_room(
+            platform=platform,
+            conversation_id=conversation_id,
+            document_id=document_id,
+            handle="",
+            person_id=person_id,
+        )
+        if current is None or current.summary.state != "active":
+            return _no_such_document()
+        if base_revision != current.summary.revision:
+            return PublishResult("conflict", note="The revision changed; nothing was updated.")
+        if not isinstance(raw, dict) or set(raw) != {"changes"}:
+            return PublishResult(
+                "refused", note="Autonomous revisions require cited replacements."
+            )
+        changes = raw["changes"]
+        if not isinstance(changes, list) or not changes:
+            return PublishResult("refused", note="No supported replacement was supplied.")
+        revised = copy.deepcopy(current.spec)
+        sources = {n: (p, c, text) for n, p, c, text in person_id.evidence}
+        cited = set()
+        for change in changes:
+            if not isinstance(change, dict) or set(change) != {"path", "old", "new", "sources"}:
+                return PublishResult(
+                    "refused", note="Each replacement needs its path and sources."
+                )
+            path, old, new = change["path"], change["old"], change["new"]
+            ids = change["sources"]
+            if (
+                not isinstance(path, str)
+                or not path.startswith("/")
+                or not isinstance(old, str)
+                or not old
+                or not isinstance(new, str)
+                or not new
+                or not isinstance(ids, list)
+                or not ids
+                or any(type(n) is not int or n not in sources for n in ids)
+            ):
+                return PublishResult("refused", note="The replacement lacks shown evidence.")
+            here = self._room_ids(platform, conversation_id) | {conversation_id}
+            if any(sources[n][0] != platform or sources[n][1] not in here for n in ids):
+                return PublishResult(
+                    "refused", note="The evidence is outside this document's room."
+                )
+            if not any(new == sources[n][2].strip() for n in ids):
+                return PublishResult(
+                    "refused", note="The replacement must quote its shown evidence."
+                )
+            try:
+                parts = [x.replace("~1", "/").replace("~0", "~") for x in path[1:].split("/")]
+                node = revised
+                for part in parts[:-1]:
+                    node = node[int(part)] if isinstance(node, list) else node[part]
+                key = int(parts[-1]) if isinstance(node, list) else parts[-1]
+                value = node[key]
+                if not isinstance(value, str) or value.count(old) != 1:
+                    raise ValueError("replacement target changed")
+                node[key] = value.replace(old, new, 1)
+            except (KeyError, IndexError, TypeError, ValueError):
+                return PublishResult("refused", note="The replacement target does not match.")
+            cited.update(ids)
+        return revised, f"cognition:{person_id.session_id};sources:" + ",".join(
+            map(str, sorted(cited))
+        )
+
+    async def _revision_target(
+        self, platform: str, conversation_id: str, document_id: UUID,
+        base_revision: int | None, person_id: str | DocumentAuthority,
+    ) -> StoredDocument | PublishResult:
+        """The stored document a revision lands on, or the refusal/conflict to answer."""
+        current = await self._store.get(document_id=document_id)
+        # A document in another room is answered exactly like one that does not exist:
+        # a model in room B must not learn that an id is a document in room A (the read
+        # API never distinguishes them either).
+        here = self._room_ids(platform, conversation_id) | {conversation_id}
+        if (
+            current is None
+            or current.summary.platform != platform
+            or current.summary.conversation_id not in here
+            or not may_read(current.summary, person_id, self._named(person_id))
+        ):
+            return _no_such_document()
+        if current.summary.state != "active":
+            return _not_active(current.summary.state)
+        if current.summary.revision != base_revision:
+            return PublishResult(
+                "conflict", document_id=document_id, revision=current.summary.revision,
+                note=(
+                    f"This document is at revision {current.summary.revision}, not "
+                    f"{base_revision}. Read it again before deciding whether to revise."
+                ),
+            )
+        return current
+
     async def publish(
         self,
         *,
@@ -687,80 +577,14 @@ class DocumentService:
         live_addresses: frozenset[str] | None = None,
     ) -> PublishResult:
         if isinstance(person_id, DocumentAuthority):
-            if person_id.read_only:
-                return PublishResult("refused", note="Historical sessions cannot revise documents.")
-            if (
-                document_id is None
-                or not person_id.evidence
-                or (platform, conversation_id) not in self._named(person_id)
-            ):
-                return _no_such_document()
-            current = await self._in_room(
-                platform=platform,
-                conversation_id=conversation_id,
-                document_id=document_id,
-                handle="",
-                person_id=person_id,
+            outcome = await self._autonomous_revise(
+                platform=platform, conversation_id=conversation_id,
+                person_id=person_id, raw=raw, document_id=document_id,
+                base_revision=base_revision,
             )
-            if current is None or current.summary.state != "active":
-                return _no_such_document()
-            if base_revision != current.summary.revision:
-                return PublishResult("conflict", note="The revision changed; nothing was updated.")
-            if not isinstance(raw, dict) or set(raw) != {"changes"}:
-                return PublishResult(
-                    "refused", note="Autonomous revisions require cited replacements."
-                )
-            changes = raw["changes"]
-            if not isinstance(changes, list) or not changes:
-                return PublishResult("refused", note="No supported replacement was supplied.")
-            revised = copy.deepcopy(current.spec)
-            sources = {n: (p, c, text) for n, p, c, text in person_id.evidence}
-            cited = set()
-            for change in changes:
-                if not isinstance(change, dict) or set(change) != {"path", "old", "new", "sources"}:
-                    return PublishResult(
-                        "refused", note="Each replacement needs its path and sources."
-                    )
-                path, old, new = change["path"], change["old"], change["new"]
-                ids = change["sources"]
-                if (
-                    not isinstance(path, str)
-                    or not path.startswith("/")
-                    or not isinstance(old, str)
-                    or not old
-                    or not isinstance(new, str)
-                    or not new
-                    or not isinstance(ids, list)
-                    or not ids
-                    or any(type(n) is not int or n not in sources for n in ids)
-                ):
-                    return PublishResult("refused", note="The replacement lacks shown evidence.")
-                here = self._room_ids(platform, conversation_id) | {conversation_id}
-                if any(sources[n][0] != platform or sources[n][1] not in here for n in ids):
-                    return PublishResult(
-                        "refused", note="The evidence is outside this document's room."
-                    )
-                if not any(new == sources[n][2].strip() for n in ids):
-                    return PublishResult(
-                        "refused", note="The replacement must quote its shown evidence."
-                    )
-                try:
-                    parts = [x.replace("~1", "/").replace("~0", "~") for x in path[1:].split("/")]
-                    node = revised
-                    for part in parts[:-1]:
-                        node = node[int(part)] if isinstance(node, list) else node[part]
-                    key = int(parts[-1]) if isinstance(node, list) else parts[-1]
-                    value = node[key]
-                    if not isinstance(value, str) or value.count(old) != 1:
-                        raise ValueError("replacement target changed")
-                    node[key] = value.replace(old, new, 1)
-                except (KeyError, IndexError, TypeError, ValueError):
-                    return PublishResult("refused", note="The replacement target does not match.")
-                cited.update(ids)
-            raw = revised
-            written_by = f"cognition:{person_id.session_id};sources:" + ",".join(
-                map(str, sorted(cited))
-            )
+            if isinstance(outcome, PublishResult):
+                return outcome
+            raw, written_by = outcome
         if isinstance(person_id, str) and not self._is_person(person_id):
             return PublishResult(
                 "refused",
@@ -790,8 +614,10 @@ class DocumentService:
         if not checked.ok or checked.document is None:
             return PublishResult("refused", findings=checked.findings)
 
-        rewritten, media, findings, down = await self._resolve(
-            platform, conversation_id, checked.document
+        rewritten, media, findings, down = await resolve_media(
+            records=self._records, media=self._media, room_ids=self._room_ids,
+            now_ms=self._now_ms, window=self._window, platform=platform,
+            conversation_id=conversation_id, document=checked.document,
         )
         if down:
             return PublishResult(
@@ -799,7 +625,7 @@ class DocumentService:
             )
         if findings:
             return PublishResult("refused", findings=tuple(findings))
-        if _maps(rewritten):
+        if document_maps(rewritten):
             # The target's cheap checks first: a stale `base_revision` or another room's id is
             # answered before any billed lookup, so the model's «read it again and publish
             # again» after a conflict does not pay for the same places twice.
@@ -808,8 +634,9 @@ class DocumentService:
             )
             if early is not None:
                 return early
-        rewritten, findings, down = await self._ground_maps(
-            rewritten, person_names, live_addresses
+        rewritten, findings, down = await ground_maps(
+            place_locator=self._place_locator, content_checks=self._content_checks,
+            document=rewritten, person_names=person_names, live_addresses=live_addresses,
         )
         if down:
             return PublishResult(
@@ -847,29 +674,12 @@ class DocumentService:
                     revision=revision,
                 )
                 return self._ok(made.summary.id, made.summary.revision)
-            current = await self._store.get(document_id=document_id)
-            # A document in another room is answered exactly like one that does not exist:
-            # a model in room B must not learn that an id is a document in room A (the read
-            # API never distinguishes them either).
-            here = self._room_ids(platform, conversation_id) | {conversation_id}
-            if (
-                current is None
-                or current.summary.platform != platform
-                or current.summary.conversation_id not in here
-                or not may_read(current.summary, person_id, self._named(person_id))
-            ):
-                return _no_such_document()
-            if current.summary.state != "active":
-                return _not_active(current.summary.state)
-            if current.summary.revision != base_revision:
-                return PublishResult(
-                    "conflict", document_id=document_id, revision=current.summary.revision,
-                    note=(
-                        f"This document is at revision {current.summary.revision}, not "
-                        f"{base_revision}. Read it again before deciding whether to revise."
-                    ),
-                )
-            outcome = await self._store.add_revision(
+            current = await self._revision_target(
+                platform, conversation_id, document_id, base_revision, person_id
+            )
+            if isinstance(current, PublishResult):
+                return current
+            stored = await self._store.add_revision(
                 document_id=document_id,
                 base_revision=current.summary.revision,
                 revision=revision,
@@ -878,18 +688,18 @@ class DocumentService:
             return PublishResult(
                 "unavailable", note="The document could not be saved; nothing was stored."
             )
-        if outcome.status == "conflict":
+        if stored.status == "conflict":
             return PublishResult(
                 "conflict",
                 document_id=document_id,
                 note="Someone revised this document a moment ago. Read it again and publish again.",
             )
-        if outcome.status == "not_active":
+        if stored.status == "not_active":
             # Archived or deleted between the read above and the write.
             return _not_active("no longer active")
-        if outcome.status == "not_found" or outcome.document is None:
+        if stored.status == "not_found" or stored.document is None:
             return _no_such_document()
-        return self._ok(document_id, outcome.document.summary.revision)
+        return self._ok(document_id, stored.document.summary.revision)
 
 
 def _no_such_document() -> PublishResult:

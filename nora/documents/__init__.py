@@ -17,6 +17,16 @@ The files beside this module are GENERATED from that catalog by
 from importlib import resources
 
 
+def __getattr__(name: str):
+    # `wire` resolves lazily: the checker below stays importable without the
+    # adapter tree (the "document checker imports nothing of ours" contract).
+    if name == "wire":
+        import importlib
+
+        return importlib.import_module(f"{__name__}.wire")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def catalog_prompt() -> str:
     """The generated catalog prompt: what a model is told to write a document against."""
     return resources.files(__name__).joinpath("catalog-prompt.md").read_text("utf-8")

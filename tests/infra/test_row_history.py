@@ -21,6 +21,7 @@ pins:
 from __future__ import annotations
 
 import itertools
+import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -233,7 +234,12 @@ async def test_the_backfill_dates_what_each_row_proves(clean_pg_url: str, engine
     }
     # A later additive column is absent from the old image. Compare it using
     # the actual PostgreSQL default the restore reads, not a blanket NULL:
-    # note.object_refs is NOT NULL with an empty-array default.
+    # note.object_refs is NOT NULL with an empty-array default, and a
+    # derived-authority column (reminders.due_tick) restores to the
+    # BACKFILLED expression evaluated over the image's own fields — exactly
+    # what `snapshot_at._insert_sql` writes.
+    from nora.infra.sql.snapshot_at import BACKFILLED
+
     async with engine.connect() as conn:
         for table in ("note", "reminders"):
             live_rows = (await conn.execute(sa.text(
@@ -262,6 +268,15 @@ async def test_the_backfill_dates_what_each_row_proves(clean_pg_url: str, engine
                         assert not expression.startswith("nextval("), (table, column)
                         # Expression read from PostgreSQL's catalog, never user input.
                         value = (await conn.execute(sa.text(f"SELECT {expression}"))).scalar_one()
+                    elif (table, column) in BACKFILLED:
+                        # The restore's coalesce expression reads
+                        # `r.`-qualified fields off the image —
+                        # `jsonb_populate_record` supplies the row type it
+                        # resolves against.
+                        value = (await conn.execute(sa.text(
+                            f'SELECT {BACKFILLED[(table, column)]} '  # noqa: S608 — module-level expression
+                            f'FROM jsonb_populate_record(NULL::"{table}", :img::jsonb) r'
+                        ), {"img": json.dumps(h)})).scalar_one()
                     defaults[column] = value
                 assert {**defaults, **h} == live_row, table
 

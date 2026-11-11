@@ -1,44 +1,44 @@
 [
- {
-  "name": "(d) probe records {} again",
-  "file": "nora/app/cognition_session.py",
-  "old": "doctrine_sha256=doctrine_sha256, skill_versions=skill_versions,\n                model_id=self._model_id, model_route=self._model_route, wake_id=None,",
-  "new": "doctrine_sha256=doctrine_sha256, skill_versions={},\n                model_id=self._model_id, model_route=self._model_route, wake_id=None,",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_probe_an_eval_arm_drives_records_the_skill_it_injects"
- },
- {
-  "name": "(f) the shared Dreamer doctrine edited",
-  "file": "nora/dreamer/doctrine/dreamer.md",
-  "old": "You have no independent conversation with the room and no authority beyond this job.",
-  "new": "You have an independent conversation with the room and authority beyond this job.",
-  "target": "tests/unit/test_dreamer_instruction_goldens.py"
- },
- {
-  "name": "startup check removed",
-  "file": "nora/app/cognition_wiring.py",
-  "old": "    skills.resolved()",
-  "new": "",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_mapped_skill_that_is_not_installed_stops_the_runner_at_startup"
- },
- {
-  "name": "(8a) composition lets the wiring's errors through raw",
-  "file": "nora/app/composition.py",
-  "old": "            except (InstructionError, SkillNotInstalledError) as exc:",
-  "new": "            except InstructionError as exc:",
-  "target": "tests/test_composition.py -k test_a_session_whose_objective_or_skill_is_missing_is_a_startup_error"
- },
- {
-  "name": "(8b) the prompt reads the skill from a second resolution",
-  "file": "nora/app/cognition_session.py",
-  "old": "            doctrine_text, skill_text, tool_names=surface.admitted)",
-  "new": "            doctrine_text, self._skill_text_for([i.kind for i in items]), tool_names=surface.admitted)",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_reload_during_grounding"
- },
- {
-  "name": "(8c) a deleted skill is skipped, not refused",
-  "file": "nora/app/cognition_wiring.py",
-  "old": "            raise SkillNotInstalledError(f\"session skill {REGISTER_SKILL!r} is not installed\")",
-  "new": "            return \"\", {}",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_mapped_skill_deleted_by_a_hot_reload"
- }
+  {
+    "name": "(d) probe records {} again",
+    "file": "nora/app/cognition_session.py",
+    "old": "doctrine_sha256=doctrine_sha256, skill_versions=skill_versions,\n                model_id=self._model_id, model_route=self._model_route, wake_id=None,",
+    "new": "doctrine_sha256=doctrine_sha256, skill_versions={},\n                model_id=self._model_id, model_route=self._model_route, wake_id=None,",
+    "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_probe_an_eval_arm_drives_records_the_skill_it_injects"
+  },
+  {
+    "name": "(f) the shared Dreamer doctrine edited",
+    "file": "nora/dreamer/doctrine/dreamer.md",
+    "old": "You have no independent conversation with the room and no authority beyond this job.",
+    "new": "You have an independent conversation with the room and authority beyond this job.",
+    "target": "tests/unit/test_dreamer_instruction_goldens.py"
+  },
+  {
+    "name": "startup check removed",
+    "file": "nora/app/cognition_wiring.py",
+    "old": "    skills.resolved()",
+    "new": "",
+    "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_mapped_skill_that_is_not_installed_stops_the_runner_at_startup"
+  },
+  {
+    "name": "(8a) composition lets the wiring's errors through raw",
+    "file": "nora/app/composition.py",
+    "old": "            except (InstructionError, SkillNotInstalledError) as exc:",
+    "new": "            except InstructionError as exc:",
+    "target": "tests/test_composition.py -k test_a_session_whose_objective_or_skill_is_missing_is_a_startup_error"
+  },
+  {
+    "name": "(8b) the prompt reads the skill from a second resolution",
+    "file": "nora/app/cognition_session.py",
+    "old": "            doctrine_text, skill_text, tool_names=surface.admitted, historical=historical)",
+    "new": "            doctrine_text, self._skill_text_for(), tool_names=surface.admitted, historical=historical)",
+    "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_reload_during_grounding"
+  },
+  {
+    "name": "(8c) a deleted skill is skipped, not refused",
+    "file": "nora/app/cognition_wiring.py",
+    "old": "            raise SkillNotInstalledError(f\"session skill {REGISTER_SKILL!r} is not installed\")",
+    "new": "            return \"\", {}",
+    "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_mapped_skill_deleted_by_a_hot_reload"
+  }
 ]

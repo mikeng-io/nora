@@ -16,7 +16,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from nora.agent.tools import COMPUTER_TOOLS
+from nora.agent.catalog.groups import COMPUTER_TOOLS
 from nora.app.computer_metrics import SWEEPER_AUDIT_TOOL
 from nora.domain.computer import COMPUTER_AUDIT_STAGES
 

@@ -1,23 +1,23 @@
 [project]
 name = "nora"
-version = "7.16.7"
+version = "7.17.6"
 description = "A self-hosted, sessionless social AI agent with memory and background cognition"
 requires-python = ">=3.11"
 dependencies = [
-    "strands-agents==1.50.2",
+    "strands-agents==1.64.0",
     "aiohttp>=3.9",
-    "openai>=1.40",
+    "openai>=3.48.0",
     "PyYAML>=6.0",
-    "pydantic>=2.8",
-    "sqlalchemy>=2.0",
-    "alembic>=1.13",
+    "pydantic>=2.14.3",
+    "sqlalchemy>=2.1.8",
+    "alembic>=1.20.1",
     "prometheus-client>=0.26.0",
     "structlog>=26.1.0",
-    "opentelemetry-exporter-otlp-proto-http>=1.44.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.2",
     "pillow>=13.0.0",
-    "cryptography>=50.0.0",
-    "asyncpg>=0.31.0",
-    "psycopg[binary]>=3.3.4",
+    "cryptography>=50.0.2",
+    "asyncpg>=0.32.0",
+    "psycopg[binary]>=3.3.8",
     "requests>=2.34.2",
     # [voice] pulls PyNaCl AND davey -- discord.py 2.7.1's VoiceClient.__init__
     # raises RuntimeError unconditionally without EITHER (verified live,
@@ -26,8 +26,8 @@ dependencies = [
     # did, was not sufficient and the voice-support warning at startup
     # ("davey is not installed") was wrongly read as harmless).
     "discord-py[voice]>=2.7.1",
-    "yt-dlp>=2026.8.19",
-    "boto3>=1.43.62",
+    "yt-dlp>=2026.10.26",
+    "boto3>=1.43.126",
     "pgvector>=0.5.0",
     # SQLAlchemy's async engine needs greenlet, but sqlalchemy's own marker
     # only pulls it in on win32/AMD64/x86_64/ppc64le/aarch64 -- NOT macOS arm64,
@@ -44,13 +44,13 @@ dependencies = [
     # Reading a shared PDF as text (design/external-files §2, the `pdf` kind).
     # Pure Python with no dependencies of its own; the stdlib has no PDF
     # parser, and docx/xlsx/pptx are read with zipfile + ElementTree instead.
-    "pypdf>=6.21.4",
+    "pypdf>=7.0.0",
     "redis>=5.0",
     "opentelemetry-instrumentation-aiohttp-server>=0.66b2",
 ]
 
 [project.optional-dependencies]
-evals = ["strands-agents-evals==1.0.3"]
+evals = ["strands-agents-evals==1.9.0"]
 # Error reporting is OPTIONAL and off by default: `nora/obs/errors.py` degrades
 # to "off" when the SDK is absent, so a laptop, the test suite and a deployment
 # that does not want Sentry all run without it. Pinned like every other
@@ -72,9 +72,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.uv]
 override-dependencies = [
-    # strands-agents-tools 0.8.5 caps Pillow at <13.0.0; GHSA-8g5g-8vmr-9782.
-    # Remove once upstream lifts the cap.
-    "pillow>=13.0.0",
     # discord-py[voice] 2.7.1 caps PyNaCl at <1.6; GHSA-mrfv-m5wm-5w6w.
     # Remove once upstream lifts the cap.
     "pynacl>=1.6.2",
@@ -206,7 +203,13 @@ include_external_packages = true
 [[tool.importlinter.contracts]]
 name = "domain is framework-free"
 type = "forbidden"
-source_modules = ["nora.domain"]
+source_modules = [
+    "nora.domain",
+    "nora.agenda.domain", "nora.computer.domain", "nora.conversation.domain",
+    "nora.documents.domain", "nora.location.domain", "nora.media.domain",
+    "nora.memory.domain", "nora.people.domain", "nora.social.domain",
+    "nora.subagents.domain", "nora.voice.domain",
+]
 forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus_client", "opentelemetry", "yaml", "openai"]
 
 [[tool.importlinter.contracts]]
@@ -290,7 +293,7 @@ layers = [
     "nora.obs",
     "nora.infra | nora.testing",
     # Pure: see the "document checker imports nothing of ours" contract below.
-    "nora.domain | nora.documents",
+    "nora.domain | nora.documents.check",
 ]
 
 [[tool.importlinter.contracts]]
@@ -301,7 +304,7 @@ type = "forbidden"
 # importing a LISTED layer; `nora.persons`, `nora.tag` and `nora.web` sit outside that
 # list, so a comment saying "nothing of ours" was a claim nothing checked (review of
 # PR 648, 2026-10-01). Every other top-level name is forbidden here instead.
-source_modules = ["nora.documents"]
+source_modules = ["nora.documents.check"]
 forbidden_modules = [
     "nora.agent", "nora.analytics", "nora.app", "nora.config",
     "nora.doctrine", "nora.domain", "nora.dreamer", "nora.engagement", "nora.infra",
@@ -309,6 +312,9 @@ forbidden_modules = [
     "nora.persons_file", "nora.platform",
     "nora.policy", "nora.presence", "nora.skills", "nora.subagent", "nora.subject", "nora.tag",
     "nora.testing", "nora.web", "nora.config_reload", "nora.memory_routing", "nora.secret",
+    "nora.agenda", "nora.computer", "nora.conversation", "nora.location",
+    "nora.media", "nora.memory", "nora.people", "nora.social",
+    "nora.subagents", "nora.voice",
 ]
 allow_indirect_imports = "True"
 
@@ -375,13 +381,120 @@ forbidden_modules = [
 ]
 allow_indirect_imports = "True"
 
+
+[[tool.importlinter.contracts]]
+name = "every area depends inward"
+type = "layers"
+containers = [
+    "nora.agenda",
+    "nora.computer",
+    "nora.conversation",
+    "nora.documents",
+    "nora.location",
+    "nora.media",
+    "nora.memory",
+    "nora.people",
+    "nora.social",
+    "nora.subagents",
+    "nora.voice",
+]
+layers = ["wire", "adapters", "app", "domain"]
+
+[[tool.importlinter.contracts]]
+name = "nora.agenda is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.agenda.domain", "nora.agenda.app", "nora.agenda.adapters", "nora.agenda.wire",
+]
+allowed_importers = ["nora.agenda"]
+
+[[tool.importlinter.contracts]]
+name = "nora.computer is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.computer.domain", "nora.computer.app", "nora.computer.adapters", "nora.computer.wire",
+]
+allowed_importers = ["nora.computer"]
+
+[[tool.importlinter.contracts]]
+name = "nora.conversation is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.conversation.domain", "nora.conversation.app", "nora.conversation.adapters", "nora.conversation.wire",
+]
+allowed_importers = ["nora.conversation"]
+
+[[tool.importlinter.contracts]]
+name = "nora.documents is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.documents.domain", "nora.documents.app", "nora.documents.adapters", "nora.documents.wire",
+]
+allowed_importers = ["nora.documents"]
+
+[[tool.importlinter.contracts]]
+name = "nora.location is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.location.domain", "nora.location.app", "nora.location.adapters", "nora.location.wire",
+]
+allowed_importers = ["nora.location"]
+
+[[tool.importlinter.contracts]]
+name = "nora.media is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.media.domain", "nora.media.app", "nora.media.adapters", "nora.media.wire",
+]
+allowed_importers = ["nora.media"]
+
+[[tool.importlinter.contracts]]
+name = "nora.memory is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.memory.domain", "nora.memory.app", "nora.memory.adapters", "nora.memory.wire",
+]
+allowed_importers = ["nora.memory"]
+
+[[tool.importlinter.contracts]]
+name = "nora.people is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.people.domain", "nora.people.app", "nora.people.adapters", "nora.people.wire",
+]
+allowed_importers = ["nora.people"]
+
+[[tool.importlinter.contracts]]
+name = "nora.social is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.social.domain", "nora.social.app", "nora.social.adapters", "nora.social.wire",
+]
+allowed_importers = ["nora.social"]
+
+[[tool.importlinter.contracts]]
+name = "nora.subagents is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.subagents.domain", "nora.subagents.app", "nora.subagents.adapters", "nora.subagents.wire",
+]
+allowed_importers = ["nora.subagents"]
+
+[[tool.importlinter.contracts]]
+name = "nora.voice is reachable only through its root"
+type = "protected"
+protected_modules = [
+    "nora.voice.domain", "nora.voice.app", "nora.voice.adapters", "nora.voice.wire",
+]
+allowed_importers = ["nora.voice"]
+
 [dependency-groups]
 dev = [
     "aioresponses>=0.7.9",
-    "boto3-stubs[s3]>=1.43.78",
+    "boto3-stubs[s3]>=1.43.126",
     "import-linter>=2.0",
-    "mcp>=1.29.0",
-    "mypy>=1.11",
+    "mcp>=2.3.0",
+    "mypy>=2.4.1",
     "pytest>=8.0",
     "pytest-aiohttp>=1.0",
     "pytest-asyncio>=0.24",

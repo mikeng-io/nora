@@ -4,21 +4,20 @@ from pathlib import Path
 
 import pytest
 
+from nora.agent.catalog.groups import (
+    LOAD_TRANSCRIPT_DEFAULT,
+    LOAD_TRANSCRIPT_MAX,
+    NATIVE_TOOL_BUDGETS,
+)
 from nora.agent.guards import Deliverer
 from nora.agent.markdown import render_markdown
 from nora.agent.outbound import OutboundComposer
 from nora.agent.room import Room
-from nora.agent.tools import (
-    LOAD_TRANSCRIPT_DEFAULT,
-    LOAD_TRANSCRIPT_MAX,
-    NATIVE_TOOL_BUDGETS,
-    build_tool_specs,
-    build_tools,
-    note_handle,
-)
+from nora.agent.tools import build_tool_specs, build_tools
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import GifCandidate, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
+from nora.domain.notes import note_handle
 from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment, SendResult
 from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
@@ -136,14 +135,8 @@ def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
         # DEC-146: the window-scoped rung of the recall ladder, below
         # `load_transcript`. Exercised in tests/test_who_said.py.
-        "who_said",
-        "now",
-        "load_transcript",
-        "send_reply",
-        "reaction_send",
-        "search_gifs",
-        "send_gif",
-        "send_to",
+        "who_said", "now", "load_transcript", "send_reply", "reaction_send", "search_gifs",
+        "send_gif", "send_to",
         # The room tools.
         "room_list",
         "room_read",
@@ -152,21 +145,11 @@ def test_every_declared_tool_is_built(wiring):
         # The observation Record's task reads (design/platform-observations
         # 05): built like every closure; with no observation store wired they
         # answer `unavailable` rather than `nothing_found`.
-        "poll_list",
-        "poll_read",
-        "room_state_read",
+        "poll_list", "poll_read", "room_state_read",
         # Built here like every closure; only a Dreamer loop is OFFERED them
         # (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
-        "rollup_read",
-        "standing_read",
-        "character_read",
-        "social_read",
-        "group_members",
-        "lookup_person",
-        "about",
-        "ask_memory",
-        "search_memory",
-        "recall_lookups",
+        "rollup_read", "standing_read", "character_read", "social_read", "group_members",
+        "lookup_person", "about", "ask_memory", "search_memory", "recall_lookups",
         # `search_memory_workspace` IS built here — `build_tools` builds every
         # closure. Which ones a ROOM sees is `ToolScope`'s decision, applied
         # by `ToolRegistry.surface()`, and the Dreamer-only cut is pinned there:
@@ -175,9 +158,7 @@ def test_every_declared_tool_is_built(wiring):
         "calculate",
         "transit",
         "route",
-        "place_info",
-        "saved_places",
-        "where_is",
+        "place_info", "saved_places", "where_is",
         # DEC-156: the fetch surface — coordinate to place, the read half.
         "reverse_geocode",
         # DEC-155: the derived-presence history tool (where someone HAS BEEN).
@@ -186,30 +167,22 @@ def test_every_declared_tool_is_built(wiring):
         "routine_read",
         # Live digital activity (online / playing /
         # voice) — exercised in tests/unit/test_online_now.py.
-        "online_now",
-        "media_fetch",
+        "online_now", "media_fetch",
         # A shared file link, read as text.
-        "file_fetch",
-        "generate_image",
-        "media_search",
-        "media_send",
-        "web_search",
-        "web_fetch",
+        "file_fetch", "generate_image", "media_search", "media_send", "web_search", "web_fetch",
         # x_read and x_search (DEC-201):
         # READ-ONLY X via the host bridge.
         "x_read",
         "x_search",
         # linkedin_read and linkedin_search (DEC-201): READ-ONLY LinkedIn via
         # the same host bridge, inert unless [social.linkedin] enabled.
-        "linkedin_read",
-        "linkedin_search",
+        "linkedin_read", "linkedin_search",
         # instagram_read: a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
         # instagram_search: Instagram
         # accounts matching free text, over the instagram-bridge.
-        "instagram_search",
-        "weather",
+        "instagram_search", "weather",
         # TD open-data parking vacancy (data.gov.hk hk-td-tis_5).
         "parking_status",
         # Google Nearby Search parking discovery around a named place/position.
@@ -217,12 +190,7 @@ def test_every_declared_tool_is_built(wiring):
         # The six music verbs are built here too. The Discord-only cut
         # is `ToolScope`'s, pinned by
         # `test_non_discord_catalog_omits_music_tools`.
-        "play_music",
-        "skip_music",
-        "top_music",
-        "stop_music",
-        "music_status",
-        "set_music_volume",
+        "play_music", "skip_music", "top_music", "stop_music", "music_status", "set_music_volume",
         # The loader. Built for every turn;
         # `surface()` hands it to the model only when something is deferred.
         "load_tools",
@@ -230,49 +198,33 @@ def test_every_declared_tool_is_built(wiring):
         "list_reminders",
         "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
-        "event_propose",
-        "event_revise",
-        "event_rsvp",
-        "event_set_status",
-        "event_search",
+        "event_propose", "event_revise", "event_rsvp", "event_set_status", "event_search",
         "suggest_venue",
         # Nora's computer (DEC-243).
         "computer_run",
         "computer_read",
         "computer_write",
-        "computer_edit",
-        "computer_export",
-        "computer_import",
-        "computer_session_list",
+        "computer_edit", "computer_export", "computer_import", "computer_session_list",
         # Built here; offered only with a browser runner.
         "computer_browse",
         # Scoped-computer pair: built here like every closure; offered only
         # with `[computer.scoped]` wiring (the queue and the browser manager).
-        "computer_capture",
-        "computer_cancel",
+        "computer_capture", "computer_cancel",
         # A document is published to the web app, read back to edit.
-        "document_publish",
-        "document_read",
-        "document_set_status",
-        "document_list",
+        "document_publish", "document_read", "document_set_status", "document_list",
         "document_revise",
         # Subagents (DEC-283).
         "subagent_create",
         "subagent_list",
-        "subagent_read",
-        "subagent_cancel",
+        "subagent_read", "subagent_cancel",
         # Built here; offered only when `[video_gen]` is wired.
         "video_create",
         # The worker's own place-keeper.
         "checkpoint_update",
         # Running build context plus public release metadata and notes.
-        "version_list",
-        "version_read",
+        "version_list", "version_read",
         # The note tier's four verbs.
-        "note_read",
-        "note_search",
-        "note_create",
-        "note_revise",
+        "note_read", "note_search", "note_create", "note_revise",
         # DEC-306: one kept memo of the unit.
         "memo_read",
         # The remember verb — the conclusion write lane.
@@ -289,14 +241,14 @@ def test_read_peer_card_is_gone_from_the_table():
     the two places a tool can exist: `NATIVE_TOOLS` (what makes a tool callable
     at all — R-7 default-denies anything absent) and the budgets table.
     Re-adding the tool turns this red."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     assert "read_peer_card" not in NATIVE_TOOLS
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
 
 
 def test_exactly_these_tools_are_cacheable():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
     assert cacheable == {
         "place_info", "route", "web_search", "web_fetch", "weather", "transit",
@@ -632,7 +584,7 @@ def test_strip_media_markers_covers_all_marker_shapes():
     The image is already delivered as a real attachment, so a model that
     quotes the raw handle leaks internal identifiers to the group. The
     stripper is the hard enforcement; these shapes must all collapse."""
-    from nora.agent.tools import _strip_media_markers as strip
+    from nora.agent.toolkit.transcript import _strip_media_markers as strip
 
     cases = (
         ("改完 [image c6a9cd]", "改完 "),
@@ -1614,8 +1566,7 @@ async def test_every_non_ok_media_library_status_carries_a_note(wiring):
         "unavailable/raised": _with_image_tools(wiring, media_store=_BrokenMediaStore([])),
     }
     for case, tools in search_cases.items():
-        _assert_noted(case, await _call(tools["media_search"], query="cat"),
-                      case.split("/")[0])
+        _assert_noted(case, await _call(tools["media_search"], query="cat"), case.split("/")[0])
     send_cases = {
         "unavailable/unwired": (_with_image_tools(wiring, media_store=one), "aabbcc"),
         "nothing_found/not_a_handle": (
@@ -1633,8 +1584,7 @@ async def test_every_non_ok_media_library_status_carries_a_note(wiring):
             _tools_over(wiring, refusing, media_store=one, blob_store=full), "aabbcc"),
     }
     for case, (tools, handle) in send_cases.items():
-        _assert_noted(case, await _call(tools["media_send"], handle=handle),
-                      case.split("/")[0])
+        _assert_noted(case, await _call(tools["media_send"], handle=handle), case.split("/")[0])
 
 
 async def test_a_media_search_note_follows_whether_anything_matched(wiring):
@@ -1942,7 +1892,7 @@ def test_a_quote_finds_the_platform_id_under_EITHER_spelling():
 
     PROBE: drop `message_id` from the tuple and the Instagram case reds.
     """
-    from nora.agent.tools import platform_message_id_of
+    from nora.conversation.adapters.tools.shared import platform_message_id_of
 
     assert platform_message_id_of({"id": "1234567890"}) == "1234567890"
     assert platform_message_id_of({"message_id": "mid.$gAASG4nv"}) == "mid.$gAASG4nv"
@@ -1956,7 +1906,7 @@ def test_a_quote_id_is_never_guessed_from_an_unusable_row():
     worse than not threading it, so anything unusable is None rather than
     coerced — including `True`, which `str()` would happily turn into the
     message id "True"."""
-    from nora.agent.tools import platform_message_id_of
+    from nora.conversation.adapters.tools.shared import platform_message_id_of
 
     assert platform_message_id_of({}) is None
     assert platform_message_id_of({"id": ""}) is None

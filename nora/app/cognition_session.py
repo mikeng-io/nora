@@ -171,10 +171,10 @@ from nora.domain.stimuli import (
 )
 from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
 from nora.infra.sql.standing_revise import standing_revise as live_standing_revise
+from nora.language.cognition_parse import rendered_new_sources
 from nora.language.cognition_render import (
     RenderBudget,
     render_agenda,
-    rendered_new_sources,
     room_key,
     room_label,
     speaker_of,
@@ -304,9 +304,10 @@ class CognitionRunResult:
 
 class CognitionAgentRunner(Protocol):
     """The test seam (CLAUDE.md's policy: a constructor argument, never an
-    `_fn` hook). `nora.app.cognition_agent_runner.LiveCognitionAgentRunner`
-    is the production implementation, wrapping `nora.agent.factory.
-    create_dream_agent`; `tests/behavioral/
+    `_fn` hook). `nora.app.cognition_agent_runner.DreamerAgentRunner`
+    is the production implementation, delegating to
+    `DreamerRuntime.run_agent` — the one model-invocation route (node 30);
+    `tests/behavioral/
     test_cognition_session_writes_nothing_live.py`'s `ScriptedAgentRunner`
     drives a fixed sequence of tool calls with no model and no Strands.
 
@@ -409,8 +410,9 @@ class TokenSpend:
 
 #: The session's `TokenSpend`, set around the model loop. A context variable and
 #: not a parameter of `CognitionAgentRunner.run`, so every runner double that
-#: predates it still satisfies the Protocol; a task started by `asyncio.wait_for`
-#: copies the context, and the holder is shared by reference.
+#: predates it still satisfies the Protocol; the loop runs inside
+#: `asyncio.timeout` in this task's own context, and the holder is shared by
+#: reference.
 SESSION_TOKENS: contextvars.ContextVar[TokenSpend | None] = contextvars.ContextVar(
     "cognition_session_tokens", default=None,
 )
@@ -615,7 +617,155 @@ def _answer(answer: PaceAnswer, **ok: object) -> dict[str, object]:
     return {"status": "ok", **ok}
 
 
+def _shown_rooms(grounding: Grounding, view: UnitView) -> dict[str, tuple[str, str] | None]:
+    """The shown `object` handles, each to the room the grounder read it from."""
+    shown: dict[str, tuple[str, str] | None] = {}
+
+    def remember(handle: str, room: tuple[str, str]) -> None:
+        if handle not in shown:
+            shown[handle] = room
+        elif shown[handle] != room:
+            shown[handle] = None
+
+    for ref, e in grounding.observations.items():
+        stimulus = next((s for s in view.pending if s.ref == ref), None)
+        if (stimulus is not None and stimulus.platform is not None
+                and stimulus.conversation_id is not None):
+            remember(e.handle, (stimulus.platform, stimulus.conversation_id))
+    for key, events in grounding.source_objects.items():
+        platform, _, cid = key.partition(":")
+        for e in events:
+            remember(e.handle, (platform, cid))
+    for retained in grounding.retained_objects.values():
+        for r in retained:
+            if r.head is not None:
+                remember(r.ref.handle, (r.ref.platform, r.ref.conversation_id))
+    return shown
+
+
+def _shown_custody(
+    state: _RunState, prompt: str, grounding: Grounding, unit: str, memory: Any,
+) -> None:
+    """Citation custody follows the actual emitted elements, never loaded rows."""
+    from xml.etree import ElementTree
+
+    from nora.domain.blocks import render_group
+
+    root = ElementTree.fromstring(  # noqa: S314 - own escaped output
+        render_group("context", (), prompt)
+    )
+    emitted_objects = {element.attrib["object"] for element in root.iter()
+                       if "object" in element.attrib}
+    state.shown_handles = {key: room for key, room in state.shown_handles.items()
+                           if key in emitted_objects}
+    transcript_by_id = {line.row.id: line for line in grounding.transcript}
+    for element in root.findall("./transcript/m"):
+        mid = int(element.attrib["source_id"])
+        line = transcript_by_id[mid]
+        source_room = Room(line.platform, line.conversation_id)
+        if source_room is None:
+            continue
+        text = element.text or ""
+        if not line.row.is_nora and text == (line.row.body or ""):
+            state.document_evidence.append(
+                (mid, source_room.platform, source_room.conversation_id, text))
+        state.fetched.take(
+            "record_query",
+            {
+                "status": "ok",
+                "messages": [{"n": mid, "sender": element.attrib.get("from", "unknown")}],
+            },
+            _room_key(source_room),
+        )
+        if memory is not None and not line.row.is_nora and text:
+            state.graph_fetched.show(
+                Source(
+                    ("message", str(mid)),
+                    "record",
+                    unit,
+                    (line.row.person_id,) if line.row.person_id else (),
+                    text,
+                )
+            )
+    complete_record_text = {
+        r.message_id: r.text for r in grounding.records.values()
+        if r.kind in {"message", "edit"}
+    }
+    for item in root.findall("./agenda/item"):
+        index = int(item.attrib["index"])
+        source_room = state.items_by_index[index].room
+        for element in item.findall("m"):
+            mid = int(element.attrib["n"])
+            if (
+                mid > 0
+                and element.text
+                and element.text == complete_record_text.get(mid)
+                and not any(
+                    element.attrib.get(flag) == "yes"
+                    for flag in ("own", "deleted", "withdrawn")
+                )
+            ):
+                state.document_evidence.append(
+                    (mid, source_room.platform, source_room.conversation_id, element.text)
+                )
+    if memory is not None:
+        # ONE evidence custody: the agenda's emitted rows are the only
+        # sources a graph statement may cite (the loaded-but-clipped rest
+        # was never shown).
+        memory.register_shown(state)
+
+
 class CognitionSessionRunner:
+    """`doctrine_source`, when given, is read at the start of EVERY session
+    and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
+    as the constructor's fixed fallback for a caller with a fixed text):
+    the production composition passes the Dreamer's hot-reloading
+    objective through it. `skill_versions_for` records what
+    `skill_text_for` injected. `skills_for`, when given, replaces both: the
+    text and the versions come from one resolution, taken once per session
+    BEFORE the awaited grounding read and carried through (the production
+    composition passes it: a skill hot-reloads, and two reads of it could
+    straddle an edit).
+
+    `read_only_tools` is the allowlist `read_tools_for`'s result is
+    held to (the composition passes the registry's own read-only set,
+    `ToolRegistry.read_only_tools()`); empty, the default, refuses every
+    read tool: a session with no declared read surface has none.
+
+    `notes` (`SqlNoteStore`), `events` (`GatheringService`), `standing`
+    (`SqlStandingStore`) and `reminders` (`ReminderStore`) are the live
+    stores the tag path writes through; the session's writes land there.
+    `memos` (`SqlMemoStore`, DEC-306) is the memo tier's, which only a
+    session writes; None answers every memo verb `unavailable`.
+    `ai_peer` is Nora's own requester id, the owner of every reminder she
+    sets herself.
+
+    `units` (every unit the evaluator may wake) must each have a home room
+    and `budget.timeout_seconds` must end `SESSION_TIMEOUT_MARGIN_SECONDS`
+    before `session_timeout_seconds` (the evaluator's
+    `WakePolicy.session_timeout_seconds`, the wake's own clock): both are
+    refused HERE, at startup, not discovered per wake.
+
+    `person_known(person_id)` is the roster question a Rollup stimulus is
+    judged readable by (`nora.domain.cognition_ground.rollup_status`); None
+    knows everyone, so only a ref that does not parse is unreadable.
+
+    `roster_of` and `nora_names` are what a note write is held to with the
+    SAME validator the tag path runs (`nora.domain.note_body.parse_note_body`):
+    the room's roster (an `## Owed` owner must be on it; None here: no roster
+    is known, so every owner is refused) and the names Nora goes by (a line
+    may not be hers, nor owed by her).
+
+    `room_proactive`, `max_pending_per_requester`, `remind_min_lead_seconds`
+    and `remind_max_horizon_days` are what `remind` is held to: the room's
+    flag, and the tag `remind` tool's own `ReminderCaps`. None leaves that
+    check out, which only a test wants.
+
+    `model_window_tokens` (None: unknown) and `overflow_window_fraction`
+    are what a context overflow is PROVEN against (DEC-244): without a
+    known window no overflow is ever the agenda's, and every one is
+    `infra`."""
+
     def __init__(
         self,
         *,
@@ -679,55 +829,7 @@ class CognitionSessionRunner:
         documents: Any = None,
         documents_context: Any = None,
     ) -> None:
-        """`doctrine_source`, when given, is read at the start of EVERY session
-        and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
-        as the constructor's fixed fallback for a caller with a fixed text):
-        the production composition passes the Dreamer's hot-reloading
-        objective through it. `skill_versions_for` records what
-        `skill_text_for` injected. `skills_for`, when given, replaces both: the
-        text and the versions come from one resolution, taken once per session
-        BEFORE the awaited grounding read and carried through (the production
-        composition passes it: a skill hot-reloads, and two reads of it could
-        straddle an edit).
-
-        `read_only_tools` is the allowlist `read_tools_for`'s result is
-        held to (the composition passes the registry's own read-only set,
-        `ToolRegistry.read_only_tools()`); empty, the default, refuses every
-        read tool: a session with no declared read surface has none.
-
-        `notes` (`SqlNoteStore`), `events` (`GatheringService`), `standing`
-        (`SqlStandingStore`) and `reminders` (`ReminderStore`) are the live
-        stores the tag path writes through; the session's writes land there.
-        `memos` (`SqlMemoStore`, DEC-306) is the memo tier's, which only a
-        session writes; None answers every memo verb `unavailable`.
-        `ai_peer` is Nora's own requester id, the owner of every reminder she
-        sets herself.
-
-        `units` (every unit the evaluator may wake) must each have a home room
-        and `budget.timeout_seconds` must end `SESSION_TIMEOUT_MARGIN_SECONDS`
-        before `session_timeout_seconds` (the evaluator's
-        `WakePolicy.session_timeout_seconds`, the wake's own clock): both are
-        refused HERE, at startup, not discovered per wake.
-
-        `person_known(person_id)` is the roster question a Rollup stimulus is
-        judged readable by (`nora.domain.cognition_ground.rollup_status`); None
-        knows everyone, so only a ref that does not parse is unreadable.
-
-        `roster_of` and `nora_names` are what a note write is held to with the
-        SAME validator the tag path runs (`nora.domain.note_body.parse_note_body`):
-        the room's roster (an `## Owed` owner must be on it; None here: no roster
-        is known, so every owner is refused) and the names Nora goes by (a line
-        may not be hers, nor owed by her).
-
-        `room_proactive`, `max_pending_per_requester`, `remind_min_lead_seconds`
-        and `remind_max_horizon_days` are what `remind` is held to: the room's
-        flag, and the tag `remind` tool's own `ReminderCaps`. None leaves that
-        check out, which only a test wants.
-
-        `model_window_tokens` (None: unknown) and `overflow_window_fraction`
-        are what a context overflow is PROVEN against (DEC-244): without a
-        known window no overflow is ever the agenda's, and every one is
-        `infra`."""
+        """The session runner's collaborators; see the class docstring."""
         self._documents = documents
         self._documents_context = documents_context
         self._memory = memory
@@ -791,11 +893,9 @@ class CognitionSessionRunner:
         #: model's window WITH the size evidence (in memory: a restart forgets
         #: it, which fails toward `infra`). A `closed` session clears it.
         self._overflowed: dict[str, frozenset[int]] = {}
-        #: Wake id -> the task running its session, for `shutdown`.
-        self._tasks: dict[int, asyncio.Task[Any]] = {}
         #: Outcome writes shielded from a second cancel (a `shutdown` and the
-        #: evaluator's `cancel_in_flight` both cancelling one task), held so
-        #: they are not garbage-collected while they finish.
+        #: Dreamer lane's `cancel_in_flight` both cancelling one task), held
+        #: so they are not garbage-collected while they finish.
         self._finishing: set[asyncio.Task[Any]] = set()
         #: One lock per unit around a pace or remind call's read-check-write:
         #: the model may issue two in one turn, and the pending cap and the
@@ -880,9 +980,6 @@ class CognitionSessionRunner:
         did not close. Every path writes the wake's outcome (or, if that write
         fails, leaves the wake OPEN until it expires): nothing here returns
         with the wake's stimuli consumed and unseen."""
-        task = asyncio.current_task()
-        if task is not None:
-            self._tasks[wake_id] = task
         session_id: int | None = None
         #: Offered to the model loop (`SESSION_TOKENS`) and read by EVERY path
         #: that records this wake's outcome, so a failed, timed-out or cancelled
@@ -1067,8 +1164,6 @@ class CognitionSessionRunner:
                 cause=classify_failure(exc),
             )
             raise
-        finally:
-            self._tasks.pop(wake_id, None)
 
     async def replay(self, *, view: UnitView, now_ms: int, historical: bool = False) -> Any:
         """Run the recorded batch through live assembly, using sandbox collaborators."""
@@ -1201,14 +1296,14 @@ class CognitionSessionRunner:
         )
 
     async def shutdown(self) -> None:
-        """Cancel every session still in flight and wait for it to record
-        itself `cancelled`. A session must not vanish with its wake still
-        reading «in flight» when it could have said otherwise."""
-        tasks = tuple(self._tasks.values())
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        """Wait for the finishing outcome writes to land. The tasks
+        themselves are not this runner's to cancel: a live session's task is
+        admitted on the Dreamer lane (`SubconsciousExecutor` →
+        `DreamerRuntime.dispatch`), and `CognitionShutdown` cancels it there
+        before calling this — the boundary that created the task cancels it
+        (node 18). What remains here is the settlement half: a session must
+        not vanish with its wake still reading «in flight» when it could
+        have said `cancelled`."""
         if self._finishing:
             await asyncio.gather(*tuple(self._finishing), return_exceptions=True)
 
@@ -1279,29 +1374,6 @@ class CognitionSessionRunner:
         one runs the model and records outcomes, the other returns what it
         built and persists nothing."""
         items = situation.agenda.items
-        # The `object` handles this session was shown, each to the room the
-        # grounder read it from — the evidence `object_refs` is held to.
-        shown_handles: dict[str, tuple[str, str] | None] = {}
-
-        def remember(handle: str, room: tuple[str, str]) -> None:
-            if handle not in shown_handles:
-                shown_handles[handle] = room
-            elif shown_handles[handle] != room:
-                shown_handles[handle] = None
-
-        for ref, e in grounding.observations.items():
-            stimulus = next((s for s in view.pending if s.ref == ref), None)
-            if (stimulus is not None and stimulus.platform is not None
-                    and stimulus.conversation_id is not None):
-                remember(e.handle, (stimulus.platform, stimulus.conversation_id))
-        for key, events in grounding.source_objects.items():
-            platform, _, cid = key.partition(":")
-            for e in events:
-                remember(e.handle, (platform, cid))
-        for retained in grounding.retained_objects.values():
-            for r in retained:
-                if r.head is not None:
-                    remember(r.ref.handle, (r.ref.platform, r.ref.conversation_id))
         state = _RunState(
             session_id=session_id,
             wake_id=wake_id,
@@ -1311,7 +1383,7 @@ class CognitionSessionRunner:
             items_by_index=dict(enumerate(items)),
             historical=historical,
             rooms={_room_key(i.room): (i.room.platform, i.room.conversation_id) for i in items},
-            shown_handles=shown_handles,
+            shown_handles=_shown_rooms(grounding, view),
             # Her own sends in an item's window are SHOWN too (DEC-245), marked
             # as hers, so a note citing one is refused `cites_nora`, not `unknown_id`.
             records=(
@@ -1368,73 +1440,7 @@ class CognitionSessionRunner:
             memory_items=state.memory_items,
             shared=shared_view,
         )
-        # Citation custody follows the actual emitted elements, never loaded rows.
-        from xml.etree import ElementTree
-
-        from nora.domain.blocks import render_group
-
-        root = ElementTree.fromstring(  # noqa: S314 - own escaped output
-            render_group("context", (), prompt)
-        )
-        emitted_objects = {element.attrib["object"] for element in root.iter()
-                           if "object" in element.attrib}
-        state.shown_handles = {key: room for key, room in state.shown_handles.items()
-                               if key in emitted_objects}
-        transcript_by_id = {line.row.id: line for line in grounding.transcript}
-        for element in root.findall("./transcript/m"):
-            mid = int(element.attrib["source_id"])
-            line = transcript_by_id[mid]
-            source_room = Room(line.platform, line.conversation_id)
-            if source_room is None:
-                continue
-            text = element.text or ""
-            if not line.row.is_nora and text == (line.row.body or ""):
-                state.document_evidence.append(
-                    (mid, source_room.platform, source_room.conversation_id, text))
-            state.fetched.take(
-                "record_query",
-                {
-                    "status": "ok",
-                    "messages": [{"n": mid, "sender": element.attrib.get("from", "unknown")}],
-                },
-                _room_key(source_room),
-            )
-            if self._memory is not None and not line.row.is_nora and text:
-                state.graph_fetched.show(
-                    Source(
-                        ("message", str(mid)),
-                        "record",
-                        unit,
-                        (line.row.person_id,) if line.row.person_id else (),
-                        text,
-                    )
-                )
-        complete_record_text = {
-            r.message_id: r.text for r in grounding.records.values()
-            if r.kind in {"message", "edit"}
-        }
-        for item in root.findall("./agenda/item"):
-            index = int(item.attrib["index"])
-            source_room = state.items_by_index[index].room
-            for element in item.findall("m"):
-                mid = int(element.attrib["n"])
-                if (
-                    mid > 0
-                    and element.text
-                    and element.text == complete_record_text.get(mid)
-                    and not any(
-                        element.attrib.get(flag) == "yes"
-                        for flag in ("own", "deleted", "withdrawn")
-                    )
-                ):
-                    state.document_evidence.append(
-                        (mid, source_room.platform, source_room.conversation_id, element.text)
-                    )
-        if self._memory is not None:
-            # ONE evidence custody: the agenda's emitted rows are the only
-            # sources a graph statement may cite (the loaded-but-clipped rest
-            # was never shown).
-            self._memory.register_shown(state)
+        _shown_custody(state, prompt, grounding, unit, self._memory)
         return state, surface, system_prompt, prompt
 
     async def _run_session(
@@ -1465,9 +1471,11 @@ class CognitionSessionRunner:
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
         trace_outcome = "llm_error"
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._budget.timeout_seconds
         try:
-            result = await asyncio.wait_for(
-                self._run_agent(
+            async with asyncio.timeout_at(deadline):
+                result = await self._run_agent(
                     unit=unit, pending_ids=frozenset(s.id for s in view.pending),
                     system_prompt=system_prompt, prompt=prompt, tools=tools,
                     historical=historical,
@@ -1477,11 +1485,12 @@ class CognitionSessionRunner:
                         # scales by it: DEC-247).
                         "cognition.items": str(len(items)),
                     },
-                ),
-                timeout=self._budget.timeout_seconds,
-            )
+                )
             trace_outcome = "llm_error" if result.stop_reason in LIMIT_STOP_REASONS else "silent"
         except TimeoutError as exc:
+            # `asyncio.timeout` raises TimeoutError only after its own
+            # deadline callback fired; an external task.cancel() propagates
+            # as CancelledError, so TimeoutError here IS the wall clock.
             raise SessionTimeoutError(
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
@@ -1509,7 +1518,11 @@ class CognitionSessionRunner:
                 bound_rooms=tuple(sorted(state.rooms)),
             )
             if self._tag_trace_store is not None:
-                await asyncio.wait_for(self._tag_trace_store.save(trace), timeout=5.0)
+                save_deadline = loop.time() + 5.0
+                # TimeoutError here is the save's own deadline firing, same
+                # classification as the session clock above.
+                async with asyncio.timeout_at(save_deadline):
+                    await self._tag_trace_store.save(trace)
             # The SAME automatic completion hook the tag path holds (design
             # 20): the tools-less Standing fold runs on this session's
             # complete retained Record — including a silent or failed
@@ -3301,7 +3314,7 @@ class CognitionSessionRunner:
             """
             if self._memory is None:
                 return {"status": "unavailable", "note": "Memory admission is unavailable."}
-            return await self._memory.propose(state, statements=statements)
+            return dict(await self._memory.propose(state, statements=statements))
 
         async def profile_read(
             entity: list[str],
@@ -3361,10 +3374,14 @@ class CognitionSessionRunner:
             # account heads (the store has no as-of view), so a session at
             # T would read — or revise — the future. History offers memory writes.
             verbs = (memory_propose,)
+        # `wire` is reached through the area root (`nora.documents` may be the
+        # only importer of `nora.documents.wire`): the root's lazy attribute
+        # resolves it, exactly as `build_tool_specs` reaches every area.
+        import importlib
+
         from nora.agent.ports import adapt
-        from nora.agent.tools import cognition_document_tools
         from nora.domain.documents import DocumentAuthority
-        document_specs = cognition_document_tools(
+        document_specs = importlib.import_module("nora.documents").wire.session_tool_specs(
             self._documents,
             self._documents_context,
             lambda: DocumentAuthority(

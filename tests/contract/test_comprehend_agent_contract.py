@@ -6,10 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 from nora.agent.factory import RetryPolicy
-from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
+from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.domain.stimuli import UnitView
 from nora.obs.metrics import Metrics
 from nora.testing.comprehend import ScriptedCognitionRunner
+from tests.fakes import dreamer_runtime_for
 from tests.unit.test_cognition_session_runner import NOW, _pending, _runner, proposal, wake_memory
 from tests.unit.test_dream_memory_budget import _ScriptedModel
 
@@ -22,8 +23,14 @@ async def test_wrong_call_shape_can_be_corrected_in_the_one_session(implementati
     else:
         scripted = _ScriptedModel(["memory_propose", "memory_propose", None],
             inputs=[json.dumps(args) for _, args in trajectory])
-        model = LiveCognitionAgentRunner(models=SimpleNamespace(create=lambda: scripted),
-            retry=RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0), metrics=Metrics())
+        model = DreamerAgentRunner(
+            runtime=dreamer_runtime_for(
+                models=SimpleNamespace(create=lambda: scripted),
+                retry=RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+                metrics=Metrics(),
+            ),
+            metrics=Metrics(),
+        )
     memory = wake_memory()
     runner, store, _ = _runner(agent_runner=model, memory=memory)
     from opentelemetry import context

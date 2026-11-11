@@ -43,7 +43,7 @@ _FIELDS = (
 )
 
 
-def _row(r: Row[Any]) -> ComputerSession:
+def _row(r: Row[*tuple[Any, ...]]) -> ComputerSession:
     return normalise_session(ComputerSession(**{f: getattr(r, f) for f in _FIELDS}))
 
 

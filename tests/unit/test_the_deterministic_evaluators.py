@@ -52,7 +52,7 @@ def test_tool_budget_enforces_the_r7_limits():
     # Derived from the live budgets, so a
     # budget change cannot silently un-test the R-7 ceiling: exactly the budget
     # is allowed, one more is refused.
-    from nora.agent.tools import NATIVE_TOOL_BUDGETS as B
+    from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS as B
     ce, gm, sr = B["load_transcript"], B["group_members"], B["send_reply"]
     assert ToolBudget().evaluate(_t(["load_transcript"] * ce + ["send_reply"])).passed
     assert not ToolBudget().evaluate(_t(["load_transcript"] * (ce + 1) + ["send_reply"])).passed

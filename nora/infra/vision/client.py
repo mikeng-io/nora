@@ -149,7 +149,7 @@ async def _stamp_opencode_session(request: httpx.Request) -> None:
         request.headers[OPENCODE_SESSION_HEADER] = f"ses_{uuid.uuid4().hex}"
 
 
-def opencode_go_http_client() -> httpx.AsyncClient:
+def opencode_go_http_client() -> DefaultAsyncHttpxClient:
     """The transport OpenCode Go's direct describer lane is built on.
 
     A request hook rather than a `describe()` argument, deliberately: the header

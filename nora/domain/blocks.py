@@ -33,6 +33,14 @@ from datetime import datetime, tzinfo
 from typing import Literal, Protocol, TypeVar, overload
 
 from nora.domain.block_types import BLOCK_TYPES
+
+# Re-exported: the declared-occasion test matches the nora.domain.blocks import surface.
+from nora.domain.blocks_declared import (
+    BlockDeclaration as BlockDeclaration,
+)
+from nora.domain.blocks_declared import (
+    assemble_declared as assemble_declared,
+)
 from nora.domain.composed import Composed, compose_body
 from nora.domain.external_files import render_file_links
 from nora.domain.prompt import age, escape, escape_attr, one_line
@@ -155,10 +163,7 @@ EmptyBody = Literal["drop", "render", "self_close", "nothing"]
 #: Attributes `render()` writes from the block's TYPE, and which therefore may
 #: not also arrive through `attrs`. Checked in `__post_init__`; the value is
 #: what the message says the caller was trying to set.
-_DERIVED_ATTRS = {
-    "description": "what the block IS",
-    "fields": "what the block's fields mean",
-}
+_DERIVED_ATTRS = {"description": "what the block IS", "fields": "what the block's fields mean"}
 
 #: What an attribute NAME may be. Letters, digits, `_`, `-`, `.`, no leading
 #: digit — the useful subset of XML's `Name`, and the whole of what this tree
@@ -267,12 +272,10 @@ class ContextBlock:
         """
         pairs = BLOCK_TYPES[self.name].annotations
         if any(k == "status" for k, _ in self.attrs):
-            pairs += (
-                (
-                    "status",
-                    "unavailable means the read failed; empty means a successful read held none",
-                ),
-            )
+            pairs += ((
+                "status",
+                "unavailable means the read failed; empty means a successful read held none",
+            ),)
         if not pairs:
             return ""
         return "; ".join(f"`{field}` is {what}" for field, what in pairs)
@@ -337,74 +340,6 @@ class ContextBlock:
         return f"{opening}>\n{self.body}\n</{self.name}>"
 
 
-@dataclass(frozen=True)
-class BlockDeclaration:
-    """One occasion's decision and the shared data type that grounds it."""
-
-    name: str
-    order: int
-    decision: str
-    key: BlockKey = "turn"
-
-    def __post_init__(self) -> None:
-        if not self.decision.strip():
-            raise ValueError("a declared block must ground a decision")
-        if not BLOCK_TYPES[self.name].store:
-            raise ValueError(f"{self.name}: no shared store ownership declared")
-
-
-def assemble_declared(
-    declaration: Sequence[BlockDeclaration],
-    blocks: Sequence[ContextBlock],
-    *,
-    unavailable: Iterable[str] = (),
-    sep: str = "\n\n",
-) -> str:
-    """Render every declared type, including successful empty and failed reads.
-
-    A caller must classify missing reads explicitly. Undeclared data and failed
-    reads with content are rejected rather than silently smuggled into a prompt.
-    """
-    rows = {d.name: d for d in declaration}
-    if len(rows) != len(declaration):
-        raise ValueError("duplicate context declaration")
-    failed = frozenset(unavailable)
-    if failed - rows.keys():
-        raise ValueError("undeclared failed read")
-    if {b.name for b in blocks} - rows.keys():
-        raise ValueError("undeclared context data")
-    chosen: list[ContextBlock] = []
-    for d in declaration:
-        instances = [b for b in blocks if b.name == d.name]
-        if d.name in failed:
-            if any(b.body for b in instances):
-                raise ValueError(f"{d.name}: failed read carries content")
-            instances = [
-                ContextBlock(
-                    name=d.name,
-                    body=compose_body(""),
-                    attrs=(("status", "unavailable"),),
-                    when_empty="self_close",
-                )
-            ]
-        elif not instances:
-            instances = [ContextBlock(name=d.name, body=compose_body(""), when_empty="self_close")]
-        for block in instances:
-            if dict(block.attrs).get("status") == "unavailable" and block.body:
-                raise ValueError("unavailable context carries content")
-            from xml.etree import ElementTree
-
-            tree = ElementTree.fromstring(render_group("body", (), block.body.text))  # noqa: S314 - own escaped output
-            explained = {name for name, _ in BLOCK_TYPES[block.name].annotations}
-            unexplained = set(dict(block.attrs)) - explained - {"status"}
-            for element in tree.iter():
-                unexplained.update(set(element.attrib) - explained)
-            if unexplained:
-                raise ValueError(f"{block.name}: undescribed fields {sorted(unexplained)}")
-            chosen.append(replace(block, order=d.order, key=d.key, when_empty="self_close"))
-    return assemble(chosen, sep=sep)
-
-
 def wrap_outside_text(name: str, source: str, text: str) -> str:
     """One piece of text from OUTSIDE, as a block that says whose it is.
 
@@ -453,23 +388,16 @@ def assemble(blocks: Sequence[ContextBlock], *, sep: str | None = None) -> str:
     ESCAPES to nothing (control characters only) is dropped, as on the tag turn
     (`tests/unit/test_dreamer_assembly_goldens.py` pins it).
     """
-    chosen = sorted(
-        (b for b in blocks if b.body or b.when_empty != "drop"),
-        key=lambda b: b.order,
-    )
+    chosen = sorted((b for b in blocks if b.body or b.when_empty != "drop"), key=lambda b: b.order)
     if sep is None:
         return "".join(b.render() + "\n" for b in chosen)
     return sep.join(b.render() for b in chosen)
 
 
 @overload
-def restamp(
-    block: ContextBlock, row: Mapping[str, tuple[int, BlockKey]],
-) -> ContextBlock: ...
+def restamp(block: ContextBlock, row: Mapping[str, tuple[int, BlockKey]]) -> ContextBlock: ...
 @overload
-def restamp(
-    block: None, row: Mapping[str, tuple[int, BlockKey]],
-) -> None: ...
+def restamp(block: None, row: Mapping[str, tuple[int, BlockKey]]) -> None: ...
 def restamp(
     block: ContextBlock | None, row: Mapping[str, tuple[int, BlockKey]],
 ) -> ContextBlock | None:
@@ -697,9 +625,7 @@ def _handle(style: HandleStyle, *, index: int, row_id: object) -> str:
     return ""
 
 
-def _when(
-    style: TimeStyle, ts: int | None, *, now: datetime | None, tz: tzinfo | None
-) -> str:
+def _when(style: TimeStyle, ts: int | None, *, now: datetime | None, tz: tzinfo | None) -> str:
     """The time, or nothing. A missing timestamp renders NOTHING rather than a
     placeholder — `prefill._parent_of`'s rule that a symbol which can mean
     "unknown" invites a model to emit one."""
@@ -914,15 +840,11 @@ def render_elements(
             # which would render `from=""`, the symbol this renderer forbids.
             if collapsed
         )
-        out.append(
-            f"<{tag} {rendered}>{escape(render_file_links(body(row) or ''))}</{tag}>"
-        )
+        out.append(f"<{tag} {rendered}>{escape(render_file_links(body(row) or ''))}</{tag}>")
     return "\n".join(out)
 
 
-def render_group(
-    tag: str, attrs: Sequence[tuple[str, str | None]], inner: str,
-) -> str:
+def render_group(tag: str, attrs: Sequence[tuple[str, str | None]], inner: str) -> str:
     """One element that CONTAINS other rendered elements: an agenda's `<item>`
     around its `<m>` rows, an event listing's `<room_events>` around its
     `<event>` rows.

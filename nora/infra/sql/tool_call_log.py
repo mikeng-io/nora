@@ -16,7 +16,7 @@ from nora.domain.tool_call_log import ToolCallLogEntry, normalise_tool_call_log_
 from nora.infra.sql.schema import TOOL_CALL_LOG
 
 
-def _row_to_entry(r: Row[Any]) -> ToolCallLogEntry:
+def _row_to_entry(r: Row[*tuple[Any, ...]]) -> ToolCallLogEntry:
     return normalise_tool_call_log_entry(
         ToolCallLogEntry(
             id=r.id, conversation_id=r.conversation_id,

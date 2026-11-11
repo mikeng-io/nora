@@ -130,10 +130,10 @@ Conventional Commit title, appending `(#N, DEC-M)` when it closes an issue or
 lands an indexed decision, and these headings in order:
 
 - **What**: concrete changes and supporting artifacts, one block per piece.
+- **Architecture**: the design bundle the change edits, or `none` and why.
 - **Also**: findings left outside the change; omit when empty.
 - **Gate on the merged tree**: the actual outcome and exit code.
-- **Authored by**: human or agent; for an agent, the tool and model, and who
-  reviewed it.
+- **Authored by**: human or agent; for an agent, the tool, model and reviewer.
 - **Closes**: `Closes #N` only when the PR fully resolves it; otherwise reference
   `issue #N` in the prose. Omit when there is no issue.
 

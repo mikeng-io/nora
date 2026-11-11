@@ -426,9 +426,7 @@ def emoji_display(emoji: str) -> str:
     return "[emoji]"
 
 
-def display_reactions(
-    counts: Iterable[tuple[str, int]],
-) -> dict[str, int]:
+def display_reactions(counts: Iterable[tuple[str, int]]) -> dict[str, int]:
     """Standing counts as the model reads them: each stored emoji projected
     to its bounded handle (`emoji_display`), identical handles merged — two
     custom emoji one handle cannot tell apart are one count, never two

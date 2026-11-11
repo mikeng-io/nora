@@ -181,8 +181,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
         honcho_loop.run_forever()
     threading.Thread(target=_serve, daemon=True).start()
     ready.wait(timeout=10)
-    monkeypatch.setattr(_obtain_mod, "memory_endpoint",
-                        lambda: (ready.url, "nora"))
+    monkeypatch.setattr(_obtain_mod, "memory_endpoint", lambda: (ready.url, "nora"))
 
     example = example_config_path.read_text()
     assert 'database_url_env = "DATABASE_URL"' in example
@@ -198,8 +197,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     # generated deployment carries a generated room and generated identity,
     # never the real host's.
     from nora.subject.obtain import _DEFAULT_IDENTITY, default_policy
-    (deploy_dir / "policy.toml").write_text(
-        default_policy(("signal", REAL_ID)))
+    (deploy_dir / "policy.toml").write_text(default_policy(("signal", REAL_ID)))
     (deploy_dir / "identity.toml").write_text(_DEFAULT_IDENTITY)
     import evals.backbone as bb
     monkeypatch.setattr(bb, "_DEPLOYMENT_DIR", deploy_dir)
@@ -226,8 +224,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     requests: list[dict] = []
     real_create_client = factory.create_client
 
-    transport = httpx.MockTransport(
-        _scripted_respond(evidence_root, requests))
+    transport = httpx.MockTransport(_scripted_respond(evidence_root, requests))
 
     def with_transport(**kwargs):
         kwargs.setdefault("http_client", httpx.AsyncClient(
@@ -238,8 +235,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     # The same injected transport covers SDK-owned provider clients a
     # bounded run reaches (the declared seam on run_budget).
     from nora.subject.run_budget_transport import injected_transport_client
-    injected_transport_client.set(
-        httpx.AsyncClient(transport=transport))
+    injected_transport_client.set(httpx.AsyncClient(transport=transport))
 
     if break_evidence_write:
         import os as _os

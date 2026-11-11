@@ -10,12 +10,7 @@ from typing import Any
 import pytest
 
 from nora.agent import factory
-from nora.agent.guards import Deliverer, ReplyGuard
-from nora.agent.mcp import McpToolGroup
-from nora.agent.registry import ToolRegistry, aggregate_budgeted_tools
-from nora.agent.room import Room
-from nora.agent.surface import WORKER_ONLY_TOOLS
-from nora.agent.tools import (
+from nora.agent.catalog.groups import (
     COMPUTER_TOOLS,
     GRAPH_MEMORY_TOOLS,
     LOADER_TOOL,
@@ -23,6 +18,11 @@ from nora.agent.tools import (
     SUBAGENT_TOOLS,
     VIDEO_TOOLS,
 )
+from nora.agent.guards import Deliverer, ReplyGuard
+from nora.agent.mcp import McpToolGroup
+from nora.agent.registry import ToolRegistry, aggregate_budgeted_tools
+from nora.agent.room import Room
+from nora.agent.surface import WORKER_ONLY_TOOLS
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
@@ -186,14 +186,8 @@ def test_the_registry_exposes_every_declared_tool():
     ))
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
-        "who_said",
-        "now",
-        "load_transcript",
-        "send_reply",
-        "reaction_send",
-        "search_gifs",
-        "send_gif",
-        "send_to",
+        "who_said", "now", "load_transcript", "send_reply", "reaction_send", "search_gifs",
+        "send_gif", "send_to",
         # which rooms this group has, and what is
         # said in one of them.
         "room_list",
@@ -202,22 +196,9 @@ def test_the_registry_exposes_every_declared_tool():
         # under lineage.
         "record_query",
         # the Dreamer-only reads.
-        "rollup_read",
-        "standing_read",
-        "character_read",
-        "social_read",
-        "group_members",
-        "lookup_person",
-        "about",
-        "ask_memory",
-        "search_memory",
-        "recall_lookups",
-        "calculate",
-        "transit",
-        "route",
-        "place_info",
-        "saved_places",
-        "where_is",
+        "rollup_read", "standing_read", "character_read", "social_read", "group_members",
+        "lookup_person", "about", "ask_memory", "search_memory", "recall_lookups", "calculate",
+        "transit", "route", "place_info", "saved_places", "where_is",
         # DEC-156: the coordinate -> street-address fetch surface. `where_is`
         # carries no address, so this is the ONLY tool that resolves one, and
         # R-57 screens routes against what it disclosed.
@@ -231,41 +212,26 @@ def test_the_registry_exposes_every_declared_tool():
         "online_now",
         "media_fetch",
         # a shared file link, read as text.
-        "file_fetch",
-        "generate_image",
-        "media_search",
-        "media_send",
-        "web_search",
-        "web_fetch",
+        "file_fetch", "generate_image", "media_search", "media_send", "web_search", "web_fetch",
         # x_read and x_search (DEC-201, replacing DEC-151's social_fetch):
         # READ-ONLY X via the host bridge.
         "x_read",
         "x_search",
         # linkedin_read and linkedin_search (DEC-201): READ-ONLY LinkedIn via
         # the same host bridge, inert unless [social.linkedin] enabled.
-        "linkedin_read",
-        "linkedin_search",
+        "linkedin_read", "linkedin_search",
         # instagram_read: a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
         # instagram_search: Instagram
         # accounts matching free text, over the instagram-bridge.
-        "instagram_search",
-        "weather",
+        "instagram_search", "weather",
         # HK parking: TD open-data vacancy for a named car park,
         # and Google Places nearby-search + street meters for «near X».
-        "parking_status",
-        "find_parking",
+        "parking_status", "find_parking",
         # Discord-only music.
-        "play_music",
-        "skip_music",
-        "top_music",
-        "stop_music",
-        "music_status",
-        "set_music_volume",
-        "remind",
-        "list_reminders",
-        "cancel_reminder",
+        "play_music", "skip_music", "top_music", "stop_music", "music_status", "set_music_volume",
+        "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
         "event_propose",
         "event_revise",
@@ -274,13 +240,8 @@ def test_the_registry_exposes_every_declared_tool():
         "event_search",
         "suggest_venue",
         # Nora's computer (DEC-243).
-        "computer_run",
-        "computer_read",
-        "computer_write",
-        "computer_edit",
-        "computer_export",
-        "computer_import",
-        "computer_session_list",
+        "computer_run", "computer_read", "computer_write", "computer_edit", "computer_export",
+        "computer_import", "computer_session_list",
         # a whole browser task, by a sub-agent.
         "computer_browse",
         # the scoped pair: a picture of a task's own tab; a queued or
@@ -288,21 +249,14 @@ def test_the_registry_exposes_every_declared_tool():
         "computer_capture",
         "computer_cancel",
         # a document is published to the web app, read back to edit.
-        "document_publish",
-        "document_read",
-        "document_set_status",
-        "document_list",
+        "document_publish", "document_read", "document_set_status", "document_list",
         "document_revise",
         # (the four `subagent_*` tools are tag-turn only: this Dreamer-path build omits them,
         # and tests/unit/test_subagent_tools.py pins where they ARE built.)
         # DEC-97: what she is running, and what was in an earlier version.
-        "version_list",
-        "version_read",
+        "version_list", "version_read",
         # The note tier's four verbs.
-        "note_read",
-        "note_search",
-        "note_create",
-        "note_revise",
+        "note_read", "note_search", "note_create", "note_revise",
         # DEC-306: one kept memo of the unit.
         "memo_read",
         # The remember verb — the conclusion write lane.
@@ -488,7 +442,7 @@ def test_budgets_match_todays_table():
         # fetch (DEC-116, Tavily /extract): a page is heavier than a snippet
         # round trip and there is rarely a reason to open more than one or two
         # links in a turn.
-        "web_fetch": 2,
+        "web_fetch": 5,
         # x_read (DEC-201): a post, then its author's profile or posts, and a
         # second try. x_search: a search and one refinement.
         "x_read": 3,
@@ -593,7 +547,7 @@ def test_budgets_do_not_require_runtime_dependencies():
 
 
 def test_specs_carry_the_same_budgets_as_budgets():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     registry = ToolRegistry()
     specs = registry.specs(
@@ -668,7 +622,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
     that the SPEC carries the table's value — `_spec()` silently dropping the
     field would give every tool the dataclass default, and a live-only tool
     quietly declaring it never goes stale is the failure worth catching."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     registry = ToolRegistry()
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
@@ -689,7 +643,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
 
 
 def test_transit_is_declared_live_only_and_not_terminal():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     assert NATIVE_TOOLS["transit"].time_shiftable is False
     assert NATIVE_TOOLS["transit"].terminal is False
     assert "transit" not in ToolRegistry().terminal_tools()
@@ -755,7 +709,7 @@ def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
     """The taxonomy must stay COMPLETE over the tools routing actually confuses —
     a new local tool added untagged would silently sit outside the priority. Pins
     the tier of each tool in the seed confusability clusters."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     expected = {
         "weather": "confirmed", "transit": "confirmed", "route": "confirmed",
         "place_info": "confirmed", "where_is": "confirmed",
@@ -791,7 +745,7 @@ def test_skills_is_budgeted_so_r7_admits_it_but_the_registry_does_not_build_it()
 
 
 def test_skills_declares_terminal_false_and_no_time_dimension():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     spec = NATIVE_TOOLS["skills"]
     assert spec.plugin is True
     assert spec.terminal is False
@@ -1065,8 +1019,7 @@ READ_ONLY = frozenset({"document_list",
     # DEC-316: the graph surface's memory search, an index read
     "memory_search", "memory_read",
     # reads a shared file; the account cannot write.
-    "file_fetch",
-    "media_search",
+    "file_fetch", "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "event_search",
     "suggest_venue", "version_list", "version_read", "search_gifs",
     # The two parking verbs: live reads that act on nothing —
@@ -1081,8 +1034,7 @@ READ_ONLY = frozenset({"document_list",
     # The unit-wide memory variant — a pure read of a store the tag path
     # already trusts, granted to a unit-keyed adaptor through
     # `UNIT_SAFE_TOOLS`.
-    "search_memory_workspace",
-    "music_status",
+    "search_memory_workspace", "music_status",
     # DEC-151, DEC-201: the X tools are pure reads at all three layers, the
     # tools' closed vocabulary, the bridge's host-side allowlist, this
     # declaration.
@@ -1127,7 +1079,7 @@ def test_every_registered_tool_declares_whether_it_only_reads():
     the activation is registered by Strands' own plugin, so there is nothing
     here to classify. It is excluded from the Dreamer by the fail-closed
     default, which is the correct answer for a tool nobody here builds."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     unclassified = {
         name for name, spec in NATIVE_TOOLS.items()
@@ -1158,7 +1110,7 @@ def test_the_read_and_act_halves_partition_the_table():
     failure this guards is a tool added to one list and forgotten in the other
     — the exact failure `NativeTool`'s own docstring says the table exists to
     prevent."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     assert READ_ONLY | ACT_VERBS | {"skills"} == set(NATIVE_TOOLS)
     assert not READ_ONLY & ACT_VERBS

@@ -1,12 +1,26 @@
 # Open questions and measurements
 
-Current scope (2026-11-02): the
-[scoped anonymous browser target](00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
-is NOT BUILT and owns today's acceptance in issue #520. The rulings and B3
-measurement programme below are retained historical context. Login/vault,
-streaming/noVNC, tier cache, small models, GPU and stealth-engine arms are
-outside the current slice; challenge rate is measured on the consistent Chrome
-baseline without an anti-bot guarantee. ADR 0022 remains unchanged.
+## Current scope (2026-11-09)
+
+Scoped VM routing/browser source merged in PR #584; the bundle's
+[delivery status](00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
+separates that from live acceptance. Automatic VM provisioning, restart on demand,
+capacity admission and idle VM stop have opt-in source, pending stack review and live acceptance. Their
+[design and acceptance](05-microvm-lifecycle.md) precede the stacked source implementation; installation and live acceptance remain open.
+The following November 4 selection and October B3 programme are historical,
+not instructions to rebuild existing routing or run a model comparison.
+
+| Question | Current disposition | Evidence or remaining closure |
+|---|---|---|
+| Sandbox platform | Operator selected the existing Docker Sandboxes runtime; no OpenSandbox/E2B migration. | Reuse the sbx wrapper and preserve the provider-independent scope/runtime contract. |
+| Automatic lifecycle | Design target: first-use provisioning, disk-preserving restart, capacity admission and quiet idle stop. | Source evidence and unavailable installation/live boundaries are recorded in 05; no installed delivery is claimed. |
+| Lightpanda as a Chrome replacement | Not selected: real screenshots and visual geometry remain required. | Official docs describe no graphics pipeline and placeholder/text-layout captures; Nora uses real screenshot and geometry calls. |
+| Lightpanda for text-only work | Possible later experiment, not part of lifecycle implementation. | A separately selected corpus must measure CDP/API fit, page correctness and whole-VM resource use; no silent cross-engine continuation. |
+| Host sizing | No memory-reserve or safe-concurrency conclusion from configured VM RAM or RSS alone. | Measure resident/PSS and swap, pressure, guest Chrome processes and concurrent demand; choose explicit limits before enabling the controller. |
+
+Login/vault, streaming/noVNC, tier cache, new decision models, GPU and stealth
+engines remain outside this slice. Historical evidence below does not authorize
+paid calls or host changes.
 
 ## Current selection (2026-11-04)
 

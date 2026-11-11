@@ -5,6 +5,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.egress import scan_identifiers
 from nora.domain.media import MediaBlob, MediaObject, MediaRef
 from nora.domain.media_join import MediaJoin
@@ -19,6 +20,7 @@ from nora.ingest.stages import media as media_stage
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
+from nora.social.adapters.tools.shared import social_read_vocabulary
 from nora.testing import (
     FakeBlobStore,
     FakeMediaInterpreter,
@@ -46,20 +48,18 @@ RULE_TESTS = {
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
     # R-1: untagged ambient traffic reaches the agent ONLY under the participation
-    # occasion's gating: an operator-opted-in room, one quiescence-closed window,
-    # one evaluation through `FirePath.speak`. The named test pins that ordinary
-    # ambient traffic constructs ZERO agents; its sibling pins the exception's
-    # gating.
+    # occasion's gating: an operator-opted-in room, one quiescence-closed window, one
+    # evaluation through `FirePath.speak`. The named test pins that ordinary ambient
+    # traffic constructs ZERO agents; its sibling pins the exception's gating.
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
     # R-1b: the send-path clause of R-1. `nora.app.fire.FirePath` makes "only the
-    # tagging path may cause a send" false — a fire turn is a send not caused by
-    # a tag. R-1's test harnesses only ambient input, so it stays green no matter
-    # how many non-tag send paths exist and is no brake on this clause. R-1b is
-    # that brake: `Deliverer` is the only caller of `adapter.send`, it is
-    # constructed only by `deliver.build`, and `deliver.build` has exactly two
-    # callers — the tag pipeline and the fire path. The participation occasion
-    # changes NOTHING here: it goes through `FirePath.speak`, so the two callers
-    # remain two.
+    # tagging path may cause a send" false — a fire turn is a send not caused by a tag.
+    # R-1's test harnesses only ambient input, so it stays green no matter how many non-tag
+    # send paths exist and is no brake on this clause. R-1b is that brake: `Deliverer` is
+    # the only caller of `adapter.send`, it is constructed only by `deliver.build`, and
+    # `deliver.build` has exactly two callers — the tag pipeline and the fire path. The
+    # participation occasion changes NOTHING here: it goes through `FirePath.speak`, so the
+    # two callers remain two.
     "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
     "R-2": "test_a_reaction_and_a_text_reply_share_the_message_cap",
     "R-2b": "test_deliverer_latch_is_single_shot",
@@ -367,9 +367,7 @@ RULE_TESTS = {
     "R-70": "test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit",
     # R-71 and R-72 are retired; the numbers are not reused.
     # R-73 points at `who_said`'s enforcement of the principle; the decision
-    # index's R-73 row cites that test as a satisfying one.
-    # Owner-local evaluation authorization is the explicit exception in that
-    # row, with its wired export/refusal tests named alongside the runtime guard.
+    # index's R-73 row cites that test, owner-local eval export excepted.
     "R-73": "test_neither_the_words_nor_a_line_reaches_the_collector",
     # R-76 names the CHILD test rather than either drop test, and that is the
     # deliberate choice: «ingest is not exported» is the symptom everyone
@@ -647,14 +645,15 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     """
     import inspect
 
-    from nora.agent import tools as tools_module
-    src = inspect.getsource(tools_module)
+    from nora.memory.adapters.tools import meta as lookups_module
+
+    src = inspect.getsource(lookups_module)
     # The merged docstring is the LLM-facing one (Strands reads the callable's
     # docstring as the schema description). Assert the evidence framing
     # survived into it: `actually`, `doubted`/`guessed`, and the retained
     # cost framing `re-running`.
     start = src.find("def recall_lookups(")
-    assert start != -1, "recall_lookups callable not found in tools.py"
+    assert start != -1, "recall_lookups callable not found in meta.py"
     open_q = src.find('"""', start)
     close_q = src.find('"""', open_q + 3)
     doc = src[open_q + 3:close_q].lower()
@@ -822,7 +821,7 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     `like`/`follow`/`delete`; the instagram-bridge serves `/send`, `/react`, …
     — so none of them may reach a write. Read-only is enforced at three
     layers, and this test DERIVES all three from the code, from ONE vocabulary
-    table covering every social tool (`nora.agent.tools.
+    table covering every social tool (`nora.social.adapters.tools.shared.
     social_read_vocabulary`), so an edit to any layer that drifts from the
     others goes red here:
 
@@ -845,10 +844,9 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     LinkedIn only: no `instagram` key is in `READ_ONLY_ALLOWLIST`, and the X
     tools construct no Instagram pair at all.
     """
-    from nora.agent import tools as tools_module
     from nora.infra.social import EXCEPTION_ROUTES, bridge_server
 
-    vocabulary = tools_module.social_read_vocabulary()
+    vocabulary = social_read_vocabulary()
     assert set(vocabulary) == {
         "x_read", "x_search", "linkedin_read", "linkedin_search",
         "instagram_read", "instagram_search",
@@ -871,9 +869,7 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     names = sorted(vocabulary)
     for i, a in enumerate(names):
         for b in names[i + 1:]:
-            assert not (vocabulary[a] & vocabulary[b]), (
-                f"a social read has two tools: {a} and {b}"
-            )
+            assert not (vocabulary[a] & vocabulary[b]), f"a social read has two tools: {a} and {b}"
     x_reads = vocabulary["x_read"] | vocabulary["x_search"]
     linkedin_reads = vocabulary["linkedin_read"] | vocabulary["linkedin_search"]
     read, search = vocabulary["instagram_read"], vocabulary["instagram_search"]
@@ -911,7 +907,7 @@ def test_r86_social_reads_are_read_only_at_three_layers():
 
     # Layer 3: the declaration the Dreamer's ceiling is derived from.
     for tool in vocabulary:
-        assert tools_module.NATIVE_TOOLS[tool].read_only is True, tool
+        assert NATIVE_TOOLS[tool].read_only is True, tool
 
 
 async def write_prior(store) -> None:

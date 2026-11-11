@@ -35,6 +35,7 @@ from nora.infra.sql.schema import (
     COMPUTER_EVENTS,
     COMPUTER_EXPORTS,
     DOCUMENT_REVISION,
+    FETCHED_PAGES,
     MEDIA_OBJECTS,
     MESSAGES,
     REMINDERS,
@@ -437,6 +438,12 @@ HOLDERS: dict[str, Callable[[str], tuple[sa.Table, dict[str, Any]]]] = {
     }),
     "reminders.payload": lambda sha: (REMINDERS, {
         **_row("reminders"), "payload": {"media": sha},
+    }),
+    # A NOT_RESTORED table: no fixture builder, the row is literal here.
+    "fetched_pages.blob_key": lambda sha: (FETCHED_PAGES, {
+        "conversation_id": "g1", "url": "https://example.invalid/p",
+        "blob_key": sha, "fetched_at": datetime.now(UTC),
+        "expires_at": datetime.now(UTC) + timedelta(days=1), "provenance": {},
     }),
 }
 

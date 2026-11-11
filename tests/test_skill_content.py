@@ -1075,7 +1075,7 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
 def test_the_document_skill_names_only_tools_that_exist() -> None:
     """A rule that tells her to call a tool she does not hold is a dead rule: a rename would
     otherwise leave her following an instruction to nothing."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     body = (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8")
     named = {"document_publish", "document_read", "document_set_status", "computer_export"}

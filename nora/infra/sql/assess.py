@@ -25,7 +25,7 @@ from nora.infra.sql.schema import ASSESS_REPORT
 __all__ = ["SqlAssessReportStore"]
 
 
-def _row_to_report(row: sa.Row[Any]) -> AssessReport:
+def _row_to_report(row: sa.Row[*tuple[Any, ...]]) -> AssessReport:
     return AssessReport(
         kind=row.kind,
         run_at_ms=row.run_at_ms,
