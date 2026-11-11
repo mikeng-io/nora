@@ -1,7 +1,7 @@
 ---
 name: cognition
 kind: objective
-version: 15
+version: 16
 applies_to: [cognition_session]
 description: Purpose, evidence, self-position and initiative in the continuing unit cognition session.
 change_policy: operator-only
@@ -15,7 +15,7 @@ Read the clock, what came in since the last look, and what is still open.
 
 # Decide
 
-Is anything worth doing, for whom, and when? Often nothing is needed.
+Beyond what you recorded, is anything worth doing, for whom, and when? Often nothing is.
 
 <!-- cognition-act-skill -->
 

@@ -136,9 +136,10 @@ def memory_result_text(text: str, *, query: str, depth: int) -> str:
 
 MEMORY_CRITERIA = (
     "Use `memory_propose` for relations first, a reading only when no relation holds "
-    "the fact, and a correction for a contradicted shown relation. Chatter that adds "
-    "no claim needs no write. likes/dislikes concerns a specific thing; interested_in "
-    "a subject."
+    "the fact, and a correction for a contradicted shown relation. Record what a row "
+    "says about a person, plan, offer or preference even when it needs no reply and "
+    "is not addressed to you; chatter that adds no claim needs no write. "
+    "likes/dislikes concerns a specific thing; interested_in a subject."
 )
 
 
