@@ -106,10 +106,10 @@ design is built against — "silently dropping the oldest position is how a roll
 summary quietly becomes a recent summary" (`nora/domain/standing.py#L54-L58`).
 
 Lessons and Character/Culture are deliberately not the same kind of thing, and the
-Lessons objective says so in its own words: a lesson "is practice: one thing to do,
-or stop doing, here. It is not a description of the group or of yourself (that is
-written elsewhere), and it is not one of your rules restated"
-(`nora/dreamer/objectives/lessons.md#L15-L21`). Character and Culture are accounts
+`lesson_write` verb says so in its own words: "a practice for how to act in this
+unit that the outcomes of your own sends taught you. Say it short, as one thing to
+do differently, not what the unit is like and not a rule you already carry"
+(`nora/language/lesson_book.py#L188-L191`). Character and Culture are accounts
 of what things are *like*; a lesson is about what she *does*.
 
 ## Response episodes: the shared unit of outcome
@@ -661,7 +661,9 @@ whole tier is built to have.
 - `tests/unit/test_lessons_checks.py` — the echo test by coverage of 5-character runs,
   the no-relearn floor, the caps, and that every refusal reason is in the vocabulary.
 - `tests/unit/test_cognition_lessons.py` — handles never ids, the three-episode floor,
-  settle-versus-abandon, the horizon retirement and the correction fast path.
+  the horizon retirement and the correction fast path;
+  `tests/unit/test_cognition_session_lessons.py` — the batch holds until a session
+  closes.
 - `tests/infra/test_lessons.py` — the append-only store, the compare-and-set conflict,
   an operator retirement that cannot be re-learned from the same evidence, rollback
   undoing a retirement, and the CLI round trip.
