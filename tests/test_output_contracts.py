@@ -193,6 +193,18 @@ def _built_tools() -> dict[str, str | None]:
                     return owned[0]
         return candidates[0]
 
+    def factory_inner(factory_name: str, tool_name: str):
+        # `_spec("tool", _make_<tool>(deps...))` binds the inner callable the
+        # factory returns; resolve the nested def named after the tool.
+        for factory in funcs.get(factory_name, []):
+            for inner in ast.walk(factory):
+                if (
+                    isinstance(inner, ast.FunctionDef | ast.AsyncFunctionDef)
+                    and inner.name == tool_name
+                ):
+                    return inner
+        return None
+
     out: dict[str, str | None] = {}
     for tree in trees.values():
         for node in ast.walk(tree):
@@ -203,9 +215,14 @@ def _built_tools() -> dict[str, str | None]:
             first, second = node.args[0], node.args[1]
             if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
                 continue  # `def _spec(name, call)` itself has no literal
-            if not isinstance(second, ast.Name):
+            if isinstance(second, ast.Name):
+                fn = resolve(second.id, tree)
+            elif isinstance(second, ast.Call) and isinstance(second.func, ast.Name):
+                fn = factory_inner(second.func.id, first.value)
+            else:
                 continue
-            fn = resolve(second.id, tree)
+            if fn is None:
+                continue
             out[first.value] = ast.unparse(fn.returns) if fn.returns else None
     return out
 

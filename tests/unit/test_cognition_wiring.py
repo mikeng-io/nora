@@ -288,7 +288,7 @@ async def test_the_objective_is_read_at_every_session_not_captured_at_startup():
     await _wake(runner, (_stim(1, HOME),), wake_id=1)
     stimuli.seed_wake("u", 2)                    # the next wake, written after the first ended
     await _wake(runner, (_stim(2, HOME),), wake_id=2)
-    assert [text.split("<cognition_act", 1)[0] for text in agent.system_prompts] == [
+    assert [text.split("<cognition_", 1)[0] for text in agent.system_prompts] == [
         "first text", "second text"]
     assert [s.doctrine_sha256 for _, s, _ in ledger.sessions] == ["sha-1", "sha-2"]
 
