@@ -19,24 +19,7 @@ def _make__resolve_quote(deps):
     bound_window = deps.bound_window
 
     def _resolve_quote(reply_to: int | None) -> OutboundQuote | None:
-        """`n` from the rendered transcript -> the row's platform handles.
-
-        A CLOSED SET, which is the whole safety property: only 1..N exist, so
-        an out-of-range or absent value resolves to `None` and the message
-        goes unthreaded — it can never reach for some other row. The model
-        never sees `ts`, `sender_id` or the platform's message id; they stay on
-        this side, which is what keeps a raw identifier off the wire (R-18).
-
-        Positional over `bound_window`, the SAME tuple the prefill rendered
-        (`render_messages` numbers it `enumerate(..., 1)` into `n`), so the
-        index resolves against what was actually shown rather than a fresh read
-        that may have moved underneath.
-
-        Discord's message id has no column on `messages` and lives in the row's
-        `raw_json`; a row that predates it, or a platform that never had one,
-        simply yields `None` there and the reply goes unthreaded on Discord
-        while still threading on Signal, which needs only `ts` + `sender_id`.
-        """
+        """`n` from the rendered transcript -> the row's platform handles."""
         if reply_to is None:
             return None
         if not (1 <= reply_to <= len(bound_window)):
@@ -250,10 +233,9 @@ def _make_send_reply(deps):
                     record_metadata=_gif_record(reaction),
                 )
         status = _send_status(deliverer, sent=sent, held_before=held_before)
-        # A LENGTH, never the reply. `Deliverer` already logs the specific
-        # reason behind every refusal (R-2 latch, R-4 empty, R-6 leak, R-18
-        # egress, audit failure, send failure); this line exists so that the
-        # call itself is visible in the same grep as every other tool.
+        # A LENGTH, never the reply. `Deliverer` already logs the specific reason
+        # behind every refusal (R-2 latch, R-4 empty, R-6 leak, R-18 egress, audit
+        # failure, send failure); this line exists so that the call itself is visible
         _record(
             metrics,
             "send_reply",
@@ -362,10 +344,9 @@ def _make_send_gif(deps):
                 "media": {"provider": candidate.provider, "id": candidate.id, "type": "gif"}
             },
         )
-        # A HOLD must not raise. The raise below tells the model the GIF failed
-        # and to "reply in words instead" — but a hold holds the words too, so
-        # the fallback would be a second held send and another model call: a
-        # loop.
+        # A HOLD must not raise. The raise below tells the model the GIF failed and to
+        # "reply in words instead" — but a hold holds the words too, so the fallback
+        # would be a second held send and another model call: a loop.
         if _send_status(deliverer, sent=sent, held_before=held_before) == HELD:
             return {
                 "status": "held_for_review",

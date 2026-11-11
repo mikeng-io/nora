@@ -3757,15 +3757,12 @@ class DocumentsConfig(BaseModel):
 
 
 class GoogleConfig(BaseModel):
-    """Nora's ONE Google identity: one Desktop-app OAuth client and one refresh token
-    for her own Google account (`account`), shared by every Google service she uses
-    (shared files today), never a client or variable per service. Each `*_env` field NAMES the
-    environment variable that holds the value (DEC-8), never the value. `account` is the
-    mailbox itself — the NOT_SHARED note tells the owner which account to share with;
-    empty falls back to "Nora's Google account" there. The scopes are
-    declared by each service in code (`nora.infra.google.scopes`) and granted together
-    by `scripts/google_auth.py`. An API KEY (the Maps key under `[route]`) is a
-    different mechanism and stays with its feature."""
+    """Nora's ONE Google identity: one OAuth client and one refresh token for her own
+    Google account (`account`), shared by every Google service she uses (shared files
+    today), never a client or variable per service. Each `*_env` field NAMES the environment
+    variable that holds the value (DEC-8), never the value; `account` is the mailbox itself
+    (empty → "Nora's Google account" in the note). The scopes are declared by each service
+    in code (`nora.infra.google.scopes`); the Maps API KEY under `[route]` stays separate."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

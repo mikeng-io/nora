@@ -54,10 +54,10 @@ def _make_file_fetch(deps):
             _now_ms=deps._now_ms,
             bound_conversation_id=deps.bound_conversation_id,
         )
-        k_, _, v_ = await _file_fetch__p1(c)
+        k_, _, v_ = await _file_fetch__resolve_ref(c)
         if k_:
             return v_
-        k_, _, v_ = await _file_fetch__p2(c)
+        k_, _, v_ = await _file_fetch__result(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -65,7 +65,7 @@ def _make_file_fetch(deps):
     return file_fetch
 
 
-async def _file_fetch__p1(c):
+async def _file_fetch__resolve_ref(c):
     c.off = "I can't open shared files right now. Say so; don't guess what the file says."
     c.code = c.code.strip() if isinstance(c.code, str) else ""
     c.link = c.link.strip() if isinstance(c.link, str) else ""
@@ -164,7 +164,7 @@ async def _file_fetch__p1(c):
     return (False, None, None)
 
 
-async def _file_fetch__p2(c):
+async def _file_fetch__result(c):
     return (
         True,
         None,

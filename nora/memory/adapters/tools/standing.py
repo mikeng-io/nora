@@ -98,10 +98,10 @@ def _make_rollup_read(deps):
             _rollup_name=_make__rollup_name(deps),
             by_id=deps.by_id,
         )
-        k_, _, v_ = await _rollup_read__p1(c)
+        k_, _, v_ = await _rollup_read__fetch(c)
         if k_:
             return v_
-        k_, _, v_ = await _rollup_read__p2(c)
+        k_, _, v_ = await _rollup_read__finish(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -251,13 +251,13 @@ def _make_character_read(deps):
             bound_conversation_id=deps.bound_conversation_id,
             now_fn=deps.now_fn,
         )
-        k_, _, v_ = await _character_read__p1(c)
+        k_, _, v_ = await _character_read__wired(c)
         if k_:
             return v_
-        k_, _, v_ = await _character_read__p2(c)
+        k_, _, v_ = await _character_read__heads(c)
         if k_:
             return v_
-        k_, _, v_ = await _character_read__p3(c)
+        k_, _, v_ = await _character_read__record(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -265,7 +265,7 @@ def _make_character_read(deps):
     return character_read
 
 
-async def _rollup_read__p1(c):
+async def _rollup_read__fetch(c):
     if c.rollup is None:
         _record(c.metrics, "rollup_read", "unavailable", reason="unwired")
         return (True, None, {"status": "unavailable", "note": _ROLLUP_OFF})
@@ -379,14 +379,14 @@ async def _rollup_read__p1(c):
     return (False, None, None)
 
 
-async def _rollup_read__p2(c):
+async def _rollup_read__finish(c):
     if c.notes:
         c.result["note"] = " ".join(c.notes)
     return (True, None, c.result)
     return (False, None, None)
 
 
-async def _character_read__p1(c):
+async def _character_read__wired(c):
     if c.profile_read is None and c.culture is None:
         _record(c.metrics, "character_read", "unavailable", reason="unwired")
         return (True, None, {"status": "unavailable", "note": _CHARACTER_OFF})
@@ -422,7 +422,7 @@ async def _character_read__p1(c):
     return (False, None, None)
 
 
-async def _character_read__p2(c):
+async def _character_read__heads(c):
     if c.profile_read is not None:
         try:
             c.profile_heads = await asyncio.gather(
@@ -530,7 +530,7 @@ async def _character_read__p2(c):
     return (False, None, None)
 
 
-async def _character_read__p3(c):
+async def _character_read__record(c):
     for _w1 in c.held:
         c.r, c.head = _w1
         if scan_identifiers(c.head.body, content_checks=c.content_checks) is None:

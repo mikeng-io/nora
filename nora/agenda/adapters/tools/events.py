@@ -457,9 +457,8 @@ def _make_suggest_venue(deps):
             roster = await room.members()
         except Exception:
             # `Room.members` is documented never to raise (its own docstring:
-            # "available=False if it could not be read"). This is the belt
-            # for those braces, landing on `unavailable` rather than an
-            # unhandled exception escaping the tool (R-5).
+            # "available=False if it could not be read"). This is the belt for
+            # those braces, landing on `unavailable` rather than an unhandled
             log.exception("suggest_venue couldn't read the room")
             roster = None
         if roster is None or not roster.available:

@@ -130,12 +130,7 @@ def _make__media_search_room(deps):
         query: str,
         span: int,
     ) -> dict:
-        """`media_search`'s `room` scope: pictures and clips PEOPLE SENT in
-        THIS conversation, found through this conversation's own message rows
-        (`media_rows`), never through the media index's provenance, which
-        names only the first room a byte string was seen in. The room is
-        `bound_conversation_id`, never an argument. Text comes from the media
-        index by content address, when a row exists. No sender is returned."""
+        """`media_search`'s `room` scope: pictures and clips PEOPLE SENT in"""
         unreadable = {
             "status": "unavailable",
             "note": "I can't look through the photos sent here right now. Say "
@@ -172,10 +167,9 @@ def _make__media_search_room(deps):
         for photo in photos:
             obj = look.objects.get(photo.sha256)
             read = obj is not None and obj.comprehended
-            # The SAME screen `media_fetch` serves through, over the whole
-            # reading (title, description, content, caveat) at once. A screened
-            # reading is never matched on either: matching it would let a model
-            # confirm hidden digits one query at a time.
+            # The SAME screen `media_fetch` serves through, over the whole reading
+            # (title, description, content, caveat) at once. A screened reading is
+            # never matched on either: matching it would let a model confirm
             hidden = (
                 obj is not None
                 and read
@@ -240,9 +234,7 @@ def _make__room_result(deps):
         *,
         hidden: bool,
     ) -> dict[str, object]:
-        """One room photo for the model: its marker code, kind, when it was
-        sent and its stored reading, unless the reading failed the identifier
-        screen, in which case none of it (title included) is returned."""
+        """One room photo for the model: its marker code, kind, when it was"""
         entry: dict[str, object] = {
             "handle": photo.handle,
             "kind": label_from_media_type(photo.media_type),
@@ -334,10 +326,9 @@ def _make_media_send(deps):
         # The extension follows the bytes: a stored clip sent as `.png` is shown by Discord as a
         # broken picture rather than a video.
         filename = f"nora-media-{meta.handle}{mimetypes.guess_extension(media_type) or '.bin'}"
-        # The transcript label follows the modality of the bytes (DEC-138: media is ONE
-        # index — a fetched video must record `[video ...]`, not `[image ...]`). Derived
-        # the same way `_BY_TOP_LEVEL` derives `label_for`, so a future media type never
-        # silently mislabels.
+        # The transcript label follows the modality of the bytes (DEC-138: media is
+        # ONE index — a fetched video must record `[video ...]`, not `[image ...]`).
+        # Derived the same way `_BY_TOP_LEVEL` derives `label_for`, so a future media
         top, _, _ = media_type.partition("/")
         modality = top if top in ("image", "video", "audio") else "file"
         held_before = deliverer.held_count

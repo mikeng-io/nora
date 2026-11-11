@@ -46,11 +46,9 @@ def _source_event_item(
     if on is not None:
         item["source_event"]["on"] = on
     elif e.target_message_id is not None:
-        # The affected message the result does not otherwise show: the
-        # recorded row's own words and author as labelled `target` context
-        # — never the event actor's words — or `target_unresolved` when a
-        # named target cannot be shown (hidden, deleted elsewhere, or past
-        # the bound), never a guessed quote.
+        # The affected message the result does not otherwise show: the recorded row's
+        # own words and author as labelled `target` context — never the event actor's
+        # words — or `target_unresolved` when a named target cannot be shown (hidden,
         if e.target is not None:
             item["source_event"]["target"] = _target_item(e.target, now=now)
         else:
@@ -121,17 +119,9 @@ def _transcript_messages(
             item["edited"] = stamp(r.edit.ts, now)
             item["was"] = _file_handles(r.edit.was)
         if r.reactions is not None and r.reactions.recorded:
-            # Additive provenance (platform-observations, first reactions
-            # slice): the same fold the prompt annotates with. `reactions`
-            # carries the standing counts `record_query` defined, each stored
-            # emoji projected to its bounded display handle (a custom emoji's
-            # platform id never reaches a tool result), merged when handles
-            # collide and capped at REACTION_PAIRS_MAX pairs with the rest in
-            # `reactions_more`; `reactions_at` is the newest recorded SOURCE
-            # event, distinct from `when`; `reactions_source` is the
-            # coverage — recorded transitions only, never the complete
-            # upstream set — and `partial` marks a state the read's own bound
-            # cut short.
+            # Additive provenance (platform-observations, first reactions slice):
+            # the same fold the prompt annotates with. `reactions` carries the
+            # standing counts `record_query` defined, each stored emoji projected
             pairs = r.reactions.display_counts
             if r.reactions.coverage == "partial":
                 item["reactions_partial"] = True
@@ -151,11 +141,9 @@ def _transcript_messages(
         out.append(item)
     if on_rows is not None:
         on_rows([replace(row, body=item["body"]) for row, item in zip(rows, out, strict=True)])
-    # Typed source events of the same window, interleaved at their own
-    # time — the same chronological merge the prompt's transcript does.
-    # A message the source pinned an event to is named by its own item
-    # number: `on` counts only message items (1-based), the same positional
-    # handle the prompt's `on="n"` gives the `#n` index.
+    # Typed source events of the same window, interleaved at their own time — the same
+    # chronological merge the prompt's transcript does. A message the source pinned an
+    # event to is named by its own item number: `on` counts only message items (1-based),
     if source_events:
         index_of = {r.id: i for i, r in enumerate(rows, 1)}
         merged: list[dict] = []

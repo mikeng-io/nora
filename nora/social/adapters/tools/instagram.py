@@ -134,16 +134,16 @@ def _make_instagram_read(deps):
             _instagram_story_urls=deps._instagram_story_urls,
             unwired_owners=deps.unwired_owners,
         )
-        k_, _, v_ = await _instagram_read__p1(c)
+        k_, _, v_ = await _instagram_read__resolve_link(c)
         if k_:
             return v_
-        k_, _, v_ = await _instagram_read__p2(c)
+        k_, _, v_ = await _instagram_read__guard_unasked(c)
         if k_:
             return v_
-        k_, _, v_ = await _instagram_read__p3(c)
+        k_, _, v_ = await _instagram_read__read(c)
         if k_:
             return v_
-        k_, _, v_ = await _instagram_read__p4(c)
+        k_, _, v_ = await _instagram_read__record_story(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -175,10 +175,9 @@ def _make_instagram_search(deps):
         # Trimmed first, then measured the way the bridge measures it.
         text = query.strip() if isinstance(query, str) else ""
         if not text or len(text.encode("utf-8")) > _INSTAGRAM_SEARCH_QUERY_MAX_BYTES:
-            # Refused HERE, so nothing is sent: the bridge would answer 400,
-            # and a 400 is our bug. `unavailable` («I couldn't search that»),
-            # never `nothing_found`, which would claim nobody matched. The
-            # query is not echoed back.
+            # Refused HERE, so nothing is sent: the bridge would answer 400, and a
+            # 400 is our bug. `unavailable` («I couldn't search that»), never
+            # `nothing_found`, which would claim nobody matched. The query is not
             _record(metrics, "instagram_search", "unavailable", reason="query")
             return {
                 "status": "unavailable",
@@ -221,7 +220,7 @@ def _make_instagram_search(deps):
     return instagram_search
 
 
-async def _instagram_read__p1(c):
+async def _instagram_read__resolve_link(c):
     c.link, c.differ = _resolve_url_alias(
         "instagram_read", c.link, c.url, _parse_instagram_link, c.metrics
     )
@@ -309,7 +308,7 @@ async def _instagram_read__p1(c):
     return (False, None, None)
 
 
-async def _instagram_read__p2(c):
+async def _instagram_read__guard_unasked(c):
     if c.read in ("story", "post", "posts") and (c.fire_turn or c.dream_adaptor):
         _record(c.metrics, "instagram_read", "refused", reason="unasked", what=c.read)
         return (
@@ -391,7 +390,7 @@ async def _instagram_read__p2(c):
     return (False, None, None)
 
 
-async def _instagram_read__p3(c):
+async def _instagram_read__read(c):
     if c.source == "person":
         c.view = await c.room.scope()
         if not c.view.available:
@@ -496,7 +495,7 @@ async def _instagram_read__p3(c):
     return (False, None, None)
 
 
-async def _instagram_read__p4(c):
+async def _instagram_read__record_story(c):
     if c.read == "story" and c.out.get("status") == "ok":
         c._instagram_story_urls.update(
             item["url"]

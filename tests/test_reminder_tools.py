@@ -681,14 +681,11 @@ def test_every_status_remind_can_emit_is_named_in_the_metric_help():
     import re
     from pathlib import Path
 
-    from nora.agenda.adapters.tools import reminders as reminders_module
-    from nora.agenda.adapters.tools import shared as shared_module
+    from nora.agenda.adapters.tools import reminders, shared
     from nora.obs.metric_specs import _COUNTERS
 
-    source = "".join(
-        Path(m.__file__).read_text(encoding="utf-8")
-        for m in (reminders_module, shared_module)
-    )
+    source = "".join(Path(m.__file__).read_text(encoding="utf-8")
+                     for m in (reminders, shared))
     emitted = set(re.findall(r'_record_created\(\s*c\.metrics,\s*"([a-z_]+)"', source))
     emitted |= set(re.findall(r'_RepeatRefusal\(\s*\n?\s*"([a-z_]+)"', source))
     assert len(emitted) >= 11, f"expected every status to be a literal; found {emitted}"
@@ -702,13 +699,11 @@ def test_every_status_remind_can_emit_is_named_in_the_metric_help():
     )
 
 
-# ---- DEC-85: recurrence, and the three asks that produced it ------------------
-#
-# Each of the three is verbatim from the group. They are tests rather than an
-# anecdote in a design document because what they pin is the SHAPE the model
-# has to produce: a recurrence is `when` + `repeat` + a bound, and lead time
-# (「前兩個星期」) is arithmetic on `when` rather than a concept anything here
-# stores.
+# ---- DEC-85: recurrence, and the three asks that produced it ------------------  Each of
+# the three is verbatim from the group. They are tests rather than an anecdote in a design
+# document because what they pin is the SHAPE the model has to produce: a recurrence is
+# `when` + `repeat` + a bound, and lead time (「前兩個星期」) is arithmetic on `when` rather than a
+# concept anything here stores.
 
 # `max_horizon_days` bounds the FIRST occurrence. Two of the three asks name a
 # date months out, so they are exercised against a cap widened to a year; the
@@ -1144,13 +1139,12 @@ async def test_the_f1_ask_is_one_call_not_twelve():
 
     # THE STORED RULE, and the firings it will actually produce.
     #
-    # Asserting the RESULT DICT alone is not enough: `_occurrences_through`
-    # receives `step` separately, so `repeat_left` comes out as 6 even when the
-    # rule that will fire has lost its multiplier entirely (a series that finishes
-    # in six MINUTES instead of an hour, with every assertion above satisfied).
-    #
-    # So the times are read off the persisted row. `repeat_left` is what she
-    # SAYS; this is what will HAPPEN, and the two must be the same thing.
+    # Asserting the RESULT DICT alone is not enough: `_occurrences_through` receives
+    # `step` separately, so `repeat_left` comes out as 6 even when the rule that will
+    # fire has lost its multiplier entirely (a series that finishes in six MINUTES
+    # instead of an hour, with every assertion above satisfied).  So the times are read
+    # off the persisted row. `repeat_left` is what she SAYS; this is what will HAPPEN,
+    # and the two must be the same thing.
     [row] = await store.pending_for(CONVERSATION)
     assert row.series is not None
     assert row.series.rule.interval == 10

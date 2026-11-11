@@ -35,6 +35,55 @@ from nora.domain.computer_sessions import (
 log = logging.getLogger("nora.tools")
 
 
+async def _session_list_entries(
+    rows,
+    *,
+    scope,
+    wanted,
+    limit,
+    now,
+    idle_after,
+    lapsed_visible,
+    running,
+    events_of,
+):
+    """Rows that match the asked `status`, newest first, each with its progress line."""
+    chosen: list[dict[str, object]] = []
+    for row in rows:
+        if row.workspace_scope != scope:
+            continue
+        shown = shown_status(
+            row,
+            now=now,
+            idle_after=idle_after,
+            lapsed_visible=lapsed_visible,
+            tmux_running=running if row.status != EXPIRED else False,
+        )
+        if wanted is not None and shown not in wanted:
+            continue
+        if len(chosen) >= max(1, min(int(limit), 20)):
+            break
+        events = await events_of(row.id)
+        entry: dict[str, object] = {
+            "objective": row.objective or "(no message)",
+            "status": shown,
+            "opened": age(row.created_at, now),
+            "last_active": age(row.last_activity_at, now),
+            "progress": progress_text(
+                derive_progress(events, capped=len(events) >= _SESSION_EVENTS_READ),
+                now=now,
+            )
+            if events is not None
+            else "unknown: its record could not be read",
+        }
+        if row.resume_prefix:
+            entry["resume_prefix"] = row.resume_prefix
+        if row.expired_at is not None:
+            entry["stopped"] = age(row.expired_at, now)
+        chosen.append(entry)
+    return chosen
+
+
 def _make_computer_session_list(deps):
     computer = deps.computer
     computer_sessions = deps.computer_sessions
@@ -94,9 +143,7 @@ def _make_computer_session_list(deps):
                 }
             # A running tmux job keeps an open session `active`. Unknown (the
             # computer is down, tmux cannot be listed) is not «nothing running»:
-            # the status then rests on the audit activity alone, as said here.
-            # A tmux job OR any process the room's user owns (a `nohup … &`
-            # job has no tmux session).
+            # the status then rests on the audit activity alone, as said here. A
             state = await computer.state(scope=bound_computer_scope)
             running = anything_running(state)
             wanted = {
@@ -104,39 +151,11 @@ def _make_computer_session_list(deps):
                 "lapsed": {"lapsed"},
                 "expired": {"lapsed", "expired"},
             }.get(status)
-            chosen: list[dict[str, object]] = []
-            for row in rows:
-                if row.workspace_scope != bound_computer_scope:
-                    continue
-                shown = shown_status(
-                    row,
-                    now=now,
-                    idle_after=idle_after,
-                    lapsed_visible=lapsed_visible,
-                    tmux_running=running if row.status != EXPIRED else False,
-                )
-                if wanted is not None and shown not in wanted:
-                    continue
-                if len(chosen) >= max(1, min(int(limit), 20)):
-                    break
-                events = await _session_events(row.id)
-                entry: dict[str, object] = {
-                    "objective": row.objective or "(no message)",
-                    "status": shown,
-                    "opened": age(row.created_at, now),
-                    "last_active": age(row.last_activity_at, now),
-                    "progress": progress_text(
-                        derive_progress(events, capped=len(events) >= _SESSION_EVENTS_READ),
-                        now=now,
-                    )
-                    if events is not None
-                    else "unknown: its record could not be read",
-                }
-                if row.resume_prefix:
-                    entry["resume_prefix"] = row.resume_prefix
-                if row.expired_at is not None:
-                    entry["stopped"] = age(row.expired_at, now)
-                chosen.append(entry)
+            chosen = await _session_list_entries(
+                rows, scope=bound_computer_scope, wanted=wanted, limit=limit,
+                now=now, idle_after=idle_after, lapsed_visible=lapsed_visible,
+                running=running, events_of=_session_events,
+            )
             if not chosen:
                 outcome = "nothing_found"
                 return {
@@ -246,15 +265,50 @@ def _make_computer_browse(deps):
             computer_ready=deps.computer_ctx.computer_ready,
             now_fn=deps.now_fn,
         )
-        k_, _, v_ = await _computer_browse__p1(c)
+        k_, _, v_ = await _computer_browse__prepare(c)
         if k_:
             return v_
-        k_, _, v_ = await _computer_browse__p2(c)
+        k_, _, v_ = await _computer_browse__needs_human(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
 
     return computer_browse
+
+
+def _computer_capture_answer(status: str, result: dict, got) -> dict:
+    """The capture reply: the taken picture's handle, or why none was taken."""
+    if status != "ok":
+        return {
+            "status": "unavailable",
+            "reason": result["reason"],
+            "note": "The picture was not taken — the tab is gone, belongs "
+            "to another task, or the browser could not be reached.",
+        }
+    return {
+        "status": "ok",
+        "path": got.path,
+        "media_type": got.media_type,
+        "size": got.size,
+        "sha256": got.sha256,
+        "url": got.url,
+        "title": got.title,
+        "partial": got.partial,
+        "tab": got.target_id,
+        "scope": got.scope,
+        "instance": got.instance,
+        "task": str(got.task_id),
+        "captured_at": got.captured_at.isoformat(),
+        "note": (
+            "Saved to your workspace — the picture covers the "
+            "visible part only, the page was taller than the capture "
+            "limit."
+            if got.partial
+            else "Saved to your workspace. Send it with "
+            "computer_export(path=...) when the room asks for it; "
+            "saving is not sending."
+        ),
+    }
 
 
 def _make_computer_capture(deps):
@@ -350,37 +404,7 @@ def _make_computer_capture(deps):
                     result=result,
                     session_id=session_id,
                 )
-        if status != "ok":
-            return {
-                "status": "unavailable",
-                "reason": result["reason"],
-                "note": "The picture was not taken — the tab is gone, belongs "
-                "to another task, or the browser could not be reached.",
-            }
-        return {
-            "status": "ok",
-            "path": got.path,
-            "media_type": got.media_type,
-            "size": got.size,
-            "sha256": got.sha256,
-            "url": got.url,
-            "title": got.title,
-            "partial": got.partial,
-            "tab": got.target_id,
-            "scope": got.scope,
-            "instance": got.instance,
-            "task": str(got.task_id),
-            "captured_at": got.captured_at.isoformat(),
-            "note": (
-                "Saved to your workspace — the picture covers the "
-                "visible part only, the page was taller than the capture "
-                "limit."
-                if got.partial
-                else "Saved to your workspace. Send it with "
-                "computer_export(path=...) when the room asks for it; "
-                "saving is not sending."
-            ),
-        }
+        return _computer_capture_answer(status, result, got)
 
     return computer_capture
 
@@ -500,7 +524,7 @@ def _make_computer_cancel(deps):
     return computer_cancel
 
 
-async def _computer_browse__p1(c):
+async def _computer_browse__prepare(c):
     c.task_uuid: UUID | None = None
     if c.task:
         try:
@@ -553,9 +577,7 @@ async def _computer_browse__p1(c):
         async def _action_record(
             *, name: str, ref: str = "", observation: int = 0, outcome: str = "", detail: str = ("")
         ) -> None:
-            """One durable row per page action the browse agent selected:
-            the selection (name + ref), the observation it came from and
-            what became of it — linked to this call by `parent_operation_id`."""
+            """One durable row per page action the browse agent selected:"""
             if c.computer_events is None:
                 return
             await c.computer_events.append(
@@ -613,6 +635,10 @@ async def _computer_browse__p1(c):
                 session_id=c.session_id,
                 output_ref=c.output_ref,
             )
+    return await _computer_browse__answer(c)
+
+
+async def _computer_browse__answer(c):
     c.answer, c._ = _clip(c.got.answer, c.computer_bounds.max_output_chars)
     if c.status == "ok":
         return (
@@ -648,7 +674,7 @@ async def _computer_browse__p1(c):
     return (False, None, None)
 
 
-async def _computer_browse__p2(c):
+async def _computer_browse__needs_human(c):
     if c.got.needs_human:
         return (
             True,

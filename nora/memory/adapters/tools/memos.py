@@ -123,10 +123,9 @@ def _make_search_memory_workspace(deps):
         """
         by_person = getattr(persons, "by_person", None)
         if by_person is None:
-            # A WIRING gap (identity.toml was never threaded into this build),
-            # not an empty address book: an empty one is a roster that
-            # legitimately filters every hit, a missing one is «I could not
-            # check» — and R-27's rule is that the two never share a status.
+            # A WIRING gap (identity.toml was never threaded into this build), not
+            # an empty address book: an empty one is a roster that legitimately
+            # filters every hit, a missing one is «I could not check» — and R-27's
             _record(metrics, "search_memory_workspace", "unavailable", reason="no_roster")
             return {
                 "status": "unavailable",
@@ -134,11 +133,9 @@ def _make_search_memory_workspace(deps):
                 "through what was said. Say you can't check, and do not "
                 "guess.",
             }
-        # The roster is identity.toml's WHOLE address book — not a room's
-        # live view, and not a unit's either: `PersonRef` carries no unit, so
-        # this filter CANNOT be unit-shaped.
-        # Nora's OWN peer is excluded the same way the room path drops her:
-        # her words are not the group's memory of what was said.
+        # The roster is identity.toml's WHOLE address book — not a room's live view,
+        # and not a unit's either: `PersonRef` carries no unit, so this filter CANNOT
+        # be unit-shaped. Nora's OWN peer is excluded the same way the room path drops
         roster = {
             ref.honcho_peer_id: ref.name
             for person_id, ref in by_person.items()
@@ -146,15 +143,8 @@ def _make_search_memory_workspace(deps):
         }
         try:
             # No `conversation_id`, so the client hits Honcho's WORKSPACE
-            # `/search`, narrowed to THIS unit's named scope (DEC-214): `unit`
-            # is the run's own key, never a room, and `None` (a unit that
-            # cannot be named) is refused by the client once `[units]` exists
-            # rather than widened to the workspace. The room verb stays
-            # session-scoped so a roster member's PRIVATE DM words never
-            # surface into a room; that reason does not bind here, because
-            # this verb exists for the Dreamer, whose output is verdicts,
-            # never a quote into any room. `ToolScope` keeps this verb off the
-            # tag surface.
+            # `/search`, narrowed to THIS unit's named scope (DEC-214): `unit` is
+            # the run's own key, never a room, and `None` (a unit that cannot be
             found = await honcho.search(query=query[:500], unit=_unit())
         except Exception:
             # Belt-and-braces, exactly as on the room path: the adapter catches
@@ -169,10 +159,8 @@ def _make_search_memory_workspace(deps):
                 "couldn't check, and do not say there was nothing.",
             }
         # The filter/withhold/status tail is SHARED with `search_memory` —
-        # `_memory_hits_result` — so the two verbs can never drift into two
-        # disclosure decisions. This verb counts on `nora_tool_calls_total`
-        # (it has no room, so the room-lookups series would mislabel it) and
-        # carries no `partial_view`: there is no room view to degrade.
+        # `_memory_hits_result` — so the two verbs can never drift into two disclosure
+        # decisions. This verb counts on `nora_tool_calls_total` (it has no room, so
         return _memory_hits_result(
             hits=found.hits,
             roster=roster,

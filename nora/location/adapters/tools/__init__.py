@@ -22,10 +22,10 @@ def build(deps):
     from nora.location.adapters.tools.geo import _make_reverse_geocode
 
     reverse_geocode = _make_reverse_geocode(deps)
-    from nora.location.adapters.tools.presence import _make_where_been
+    from nora.location.adapters.tools.been import _make_where_been
 
     where_been = _make_where_been(deps)
-    from nora.location.adapters.tools.routine import _make_routine_read
+    from nora.location.adapters.tools.routine_read import _make_routine_read
 
     routine_read = _make_routine_read(deps)
     from nora.location.adapters.tools.geo import _make_weather

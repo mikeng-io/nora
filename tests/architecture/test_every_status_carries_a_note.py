@@ -20,8 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 #: The tool bodies moved out of `nora/agent/tools.py` into each area's
 #: `adapters/tools*` (ADR 0037); those files plus the agent-side toolkit are
-#: enumerated by `_TOOL_MODULES` below, and a NEW module returning tool
-#: results is still added here in the same commit.
+#: enumerated by `_TOOL_MODULES` (new result-bearing modules join it here).
 def _tool_modules() -> tuple[str, ...]:
     out = ["nora/agent/runtime_tools.py"]
     out += sorted(

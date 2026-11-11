@@ -48,20 +48,18 @@ RULE_TESTS = {
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
     # R-1: untagged ambient traffic reaches the agent ONLY under the participation
-    # occasion's gating: an operator-opted-in room, one quiescence-closed window,
-    # one evaluation through `FirePath.speak`. The named test pins that ordinary
-    # ambient traffic constructs ZERO agents; its sibling pins the exception's
-    # gating.
+    # occasion's gating: an operator-opted-in room, one quiescence-closed window, one
+    # evaluation through `FirePath.speak`. The named test pins that ordinary ambient
+    # traffic constructs ZERO agents; its sibling pins the exception's gating.
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
     # R-1b: the send-path clause of R-1. `nora.app.fire.FirePath` makes "only the
-    # tagging path may cause a send" false — a fire turn is a send not caused by
-    # a tag. R-1's test harnesses only ambient input, so it stays green no matter
-    # how many non-tag send paths exist and is no brake on this clause. R-1b is
-    # that brake: `Deliverer` is the only caller of `adapter.send`, it is
-    # constructed only by `deliver.build`, and `deliver.build` has exactly two
-    # callers — the tag pipeline and the fire path. The participation occasion
-    # changes NOTHING here: it goes through `FirePath.speak`, so the two callers
-    # remain two.
+    # tagging path may cause a send" false — a fire turn is a send not caused by a tag.
+    # R-1's test harnesses only ambient input, so it stays green no matter how many non-tag
+    # send paths exist and is no brake on this clause. R-1b is that brake: `Deliverer` is
+    # the only caller of `adapter.send`, it is constructed only by `deliver.build`, and
+    # `deliver.build` has exactly two callers — the tag pipeline and the fire path. The
+    # participation occasion changes NOTHING here: it goes through `FirePath.speak`, so the
+    # two callers remain two.
     "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
     "R-2": "test_a_reaction_and_a_text_reply_share_the_message_cap",
     "R-2b": "test_deliverer_latch_is_single_shot",

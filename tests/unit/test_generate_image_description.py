@@ -28,10 +28,8 @@ LEVEL_3_CEILING = 320
 
 
 def _function() -> ast.AsyncFunctionDef:
-    """The de-split view of `generate_image` — its media-area adapter file
-    reads as the single nested def tools.py once held (`tests/
-    test_tool_surface_policy.py` carries the splice)."""
-    from tests.test_tool_surface_policy import _tool_view
+    """`generate_image`'s callable, de-split to the one nested def the checks read."""
+    from tests.tool_view import _tool_view
 
     fn, _, _ = _tool_view("generate_image")
     return fn

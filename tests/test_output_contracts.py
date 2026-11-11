@@ -163,11 +163,10 @@ def _built_tools() -> dict[str, str | None]:
     absent by construction: it is `plugin=True`, so `build_tool_specs` never
     names it in a `_spec(...)` call and there is no body of ours to classify.
     """
-    # Scanned across every module that now carries tool code (the area
-    # split moved `_spec` calls into each area's `build()`); the callable
-    # usually sits in the same file, otherwise in a sibling module of the
-    # same area — resolved by the `_make_<callable>` factory's owner.
-    from tests.test_tool_surface_policy import _tool_source_paths
+    # Scanned across every module that now carries tool code (the area split
+    # moved `_spec` calls into each area's `build()`); the callable usually sits
+    # in the same file — siblings resolved by the `_make_<callable>` owner.
+    from tests.tool_view import _tool_source_paths
 
     trees: dict[Path, ast.Module] = {}
     funcs: dict[str, list[ast.FunctionDef | ast.AsyncFunctionDef]] = {}
@@ -324,7 +323,7 @@ def test_no_agent_module_returns_a_status_outside_the_vocabulary() -> None:
     grows a call site here — or the day a second value goes the same way — this
     test says which one and why.
     """
-    from tests.test_tool_surface_policy import _tool_source_paths
+    from tests.tool_view import _tool_source_paths
 
     found: dict[str, list[str]] = {}
     for path in sorted(set(AGENT_PACKAGE.rglob("*.py")) | set(_tool_source_paths())):

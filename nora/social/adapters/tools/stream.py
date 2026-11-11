@@ -63,11 +63,9 @@ def _make_social_read(deps):
         if bound is None:
             return {"status": "unavailable", "note": _SOCIAL_OFF}
         target = bound[0]
-        # A social item is readable only in a room that lists its author (the
-        # `social` lineage predicate), so the name resolves among exactly
-        # those people, by the one matching rule (`find_by_name`: name, first
-        # and last names, aliases) or by person id: anyone else answers like a
-        # name nobody uses, and is never read.
+        # A social item is readable only in a room that lists its author (the `social`
+        # lineage predicate), so the name resolves among exactly those people, by the
+        # one matching rule (`find_by_name`: name, first and last names, aliases) or
         listed = [
             ref
             for pid, ref in persons.by_person.items()

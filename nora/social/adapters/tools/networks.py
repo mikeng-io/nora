@@ -75,10 +75,10 @@ def _make_x_read(deps):
             social_source=deps.social_source,
             unwired_owners=deps.unwired_owners,
         )
-        k_, _, v_ = await _x_read__p1(c)
+        k_, _, v_ = await _x_read__resolve_link(c)
         if k_:
             return v_
-        k_, _, v_ = await _x_read__p2(c)
+        k_, _, v_ = await _x_read__guard_egress(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -196,13 +196,13 @@ def _make_linkedin_read(deps):
             metrics=deps.metrics,
             unwired_owners=deps.unwired_owners,
         )
-        k_, _, v_ = await _linkedin_read__p1(c)
+        k_, _, v_ = await _linkedin_read__guard_unasked(c)
         if k_:
             return v_
-        k_, _, v_ = await _linkedin_read__p2(c)
+        k_, _, v_ = await _linkedin_read__resolve_target(c)
         if k_:
             return v_
-        k_, _, v_ = await _linkedin_read__p3(c)
+        k_, _, v_ = await _linkedin_read__read(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -279,7 +279,7 @@ def _make_linkedin_search(deps):
     return linkedin_search
 
 
-async def _x_read__p1(c):
+async def _x_read__resolve_link(c):
     c.link, c.differ = _resolve_url_alias("x_read", c.link, c.url, _parse_x_link, c.metrics)
     if c.differ:
         return (True, None, dict(_URL_AND_LINK_DIFFER))
@@ -379,7 +379,7 @@ async def _x_read__p1(c):
     return (False, None, None)
 
 
-async def _x_read__p2(c):
+async def _x_read__guard_egress(c):
     if scan_identifiers(c.target, content_checks=c.content_checks) is not None or (
         c.content_checks and _looks_like_coordinate(c.target)
     ):
@@ -414,7 +414,7 @@ async def _x_read__p2(c):
     return (False, None, None)
 
 
-async def _linkedin_read__p1(c):
+async def _linkedin_read__guard_unasked(c):
     if c.fire_turn or c.dream_adaptor:
         _record(c.metrics, "linkedin_read", "refused", reason="unasked")
         return (True, None, dict(_LINKEDIN_UNASKED))
@@ -442,7 +442,7 @@ async def _linkedin_read__p1(c):
     return (False, None, None)
 
 
-async def _linkedin_read__p2(c):
+async def _linkedin_read__resolve_target(c):
     if c.source == "link":
         c.text = _with_scheme(cast(str, c.link))
         c.parsed = _parse_linkedin_link(c.text)
@@ -547,6 +547,10 @@ async def _linkedin_read__p2(c):
             )
         c.read = c.what
         c.target = c.name
+    return await _linkedin_read__fetch(c)
+
+
+async def _linkedin_read__fetch(c):
     if scan_identifiers(c.target, content_checks=c.content_checks) is not None or (
         c.content_checks and _looks_like_coordinate(c.target)
     ):
@@ -572,7 +576,7 @@ async def _linkedin_read__p2(c):
     return (False, None, None)
 
 
-async def _linkedin_read__p3(c):
+async def _linkedin_read__read(c):
     try:
         c.out = await c.linkedin_source.read(
             platform="linkedin", what=c.read, target=c.target, limit=c.limit

@@ -41,31 +41,22 @@ def _make_transit(deps):
             out = await transit_source.arrivals(route, near=near)
         except Exception:
             # `TransitClient.arrivals` is documented never to raise (it turns
-            # every transport failure into `unavailable` itself). This is the
-            # belt for those braces, and it must land on `unavailable` rather
-            # than on an empty answer — `test_a_tool_never_raises_into_the_agent_loop`
-            # is the rule, and R-5 is why «I could not check» may never be
-            # served as «there is nothing».
+            # every transport failure into `unavailable` itself). This is the belt
+            # for those braces, and it must land on `unavailable` rather than on
             log.exception("transit failed")
             out = {
                 "status": "unavailable",
                 "note": "I could not check the buses just now. Say so, and do "
                 "not say there are no buses or guess a time.",
             }
-        # The same hole `_asked_about` and `calculate` exist for, in the third
-        # place a MODEL-SUPPLIED string is handed straight back. `route` is
-        # already narrowed to `[A-Z0-9]{1,7}` before it reaches a URL, so
-        # nothing that looks like a phone number can survive to the echo — this
-        # is the belt for that, and it costs one regex.
+        # The same hole `_asked_about` and `calculate` exist for, in the third place a
+        # MODEL-SUPPLIED string is handed straight back. `route` is already narrowed
+        # to `[A-Z0-9]{1,7}` before it reaches a URL, so nothing that looks like a
         if scan_identifiers(str(out.get("route", "")), content_checks=content_checks) is not None:
             out.pop("route", None)
-        # And the fourth: `near` is free text, echoed back as `near.asked` for
-        # the same two-calls-one-turn disambiguation `_asked_about` buys, and
-        # screened HERE because `nora.infra` sits below the scanner and cannot
-        # reach it. The stop names beside it (`stop`, `could_be`) are
-        # dataset-authored, but they are rendered text on their way to a
-        # reply, so they go through the same regex — it costs microseconds and
-        # means nothing in this result is unscanned.
+        # And the fourth: `near` is free text, echoed back as `near.asked` for the
+        # same two-calls-one-turn disambiguation `_asked_about` buys, and screened
+        # HERE because `nora.infra` sits below the scanner and cannot reach it. The
         near_info = out.get("near")
         if isinstance(near_info, dict):
             for key in ("asked", "stop"):
@@ -101,10 +92,7 @@ def _make__bind_place(deps):
     _bound_places = deps._bound_places
 
     def _bind_place(name: str, place_id: int, owner: str) -> str:
-        """The words to show for this place, unique within the turn: the plain
-        name when it is free (or already this place's), else qualified by
-        whose it is («a home of theirs (Grant)»), or numbered for a second
-        place of the same person («a home of theirs (2)»)."""
+        """The words to show for this place, unique within the turn: the plain"""
         base = name.strip()
         first = owner.split()[0] if owner.strip() else ""
         candidate, n = base, 1
@@ -185,10 +173,10 @@ def _make_route(deps):
             _resolve_bound_place=_make__resolve_bound_place(deps),
             _route_person_names=deps._route_person_names,
         )
-        k_, _, v_ = await _route__p1(c)
+        k_, _, v_ = await _route__normalize(c)
         if k_:
             return v_
-        k_, _, v_ = await _route__p2(c)
+        k_, _, v_ = await _route__resolve_places(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -198,8 +186,7 @@ def _make_route(deps):
 
 def _make__place_info_ok_note(deps):
     def _place_info_ok_note(*, has_rating: bool) -> str:
-        """How to report a `place_info` `ok` (ADR 0015 §3), with the rating
-        clause chosen by whether Google had a rating at all."""
+        """How to report a `place_info` `ok` (ADR 0015 §3), with the rating"""
         rating = (
             'Quote the rating as the one Google gives, with "about" in front of it.'
             if has_rating
@@ -232,10 +219,8 @@ def _make_place_info(deps):
             name: The place, as it was said.
         """
         # The FULL R-28 screen-call-screen sandwich (outbound
-        # identifier/coordinate/person screen, the actual call wrapped in
-        # try/except, and a return-path screen on Google's own name/address) lives
-        # in `nora.agent.security.screen_and_resolve_place`, shared with
-        # `GatheringService._resolve_place`.
+        # identifier/coordinate/person screen, the actual call wrapped in try/except,
+        # and a return-path screen on Google's own name/address) lives in
         result = await _screen_and_resolve_place(
             name,
             route_source=route_source,
@@ -293,19 +278,9 @@ def _make_place_info(deps):
             # rule route's maps_url follows). The full URL, never shortened (ADR 0023).
             maps_url = "https://www.google.com/maps/search/?api=1&query=" + urllib.parse.quote(name)
             out["maps_url"] = maps_url
-            # DEC-89: offer it to the turn's carrier so that a reply which NAMES this
-            # place carries the link whether or not the model remembered to quote it.
-            # Two anchors for one url, because the words she is likely to write are not
-            # always the words she asked with: `name` is what the group said
-            # («Soi.29»), `out["name"]` is what Google resolved («Soi 29 Thai
-            # Kitchen»), and either appearing in the reply is evidence she is
-            # recommending THIS place. `LinkCarry` dedupes by url, so two anchors still
-            # append one line.
-            #
-            # `route` deliberately does NOT do this. Its `maps_url` is a link to one
-            # specific trip, and its docstring conditions on being ASKED for it
-            # («俾條 link 我»); appending unasked would put a map link under every
-            # «幾耐到» answer.
+            # DEC-89: offer it to the turn's carrier so that a reply which NAMES
+            # this place carries the link whether or not the model remembered to
+            # quote it. Two anchors for one url, because the words she is likely
             link_carry.offer(anchor=name, url=maps_url)
             link_carry.offer(anchor=str(out.get("name", "")), url=maps_url)
             out["note"] = _place_info_ok_note(has_rating=out.get("rating") is not None)
@@ -347,10 +322,9 @@ def _make_saved_places(deps):
             location_trusted=location_trusted,
             content_checks=content_checks,
         )
-        # `None` is a FAILED READ, not an empty answer (R-27). Folding it into
-        # «no names» would tell the model `ok` with an empty list while the presence
-        # store is unreachable, and Nora would say 「你冇 save 過任何地方」 with
-        # `status="ok"` in the metrics beside it.
+        # `None` is a FAILED READ, not an empty answer (R-27). Folding it into «no
+        # names» would tell the model `ok` with an empty list while the presence store
+        # is unreachable, and Nora would say 「你冇 save 過任何地方」 with `status="ok"` in the
         if places is None:
             _record(metrics, "saved_places", "unavailable")
             return {
@@ -358,10 +332,9 @@ def _make_saved_places(deps):
                 "note": "I couldn't check the saved places just now. Say you "
                 "couldn't look, not that there aren't any.",
             }
-        # Names only — the coordinate is never model-facing (DEC-24/60). Empty
-        # in a non-subset room (resolvable_places fell through), which is the
-        # R-35 shape: the model simply has no household names to offer, and a
-        # guarded name stays indistinguishable from an unsaved one.
+        # Names only — the coordinate is never model-facing (DEC-24/60). Empty in a
+        # non-subset room (resolvable_places fell through), which is the R-35 shape:
+        # the model simply has no household names to offer, and a guarded name stays
         names = sorted({p.name for p in places})
         # Addresses are carried for the names Life360 stores them on: a saved
         # place question («我返工嗰度個地址係咩») needs the street address
@@ -392,7 +365,7 @@ def _make_saved_places(deps):
     return saved_places
 
 
-async def _route__p1(c):
+async def _route__normalize(c):
     c.by_mode, c.preference = (c.by or "", c.prefer or "")
     for _w1 in (c.origin, c.destination):
         c.place = _w1
@@ -468,6 +441,10 @@ async def _route__p1(c):
             },
         )
     c.ref_places: dict[str, Any] = {}
+    return await _route__bind_places(c)
+
+
+async def _route__bind_places(c):
     for _w2 in (c.origin, c.destination):
         c.place = _w2
         c.bound = c._bound_places.get(str(c.place).strip().casefold())
@@ -518,7 +495,7 @@ async def _route__p1(c):
     return (False, None, None)
 
 
-async def _route__p2(c):
+async def _route__resolve_places(c):
     if c.presence_source is not None and c.presence_circles:
         from nora.infra.routes.places import Place
 

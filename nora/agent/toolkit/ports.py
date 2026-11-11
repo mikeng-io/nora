@@ -323,10 +323,9 @@ class NoteCollaborator(Protocol):
         title: str,
     ) -> Note | None: ...
 
-    # `remind`'s one-open-row check asks the two questions the
-    # fire-time screen asks (`nora/app/proactive_screen.py`): has the tag path
-    # moved this note since a waiting row was linked, and is a waiting row's
-    # retired note one that was MERGED into this one.
+    # `remind`'s one-open-row check asks the two questions the fire-time screen asks
+    # (`nora/app/proactive_screen.py`): has the tag path moved this note since a waiting
+    # row was linked, and is a waiting row's retired note one that was MERGED into this
     async def revision_chain(
         self,
         *,

@@ -144,11 +144,9 @@ def _make_parking_status(deps):
             log.exception("parking_status failed")
             data = None
         if data is None:
-            # Distinguish "no such car park" from "couldn't check" — the
-            # port collapses both to None, so the tool cannot tell them
-            # apart and must NOT invent either; this is the honest
-            # `unavailable`, while `nothing_found` stays unreachable
-            # through this provider. (A richer provider MAY distinguish.)
+            # Distinguish "no such car park" from "couldn't check" — the port
+            # collapses both to None, so the tool cannot tell them apart and must
+            # NOT invent either; this is the honest `unavailable`, while
             _record(metrics, "parking_status", "unavailable")
             return {
                 "status": "unavailable",
@@ -176,9 +174,7 @@ def _make_parking_status(deps):
 
 def _make__find_parking_ok_note(deps):
     def _find_parking_ok_note(car_parks: list[dict], *, street: bool) -> str:
-        """How to report a `find_parking` `ok` (ADR 0015 §3), per field present:
-        the vacancy clauses only when an entry has (or lacks) a live count, the
-        street clause only when `street_parking` came back."""
+        """How to report a `find_parking` `ok` (ADR 0015 §3), per field present:"""
         parts = ["Say each car park's distance (distance_m); don't rank them silently."]
         if any("vacancy" in c for c in car_parks):
             parts.append(
@@ -231,18 +227,18 @@ def _make_find_parking(deps):
             _find_parking_ok_note=_make__find_parking_ok_note(deps),
             _route_person_names=deps._route_person_names,
         )
-        k_, _, v_ = await _find_parking__p1(c)
+        k_, _, v_ = await _find_parking__wired(c)
         if k_:
             return v_
         if c.place.strip():
-            k_, _, v_ = await _find_parking__p2(c)
+            k_, _, v_ = await _find_parking__validate(c)
             if k_:
                 return v_
         else:
-            k_, _, v_ = await _find_parking__p3(c)
+            k_, _, v_ = await _find_parking__audience(c)
             if k_:
                 return v_
-        k_, _, v_ = await _find_parking__p4(c)
+        k_, _, v_ = await _find_parking__search(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -250,7 +246,7 @@ def _make_find_parking(deps):
     return find_parking
 
 
-async def _find_parking__p1(c):
+async def _find_parking__wired(c):
     if c.route_source is None:
         _record(c.metrics, "find_parking", "unavailable")
         return (
@@ -267,7 +263,7 @@ async def _find_parking__p1(c):
     return (False, None, None)
 
 
-async def _find_parking__p2(c):
+async def _find_parking__validate(c):
     if scan_identifiers(c.place, content_checks=c.content_checks) is not None or (
         c.content_checks and _looks_like_coordinate(c.place)
     ):
@@ -340,7 +336,7 @@ async def _find_parking__p2(c):
     return (False, None, None)
 
 
-async def _find_parking__p3(c):
+async def _find_parking__audience(c):
     if c.presence_source is None or not c.presence_circles:
         _record(c.metrics, "find_parking", "unavailable")
         return (
@@ -416,7 +412,7 @@ async def _find_parking__p3(c):
     return (False, None, None)
 
 
-async def _find_parking__p4(c):
+async def _find_parking__search(c):
     try:
         c.parking = await c.route_source.nearby_parking(lat=c.lat, lng=c.lng)
     except Exception:

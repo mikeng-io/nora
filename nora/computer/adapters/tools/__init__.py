@@ -19,7 +19,7 @@ def build(deps):
     from nora.computer.adapters.tools.sandbox import _make_computer_edit
 
     computer_edit = _make_computer_edit(deps)
-    from nora.computer.adapters.tools.transfer import _make_computer_export
+    from nora.computer.adapters.tools.export import _make_computer_export
 
     computer_export = _make_computer_export(deps)
     from nora.computer.adapters.tools.transfer import _make_computer_import

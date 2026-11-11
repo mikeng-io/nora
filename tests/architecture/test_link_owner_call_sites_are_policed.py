@@ -106,14 +106,13 @@ def _enclosing_function_name(tree: ast.Module, call: ast.Call) -> str | None:
 
 
 def _allowlisted(fn_name: str | None) -> bool:
-    """`fn_name` in `_ALLOWED`, where an oversized tool split into
-    `_<tool>__pN` chunk helpers (ADR 0037) counts as its tool."""
+    """`fn_name` in `_ALLOWED`, a `_<tool>__<step>` helper (ADR 0037) counting as its tool."""
     if fn_name is None:
         return False
     if fn_name in _ALLOWED:
         return True
     import re
-    base = re.sub(r"^_+|__p\d+$", "", fn_name)
+    base = re.sub(r"^_+|__.*$", "", fn_name)
     return base in _ALLOWED
 
 
@@ -179,6 +178,6 @@ def test_the_allowlist_is_actually_exercised() -> None:
                 if fn_name is not None:
                     called_in.add(fn_name)
                     import re
-                    called_in.add(re.sub(r"^_+|__p\d+$", "", fn_name))
+                    called_in.add(re.sub(r"^_+|__.*$", "", fn_name))
     stale = set(_ALLOWED) - called_in
     assert not stale, f"_ALLOWED name(s) that call nothing governed: {sorted(stale)}"

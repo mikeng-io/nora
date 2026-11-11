@@ -2,15 +2,15 @@
  {
   "name": "(a) size cap skipped: a shared file over import_max_bytes is written",
   "file": "nora/computer/adapters/tools/transfer.py",
-  "old": "                if len(data) > computer_bounds.import_max_bytes:",
-  "new": "                if len(data) <= computer_bounds.import_max_bytes:",
+  "old": "    if len(data) > max_bytes:",
+  "new": "    if len(data) <= max_bytes:",
   "target": "tests/unit/test_computer_import_shared_file.py::test_over_the_computers_import_cap_is_refused_and_writes_nothing"
  },
  {
   "name": "(a') the shared cap guards a sent file too",
   "file": "nora/computer/adapters/tools/transfer.py",
-  "old": "                if len(data) > computer_bounds.import_max_bytes:",
-  "new": "                if False:",
+  "old": "    if len(data) > max_bytes:",
+  "new": "    if False:",
   "target": "tests/unit/test_computer_export_tools.py::test_import_over_the_cap_is_refused"
  },
  {

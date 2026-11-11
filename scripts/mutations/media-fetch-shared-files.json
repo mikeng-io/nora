@@ -44,7 +44,7 @@
  {
   "name": "(h) an unshared file loses the share-with-her note",
   "file": "nora/agent/tool_deps.py",
-  "old": "\"note\": _FILE_LOOK_NOTES.get(err.reason)\n                or _FILE_NOTES.get(err.reason)",
+  "old": "\"note\": _FILE_LOOK_NOTES.get(err.reason)\n                or _file_note(err.reason, self.google_account)",
   "new": "\"note\": _FILE_LOOK_NOTES.get(err.reason)\n",
   "target": "tests/unit/test_media_fetch_shared_file.py::test_an_unshared_file_is_refused_with_the_share_note"
  },

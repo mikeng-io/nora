@@ -34,23 +34,15 @@ def _make__resolve(deps):
     _unit = deps._unit
 
     async def _resolve(book: NoteCollaborator, title: str) -> list[Note]:
-        """Title → the standing notes that answer to it.
-
-        Resolution is in the TOOL layer, not the store, and that is the whole
-        decision: no store method changes and no id ever enters the prompt.
-        Returns every match rather than the first, because the caller's job on
-        two is to REFUSE — `standing()` is ordered, so "the first one" would be
-        a stable, plausible, wrong answer.
-        """
+        """Title → the standing notes that answer to it."""
         wanted = note_handle(title)
         unit = _unit() or ""
         found = [n for n in await book.standing(unit=unit) if note_handle(n.title) == wanted]
         if found:
             return found
-        # A MERGED NOTE FORWARDS. The turn's `<notes>` was
-        # rendered before the merge, so the model can name the duplicate's
-        # title after it retired; «no note by that title» would then be false
-        # of the question, which lives on in the survivor.
+        # A MERGED NOTE FORWARDS. The turn's `<notes>` was rendered before the merge,
+        # so the model can name the duplicate's title after it retired; «no note by
+        # that title» would then be false of the question, which lives on in the
         survivor = await book.merged_successor_by_title(unit=unit, title=title)
         return [survivor] if survivor is not None else []
 
@@ -117,9 +109,8 @@ def _make_note_read(deps):
             return dict(notes_off)
         if found is None:
             # The note was standing a moment ago and is not readable now — a
-            # note_set_status (or note_merge) took it out from under this call, or the unit
-            # moved. «I could not read it», never «there is no such note»: the
-            # index she is looking at still says there is.
+            # note_set_status (or note_merge) took it out from under this call, or
+            # the unit moved. «I could not read it», never «there is no such
             _record(metrics, "note_read", "unavailable", reason="vanished")
             return dict(notes_off)
         note, head = found
@@ -218,13 +209,7 @@ def _make__held_to_schema(deps):
         carried: frozenset[int],
         carried_turns: frozenset[str] = frozenset(),
     ) -> str | dict:
-        """The tag path's body held to the note-body schema: her `[#n]`
-        positions mapped to the row ids her transcript showed, then parsed
-        against those rows, the roster and the ids the note already cites.
-        Returns the normalised body, or the refusal she reads, naming the
-        rule so she can correct the call. There is no carry-forward check:
-        `note_revise` replaces freely, with a person in the turn, which is
-        where a conflated line comes out."""
+        """The tag path's body held to the note-body schema: her `[#n]`"""
         rows = [r.id for r in bound_window]
         try:
             mapped = resolve_positions(body, rows=rows, carried=carried)
@@ -318,10 +303,9 @@ def _make_note_create(deps):
         if book is None:
             _record(metrics, "note_create", "unavailable")
             return dict(notes_off)
-        # WHO WROTE IT. `established_by` is not decoration: the strike reset
-        # fires only on a tag-path revision, and a revision written under
-        # nobody's name makes the strike-reset loop breaker reset itself forever.
-        # Same refusal `remind` makes, for the same class of reason.
+        # WHO WROTE IT. `established_by` is not decoration: the strike reset fires
+        # only on a tag-path revision, and a revision written under nobody's name
+        # makes the strike-reset loop breaker reset itself forever. Same refusal
         tagger = room.tagger
         if tagger is None:
             _record(metrics, "note_create", "refused", reason="no_tagger")
@@ -336,10 +320,9 @@ def _make_note_create(deps):
         if isinstance(held, dict):
             return held
         body = held
-        # AN OPEN TITLE IS REFUSED. Nothing in the schema stops a second
-        # open note with the same title, and a duplicate is an amplifier: a
-        # later `updates` naming it would match two notes. The room's
-        # question already has a note; the model's job is to update it.
+        # AN OPEN TITLE IS REFUSED. Nothing in the schema stops a second open note
+        # with the same title, and a duplicate is an amplifier: a later `updates`
+        # naming it would match two notes. The room's question already has a note; the
         try:
             open_titles = [n.title for n in await book.standing(unit=_unit() or "")]
             if has_duplicate_open_title(title, open_titles):
@@ -372,9 +355,6 @@ def _make_note_create(deps):
             # THE DOMAIN'S OWN SENTENCE, surfaced rather than swallowed.
             # `nora.domain.notes` refuses a note with no anchor, no closing
             # condition, or an over-long index entry, and each refusal says
-            # exactly what is wrong and why. Replacing that with a generic
-            # «I couldn't» would leave the model with no way to fix the call —
-            # which is the difference between a refusal and a failure.
             _record(metrics, "note_create", "refused", reason="domain")
             return {"status": "refused", "note": str(exc)}
         except Exception:
@@ -420,10 +400,10 @@ def _make_note_revise(deps):
             note_heads=deps.note_heads,
             notes_off=deps.notes_off,
         )
-        k_, _, v_ = await _note_revise__p1(c)
+        k_, _, v_ = await _note_revise__notebook(c)
         if k_:
             return v_
-        k_, _, v_ = await _note_revise__p2(c)
+        k_, _, v_ = await _note_revise__append(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -431,7 +411,7 @@ def _make_note_revise(deps):
     return note_revise
 
 
-async def _note_revise__p1(c):
+async def _note_revise__notebook(c):
     c.book = c._notebook()
     if c.book is None:
         _record(c.metrics, "note_revise", "unavailable")
@@ -503,7 +483,7 @@ async def _note_revise__p1(c):
     return (False, None, None)
 
 
-async def _note_revise__p2(c):
+async def _note_revise__append(c):
     try:
         c.revision = await c.book.append_revision(
             unit=c._unit() or "",

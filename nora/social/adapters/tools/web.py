@@ -50,15 +50,8 @@ def _make_web_search(deps):
             query: What to search for, in plain words.
         """
         # The query is an EGRESS surface: it leaves the host to Tavily. An IDENTIFIER
-        # must never be searched — it is unsafe at every exit — so it is blocked BEFORE
-        # the call, and `nothing_found` rather than a fourth state: from where the model
-        # sits «I have nothing» is the honest surface, and the string is not echoed
-        # back. Revert this and a phone number reaches Tavily — the `calls == []` probe
-        # is exactly that.
-        #
-        # `scan_identifiers`, NOT `scan_reply`: this tool filters on the floor because an
-        # identifier is unsafe at every exit (see `egress.py`). A MODEL NAME in a query
-        # is fine (「搵首 haiku」 must work).
+        # must never be searched — it is unsafe at every exit — so it is blocked
+        # BEFORE the call, and `nothing_found` rather than a fourth state: from where
         if scan_identifiers(query, content_checks=content_checks) is not None:
             _record(metrics, "web_search", "nothing_found", reason="identifier")
             return {
@@ -69,8 +62,6 @@ def _make_web_search(deps):
         # A raw coordinate must not egress either: `scan_identifiers` does NOT catch a
         # bare «22.31,114.16», so a `where_is` fallback coordinate the model just
         # received could otherwise ride a search query to Tavily. The R-28 barrier
-        # screens `route`; the web query is the other free-text egress and needs the
-        # same screen. `nothing_found`, and the coordinate is not echoed back.
         if content_checks and _looks_like_coordinate(query):
             _record(metrics, "web_search", "nothing_found", reason="coordinate")
             return {
@@ -144,10 +135,10 @@ def _make_web_fetch(deps):
             search_source=deps.search_source,
             now_fn=deps.now_fn,
         )
-        k_, _, v_ = await _web_fetch__p1(c)
+        k_, _, v_ = await _web_fetch__guards(c)
         if k_:
             return v_
-        k_, _, v_ = await _web_fetch__p2(c)
+        k_, _, v_ = await _web_fetch__serve(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -155,7 +146,7 @@ def _make_web_fetch(deps):
     return web_fetch
 
 
-async def _web_fetch__p1(c):
+async def _web_fetch__guards(c):
     c.file_code = quoted_handle_code(c.url)
     if c.file_code is not None:
         _record(c.metrics, "web_fetch", "nothing_found", reason="file_handle")
@@ -251,7 +242,7 @@ async def _web_fetch__p1(c):
     return (False, None, None)
 
 
-async def _web_fetch__p2(c):
+async def _web_fetch__serve(c):
     c.served = _serve_page(
         url=c.url,
         text=c.text,

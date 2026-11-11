@@ -65,12 +65,9 @@ def _make_group_members(deps):
             # accounts is a phone number or an ACI, and those are what R-18
             # exists to keep off the wire.
             "members_i_have_no_name_for": view.unnamed,
-            # What the platform's roster actually IS. Discord has no
-            # "who is in this channel" endpoint — `nora.platform.discord.
-            # roster` reads the GUILD's member list, which may exceed this
-            # channel's audience (the safe direction: it can only over-report,
-            # never drop somebody a disclosure would have excluded). The model
-            # must not read "in this conversation" as exactly this channel.
+            # What the platform's roster actually IS. Discord has no "who is in
+            # this channel" endpoint — `nora.platform.discord. roster` reads the
+            # GUILD's member list, which may exceed this channel's audience (the
             "scope": (
                 "this Discord server's member list, which can exceed this channel's audience"
                 if room.platform == "discord"
@@ -171,10 +168,10 @@ def _make_about(deps):
             room=deps.room,
             _memory_route=deps._memory_route,
         )
-        k_, _, v_ = await _about__p1(c)
+        k_, _, v_ = await _about__scope(c)
         if k_:
             return v_
-        k_, _, v_ = await _about__p2(c)
+        k_, _, v_ = await _about__conclusions(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -215,25 +212,25 @@ def _make_online_now(deps):
             _online_arms=deps._online_arms,
             _online_states=deps._online_states,
         )
-        k_, _, v_ = await _online_now__p1(c)
+        k_, _, v_ = await _online_now__check_what(c)
         if k_:
             return v_
-        k_, _, v_ = await _online_now__p2(c)
+        k_, _, v_ = await _online_now__states(c)
         if k_:
             return v_
         if c.what == "playing":
-            k_, _, v_ = await _online_now__p3(c)
+            k_, _, v_ = await _online_now__missing_steam(c)
             if k_:
                 return v_
         elif c.what == "voice":
-            k_, _, v_ = await _online_now__p4(c)
+            k_, _, v_ = await _online_now__missing_discord(c)
             if k_:
                 return v_
         else:
-            k_, _, v_ = await _online_now__p5(c)
+            k_, _, v_ = await _online_now__resolve_states(c)
             if k_:
                 return v_
-        k_, _, v_ = await _online_now__p6(c)
+        k_, _, v_ = await _online_now__result(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -241,7 +238,7 @@ def _make_online_now(deps):
     return online_now
 
 
-async def _about__p1(c):
+async def _about__scope(c):
     c.view = await c.room.scope()
     if not c.view.available:
         _record_room(c.metrics, "about", "unavailable")
@@ -336,7 +333,7 @@ async def _about__p1(c):
     return (False, None, None)
 
 
-async def _about__p2(c):
+async def _about__conclusions(c):
     c.kept = tuple(
         __cv
         for __cv in c.memory.conclusions
@@ -379,7 +376,7 @@ async def _about__p2(c):
     return (False, None, None)
 
 
-async def _online_now__p1(c):
+async def _online_now__check_what(c):
     if str(c.what) not in c._online_arms:
         _record(c.metrics, "online_now", "unavailable", reason="what")
         return (
@@ -454,6 +451,10 @@ async def _online_now__p1(c):
                 ),
             },
         )
+    return await _online_now__fetch_states(c)
+
+
+async def _online_now__fetch_states(c):
     c.steam_ids_by_person = {
         ref.person_id: c.persons.platform_ids("pulse", ref.person_id) for ref in c.refs
     }
@@ -505,17 +506,14 @@ async def _online_now__p1(c):
     return (False, None, None)
 
 
-async def _online_now__p2(c):
+async def _online_now__states(c):
     if c.presence is not None and c.what == "online":
         c.all_member_ids = frozenset().union(*c.discord_ids_by_person.values())
         c.presence_states = await c.presence.presence(member_ids=c.all_member_ids)
         c.presence_checked = c.presence_states is not None
 
     def _steam_state(ref: PersonRef) -> SteamPlayerState | None:
-        """The one answered summary for this person, or None — an id
-        Steam did not answer for is that account's nothing_found. A
-        person with several mapped accounts reads the first id Steam
-        answered for (sorted, so the pick is stable)."""
+        """The one answered summary for this person, or None — an id"""
         if c.players is None:
             return None
         for sid in sorted(c.steam_ids_by_person[ref.person_id]):
@@ -554,9 +552,7 @@ async def _online_now__p2(c):
     c._presence_state = _presence_state
 
     def _discord_fields(state: DiscordPresenceState) -> dict:
-        """The Discord-presence half of an `online` entry: Discord's own
-        status word, plus rich presence only when the activity named it
-        (never a guessed field)."""
+        """The Discord-presence half of an `online` entry: Discord's own"""
         out: dict = {"discord_status": state.status}
         if state.game:
             out["discord_game"] = state.game
@@ -567,8 +563,7 @@ async def _online_now__p2(c):
     c._discord_fields = _discord_fields
 
     def _online_ok_note(out: dict) -> str:
-        """How to report an `ok` (ADR 0015 §3): the honesty rules, each
-        clause only when the field it is about is in THIS answer."""
+        """How to report an `ok` (ADR 0015 §3): the honesty rules, each"""
         entries = out["people"]
         parts = [
             "This is live, so report it as right now and do not repeat it later as still true."
@@ -605,7 +600,7 @@ async def _online_now__p2(c):
     return (False, None, None)
 
 
-async def _online_now__p3(c):
+async def _online_now__missing_steam(c):
     for _w1 in c.refs:
         c.ref = _w1
         if not c.steam_ids_by_person[c.ref.person_id]:
@@ -629,7 +624,7 @@ async def _online_now__p3(c):
     return (False, None, None)
 
 
-async def _online_now__p4(c):
+async def _online_now__missing_discord(c):
     for _w1 in c.refs:
         c.ref = _w1
         if not c.discord_ids_by_person[c.ref.person_id]:
@@ -645,7 +640,7 @@ async def _online_now__p4(c):
     return (False, None, None)
 
 
-async def _online_now__p5(c):
+async def _online_now__resolve_states(c):
     for _w1 in c.refs:
         c.ref = _w1
         c.has_steam = bool(c.steam_ids_by_person[c.ref.person_id])
@@ -707,7 +702,7 @@ async def _online_now__p5(c):
     return (False, None, None)
 
 
-async def _online_now__p6(c):
+async def _online_now__result(c):
     if c.readable == 0:
         _record(c.metrics, "online_now", "nothing_found", what=c.what)
         return (

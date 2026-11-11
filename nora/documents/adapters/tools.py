@@ -86,10 +86,10 @@ def _make_document_publish(deps):
             document_asked=deps.document_asked,
             link_carry=deps.link_carry,
         )
-        k_, _, v_ = await _document_publish__p1(c)
+        k_, _, v_ = await _document_publish__validate(c)
         if k_:
             return v_
-        k_, _, v_ = await _document_publish__p2(c)
+        k_, _, v_ = await _document_publish__record(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -295,7 +295,7 @@ def _make_document_set_status(deps):
     return document_set_status
 
 
-async def _document_publish__p1(c):
+async def _document_publish__validate(c):
     c.tool = "document_publish"
     if c.documents is None:
         _record(c.metrics, c.tool, "unavailable", reason="not_wired")
@@ -356,6 +356,10 @@ async def _document_publish__p1(c):
                     ),
                 },
             )
+    return await _document_publish__publish(c)
+
+
+async def _document_publish__publish(c):
     try:
         c.out = await c.documents.publish(
             platform=c.room.platform,
@@ -443,7 +447,7 @@ async def _document_publish__p1(c):
     return (False, None, None)
 
 
-async def _document_publish__p2(c):
+async def _document_publish__record(c):
     if c.out.status == "conflict":
         _record(c.metrics, c.tool, "bad_arguments", reason="conflict")
         return (

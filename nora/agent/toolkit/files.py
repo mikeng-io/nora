@@ -126,9 +126,7 @@ _FILE_MORE_NOTE = " This is not the whole file: read the next part only if the a
 
 
 def _file_note(reason: str, account: str) -> str | None:
-    """The note for one shared-file `reason`. `NOT_SHARED` names Nora's own
-    Google account (`[google] account`, empty → a generic phrasing); the rest
-    are fixed strings."""
+    """The note for one shared-file `reason`. `NOT_SHARED` names Nora's own"""
     if reason == NOT_SHARED:
         who = account or "Nora's Google account"
         return (

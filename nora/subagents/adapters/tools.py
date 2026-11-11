@@ -56,6 +56,39 @@ def _make__subagent_view(deps):
     return _subagent_view
 
 
+def _subagent_create_answer(metrics, tool: str, out) -> dict:
+    """The started-job reply: started, or why nothing is running."""
+    if out.status == "bad_arguments":
+        _record(metrics, tool, "bad_arguments", reason="brief")
+        return {
+            "status": "bad_arguments",
+            "note": f"Nothing was started: {out.problem}. Call again with it fixed.",
+        }
+    if out.status != "started":
+        _record(metrics, tool, "unavailable", reason=out.reason or "unavailable")
+        return {
+            "status": "unavailable",
+            "note": "I couldn't start it, and nothing is running. Say so; don't "
+            "say you are on it.",
+        }
+    if out.repeated:
+        _record(metrics, tool, "started", reason="repeated_in_turn")
+        return {
+            "status": "started",
+            "id": out.id,
+            "note": "This job was already started earlier in this turn, and nothing "
+            "new was started. Tell the room once that you are on it.",
+        }
+    _record(metrics, tool, "started")
+    return {
+        "status": "started",
+        "id": out.id,
+        "note": "It is running in the background. Tell the room you are on it and "
+        "that the result comes later, as a message. Do not wait for it, "
+        "and do not say when it will be done.",
+    }
+
+
 def _make_subagent_create(deps):
     conversation_type = deps.conversation_type
     metrics = deps.metrics
@@ -147,35 +180,7 @@ def _make_subagent_create(deps):
             tag_id=current_tag_id() or None,
             brief=brief,
         )
-        if out.status == "bad_arguments":
-            _record(metrics, tool, "bad_arguments", reason="brief")
-            return {
-                "status": "bad_arguments",
-                "note": f"Nothing was started: {out.problem}. Call again with it fixed.",
-            }
-        if out.status != "started":
-            _record(metrics, tool, "unavailable", reason=out.reason or "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't start it, and nothing is running. Say so; don't "
-                "say you are on it.",
-            }
-        if out.repeated:
-            _record(metrics, tool, "started", reason="repeated_in_turn")
-            return {
-                "status": "started",
-                "id": out.id,
-                "note": "This job was already started earlier in this turn, and nothing "
-                "new was started. Tell the room once that you are on it.",
-            }
-        _record(metrics, tool, "started")
-        return {
-            "status": "started",
-            "id": out.id,
-            "note": "It is running in the background. Tell the room you are on it and "
-            "that the result comes later, as a message. Do not wait for it, "
-            "and do not say when it will be done.",
-        }
+        return _subagent_create_answer(metrics, tool, out)
 
     return subagent_create
 

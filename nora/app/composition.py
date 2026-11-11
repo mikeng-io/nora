@@ -3582,10 +3582,7 @@ async def build_dependencies(
         display_name=cfg.doctrine.display_name,
         # `[external_files]` (ships off): the source a shared file link is
         # opened through; None answers the open `unavailable`.
-        external_files=external_files_source(
-            cfg, google=google_credentials(cfg, metrics=metrics),
-        ),
-        # `[google] account`: the NOT_SHARED note names who to share with.
+        external_files=external_files_source(cfg, google=google_credentials(cfg, metrics=metrics)),
         google_account=cfg.google.account,
         subagent=subagent_desk,
         video=video_desk,

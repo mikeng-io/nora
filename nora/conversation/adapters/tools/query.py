@@ -72,8 +72,7 @@ def _make__source_name_of(deps):
     persons = deps.persons
 
     def _source_name_of(platform: str, ref: str) -> str | None:
-        """A subject's roster name, or None — a raw ref never reaches a
-        tool result (R-18)."""
+        """A subject's roster name, or None — a raw ref never reaches a"""
         found = persons.resolve(platform, ref) if persons is not None else None
         return found.name if found is not None else None
 
@@ -92,11 +91,7 @@ def _make__resolve_targets(deps):
         *,
         as_of_ms: int | None = None,
     ) -> dict[int, TargetContext]:
-        """The affected messages these `target_message_id`s name, by id —
-        ONE bounded batched Record read of the ROOM THE EVENT WAS READ IN
-        (`by_ids`), named through the roster. A failed or unresolvable read
-        returns what's absent: the caller's `target_unresolved` says so,
-        and nothing is guessed or scanned."""
+        """The affected messages these `target_message_id`s name, by id —"""
         wanted = tuple(dict.fromkeys(i for i in msg_ids if i))
         if not wanted:
             return {}
@@ -125,10 +120,7 @@ def _make__head_target(deps):
     now_fn = deps.now_fn
 
     async def _head_target(scope: SourceScope, head: Any) -> dict | None:
-        """The affected message behind a folded head — through its newest
-        applied row's `target_message_id` — as a `target` dict;
-        `{"unresolved": True}` when the link exists but the row cannot be
-        shown (hidden, another room, or the bound), None when it names none."""
+        """The affected message behind a folded head — through its newest"""
         for row in await observations.by_ids(scope=scope, ids=(head.head_id,)):
             if row.target_message_id is None:
                 return None
@@ -158,14 +150,7 @@ def _make__room_source_events(deps):
         limit: int = 24,
         as_of_ms: int | None = None,
     ) -> tuple[tuple[SourceEvent, ...], int] | None:
-        """The room's typed source events at/after `since_ms`, projected —
-        `(events, more)` where `more` counts what the bound cut — or None
-        when the read failed (the caller says so in its result: a failed
-        read is `unavailable`, never an empty list, and a bounded one never
-        reads as complete). `as_of_ms` bounds the event window AND the poll
-        labels at the caller's instant: a head folded after it (an option
-        renamed, a vote recorded later) is not the label the event then
-        carried, so it is withheld rather than shown."""
+        """The room's typed source events at/after `since_ms`, projected —"""
         try:
             rows = await observations.recent(
                 scope=scope, since_ms=since_ms, limit=limit + 1, before_ms=as_of_ms
@@ -220,10 +205,9 @@ def _make__room_source_events(deps):
             )
 
         shown = tuple(event_of(r) for r in rows[:limit])
-        # The affected messages the shown events name — one batched Record
-        # read of the room they were read in, fail-soft like the source
-        # read itself: an unresolvable target says `target_unresolved`,
-        # never a guess.
+        # The affected messages the shown events name — one batched Record read of the
+        # room they were read in, fail-soft like the source read itself: an
+        # unresolvable target says `target_unresolved`, never a guess.
         targets = await _resolve_targets(
             scope.platform,
             scope.conversation_id,
@@ -253,12 +237,7 @@ def _make__observation_query(deps):
         history: bool,
         at_id: int | None,
     ) -> dict:
-        """The typed `kind` branch of `record_query`: ONE bounded, scoped
-        read of the observation Record — discovery (`heads`) with no
-        `object`, the object's folded head with one, its retained history
-        or an as-of point when asked. R-27 holds: an unwired store is
-        `unavailable`, a scope with no such object is `nothing_found`,
-        and a bounded `as_of` that cut its history says `partial`."""
+        """The typed `kind` branch of `record_query`: ONE bounded, scoped"""
         c = SimpleNamespace(
             kind=kind,
             object=object,
@@ -273,18 +252,18 @@ def _make__observation_query(deps):
             bound_conversation_id=deps.bound_conversation_id,
             now_fn=deps.now_fn,
         )
-        k_, _, v_ = await __observation_query__p1(c)
+        k_, _, v_ = await _observation_query__check_kind(c)
         if k_:
             return v_
         try:
-            k_, _, v_ = await __observation_query__p2(c)
+            k_, _, v_ = await _observation_query__discover_heads(c)
             if k_:
                 return v_
-            k_, _, v_ = await __observation_query__p3(c)
+            k_, _, v_ = await _observation_query__read_history(c)
             if k_:
                 return v_
         except Exception:  # noqa: BLE001
-            k_, _, v_ = await __observation_query__p4(c)
+            k_, _, v_ = await _observation_query__fail(c)
             if k_:
                 return v_
         return None  # type: ignore[return-value]
@@ -352,10 +331,10 @@ def _make_record_query(deps):
             bound_conversation_id=deps.bound_conversation_id,
             now_fn=deps.now_fn,
         )
-        k_, _, v_ = await _record_query__p1(c)
+        k_, _, v_ = await _record_query__guard_scope(c)
         if k_:
             return v_
-        k_, _, v_ = await _record_query__p2(c)
+        k_, _, v_ = await _record_query__run(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -376,14 +355,7 @@ def _make__record_messages(deps):
         near: frozenset[int],
         now: datetime,
     ) -> list[dict]:
-        """The hits in `load_transcript`'s one shape (`_transcript_messages`),
-        each named with its room, its reactions and whether it was deleted.
-        A deleted message keeps its place and loses its words: its author
-        took them back (`RecordStore.hide_message` hides it).
-
-        Each row carries its number `n` ONLY for the Cognition session, the
-        citation handle a note's line rests on (DEC-250); never on a tag turn
-        or any other pass (R-18)."""
+        """The hits in `load_transcript`'s one shape (`_transcript_messages`),"""
         names = {
             (r.platform, cid): (r.label or platform_name(r.platform))
             for r in rooms
@@ -420,7 +392,7 @@ def _make__record_messages(deps):
     return _record_messages
 
 
-async def __observation_query__p1(c):
+async def _observation_query__check_kind(c):
     if c.kind in UNSUPPORTED_KINDS.get(c.room.platform, frozenset()):
         _record(c.metrics, "record_query", "unavailable", kind=c.kind, reason="unsupported")
         return (
@@ -440,7 +412,7 @@ async def __observation_query__p1(c):
     return (False, None, None)
 
 
-async def __observation_query__p2(c):
+async def _observation_query__discover_heads(c):
     if c.object is None and (not c.history) and (c.at_id is None):
         c.heads = await c.observations.heads(scope=c.scope, kind=c.kind, limit=_DISCOVERY_LIMIT + 1)
         c.heads = sorted(
@@ -538,7 +510,7 @@ async def __observation_query__p2(c):
     return (False, None, None)
 
 
-async def __observation_query__p3(c):
+async def _observation_query__read_history(c):
     if c.history:
         c.rows = await c.observations.history(
             scope=c.scope, kind=c.kind, object_ref=c.head.object_ref, limit=_HISTORY_LIMIT + 1
@@ -607,14 +579,14 @@ async def __observation_query__p3(c):
     return (False, None, None)
 
 
-async def __observation_query__p4(c):
+async def _observation_query__fail(c):
     log.exception("record_query observation branch failed")
     _record(c.metrics, "record_query", "unavailable", kind=c.kind)
     return (True, None, {"status": "unavailable", "note": _RECORD_QUERY_OFF})
     return (False, None, None)
 
 
-async def _record_query__p1(c):
+async def _record_query__guard_scope(c):
     if (c.kind is not None or c.object is not None) and c.scope != "this_room":
         _record(c.metrics, "record_query", "unavailable", reason="object_scope")
         return (
@@ -712,7 +684,7 @@ async def _record_query__p1(c):
     return (False, None, None)
 
 
-async def _record_query__p2(c):
+async def _record_query__run(c):
     try:
         c.hits, c.more, c.near = await c.record.query(
             RecordQuery(

@@ -10,7 +10,7 @@ def build(deps):
     from nora.media.adapters.tools.create import _make_generate_image
 
     generate_image = _make_generate_image(deps)
-    from nora.media.adapters.tools.create import _make_video_create
+    from nora.media.adapters.tools.video import _make_video_create
 
     video_create = _make_video_create(deps)
     from nora.media.adapters.tools.search import _make_media_search

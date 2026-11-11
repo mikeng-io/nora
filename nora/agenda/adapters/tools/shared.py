@@ -53,11 +53,9 @@ def _occurrences_through(
     cap: int,
 ) -> int:
     """How many occurrences of this rule land at or before `ends_at`, capped."""
-    # Built INSIDE the caller's `try`, never here: an unresolvable
-    # `[reminders].timezone` is a deployment fault that `_parse_repeat` answers
-    # as `unavailable`, and a probe built outside that guard would raise out of the
-    # tool — a silent turn (R-5). Adding an argument must not change which failure
-    # mode a broken deployment produces.
+    # Built INSIDE the caller's `try`, never here: an unresolvable `[reminders].timezone`
+    # is a deployment fault that `_parse_repeat` answers as `unavailable`, and a probe
+    # built outside that guard would raise out of the tool — a silent turn (R-5). Adding
     probe = RecurrenceRule(
         every=every,
         tz=tz,
@@ -118,12 +116,23 @@ def _parse_repeat(
                 "bad_repeat",
                 "Every less-than-one is not a gap. Say how far apart they meant.",
             )
+    return _repeat_bounds(
+        every=every, step=step, times=times, until=until, due_at=due_at, caps=caps
+    )
 
-    # THE OPERATING FLOOR. Sub-day recurrence makes 「每分鐘」 sayable,
-    # and a room runs ONE turn at a time — a series faster than
-    # it can serve does not arrive sooner, it queues and starves real tags.
-    # REFUSED here rather than clamped: a bound nobody was told about is a silent
-    # failure, and 「最快五分鐘一次」 is a sentence she can say.
+
+def _repeat_bounds(
+    *,
+    every: Recurrence,
+    step: int,
+    times: object,
+    until: object,
+    due_at: datetime,
+    caps: ReminderCaps,
+) -> RecurrenceRule | _RepeatRefusal:
+    # THE OPERATING FLOOR. Sub-day recurrence makes 「每分鐘」 sayable, and a room runs ONE
+    # turn at a time — a series faster than it can serve does not arrive sooner, it queues
+    # and starves real tags. REFUSED here rather than clamped: a bound nobody was told
     unit_seconds = UNIT_SECONDS.get(every)
     if unit_seconds is not None and unit_seconds * step < caps.min_interval_seconds:
         floor_minutes = caps.min_interval_seconds // 60
@@ -151,12 +160,9 @@ def _parse_repeat(
                 "which date they meant: one of the two is wrong.",
             )
 
-    # EVERYTHING that can raise on a bad rule lives inside ONE try:
-    # `_occurrences_through` builds a probe `RecurrenceRule`, and outside this guard
-    # an unresolvable `[reminders].timezone` would escape as an exception out of the
-    # tool — a silent turn (R-5) — but ONLY on the `until` path. The same
-    # deployment fault answers `unavailable` without `until`. Adding an argument
-    # must not change which failure mode a broken deployment produces.
+    # EVERYTHING that can raise on a bad rule lives inside ONE try: `_occurrences_through`
+    # builds a probe `RecurrenceRule`, and outside this guard an unresolvable
+    # `[reminders].timezone` would escape as an exception out of the tool — a silent turn
     try:
         count = _resolve_count(
             every=every,
@@ -188,10 +194,8 @@ def _parse_repeat(
         )
     except (ValueError, OverflowError):
         # An `every_n` past `MAX_INTERVAL`, or one whose occurrences leave the
-        # representable calendar entirely (`yearly x 10000` is year 12026;
-        # `minutely x 10**12` overflows `timedelta`). The multiplier is a number the
-        # MODEL writes, so this is an ordinary refusal it can fix rather than a
-        # deployment fault.
+        # representable calendar entirely (`yearly x 10000` is year 12026; `minutely x
+        # 10**12` overflows `timedelta`). The multiplier is a number the MODEL writes,
         return _RepeatRefusal(
             "bad_repeat",
             "That is too far apart for me to keep track of. Say a smaller gap: "

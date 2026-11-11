@@ -59,9 +59,8 @@ def _make_remember(deps):
         tagger = room.tagger
         if tagger is None:
             # Fail-closed on identity, the same refusal `note_create` makes:
-            # without a resolved tagger there is no observed peer to attach
-            # the fact to, and a conclusion written under a guessed peer id
-            # would be a memory about nobody that `about` can never find.
+            # without a resolved tagger there is no observed peer to attach the
+            # fact to, and a conclusion written under a guessed peer id would be a
             _record(metrics, "remember", "refused", reason="no_tagger")
             return {
                 "status": "refused",
@@ -97,17 +96,13 @@ def _make_remember(deps):
         except Exception:
             # Belt-and-braces only, the same shape `note_create` carries: the
             # adapter/double catches everything itself, so this handler is NOT
-            # where the outage is detected. `conclude`'s False on failure is
-            # the real signal; this just keeps a raised error from becoming an
-            # ERROR dressed as a PASS (R-27).
+            # where the outage is detected. `conclude`'s False on failure is the
             log.exception("remember failed")
             written = False
         if not written:
-            # THE WHOLE POINT OF THREE STATES: memory got the call and could
-            # not commit it. This is `unavailable` — never a silent success,
-            # and never a fallback to the note tier (a failed conclusion is a
-            # failure; writing it somewhere else would teach tomorrow's `about`
-            # to lie by omission).
+            # THE WHOLE POINT OF THREE STATES: memory got the call and could not
+            # commit it. This is `unavailable` — never a silent success, and never
+            # a fallback to the note tier (a failed conclusion is a failure;
             _record(metrics, "remember", "unavailable")
             return {
                 "status": "unavailable",
@@ -191,15 +186,40 @@ def _make_remember_told(deps):
             _unit=deps._unit,
             bound_conversation_id=deps.bound_conversation_id,
         )
-        k_, _, v_ = await _remember_told__p1(c)
+        k_, _, v_ = await _remember_told__tagger(c)
         if k_:
             return v_
-        k_, _, v_ = await _remember_told__p2(c)
+        k_, _, v_ = await _remember_told__room(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
 
     return remember_told
+
+
+async def _dispute_subject(person: str, tagger, room, metrics, content_checks):
+    """Whose account the dispute lands on: the speaker unless `person` names someone here."""
+    subject = tagger
+    if person.strip():
+        view = await room.scope()
+        if not view.available:
+            _record(metrics, "profile_dispute", "unavailable", reason="roster")
+            return subject, dict(_PROFILE_DISPUTE_UNAVAILABLE)
+        matches = view.find(person)
+        if not matches:
+            miss = _miss(person, view, content_checks=content_checks)
+            _record(metrics, "profile_dispute", miss["status"], candidates=0)
+            return subject, miss
+        if len(matches) > 1:
+            _record(metrics, "profile_dispute", "ambiguous", candidates=len(matches))
+            return subject, {
+                "status": "ambiguous",
+                **_asked_about(person, content_checks=content_checks),
+                "could_be": [p.name for p in matches],
+                "note": "More than one person here goes by that. Ask which one.",
+            }
+        subject = matches[0]
+    return subject, None
 
 
 def _make_profile_dispute(deps):
@@ -232,11 +252,9 @@ def _make_profile_dispute(deps):
                 is the speaker's own.
             kind: dispute (the default: it is wrong) or forget (take it away, which
                 only the person themselves may ask)."""
-        # The dispute door (35 §2), mirroring `remember_told`: the speaker is
-        # the disputer, the named person is the account's subject, and the
-        # store rules on it in one transaction. The line the claim names is
-        # matched by code (`nora.domain.profile.match_disputed_line`), never
-        # by the model: an unmatched claim is recorded, not guessed at.
+        # The dispute door (35 §2), mirroring `remember_told`: the speaker is the
+        # disputer, the named person is the account's subject, and the store rules on
+        # it in one transaction. The line the claim names is matched by code
         tagger = room.tagger
         if tagger is None:
             _record(metrics, "profile_dispute", "refused", reason="no_tagger")
@@ -268,26 +286,11 @@ def _make_profile_dispute(deps):
             # never a record.
             _record(metrics, "profile_dispute", "unavailable", reason="unwired")
             return dict(_PROFILE_DISPUTE_UNAVAILABLE)
-        subject = tagger
-        if person.strip():
-            view = await room.scope()
-            if not view.available:
-                _record(metrics, "profile_dispute", "unavailable", reason="roster")
-                return dict(_PROFILE_DISPUTE_UNAVAILABLE)
-            matches = view.find(person)
-            if not matches:
-                miss = _miss(person, view, content_checks=content_checks)
-                _record(metrics, "profile_dispute", miss["status"], candidates=0)
-                return miss
-            if len(matches) > 1:
-                _record(metrics, "profile_dispute", "ambiguous", candidates=len(matches))
-                return {
-                    "status": "ambiguous",
-                    **_asked_about(person, content_checks=content_checks),
-                    "could_be": [p.name for p in matches],
-                    "note": "More than one person here goes by that. Ask which one.",
-                }
-            subject = matches[0]
+        subject, blocked = await _dispute_subject(
+            person, tagger, room, metrics, content_checks=content_checks
+        )
+        if blocked is not None:
+            return blocked
         try:
             result = await profile.record_dispute(
                 account=ProfileAccount(
@@ -329,7 +332,7 @@ def _make_profile_dispute(deps):
     return profile_dispute
 
 
-async def _remember_told__p1(c):
+async def _remember_told__tagger(c):
     c.tagger = c.room.tagger
     if c.tagger is None:
         _record(c.metrics, "remember", "refused", reason="no_tagger")
@@ -414,7 +417,7 @@ async def _remember_told__p1(c):
     return (False, None, None)
 
 
-async def _remember_told__p2(c):
+async def _remember_told__room(c):
     try:
         c.target = c.lineage.render_room(
             platform=c.room.platform, conversation_id=c.bound_conversation_id

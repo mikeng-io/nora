@@ -26,9 +26,6 @@ def _make_now(deps):
         # The SAME clock read and formatter as the turn's clock line
         # (`nora.agent.clock`), so a mid-turn answer states exactly its facts. Uses
         # the injected `clock` when there is one, read the way the fire path reads it
-        # (`self._clock().astimezone()`): an eval sandbox freezes the turn at a past
-        # instant, and a `now` read from the wall would disagree with it. In
-        # production both are the wall.
         moment = clock().astimezone() if clock is not None else local_now()
         # The clock reading stays in the line: it is a fact about Nora's own host,
         # not about the group, and it tells an operator the container's timezone is
@@ -62,18 +59,11 @@ def _make_calculate(deps):
         """
         # The evaluator is pure and documented never to raise (see
         # `nora.agent.arithmetic`), so there is no try/except here and no
-        # `unavailable` status: it holds none of this tag's collaborators, so
-        # there is nothing that can be unreachable. A bare `except` would only
-        # be able to invent a state that cannot happen.
+        # `unavailable` status: it holds none of this tag's collaborators, so there is
         out = evaluate_expression(expression)
-        # Same hole `_asked_about` exists for, in the one other place a
-        # MODEL-SUPPLIED string is handed straight back. `+85290000101 + 0` is
-        # real arithmetic — a unary plus on an integer — so a model can put a
-        # phone number here exactly as it does in `lookup_person(name=...)`,
-        # and an identifier inside a tool result costs the whole reply at R-18.
-        # Only the ECHO is recoverable: the RESULT of that expression is
-        # `85290000101`, which is a number and nothing distinguishes it from
-        # arithmetic, here or at egress.
+        # Same hole `_asked_about` exists for, in the one other place a MODEL-SUPPLIED
+        # string is handed straight back. `+85290000101 + 0` is real arithmetic — a
+        # unary plus on an integer — so a model can put a phone number here exactly as
         if scan_identifiers(expression, content_checks=content_checks) is not None:
             out.pop("expression", None)
         # ADR 0015 §3: how to report the answer rides in the result. A refusal
@@ -93,8 +83,6 @@ def _make_calculate(deps):
         # COUNTS and status, never the expression (`_log_call`'s rule):
         # `data/nora.log` is a worse place for a model-supplied string than a tool
         # result, because nothing scans it on the way out. The expression still
-        # reaches the TRACE, in the result above (DEC-31): `1485/6` is checkable,
-        # `247.5` is not.
         _record(
             metrics,
             "calculate",

@@ -95,10 +95,10 @@ def _make_room_list(deps):
             bound_conversation_id=deps.bound_conversation_id,
             now_fn=deps.now_fn,
         )
-        k_, _, v_ = await _room_list__p1(c)
+        k_, _, v_ = await _room_list__unit(c)
         if k_:
             return v_
-        k_, _, v_ = await _room_list__p2(c)
+        k_, _, v_ = await _room_list__threads(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -150,10 +150,10 @@ def _make_room_read(deps):
             _unit_rooms=_make__unit_rooms(deps),
             now_fn=deps.now_fn,
         )
-        k_, _, v_ = await _room_read__p1(c)
+        k_, _, v_ = await _room_read__unit(c)
         if k_:
             return v_
-        k_, _, v_ = await _room_read__p2(c)
+        k_, _, v_ = await _room_read__result(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -363,7 +363,7 @@ def _make_room_state_read(deps):
     return room_state_read
 
 
-async def _room_list__p1(c):
+async def _room_list__unit(c):
     c.unit = await c._unit_rooms()
     if c.unit is None or (c.unit.rooms is None and (not c.unit.direct)):
         _record(c.metrics, "room_list", "unavailable")
@@ -447,7 +447,7 @@ async def _room_list__p1(c):
     return (False, None, None)
 
 
-async def _room_list__p2(c):
+async def _room_list__threads(c):
 
     async def _threads(r: KnownRoom) -> dict:
         unavailable = {"status": "unavailable", "note": "I couldn't check this room's threads."}
@@ -534,7 +534,7 @@ async def _room_list__p2(c):
     return (False, None, None)
 
 
-async def _room_read__p1(c):
+async def _room_read__unit(c):
     c.unit = await c._unit_rooms()
     if c.unit is None or (c.unit.rooms is None and (not c.unit.direct)):
         _record(c.metrics, "room_read", "unavailable")
@@ -600,6 +600,10 @@ async def _room_read__p1(c):
                 "note": ("I can't read that room right now. Say so; do not guess what was said."),
             },
         )
+    return await _room_read__build_transcript(c)
+
+
+async def _room_read__build_transcript(c):
     c.name = _room_name(c.target)
     if not c.rows:
         _record(
@@ -660,7 +664,7 @@ async def _room_read__p1(c):
     return (False, None, None)
 
 
-async def _room_read__p2(c):
+async def _room_read__result(c):
     c.result: dict = {
         "status": "ok",
         "room": c.name,

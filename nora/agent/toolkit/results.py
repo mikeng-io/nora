@@ -138,17 +138,13 @@ def _memory_hits_result(
         # the handle here, never the link (R-18).
         kept.append({"who": name, "said": render_file_links(content)})
     if not kept:
-        # Third state, and it is NOT `nothing_found`. A result set emptied by
-        # the egress filter means the words exist and she may not repeat
-        # them — telling the group nobody said anything would be false, and
-        # DEC-95 makes it likelier by sending her here more often AND by
-        # filtering on the reply predicate.
+        # Third state, and it is NOT `nothing_found`. A result set emptied by the
+        # egress filter means the words exist and she may not repeat them — telling
+        # the group nobody said anything would be false, and DEC-95 makes it likelier
         if withheld:
             # A DISTINCT status, not `nothing_found` with a note attached: the
-            # model reads `status` first and prose second, so encoding «I found things I
-            # may not repeat» as «nothing was said» leaves the true answer
-            # depending on whether it read far enough. R-27's states are
-            # distinct BECAUSE the caller keys on them.
+            # model reads `status` first and prose second, so encoding «I found
+            # things I may not repeat» as «nothing was said» leaves the true
             record("withheld", results=0, withheld=withheld)
             return {
                 "status": "withheld",
@@ -157,10 +153,9 @@ def _memory_hits_result(
                 "can't quote it. Never say nobody said anything, and "
                 "never paraphrase it into a quote.",
             }
-        # `nothing_found`, not `ok`. A miss recorded as a success makes
-        # hit-rate unreadable on the counter — the one series that would show
-        # her searching constantly and finding nothing, which is what a broken
-        # index or a bad query shape looks like from outside.
+        # `nothing_found`, not `ok`. A miss recorded as a success makes hit-rate
+        # unreadable on the counter — the one series that would show her searching
+        # constantly and finding nothing, which is what a broken index or a bad query
         record("nothing_found", results=0)
         return {
             "status": "nothing_found",
@@ -169,10 +164,9 @@ def _memory_hits_result(
         }
     record("ok", results=len(kept))
     result: dict = {"status": "ok", "results": kept}
-    # `partial_view` is present only on the ROOM verb (a degraded roster is a
-    # property of a room's live view; the unit verb has no view to
-    # degrade) — omitted entirely rather than nulled, so the unit
-    # result's shape does not carry a key that could only ever be one value.
+    # `partial_view` is present only on the ROOM verb (a degraded roster is a property of
+    # a room's live view; the unit verb has no view to degrade) — omitted entirely rather
+    # than nulled, so the unit result's shape does not carry a key that could only ever be
     if partial_view is not None:
         result["partial_view"] = partial_view
         # ADR 0015 §3: the note that a partly known room only means that account's

@@ -372,6 +372,10 @@ class ToolDeps:
         object.__setattr__(self, "_instagram_story_urls", _instagram_story_urls)
         _instagram_pages: dict[str, tuple[tuple[str, str], list[dict], str | None]] = {}
         object.__setattr__(self, "_instagram_pages", _instagram_pages)
+        self._init_derived()
+
+    def _init_derived(self) -> None:
+        """Derived state shared by the tool bodies: off-notes, scratch maps, actor labels."""
         note_heads: dict[str, str] = {}
         object.__setattr__(self, "note_heads", note_heads)
         notes_off = {
@@ -435,19 +439,11 @@ class ToolDeps:
         object.__setattr__(self, "computer_ctx", build_computer_ctx(self))
 
     def _now_ms(self) -> int:
-        """Epoch milliseconds off the SAME clock every other tool here reads.
-
-        `now_fn` is `ToolRegistry`'s injected clock, so a test that freezes time
-        freezes the note tier with it. Never `time.time()` — a second clock in
-        one module is how a note's `written_at` ends up in a different era from
-        the reminder set in the same turn.
-        """
+        """Epoch milliseconds off the SAME clock every other tool here reads."""
         return int(self.now_fn().timestamp() * 1000)
 
     async def _lineage_target(self, tool: str) -> tuple[RenderRoom, RoomFacts, Any] | None:
-        """This room's `RenderRoom` with its live roster read, the room's own
-        facts and the roster view; `None` (counted) when the room is not in
-        the policy or lineage is not wired."""
+        """This room's `RenderRoom` with its live roster read, the room's own"""
         if self.lineage is None:
             _record(self.metrics, tool, "unavailable", reason="unwired")
             return None
@@ -472,10 +468,7 @@ class ToolDeps:
         )
 
     def _in_library(self, obj: MediaObject) -> bool:
-        """Whether the library (`media_search`, `media_send`) may show this row
-        to THIS room. What Nora generated is hers and global (DEC-138). A picture
-        she kept from the web belongs to the room whose look kept it: it is
-        found and sent there only."""
+        """Whether the library (`media_search`, `media_send`) may show this row"""
         if obj.source == "generated":
             return True
         return obj.source == "fetched" and born_in_room(
@@ -483,11 +476,7 @@ class ToolDeps:
         )
 
     async def _keep_fetched_image(self, url: str, data: bytes, media_type: str) -> str | None:
-        """Put a looked-at web picture into custody as a `fetched` row born in
-        this room, and return its short code, or `None` when it could not be
-        kept (custody off, a store error) or when the same bytes were first
-        indexed in another room: those do not resolve here, so no code is
-        offered for them. Never raises."""
+        """Put a looked-at web picture into custody as a `fetched` row born in"""
         if self.blob_store is None or self.media_store is None:
             return None
         try:
@@ -518,11 +507,7 @@ class ToolDeps:
         return key[:HANDLE_CHARS]
 
     async def _shared_file_bytes(self, ref: ExternalFileRef) -> FileBytes | dict:
-        """A shared file's bytes for `media_fetch` to look at, fetched afresh
-        through the one `ExternalFilesSource` (its own byte cap applies), or
-        the answer that stops the look. Nothing keeps the bytes: the caller
-        reads them once and drops them. The answer names `ref.handle`, never
-        the file id or the link (R-18). Never raises."""
+        """A shared file's bytes for `media_fetch` to look at, fetched afresh"""
         if self.external_files is None:
             _record_media(self.metrics, "unavailable", reason="files_unwired")
             return {
@@ -559,10 +544,7 @@ class ToolDeps:
             }
 
     def _not_lookable_note(self, handle: str, kind: str | None) -> str:
-        """What `media_fetch` says of a shared file that is not a picture or
-        a video: `file_fetch` reads only the text kinds; anything else is
-        neither looked at nor read here (and can be copied when her computer
-        is on)."""
+        """What `media_fetch` says of a shared file that is not a picture or"""
         if kind in _TEXT_KINDS:
             return (
                 f"That shared file is not a picture or a video. To read what it says, use "
@@ -577,10 +559,7 @@ class ToolDeps:
         return note
 
     async def _shared_file_by_code(self, hex_code: str) -> ExternalFileRef | dict:
-        """The one shared file a handle's code names among this room's own
-        file links, or the answer that stops the look: `unavailable` when the
-        record cannot be read (or the read was cut short with nothing found),
-        `ambiguous` for two links, `nothing_found` for none. Never a guess."""
+        """The one shared file a handle's code names among this room's own"""
         found = await resolve_file_code(
             self.store,
             code=hex_code,
@@ -620,40 +599,11 @@ class ToolDeps:
         return found.refs[0]
 
     def _notebook(self) -> NoteCollaborator | None:
-        """The wired store, or None — BOTH halves of the wiring checked as one.
-
-        A store with no unit is as unusable as no store at all (a note is
-        unit-keyed), and answering «nothing found» from either state
-        is the `unavailable`-reported-as-`nothing_found` failure R-27 exists to
-        prevent. Returning the store rather than a bool is what lets each tool
-        bind a non-optional local, so the narrowing is the type checker's job
-        rather than an `assert` restating what this function already decided.
-        """
+        """The wired store, or None — BOTH halves of the wiring checked as one."""
         return self.notes if self._unit() else None
 
     def _unit(self) -> str | None:
-        """This turn's unit, or `None` when it cannot be named.
-
-        **`supplied_unit` WINS when set**: a unit-keyed Dreamer adaptor's key
-        IS the unit, and the Dreamer's synthetic `Room` carries it in the
-        conversation slot with no platform, so the resolver below could never
-        name it and every unit-scoped verb would answer `unavailable` on a
-        fully-wired store. A SUPPLIED unit is the truth about what the run is
-        keyed on; the resolver is the fallback for the tag path, which has a
-        real room and no supplier.
-
-        Resolved per turn from `room.platform` and the bound conversation —
-        never a process-wide constant. `None` means policy could not name the
-        room, and every verb that needs one answers `unavailable` on it:
-        reading the wrong unit's notebook is worse than reading none.
-
-        **Shared by every unit-keyed verb**, because it is one value —
-        `policy.conversation(...).unit` — and two resolvers for it would
-        be two definitions of which social unit a room belongs to.
-        `unit_for` is preferred and `note_unit` is the fallback, so a verb
-        outside the note tier does not depend on the NOTE tier being wired,
-        which it would if it read only `note_unit`.
-        """
+        """This turn's unit, or `None` when it cannot be named."""
         if self.supplied_unit:
             return self.supplied_unit
         resolver = self.unit_for or self.note_unit
@@ -666,16 +616,7 @@ class ToolDeps:
             return None
 
     def _memory_route(self) -> dict[str, str]:
-        """The key every Honcho verb here is ROUTED by (DEC-214): the unit
-        this turn is for, or its room.
-
-        A Dreamer adaptor's `supplied_unit` IS the unit, and its synthetic
-        `Room` holds that unit in the conversation slot — so the room form
-        would name a conversation that does not exist and fail closed. The
-        tag and fire paths have a real room, and the memory client resolves
-        it to its unit from the same `policy.toml` entry `_unit()` reads,
-        so a room with no `unit_for` wired here is still routed correctly.
-        Never a model-supplied value: both are captured once (DEC-24)."""
+        """The key every Honcho verb here is ROUTED by (DEC-214): the unit"""
         if self.supplied_unit:
             return {"unit": self.supplied_unit}
         return {"conversation_id": self.bound_conversation_id}

@@ -60,7 +60,7 @@ def _make_who_said(deps):
             metrics=deps.metrics,
             lookup_rows=deps.lookup_rows,
         )
-        k_, _, v_ = await _who_said__p1(c)
+        k_, _, v_ = await _who_said__query(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -165,7 +165,7 @@ def _make_load_transcript(deps):
             bound_conversation_id=deps.bound_conversation_id,
             now_fn=deps.now_fn,
         )
-        k_, _, v_ = await _load_transcript__p1(c)
+        k_, _, v_ = await _load_transcript__window(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -173,7 +173,7 @@ def _make_load_transcript(deps):
     return load_transcript
 
 
-async def _who_said__p1(c):
+async def _who_said__query(c):
     with span(
         "tool.who_said",
         **{"nora.tool": "who_said", "nora.who_said.window_rows": len(c.lookup_rows)},
@@ -236,7 +236,7 @@ async def _who_said__p1(c):
     return (False, None, None)
 
 
-async def _load_transcript__p1(c):
+async def _load_transcript__window(c):
     c.now = c.now_fn().astimezone(_HKT)
     c.as_of_ms = int(c.now.timestamp() * 1000)
     try:

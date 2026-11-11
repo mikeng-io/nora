@@ -163,7 +163,7 @@ def test_the_model_is_told_the_same_ceiling_the_clamp_enforces():
     # Twice: `load_transcript` and `room_read` share the clamp; after the ADR
     # 0037 split they live in `conversation`'s area adapters. «recent» is not
     # in the wording because `before` makes the window movable.
-    from tests.test_tool_surface_policy import _tool_source_paths
+    from tests.tool_view import _tool_source_paths
 
     count = sum(
         path.read_text().count(

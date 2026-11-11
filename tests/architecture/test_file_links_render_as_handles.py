@@ -275,11 +275,10 @@ def _calls_render(node: ast.AST) -> bool:
 def test_each_hand_built_sink_renders_the_handle(rel, fn):
     functions = _functions(rel)
     assert fn in functions, f"{rel}::{fn} is gone: re-point HAND_BUILT at its new name"
-    # ADR 0037 splits an oversized tool into `_<fn>__pN` chunk helpers in the
+    # ADR 0037 splits an oversized tool into `_<fn>__<step>` helpers in the
     # same module — the render call may sit in any of them.
     sinks = [functions[fn]] + [
-        d for n, d in functions.items()
-        if n.startswith(f"_{fn}__p") and n[len(f"_{fn}__p"):].isdigit()
+        d for n, d in functions.items() if n.startswith(f"_{fn}__")
     ]
     assert any(_calls_render(d) for d in sinks), (
         f"{rel}::{fn} ({HAND_BUILT[(rel, fn)]}) hands message text to a model "
@@ -292,9 +291,8 @@ def test_each_hand_built_sink_renders_the_handle(rel, fn):
 #: the named functions in it render (checked in `HAND_BUILT`).
 BUILDERS: dict[str, str | tuple[str, ...]] = {
     # ADR 0037 moved the tool sinks: the store reads now live in
-    # toolkit/transcript.py (the shared renderer, in the media-join gate's
-    # _NOT_A_BUILDER since its callers enrich first) and query.py below; the
-    # renderers themselves are in HAND_BUILT above.
+    # toolkit/transcript.py (the shared renderer; its callers enrich first)
+    # and query.py below; the renderers themselves are in HAND_BUILT above.
     "nora/conversation/adapters/tools/query.py":
         "renders record hits through the shared _transcript_messages (HAND_BUILT)",
     "nora/app/adoption.py": ("backfill",),

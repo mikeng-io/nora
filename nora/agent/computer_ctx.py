@@ -41,7 +41,7 @@ from nora.obs.tracing import current_span_ids
 log = logging.getLogger("nora.tools")
 
 
-def _cctx__p1(c):
+def _cctx__resolve_scope(c):
     c.computer_bounds = c.computer_settings or ComputerToolSettings()
     c.computer_platform = c.room.platform if c.room is not None else ""
     if c.room is None:
@@ -58,8 +58,7 @@ def _cctx__p1(c):
         c.bound_computer_scope = computer_dm_scope(c._dm_scope_id) if c._dm_scope_id else ""
 
     def _computer_dirty() -> None:
-        """A mutating segment landed: the context block's cache must re-read
-        the workspace/browser view, not serve the turn what it had."""
+        """A mutating segment landed: the context block's cache must re-read"""
         if c.computer_context_invalidate is not None and c.bound_computer_scope:
             c.computer_context_invalidate(c.bound_computer_scope)
 
@@ -90,14 +89,12 @@ def _cctx__p1(c):
         return tagger.person_id if tagger is not None else None
 
     c._computer_requester = _computer_requester
+    return _cctx__make_blob_row(c)
 
+
+def _cctx__make_blob_row(c):
     async def _computer_blob(tool: str, text: str) -> dict[str, object]:
-        """Put one full input or output in the blob store; return its ref.
-
-        The ref always carries the size and sha256 of the text; `key` is added
-        and `stored` is true when the bytes are stored. A failed put is logged
-        and counted (`stage="blob"`) and the ref says `stored: false`: the row
-        still records that the text existed and what it hashed to."""
+        """Put one full input or output in the blob store; return its ref."""
         data = text.encode("utf-8", errors="surrogatepass")
         ref: dict[str, object] = {
             "bytes": len(data),
@@ -165,7 +162,7 @@ def _cctx__p1(c):
     return (False, None, None)
 
 
-def _cctx__p2(c):
+def _cctx__make_begin(c):
 
     async def _computer_begin(
         tool: str,
@@ -175,10 +172,7 @@ def _cctx__p2(c):
         request: Mapping[str, object],
         session_id: UUID | None = None,
     ) -> bool:
-        """Append the operation's `started` row, BEFORE the call reaches the
-        computer. False when it could not be written: the caller then refuses
-        the call, because an operation without a record must not happen. The
-        failure is logged and counted (`stage="row"`)."""
+        """Append the operation's `started` row, BEFORE the call reaches the"""
         if c.computer_events is None:
             return False
         try:
@@ -214,19 +208,7 @@ def _cctx__p2(c):
         output_ref: Mapping[str, object] | None = None,
         session_id: UUID | None = None,
     ) -> None:
-        """Count the call and append its `finished` row.
-
-        Called from each tool's `finally`, so it runs on every path out of a
-        call that began, cancellation included. The append runs as its own
-        task behind `asyncio.shield`: a second cancellation of the turn while
-        it is in flight cannot interrupt the write, only the wait for it. A
-        failed append is logged and counted (`stage="row"`) and the tool
-        STILL answers: the call already ran, and losing the reply because a
-        log write failed would make the record cost the thing it watches.
-
-        The log line carries counts only (`_log_call`'s rule): the command and
-        the path are in the audit row, never in the log file.
-        """
+        """Count the call and append its `finished` row."""
         _record(c.metrics, tool, status)
         await c._computer_append_finished(
             c._computer_row(
@@ -246,9 +228,7 @@ def _cctx__p2(c):
     c._computer_finish = _computer_finish
 
     async def _computer_append_finished(row: ComputerEvent, *, tool: str) -> None:
-        """Append one `finished` row, shielded from the turn's cancellation
-        (see `_computer_finish`). A failure is logged and counted, never
-        raised: the call it records has already happened."""
+        """Append one `finished` row, shielded from the turn's cancellation"""
         if c.computer_events is None:
             return
         try:
@@ -265,12 +245,14 @@ def _cctx__p2(c):
             c.metrics.inc("nora_computer_audit_failures_total", tool=tool, stage="row")
 
     c._computer_append_finished = _computer_append_finished
+    return _cctx__make_off(c)
 
+
+def _cctx__make_off(c):
     async def _computer_off(
         tool: str, operation_id: UUID, *, started: datetime, request: Mapping[str, object]
     ) -> None:
-        """Both rows of a call that never reached a computer (none is wired,
-        or the audit is incomplete): recorded when the row store is wired."""
+        """Both rows of a call that never reached a computer (none is wired,"""
         if await c._computer_begin(tool, operation_id, started=started, request=request):
             await c._computer_finish(
                 tool,
@@ -289,19 +271,10 @@ def _cctx__p2(c):
     return (False, None, None)
 
 
-def _cctx__p3(c):
+def _cctx__make_session(c):
 
     async def _computer_session(tool: str) -> UUID | None:
-        """Continue this room's open computer session, or open one; its id,
-        or None when there is no session store or it failed. Runs BEFORE the
-        call's `started` row, which carries the id. A failure is logged and
-        counted (`stage="session"`) and the call still runs: the session is
-        bookkeeping over the audit, and the audit row is what must exist.
-        An opening writes its own transition row.
-
-        A sub-agent job keeps no session: sessions are a live turn's task record
-        (`<computer>`, the sweeper), and the worker's own record is its job row and
-        its audit rows, so it neither continues nor bumps a tag turn's."""
+        """Continue this room's open computer session, or open one; its id,"""
         if c.computer_sessions is None or c.subagent_job:
             return None
         now = c.now_fn()
@@ -347,20 +320,13 @@ def _cctx__p3(c):
     return (False, None, None)
 
 
-def _cctx__p4(c):
+def _cctx__make_lease(c):
 
     @contextlib.asynccontextmanager
     async def _computer_lease(
         tool: str, operation_id: UUID, session_id: UUID | None
     ) -> AsyncIterator[str | None]:
-        """The lease on this unit's workspace around a call, independent
-        of session identity. A live turn waits
-        its bound; a background pass never waits. Yields None when held (or
-        when no lease table is wired), else `"live"` or `"background"`: the
-        call was refused, one `busy` row is written, and the caller answers
-        the matching busy note without calling the computer. A held lease
-        gets a `started` row on acquire and a `finished` (`released`) row on
-        exit, whatever the call did."""
+        """The lease on this unit's workspace around a call, independent"""
         if c.computer_leases is None:
             yield None
             return
@@ -442,14 +408,14 @@ def _cctx__p4(c):
     return (False, None, None)
 
 
-def _cctx__p5(c):
+def _cctx__wire_queues(c):
     c._queued_run = c._computer_queued("native", LIVE_WAIT_SECONDS, dirty=True)
     c._queued_browse = c._computer_queued("browse", LIVE_WAIT_SECONDS, dirty=True)
     c._queued_capture = c._computer_queued("capture", LIVE_WAIT_SECONDS, dirty=True)
     return (False, None, None)
 
 
-def _cctx__computer_queued__p1(c):
+def _cctx__computer_queued__decorate(c):
 
     def decorate(fn: Callable[..., Awaitable[dict]]) -> Callable[..., Awaitable[dict]]:
 
@@ -531,24 +497,11 @@ def _cctx__computer_queued__p1(c):
 
 
 def _cctx__computer_queued(c, kind, wait_seconds, dirty):
-    """Wrap a computer tool in the scope's FIFO admission.
-
-    No admission wired (or no scope resolved): the tool runs
-    synchronously, exactly as before. Wired: the call is a durable
-    `computer_tasks` row — head-of-queue runs now through
-    `run_segment` (a registered, cancellable executor that writes the
-    terminal row itself), otherwise the call waits `wait_seconds` for a
-    terminal row and otherwise answers `queued`: the RUNNER then
-    re-builds the call from the durable `payload` through `dispatch`
-    (fresh policy admission on the rebuilt request, never a captured
-    closure) and delivers the result to this room through the
-    compute-job path. A worker's nested call inherits its parent's
-    `current_segment` and runs inline, never behind itself. `dirty`
-    kinds invalidate the scope's cached context view when they land."""
+    """Wrap a computer tool in the scope's FIFO admission."""
     c.kind = kind
     c.wait_seconds = wait_seconds
     c.dirty = dirty
-    k_, _, v_ = _cctx__computer_queued__p1(c)
+    k_, _, v_ = _cctx__computer_queued__decorate(c)
     if k_:
         return v_
 
@@ -577,28 +530,28 @@ def build_computer_ctx(deps):
         bound_conversation_id=deps.bound_conversation_id,
         now_fn=deps.now_fn,
     )
-    k_, f_, v_ = _cctx__p1(c)
+    k_, f_, v_ = _cctx__resolve_scope(c)
     if k_:
         return (True, None, v_)
     if f_ == "break":
         return (False, "break", None)
     if f_ == "continue":
         return (False, "continue", None)
-    k_, f_, v_ = _cctx__p2(c)
+    k_, f_, v_ = _cctx__make_begin(c)
     if k_:
         return (True, None, v_)
     if f_ == "break":
         return (False, "break", None)
     if f_ == "continue":
         return (False, "continue", None)
-    k_, f_, v_ = _cctx__p3(c)
+    k_, f_, v_ = _cctx__make_session(c)
     if k_:
         return (True, None, v_)
     if f_ == "break":
         return (False, "break", None)
     if f_ == "continue":
         return (False, "continue", None)
-    k_, f_, v_ = _cctx__p4(c)
+    k_, f_, v_ = _cctx__make_lease(c)
     if k_:
         return (True, None, v_)
     if f_ == "break":
@@ -606,7 +559,7 @@ def build_computer_ctx(deps):
     if f_ == "continue":
         return (False, "continue", None)
     c._computer_queued = partial(_cctx__computer_queued, c)
-    k_, f_, v_ = _cctx__p5(c)
+    k_, f_, v_ = _cctx__wire_queues(c)
     if k_:
         return (True, None, v_)
     if f_ == "break":

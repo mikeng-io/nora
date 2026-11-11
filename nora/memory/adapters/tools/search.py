@@ -73,13 +73,7 @@ def _make__memory_search_index(deps):
         depth: int = 2,
         seed: tuple[str, str] | None = None,
     ) -> dict:
-        """`memory_search` while `[memory.index] read`: the one retrieval
-        service, scoped to this room's unit from the live policy and this
-        room's live roster, seeded by the question (and by the person, when
-        one is named), and narrowed by `ref`, `kinds`, `since_ms` and
-        `until_ms` INSIDE the index's reads (`nora.agent.memory_search`).
-        Every status carries a note; `unavailable` is any failure, `partial`
-        an index not yet complete."""
+        """`memory_search` while `[memory.index] read`: the one retrieval"""
         asked: dict = {"person": ref.name} if ref is not None else {}
         if lineage is None:
             _record_room(metrics, "memory_search", "unavailable", reason="unwired")
@@ -100,11 +94,9 @@ def _make__memory_search_index(deps):
             )
             listed = target.room.persons if target.room is not None else None
             if ref is not None and (listed is None or ref.person_id not in listed):
-                # The live roster resolved them, but policy does not list
-                # them for this room (or the room is `*`, persons=None): the
-                # index's person filter would read false everywhere and
-                # answer a false `nothing_found`:
-                # «I could not check», before any read.
+                # The live roster resolved them, but policy does not list them
+                # for this room (or the room is `*`, persons=None): the
+                # index's person filter would read false everywhere and answer
                 _record_room(metrics, "memory_search", "unavailable", reason="unlisted")
                 return {**_MEMORY_UNLISTED, **asked}
             now = now_fn()
@@ -262,10 +254,9 @@ def _make_memory_search(deps):
             _record_room(metrics, "memory_search", "unavailable", reason="bad_kind")
             return dict(_MEMORY_BAD_KIND)
         node_kinds = tuple(n for k in wanted for n in KINDS_BY_CATEGORY[k])
-        # An empty `query` falls back to the tag message (`question`), as
-        # `ask_memory` does, kept on purpose:
-        # the docstring asks the model to write its own, and a blank one is
-        # still a search for what was asked, never an error.
+        # An empty `query` falls back to the tag message (`question`), as `ask_memory`
+        # does, kept on purpose: the docstring asks the model to write its own, and a
+        # blank one is still a search for what was asked, never an error.
         text = query.strip() or question
         view: RoomView | None = None
         ref: PersonRef | None = None
@@ -295,9 +286,8 @@ def _make_memory_search(deps):
             text = text or ref.name
         if memory_retrieval is None:
             # Not reachable through `build_tool_specs`, which offers this verb
-            # only with the index wired (`GRAPH_MEMORY_TOOLS`). Said, not
-            # raised, if a caller builds it some other way: there is no
-            # Honcho behind it (DEC-316).
+            # only with the index wired (`GRAPH_MEMORY_TOOLS`). Said, not raised,
+            # if a caller builds it some other way: there is no Honcho behind it
             _record_room(metrics, "memory_search", "unavailable", reason="unwired")
             return {"status": "unavailable", "note": _INDEX_UNAVAILABLE}
         return await _memory_search_index(
@@ -373,10 +363,9 @@ def _make_ask_memory(deps):
             }
         ref = matches[0]
         try:
-            # OBSERVER = Nora, OBSERVED = the person: she reasons from HER model of
-            # them. The QUESTION is the tagging message, hers to supply (DEC-24), not a
-            # value the model invents, unless the model supplies a `query`, which IS
-            # read. `level` is the model's per-question depth/latency choice.
+            # OBSERVER = Nora, OBSERVED = the person: she reasons from HER model
+            # of them. The QUESTION is the tagging message, hers to supply
+            # (DEC-24), not a value the model invents, unless the model supplies a
             answer = await honcho.chat(
                 peer_id=ai_peer,
                 target=ref.honcho_peer_id,
@@ -400,11 +389,8 @@ def _make_ask_memory(deps):
                 "can't check right now, not that you don't know them.",
             }
         # R-18 fails closed on the WHOLE reply, so a reasoned answer carrying an
-        # identifier would cost the entire message. Unlike `about`'s list, this is
-        # one indivisible string — if it names an identifier it cannot be part-
-        # kept, so it is withheld whole. `scan_identifiers`, not the reply
-        # predicate (the `about` rationale: what she runs on stays hers because
-        # the Deliverer refuses to SAY it, not because she is made to forget).
+        # identifier would cost the entire message. Unlike `about`'s list, this is one
+        # indivisible string — if it names an identifier it cannot be part- kept, so
         if scan_identifiers(answer, content_checks=content_checks) is not None:
             # `status="empty"` to match `about`'s all-withheld path (nothing usable
             # surfaced), not a new label value: the recall metric keeps its
@@ -461,15 +447,9 @@ def _make_search_memory(deps):
                 "note": "I can't work out who is here, so I can't look back through "
                 "what was said. Say you can't check, and do not guess.",
             }
-        # No room-wide gate here. The guard is the per-hit filter right below: a
-        # hit is surfaced only if its sender resolves to a NAMED person in `roster`.
-        # An unmapped account in the room, or a DEGRADED view (roster unreadable,
-        # `roster` narrowed to the tagger alone), both fall out of that same filter
-        # automatically: fewer names in `roster` means fewer hits pass, never a
-        # blanket refusal.
-        # OBSERVED speakers Nora may surface into THIS room: the resolved people
-        # here, by their peer id. A message from anyone else — Nora's own peer, or
-        # a peer not in this room — is dropped.
+        # No room-wide gate here. The guard is the per-hit filter right below: a hit
+        # is surfaced only if its sender resolves to a NAMED person in `roster`. An
+        # unmapped account in the room, or a DEGRADED view (roster unreadable,
         roster = {p.honcho_peer_id: p.name for p in view.people}
         try:
             # SESSION-scoped to THIS channel: a workspace-wide search would surface a
@@ -492,9 +472,7 @@ def _make_search_memory(deps):
             }
         # The roster filter, the withhold and the status shaping are shared with
         # `search_memory_workspace` in `_memory_hits_result`: one filter, so the two
-        # verbs can never drift into two disclosure decisions. What stays HERE is
-        # the room verb's own: the `nora_room_lookups_total` counter (alerted on,
-        # R-22) and `partial_view`, which only a room's live view can supply.
+        # verbs can never drift into two disclosure decisions. What stays HERE is the
         return _memory_hits_result(
             hits=hits,
             roster=roster,

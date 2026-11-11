@@ -56,16 +56,7 @@ def _make__music_sender_ids(deps):
     room = deps.room
 
     def _music_sender_ids() -> frozenset[str]:
-        """The tagger's raw Discord ids — `MusicToolBridge.play`'s
-        `sender_ids`, which must resolve a REAL guild member, never a name.
-        `persons.platform_ids` is the reverse of the resolution `room.tagger`
-        already went through once; the FULL set is handed to the bridge
-        rather than an arbitrary pick, because identity.toml can map one
-        person to more than one Discord account. Only the bridge, which can
-        see who is actually sitting in a voice channel right now, can say
-        which one is real for this request: the same
-        intersect-against-what-the-platform-asserts principle
-        `nora.agent.outbound` uses for mention resolution."""
+        """The tagger's raw Discord ids — `MusicToolBridge.play`'s"""
         tagger = room.tagger
         if tagger is None:
             return frozenset()
@@ -123,10 +114,9 @@ def _make_play_music(deps):
         _record(metrics, "play_music", outcome.status)
         result = _music_result(outcome)
         if outcome.status == "ok":
-            # How to report a start (ADR 0015 §3), per `queued`: the system
-            # posts no «Now playing» line for a session started by request,
-            # so her reply is the only announcement, and «queued» must never
-            # be said as «now playing».
+            # How to report a start (ADR 0015 §3), per `queued`: the system posts
+            # no «Now playing» line for a session started by request, so her reply
+            # is the only announcement, and «queued» must never be said as «now
             result["note"] = (
                 "Queued behind what is playing: say it is queued, not playing now."
                 if outcome.queued
@@ -295,8 +285,7 @@ def _make_set_music_volume(deps):
         """
         # `percent` is bounded HERE (0-200, same as the slash command's
         # app_commands.Range) because the model is the only gate otherwise: a
-        # hallucinated `percent=500` would fall through to the manager's
-        # out-of-range `False`, which must not be labelled `nothing_found`.
+        # hallucinated `percent=500` would fall through to the manager's out-of-range
         if not 0 <= percent <= 200:
             _record(metrics, "set_music_volume", "unavailable")
             return {

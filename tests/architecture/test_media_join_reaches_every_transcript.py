@@ -72,10 +72,8 @@ _NOT_A_BUILDER = {
         "which is already a listed builder and joins them itself"
     ),
     # ADR 0037 split `nora/agent/tools.py` into per-area modules; the reads
-    # below moved with their tools. `_transcript_messages` is the shared
-    # renderer: the rows it renders are enriched through the injected
-    # `deps.media_join` by each tool caller (record.py/rooms.py/query.py)
-    # BEFORE it runs, so a join here would enrich the same rows twice.
+    # below moved with their tools. `_transcript_messages` is the shared renderer:
+    # callers join the rows through `deps.media_join` BEFORE it runs.
     "nora/agent/toolkit/transcript.py": (
         "the shared `_transcript_messages` renderer; every caller's rows are "
         "already joined through the injected MediaJoin before it runs"
@@ -274,10 +272,9 @@ PATHS = {
     "nora/engagement/stages/debrief.py": "debrief",
     "nora/app/runtime.py": "dreamer",
     "nora/app/adoption.py": "adoption",
-    # The conversation tools' record_query hit render (`query.py`); the same
-    # `path="load_transcript"` label is used by `record.py`/`rooms.py`, which
-    # the read-name discovery cannot see (they call no store read directly —
-    # `_transcript_messages` in `nora/agent/toolkit/transcript.py` does it).
+    # The conversation tools' record_query hit render (`query.py`); record.py/
+    # rooms.py share the label — the discovery sees only the toolkit's
+    # `_transcript_messages` store read (in `_NOT_A_BUILDER` above).
     "nora/conversation/adapters/tools/query.py": "load_transcript",
     "nora/ingest/relevance_gate.py": "relevance_gate",
     # The eval seam's dream pass. Its OWN label: this

@@ -103,13 +103,13 @@ def _make_remind(deps):
             notes_off=deps.notes_off,
             now_fn=deps.now_fn,
         )
-        k_, _, v_ = await _remind__p1(c)
+        k_, _, v_ = await _remind__validate(c)
         if k_:
             return v_
-        k_, _, v_ = await _remind__p2(c)
+        k_, _, v_ = await _remind__resolve_notebook(c)
         if k_:
             return v_
-        k_, _, v_ = await _remind__p3(c)
+        k_, _, v_ = await _remind__result(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -154,15 +154,9 @@ def _make_list_reminders(deps):
             {
                 "id": str(r.id),
                 "text": r.text,
-                # A REPEATING reminder shows as ONE row, because that is
-                # what it is here: a series keeps exactly one waiting
-                # occurrence and the rest do not exist yet (DEC-85). So
-                # `repeat` is the difference between «洗衫 at 21:00» and
-                # 「每日都會提」 — without it she reads a fourteen-day
-                # countdown as a single reminder and tells them so.
-                #
-                # Cancelling this row cancels the SERIES. There is nothing
-                # else to cancel: no later occurrence has been written.
+                # A REPEATING reminder shows as ONE row, because that is what
+                # it is here: a series keeps exactly one waiting occurrence
+                # and the rest do not exist yet (DEC-85). So `repeat` is the
                 "repeat": (
                     Recurrence.NONE.value if r.series is None else r.series.rule.every.value
                 ),
@@ -179,21 +173,13 @@ def _make_list_reminders(deps):
                         ),
                     }
                 ),
-                # WHOSE. A reminder is group-owned in a group, so this
-                # listing shows everybody's and anybody here may cancel any of
-                # them — which is precisely why the name has to be on the row.
-                # Without it 「取消 Tyler 七點嗰個」 is unanswerable, and one
-                # person can call off another's with neither of them able to
-                # see that that is what happened.
-                #
-                # `set_by`, not `owner`: the group owns it, this person asked
-                # for it, and a field called `owner` would tell the model the
-                # opposite of the rule cancel actually enforces.
+                # WHOSE. A reminder is group-owned in a group, so this listing
+                # shows everybody's and anybody here may cancel any of them —
+                # which is precisely why the name has to be on the row.
                 "set_by": _owner_name(persons, r.requester_person_id, ai_peer=ai_peer),
                 # Rendered in Nora's own zone rather than UTC: the model
                 # reasons about 「聽日七點」 against the local clock the prefill
                 # stated, and a UTC stamp is one silent subtraction away from
-                # an eight-hour mistake.
                 "due_at": r.due_at.astimezone(_HKT).isoformat(),
             }
             for r in rows
@@ -255,10 +241,8 @@ def _make_cancel_reminder(deps):
             }
         if not cancelled:
             # The store answers ONE bool for three situations — another
-            # conversation's row (a uuid carries no scope, so the STORE
-            # re-checks it), a row that already resolved, and an id that
-            # never existed. The note names all three rather than picking one,
-            # because reporting the wrong one is worse than reporting the set.
+            # conversation's row (a uuid carries no scope, so the STORE re-checks
+            # it), a row that already resolved, and an id that never existed. The
             _record(metrics, "cancel_reminder", "refused", reason="no_pending_row")
             return {
                 "status": "refused",
@@ -280,7 +264,7 @@ def _make_cancel_reminder(deps):
     return cancel_reminder
 
 
-async def _remind__p1(c):
+async def _remind__validate(c):
     if c.fire_turn:
         _record_created(c.metrics, "fire_turn")
         return (
@@ -399,7 +383,7 @@ async def _remind__p1(c):
     return (False, None, None)
 
 
-async def _remind__p2(c):
+async def _remind__resolve_notebook(c):
     if c.note is not None and c.note.strip():
         c.book = c._notebook()
         if c.book is None:
@@ -494,7 +478,7 @@ async def _remind__p2(c):
     return (False, None, None)
 
 
-async def _remind__p3(c):
+async def _remind__result(c):
     c.result: dict[str, object] = {
         "status": "ok",
         "id": str(c.row.id),

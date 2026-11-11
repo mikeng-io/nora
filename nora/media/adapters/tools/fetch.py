@@ -95,30 +95,30 @@ def _make_media_fetch(deps):
             _shared_file_bytes=deps._shared_file_bytes,
             bound_conversation_id=deps.bound_conversation_id,
         )
-        k_, _, v_ = await _media_fetch__p1(c)
+        k_, _, v_ = await _media_fetch__scan_question(c)
         if k_:
             return v_
         if c.url:
-            k_, _, v_ = await _media_fetch__p2(c)
+            k_, _, v_ = await _media_fetch__scan_url(c)
             if k_:
                 return v_
         elif c.shared is None:
-            k_, _, v_ = await _media_fetch__p3(c)
+            k_, _, v_ = await _media_fetch__resolve_handle(c)
             if k_:
                 return v_
-            k_, _, v_ = await _media_fetch__p4(c)
+            k_, _, v_ = await _media_fetch__match_media(c)
             if k_:
                 return v_
-        k_, _, v_ = await _media_fetch__p5(c)
+        k_, _, v_ = await _media_fetch__shared_bytes(c)
         if k_:
             return v_
-        k_, _, v_ = await _media_fetch__p6(c)
+        k_, _, v_ = await _media_fetch__gather_data(c)
         if k_:
             return v_
-        k_, _, v_ = await _media_fetch__p7(c)
+        k_, _, v_ = await _media_fetch__cut_video(c)
         if k_:
             return v_
-        k_, _, v_ = await _media_fetch__p8(c)
+        k_, _, v_ = await _media_fetch__answer(c)
         if k_:
             return v_
         return None  # type: ignore[return-value]
@@ -126,7 +126,7 @@ def _make_media_fetch(deps):
     return media_fetch
 
 
-async def _media_fetch__p1(c):
+async def _media_fetch__scan_question(c):
     c.question = c.question.strip()
     if c.question:
         c.kind = scan_identifiers(c.question, content_checks=c.content_checks)
@@ -195,7 +195,7 @@ async def _media_fetch__p1(c):
     return (False, None, None)
 
 
-async def _media_fetch__p2(c):
+async def _media_fetch__scan_url(c):
     c.decoded_url = urllib.parse.unquote(c.url)
     if scan_identifiers(c.decoded_url, content_checks=c.content_checks) is not None:
         _record_media(c.metrics, "nothing_found", reason="identifier")
@@ -262,7 +262,7 @@ async def _media_fetch__p2(c):
     return (False, None, None)
 
 
-async def _media_fetch__p3(c):
+async def _media_fetch__resolve_handle(c):
     c.hex_handle = _handle_hex(c.code)
     if len(c.hex_handle) < HANDLE_CHARS:
         _record_media(c.metrics, "nothing_found", reason="no_handle")
@@ -363,7 +363,7 @@ async def _media_fetch__p3(c):
     return (False, None, None)
 
 
-async def _media_fetch__p4(c):
+async def _media_fetch__match_media(c):
     if c.links.refs:
         c.shared = c.links.refs[0]
     else:
@@ -432,7 +432,7 @@ async def _media_fetch__p4(c):
     return (False, None, None)
 
 
-async def _media_fetch__p5(c):
+async def _media_fetch__shared_bytes(c):
     if c.shared is not None:
         c.got = await c._shared_file_bytes(c.shared)
         if isinstance(c.got, dict):
@@ -462,6 +462,10 @@ async def _media_fetch__p5(c):
                     kept=c.kept_image,
                 ),
             )
+    return await _media_fetch__plan_describe(c)
+
+
+async def _media_fetch__plan_describe(c):
     c.modality = _modality_of(c.media_type)
     if c.modality is None:
         _record_media(c.metrics, "not_an_image")
@@ -555,7 +559,7 @@ async def _media_fetch__p5(c):
     return (False, None, None)
 
 
-async def _media_fetch__p6(c):
+async def _media_fetch__gather_data(c):
     if c.url or c.shared is not None:
         c.data_for_vision = c.data
     else:
@@ -583,15 +587,7 @@ async def _media_fetch__p6(c):
     c.prompt = f"{_QUERY_FRAME}\n\n{c.question}" if c.question else ""
 
     async def _ask(payload: bytes, windows: int):
-        """One describer call on this modality's model, provider and
-        ceiling. Never raises: `VisionClient.describe` turns every failure
-        into an unavailable result itself, and this is the belt for those
-        braces (`test_a_tool_never_raises_into_the_agent_loop`).
-
-        `windows` is how many windows THIS read covers — the serial factor
-        the per-call timeout divides by (`vision.derive_vision_timeout`).
-        It is passed through, never used to compute a timeout here: that
-        derivation lives in the client and nowhere else."""
+        """One describer call on this modality's model, provider and"""
         try:
             return await c.vision_source.describe(
                 data=payload,
@@ -612,7 +608,7 @@ async def _media_fetch__p6(c):
     return (False, None, None)
 
 
-async def _media_fetch__p7(c):
+async def _media_fetch__cut_video(c):
     if c.modality == "video":
         c.cut = await cut_video(
             c.data_for_vision, chunk_seconds=c.video_chunk_seconds, max_chunks=c.video_max_chunks
@@ -692,7 +688,7 @@ async def _media_fetch__p7(c):
     return (False, None, None)
 
 
-async def _media_fetch__p8(c):
+async def _media_fetch__answer(c):
     if c.question:
         return (
             True,
