@@ -13,7 +13,7 @@ import ast
 import inspect
 from types import SimpleNamespace
 
-import nora.app.composition as composition
+import nora.app.composition_social as composition
 from nora.app.composition_readers import social_person_rooms
 from nora.infra.sql.social_stream import readable_social_store
 from nora.persons import load_persons

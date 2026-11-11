@@ -14,7 +14,7 @@ import pytest
 import nora.documents
 from nora.agent import tool_choice
 from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
-from nora.app import composition_dreamer
+from nora.app import composition_cognition
 from nora.app.composition import (
     Dependencies,
     build_dependencies,
@@ -1793,7 +1793,7 @@ async def test_cognition_on_that_built_no_runner_refuses_to_boot(
     """The boot check: a loop that wakes and runs no session must not boot."""
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    monkeypatch.setattr(composition_dreamer, "build_cognition_runner", lambda **kw: None)
+    monkeypatch.setattr(composition_cognition, "build_cognition_runner", lambda **kw: None)
     with pytest.raises(StartupError, match="no session runner"):
         await build_dependencies(override_config(cfg, _SESSION_ON))
 
