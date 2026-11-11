@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Lessons: accumulated from closed response episodes, with a correction fast path"
-description: "A lesson is practice induced from the outcomes of many of her acts. The event is a response episode closing, not a message and not a clock. Episodes pile up; at a threshold one Lessons session per unit writes, reinforces, consolidates or retires lessons, each citing the episodes that taught it, under a size cap and the doctrine check. An explicit correction aimed at her wakes it at once. The hard part is judgement quality and a labelled set, not code."
+title: "Lessons: learned in the Cognition session from closed response episodes and corrections"
+description: "A lesson is practice induced from the outcomes of many of her acts. Closed response episodes and corrections aimed at her ride along in the unit's Cognition session as context; that session writes, reinforces, consolidates or retires lessons, each citing the episodes or correction that taught it, under a size cap and the doctrine check. The hard part is judgement quality and a labelled set, not code."
 tags: [nora, lessons, event-driven, dreamer, doctrine-check, tension]
 timestamp: '2026-10-07'
 edges:
