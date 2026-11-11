@@ -115,8 +115,8 @@ class _LessonProbe:
 
 async def test_lesson_guidance_appears_only_when_the_verbs_are_offered():
     live = await rendered_session(historical=False, lessons=_LessonProbe())
-    assert "lesson_write" in live and "one practice for" in live
-    assert "A single outcome is weak evidence" in live
+    assert "lesson_write" in live and "a pattern across several episodes" in live
+    assert "One reply, reaction or silence is a weak signal" in live
     without = await rendered_session(historical=False)
     assert "lesson_write" not in without
 
@@ -154,7 +154,7 @@ def _dump(directory: Path) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     for historical in (True, False):
         name = "historical" if historical else "live"
-        text = asyncio.run(rendered_session(historical=historical))
+        text = asyncio.run(rendered_session(historical=historical, lessons=_LessonProbe()))
         (directory / f"{name}.txt").write_text(text)
         print(f"{name}: {len(text)} characters, {len(text.splitlines())} lines")
 
