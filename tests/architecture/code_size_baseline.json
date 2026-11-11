@@ -2064,7 +2064,6 @@
   "internal_docstrings": 4
  },
  "scripts/memory_graph_spike.py": {
-  "file_lines": 877,
   "functions": {
    "age_comparison": 158
   }
@@ -3456,11 +3455,6 @@
   "comment_blocks": 11,
   "file_lines": 1321,
   "internal_docstrings": 2
- },
- "tests/unit/test_replay_diagnosis.py": {
-  "functions": {
-   "test_decision_resolves_fingerprinted_writer_events": 156
-  }
  },
  "tests/unit/test_rollup_determinism.py": {
   "comment_blocks": 1,

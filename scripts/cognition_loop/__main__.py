@@ -97,10 +97,9 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             f"{args.token_budget} — refuse rather than start"
         )
 
-    # The config under test is the run's --config: materialise it into the
-    # `config.evaluation.toml` every subject composes, refusing when the
-    # generated file would differ from what the deployment runs — the same
-    # drift-check the standard eval entry runs before any case.
+    # The config under test is the run's --config: materialise it into
+    # `config.evaluation.toml`, refusing when the generated file differs
+    # from the deployment — the drift-check the standard eval entry runs.
     generated = materialise(
         example=_REPO / "config.example.toml",
         deployment=args.config,

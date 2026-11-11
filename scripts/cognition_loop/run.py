@@ -53,9 +53,7 @@ async def _wake_reason(source: AsyncEngine, wake_id: int) -> str:
 
 
 def _profile_keys(subject: Any, unit: str) -> list[str]:
-    """Every person listed in ANY of the unit's rooms — not only the
-    composed room — plus Nora and the unit's own culture keys. A room
-    listing everyone (`persons` unset) means every person in identity."""
+    """The unit's profile keys: every room's people, Nora, culture."""
     allowlist = subject.deps.config_reload.policy
     persons: set[str] = set()
     for convo in allowlist.rooms():

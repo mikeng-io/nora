@@ -161,8 +161,7 @@ async def _replay_history(
 async def _history_window(
     src: AsyncConnection, prev: datetime, at: datetime,
 ) -> list[Any]:
-    """Record-table history rows in the window — derived stores' chains
-    are never a candidate's to copy."""
+    """Record-table history rows in the window, never a derived chain."""
     return list((await src.execute(
         sa.select(ROW_HISTORY).where(
             ROW_HISTORY.c.recorded_at > prev,
