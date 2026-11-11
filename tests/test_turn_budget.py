@@ -31,9 +31,8 @@ from pathlib import Path
 
 import pytest
 
-from nora.agent import tools
+from nora.agent.catalog.groups import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_MAX
 from nora.agent.registry import ToolRegistry
-from nora.agent.tools import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_MAX
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIGS = ("config.toml", "config.example.toml")
@@ -161,9 +160,15 @@ def test_the_model_is_told_the_same_ceiling_the_clamp_enforces():
     `__doc__` would be None. So the literal is checked here instead. A clamp
     the model is not told about produces a silently truncated answer it thinks
     is complete."""
-    source = (Path(tools.__file__)).read_text()
-    # Twice: `load_transcript` and `room_read` share the clamp. «recent» is not in
-    # the wording because `before` makes the window movable.
-    assert source.count(
-        f"limit: How many messages to fetch (max {LOAD_TRANSCRIPT_MAX})."
-    ) == 2
+    # Twice: `load_transcript` and `room_read` share the clamp; after the ADR
+    # 0037 split they live in `conversation`'s area adapters. «recent» is not
+    # in the wording because `before` makes the window movable.
+    from tests.test_tool_surface_policy import _tool_source_paths
+
+    count = sum(
+        path.read_text().count(
+            f"limit: How many messages to fetch (max {LOAD_TRANSCRIPT_MAX})."
+        )
+        for path in _tool_source_paths()
+    )
+    assert count == 2

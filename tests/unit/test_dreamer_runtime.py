@@ -1596,8 +1596,8 @@ def test_the_dreamer_applies_the_configured_tool_budget_over_the_table():
     Falsification: drop the `overrides` lookup in `_tool_budgets` and this
     returns the table's 2.
     """
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     from nora.agent.dreamer import _tool_budgets
-    from nora.agent.tools import NATIVE_TOOLS
 
     adaptor = _Adaptor(sink=_Sink())
     tools = [_named_tool("web_fetch")]
@@ -1645,8 +1645,8 @@ def test_an_adaptors_own_tool_ceiling_wins_over_the_table_and_the_deployment():
     the last assertion returns the deployment's 5, or the table's 3 with the
     `[llm.budgets]` layer gone too.
     """
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     from nora.agent.dreamer import _tool_budgets
-    from nora.agent.tools import NATIVE_TOOLS
 
     adaptor = _Adaptor(sink=_Sink())
     tools = [_named_tool("note_read")]

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from nora.agent import tool_choice
-from nora.agent.tools import GRAPH_MEMORY_TOOLS
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
 from nora.app.composition import (
     Dependencies,
     StartupError,
@@ -266,7 +266,7 @@ async def test_the_doctrine_the_root_builds_carries_no_capability_section(cfg):
     # name followed by an em-dash.
     import re
 
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     names = "|".join(re.escape(n) for n in NATIVE_TOOLS)
     assert not re.search(rf"^- ({names}) — ", text, re.MULTILINE), "tool-catalogue line present"
 
@@ -839,7 +839,7 @@ async def test_subagent_off_registers_no_backend(cfg, no_build_stamp):
     try:
         assert deps.subagent_backend is None
         # and the four model-facing tools are withheld from every turn
-        from nora.agent.tools import SUBAGENT_TOOLS
+        from nora.agent.catalog.groups import SUBAGENT_TOOLS
 
         assert deps.engagement._tool_registry._withheld >= SUBAGENT_TOOLS
     finally:
@@ -861,7 +861,7 @@ async def test_subagent_on_registers_its_backend_under_its_kind_and_the_poller_r
     try:
         assert isinstance(deps.subagent_backend, SubagentBackend)
         # the tools are offered, and their desk launches into THIS backend
-        from nora.agent.tools import SUBAGENT_TOOLS
+        from nora.agent.catalog.groups import SUBAGENT_TOOLS
 
         registry = deps.engagement._tool_registry
         assert registry._withheld.isdisjoint(SUBAGENT_TOOLS)
@@ -2064,7 +2064,7 @@ async def test_an_eval_subject_with_the_subagent_on_builds_the_tools_and_a_recor
     """`recording_subagent_worker` (what `obtain` wraps composition in under `[subagent]
     enabled`): the four tools are offered, the desk and the poller hold a recorder under kind
     `subagent`, and no worker is built, so nothing can start. The patch is gone afterwards."""
-    from nora.agent.tools import SUBAGENT_TOOLS
+    from nora.agent.catalog.groups import SUBAGENT_TOOLS
     from nora.app import composition
     from nora.subject.recording_subagent import (
         RecordingSubagentBackend,
@@ -2183,7 +2183,7 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
     the session's memory verbs exactly as it picks every other occasion's.
     The session's `wired` set (its guard's read-only set) and what it BUILDS
     agree, and neither holds the other surface."""
-    from nora.agent.tools import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
+    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(

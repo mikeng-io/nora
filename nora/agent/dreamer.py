@@ -2181,7 +2181,7 @@ def _tool_budgets(
     skip is the second half of that, for the window where a hot-reloaded objective
     drops a tool the config still names.
     """
-    from .tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     budgets: dict[str, int] = {}
     for tool in tools:

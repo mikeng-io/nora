@@ -28,13 +28,15 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.catalog.groups import HOT_TOOLS
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import HOT_TOOLS, NATIVE_TOOLS, social_read_vocabulary
 from nora.infra.social import InstagramSocialClient, PersonsSubjectIndex, SocialRouter
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import Conversation, Policy
+from nora.social.adapters.tools.shared import social_read_vocabulary
 from nora.testing import FakeMemoryStore, FakeRosterSource, FakeSocialProvider
 from tests.fakes import SinkSender
 

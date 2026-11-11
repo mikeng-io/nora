@@ -615,6 +615,8 @@ sources = ["google_drive"]
 client_id_env = "GOOGLE_OAUTH_CLIENT_ID"
 client_secret_env = "GOOGLE_OAUTH_CLIENT_SECRET"
 refresh_token_env = "GOOGLE_OAUTH_REFRESH_TOKEN"
+# her own Google account: the NOT_SHARED note tells the owner who to share with
+account = "nora@example.org"
 
 [subagent]
 enabled = false

@@ -145,6 +145,18 @@
   },
   "internal_docstrings": 2
  },
+ "nora/agenda/adapters/tools/events.py": {
+  "comment_blocks": 1
+ },
+ "nora/agenda/adapters/tools/reminders.py": {
+  "comment_blocks": 4
+ },
+ "nora/agenda/adapters/tools/shared.py": {
+  "comment_blocks": 4,
+  "functions": {
+   "_parse_repeat": 124
+  }
+ },
  "nora/agent/arithmetic.py": {
   "comment_blocks": 9,
   "internal_docstrings": 3
@@ -155,12 +167,22 @@
    "_tools": 177
   }
  },
+ "nora/agent/catalog/model.py": {
+  "comment_blocks": 8
+ },
  "nora/agent/cognition_pace.py": {
   "comment_blocks": 1,
   "internal_docstrings": 3
  },
  "nora/agent/comprehend_tools.py": {
   "comment_blocks": 4
+ },
+ "nora/agent/computer_ctx.py": {
+  "functions": {
+   "_cctx__p1": 122,
+   "_cctx__p2": 122
+  },
+  "internal_docstrings": 9
  },
  "nora/agent/dream_guard.py": {
   "comment_blocks": 17,
@@ -191,7 +213,7 @@
  },
  "nora/agent/guards.py": {
   "comment_blocks": 49,
-  "file_lines": 1537,
+  "file_lines": 1540,
   "functions": {
    "Deliverer.deliver": 305,
    "ReplyGuard.evaluate": 226
@@ -262,7 +284,7 @@
  },
  "nora/agent/registry.py": {
   "comment_blocks": 41,
-  "file_lines": 1405,
+  "file_lines": 1407,
   "functions": {
    "ToolRegistry.__init__": 454,
    "ToolRegistry.specs": 149
@@ -288,6 +310,9 @@
  "nora/agent/run_budget_transport.py": {
   "comment_blocks": 2,
   "internal_docstrings": 3
+ },
+ "nora/agent/runtime_tools.py": {
+  "comment_blocks": 4
  },
  "nora/agent/security.py": {
   "comment_blocks": 1,
@@ -325,44 +350,31 @@
   "comment_blocks": 2,
   "internal_docstrings": 1
  },
- "nora/agent/tools.py": {
-  "comment_blocks": 373,
-  "file_lines": 18887,
+ "nora/agent/tool_deps.py": {
   "functions": {
-   "_parse_repeat": 129,
-   "build_tool_specs": 13503,
-   "build_tool_specs._movement_person": 161,
-   "build_tool_specs._observation_query": 161,
-   "build_tool_specs.about": 182,
-   "build_tool_specs.character_read": 160,
-   "build_tool_specs.computer_browse": 131,
-   "build_tool_specs.computer_export": 255,
-   "build_tool_specs.computer_import": 225,
-   "build_tool_specs.document_publish": 162,
-   "build_tool_specs.find_parking": 176,
-   "build_tool_specs.generate_image": 299,
-   "build_tool_specs.instagram_read": 281,
-   "build_tool_specs.linkedin_read": 146,
-   "build_tool_specs.load_transcript": 154,
-   "build_tool_specs.media_fetch": 660,
-   "build_tool_specs.note_revise": 121,
-   "build_tool_specs.online_now": 369,
-   "build_tool_specs.record_query": 219,
-   "build_tool_specs.remember_told": 155,
-   "build_tool_specs.remind": 261,
-   "build_tool_specs.room_list": 151,
-   "build_tool_specs.room_read": 141,
-   "build_tool_specs.route": 229,
-   "build_tool_specs.routine_read": 193,
-   "build_tool_specs.video_create": 152,
-   "build_tool_specs.web_fetch": 138,
-   "build_tool_specs.where_been": 467,
-   "build_tool_specs.where_been._been_read": 126,
-   "build_tool_specs.who_said": 127,
-   "build_tool_specs.x_read": 141,
-   "build_tools": 158
+   "ToolDeps.__post_init__": 162
   },
-  "internal_docstrings": 128
+  "internal_docstrings": 10
+ },
+ "nora/agent/toolkit/ports.py": {
+  "comment_blocks": 1
+ },
+ "nora/agent/toolkit/results.py": {
+  "comment_blocks": 4
+ },
+ "nora/agent/toolkit/spec.py": {
+  "comment_blocks": 2
+ },
+ "nora/agent/toolkit/transcript.py": {
+  "comment_blocks": 3
+ },
+ "nora/agent/tools.py": {
+  "comment_blocks": 16,
+  "file_lines": 877,
+  "functions": {
+   "build_tool_specs": 451,
+   "build_tools": 184
+  }
  },
  "nora/agent/video_desk.py": {
   "comment_blocks": 2,
@@ -630,15 +642,61 @@
   "comment_blocks": 2,
   "internal_docstrings": 4
  },
+ "nora/computer/adapters/tools/sandbox.py": {
+  "functions": {
+   "_computer_run__p1": 126,
+   "_make_computer_read": 132
+  }
+ },
+ "nora/computer/adapters/tools/sessions.py": {
+  "comment_blocks": 1,
+  "functions": {
+   "_computer_browse__p1": 146,
+   "_make_computer_capture": 126,
+   "_make_computer_session_list": 137,
+   "_make_computer_session_list.computer_session_list": 123
+  },
+  "internal_docstrings": 1
+ },
+ "nora/computer/adapters/tools/transfer.py": {
+  "file_lines": 1237,
+  "functions": {
+   "_computer_export__p2": 206,
+   "_computer_export__p3": 170,
+   "_computer_import__take__p1": 156,
+   "_make__computer_copy_in": 148,
+   "_make__computer_copy_in._computer_copy_in": 134
+  },
+  "internal_docstrings": 4
+ },
  "nora/config.py": {
   "comment_blocks": 109,
   "file_lines": 4760,
   "internal_docstrings": 23
  },
+ "nora/conversation/adapters/tools/query.py": {
+  "comment_blocks": 1,
+  "file_lines": 817,
+  "internal_docstrings": 6
+ },
+ "nora/conversation/adapters/tools/replies.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
+ },
+ "nora/conversation/adapters/tools/rooms.py": {
+  "functions": {
+   "_room_read__p1": 124
+  }
+ },
  "nora/doctrine/loader.py": {
   "comment_blocks": 11,
   "file_lines": 944,
   "internal_docstrings": 6
+ },
+ "nora/documents/adapters/tools.py": {
+  "functions": {
+   "_document_publish__p1": 146
+  }
  },
  "nora/documents/check.py": {
   "comment_blocks": 1,
@@ -1660,6 +1718,67 @@
    "render_shared_state": 127
   }
  },
+ "nora/location/adapters/tools/geo.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "nora/location/adapters/tools/presence.py": {
+  "comment_blocks": 4,
+  "file_lines": 838,
+  "functions": {
+   "_make__presence_audience": 129
+  },
+  "internal_docstrings": 9
+ },
+ "nora/location/adapters/tools/routes.py": {
+  "comment_blocks": 7,
+  "functions": {
+   "_route__p1": 124
+  },
+  "internal_docstrings": 2
+ },
+ "nora/location/adapters/tools/routine.py": {
+  "file_lines": 847,
+  "internal_docstrings": 7
+ },
+ "nora/media/adapters/tools/create.py": {
+  "comment_blocks": 1,
+  "file_lines": 919,
+  "functions": {
+   "_video_create__p1": 175
+  },
+  "internal_docstrings": 4
+ },
+ "nora/media/adapters/tools/fetch.py": {
+  "functions": {
+   "_media_fetch__p5": 121
+  },
+  "internal_docstrings": 1
+ },
+ "nora/media/adapters/tools/search.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 2
+ },
+ "nora/memory/adapters/tools/memos.py": {
+  "comment_blocks": 4
+ },
+ "nora/memory/adapters/tools/notes.py": {
+  "comment_blocks": 5,
+  "functions": {
+   "_make_note_create": 125
+  },
+  "internal_docstrings": 2
+ },
+ "nora/memory/adapters/tools/profile.py": {
+  "comment_blocks": 4,
+  "functions": {
+   "_make_profile_dispute": 125
+  }
+ },
+ "nora/memory/adapters/tools/search.py": {
+  "comment_blocks": 7,
+  "internal_docstrings": 1
+ },
  "nora/obs/determination.py": {
   "comment_blocks": 3,
   "internal_docstrings": 1
@@ -1686,6 +1805,13 @@
  },
  "nora/obs/tracing.py": {
   "comment_blocks": 8,
+  "internal_docstrings": 3
+ },
+ "nora/people/adapters/tools.py": {
+  "comment_blocks": 1,
+  "functions": {
+   "_online_now__p1": 124
+  },
   "internal_docstrings": 3
  },
  "nora/persons.py": {
@@ -1919,6 +2045,25 @@
  "nora/skills/loader.py": {
   "comment_blocks": 3
  },
+ "nora/social/adapters/tools/instagram.py": {
+  "comment_blocks": 1
+ },
+ "nora/social/adapters/tools/networks.py": {
+  "functions": {
+   "_linkedin_read__p2": 128
+  }
+ },
+ "nora/social/adapters/tools/stream.py": {
+  "comment_blocks": 1
+ },
+ "nora/social/adapters/tools/web.py": {
+  "comment_blocks": 2
+ },
+ "nora/subagents/adapters/tools.py": {
+  "functions": {
+   "_make_subagent_create": 122
+  }
+ },
  "nora/subject/circle.py": {
   "comment_blocks": 1
  },
@@ -2026,6 +2171,10 @@
  "nora/testing/voice.py": {
   "comment_blocks": 3,
   "internal_docstrings": 2
+ },
+ "nora/voice/adapters/tools.py": {
+  "comment_blocks": 2,
+  "internal_docstrings": 1
  },
  "nora/web/api.py": {
   "comment_blocks": 9,
@@ -2227,9 +2376,11 @@
   "internal_docstrings": 4
  },
  "tests/architecture/test_every_status_carries_a_note.py": {
+  "comment_blocks": 1,
   "internal_docstrings": 1
  },
  "tests/architecture/test_file_links_render_as_handles.py": {
+  "comment_blocks": 1,
   "internal_docstrings": 1
  },
  "tests/architecture/test_framing_is_one_typed_place.py": {
@@ -2242,10 +2393,10 @@
  },
  "tests/architecture/test_link_owner_call_sites_are_policed.py": {
   "comment_blocks": 1,
-  "internal_docstrings": 3
+  "internal_docstrings": 4
  },
  "tests/architecture/test_media_join_reaches_every_transcript.py": {
-  "comment_blocks": 14,
+  "comment_blocks": 16,
   "internal_docstrings": 2
  },
  "tests/architecture/test_migration_revision_fits_version_column.py": {
@@ -2774,7 +2925,7 @@
  },
  "tests/test_acceptance_rules.py": {
   "comment_blocks": 50,
-  "file_lines": 1055,
+  "file_lines": 1057,
   "internal_docstrings": 1
  },
  "tests/test_affected_tests.py": {
@@ -2904,7 +3055,7 @@
  },
  "tests/test_media_fetch.py": {
   "comment_blocks": 9,
-  "file_lines": 2419,
+  "file_lines": 2415,
   "internal_docstrings": 5
  },
  "tests/test_metrics_export.py": {
@@ -2919,7 +3070,7 @@
   "file_lines": 859
  },
  "tests/test_output_contracts.py": {
-  "comment_blocks": 3,
+  "comment_blocks": 4,
   "internal_docstrings": 1
  },
  "tests/test_persons.py": {
@@ -2945,7 +3096,7 @@
  },
  "tests/test_reminder_tools.py": {
   "comment_blocks": 4,
-  "file_lines": 1341,
+  "file_lines": 1347,
   "internal_docstrings": 1
  },
  "tests/test_room_tools.py": {
@@ -3010,16 +3161,16 @@
   "comment_blocks": 1
  },
  "tests/test_tool_surface_policy.py": {
-  "comment_blocks": 17,
-  "file_lines": 1418,
+  "comment_blocks": 20,
+  "file_lines": 1679,
   "functions": {
    "_classify_value": 143
   },
-  "internal_docstrings": 23
+  "internal_docstrings": 27
  },
  "tests/test_tools.py": {
   "comment_blocks": 12,
-  "file_lines": 1982,
+  "file_lines": 1981,
   "internal_docstrings": 2
  },
  "tests/test_tracing.py": {
@@ -3274,7 +3425,7 @@
  },
  "tests/unit/test_generate_image_description.py": {
   "comment_blocks": 1,
-  "internal_docstrings": 1
+  "internal_docstrings": 2
  },
  "tests/unit/test_headers_goldens.py": {
   "file_lines": 922,

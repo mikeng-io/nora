@@ -351,7 +351,7 @@ class LLMConfig(BaseModel):
         # contract), so this edge has no return path. It validates against the LIVE table,
         # so adding or removing a tool changes what is accepted with no second list to
         # maintain.
-        from nora.agent.tools import NATIVE_TOOLS
+        from nora.agent.catalog.entries import NATIVE_TOOLS
 
         for name, value in self.budgets.items():
             if name not in NATIVE_TOOLS:
@@ -3758,9 +3758,11 @@ class DocumentsConfig(BaseModel):
 
 class GoogleConfig(BaseModel):
     """Nora's ONE Google identity: one Desktop-app OAuth client and one refresh token
-    for her own account (`nora@67.zone`), shared by every Google service she uses
-    (shared files today), never a client or variable per service. Each field NAMES the
-    environment variable that holds the value (DEC-8), never the value. The scopes are
+    for her own Google account (`account`), shared by every Google service she uses
+    (shared files today), never a client or variable per service. Each `*_env` field NAMES the
+    environment variable that holds the value (DEC-8), never the value. `account` is the
+    mailbox itself — the NOT_SHARED note tells the owner which account to share with;
+    empty falls back to "Nora's Google account" there. The scopes are
     declared by each service in code (`nora.infra.google.scopes`) and granted together
     by `scripts/google_auth.py`. An API KEY (the Maps key under `[route]`) is a
     different mechanism and stays with its feature."""
@@ -3770,6 +3772,7 @@ class GoogleConfig(BaseModel):
     client_id_env: str = "GOOGLE_OAUTH_CLIENT_ID"
     client_secret_env: str = "GOOGLE_OAUTH_CLIENT_SECRET"  # noqa: S105 — names an env var, not a secret
     refresh_token_env: str = "GOOGLE_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
+    account: str = ""
 
 
 class ExternalFilesConfig(BaseModel):

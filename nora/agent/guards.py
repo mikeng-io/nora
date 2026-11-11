@@ -21,6 +21,9 @@ from strands.hooks import (
     HookRegistry,
 )
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.toolkit.clock import utc_now
+
 from ..doctrine.loader import Doctrine
 from ..domain.actions import ActionOwner
 from ..domain.media import MediaBlob
@@ -32,6 +35,7 @@ from ..domain.models import (
     Touch,
     TranscriptRow,
 )
+from ..domain.notes import note_handle
 from ..domain.ports import OutboundAttachment, OutboundQuote, SendResult, Styled
 from ..obs.metrics import Metrics
 from . import tool_choice
@@ -40,7 +44,6 @@ from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
 from .markdown import render_markdown
 from .outbound import Outbound, OutboundComposer
-from .tools import NATIVE_TOOLS, note_handle, utc_now
 
 log = logging.getLogger("nora.guards")
 

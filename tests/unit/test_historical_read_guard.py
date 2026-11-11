@@ -22,12 +22,13 @@ from typing import Any, ClassVar
 import pytest
 from strands.types._events import ToolResultEvent
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.comprehend_tools import (
     HISTORICAL_READ_UNAVAILABLE,
     HistoricalRead,
     as_of_reads,
 )
-from nora.agent.tools import NATIVE_TOOLS, _read_window
+from nora.agent.toolkit.transcript import _read_window
 
 
 class _Inner:

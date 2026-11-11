@@ -36,9 +36,9 @@
  },
  {
   "name": "rollup_read: a row's lineage is not applied (every row shown)",
-  "file": "nora/agent/tools.py",
-  "old": "        shown, withheld = visible_rows(got.rows, target)\n",
-  "new": "        shown, withheld = list(got.rows), 0\n",
+  "file": "nora/memory/adapters/tools/standing.py",
+  "old": "\n    c.shown, c.withheld = visible_rows(c.got.rows, c.target)\n    ",
+  "new": "        c.shown, c.withheld = list(c.got.rows), 0\n",
   "target": "tests/integration/test_rollup_read.py::test_a_room_that_may_not_be_shown_a_row_is_told_rows_were_left_out_and_nothing_else"
  },
  {
@@ -50,16 +50,16 @@
  },
  {
   "name": "rollup_read: a name resolves among everyone, not this room's people (R-21)",
-  "file": "nora/agent/tools.py",
-  "old": "            matches = view.find(name) or tuple(\n                p for p in view.people if by_id and p.person_id == name\n            )\n",
-  "new": "            matches = tuple(p for p in persons.by_person.values() if p.name == name)\n",
+  "file": "nora/memory/adapters/tools/standing.py",
+  "old": "\n        c.matches = c.view.find(c.name) or tuple(\n            p for p in c.view.people if c.by_id and p.person_id == c.name\n        )\n        ",
+  "new": "            c.matches = tuple(p for p in persons.by_person.values() if p.c.name == c.name)\n",
   "target": "tests/integration/test_rollup_read.py::test_a_name_resolves_only_among_this_rooms_people"
  },
  {
   "name": "rollup_read: a build that does not exist reads as an empty interval",
-  "file": "nora/agent/tools.py",
-  "old": "        if got.build_id is None or got.through_ms is None:\n",
-  "new": "        if got.build_id is None and got.rows:\n",
+  "file": "nora/memory/adapters/tools/standing.py",
+  "old": "\n    if c.got.build_id is None or c.got.through_ms is None:\n        ",
+  "new": "        if c.got.build_id is None and c.got.rows:\n",
   "target": "tests/integration/test_rollup_read.py::test_no_current_build_is_unavailable_not_nothing_found"
  },
  {
@@ -127,7 +127,7 @@
  },
  {
   "name": "standing_read: a failing store reads as no position (nothing_found, not unavailable)",
-  "file": "nora/agent/tools.py",
+  "file": "nora/memory/adapters/tools/standing.py",
   "old": "            log.exception(\"standing_read failed\")\n            _record(metrics, \"standing_read\", \"unavailable\")\n            return {\"status\": \"unavailable\", \"note\": _STANDING_OFF}\n",
   "new": "            log.exception(\"standing_read failed\")\n            return {\"status\": \"nothing_found\", \"note\": _STANDING_NONE}\n",
   "target": "tests/infra/test_standing_read.py::test_a_failing_store_is_unavailable_not_nothing_found"
@@ -183,8 +183,8 @@
  },
  {
   "name": "rollup_read tool: everyone in a room with nobody resolved reads every row (M2, tool layer)",
-  "file": "nora/agent/tools.py",
-  "old": "            if not people:\n                # A room with nobody resolved",
+  "file": "nora/memory/adapters/tools/standing.py",
+  "old": "if not c.people:",
   "new": "            if False:\n                # A room with nobody resolved",
   "target": "tests/integration/test_rollup_read.py::test_everyone_in_a_room_with_no_resolved_people_is_nothing_found_not_every_row"
  },
@@ -211,15 +211,15 @@
  },
  {
   "name": "rollup_read: everyone beside a name is accepted (minor 4)",
-  "file": "nora/agent/tools.py",
-  "old": "        if everyone and len(names) > 1:\n",
+  "file": "nora/memory/adapters/tools/standing.py",
+  "old": "\n    if c.everyone and len(c.names) > 1:\n        ",
   "new": "        if False:\n",
   "target": "tests/integration/test_rollup_read.py::test_everyone_beside_a_name_is_refused_not_guessed_at"
  },
  {
   "name": "rollup_read: a bad kind gets the subject note (minor 4)",
-  "file": "nora/agent/tools.py",
-  "old": "            return {\"status\": \"unavailable\", \"note\": _ROLLUP_KIND}",
+  "file": "nora/memory/adapters/tools/standing.py",
+  "old": "return (True, None, {\"status\": \"unavailable\", \"note\": _ROLLUP_KIND}",
   "new": "            return {\"status\": \"unavailable\", \"note\": _ROLLUP_SUBJECT}",
   "target": "tests/integration/test_rollup_read.py::test_a_kind_that_is_not_one_says_which_kinds_there_are"
  },

@@ -5,6 +5,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.egress import scan_identifiers
 from nora.domain.media import MediaBlob, MediaObject, MediaRef
 from nora.domain.media_join import MediaJoin
@@ -19,6 +20,7 @@ from nora.ingest.stages import media as media_stage
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
+from nora.social.adapters.tools.shared import social_read_vocabulary
 from nora.testing import (
     FakeBlobStore,
     FakeMediaInterpreter,
@@ -645,14 +647,15 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     """
     import inspect
 
-    from nora.agent import tools as tools_module
-    src = inspect.getsource(tools_module)
+    from nora.memory.adapters.tools import meta as lookups_module
+
+    src = inspect.getsource(lookups_module)
     # The merged docstring is the LLM-facing one (Strands reads the callable's
     # docstring as the schema description). Assert the evidence framing
     # survived into it: `actually`, `doubted`/`guessed`, and the retained
     # cost framing `re-running`.
     start = src.find("def recall_lookups(")
-    assert start != -1, "recall_lookups callable not found in tools.py"
+    assert start != -1, "recall_lookups callable not found in meta.py"
     open_q = src.find('"""', start)
     close_q = src.find('"""', open_q + 3)
     doc = src[open_q + 3:close_q].lower()
@@ -820,7 +823,7 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     `like`/`follow`/`delete`; the instagram-bridge serves `/send`, `/react`, …
     — so none of them may reach a write. Read-only is enforced at three
     layers, and this test DERIVES all three from the code, from ONE vocabulary
-    table covering every social tool (`nora.agent.tools.
+    table covering every social tool (`nora.social.adapters.tools.shared.
     social_read_vocabulary`), so an edit to any layer that drifts from the
     others goes red here:
 
@@ -843,10 +846,9 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     LinkedIn only: no `instagram` key is in `READ_ONLY_ALLOWLIST`, and the X
     tools construct no Instagram pair at all.
     """
-    from nora.agent import tools as tools_module
     from nora.infra.social import EXCEPTION_ROUTES, bridge_server
 
-    vocabulary = tools_module.social_read_vocabulary()
+    vocabulary = social_read_vocabulary()
     assert set(vocabulary) == {
         "x_read", "x_search", "linkedin_read", "linkedin_search",
         "instagram_read", "instagram_search",
@@ -909,7 +911,7 @@ def test_r86_social_reads_are_read_only_at_three_layers():
 
     # Layer 3: the declaration the Dreamer's ceiling is derived from.
     for tool in vocabulary:
-        assert tools_module.NATIVE_TOOLS[tool].read_only is True, tool
+        assert NATIVE_TOOLS[tool].read_only is True, tool
 
 
 async def write_prior(store) -> None:

@@ -82,6 +82,7 @@ from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from datetime import datetime
 from typing import Any
 
+from nora.agent.catalog.model import turn_occasion
 from nora.agent.intent_router import route_intent
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
@@ -90,7 +91,6 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room, trigger_message_ids
-from nora.agent.tools import turn_occasion
 from nora.domain import audience as audience_names
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionLogRecorder

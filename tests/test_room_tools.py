@@ -855,7 +855,7 @@ async def test_a_person_with_neither_is_still_nothing_known(persons):
 
 
 async def test_about_frames_its_conclusions_as_untrusted_memory(persons):
-    from nora.agent.tools import _MEMORY_FRAMING
+    from nora.agent.toolkit.results import _MEMORY_FRAMING
 
     honcho = FakeMemoryStore(
         cards={"tyler_cortez": ["IDENTITY: Name: Tyler Cortez"]},
@@ -871,7 +871,7 @@ async def test_about_frames_its_conclusions_as_untrusted_memory(persons):
 async def test_ask_memory_frames_the_reasoners_prose_as_untrusted_memory(persons):
     """The sharpest of the four: `answer` is free-form text an LLM wrote, and
     must not reach the model as a bare string with nothing saying so."""
-    from nora.agent.tools import _MEMORY_FRAMING
+    from nora.agent.toolkit.results import _MEMORY_FRAMING
 
     honcho = FakeMemoryStore(conclusions={"miles_novak": ["plays five-a-side on Sundays"]})
     tools = _build(persons=persons, honcho=honcho, question="佢鍾唔鍾意踢波")
@@ -887,7 +887,7 @@ async def test_ask_memory_frames_the_reasoners_prose_as_untrusted_memory(persons
 async def test_search_memory_frames_verbatim_group_words_as_untrusted_memory(persons):
     """Exactly the class of text `group_transcript` wraps, arriving by a channel
     that must carry the same wrapping."""
-    from nora.agent.tools import _MEMORY_FRAMING
+    from nora.agent.toolkit.results import _MEMORY_FRAMING
 
     honcho = FakeMemoryStore()
     honcho.messages = [("miles_novak", "book 咗七點枱")]
@@ -903,7 +903,7 @@ async def test_load_transcript_frames_verbatim_group_words_as_untrusted_memory(p
     """The envelope is why this tool returns a dict at all: a bare `list` has
     nowhere to put the demotion, and the marker must not live only in a
     docstring the result itself then carries nothing of."""
-    from nora.agent.tools import _MEMORY_FRAMING
+    from nora.agent.toolkit.results import _MEMORY_FRAMING
 
     out = await _call(_build(persons=persons)["load_transcript"], limit=40)
 

@@ -25,6 +25,9 @@ import tiktoken
 from strands import Agent
 from strands.models import Model
 
+import nora.agent.catalog.groups as _groups_module
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.catalog.groups import HOT_TOOLS, LOADER_TOOL
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.surface import (
@@ -35,7 +38,6 @@ from nora.agent.surface import (
     ToolShelf,
     load_onto,
 )
-from nora.agent.tools import HOT_TOOLS, LOADER_TOOL
 from nora.obs.metrics import Metrics
 from nora.testing.fakes import FakeMemoryStore
 from tests.unit.test_tool_registry import _deliverer, _FakePersons, _FakeStore
@@ -459,7 +461,8 @@ _VOICE_EXTRA_TOKEN_CEILING = 750
 
 
 def test_every_declared_occasion_is_in_the_closed_vocabulary():
-    from nora.agent.tools import NATIVE_TOOLS, TOOL_OCCASIONS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
+    from nora.agent.catalog.model import TOOL_OCCASIONS
 
     stray = {name: sorted(spec.hot_on - TOOL_OCCASIONS)
              for name, spec in NATIVE_TOOLS.items() if spec.hot_on - TOOL_OCCASIONS}
@@ -469,7 +472,7 @@ def test_every_declared_occasion_is_in_the_closed_vocabulary():
 
 
 def test_an_unknown_occasion_is_refused_not_read_as_text():
-    from nora.agent.tools import hot_tools
+    from nora.agent.catalog.groups import hot_tools
 
     with pytest.raises(ValueError, match="unknown tool occasion"):
         hot_tools("spoken")
@@ -478,7 +481,7 @@ def test_an_unknown_occasion_is_refused_not_read_as_text():
 
 
 def test_the_voice_members_are_the_measured_ones():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     declared = {name for name, spec in NATIVE_TOOLS.items() if "voice" in spec.hot_on}
     assert declared == _VOICE_MEASURED
@@ -520,14 +523,12 @@ def test_a_text_turn_is_byte_identical_with_or_without_any_occasion_declared(mon
     and the loop limits) is the same bytes whether or not any tool declares
     `hot_on`. The comparison arm strips every declaration, which is the table
     without `hot_on` (DEC-256)."""
-    from nora.agent import tools as tools_module
-
     stripped = {name: dataclasses.replace(spec, hot_on=frozenset())
-                for name, spec in tools_module.NATIVE_TOOLS.items()}
+                for name, spec in NATIVE_TOOLS.items()}
     for platform in ("discord", "signal"):
         declared = _wire(_surface(platform=platform, defer=True))
         with monkeypatch.context() as patch:
-            patch.setattr(tools_module, "NATIVE_TOOLS", stripped)
+            patch.setattr(_groups_module, "NATIVE_TOOLS", stripped)
             before = _wire(_surface(platform=platform, defer=True))
         assert declared == before, platform
     # Positive control: the voice turn is NOT the same bytes, or the

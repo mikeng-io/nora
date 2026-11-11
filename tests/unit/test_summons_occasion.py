@@ -30,8 +30,8 @@ from typing import Any
 
 import pytest
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.registry import ToolRegistry
-from nora.agent.tools import NATIVE_TOOLS
 from nora.app.summons import PUBLIC_GRANT, UNSENT_REPLY_FOLLOW_UP, SummonsOccasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.summons import SummonsCard

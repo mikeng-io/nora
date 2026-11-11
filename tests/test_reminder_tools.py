@@ -28,9 +28,10 @@ import itertools
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from nora.agent import tools as tools_module
+from nora.agenda.adapters.tools.shared import _SELF_OWNER, _UNKNOWN_OWNER
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.toolkit.clock import _HKT
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.reminders import (
     Recurrence,
@@ -496,7 +497,7 @@ async def test_list_reminders_says_so_when_the_setter_is_no_longer_known():
     assert row["id"] == str(orphan.id)
     assert row["set_by"]
     assert "someone_who_left" not in row["set_by"]
-    assert row["set_by"] == tools_module._UNKNOWN_OWNER
+    assert row["set_by"] == _UNKNOWN_OWNER
 
 
 async def test_cancel_refuses_an_id_from_another_conversation():
@@ -600,7 +601,7 @@ async def test_a_list_reminders_ok_note_carries_only_the_rules_its_rows_need():
     await plain_store.create(_row(requester_person_id="tyler"))
     plain = await _tools(reminders=plain_store)["list_reminders"]()
     assert "everyone's" in plain["note"]
-    for clause in ("real answer", "series", tools_module._UNKNOWN_OWNER):
+    for clause in ("real answer", "series", _UNKNOWN_OWNER):
         assert clause not in plain["note"], clause
 
     series_store = FakeReminderStore()
@@ -608,14 +609,14 @@ async def test_a_list_reminders_ok_note_carries_only_the_rules_its_rows_need():
     await tools["remind"](when=SOON, text="食藥", repeat="daily", times=3)
     series = await tools["list_reminders"]()
     assert "series" in series["note"]
-    assert tools_module._UNKNOWN_OWNER not in series["note"]
+    assert _UNKNOWN_OWNER not in series["note"]
 
     orphan_store = FakeReminderStore()
     await orphan_store.create(_row(requester_person_id="someone_who_left"))
     orphan = await _tools(reminders=orphan_store)["list_reminders"]()
-    assert tools_module._UNKNOWN_OWNER in orphan["note"]
+    assert _UNKNOWN_OWNER in orphan["note"]
     assert "series" not in orphan["note"]
-    assert "\u2014" not in tools_module._SELF_OWNER
+    assert "\u2014" not in _SELF_OWNER
 
 
 async def test_a_cancel_ok_says_how_to_report_it():
@@ -680,10 +681,15 @@ def test_every_status_remind_can_emit_is_named_in_the_metric_help():
     import re
     from pathlib import Path
 
+    from nora.agenda.adapters.tools import reminders as reminders_module
+    from nora.agenda.adapters.tools import shared as shared_module
     from nora.obs.metric_specs import _COUNTERS
 
-    source = Path(tools_module.__file__).read_text(encoding="utf-8")
-    emitted = set(re.findall(r'_record_created\(\s*metrics,\s*"([a-z_]+)"', source))
+    source = "".join(
+        Path(m.__file__).read_text(encoding="utf-8")
+        for m in (reminders_module, shared_module)
+    )
+    emitted = set(re.findall(r'_record_created\(\s*c\.metrics,\s*"([a-z_]+)"', source))
     emitted |= set(re.findall(r'_RepeatRefusal\(\s*\n?\s*"([a-z_]+)"', source))
     assert len(emitted) >= 11, f"expected every status to be a literal; found {emitted}"
     assert {"bad_repeat", "bad_bound"} <= emitted, emitted
@@ -846,7 +852,7 @@ async def test_an_until_given_as_a_bare_date_covers_that_whole_day():
     assert row.series is not None
     ends = row.series.rule.until
     assert ends is not None
-    local = ends.astimezone(tools_module._HKT)
+    local = ends.astimezone(_HKT)
     assert local.date().isoformat() == "2026-10-11"
     assert (local.hour, local.minute) == (23, 59)
 
@@ -1324,7 +1330,7 @@ async def test_list_reminders_names_a_row_nora_set_herself():
     listing = await _tools(reminders=store)["list_reminders"]()
 
     assert listing["status"] == "ok"
-    assert listing["reminders"][0]["set_by"] == tools_module._SELF_OWNER
+    assert listing["reminders"][0]["set_by"] == _SELF_OWNER
 
 
 async def test_a_remind_ok_says_to_confirm_the_moment_and_only_a_real_limit():

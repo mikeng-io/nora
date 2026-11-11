@@ -31,6 +31,31 @@ from strands.tools.decorator import FunctionToolMetadata
 from strands.types._events import ToolResultEvent
 from strands.types.tools import AgentTool
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.catalog.groups import (
+    COMPUTER_TOOLS,
+    DOCUMENT_TOOLS,
+    GRAPH_MEMORY_TOOLS,
+    HONCHO_MEMORY_TOOLS,
+    HOT_TOOLS,
+    LOADER_TOOL,
+    NATIVE_TOOL_BUDGETS,
+    SUBAGENT_TOOLS,
+    VIDEO_TOOLS,
+    hot_tools,
+)
+from nora.agent.toolkit.clock import utc_now
+from nora.agent.toolkit.ports import (
+    DocumentPublisher,
+    EventsCollaborator,
+    NoteCollaborator,
+    RecordQuerySource,
+    RollupReadSource,
+    RoomDirectory,
+    SocialItemsSource,
+    StandingHeadSource,
+)
+from nora.agent.tools import build_tool_specs
 from nora.domain.standing_ledger import StandingLedger
 
 from ..domain.computer import ComputerToolSettings
@@ -48,6 +73,7 @@ from ..domain.ports import (
     DiscordPresenceSource,
     ExternalFilesSource,
     GifSource,
+    ImageGenerator,
     MediaDescriptionStore,
     MediaObjectStore,
     MusicToolBridge,
@@ -89,30 +115,6 @@ from .surface import (
     ToolScope,
     ToolShelf,
     ToolSurface,
-)
-from .tools import (
-    COMPUTER_TOOLS,
-    DOCUMENT_TOOLS,
-    GRAPH_MEMORY_TOOLS,
-    HONCHO_MEMORY_TOOLS,
-    HOT_TOOLS,
-    LOADER_TOOL,
-    NATIVE_TOOL_BUDGETS,
-    NATIVE_TOOLS,
-    SUBAGENT_TOOLS,
-    VIDEO_TOOLS,
-    DocumentPublisher,
-    EventsCollaborator,
-    ImageGenerator,
-    NoteCollaborator,
-    RecordQuerySource,
-    RollupReadSource,
-    RoomDirectory,
-    SocialItemsSource,
-    StandingHeadSource,
-    build_tool_specs,
-    hot_tools,
-    utc_now,
 )
 from .video_desk import VideoDesk
 from .whereis import Circle, PresenceReader
@@ -365,6 +367,9 @@ class ToolRegistry:
         # link is opened through, held for the life of the process like
         # `route`. `None` answers the open `unavailable`.
         external_files: ExternalFilesSource | None = None,
+        # `[google] account`: Nora's own Google mailbox, named in the
+        # NOT_SHARED note. "" → "Nora's Google account".
+        google_account: str = "",
         # `[memory.index] read` (ships off): the retrieval service
         # `memory_search` answers from, and the switch between the two memory
         # surfaces (DEC-316): wired, every build offers `memory_search` and no
@@ -396,6 +401,7 @@ class ToolRegistry:
         self._profile = profile
         self._profile_read = profile_read
         self._external_files = external_files
+        self._google_account = google_account
         self._memory_search = memory_search
         self._record = record
         self._documents = documents
@@ -1250,6 +1256,7 @@ class ToolRegistry:
             subagent=self._subagent,
             video=self._video, video_ref_kinds=self._video_ref_kinds,
             external_files=self._external_files,
+            google_account=self._google_account,
             shelf=shelf,
             on_rows=on_rows,
             content_checks=self._content_checks,

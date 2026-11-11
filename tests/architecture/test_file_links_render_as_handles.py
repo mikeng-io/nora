@@ -89,7 +89,7 @@ def _reaction() -> str:
 
 
 def _tool_result() -> str:
-    from nora.agent.tools import _transcript_messages
+    from nora.agent.toolkit.transcript import _transcript_messages
 
     return repr(_transcript_messages(
         [_row()], now=datetime(2026, 10, 10, tzinfo=UTC), display_name="Nora"))
@@ -104,7 +104,7 @@ def _memory_backfill() -> str:
 def _memory_hits() -> str:
     """search_memory / search_memory_workspace: Honcho's stored words, which
     hold raw links for anything fed before links were rendered as handles."""
-    from nora.agent.tools import _memory_hits_result
+    from nora.agent.toolkit.results import _memory_hits_result
 
     return repr(_memory_hits_result(
         hits=[("p1", f"budget {URL} pls")], roster={"p1": "A"},
@@ -232,12 +232,12 @@ HAND_BUILT = {
     ("nora/subject/context_selector_render.py", "selector_prompt"):
         "the eval selector's <tag_message>",
     ("nora/agent/reaction.py", "render_recent"): "the GIF picker's recent lines",
-    ("nora/agent/tools.py", "_transcript_messages"):
+    ("nora/agent/toolkit/transcript.py", "_transcript_messages"):
         "load_transcript / room_read / record_query results",
-    ("nora/agent/tools.py", "who_said"): "who_said hits",
-    ("nora/agent/tools.py", "_memory_hits_result"): "search_memory(_workspace) hits",
-    ("nora/agent/tools.py", "about"): "about's Honcho conclusions and card",
-    ("nora/agent/tools.py", "ask_memory"): "ask_memory's Honcho answer",
+    ("nora/conversation/adapters/tools/record.py", "who_said"): "who_said hits",
+    ("nora/agent/toolkit/results.py", "_memory_hits_result"): "search_memory(_workspace) hits",
+    ("nora/people/adapters/tools.py", "about"): "about's Honcho conclusions and card",
+    ("nora/memory/adapters/tools/search.py", "ask_memory"): "ask_memory's Honcho answer",
     ("nora/ingest/stages/memory_feed.py", "run"): "the live Honcho feed",
     ("nora/app/adoption.py", "backfill"): "adoption's Honcho back-feed",
     ("nora/app/memory_backfill.py", "_items"): "`nora memory backfill`",
@@ -275,7 +275,13 @@ def _calls_render(node: ast.AST) -> bool:
 def test_each_hand_built_sink_renders_the_handle(rel, fn):
     functions = _functions(rel)
     assert fn in functions, f"{rel}::{fn} is gone: re-point HAND_BUILT at its new name"
-    assert _calls_render(functions[fn]), (
+    # ADR 0037 splits an oversized tool into `_<fn>__pN` chunk helpers in the
+    # same module — the render call may sit in any of them.
+    sinks = [functions[fn]] + [
+        d for n, d in functions.items()
+        if n.startswith(f"_{fn}__p") and n[len(f"_{fn}__p"):].isdigit()
+    ]
+    assert any(_calls_render(d) for d in sinks), (
         f"{rel}::{fn} ({HAND_BUILT[(rel, fn)]}) hands message text to a model "
         "without `render_file_links`: a shared file link reaches it as a raw URL"
     )
@@ -285,7 +291,12 @@ def test_each_hand_built_sink_renders_the_handle(rel, fn):
 #: it renders through `nora/domain/blocks.py` (which carries the render), or
 #: the named functions in it render (checked in `HAND_BUILT`).
 BUILDERS: dict[str, str | tuple[str, ...]] = {
-    "nora/agent/tools.py": ("_transcript_messages", "who_said"),
+    # ADR 0037 moved the tool sinks: the store reads now live in
+    # toolkit/transcript.py (the shared renderer, in the media-join gate's
+    # _NOT_A_BUILDER since its callers enrich first) and query.py below; the
+    # renderers themselves are in HAND_BUILT above.
+    "nora/conversation/adapters/tools/query.py":
+        "renders record hits through the shared _transcript_messages (HAND_BUILT)",
     "nora/app/adoption.py": ("backfill",),
     "nora/app/memory_backfill.py": ("_items",),
     "nora/app/fire.py": ("_window_query",),

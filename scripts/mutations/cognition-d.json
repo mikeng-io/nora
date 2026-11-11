@@ -92,23 +92,23 @@
  },
  {
   "name": "review #669: event_propose hands the tag path no message id",
-  "file": "nora/agent/tools.py",
-  "old": "                unit_id=_unit() or \"\",\n                message_ids=room.trigger_message_ids,\n",
-  "new": "                unit_id=_unit() or \"\",\n",
+  "file": "nora/agenda/adapters/tools/events.py",
+  "old": "                title=title,\n                when=due_at,\n                venue_text=venue_text or None,\n                person_names=_route_person_names,\n                platform=room.platform,\n                unit_id=_unit() or \"\",\n                message_ids=room.trigger_message_ids,\n",
+  "new": "                title=title,\n                when=due_at,\n                venue_text=venue_text or None,\n                person_names=_route_person_names,\n                platform=room.platform,\n                unit_id=_unit() or \"\",\n",
   "target": "tests/test_gathering_tools.py::test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn"
  },
  {
   "name": "review #669: event_revise hands the tag path no message id",
-  "file": "nora/agent/tools.py",
+  "file": "nora/agenda/adapters/tools/events.py",
   "old": "                base_revision_id=UUID(base_revision_id) if base_revision_id else None,\n                message_ids=room.trigger_message_ids,\n            )\n        except GatheringNotFoundError:\n            _record(metrics, \"event_revise\"",
   "new": "                base_revision_id=UUID(base_revision_id) if base_revision_id else None,\n            )\n        except GatheringNotFoundError:\n            _record(metrics, \"event_revise\"",
   "target": "tests/test_gathering_tools.py::test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn"
  },
  {
   "name": "review #669: event_set_status hands the tag path no message id",
-  "file": "nora/agent/tools.py",
-  "old": "                platform=room.platform, unit_id=_unit() or \"\",\n                message_ids=room.trigger_message_ids,\n",
-  "new": "                platform=room.platform, unit_id=_unit() or \"\",\n",
+  "file": "nora/agenda/adapters/tools/events.py",
+  "old": "                status=parsed_status,\n                base_revision_id=UUID(base_revision_id) if base_revision_id else None,\n                platform=room.platform,\n                unit_id=_unit() or \"\",\n                message_ids=room.trigger_message_ids,",
+  "new": "                status=parsed_status,\n                base_revision_id=UUID(base_revision_id) if base_revision_id else None,\n                platform=room.platform,\n                unit_id=_unit() or \"\",",
   "target": "tests/test_gathering_tools.py::test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn"
  },
  {
