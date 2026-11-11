@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.17.7](https://github.com/mikeng-io/nora/compare/v7.17.6...v7.17.7) (2026-11-11)
+
+
+### Maintenance
+
+* **agent:** drop trailing blank lines in moved tool files ([ffd7e27](https://github.com/mikeng-io/nora/commit/ffd7e277271b78cfd65c411103691e7926a3949d))
+* **agent:** name the split steps and keep the size floor ([1e722a8](https://github.com/mikeng-io/nora/commit/1e722a8e6963852185c869fd2892800b331c37b4))
+* **agent:** split build_tool_specs into the area adapters ADR 0037 defines ([cad5d6d](https://github.com/mikeng-io/nora/commit/cad5d6dd011786376052560b6dedc27f4cc36851))
+
 ## [7.17.6](https://github.com/mikeng-io/nora/compare/v7.17.5...v7.17.6) (2026-11-11)
 
 
