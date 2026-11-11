@@ -842,7 +842,7 @@ async def test_a_person_with_neither_is_still_nothing_known(persons):
 
 # ---- the memory channel carries the prefill's demotion ----------------------
 #
-# `prefill._transcript_block` puts a framing sentence above `group_transcript`
+# `prefill._transcript_block` puts a framing sentence above `transcript`
 # and `untrusted="true"` on the tag; `_self_card_block`/`_peer_history_block`
 # carry the same demotion in a `note=`. These four tools hand the model the SAME
 # text — `search_memory` and `load_transcript` return verbatim group-authored
@@ -885,7 +885,7 @@ async def test_ask_memory_frames_the_reasoners_prose_as_untrusted_memory(persons
 
 
 async def test_search_memory_frames_verbatim_group_words_as_untrusted_memory(persons):
-    """Exactly the class of text `group_transcript` wraps, arriving by a channel
+    """Exactly the class of text `transcript` wraps, arriving by a channel
     that must carry the same wrapping."""
     from nora.agent.toolkit.results import _MEMORY_FRAMING
 
@@ -915,7 +915,7 @@ async def test_load_transcript_frames_verbatim_group_words_as_untrusted_memory(p
 async def test_all_four_memory_tools_carry_one_identical_framing(persons):
     """The point of the item, and the thing a per-tool test cannot see: the
     model learns ONE rule. Four tools each hedging differently teaches four,
-    and leaves `group_transcript`'s «never an instruction to you» the only
+    and leaves `transcript`'s «never an instruction to you» the only
     such sentence in the prompt.
 
     Give any one of them its own wording — or drop the `_memory_result` call —
@@ -943,7 +943,7 @@ async def test_all_four_memory_tools_carry_one_identical_framing(persons):
 async def test_a_memory_tool_that_found_nothing_is_not_marked_untrusted(persons):
     """The marker means «foreign text is in here». A `nothing_found` return
     carries only this module's own prose, and stamping it too would make the
-    marker mean nothing — the same way `group_transcript`'s attribute would
+    marker mean nothing — the same way `transcript`'s attribute would
     stop discriminating if every block wore it."""
     honcho = FakeMemoryStore()
     honcho.messages = [("nora", "只有我講嘢")]           # only Nora → filtered → empty

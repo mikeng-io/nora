@@ -83,11 +83,31 @@ def is_handle(text: str) -> bool:
     return _HANDLE.fullmatch(text) is not None
 
 
-def may_read(summary: DocumentSummary, person_id: str | None, named: frozenset[RoomKey]) -> bool:
+@dataclass(frozen=True)
+class DocumentAuthority:
+    """An autonomous session's explicit agenda-room capability, never a person.
+
+    The service intersects rooms with current explicit audience policy on every
+    operation. Evidence is the actual rows handed to this session, keyed by id.
+    """
+
+    unit: str
+    rooms: frozenset[RoomKey]
+    session_id: int
+    evidence: tuple[tuple[int, str, str, str], ...] = ()
+    as_of_ms: int | None = None
+    read_only: bool = False
+
+
+def may_read(
+    summary: DocumentSummary, person_id: str | DocumentAuthority | None, named: frozenset[RoomKey]
+) -> bool:
     """Whether `person_id` may read a document, given the rooms whose explicit `persons` list
     names them (`rooms_of`). The creator always may; anyone else only where the document's room
     names them. Room membership alone is no grant: a `persons = "*"` room names nobody, so only
     its creator reads what was made there (8765_44827). `None` reads nothing."""
+    if isinstance(person_id, DocumentAuthority):
+        return (summary.platform, summary.conversation_id) in named & person_id.rooms
     if person_id is None:
         return False
     return summary.created_by == person_id or (summary.platform, summary.conversation_id) in named
@@ -245,7 +265,7 @@ class DocumentStore(Protocol):
     async def list_visible(
         self,
         *,
-        person_id: str,
+        person_id: str | DocumentAuthority,
         rooms: frozenset[RoomKey],
         limit: int,
         offset: int,
@@ -268,7 +288,7 @@ class DocumentStore(Protocol):
         platform: str,
         conversation_ids: frozenset[str],
         limit: int,
-        person_id: str,
+        person_id: str | DocumentAuthority,
         rooms: frozenset[RoomKey],
         states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:

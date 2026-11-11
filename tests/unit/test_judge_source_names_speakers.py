@@ -12,7 +12,7 @@ What is pinned here, each on its own:
   not the self-set profile name, and never the account id;
 - her own lines are under her configured display name, decided by the FLAG;
 - an unmapped sender falls back as production's does, still with no id;
-- the joined source IS the `<group_transcript>` body she was shown, byte for
+- the joined source IS the `<transcript>` body she was shown, byte for
   byte — so the judge verifies against what she read, not a second format;
 - one element per row, even when a body carries newlines or a forged tag;
 - the attribution case: the source links the asker to both of

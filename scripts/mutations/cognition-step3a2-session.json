@@ -63,13 +63,6 @@
     "target": "tests/unit/test_cognition_session_runner.py -k test_an_empty_agenda_makes_no_model_call"
   },
   {
-    "name": "cognition_session: an item never closed by the model is actually closed waiting, not silently dropped",
-    "file": "nora/app/cognition_session.py",
-    "old": "            outcome = close_or_strike(\n                item, item_index=index, reason=\"waiting\", max_strikes=self._max_strikes,\n            )\n            await self._record_close(state, outcome, by_model=False)",
-    "new": "            outcome = close_or_strike(\n                item, item_index=index, reason=\"waiting\", max_strikes=self._max_strikes,\n            )",
-    "target": "tests/unit/test_cognition_session_runner.py -k test_an_item_never_closed_by_the_model_is_closed_waiting_by_code"
-  },
-  {
     "name": "wake: on_wake actually never schedules a plain (non-coroutine) return value",
     "file": "nora/app/wake.py",
     "old": "        if not inspect.isawaitable(outcome):\n            return",
@@ -145,34 +138,6 @@
     "old": "            raise SessionTimeoutError(\n                f\"the session ran past its {self._budget.timeout_seconds:g}s wall clock\",\n            ) from exc",
     "new": "            raise TimeoutError(\n                f\"the session ran past its {self._budget.timeout_seconds:g}s wall clock\",\n            ) from exc",
     "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_timed_out_session_is_cancelled_recorded_timeout_and_strands_nothing"
-  },
-  {
-    "name": "cognition_session: a waiting item actually returns to the next agenda",
-    "file": "nora/app/cognition_session.py",
-    "old": "                    carry(sid, close.strike, \"carried\", waits=True)",
-    "new": "                    pass",
-    "target": "tests/unit/test_cognition_session_lifecycle.py -k test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strikes"
-  },
-  {
-    "name": "cognition_session: an item past max_items actually comes back with a strike",
-    "file": "nora/app/cognition_session.py",
-    "old": "            strike = view.carry.get(sid, 0) + 1",
-    "new": "            strike = 0",
-    "target": "tests/unit/test_cognition_session_lifecycle.py -k test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike"
-  },
-  {
-    "name": "cognition_session (domain): a returning item actually carries its strike",
-    "file": "nora/domain/cognition_session.py",
-    "old": "        key = (*_group_key(stimulus, home_room=home_room), carried.get(stimulus.id, 0))",
-    "new": "        key = (*_group_key(stimulus, home_room=home_room), 0)",
-    "target": "tests/unit/test_cognition_session_lifecycle.py::test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike tests/unit/test_cognition_session_lifecycle.py::test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strikes"
-  },
-  {
-    "name": "cognition_session: a model close(waiting) actually takes a strike",
-    "file": "nora/app/cognition_session.py",
-    "old": "                outcome = close_or_strike(\n                    item, item_index=item_index, reason=reason,\n                    max_strikes=self._max_strikes,\n                )",
-    "new": "                outcome = CloseOutcome(item_index=item_index, kind=item.kind, reason=reason)",
-    "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_model_close_waiting_takes_a_strike_like_an_unclosed_item"
   },
   {
     "name": "stimuli sql: a wait-closed carried stimulus actually rides the next wake (waits)",
@@ -285,13 +250,6 @@
     "old": "            except TimeoutError:\n                annotate(**{\"nora.outcome\": \"timeout\"})\n                self._metrics.inc(\"nora_errors_total\", stage=\"cognition_session\")\n                raise",
     "new": "            except TimeoutError:\n                annotate(**{\"nora.outcome\": \"timeout\"})\n                self._metrics.inc(\"nora_errors_total\", stage=\"cognition_session\")\n                return",
     "target": "tests/unit/test_cognition_agent_runner.py -k test_a_timeout_is_raised"
-  },
-  {
-    "name": "stimuli twin: a retracted stimulus is actually never pending",
-    "file": "nora/testing/stimuli.py",
-    "old": "            if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)\n",
-    "new": "            if s.unit == unit and s.id not in self.uncommitted\n",
-    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_retracted_stimulus_is_never_pending_and_retracting_twice_is_a_no_op"
   },
   {
     "name": "stimuli sql: one outcome per wake, the first stands",
@@ -462,13 +420,6 @@
     "target": "tests/unit/test_cognition_pace.py::test_a_superseding_wake_at_whose_record_fails_keeps_the_displaced_one"
   },
   {
-    "name": "cognition_session (domain): a strike is actually the item's (a fresh stimulus does not inherit one)",
-    "file": "nora/domain/cognition_session.py",
-    "old": "        key = (*_group_key(stimulus, home_room=home_room), carried.get(stimulus.id, 0))\n        groups.setdefault(key, []).append(stimulus)\n\n    items: list[AgendaItem] = []\n    for (kind, room, item_key, strike), rows in groups.items():\n        ids = tuple(sorted(s.id for s in rows))",
-    "new": "        key = (*_group_key(stimulus, home_room=home_room), 0)\n        groups.setdefault(key, []).append(stimulus)\n\n    items: list[AgendaItem] = []\n    for (kind, room, item_key, _), rows in groups.items():\n        ids = tuple(sorted(s.id for s in rows))\n        strike = max((carried.get(i, 0) for i in ids), default=0)",
-    "target": "tests/unit/test_cognition_session_lifecycle.py::test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strikes"
-  },
-  {
     "name": "cognition_session: wake_at actually reads the clock at the call, not the session's start",
     "file": "nora/app/cognition_session.py",
     "old": "                call_ms = self._now_ms()\n                pending = await self._pending(unit, call_ms)\n                created_today",
@@ -488,5 +439,12 @@
     "old": "    return session is not None and session.state == \"running\"",
     "new": "    return False",
     "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_session_still_running_after_a_restart_still_holds_its_unit tests/unit/test_cognition_session_lifecycle.py::test_a_wake_with_no_outcome_blocks_its_unit_and_no_later_wake_swallows_it"
+  },
+  {
+    "name": "stimuli twin: a retracted stimulus is actually never pending",
+    "file": "nora/testing/stimuli.py",
+    "old": "            if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)\n",
+    "new": "            if s.unit == unit and s.id not in self.uncommitted\n",
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_retracted_stimulus_is_never_pending_and_retracting_twice_is_a_no_op"
   }
 ]

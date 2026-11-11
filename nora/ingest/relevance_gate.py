@@ -375,7 +375,7 @@ _GATE_SELF_NAME = "assistant"
 #: path's cached prefix, so a key copied from prefill would not mean the same
 #: thing here.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    ("group_transcript", 10, "turn"),
+    ("transcript", 10, "turn"),
     ("standing", 20, "turn"),
 )
 
@@ -417,7 +417,7 @@ def render_context(
 
     **A newline inside a body cannot forge a row; the defence is the element
     boundary.** Each message is its own `m` element inside
-    `<group_transcript>`, so a body keeps its newlines and produces no row:
+    `<transcript>`, so a body keeps its newlines and produces no row:
     `escape` makes a closing tag unwritable (R-13b) and the speaker is an
     attribute `escape_attr` closes. The newline collapse is kept on every
     ATTRIBUTE value, in `render_elements`. A forged `[assistant]: …` line
@@ -463,11 +463,11 @@ def render_context(
     # the only thing that can establish what she owes the room, so its absence
     # has to be READABLE. An empty body would be dropped by `assemble` and the
     # sentence explaining what its absence means would go with it.
-    transcript_order, transcript_key = _ROW["group_transcript"]
+    transcript_order, transcript_key = _ROW["transcript"]
     standing_order, standing_key = _ROW["standing"]
     return assemble((
         ContextBlock(
-            name="group_transcript", order=transcript_order, key=transcript_key,
+            name="transcript", order=transcript_order, key=transcript_key,
             # `window` is what the caller READ, not what it rendered, and the
             # two differ: a row with nothing left after the collapse is dropped
             # above. «How far back you were shown» is the question this answers

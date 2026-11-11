@@ -1,72 +1,72 @@
 [
- {
-  "name": "anonymous snapshot clear removes all emoji keys",
-  "file": "nora/domain/observations.py",
-  "old": "        emojis = p.covered_emojis or tuple(sorted(\n            set(standing) | set(state[\"counts\"])))",
-  "new": "        emojis = p.covered_emojis or tuple(standing.keys())",
-  "target": "tests/contract/test_reaction_union_contract.py::test_clear_all_removes_unattributed_snapshot_counts"
- },
- {
-  "name": "unknown legacy actor removal withholds anonymous overlap",
-  "file": "nora/domain/observations.py",
-  "old": "                if r.sender_id not in actors and state[\"counts\"].get(r.emoji):\n                    ambiguous = True\n",
-  "new": "",
-  "target": "tests/contract/test_reaction_union_contract.py::test_removal_with_unknown_snapshot_actor_overlap_is_partial -k False"
- },
- {
-  "name": "legacy recording time is insert time rather than transaction start",
-  "file": "nora/infra/sql/audit.py",
-  "old": "            created_at=sa.func.clock_timestamp(),\n",
-  "new": "",
-  "target": "tests/contract/test_reaction_union_contract.py::test_a_waiting_transaction_does_not_backdate_a_later_reaction -k sql"
- },
- {
-  "name": "new legacy change refreshes old typed reaction discovery",
-  "file": "nora/infra/sql/audit.py",
-  "old": "                PLATFORM_OBJECT_STATE.c.kind == \"reaction\", target_link,",
-  "new": "                sa.false(), target_link,",
-  "target": "tests/contract/test_reaction_union_contract.py::test_new_legacy_reaction_refreshes_bounded_object_discovery -k sql"
- },
- {
-  "name": "message and sidecar own one durable stimulus obligation",
-  "file": "nora/app/bridge_queue.py",
-  "old": "                        and not source_owned):",
-  "new": "                        and True):",
-  "target": "tests/integration/test_platform_observation_ingest.py::test_message_sidecar_is_one_source_obligation_with_both_refs"
- },
- {
-  "name": "Cognition grounds delivery independently from the affected target",
-  "file": "nora/app/cognition_grounding.py",
-  "old": "                event.delivered_message_id, event.target_message_id,",
-  "new": "                event.target_message_id, event.target_message_id,",
-  "target": "tests/unit/test_platform_observation_wired.py::test_the_session_runner_assembles_and_consumes_an_observation_stimulus"
- },
- {
-  "name": "bounded prompt discovery preserves last-write order",
-  "file": "nora/engagement/context.py",
-  "old": "        heads = [h for h in heads if h.applied > 0]",
-  "new": "        heads = sorted((h for h in heads if h.applied > 0), key=lambda h: max(h.observed_ms or 0, h.received_ms), reverse=True)",
-  "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools"
- },
- {
-  "name": "visible reaction tally has one presentation owner",
-  "file": "nora/agent/prefill.py",
-  "old": "                None if e.kind == \"reaction\" and e.handle in reaction_targets",
-  "new": "                None if False",
-  "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools -k False"
- },
- {
-  "name": "typed query does not mislabel current-room data as all rooms",
-  "file": "nora/conversation/adapters/tools/query.py",
-  "old": "if (c.kind is not None or c.object is not None) and c.scope != \"this_room\":",
-  "new": "        if False:",
-  "target": "tests/unit/test_platform_observation_wired.py::test_typed_tools_refuse_wrong_handle_kind_and_unsupported_room_scope"
- },
- {
-  "name": "Discord roster result does not claim channel audience",
-  "file": "nora/people/adapters/tools.py",
-  "old": "if room.platform == \"discord\"\n                else \"this conversation\"",
-  "new": "                if False else \"this conversation\"",
-  "target": "tests/test_room_tools.py::test_group_members_on_discord_labels_the_guild_scope_not_the_channel"
- }
+  {
+    "name": "anonymous snapshot clear removes all emoji keys",
+    "file": "nora/domain/observations.py",
+    "old": "        emojis = p.covered_emojis or tuple(sorted(\n            set(standing) | set(state[\"counts\"])))",
+    "new": "        emojis = p.covered_emojis or tuple(standing.keys())",
+    "target": "tests/contract/test_reaction_union_contract.py::test_clear_all_removes_unattributed_snapshot_counts"
+  },
+  {
+    "name": "unknown legacy actor removal withholds anonymous overlap",
+    "file": "nora/domain/observations.py",
+    "old": "                if r.sender_id not in actors and state[\"counts\"].get(r.emoji):\n                    ambiguous = True\n",
+    "new": "",
+    "target": "tests/contract/test_reaction_union_contract.py::test_removal_with_unknown_snapshot_actor_overlap_is_partial -k False"
+  },
+  {
+    "name": "legacy recording time is insert time rather than transaction start",
+    "file": "nora/infra/sql/audit.py",
+    "old": "            created_at=sa.func.clock_timestamp(),\n",
+    "new": "",
+    "target": "tests/contract/test_reaction_union_contract.py::test_a_waiting_transaction_does_not_backdate_a_later_reaction -k sql"
+  },
+  {
+    "name": "new legacy change refreshes old typed reaction discovery",
+    "file": "nora/infra/sql/audit.py",
+    "old": "                PLATFORM_OBJECT_STATE.c.kind == \"reaction\", target_link,",
+    "new": "                sa.false(), target_link,",
+    "target": "tests/contract/test_reaction_union_contract.py::test_new_legacy_reaction_refreshes_bounded_object_discovery -k sql"
+  },
+  {
+    "name": "message and sidecar own one durable stimulus obligation",
+    "file": "nora/app/bridge_queue.py",
+    "old": "                        and not source_owned):",
+    "new": "                        and True):",
+    "target": "tests/integration/test_platform_observation_ingest.py::test_message_sidecar_is_one_source_obligation_with_both_refs"
+  },
+  {
+    "name": "Cognition grounds delivery independently from the affected target",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "            for message_id in (event.delivered_message_id, event.target_message_id):",
+    "new": "            for message_id in (event.target_message_id, event.target_message_id):",
+    "target": "tests/unit/test_platform_observation_wired.py::test_the_session_runner_assembles_and_consumes_an_observation_stimulus"
+  },
+  {
+    "name": "bounded prompt discovery preserves last-write order",
+    "file": "nora/engagement/context.py",
+    "old": "        heads = [h for h in heads if h.applied > 0]",
+    "new": "        heads = sorted((h for h in heads if h.applied > 0), key=lambda h: max(h.observed_ms or 0, h.received_ms), reverse=True)",
+    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools"
+  },
+  {
+    "name": "visible reaction tally has one presentation owner",
+    "file": "nora/agent/prefill.py",
+    "old": "                None if e.kind == \"reaction\" and e.handle in reaction_targets",
+    "new": "                None if False",
+    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools -k False"
+  },
+  {
+    "name": "typed query does not mislabel current-room data as all rooms",
+    "file": "nora/conversation/adapters/tools/query.py",
+    "old": "if (c.kind is not None or c.object is not None) and c.scope != \"this_room\":",
+    "new": "        if False:",
+    "target": "tests/unit/test_platform_observation_wired.py::test_typed_tools_refuse_wrong_handle_kind_and_unsupported_room_scope"
+  },
+  {
+    "name": "Discord roster result does not claim channel audience",
+    "file": "nora/people/adapters/tools.py",
+    "old": "if room.platform == \"discord\"\n                else \"this conversation\"",
+    "new": "                if False else \"this conversation\"",
+    "target": "tests/test_room_tools.py::test_group_members_on_discord_labels_the_guild_scope_not_the_channel"
+  }
 ]

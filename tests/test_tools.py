@@ -135,11 +135,11 @@ def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
         # DEC-146: the window-scoped rung of the recall ladder, below
         # `load_transcript`. Exercised in tests/test_who_said.py.
-        "who_said",
-        "now", "load_transcript", "send_reply", "reaction_send", "search_gifs", "send_gif",
-        "send_to",
+        "who_said", "now", "load_transcript", "send_reply", "reaction_send", "search_gifs",
+        "send_gif", "send_to",
         # The room tools.
-        "room_list", "room_read",
+        "room_list",
+        "room_read",
         # The Record under lineage.
         "record_query",
         # The observation Record's task reads (design/platform-observations
@@ -148,17 +148,17 @@ def test_every_declared_tool_is_built(wiring):
         "poll_list", "poll_read", "room_state_read",
         # Built here like every closure; only a Dreamer loop is OFFERED them
         # (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
-        "rollup_read", "standing_read", "character_read", "social_read",
-        "group_members", "lookup_person", "about", "ask_memory", "search_memory",
-        "recall_lookups",
+        "rollup_read", "standing_read", "character_read", "social_read", "group_members",
+        "lookup_person", "about", "ask_memory", "search_memory", "recall_lookups",
         # `search_memory_workspace` IS built here — `build_tools` builds every
         # closure. Which ones a ROOM sees is `ToolScope`'s decision, applied
         # by `ToolRegistry.surface()`, and the Dreamer-only cut is pinned there:
         # tests/unit/test_tool_registry.py (`dreamer - tag`).
         "search_memory_workspace",
-        "calculate", "transit", "route",
-        "place_info", "saved_places",
-        "where_is",
+        "calculate",
+        "transit",
+        "route",
+        "place_info", "saved_places", "where_is",
         # DEC-156: the fetch surface — coordinate to place, the read half.
         "reverse_geocode",
         # DEC-155: the derived-presence history tool (where someone HAS BEEN).
@@ -167,16 +167,13 @@ def test_every_declared_tool_is_built(wiring):
         "routine_read",
         # Live digital activity (online / playing /
         # voice) — exercised in tests/unit/test_online_now.py.
-        "online_now",
-        "media_fetch",
+        "online_now", "media_fetch",
         # A shared file link, read as text.
-        "file_fetch",
-        "generate_image",
-        "media_search", "media_send",
-        "web_search", "web_fetch",
+        "file_fetch", "generate_image", "media_search", "media_send", "web_search", "web_fetch",
         # x_read and x_search (DEC-201):
         # READ-ONLY X via the host bridge.
-        "x_read", "x_search",
+        "x_read",
+        "x_search",
         # linkedin_read and linkedin_search (DEC-201): READ-ONLY LinkedIn via
         # the same host bridge, inert unless [social.linkedin] enabled.
         "linkedin_read", "linkedin_search",
@@ -185,8 +182,7 @@ def test_every_declared_tool_is_built(wiring):
         "instagram_read",
         # instagram_search: Instagram
         # accounts matching free text, over the instagram-bridge.
-        "instagram_search",
-        "weather",
+        "instagram_search", "weather",
         # TD open-data parking vacancy (data.gov.hk hk-td-tis_5).
         "parking_status",
         # Google Nearby Search parking discovery around a named place/position.
@@ -194,27 +190,33 @@ def test_every_declared_tool_is_built(wiring):
         # The six music verbs are built here too. The Discord-only cut
         # is `ToolScope`'s, pinned by
         # `test_non_discord_catalog_omits_music_tools`.
-        "play_music", "skip_music", "top_music", "stop_music",
-        "music_status", "set_music_volume",
+        "play_music", "skip_music", "top_music", "stop_music", "music_status", "set_music_volume",
         # The loader. Built for every turn;
         # `surface()` hands it to the model only when something is deferred.
         "load_tools",
-        "remind", "list_reminders", "cancel_reminder",
+        "remind",
+        "list_reminders",
+        "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
-        "event_propose", "event_revise", "event_rsvp", "event_set_status",
-        "event_search", "suggest_venue",
+        "event_propose", "event_revise", "event_rsvp", "event_set_status", "event_search",
+        "suggest_venue",
         # Nora's computer (DEC-243).
-        "computer_run", "computer_read", "computer_write", "computer_edit",
-        "computer_export", "computer_import", "computer_session_list",
+        "computer_run",
+        "computer_read",
+        "computer_write",
+        "computer_edit", "computer_export", "computer_import", "computer_session_list",
         # Built here; offered only with a browser runner.
         "computer_browse",
         # Scoped-computer pair: built here like every closure; offered only
         # with `[computer.scoped]` wiring (the queue and the browser manager).
         "computer_capture", "computer_cancel",
         # A document is published to the web app, read back to edit.
-        "document_publish", "document_read", "document_set_status",
+        "document_publish", "document_read", "document_set_status", "document_list",
+        "document_revise",
         # Subagents (DEC-283).
-        "subagent_create", "subagent_list", "subagent_read", "subagent_cancel",
+        "subagent_create",
+        "subagent_list",
+        "subagent_read", "subagent_cancel",
         # Built here; offered only when `[video_gen]` is wired.
         "video_create",
         # The worker's own place-keeper.
@@ -1564,8 +1566,7 @@ async def test_every_non_ok_media_library_status_carries_a_note(wiring):
         "unavailable/raised": _with_image_tools(wiring, media_store=_BrokenMediaStore([])),
     }
     for case, tools in search_cases.items():
-        _assert_noted(case, await _call(tools["media_search"], query="cat"),
-                      case.split("/")[0])
+        _assert_noted(case, await _call(tools["media_search"], query="cat"), case.split("/")[0])
     send_cases = {
         "unavailable/unwired": (_with_image_tools(wiring, media_store=one), "aabbcc"),
         "nothing_found/not_a_handle": (
@@ -1583,8 +1584,7 @@ async def test_every_non_ok_media_library_status_carries_a_note(wiring):
             _tools_over(wiring, refusing, media_store=one, blob_store=full), "aabbcc"),
     }
     for case, (tools, handle) in send_cases.items():
-        _assert_noted(case, await _call(tools["media_send"], handle=handle),
-                      case.split("/")[0])
+        _assert_noted(case, await _call(tools["media_send"], handle=handle), case.split("/")[0])
 
 
 async def test_a_media_search_note_follows_whether_anything_matched(wiring):

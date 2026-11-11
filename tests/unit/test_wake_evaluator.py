@@ -690,13 +690,11 @@ async def test_the_backlog_gauge_skips_the_inert_kind_and_keeps_the_next_oldest(
 
 
 def test_the_inert_kinds_are_time_only_while_tracked_and_no_skill_ships():
-    from nora.app.cognition_wiring import AGENDA_SKILLS, floors_ready
     from nora.domain.stimuli import inert_kinds_for
 
     assert inert_kinds_for(tracked=True, floors_ready=False) == {"time"}
     assert inert_kinds_for(tracked=True, floors_ready=True) == frozenset()
     assert inert_kinds_for(tracked=False, floors_ready=False) == frozenset()
-    assert "time" in AGENDA_SKILLS and floors_ready() is True   # production: the floors wake
 
 
 def test_a_failed_runs_mark_unions_every_agenda_failed_wakes_claims():

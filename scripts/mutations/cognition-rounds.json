@@ -114,9 +114,9 @@
   {
     "name": "a limit stop is recorded failed with cause agenda (it would strike)",
     "file": "nora/app/cognition_session.py",
-    "old": "            raise SessionLimitError(result.stop_reason or \"\")",
-    "new": "            raise AgendaError(result.stop_reason or \"\")",
-    "target": "tests/unit/test_cognition_limit_stop.py::test_a_session_that_stops_at_a_limit_is_failed_infra_and_strikes_nothing"
+    "old": "            raise SessionLimitError(result.stop_reason or \"unknown\")",
+    "new": "            raise AgendaError(result.stop_reason or \"unknown\")",
+    "target": "tests/unit/test_cognition_limit_stop.py::test_a_bounded_session_leaves_stimuli_pending"
   },
   {
     "name": "a limit stop is not counted under its reason",
@@ -135,8 +135,8 @@
   {
     "name": "a limit stop is recorded failed but the unit's backoff resets (recorded closed-like)",
     "file": "nora/app/cognition_session.py",
-    "old": "            raise SessionLimitError(result.stop_reason or \"\")",
-    "new": "            await self._finish(wake_id, unit, session_id, \"closed\", \"limit\")\n            raise SessionLimitError(result.stop_reason or \"\")",
+    "old": "            raise SessionLimitError(result.stop_reason or \"unknown\")",
+    "new": "            await self._finish(wake_id, unit, session_id, \"closed\", \"limit\")\n            raise SessionLimitError(result.stop_reason or \"unknown\")",
     "target": "tests/unit/test_cognition_limit_stop.py::test_a_limit_stop_backs_the_unit_off_and_repeated_ones_grow_it"
   },
   {

@@ -6,48 +6,19 @@ import json
 from collections import Counter
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
-from nora.domain.composed import compose_body, legacy_composed
-from nora.domain.comprehend import ComprehendItem, Preview
-from nora.domain.memory_graph import (
-    ENTRY,
-    PROPOSED_KINDS,
-    RELATION_RULES,
-    Evidence,
-    Source,
-    Subgraph,
-    TopicActivity,
-)
+from nora.domain.composed import compose_body
+from nora.domain.comprehend import Preview
 from nora.domain.prompt import escape, one_line
 from nora.language.computer_render import estimate_tokens
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    ("graph_preview", 10, "turn"),
-    ("comprehend_item", 20, "turn"),
-    ("reshape_graph", 30, "turn"),
     ("memory", 40, "turn"),
     ("cognition_orient", 60, "global"),
+    ("cognition_act", 70, "global"),
 )
 _ROW = {name: (order, key) for name, order, key in _BLOCKS}
 
 
-def _step_one(sources: tuple[str, ...]) -> tuple[str, ...]:
-    """Sources step one may write from; an entry writes its own links (27 §7a)."""
-    return tuple(k for k in sources if k not in ENTRY)
-
-
-# The admission check's own vocabulary: a name outside it is refused, so the
-# model is shown exactly the list code admits against — rendered, never copied.
-_ADMITTED_RELATIONS = tuple(sorted(
-    rel for rel, rule in RELATION_RULES.items()
-    if rule.layer == "notebook" and _step_one(rule.sources)
-))
-_VOCABULARY = (
-    "Entity kinds you may create: " + ", ".join(PROPOSED_KINDS) + ". "
-    "Relations, the only names admitted: " + ", ".join(_ADMITTED_RELATIONS) + " — "
-    "likes/dislikes is a preference for one specific thing; interested_in is a"
-    " subject. Who said, shared, asked or replied is already recorded by code;"
-    " propose only what the item establishes about the world."
-)
 RESHAPE = """Read this entity's committed subgraph. Propose traits and unconfirmed guesses
 for a person, culture baselines for a room or unit, or lessons for yourself from the closed
 response episode. For a topic, propose its internal topic account (part="topic"),
@@ -163,95 +134,116 @@ def memory_result_text(text: str, *, query: str, depth: int) -> str:
     )
 
 
-def render_comprehend(item: ComprehendItem, preview: Preview, *, tokens: int = 1500) -> str:
-    payload = {
-        "source": item.work.source,
-        "now": item.work.as_of.isoformat(),
-        "unit": item.work.unit,
-        "historical": item.work.historical,
-        "window": [t.isoformat() for t in preview.window],
-        "sources": [
-            {"key": s.key, "layer": s.layer, "persons": s.persons, "text": s.text}
-            for s in item.sources
-        ],
-        "reading_sources": item.snapshot,
-    }
-    return assemble(
-        [
-            restamp(
-                ContextBlock(
-                    name="graph_preview",
-                        body=legacy_composed(escape(preview_text(preview, tokens=tokens)))
-                ),
-                _ROW,
-            ),
-            restamp(
-                ContextBlock(
-                    name="comprehend_item",
-                    body=legacy_composed(escape(
-                        json.dumps(payload, ensure_ascii=False, default=str).replace(
-                            "\x7f", r"\u007f"
-                        )
-                    )),
-                ),
-                _ROW,
-            ),
-        ]
-    )
+MEMORY_CRITERIA = (
+    "Write to the memory graph with `memory_propose`: a relation when one of its "
+    "types fits, a reading for anything else worth keeping, and a correction for a "
+    "shown relation the rows contradict. likes/dislikes concerns a specific thing; "
+    "interested_in a subject."
+)
 
 
-def render_reshape(
-    entity: tuple[str, str],
-    graph: Subgraph,
-    at: str,
-    *,
-    evidence: tuple[Evidence, ...] = (),
-    sources: tuple[Source, ...] = (),
-    activity: TopicActivity | None = None,
-) -> str:
-    from dataclasses import asdict
+# Tool-gated stage guidance belongs to this declared context occasion.
+_ORIENT_GUIDANCE = (
+    (frozenset({"memory_search", "memory_read"}),
+     "Use {tools} to find and inspect held memory before forming a new entity or relation."),
+    (frozenset({"memory_propose"}), MEMORY_CRITERIA),
+    (frozenset({"memory_propose"}),
+     "Examples (synthetic): Ada says in row 5201, 'I love Lantern Game': propose Ada "
+     "likes Lantern Game, citing 5201. Row 5230 says 'lol nice' with a bare link: "
+     "nothing to keep."),
+    (frozenset({"profile_read", "profile_revise"}),
+     "Use {tools} for profiles: read the account before revising it, and change a "
+     "line only when new evidence bears on it; a single instance is a guess, not a trait."),
+    (frozenset({"standing_revise"}),
+     "Use {tools} only to correct your Standing when it is wrong or missing something: "
+     "i_owe is what you took on; hold_open is what you are keeping open and what would "
+     "resolve it."),
+)
+_ACT_GUIDANCE = (
+    (frozenset({"document_revise"}),
+     "Use {tools} to carry a settled change into a shared document, preserving "
+     "unrelated content."),
+)
+_NOTEBOOK_VERBS = (
+    ("notes", ("note_create", "note_revise", "note_set_status", "note_merge")),
+    ("memos", ("memo_create", "memo_revise", "memo_set_status")),
+    ("events", ("event_propose", "event_revise", "event_set_status")),
+)
+_HISTORICAL_ORIENT = (
+    "This session replays the past in source-time order: the clock line is the time of "
+    "what you are shown, and nothing after it is known. Keep what you learn with the "
+    "tools offered here.")
+_HISTORICAL_ACT = (
+    "History does not act: this replay offers no reminder, wake or present-day notebook "
+    "entry, so decide nothing for today and end when your understanding is kept.")
+_REMINDER_WORTH = (
+    "A reminder earns its place when a moment is near, something is still open, and a "
+    "word at the right hour helps the people involved: where to meet before dinner, a "
+    "booking someone owes before its deadline, asking how an interview went that "
+    "evening. Something settled, already raised, or weeks away is not one."
+)
+_REMIND_TOOLS = frozenset({"remind", "remind_move", "remind_cancel"})
+_WAKE_TOOLS = frozenset({"wake_at", "wake_move", "wake_cancel"})
+_NOTEBOOK_TOOLS = frozenset({
+    "note_create", "note_revise", "note_set_status", "note_merge",
+    "memo_create", "memo_revise", "memo_set_status",
+    "event_propose", "event_revise", "event_set_status",
+})
 
-    return assemble(
-        [
-            restamp(
-                ContextBlock(
-                    name="reshape_graph",
-                    body=legacy_composed(escape(
-                        json.dumps(
-                            {
-                                "entity": entity,
-                                "topic_activity": asdict(activity) if activity else None,
-                                "now": at,
-                                "graph": asdict(graph),
-                                "evidence": [asdict(e) for e in evidence],
-                                "sources": [asdict(s) for s in sources],
-                            },
-                            default=str,
-                            ensure_ascii=False,
-                        )
-                    )),
-                ),
-                _ROW,
-            )
-        ]
-    )
+
+def _tool_list(tool_names: frozenset[str]) -> str:
+    return ", ".join(f"`{name}`" for name in sorted(tool_names))
 
 
-SESSION_INSTRUCTION = _VOCABULARY
+def _guidance(
+    sections: tuple[tuple[frozenset[str], str], ...], tool_names: frozenset[str]
+) -> list[str]:
+    return [text.format(tools=_tool_list(required & tool_names))
+            for required, text in sections if required & tool_names]
 
 
-def render_session_system(doctrine: str, skills: str, *, memory: bool) -> str:
-    if not memory and "<!-- cognition-memory -->" in doctrine:
-        before, _, remainder = doctrine.partition("<!-- cognition-memory -->")
-        _, _, after = remainder.partition("<!-- /cognition-memory -->")
-        doctrine = before + after
-    doctrine = doctrine.replace("<!-- cognition-memory -->", "").replace(
-        "<!-- /cognition-memory -->", "")
+def _remind_and_wake_guidance(tool_names: frozenset[str]) -> str | None:
+    reminders = _REMIND_TOOLS & tool_names
+    wakes = _WAKE_TOOLS & tool_names
+    if not reminders and not wakes:
+        return None
+    reminder = "`remind`" if "remind" in tool_names else _tool_list(reminders)
+    wake = "`wake_at`" if "wake_at" in tool_names else _tool_list(wakes)
+    if reminders and wakes:
+        return (f"Use {reminder} for a later room turn and {wake} for your own later look; "
+                f"move or cancel either as the matter changes. {_REMINDER_WORTH}")
+    if reminders:
+        return (f"Use {reminder} for a later room turn; move or cancel it as the matter "
+                f"changes. {_REMINDER_WORTH}")
+    return f"Use {wake} for your own later look; move or cancel it as its reason changes."
+
+
+def _notebook_verbs(tool_names: frozenset[str]) -> str:
+    kinds = [f"{kind} with {_tool_list(frozenset(verbs) & tool_names)}"
+             for kind, verbs in _NOTEBOOK_VERBS if frozenset(verbs) & tool_names]
+    return "Write " + "; ".join(kinds) + "."
+
+
+def render_session_system(doctrine: str, skills: str, *, tool_names: frozenset[str],
+                          historical: bool = False) -> str:
+    """Assemble each stage from the session's actual offered tools."""
+    sections = [_HISTORICAL_ORIENT] if historical else []
+    sections += _guidance(_ORIENT_GUIDANCE, tool_names)
+    if tool_names & _NOTEBOOK_TOOLS:
+        sections += [skills, _notebook_verbs(tool_names)]
     orient = assemble([restamp(ContextBlock(
-        name="cognition_orient", body=compose_body(SESSION_INSTRUCTION if memory else "")), _ROW)])
-    # Authored objective slots keep the generated instruction and the resolved
-    # skill in OODA order, inside the objective's existing authority wrapper.
-    if "<!-- cognition-orient -->" in doctrine:
-        return doctrine.replace("<!-- cognition-orient -->", orient).replace(
-            "<!-- cognition-act-skill -->", skills)
-    return doctrine + orient + skills
+        name="cognition_orient", body=compose_body(
+            "\n\n".join(sections))), _ROW)])
+    actions = [_HISTORICAL_ACT] if historical else []
+    pace = _remind_and_wake_guidance(tool_names)
+    if pace is not None:
+        actions.append(pace)
+    actions.extend(_guidance(_ACT_GUIDANCE, tool_names))
+    act = assemble([restamp(ContextBlock(
+        name="cognition_act", body=compose_body(
+            "\n\n".join(actions))), _ROW)])
+    orient_marker, act_marker = "<!-- cognition-orient -->", "<!-- cognition-act-skill -->"
+    doctrine = (doctrine.replace(orient_marker, orient) if orient_marker in doctrine
+                else doctrine + orient)
+    return (doctrine.replace(act_marker, act) if act_marker in doctrine
+            else doctrine + act)

@@ -1,72 +1,65 @@
 [
- {
-  "name": "the registry forwards its configured self name",
-  "file": "nora/agent/registry.py",
-  "old": "        return build_tool_specs(\n            display_name=self._display_name,\n            store=store",
-  "new": "        return build_tool_specs(\n            store=store",
-  "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
- },
- {
-  "name": "the Strands wrapper forwards the configured self name",
-  "file": "nora/agent/tools.py",
-  "old": "ai_peer=ai_peer,\n        display_name=display_name,\n        f",
-  "new": "        ai_peer=ai_peer,",
-  "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
- },
- {
-  "name": "transcript reads keep the configured self label",
-  "file": "nora/conversation/adapters/tools/record.py",
-  "old": "c.rows,\n        now=c.now,\n        with_ids=c.on_rows is not None,\n        display_name=c.display_name,\n        source_events=c.this_events",
-  "new": "            c.rows, c.now=c.now, with_ids=c.on_rows is not None,\n            source_events=c.this_events",
-  "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
- },
- {
-  "name": "tag note validation recognises the configured self name",
-  "file": "nora/memory/adapters/tools/notes.py",
-  "old": "nora_names=frozenset({display_name}) if display_name else frozenset(),",
-  "new": "nora_names=frozenset(),",
-  "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
- },
- {
-  "name": "the reaction picker sees the configured self name",
-  "file": "nora/conversation/adapters/tools/replies.py",
-  "old": "recent=render_recent(bound_window, display_name=display_name), reply=clean",
-  "new": "recent=render_recent(bound_window), reply=clean",
-  "target": "tests/test_tools.py::test_the_reaction_picker_reads_the_canonical_public_name"
- },
- {
-  "name": "composition forwards the Markdown name to the live registry",
-  "file": "nora/app/composition.py",
-  "old": "    tool_registry = ToolRegistry(\n        display_name=cfg.doctrine.display_name,",
-  "new": "    tool_registry = ToolRegistry(",
-  "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
- },
- {
-  "name": "composition forwards the Markdown name to cognition validation",
-  "file": "nora/app/composition.py",
-  "old": "                    nora_names=frozenset({cfg.doctrine.display_name}),\n",
-  "new": "",
-  "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
- },
- {
-  "name": "the act skill adds no unavailable memory routing",
-  "file": "nora/dreamer/skills/cognition-register.md",
-  "old": "The notebook preserves what people are actually carrying forward:",
-  "new": "Memory preserves what was stated. The notebook preserves what people are actually carrying forward:",
-  "target": "tests/unit/test_doctrine_identity.py::test_unwired_memory_keeps_purpose_without_requesting_memory_actions"
- },
- {
-  "name": "missing identity files report a doctrine failure",
-  "file": "nora/doctrine/loader.py",
-  "old": "    except OSError as exc:\n        raise DoctrineError(f\"identity.md: cannot read public identity: {exc}\") from exc",
-  "new": "    except OSError:\n        raise",
-  "target": "tests/unit/test_doctrine_identity.py::test_missing_or_multiline_name_is_not_guessed"
- },
- {
-  "name": "identity initialization participates in the startup failure contract",
-  "file": "nora/app/composition.py",
-  "old": "    try:\n        doctrine_store = DoctrineStore(\n            cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,\n            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,\n            trigger=cfg.engagement.trigger.text,\n            language_hint=cfg.doctrine.language_hint,\n            tool_names=ToolRegistry(content_checks=content_checks).tool_names(),\n            metrics=metrics,\n        )\n        doctrine = doctrine_store.get(applies_to=\"tag\")\n",
-  "new": "    doctrine_store = DoctrineStore(\n        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,\n        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,\n        trigger=cfg.engagement.trigger.text,\n        language_hint=cfg.doctrine.language_hint,\n        tool_names=ToolRegistry(content_checks=content_checks).tool_names(),\n        metrics=metrics,\n    )\n    try:\n        doctrine = doctrine_store.get(applies_to=\"tag\")\n",
-  "target": "tests/test_main.py::test_a_broken_doctrine_refuses_to_start[identity]"
- }
+  {
+    "name": "the registry forwards its configured self name",
+    "file": "nora/agent/registry.py",
+    "old": "        return build_tool_specs(\n            display_name=self._display_name,\n            store=store",
+    "new": "        return build_tool_specs(\n            store=store",
+    "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
+  },
+  {
+    "name": "the Strands wrapper forwards the configured self name",
+    "file": "nora/agent/tools.py",
+    "old": "ai_peer=ai_peer,\n        display_name=display_name,\n        f",
+    "new": "        ai_peer=ai_peer,",
+    "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
+  },
+  {
+    "name": "transcript reads keep the configured self label",
+    "file": "nora/conversation/adapters/tools/record.py",
+    "old": "c.rows,\n        now=c.now,\n        with_ids=c.on_rows is not None,\n        display_name=c.display_name,\n        source_events=c.this_events",
+    "new": "            c.rows, c.now=c.now, with_ids=c.on_rows is not None,\n            source_events=c.this_events",
+    "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
+  },
+  {
+    "name": "tag note validation recognises the configured self name",
+    "file": "nora/memory/adapters/tools/notes.py",
+    "old": "nora_names=frozenset({display_name}) if display_name else frozenset(),",
+    "new": "nora_names=frozenset(),",
+    "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
+  },
+  {
+    "name": "the reaction picker sees the configured self name",
+    "file": "nora/conversation/adapters/tools/replies.py",
+    "old": "recent=render_recent(bound_window, display_name=display_name), reply=clean",
+    "new": "recent=render_recent(bound_window), reply=clean",
+    "target": "tests/test_tools.py::test_the_reaction_picker_reads_the_canonical_public_name"
+  },
+  {
+    "name": "composition forwards the Markdown name to the live registry",
+    "file": "nora/app/composition.py",
+    "old": "    tool_registry = ToolRegistry(\n        display_name=cfg.doctrine.display_name,",
+    "new": "    tool_registry = ToolRegistry(",
+    "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
+  },
+  {
+    "name": "composition forwards the Markdown name to cognition validation",
+    "file": "nora/app/composition.py",
+    "old": "                    nora_names=frozenset({cfg.doctrine.display_name}),\n",
+    "new": "",
+    "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
+  },
+  {
+    "name": "missing identity files report a doctrine failure",
+    "file": "nora/doctrine/loader.py",
+    "old": "    except OSError as exc:\n        raise DoctrineError(f\"identity.md: cannot read public identity: {exc}\") from exc",
+    "new": "    except OSError:\n        raise",
+    "target": "tests/unit/test_doctrine_identity.py::test_missing_or_multiline_name_is_not_guessed"
+  },
+  {
+    "name": "identity initialization participates in the startup failure contract",
+    "file": "nora/app/composition.py",
+    "old": "    try:\n        doctrine_store = DoctrineStore(\n            cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,\n            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,\n            trigger=cfg.engagement.trigger.text,\n            language_hint=cfg.doctrine.language_hint,\n            tool_names=ToolRegistry(content_checks=content_checks).tool_names(),\n            metrics=metrics,\n        )\n        doctrine = doctrine_store.get(applies_to=\"tag\")\n",
+    "new": "    doctrine_store = DoctrineStore(\n        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,\n        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,\n        trigger=cfg.engagement.trigger.text,\n        language_hint=cfg.doctrine.language_hint,\n        tool_names=ToolRegistry(content_checks=content_checks).tool_names(),\n        metrics=metrics,\n    )\n    try:\n        doctrine = doctrine_store.get(applies_to=\"tag\")\n",
+    "target": "tests/test_main.py::test_a_broken_doctrine_refuses_to_start[identity]"
+  }
 ]

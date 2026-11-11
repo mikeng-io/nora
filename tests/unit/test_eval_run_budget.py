@@ -441,6 +441,49 @@ async def test_an_error_response_surfaces_its_status_not_a_fake_no_usage():
         active_run_budget.reset(token)
 
 
+async def test_measured_cutoff_counts_distinct_writer_and_judge_clients():
+    """One last call may cross the measured cutoff; a third never dispatches."""
+    requests: list[dict] = []
+    budget = RunBudget(max_requests=10, max_output_tokens=10_000,
+                       stop_after_total_tokens=25)
+    token = active_run_budget.set(budget)
+    try:
+        async with _client(requests) as writer, _client(requests, usage={
+                "prompt_tokens": 9, "completion_tokens": 3, "total_tokens": 12}) as judge:
+            await writer.chat.completions.create(
+                model="writer", max_tokens=200,
+                messages=[{"role": "user", "content": "write"}])
+            assert budget.input_tokens + budget.output_tokens == 15
+            await judge.chat.completions.create(
+                model="judge", max_tokens=200,
+                messages=[{"role": "user", "content": "judge the result"}])
+            assert budget.input_tokens + budget.output_tokens == 27
+            with pytest.raises(RunBudgetError, match="measured total-token cutoff"):
+                await writer.chat.completions.create(
+                    model="writer", max_tokens=200,
+                    messages=[{"role": "user", "content": "must not dispatch"}])
+            assert budget.requests == 2
+            assert [r["model"] for r in requests] == ["writer", "judge"]
+    finally:
+        active_run_budget.reset(token)
+
+
+def test_measured_cutoff_denies_overlapping_dispatch_and_unknown_usage():
+    budget = RunBudget(max_requests=10, stop_after_total_tokens=100)
+    reservation = budget.admit(input_bytes=20, declared_output_tokens=10)
+    with pytest.raises(RunBudgetError, match="sequential"):
+        budget.admit(input_bytes=20, declared_output_tokens=10)
+    budget.release(reservation)
+    assert budget.requests == 1
+    with pytest.raises(RunBudgetError):
+        budget.would_admit()
+    unknown = RunBudget(max_requests=10, stop_after_total_tokens=100)
+    with pytest.raises(RunBudgetError, match="invalid input usage"):
+        unknown.reconcile(input_tokens=None, output_tokens=1)
+    with pytest.raises(RunBudgetError):
+        unknown.would_admit()
+
+
 @pytest.mark.parametrize("finish", ["stop", "length", "content_filter"])
 async def test_the_reply_judge_declares_its_output_ceiling_on_the_final_wire(monkeypatch, finish):
     from evals.rebuilt import grading

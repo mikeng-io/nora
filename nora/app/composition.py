@@ -81,19 +81,19 @@ from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
     SESSION_SHUTDOWN_GRACE_SECONDS,
     CognitionShutdown,
-    PreludeMissingError,
     SkillNotInstalledError,
     build_cognition_runner,
     cognition_budget,
     open_events_reader,
     read_surface,
     require_session_hook,
+    shared_document_room,
     units_with_home_rooms,
     upcoming_reader,
 )
-from nora.app.cognition_wiring import (
-    agenda_skills as cognition_agenda_skills,
-)
+from nora.app.cognition_wiring import build_context_reader as cognition_context_reader
+from nora.app.cognition_wiring import context_screen as cognition_context_screen_fn
+from nora.app.cognition_wiring import session_guidance as cognition_session_guidance
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
 from nora.app.documents_service import DocumentService, room_label, rooms_named
@@ -2086,9 +2086,13 @@ async def build_dependencies(
                 "route enabled but %s is unset — routing stays unavailable",
                 cfg.route.api_key_env,
             )
-    _require_a_sendable_public_url(
-        cfg.documents.public_url, content_checks=content_checks,
+    _require_a_sendable_public_url(cfg.documents.public_url, content_checks=content_checks)
+    cognition_context_screen = cognition_context_screen_fn(
+        content_checks=content_checks, doctrine_store=lambda: doctrine_store,
+        canary=cfg.doctrine.canary,
     )
+    cognition_shared_document_room = shared_document_room(allowlist=allowlist, persons=persons)
+
     document_service = DocumentService(
         store=documents_store, records=audit, media=media_objects,
         media_window=cfg.store.context_window + LOAD_TRANSCRIPT_MAX,
@@ -2100,7 +2104,8 @@ async def build_dependencies(
         place_locator=route_client,
         # The read grant, from the same policy.toml the portal reads with (8765_44827).
         rooms_of=functools.partial(rooms_named, allowlist),
-        content_checks=content_checks,
+        content_checks=content_checks, shared_room=cognition_shared_document_room,
+        autonomous_screen=cognition_context_screen,
     )
     # `<documents>`: the one reader the tag path and the fire path
     # share. `None` while `[documents]` is off, so no room renders the block (the same
@@ -2109,8 +2114,10 @@ async def build_dependencies(
     if cfg.documents.enabled:
         documents_context = DocumentsContextReader(
             store=documents_store, room_ids=_room_ids_of(allowlist),
-            clock=lambda: datetime.now(UTC), metrics=metrics,
+            clock=clock, metrics=metrics,
             rooms_of=functools.partial(rooms_named, allowlist),
+            shared_room=cognition_shared_document_room,
+            autonomous_screen=cognition_context_screen,
         )
     # `<subagents>`: this room's sub-agent jobs, tag turn only. `None`
     # while `[subagent]` is off. The worker is attached where the desk's is, once built.
@@ -2206,9 +2213,7 @@ async def build_dependencies(
     # `SqlNoteStore.__init__` takes an engine and nothing else on purpose (its
     # own docstring), and the one read on the critical path is counted by
     # `_notes` instead.
-    note_store: SqlNoteStore | None = (
-        SqlNoteStore(engine) if cfg.notes.enabled else None
-    )
+    note_store: SqlNoteStore | None = SqlNoteStore(engine) if cfg.notes.enabled else None
     # The memo tier (DEC-306): what a unit settled and keeps. No flag: only a
     # Cognition session writes a memo (`[cognition] enabled`), and with none
     # kept every read renders nothing. ONE instance for the tag and fire
@@ -2396,9 +2401,7 @@ async def build_dependencies(
     # counted `disabled` rather than silently absent; `enabled` only under BOTH
     # `[social.instagram] enabled` and `[social.instagram.summons] enabled`,
     # exactly when the consumer below is spawned to drain it.
-    summons_wired = bool(
-        cfg.social.instagram.enabled and cfg.social.instagram.summons.enabled
-    )
+    summons_wired = bool(cfg.social.instagram.enabled and cfg.social.instagram.summons.enabled)
     summons_inbox = SummonsInbox(enabled=summons_wired, metrics=metrics)
     try:
         registry = await AdapterRegistry.from_config(
@@ -3144,9 +3147,7 @@ async def build_dependencies(
     # two would be two locks and no serialisation at all. Built HERE, above the
     # registry, because the relay below needs it and the registry needs the
     # relay.
-    slots = ConversationSlots(
-        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
-    )
+    slots = ConversationSlots(maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn)
 
     # The cognition loop's stimuli: OFF
     # under `[cognition] enabled = false`, the shipped default. On, the ingest
@@ -3319,9 +3320,7 @@ async def build_dependencies(
     # one the adapter holds: one asyncio lock, so the keeper and a call never
     # both spend a rotating token. `nora/__main__.py` starts the keeper; the
     # eval subject composes the same graph and never does.
-    image_refs_allowed = (
-        cfg.image_gen.enabled and cfg.image_gen.allow_reference_images
-    )
+    image_refs_allowed = cfg.image_gen.enabled and cfg.image_gen.allow_reference_images
     # Image custody: generated images are stored in Nora's
     # OWN blob_store (rustfs) and sent as platform attachments.
     image_generator, oauth_keepalive = _image_gen_wiring(
@@ -4516,9 +4515,7 @@ async def build_dependencies(
         # Zero-series for the counters the runtime increments — the REAL
         # work-kind and action-op tuples, so `increase()` over a series the
         # first event creates does not lose it.
-        prime_queue_metrics(
-            metrics, bridge_platforms,
-            work_kinds=sorted(WORK_KINDS))
+        prime_queue_metrics(metrics, bridge_platforms, work_kinds=sorted(WORK_KINDS))
 
     # ---- the Dreamer runtime --------------------
     #
@@ -4539,8 +4536,8 @@ async def build_dependencies(
     # The Cognition session: built inside the Dreamer block below ONLY under
     # `[cognition] enabled`; off builds nothing here, no model client and no
     # agent-runner import.
-    #: Skills injected per agenda kind (`AGENDA_SKILLS`: the Register skill).
-    agenda_skills = cognition_agenda_skills(dreamer_instructions)
+    #: Hot-loaded session guidance, gated by the offered tools during assembly.
+    session_guidance = cognition_session_guidance(dreamer_instructions)
     cognition_runner: CognitionSessionRunner | None = None
     cognition_memory = None
     if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
@@ -5146,9 +5143,7 @@ async def build_dependencies(
         # converter (`_adaptor_budget` above): the same five numbers across the
         # `nora.agent` may-not-import-`nora.config` boundary, carried in one
         # place rather than written out at each construction site.
-        dream_budgets = {
-            name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()
-        }
+        dream_budgets = {name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()}
         # A Character session with no block of its own runs on the room
         # fold's numbers when the deployment set them: the same loop shape (a
         # handed batch, a few reads, one account written), and a live config
@@ -5290,20 +5285,23 @@ async def build_dependencies(
             # room by it and never by the conversation id.
             cognition_room_labels: Mapping[tuple[str, str], str] = LiveMapping(lambda: {
                 (conv.platform, cid): conv.label
-                for conv in allowlist.rooms() for cid in conv.ids
-            })
+                for conv in allowlist.rooms() for cid in conv.ids})
 
-            async def _room_events(
-                unit: str, platform: str, conversation_id: str,
-            ) -> Sequence[Any]:
-                return await _open_events(unit, platform, conversation_id)
-
+            cognition_context = cognition_context_reader(
+                engine=engine, allowlist=allowlist, persons=persons,
+                lineage=lineage, presence_reader=presence_reader, audit=audit,
+                rosters=rosters, registry=registry, media_join=media_join,
+                record_chars=cfg.cognition.record_chars,
+                documents_context=documents_context,
+                screen=cognition_context_screen, content_checks=content_checks,
+            )
             grounder = build_grounder(
                 # NOT `tool_registry`'s `record`, which is None unless `[record_query]
                 # enabled`: the rows that raised a stimulus are code's own input, and a
                 # session must be grounded with the tool off.
                 records=SqlRecordQuery(engine), persons=persons, media_join=media_join,
-                note_index=_note_index, events_in=_room_events,
+                context=cognition_context,
+                note_index=_note_index, events_in=_open_events,
                 memo_index=lambda unit: memo_store.kept(unit=unit),
                 pending_reminds=lambda: reminders.pending_of(cfg.honcho.ai_peer),
                 lineage=lineage,
@@ -5365,6 +5363,8 @@ async def build_dependencies(
             try:
                 cognition_runner = build_cognition_runner(
                     memory=cognition_memory,
+                    documents=document_service if cfg.documents.enabled else None,
+                    documents_context=documents_context,
                     tag_trace_store=tag_trace_store,
                     cfg=cfg, models=dream_models,
                     retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
@@ -5389,7 +5389,7 @@ async def build_dependencies(
                     roster_of=_roster_names_of(rosters, persons, registry.self_aliases()),
                     nora_names=frozenset({cfg.doctrine.display_name}),
                     homes=homes, units=LiveSequence(lambda: tuple(allowlist.home_rooms())),
-                    skills=agenda_skills,
+                    skills=session_guidance,
                     grounder=grounder,
                     person_known=lambda person_id: persons.by_person.get(
                         persons.subject_id_for(person_id),
@@ -5410,10 +5410,10 @@ async def build_dependencies(
                     # through.
                     runtime=dreamer_runtime,
                 )
-            except (InstructionError, PreludeMissingError, SkillNotInstalledError) as exc:
-                # A missing or malformed `cognition` objective, a prelude it resolved
-                # without, or a mapped skill that is not installed: named at startup,
-                # not the first wake's failure and never a raw `LookupError`.
+            except (InstructionError, SkillNotInstalledError) as exc:
+                # A missing or malformed `cognition` objective, or a mapped skill that
+                # is not installed: named at startup, not the first wake's failure and
+                # never a raw `LookupError`.
                 raise StartupError(f"Cognition session error: {exc}") from exc
 
     # The wake evaluator, after the Dreamer block so it can be handed the
@@ -5429,7 +5429,7 @@ async def build_dependencies(
             session_units=(
                 None if cognition_session_units is None else (lambda: cognition_session_units)
             ),
-            floors_ready="time" in agenda_skills.by_kind,
+            floors_ready=True,
             upcoming=cognition_upcoming,
         )
         if cognition_runner is not None:

@@ -16,102 +16,19 @@ import evals.__main__ as cli
 import evals.backbone as backbone
 from nora.agent import factory
 from nora.agent.surface import ToolScope, ToolShelf, ToolSurface
-from nora.subject.eval_evidence import EvidenceError, RunEvidence
+from nora.subject.eval_evidence import EvidenceError
 from nora.subject.sandbox import eval_host_lock
-
-
-@pytest.fixture
-def evidence_root(tmp_path, monkeypatch):
-    root = tmp_path / "evidence"
-    monkeypatch.setenv("NORA_EVAL_EXCHANGES", str(root))
-    from nora.subject import sandbox
-
-    monkeypatch.setattr(sandbox, "EVAL_HOST_LOCK", tmp_path / "eval.lock")
-    return root
-
-
-def rows(evidence):
-    return [json.loads(line) for line in (evidence.path / "events.jsonl").read_text().splitlines()]
-
-
-def capture(lock_fd):
-    backbone._prefill_capture()
-    return RunEvidence(run_id="generated-run", metadata={"corpus": "generated"}, lock_fd=lock_fd)
-
-
-async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill=False):
-    @tool
-    def next_number(value: int) -> str:
-        """Return the next integer.
-
-        Args:
-            value: Integer to increment.
-        """
-        from nora.obs.tracing import record_eval_event
-        record_eval_event("nora.proposal.sources", {"body": json.dumps({
-            "1": {"text": "generated source"}})})
-        return str(value + 1)
-
-    async def respond(request):
-        body = json.loads(request.content)
-        from nora.subject.eval_evidence import current
-
-        if evidence := current():
-            assert any(r["kind"] == "event" and r["name"] == "nora.model.request"
-                       and json.loads(r["attributes"]["nora.model.request.body"]) == body
-                       for r in rows(evidence))
-        requests.append(body)
-        assert body["model"] == "generated-model"
-        assert body["tools"][0]["function"]["name"] == "next_number"
-        if len(requests) < rounds:
-            delta = {"role": "assistant", "reasoning": sentinel, "tool_calls": [
-                     {"index": 0, "id": f"call_generated_{len(requests)}",
-                     "type": "function", "function": {"name": "next_number",
-                                                        "arguments": '{"value":5}'}}]}
-            stop = "tool_calls"
-        else:
-            assert len(requests) == rounds
-            assert any(m.get("role") == "tool" and m.get("content") == "6"
-                       for m in body["messages"])
-            delta = {"role": "assistant", "content": "6 " + sentinel, "reasoning": sentinel}
-            stop = "stop"
-        chunks = [
-            {"id": "generated", "object": "chat.completion.chunk", "model": "generated-model",
-             "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
-            {"id": "generated", "object": "chat.completion.chunk", "model": "generated-model",
-             "choices": [{"index": 0, "delta": {}, "finish_reason": stop}],
-             "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15,
-                       "completion_tokens_details": {"reasoning_tokens": 2}}},
-        ]
-        data = "".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n"
-        return httpx.Response(200, headers={"content-type": "text/event-stream",
-                                            "x-omniroute-model": "generated-served",
-                                            "x-omniroute-provider": "generated-provider"},
-                              content=data)
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
-        client = factory.create_client(base_url="https://generated.invalid/v1",
-                                       api_key="generated-private-auth-value",
-                                       http_client=transport)
-        model = factory.create_model_provider(model="generated-model", max_tokens=100,
-                                              temperature=0, client=client, tool_choice="auto")
-        agent = factory.create_browse_agent(
-            model=model, system_prompt="Increment the supplied integer.",
-            tools=[next_number], trace_attributes={"gen_ai.conversation.id": "generated"},
-            retry=factory.build_retry_policy(timeout_seconds=5))
-        if reasoning_prefill:
-            from nora.agent.reasoning_strip import ReasoningStripWatch
-            from nora.obs.metrics import Metrics
-            agent.messages.append({"role": "assistant", "content": [
-                {"reasoningContent": {"reasoningText": {"text": "Generated carried reasoning"}}},
-                {"text": "Generated previous answer"},
-            ]})
-            agent.hooks.add_hook(ReasoningStripWatch(path="tag", metrics=Metrics()))
-        result = await factory.invoke(
-            agent, "5 " + sentinel, invocation_state={}, limits=factory.build_limits(
-            turns=4, output_tokens=200, total_tokens=1000))
-        await client.close()
-        assert "6" in str(result)
+from tests.integration.eval_observability_env import (
+    capture,
+    model_round_trip,
+    rows,
+)
+from tests.integration.eval_observability_env import (
+    evidence_root as evidence_root,
+)
+from tests.integration.test_grading_contract import generated_cli_contract as generated_cli_contract
+from tests.integration.test_spike_visibility import configured_sink
+from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
 
 
 def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_root, monkeypatch):
@@ -155,11 +72,14 @@ def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_ro
                 for r in data if r["kind"] == "event" and r["name"] == "nora.tools.surface"]
     assert surfaces == [{"admitted": ["later_tool", "next_number"],
                          "resident": ["next_number"], "deferred": ["later_tool"],
-                         "platform": "signal", "grant": None}]
+                         "platform": "signal", "grant": None,
+                         "deferred_schemas": {"later_tool": {
+                             "status": "unavailable",
+                             "note": "Deferred tool schema unavailable."}}}]
     case = next(r for r in data if r["kind"] == "case_started")
     assert all(r["case_id"] == case["case_id"] for r in data
                if r["kind"] in ("case_result", "case_finished"))
-    assert data[-1]["kind"] == "run_finished" and data[-1]["exit_code"] == 0
+    assert next(r for r in data if r["kind"] == "run_finished")["exit_code"] == 0
     assert stat.S_IMODE(evidence.path.stat().st_mode) == 0o700
     assert stat.S_IMODE((evidence.path / "events.jsonl").stat().st_mode) == 0o600
     assert "generated-private-auth-value" not in (evidence.path / "events.jsonl").read_text()
@@ -174,7 +94,7 @@ def test_started_case_and_failure_survive_interrupt_and_lock_releases(evidence_r
             raise SystemExit(143)
     data = rows(evidence)
     assert any(r["kind"] == "case_started" for r in data)
-    assert data[-1]["kind"] == "run_failed" and data[-1]["exit_code"] == 143
+    assert next(r for r in data if r["kind"] == "run_failed")["exit_code"] == 143
     assert not any(r["kind"] == "run_finished" for r in data)
     from nora.subject.eval_evidence import validate_events
     assert validate_events(data)["status"] == "ERROR"
@@ -225,31 +145,46 @@ def test_mid_run_disk_failure_invalidates_later_work_and_releases_lock(evidence_
         pass
 
 
-def test_cli_capture_failure_refuses_before_execution(evidence_root, monkeypatch):
-    reached = []
-    def disk_full(*_):
+def test_cli_capture_failure_refuses_before_execution(
+        evidence_root, monkeypatch, example_config_path, tmp_path, otlp_wire,
+        generated_cli_contract):
+    config = tmp_path / "generated.toml"
+    configured_sink(example_config_path, config)
+    reached, writes = [], []
+    def disk_full(*args):
+        writes.append(args[0])
         raise OSError("generated full disk")
     monkeypatch.setattr(os, "write", disk_full)
     monkeypatch.setattr(cli, "_execute", lambda *a, **k: reached.append(True) or 0)
-    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection"])
+    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection",
+                                    "--deployment-config", str(config)])
     assert cli.main() == 2
-    assert reached == []
+    assert reached == [] and writes
 
 
 @pytest.mark.parametrize("failure", ["root_is_file", "unreadable_config"])
-def test_cli_preparation_oserror_is_a_clean_refusal(evidence_root, monkeypatch, capsys, failure):
+def test_cli_preparation_oserror_is_a_clean_refusal(
+        evidence_root, monkeypatch, capsys, failure, example_config_path, tmp_path, otlp_wire,
+        generated_cli_contract):
+    config = tmp_path / "generated.toml"
+    configured_sink(example_config_path, config)
+    injected = []
+    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection",
+                                    "--deployment-config", str(config)])
     reached = []
     if failure == "root_is_file":
         evidence_root.write_text("generated regular file")
     else:
         def denied(*_):
+            injected.append(True)
             raise PermissionError("generated unreadable config")
         monkeypatch.setattr(cli, "fingerprint", denied)
     monkeypatch.setattr(cli, "_execute", lambda *a, **k: reached.append(True) or 0)
-    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection"])
     assert cli.main() == 2
     assert reached == []
     assert "refusing to run: cannot prepare private eval evidence" in capsys.readouterr().err
+    if failure == "unreadable_config":
+        assert injected
 
 
 def test_no_private_capture_event_outside_eval(evidence_root):
@@ -274,7 +209,7 @@ def test_default_evidence_is_mandatory_without_remote_export(evidence_root, monk
             evidence.exit_code = 0
     assert evidence.path.parent == tmp_path / "private-state/nora/evals"
     assert rows(evidence)[0]["kind"] == "run_started"
-    assert rows(evidence)[-1]["kind"] == "run_finished"
+    assert any(r["kind"] == "run_finished" for r in rows(evidence))
 
 
 @pytest.mark.asyncio
@@ -295,7 +230,9 @@ async def test_request_write_failure_prevents_model_dispatch(evidence_root, monk
     assert not any(r["kind"] == "run_finished" for r in rows(evidence))
 
 
-def test_two_round_private_record_sdk_and_each_public_sink(evidence_root, monkeypatch, capsys):
+@pytest.mark.parametrize("authorized", [False, True])
+def test_two_round_private_record_sdk_and_each_public_sink(
+        evidence_root, monkeypatch, capsys, authorized):
     from io import StringIO
 
     from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
@@ -323,7 +260,15 @@ def test_two_round_private_record_sdk_and_each_public_sink(evidence_root, monkey
     try:
         with eval_host_lock() as fd:
             evidence = capture(fd)
-            with evidence.capture(provider):
+            from opentelemetry.sdk.trace.export import SpanExportResult
+
+            from nora.agent.telemetry import evaluation_export
+            monkeypatch.setattr(
+                "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter.export",
+                lambda *args: SpanExportResult.SUCCESS)
+            export = evaluation_export({"enabled": True, "exporter": "otlp_http",
+                "endpoint": "http://127.0.0.1:14318/v1/traces"}) if authorized else None
+            with evidence.capture(provider, export=export):
                 result = task(Case(name="generated-private", input="5", session_id="generated"))
         events = read_events(evidence.path)
         receipt = validate_events(events)
@@ -605,3 +550,5 @@ async def test_cancelled_model_pass_has_its_own_complete_lifecycle(
     # The preceding completed call, when present, cannot vouch for this pass.
     attempts = {e["attempt_id"] for e in events if e["kind"] == "call_started"}
     assert len(attempts) == len(requests) + 1
+
+

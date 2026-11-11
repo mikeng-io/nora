@@ -35,3 +35,6 @@ class DocumentsView:
     lines: tuple[DocumentLine, ...]
     now: datetime
     put_away: tuple[DocumentLine, ...] = ()
+    not_listed: int = 0
+    unavailable: bool = False
+    room: str = ""

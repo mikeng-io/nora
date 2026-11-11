@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 #: those rows carry `[image a3f2c1]` handles rather than what the media showed
 #: — so it either joins or it renders less than the room saw.
 _TRANSCRIPT_READS = (
-    "recent", "since", "since_including_nora", "unattributed", "media_rows",
+    "recent", "since", "since_including_nora", "unattributed", "media_rows", "context_rows",
 )
 
 #: Modules that call one of the reads above and are NOT transcript builders,
@@ -271,6 +271,7 @@ PATHS = {
     "nora/app/fire.py": "fire",
     "nora/engagement/stages/debrief.py": "debrief",
     "nora/app/runtime.py": "dreamer",
+    "nora/app/cognition_context.py": "cognition",
     "nora/app/adoption.py": "adoption",
     # The conversation tools' record_query hit render (`query.py`); record.py/
     # rooms.py share the label — the discovery sees only the toolkit's
@@ -292,16 +293,9 @@ PATHS = {
 }
 
 BUILDERS = {
-    "nora/subject/dreaming.py": "since",
-    "nora/subject/sandbox.py": "recent",
-    "nora/engagement/context.py": "recent",
-    "nora/app/fire.py": "recent",
-    "nora/engagement/stages/debrief.py": "since_including_nora",
-    "nora/app/runtime.py": "since",
-    "nora/app/adoption.py": "unattributed",
-    "nora/app/memory_backfill.py": "since",
-    "nora/conversation/adapters/tools/query.py": "recent",
-    "nora/ingest/relevance_gate.py": "recent",
+    rel: min(reads)
+    for rel, reads in _discovered_readers().items()
+    if rel not in _NOT_A_BUILDER
 }
 
 

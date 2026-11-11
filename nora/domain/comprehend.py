@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any, Literal, get_args
@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from nora.domain.extraction import CLAIM_DROP_REASONS
 from nora.domain.memory_graph import (
     PROPOSED_KINDS,
+    Entity,
     Key,
     MemoryGraph,
     RefusalReason,
@@ -124,6 +125,56 @@ async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
     return Preview(tuple(seeds), nearby, resolved, window)
 
 
+async def named_candidates(
+    graph: MemoryGraph, *, unit: str, kind: str, name: str,
+    persons: frozenset[str], near: Key | None = None,
+    window: tuple[datetime, datetime] | None = None,
+    as_of: datetime | None = None, historical: bool = False,
+    limit: int = 5, drop: Callable[[Entity], bool] | None = None,
+) -> tuple[Subgraph, ...]:
+    """One name/kind's resolution candidates (27 §7a): `graph.candidates`'
+    same-kind, same-unit exact-alias-then-trigram order, each walked to its
+    three strongest relations. `resolution_candidates` calls it per kind
+    over an item's names; `memory_propose` admission calls it for a
+    `{new: ...}` endpoint's one name and kind."""
+    resolved = []
+    choices = await graph.candidates(
+        unit=unit, kind=kind, name=name, near=near, window=window, limit=limit
+    )
+    for entity in choices[:limit]:
+        if drop is not None and drop(entity):
+            continue
+        candidate = await graph.walk(
+            (entity.key,),
+            Walk(
+                unit=unit,
+                persons=persons,
+                depth=1,
+                nodes=6,
+                fan_out=3,
+                valid_at=as_of,
+                known_at=as_of if historical else None,
+            ),
+        )
+        if candidate.status == "unavailable":
+            raise RuntimeError("resolution candidates unavailable")
+        strongest = tuple(
+            sorted(
+                candidate.relations,
+                key=lambda e: (e.evidence_count, e.relation.asserted_at),
+                reverse=True,
+            )[:3]
+        )
+        resolved.append(
+            replace(
+                candidate,
+                relations=strongest,
+                status="partial" if len(candidate.relations) > 3 else candidate.status,
+            )
+        )
+    return tuple(resolved)
+
+
 async def resolution_candidates(
     graph: MemoryGraph, item: ComprehendItem, aliases: Mapping[str, Key],
     seeds: tuple[Key, ...], window: tuple[datetime, datetime],
@@ -131,45 +182,18 @@ async def resolution_candidates(
     work = item.work
     text = item.text.casefold()
     named = (*item.urls, *item.accounts, item.place)
-    resolved = []
+    persons = frozenset(p for s in item.sources for p in s.persons)
+    resolved: list[Subgraph] = []
     # ponytail: known aliases and explicit item labels seed resolution; novel names
     # remain the model's memory tools' job until the recall spike measures a gap.
     for name in dict.fromkeys(
         [a for a in aliases if a and a.casefold() in text] + [n for n in named if n]
     ):
         for kind in PROPOSED_KINDS:
-            choices = await graph.candidates(
-                unit=work.unit, kind=kind, name=name, near=seeds[0], window=window, limit=5
-            )
-            for entity in choices[:5]:
-                candidate = await graph.walk(
-                    (entity.key,),
-                    Walk(
-                        unit=work.unit,
-                        persons=frozenset(p for s in item.sources for p in s.persons),
-                        depth=1,
-                        nodes=6,
-                        fan_out=3,
-                        valid_at=work.as_of,
-                        known_at=work.as_of if work.historical else None,
-                    ),
-                )
-                if candidate.status == "unavailable":
-                    raise RuntimeError("resolution candidates unavailable")
-                strongest = tuple(
-                    sorted(
-                        candidate.relations,
-                        key=lambda e: (e.evidence_count, e.relation.asserted_at),
-                        reverse=True,
-                    )[:3]
-                )
-                resolved.append(
-                    replace(
-                        candidate,
-                        relations=strongest,
-                        status="partial" if len(candidate.relations) > 3 else candidate.status,
-                    )
-                )
+            resolved.extend(await named_candidates(
+                graph, unit=work.unit, kind=kind, name=name, persons=persons,
+                near=seeds[0], window=window, as_of=work.as_of,
+                historical=work.historical))
     return tuple(resolved)
 
 
@@ -208,7 +232,8 @@ EgressReason = Literal["private_person", "identifier", "coordinate", "lookup_cap
 ExtraRefusal = Literal[
     "schema", "identity_pointer", "private_web_evidence", "ungrounded",
     "already_staged", "unshown", "endpoint_not_a_handle", "unparseable_time",
-    "invalid_relation", "unexpected_replacement",
+    "invalid_relation", "unexpected_replacement", "possible_existing",
+    "unavailable",
 ]
 ITEM_OUTCOMES = get_args(ItemOutcome)
 LANES = get_args(Lane)
@@ -225,8 +250,8 @@ REFUSAL_REPAIR: dict[str, dict[str, str]] = {
     # A reading dropped by the provenance checks.
     "citation_outside_batch": {
         "field": "cite",
-        "repair": "Cite rendered `n` rows of the items named in this call's "
-                  "`items`; never a hidden or context-only row.",
+        "repair": "Cite rendered `n` rows shown in this session; never a hidden "
+                  "or context-only row.",
     },
     "duplicate_citation": {
         "field": "cite",
@@ -386,6 +411,17 @@ REFUSAL_REPAIR: dict[str, dict[str, str]] = {
         "field": "replacement",
         "repair": "Only a supersede carries a replacement; remove it or "
                   "change the correction to supersede.",
+    },
+    "possible_existing": {
+        "field": "new",
+        "repair": "Name the matching candidate's @kind:id handle as the "
+                  "endpoint instead of `new`, or set `new.distinct` saying "
+                  "why this entity is a different one.",
+    },
+    "unavailable": {
+        "field": "new",
+        "repair": "The memory lookup could not finish; retry the statement "
+                  "unchanged.",
     },
 }
 

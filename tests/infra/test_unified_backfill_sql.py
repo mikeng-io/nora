@@ -146,7 +146,7 @@ async def test_walk_omits_assertions_after_the_instant(engine):
 
 
 @pytest.mark.asyncio
-async def test_multi_item_receipt_covers_each_admitted_work(engine):
+async def test_readings_do_not_complete_a_session_and_its_end_records_all_inputs(engine):
     from types import SimpleNamespace
 
     from nora.agent.fetch_watch import GraphFetched
@@ -176,7 +176,7 @@ async def test_multi_item_receipt_covers_each_admitted_work(engine):
                 "stimulus_inputs": {str(sid): f"source-{sid}"}})
     state = SimpleNamespace(unit="u1", session_id=10, historical=True,
         memory_items=items, graph_fetched=GraphFetched(), shown_keys=set(),
-        admitted_indices=set(), admitted_relations={}, admitted_evidence=[])
+        admitted_relations={}, admitted_evidence=[])
     for it in items.values():
         for s in it.sources:
             state.graph_fetched.show(s)
@@ -188,20 +188,48 @@ async def test_multi_item_receipt_covers_each_admitted_work(engine):
          "cite": [{"source": i, "quote": f"body {i}"} for i in ids]}
         for ids in ([1], [1, 2])]
     for _ in range(2):
-        result = await memory.propose(state, items=[0, 1], statements=statements)
+        result = await memory.propose(state,  statements=statements)
         assert result["status"] == "ok"
     async with engine.connect() as conn:
         extracts = (await conn.execute(sa.select(EXTRACTION))).mappings().all()
         saved = (await conn.execute(sa.select(EXTRACTION_CLAIM)
             .order_by(EXTRACTION_CLAIM.c.id))).mappings().all()
-        pairs = await backfill_sql.readings_done(conn, ["input:u1:1", "input:u1:2"])
+        assert await backfill_sql.session_inputs_done(conn, ["input:u1:1", "input:u1:2"]) == set()
     assert len(extracts) == 1 and len(saved) == 2
     assert {row["extraction_id"] for row in saved} == {extracts[0]["id"]}
     assert [list(row["source_ids"]) for row in saved] == [[1], [1, 2]]
     assert {row["origin_room"] for row in saved} == {"c1"}
     assert extracts[0]["snapshot"]["source_keys"] == {
         "1": ["message", "1"], "2": ["message", "2"]}
+    await memory.completed(state)
+    async with engine.connect() as conn:
+        pairs = await backfill_sql.session_inputs_done(conn, ["input:u1:1", "input:u1:2"])
+        assert await backfill_sql.session_inputs_done(conn, ["input:other:1"]) == set()
     assert pairs == {("input:u1:1", "source-1"), ("input:u1:2", "source-2")}
+
+
+@pytest.mark.asyncio
+async def test_legacy_reading_receipts_count_as_done(engine):
+    from nora.app.unified_backfill import covered_stimulus_ids
+    from nora.infra.sql.schema import COGNITION_SESSION
+
+    async with engine.begin() as conn:
+        await conn.execute(COGNITION_SESSION.insert().values(
+            id=0, unit="u1", mode="live", started_at_ms=0,
+            from_stimulus_id=0, through_stimulus_id=0, situation={}, agenda={}))
+        await conn.execute(COMPREHEND_RESULT.insert(), [
+            {"work_id": "input:u1:7", "input_hash": "legacy-seven",
+             "session_id": 0, "part": "readings_input", "payload": {"extraction_id": 0}},
+            {"work_id": "stimuli:8", "input_hash": "legacy-eight",
+             "session_id": 0, "part": "readings", "payload": {"extraction_id": 0}},
+        ])
+    async with engine.connect() as conn:
+        assert await backfill_sql.session_inputs_done(conn, ["input:u1:7"]) == {
+            ("input:u1:7", "legacy-seven")}
+        completed = await backfill_sql.completed_sessions(conn, "u1")
+        assert {tuple(sorted(inputs.items())) for inputs in completed} == {
+            (("7", "legacy-seven"),), (("8", "legacy-eight"),)}
+        assert await covered_stimulus_ids(conn, "u1") == {7, 8}
 
 
 @pytest.mark.asyncio

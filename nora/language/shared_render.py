@@ -26,6 +26,9 @@ def render_shared_state(
     """
     if view is None or view.status == "nothing_found":
         return None
+    if view.status == "unavailable":
+        return ContextBlock(name="standing", body=compose_body(""),
+            attrs=(("status", "unavailable"),), when_empty="self_close")
     now = datetime.fromtimestamp(now_ms / 1000, tz=tz)
     coverage = " · ".join(f"{name} {status}" for name, status in view.sources)
     open_entries = [
@@ -38,14 +41,8 @@ def render_shared_state(
         if e.kind in ("decision", "commitment", "thread")
         and e.status != "open"
     ]
-    waiting = [
-        e for e in view.entries
-        if e.kind in ("act", "wake") and e.status == "pending"
-    ]
-    recent = [
-        e for e in view.entries
-        if e.kind == "act" and e.status != "pending"
-    ]
+    waiting = [e for e in view.entries if e.kind in ("act", "wake") and e.status == "pending"]
+    recent = [e for e in view.entries if e.kind == "act" and e.status != "pending"]
     said = [e for e in view.entries if e.kind == "send"]
     findings = [e for e in view.entries if e.kind == "finding"]
     positions = [e for e in view.entries if e.kind == "standing"]

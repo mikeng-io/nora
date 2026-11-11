@@ -33,6 +33,14 @@ from datetime import datetime, tzinfo
 from typing import Literal, Protocol, TypeVar, overload
 
 from nora.domain.block_types import BLOCK_TYPES
+
+# Re-exported: the declared-occasion test matches the nora.domain.blocks import surface.
+from nora.domain.blocks_declared import (
+    BlockDeclaration as BlockDeclaration,
+)
+from nora.domain.blocks_declared import (
+    assemble_declared as assemble_declared,
+)
 from nora.domain.composed import Composed, compose_body
 from nora.domain.external_files import render_file_links
 from nora.domain.prompt import age, escape, escape_attr, one_line
@@ -155,10 +163,7 @@ EmptyBody = Literal["drop", "render", "self_close", "nothing"]
 #: Attributes `render()` writes from the block's TYPE, and which therefore may
 #: not also arrive through `attrs`. Checked in `__post_init__`; the value is
 #: what the message says the caller was trying to set.
-_DERIVED_ATTRS = {
-    "description": "what the block IS",
-    "fields": "what the block's fields mean",
-}
+_DERIVED_ATTRS = {"description": "what the block IS", "fields": "what the block's fields mean"}
 
 #: What an attribute NAME may be. Letters, digits, `_`, `-`, `.`, no leading
 #: digit — the useful subset of XML's `Name`, and the whole of what this tree
@@ -266,6 +271,11 @@ class ContextBlock:
         it cannot be confused with content and content cannot forge it.
         """
         pairs = BLOCK_TYPES[self.name].annotations
+        if any(k == "status" for k, _ in self.attrs):
+            pairs += ((
+                "status",
+                "unavailable means the read failed; empty means a successful read held none",
+            ),)
         if not pairs:
             return ""
         return "; ".join(f"`{field}` is {what}" for field, what in pairs)
@@ -315,8 +325,7 @@ class ContextBlock:
         # DERIVED, never passed. See `description` above: there is no `note=`
         # argument, so two renderers cannot describe the same block
         # differently.
-        # ADR 0029's profile tag was measured without description/fields.
-        if self.name != "profile":
+        if self.description:
             parts.append(f'description="{escape_attr(self.description)}"')
             if self.annotation:
                 parts.append(f'fields="{escape_attr(self.annotation)}"')
@@ -379,23 +388,16 @@ def assemble(blocks: Sequence[ContextBlock], *, sep: str | None = None) -> str:
     ESCAPES to nothing (control characters only) is dropped, as on the tag turn
     (`tests/unit/test_dreamer_assembly_goldens.py` pins it).
     """
-    chosen = sorted(
-        (b for b in blocks if b.body or b.when_empty != "drop"),
-        key=lambda b: b.order,
-    )
+    chosen = sorted((b for b in blocks if b.body or b.when_empty != "drop"), key=lambda b: b.order)
     if sep is None:
         return "".join(b.render() + "\n" for b in chosen)
     return sep.join(b.render() for b in chosen)
 
 
 @overload
-def restamp(
-    block: ContextBlock, row: Mapping[str, tuple[int, BlockKey]],
-) -> ContextBlock: ...
+def restamp(block: ContextBlock, row: Mapping[str, tuple[int, BlockKey]]) -> ContextBlock: ...
 @overload
-def restamp(
-    block: None, row: Mapping[str, tuple[int, BlockKey]],
-) -> None: ...
+def restamp(block: None, row: Mapping[str, tuple[int, BlockKey]]) -> None: ...
 def restamp(
     block: ContextBlock | None, row: Mapping[str, tuple[int, BlockKey]],
 ) -> ContextBlock | None:
@@ -623,9 +625,7 @@ def _handle(style: HandleStyle, *, index: int, row_id: object) -> str:
     return ""
 
 
-def _when(
-    style: TimeStyle, ts: int | None, *, now: datetime | None, tz: tzinfo | None
-) -> str:
+def _when(style: TimeStyle, ts: int | None, *, now: datetime | None, tz: tzinfo | None) -> str:
     """The time, or nothing. A missing timestamp renders NOTHING rather than a
     placeholder — `prefill._parent_of`'s rule that a symbol which can mean
     "unknown" invites a model to emit one."""
@@ -717,6 +717,7 @@ def render_messages(
     turn: Callable[[Row], str | None] = lambda _: None,
     reactions: Callable[[Row], str | None] = lambda _: None,
     reactions_observed: Callable[[Row], str | None] = lambda _: None,
+    extra: Callable[[Row], Sequence[tuple[str, str | None]]] = lambda _: (),
 ) -> str:
     """A conversation as one TAG PER MESSAGE, not one line per message.
 
@@ -780,6 +781,7 @@ def render_messages(
             ("was", was(row) if changed is not None else None),
             ("reactions", reactions(row)),
             ("reactions_observed", reactions_observed(row)),
+            *extra(row),
         )
 
     return render_elements(rows, tag=tag, attrs=_attrs, body=body)
@@ -838,15 +840,11 @@ def render_elements(
             # which would render `from=""`, the symbol this renderer forbids.
             if collapsed
         )
-        out.append(
-            f"<{tag} {rendered}>{escape(render_file_links(body(row) or ''))}</{tag}>"
-        )
+        out.append(f"<{tag} {rendered}>{escape(render_file_links(body(row) or ''))}</{tag}>")
     return "\n".join(out)
 
 
-def render_group(
-    tag: str, attrs: Sequence[tuple[str, str | None]], inner: str,
-) -> str:
+def render_group(tag: str, attrs: Sequence[tuple[str, str | None]], inner: str) -> str:
     """One element that CONTAINS other rendered elements: an agenda's `<item>`
     around its `<m>` rows, an event listing's `<room_events>` around its
     `<event>` rows.

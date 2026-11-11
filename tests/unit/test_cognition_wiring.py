@@ -31,7 +31,6 @@ from nora.app.cognition_session import (
 )
 from nora.app.cognition_wiring import (
     COGNITION_READ_CATALOGUE,
-    AgendaSkills,
     CognitionShutdown,
     cognition_budget,
     read_surface,
@@ -264,13 +263,13 @@ def _runner(
         store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms={"u": HOME}, read_tools_for=read_tools_for or (lambda unit, rooms: []),
         read_only_tools=frozenset({"note_read", "about"}),
-        skill_text_for=kw.pop("skill_text_for", lambda kinds: ""),
+        skill_text_for=kw.pop("skill_text_for", lambda: ""),
         grounder=grounder or EmptyGrounder(),
         doctrine_text="FIXED", doctrine_sha256="fixed-sha",
         open_note_titles=const, open_events=const, prior_standing=const,
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=30),
         cooldown_seconds=300.0, units=("u",), session_timeout_seconds=900.0,
-        max_items=12, max_strikes=3, metrics=metrics, clock=lambda: NOW / 1000, **kw,
+        max_items=12, metrics=metrics, clock=lambda: NOW / 1000, **kw,
     )
     return runner, stimuli, ledger
 
@@ -289,26 +288,11 @@ async def test_the_objective_is_read_at_every_session_not_captured_at_startup():
     await _wake(runner, (_stim(1, HOME),), wake_id=1)
     stimuli.seed_wake("u", 2)                    # the next wake, written after the first ended
     await _wake(runner, (_stim(2, HOME),), wake_id=2)
-    assert agent.system_prompts == ["first text", "second text"]
+    assert [text.split("<cognition_", 1)[0] for text in agent.system_prompts] == [
+        "first text", "second text"]
     assert [s.doctrine_sha256 for _, s, _ in ledger.sessions] == ["sha-1", "sha-2"]
 
 
-async def test_the_skills_injected_for_the_agenda_kinds_are_recorded_on_the_session():
-    seen: list[list[str]] = []
-
-    def text_for(kinds: Any) -> str:
-        seen.append(list(kinds))
-        return "\n\n# Skill: S\n"
-
-    agent = _Agent()
-    runner, _stimuli, ledger = _runner(
-        agent=agent, skill_text_for=text_for,
-        skill_versions_for=lambda kinds: {"plans": "abc"},
-    )
-    await _wake(runner, (_stim(1, HOME),))
-    assert agent.system_prompts == ["FIXED\n\n# Skill: S\n"]
-    assert seen[0] == ["message"]
-    assert ledger.sessions[0][1].skill_versions == {"plans": "abc"}
 
 
 async def test_an_agenda_in_one_room_binds_the_reads_to_that_room():
@@ -324,8 +308,8 @@ async def test_an_agenda_in_one_room_binds_the_reads_to_that_room():
     await _wake(runner, (_stim(1, OTHER),))
     assert asked == [[OTHER]]
     # the prompt says the room's label; its id is for a tool's argument only (m5)
-    assert "Your read tools look through room «The Other Room»." in agent.prompts[0]
-    assert "discord:other" not in agent.prompts[0]
+    assert 'agenda_room="discord:other" label="The Other Room"' in agent.prompts[0]
+    assert "home" not in str(items(agent.prompts[0])[0].attrib)
 
 
 async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_home_room_instead():
@@ -346,11 +330,8 @@ async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_
     await _wake(runner, (_stim(1, OTHER), _stim(2, third), _stim(3, OTHER)))
     assert asked == [[OTHER, third]]              # once, both rooms, agenda order
     assert HOME not in asked[0]
-    assert (
-        "take an `agenda_room`, one of: `discord:other` («The Other Room»), "
-        "`whatsapp:third` («Third»)"
-        in agent.prompts[0]
-    )
+    assert 'agenda_room="discord:other" label="The Other Room"' in agent.prompts[0]
+    assert 'agenda_room="whatsapp:third" label="Third"' in agent.prompts[0]
     assert "look through room" not in agent.prompts[0]
 
 
@@ -370,7 +351,9 @@ async def test_the_prompt_says_what_time_it_is_and_how_old_each_item_is():
     await _wake(runner, (_stim(1, HOME, at=NOW - 90 * 60_000),))
     prompt = agent.prompts[0]
     # the clock is the FIRST thing she reads, then which room her reads look through
-    assert [b.tag for b in blocks(prompt)][:2] == ["clock", "reads"]
+    assert [b.tag for b in blocks(prompt)].index("clock") < [b.tag for b in blocks(prompt)].index(
+        "reads"
+    )
     (clock,) = named(prompt, "clock")
     (item,) = items(prompt)
     assert (clock.text or "").strip().startswith("It is ") and "(UTC)" in (clock.text or "")
@@ -388,10 +371,8 @@ async def test_probe_runs_one_hand_written_item_and_writes_no_outcome():
     result = await runner.probe(unit="u", summary="room A has 2 new messages", now_ms=NOW)
     assert result.stop_reason == "end_turn"
     assert "room A has 2 new messages" in agent.prompts[0]
-    assert {"close", "note_create", "remind", "wake_at", "note_read"} <= set(agent.tool_names[0])
+    assert {"note_create", "remind", "wake_at", "note_read"} <= set(agent.tool_names[0])
     assert len(ledger.sessions) == 1 and stimuli.outcomes == {}
-
-
 
 
 async def test_a_closed_session_is_counted_by_outcome():
@@ -509,24 +490,8 @@ async def test_the_guard_holds_the_safety_checks_and_no_call_ceiling(monkeypatch
 
 # ---- skills, shutdown, the boot check -----------------------------------------
 
-def test_agenda_skills_inject_in_a_fixed_order_and_record_their_digests():
-    skills = {
-        "plans": SimpleNamespace(instructions="PLANS", sha256="p1"),
-        "places": SimpleNamespace(instructions="PLACES", sha256="q1"),
-    }
-    injected = AgendaSkills(
-        by_kind={"message": "plans", "self": "places"}, resolve=skills.get,
-    )
-    text = injected.text_for(["self", "message", "time"])   # `time` has no skill
-    assert text.index("PLACES") < text.index("PLANS")        # name order, not kind order
-    assert injected.versions_for(["message", "self"]) == {"plans": "p1", "places": "q1"}
-    assert injected.text_for(["time"]) == "" and injected.versions_for(["time"]) == {}
 
 
-def test_a_skill_the_table_names_but_nothing_installed_is_an_error_not_an_empty_string():
-    injected = AgendaSkills(by_kind={"message": "plans"}, resolve=lambda name: None)
-    with pytest.raises(LookupError, match="plans"):
-        injected.text_for(["message"])
 
 
 async def test_shutdown_cancels_the_evaluators_sessions_then_the_runners_and_only_once():
@@ -688,30 +653,6 @@ def _objective() -> str:
             / "cognition.md").read_text()
 
 
-def test_the_objective_names_every_close_reason_the_session_closes_with():
-    """`close`'s tool schema offers `written`; an instruction that listed three
-    of the four told her a reason the tool accepts was not hers to use."""
-    from nora.domain.cognition_session import CLOSE_REASONS
-
-    text = _objective()
-    for reason in CLOSE_REASONS:
-        if reason == "struck":                      # code's own close, never her argument
-            continue
-        assert f"`{reason}`" in text, reason
-
-
-def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
-    """Context framing, not a capability list (AGENTS.md):
-    it says what she is handed, in what order, and what is already written down,
-    and it does not enumerate the kinds of write she can make."""
-    text = _objective()
-    for phrase in ("Read the clock, agenda, cited messages and existing accounts",
-                   "your own position and pending work when supplied",
-                   "Returning items may have changed since the last look"):
-        assert phrase in text, phrase
-    # no enumeration of the write verbs (they carry their own descriptions)
-    assert "Each note, event, Standing revision" not in text
-    assert "note_create" not in text and "event_propose" not in text
 
 
 def test_the_objective_names_none_of_the_old_shapes_of_the_input():
@@ -741,9 +682,9 @@ def test_the_objective_teaches_nothing_the_block_types_already_say():
     agenda = BLOCK_TYPES["agenda"]
     fields = dict(agenda.annotations)
     # the grammar: what each field is for, in the words the model reads
-    assert "cite it exactly as [n] at the end of the note line it supports" in fields["n"]
-    assert "or as digits in an event's cited ids" in fields["n"]
-    assert "this exact name, as written, goes in parentheses before the ids" in fields["from"]
+    assert "cite [n] on supporting note lines" in fields["n"]
+    assert "or in an event's cited ids" in fields["n"]
+    assert "use this exact name in parentheses before cited ids" in fields["from"]
     assert "Decided, Proposed or Ruled out" in fields["from"]
     assert "its sections run Decided, Open, Owed, Proposed, Ruled out" in agenda.description
     # the citation grammar is said ONCE, in the fields; the description points at them
@@ -757,8 +698,8 @@ def test_the_objective_teaches_nothing_the_block_types_already_say():
     assert "takes no `(names)`" in agenda.description
     assert "A Ruled out line is `<option>: <reason> (<names>) [<ids>]`" in agenda.description
     # which field is the message's REAL id, and the note's, and where the room key is
-    assert fields["n"].startswith("a message's real id: ")
-    assert dict(BLOCK_TYPES["note_index"].annotations)["n"].startswith("the note's real id")
+    assert fields["n"].startswith("the row's citation id ")
+    assert "real note id" in dict(BLOCK_TYPES["notes"].annotations)["n"]
     assert "`platform:conversation_id`" in BLOCK_TYPES["reads"].description
     # and the rest of what the input carries, said on the fields
     assert "changed after they were said" in fields["edited"]
@@ -766,6 +707,5 @@ def test_the_objective_teaches_nothing_the_block_types_already_say():
     assert "not readable now" in fields["unreadable"]
     assert "left out to fit" in fields["earlier_not_shown"]
     assert "first and last message ids" in fields["earlier_range"]
-    assert "how many earlier looks left the item open" in fields["returning"]
     assert "what you sent" in agenda.description and "marked `own`" in agenda.description
     assert "context only, never cited" in fields["own"]

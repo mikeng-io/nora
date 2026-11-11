@@ -36,7 +36,6 @@ from tests.unit.test_cognition_session_lifecycle import (
     _rig,
     agenda_fault,
     boom,
-    close_written,
     ok,
 )
 
@@ -260,7 +259,7 @@ async def test_twenty_infrastructure_failures_back_off_to_the_cap_and_strike_not
     the failing wakes claimed still pending, the wait between sessions climbing
     to and held at the 6 h cap, and the first session after recovery processes
     the whole backlog. Nothing is retracted, ever."""
-    rig = _rig(agent=ScriptedAgent(script=[boom] * 20 + [close_written]))
+    rig = _rig(agent=ScriptedAgent(script=[boom] * 20 + [ok]))
     for _ in range(3):
         await rig.say()
     began = rig.clock.ms

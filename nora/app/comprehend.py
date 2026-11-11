@@ -18,17 +18,18 @@ import logging
 import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, tzinfo
-from typing import Annotated, Any, Literal, get_args
+from typing import TYPE_CHECKING, Annotated, Any, Literal, get_args
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nora.agent.fetch_watch import GraphFetched
-from nora.domain.comprehend import PARTS, REFUSAL_REASONS
+from nora.domain.comprehend import PARTS, REFUSAL_REASONS, named_candidates
 from nora.domain.memory_graph import (
     MEMORY_KINDS,
     POINTER_KINDS,
     PROPOSED_KINDS,
+    RELATION_RULES,
     Admission,
     Correction,
     Entity,
@@ -40,6 +41,7 @@ from nora.domain.memory_graph import (
     Walk,
     WorkItem,
 )
+from nora.domain.prompt import contains_source_span
 
 log = logging.getLogger(__name__)
 
@@ -66,13 +68,28 @@ class CitedValue(Shape):
     cite: list[Citation] = Field(default_factory=list)
 
 
+if TYPE_CHECKING:
+    ProposedKind = str
+    ProposedRelation = str
+else:
+    ProposedKind = Literal[tuple(PROPOSED_KINDS)]
+    ProposedRelation = Literal[tuple(
+        name for name, rule in RELATION_RULES.items() if rule.layer == "notebook"
+    )]
+
+
 class NewEntity(Shape):
     """An entity with no matching shown candidate, nested inside an endpoint."""
 
-    kind: str
+    kind: ProposedKind
     name: str
     aliases: list[str] = Field(default_factory=list)
     attributes: dict[str, CitedValue] = Field(default_factory=dict)
+    distinct: str | None = Field(default=None, description=(
+        "Why this entity is not one of the candidates a `possible_existing` "
+        "refusal listed, or null; honoured only to re-propose an endpoint "
+        "the session already refused possible_existing for the same name "
+        "and kind — it never skips the lookup."))
 
 
 class NewEndpoint(Shape):
@@ -86,7 +103,7 @@ Endpoint = str | NewEndpoint
 
 class RelationStatement(Shape):
     type: Literal["relation"]
-    rel: str
+    rel: ProposedRelation
     subject: Endpoint = Field(description=(
         "A shown `@kind:id` handle — a preview row, an admitted relation's "
         "end, or `@person:<id>` for a person a shown row authored — or "
@@ -204,7 +221,6 @@ class Scope:
     """What one proposal may cite and name, built from the shown rows only."""
 
     catalogue: dict[int, Key] = field(default_factory=dict)
-    key_to_items: dict[Key, set[int]] = field(default_factory=dict)
     shown_keys: frozenset[Key] = frozenset()
     shown_relations: frozenset[str] = frozenset()
     shown_persons: frozenset[str] = frozenset()
@@ -232,17 +248,13 @@ def proposal_scope(
             if r.get("person_id")),
         admitted=frozenset(admitted),
     )
-    for index, item in enumerate(inputs):
+    for item in inputs:
         for n, key in item.snapshot.get("source_keys", {}).items():
             try:
                 key = tuple(key)
                 scope.catalogue[int(n)] = key
             except (TypeError, ValueError):
                 continue
-            scope.key_to_items.setdefault(key, set()).add(index)
-        for source in item.sources:
-            if source.key in fetched.sources:
-                scope.key_to_items.setdefault(source.key, set()).add(index)
     return scope
 
 
@@ -318,16 +330,81 @@ class MemoryProposalAdmission:
             keys.append(key)
         return {key: fetched.sources[key] for key in keys}, None
 
+    async def _possible_existing(
+        self, new: NewEntity, work: WorkItem, fetched: GraphFetched,
+        proposed: Entity, confirmed: Any,
+    ) -> tuple[str, list[dict[str, Any]], set[Key], set[str]] | None:
+        """The 27 §7a candidates for a `{new: …}` endpoint, or None to proceed."""
+        try:
+            candidates = await named_candidates(
+                self.graph, unit=work.unit, kind=new.kind, name=new.name,
+                persons=frozenset(
+                    p for s in fetched.sources.values() for p in s.persons),
+                near=work.source, as_of=work.as_of, historical=work.historical,
+                drop=lambda e: e.key == proposed.key
+                               or new.name in (e.name, *e.aliases))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("resolution candidates failed (%s)", type(exc).__name__)
+            return "unavailable", [], set(), set()
+        if not candidates:
+            return None
+        if (new.distinct or "").strip() and (
+                new.kind, new.name.casefold()) in confirmed:
+            return None
+        cards: list[dict[str, Any]] = []
+        keys: set[Key] = set()
+        relation_ids: set[str] = set()
+        for candidate in candidates:
+            node = next((n for n in candidate.nodes if n.entity is not None), None)
+            entity = node.entity if node is not None else None
+            cards.append({
+                "handle": (f"@{entity.key[0]}:{entity.key[1]}" if entity else None),
+                "name": entity.name if entity else None,
+                "aliases": list(entity.aliases) if entity else [],
+                "relations": [
+                    {"id": e.relation.id, "rel": e.relation.rel,
+                     "src": f"@{e.relation.src[0]}:{e.relation.src[1]}",
+                     "dst": f"@{e.relation.dst[0]}:{e.relation.dst[1]}",
+                     "evidence": e.evidence_count,
+                     "asserted_at": e.relation.asserted_at.isoformat()}
+                    for e in candidate.relations],
+            })
+            if entity is not None:
+                keys.add(entity.key)
+            for e in candidate.relations:
+                keys.update((e.relation.src, e.relation.dst))
+                relation_ids.add(e.relation.id)
+        return "possible_existing", cards, keys, relation_ids
+
+    async def _refuse_possible_existing(
+        self, outcome: tuple[str, list[dict[str, Any]], set[Key], set[str]],
+        index: int, new: NewEntity, refuse: Any,
+        report: dict[int, dict[str, Any]], candidate_keys: set[Key],
+        candidate_relations: set[str],
+        possible_existing: set[tuple[str, str]],
+    ) -> None:
+        """Record a `_possible_existing` refusal and its candidate custody."""
+        reason, cards, keys_found, rel_ids = outcome
+        report[index] = {"status": "refused", "reason": reason,
+                         "kind": "relation",
+                         **({"candidates": cards} if cards else {})}
+        await refuse("entity", reason)
+        if reason == "possible_existing":
+            candidate_keys.update(keys_found)
+            candidate_relations.update(rel_ids)
+            possible_existing.add((new.kind, new.name.casefold()))
+
     async def _admit(
         self, work: WorkItem, output: Proposal, fetched: GraphFetched,
         session: int, scope: Scope, indices: list[int] | None = None,
+        confirmed: Any = frozenset(),
     ) -> tuple[Admission, list[dict[str, str]], dict[str, Any]]:
-        """Flatten the statements into the existing domain objects, admit them,
-        and report one outcome per statement. `indices` maps each valid
-        statement's position back to its index in the original call, so a
-        schema-refused sibling neither shifts results nor withholds admission."""
+        """Flatten the statements into domain objects, admit them, report each."""
         local_refusals: list[dict[str, str]] = []
         report: dict[int, dict[str, Any]] = {}
+        candidate_keys: set[Key] = set()
+        candidate_relations: set[str] = set()
+        possible_existing: set[tuple[str, str]] = set()
 
         async def refuse(part: str, reason: str) -> None:
             local_refusals.append({"kind": part, "reason": reason})
@@ -345,7 +422,6 @@ class MemoryProposalAdmission:
         corrections: list[Correction] = []
         correction_stmt: dict[Correction, int] = {}
         claims: dict[int, dict[str, Any]] = {}
-        cited_items: dict[int, set[int]] = {}
 
         async def flatten_relation(
             index: int, st: RelationStatement,
@@ -383,6 +459,13 @@ class MemoryProposalAdmission:
                     return None
                 keys[slot] = key
                 if entity is not None and isinstance(endpoint, NewEndpoint):
+                    outcome = await self._possible_existing(
+                        endpoint.new, work, fetched, entity, confirmed)
+                    if outcome is not None:
+                        await self._refuse_possible_existing(
+                            outcome, index, endpoint.new, refuse, report,
+                            candidate_keys, candidate_relations, possible_existing)
+                        return None
                     entities.append(entity)
                     entity_stmt[entity.id] = index
                     for name, cited in endpoint.new.attributes.items():
@@ -430,8 +513,6 @@ class MemoryProposalAdmission:
             for cite in st.cite:
                 key = scope.catalogue.get(cite.source) or ("message", str(cite.source))
                 evidence.append(Evidence(key, relation_id=rel_id, span=cite.quote))
-            cited_items.setdefault(index, set()).update(
-                i for key in sources for i in scope.key_to_items.get(key, ()))
             return rel_id
 
         for pos, st in enumerate(output.statements):
@@ -452,12 +533,6 @@ class MemoryProposalAdmission:
                         for c in st.cite if c.quote is not None
                     ],
                 }
-                keys = [
-                    scope.catalogue.get(c.source) or ("message", str(c.source))
-                    for c in st.cite
-                ]
-                cited_items.setdefault(index, set()).update(
-                    i for key in keys for i in scope.key_to_items.get(key, ()))
                 report[index] = {"status": "pending", "kind": "reading"}
             elif isinstance(st, CorrectionStatement):
                 if st.relation not in scope.shown_relations | scope.admitted:
@@ -473,9 +548,9 @@ class MemoryProposalAdmission:
                     continue
                 bad_quote = next(
                     (c for c in st.cite
-                     if c.quote is not None and c.quote not in sources[
+                     if c.quote is not None and not contains_source_span(c.quote, sources[
                          scope.catalogue.get(c.source)
-                         or ("message", str(c.source))].text),
+                         or ("message", str(c.source))].text)),
                     None,
                 )
                 if bad_quote is not None:
@@ -516,8 +591,6 @@ class MemoryProposalAdmission:
                     continue
                 corrections.append(correction)
                 correction_stmt[correction] = index
-                cited_items.setdefault(index, set()).update(
-                    i for key in sources for i in scope.key_to_items.get(key, ()))
             else:
                 await flatten_relation(index, st)
 
@@ -640,8 +713,11 @@ class MemoryProposalAdmission:
                        else {}),
                 }
         return admission, local_refusals, {
-            "report": report, "claims": claims, "cited_items": cited_items,
+            "report": report, "claims": claims,
             "refused_by_stmt": refused_by_stmt,
+            "candidate_keys": candidate_keys,
+            "candidate_relations": candidate_relations,
+            "possible_existing": possible_existing,
         }
 
 

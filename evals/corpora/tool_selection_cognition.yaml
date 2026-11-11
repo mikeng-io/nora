@@ -124,14 +124,6 @@ cases:
     metadata: {tools: [remind_move], not_tools: [remind, remind_cancel]}
     snapshot: *room_a
 
-  - name: cognition_close_vs_note_revise_settled_item
-    entry: dreamer
-    category: cognition
-    expect: reply
-    input: "room A has 1 new message confirming what note N1 already says, nothing new to add"
-    metadata: {tools: [close], not_tools: [note_revise, note_create]}
-    snapshot: *room_a
-
   - name: cognition_record_query_vs_rollup_read_history_question
     entry: dreamer
     category: cognition

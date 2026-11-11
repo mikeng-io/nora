@@ -863,7 +863,7 @@ def judge_source(
 
     PRODUCTION'S OWN NAMING AND RENDERER, not a format of the eval layer's:
     `Persons.name_transcript` is the projection both context assemblers run
-    (DEC-80), and `render_transcript` is the body of `<group_transcript>`. So
+    (DEC-80), and `render_transcript` is the body of `<transcript>`. So
     a member is called what the prompt calls them, her own rows are under her
     configured `display_name` — the flag decides, never a name — and a sender
     the identity does not know falls back to the self-set profile name and

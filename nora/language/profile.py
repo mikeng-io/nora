@@ -135,6 +135,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("about_person", 5, "turn"),
     ("profile_lines", 10, "turn"),
     ("previous_character", 20, "turn"),
+    ("room_cultures", 30, "turn"),
     ("profile_disputes", 30, "turn"),
     ("profile_messages", 40, "turn"),
     ("profile_mentions", 45, "turn"),
@@ -387,8 +388,7 @@ class ProfileEvidence:
         if source is None:
             return []
         pk = self._keys[key]
-        args: dict[str, Any] = {"key": key, "rooms": _listed(pk),
-                                "person": pk.person.person_id}
+        args: dict[str, Any] = {"key": key, "rooms": _listed(pk), "person": pk.person.person_id}
         out: list[PersonSourceRevision] = []
         readers: tuple[tuple[str, Callable[[], Awaitable[list[PersonSourceRevision]]]], ...] = (
             ("message", lambda: source.messages(

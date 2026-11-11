@@ -1150,7 +1150,7 @@ class ToolRegistry:
 
         `transcript` is in it for the same reason and is the most per-turn value
         here: it is `TagContext.transcript`, the window the prefill rendered
-        `<group_transcript>` from, and `who_said` (DEC-146) answers out of it.
+        `<transcript>` from, and `who_said` (DEC-146) answers out of it.
         It must never become a registry field: a window living for the life of
         the process would let one conversation's messages be searched from
         another, which is a disclosure. Passing the SAME tuple the prefill used

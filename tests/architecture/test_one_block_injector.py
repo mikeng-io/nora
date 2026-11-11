@@ -46,6 +46,8 @@ _CLOSE = re.compile(r"</([a-z_][a-z0-9_]*)>")
 #: borrows for the block and its catalogue line.
 _OWN_INJECTOR = {
     "nora/doctrine/loader.py": "`render_section` — doctrine's own injector",
+    "nora/language/cognition_parse.py":
+        "the `<root>` shim that parses a rendered agenda back; never prompt-bound",
 }
 
 #: Tags a module NAMES without BUILDING, with the reason. The discriminator
@@ -61,8 +63,6 @@ _OWN_INJECTOR = {
 _NOT_BUILT_HERE = {
     ("nora/ingest/relevance_gate.py", "nora_doctrine"):
         "strips the wrapper doctrine/loader.py builds",
-    ("nora/language/cognition_render.py", "root"):
-        "parse wrapper for reading a rendered agenda; it never reaches a prompt",
 }
 
 #: Constants that QUOTE the agenda's real elements in worked examples —
@@ -270,42 +270,24 @@ def test_a_module_that_writes_a_tag_by_hand_is_caught():
 #: subject, a declaration that reads as a guarantee and enforces nothing).
 #: `test_the_converted_list_is_not_quietly_shrinking` checks the list against the
 #: source, so a module that builds blocks and is missing here fails.
-CONVERTED = (
-    "nora/language/shared_render.py",
-    "nora/language/comprehend_render.py",
-    "nora/app/profile_spike.py",
-    "nora/agent/prefill.py",
-    "nora/agent/reaction.py",
-    "nora/agent/speech_format.py",
-    "nora/domain/decision_log.py",
-    "nora/ingest/relevance_gate.py",
-    "nora/language/computer_render.py",
-    "nora/language/documents_render.py",
-    "nora/language/subagents_render.py",
-    "nora/language/checkpoint_render.py",
-    "nora/language/culture_render.py",
-    "nora/language/note_render.py",
-    "nora/language/memo_render.py",
-    "nora/language/presence_render.py",
-    "nora/engagement/debrief_render.py",
-    "nora/infra/transit/arrivals.py",
-    "nora/language/cognition_render.py",
-    "nora/language/confirmation_render.py",
-    "nora/language/subagent_render.py",
-    "nora/language/browse_render.py",
-    "nora/language/culture.py",
-    "nora/language/character.py",
-    "nora/language/profile.py",
-    "nora/language/profile_render.py",
-    "nora/language/profile_collective.py",
-    "nora/language/profile_verdict.py",
-    "nora/language/lessons.py",
-    "nora/language/lesson_render.py",
-    "nora/language/doctrine_check.py",
-    "nora/domain/summons.py",
-    "nora/skills/loader.py",
-    "nora/subject/context_selector_render.py",
-)
+def _converted_modules() -> tuple[str, ...]:
+    """Discover the modules that use the canonical block constructor."""
+    found = []
+    for path in sorted((ROOT / "nora").rglob("*.py")):
+        tree = ast.parse(path.read_text())
+        if any(
+            isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            and n.func.id == "ContextBlock"
+            for n in ast.walk(tree)
+        ):
+            rel = path.relative_to(ROOT).as_posix()
+            if rel not in _OWN_INJECTOR:
+                found.append(rel)
+    return tuple(found)
+
+
+CONVERTED = _converted_modules()
+
 
 
 @pytest.mark.parametrize("rel", CONVERTED)
@@ -328,8 +310,8 @@ def test_no_block_is_written_by_hand(rel: str):
 
 
 def test_the_converted_list_is_not_quietly_shrinking():
-    """`CONVERTED` is a hand-written list, which goes
-    stale — so it is checked against the source rather than trusted. Every
+    """`CONVERTED` is discovered from constructor calls; this independently
+    checks that the discovery remains complete. Every
     module that builds a prompt block through `ContextBlock` must be on it, or
     dropping a module's line here would silently stop guarding it."""
     builds = set(CONVERTED) | set(_OWN_INJECTOR)

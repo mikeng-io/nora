@@ -141,6 +141,7 @@ test test-fast test-affected:
 # database of its own, and composes the deployment's own config, policy and
 # roster (design/evaluation/11-the-sandbox-rebuild.md §1.2). Off the deploy
 # host there is no source and no deployment to compose, and the run says so.
+EVAL_GRADING = --grading-contract "$(EVAL_GRADING_CONTRACT)" --grading-contract-sha256 "$(EVAL_GRADING_CONTRACT_SHA256)"
 
 # Refresh the eval source from production. Deploy host only.
 eval-source:
@@ -150,7 +151,7 @@ eval-source:
 # 15 cases must reach their expected verdict — zero false-speaks on the
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:
-	uv run python -m evals participation
+	uv run python -m evals participation $(EVAL_GRADING)
 
 # Releases are cut on GitHub by release-please (DEC-314, the nora-release
 # skill); there is no release target here.
@@ -208,7 +209,7 @@ schema-parity:
 # adversarial corpora, judged.
 eval-adversarial-corpora:
 	uv run python -m evals injections near_miss transcript_injection \
-	  identity_grounding source_scope being_contradicted --judge
+	  identity_grounding source_scope being_contradicted --judge $(EVAL_GRADING)
 
 eval-gate:
-	uv run python -m evals relevance_gate
+	uv run python -m evals relevance_gate $(EVAL_GRADING)

@@ -3149,7 +3149,7 @@ async def test_the_tag_s_room_carries_the_record_row_of_the_message_that_raised_
 
 
 async def test_who_said_searches_the_whole_read_window_not_the_prompt_slice():
-    """`[store] prompt_window` trims what `<group_transcript>` shows; the
+    """`[store] prompt_window` trims what `<transcript>` shows; the
     lookup tool is handed the deeper read, so a lookup never shrinks with the
     prompt. 12 rows read (`context_window=10` plus the tag), 4 shown."""
     seen: dict = {}

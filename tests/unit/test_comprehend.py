@@ -10,7 +10,6 @@ from nora.agent.comprehend_tools import egress_reason
 from nora.domain.comprehend import ComprehendItem, Preview, card_facts
 from nora.domain.memory_graph import (
     Entity,
-    Evidence,
     GraphEdge,
     GraphNode,
     Relation,
@@ -224,41 +223,6 @@ def test_web_page_preview_uses_found_layer_word():
 
 
 
-def test_the_instruction_lists_the_vocabulary_admission_checks():
-    from nora.domain.memory_graph import (
-        ENTRY,
-        PROPOSED_KINDS,
-        RELATION_RULES,
-        validate_relation,
-    )
-    from nora.language.comprehend_render import SESSION_INSTRUCTION
-
-    kinds = next(
-        line for line in SESSION_INSTRUCTION.splitlines()
-        if line.startswith("Entity kinds")
-    )
-    assert all(kind in kinds for kind in PROPOSED_KINDS) and "person" not in kinds
-    admitted = {
-        rel for rel, rule in RELATION_RULES.items()
-        if rule.layer == "notebook" and set(rule.sources) - set(ENTRY)
-    }
-    rels = next(
-        line for line in SESSION_INSTRUCTION.splitlines()
-        if "the only names admitted:" in line
-    )
-    listed = set(rels.split("the only names admitted:")[1].split("—")[0].replace(",", " ").split())
-    assert listed == admitted
-    # An entry's links are written by the entry's own writer and are never offered.
-    assert {"records", "concerns", "settles"} & admitted == set()
-    topic = Entity("generated-topic", "topic", UNIT, "Generated Sport")
-    evidence = (Evidence(SOURCE.key, relation_id="generated-interest", span="like Hall"),)
-    interest = Relation(
-        "generated-interest", PERSON.key, "interested_in", topic.key, "notebook", UNIT,
-        asserted_at=AT,
-    )
-    assert validate_relation(interest, evidence, {SOURCE.key: SOURCE}) is None
-    liked = replace(interest, rel="likes")
-    assert validate_relation(liked, evidence, {SOURCE.key: SOURCE}) == "wrong_ends"
 
 
 

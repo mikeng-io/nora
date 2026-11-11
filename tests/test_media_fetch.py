@@ -1908,7 +1908,7 @@ async def test_layer_1_carries_the_caveat_too(wiring):
 async def test_load_transcript_renders_media_the_way_the_prefill_does(wiring):
     """**The transcript this tool builds carries the description.** The prefill
     joins media custody, so the identical blob renders
-    `[image a3f2c1: a plate of noodles - …]` inside `<group_transcript>`; a path
+    `[image a3f2c1: a plate of noodles - …]` inside `<transcript>`; a path
     without that join would render `[image a3f2c1]` with nothing after it in the
     tool result — IN THE SAME PROMPT. That is the disagreeing-renderers bug this
     tool's own comments say it exists not to reproduce, and it is worse than a

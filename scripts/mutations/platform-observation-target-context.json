@@ -16,8 +16,8 @@
   {
     "name": "Cognition grounds the affected row as well as the delivered utterance",
     "file": "nora/app/cognition_grounding.py",
-    "old": "                event.delivered_message_id, event.target_message_id,",
-    "new": "                event.delivered_message_id, event.delivered_message_id,",
+    "old": "            for message_id in (event.delivered_message_id, event.target_message_id):",
+    "new": "            for message_id in (event.delivered_message_id, event.delivered_message_id):",
     "target": "tests/unit/test_platform_observation_wired.py::test_the_session_runner_assembles_and_consumes_an_observation_stimulus"
   },
   {

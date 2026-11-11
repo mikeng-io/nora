@@ -56,38 +56,6 @@ def test_the_census_finds_the_five_occasions_it_used_to_list():
         "nora/ingest/relevance_gate.py", "nora/language/culture.py",
     } <= set(_OCCASIONS), sorted(_OCCASIONS)
 
-#: Imported name -> the ONE block name it always builds. Each lives in its
-#: own module (`nora.language.note_render`, `.shared_render`,
-#: `nora.domain.decision_log`, `nora.language.culture_render`) and is
-#: shared across occasions precisely because it is not parametrised on name.
-_SHARED_BUILDER_NAMES = {
-    "render_shared_state": "standing",
-    "render_notes": "notes",
-    "render_decisions": "loop_decisions",
-    "render_self": "self",
-    # `nora.language.presence_render`: the tag
-    # path and the proactive pass render `<presence>` through it, and no
-    # occasion builds its own copy.
-    "render_presence": "presence",
-    # `nora.language.culture_render` (DEC-207): every occasion that carries a
-    # room's account renders it through this one builder.
-    "render_culture": "culture",
-    # `nora.language.note_render.today_block` (context-assembly step 1): the
-    # one-line day note-merge, note-candidates and the curator each built for
-    # themselves. It always builds `today`, and the caller stamps its row with
-    # `restamp`, so this is the same shape as the five above.
-    "today_block": "today",
-    # `nora.language.profile_render.render_profile` (45 §5): the one `<profile>`
-    # block, built for the cognition prompt, the debrief fold and the prefill,
-    # and restamped by the caller's own `_BLOCKS` row.
-    "render_profile": "profile",
-    # `nora.language.character._within_budget`: the one `<social_items>` block,
-    # shared by the Character and Profile sessions; its second return value is
-    # always that block (or None), restamped by the caller's own row.
-    "_within_budget": "social_items",
-}
-
-
 def _local_block_names(tree: ast.Module) -> set[str]:
     """Every `ContextBlock(name="x", ...)` literal — `name` given as a plain
     string constant, which is how all five occasions build one directly."""
@@ -108,25 +76,53 @@ def _local_block_names(tree: ast.Module) -> set[str]:
 
 
 def _shared_builder_names(tree: ast.Module) -> set[str]:
-    """Every call to one of the four known shared builders, resolved through
-    the module's OWN imports rather than matched on the bare call text — an
-    import makes the alias this module calls it by, and a call under any
-    other name (a local function that happens to share the string) is not
-    counted."""
-    imported = {
-        alias.asname or alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
-        if alias.name in _SHARED_BUILDER_NAMES
-    }
+    """Follow actual imported/local builder calls to ContextBlock constructors.
+
+    Shared wrappers may return several types. Derive those types at their owner
+    rather than maintaining another function-name to block-name registry.
+    """
+    seen: set[tuple[str, str]] = set()
+    parsed: dict[str, ast.Module] = {}
+
+    def imports(module: ast.Module) -> dict[str, tuple[str, str]]:
+        return {a.asname or a.name: (n.module, a.name)
+                for n in ast.walk(module) if isinstance(n, ast.ImportFrom)
+                and n.module and n.module.startswith("nora.") for a in n.names}
+
+    def follow(module_name: str, function: str) -> set[str]:
+        key = (module_name, function)
+        if key in seen:
+            return set()
+        seen.add(key)
+        path = ROOT / (module_name.replace(".", "/") + ".py")
+        if not path.is_file():
+            return set()
+        if module_name not in parsed:
+            parsed[module_name] = ast.parse(path.read_text())
+        module = parsed[module_name]
+        fn = next((n for n in module.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                   and n.name == function), None)
+        if fn is None:
+            return set()
+        subtree = ast.Module(body=fn.body, type_ignores=[])
+        names = _local_block_names(subtree)
+        bindings = imports(module)
+        for call in ast.walk(fn):
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Name):
+                name = call.func.id
+                target = bindings.get(name, (module_name, name))
+                names |= follow(*target)
+        return names
+
+    bindings = imports(tree)
     names: set[str] = set()
-    for node in ast.walk(tree):
+    for call in ast.walk(tree):
         if (
-            isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-            and node.func.id in imported
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id in bindings
         ):
-            names.add(_SHARED_BUILDER_NAMES[node.func.id])
+            names |= follow(*bindings[call.func.id])
     return names
 
 
@@ -143,6 +139,13 @@ def _declared_names(tree: ast.Module, rel: str) -> set[str]:
             continue
         names: set[str] = set()
         for elt in node.value.elts:
+            if (
+                isinstance(elt, ast.Call)
+                and isinstance(elt.func, ast.Name)
+                and elt.func.id == "BlockDeclaration"
+            ):
+                assert isinstance(elt.args[0], ast.Constant)
+                names.add(elt.args[0].value)
             if (
                 isinstance(elt, ast.Tuple) and elt.elts
                 and isinstance(elt.elts[0], ast.Constant)

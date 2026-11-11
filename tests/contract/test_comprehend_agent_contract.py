@@ -33,7 +33,24 @@ async def test_wrong_call_shape_can_be_corrected_in_the_one_session(implementati
         )
     memory = wake_memory()
     runner, store, _ = _runner(agent_runner=model, memory=memory)
-    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
-        last_activity_ms=None, last_wake=None), now_ms=NOW)
+    from opentelemetry import context
+
+    from nora.obs.tracing import EVAL_EVIDENCE_KEY
+
+    recorded = []
+    token = context.attach(context.set_value(
+        EVAL_EVIDENCE_KEY,
+        lambda kind, **payload: recorded.append({"kind": kind, **payload})))
+    try:
+        await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+            last_activity_ms=None, last_wake=None), now_ms=NOW)
+    finally:
+        context.detach(token)
+    if implementation == "strands":
+        tools = [e for e in recorded if e["kind"] == "tool_finished"]
+        assert tools[0]["result"]["status"] == "error"
+        assert tools[0]["argument_validation"] == "rejected_before_dispatch"
+        assert tools[1]["result"]["status"] == "success"
+        assert "argument_validation" not in tools[1]
     assert len(store.sessions) == 1
-    assert list(memory.records.claims.values()) == [[]]
+    assert list(memory.records.claims.values()) == []

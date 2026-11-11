@@ -24,8 +24,12 @@ def test_profile_tag_names_its_subject_and_author_by_id(entity, subject):
     block = render_profile(ProfileView(entity=entity, of=subject, lines=(line,)),
                            name_of=lambda _: "Ada", now=NOW)
     assert block is not None
-    assert block.render() == (
-        f'<profile of="{subject}" written_by="nora" '
+    import re
+
+    bare = re.sub(r' description="[^"]*"(?: fields="[^"]*")?', "", block.render())
+    assert block.description and block.annotation
+    assert bare == (
+        f'<profile of="{subject}" entity="{entity}" written_by="nora" '
         'source="what people said in chat" written="60m ago">\n'
         'facts:\n- Occupation: librarian [told] (told by Ada)\n'
         'traits:\nguesses (unconfirmed):\n</profile>'
@@ -50,7 +54,7 @@ def test_people_budget_never_emits_an_unidentified_profile():
     blocks = render_profile_people(views, name_of=lambda _: "Ada", now=NOW)
     assert blocks and len(blocks) < len(views)
     for block in blocks:
-        assert set(dict(block.attrs)) == {"of", "written_by", "source", "written"}
+        assert {"of", "entity", "written_by", "source", "written"} <= set(dict(block.attrs))
         assert dict(block.attrs)["of"] in {view.of for view in views}
         assert dict(block.attrs)["written_by"] == "nora"
     assert blocks[-1].body.text.endswith("more characters not shown]")

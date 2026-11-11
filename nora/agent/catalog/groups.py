@@ -74,7 +74,7 @@ SUBAGENT_TOOLS: frozenset[str] = frozenset(
 VIDEO_TOOLS: frozenset[str] = frozenset({"video_create"})
 
 DOCUMENT_TOOLS: frozenset[str] = frozenset(
-    {"document_publish", "document_read", "document_set_status"}
+    {"document_publish", "document_read", "document_set_status", "document_list", "document_revise"}
 )
 
 HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset(

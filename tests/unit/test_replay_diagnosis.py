@@ -5,6 +5,14 @@ from __future__ import annotations
 import pytest
 
 from nora.subject.replay_diagnosis import diagnose
+from tests.integration.test_grading_contract import attach_archive_contract
+
+
+@pytest.fixture(autouse=True)
+def private_unit_export(monkeypatch):
+    from scripts import memory_graph_spike
+    monkeypatch.setattr(memory_graph_spike, "evaluation_export_for", lambda _: None)
+
 
 
 def scripted_judge(statement, events):
@@ -130,6 +138,23 @@ def test_unknown_event_cannot_ground_a_diagnostic():
     )
 
 
+def _record_uncited_tool_calls(source):
+    """The read then propose tool calls the `uncited` mode's trajectory needs."""
+    tool = {"toolUseId": "generated-read", "name": "load_transcript",
+            "input": {"items": [0]}}
+    source.record("tool_started", span_id="generated", tool=tool)
+    source.record("tool_finished", span_id="generated", tool=tool,
+                  result={"content": [{"text": "Generated context reply_to=2"}]})
+    saved = {"what": "Generated fact", "cite": [{"source": 1}]}
+    proposal = {"toolUseId": "generated-save", "name": "memory_propose",
+                "input": {"items": [0], "statements": [saved]}}
+    source.record("tool_started", span_id="generated", tool=proposal)
+    source.record("tool_finished", span_id="generated", tool=proposal,
+                  result={"content": [{"json": {"statements": [
+                      {"index": 0, "status": "saved"}]}}]})
+    return saved
+
+
 @pytest.mark.parametrize("mode", [
     "live", "rescore", "legacy", "tampered", "http400", "parse", "oversized", "absent",
     "missing_reason", "uncited",
@@ -170,18 +195,7 @@ async def test_decision_resolves_fingerprinted_writer_events(tmp_path, monkeypat
             source.record("transport_finished", span_id="generated",
                           reasoning_availability="absent" if mode == "absent" else "observed")
             if mode == "uncited":
-                tool = {"toolUseId": "generated-read", "name": "load_transcript",
-                        "input": {"items": [0]}}
-                source.record("tool_started", span_id="generated", tool=tool)
-                source.record("tool_finished", span_id="generated", tool=tool,
-                              result={"content": [{"text": "Generated context reply_to=2"}]})
-                saved = {"what": "Generated fact", "cite": [{"source": 1}]}
-                proposal = {"toolUseId": "generated-save", "name": "memory_propose",
-                            "input": {"items": [0], "statements": [saved]}}
-                source.record("tool_started", span_id="generated", tool=proposal)
-                source.record("tool_finished", span_id="generated", tool=proposal,
-                              result={"content": [{"json": {"statements": [
-                                  {"index": 0, "status": "saved"}]}}]})
+                saved = _record_uncited_tool_calls(source)
             source.record("event", name="nora.session.terminal", span_id="generated", attributes={
                 "body": json.dumps({"session_id": 1})})
             writer_ids = [e["event_id"] for e in read_events(source.path)
@@ -261,9 +275,12 @@ async def test_decision_resolves_fingerprinted_writer_events(tmp_path, monkeypat
             models=["generated"], call=diagnose))
         monkeypatch.setattr(spike, "load", lambda *args: None)
         output_root = tmp_path / "diagnostic"
-        result = await spike.run_diagnostic(SimpleNamespace(output=output_root,
-            decision_judge=target, config=tmp_path / "generated.toml",
-            judge_a="generated-a", judge_b="generated-b"))
+        args = SimpleNamespace(output=output_root, decision_judge=target,
+                               config=tmp_path / "generated.toml",
+                               judge_a="generated-a", judge_b="generated-b")
+        args.config.write_text("# generated configuration\n")
+        attach_archive_contract(args, tmp_path, "diagnostic")
+        result = await spike.run_diagnostic(args)
     failed = mode in {"tampered", "http400", "parse", "oversized", "missing_reason"}
     assert spike.report_exit(result) == (2 if failed else 0)
     if mode == "tampered":
@@ -360,6 +377,63 @@ def generated_trajectory(*, later_absent=False, mixed=False, chunks=3, text="not
         absent()
     emit("event", name="nora.session.terminal", attributes={"body": '{"bound":null}'})
     return {"kind": "unsupported", "statement": statement}, events
+
+
+@pytest.mark.parametrize("structured", [False, True])
+def test_missed_diagnostic_uses_source_ids_not_item_numbers_or_timestamps(structured):
+    import json
+
+    from nora.subject.replay_diagnosis import compact_trajectory
+
+    _, events = generated_trajectory()
+    request = next(e for e in events if e.get("name") == "nora.model.request")
+    request["attributes"]["nora.model.request.body"] = json.dumps({"messages": [{
+        "role": "user", "content": (
+            '<item index="0"><m n="1">Generated fact</m></item>'
+            '<item index="1"><m n="12">Generated other</m></item>'),
+    }]})
+    statement = {"kind": "missed", "location": "Agenda item 0, NEW source row 1 at 12:34"}
+    if structured:
+        statement["sources"] = [1]
+    trajectory = compact_trajectory(statement, events)
+    assert [i["index"] for i in trajectory["agenda_items"]] == [0]
+    assert set(trajectory["cited_rows"]) == {"1"}
+
+
+def test_reaction_context_cannot_replace_the_diagnostic_cited_message():
+    import json
+
+    from nora.subject.replay_diagnosis import compact_trajectory
+
+    statement, events = generated_trajectory()
+    request = next(e for e in events if e.get("name") == "nora.model.request")
+    request["attributes"]["nora.model.request.body"] = json.dumps({"messages": [{
+        "role": "user", "content": (
+            '<item index="0"><m n="1" person="generated-author">Generated fact</m>'
+            '<m n="1" reaction="👍">Generated fact</m></item>'),
+    }]})
+    trajectory = compact_trajectory(statement, events)
+    assert 'person="generated-author"' in trajectory["cited_rows"]["1"]["rendered"]
+    assert 'reaction="' not in trajectory["cited_rows"]["1"]["rendered"]
+
+
+def test_diagnostic_cited_rows_carry_the_shown_carrier_binding():
+    import json
+
+    from nora.subject.replay_diagnosis import compact_trajectory
+
+    statement, events = generated_trajectory()
+    request = next(e for e in events if e.get("name") == "nora.model.request")
+    request["attributes"]["nora.model.request.body"] = json.dumps({"messages": [{
+        "role": "user", "content": (
+            '<reads><binding agenda_room="signal:generated-room" label="Friends"/></reads>'
+            '<item index="0" room="«Friends»"><m n="1" person="generated-author">'
+            'Generated fact</m></item>'),
+    }]})
+    trajectory = compact_trajectory(statement, events)
+    row = trajectory["cited_rows"]["1"]
+    assert row["carrier"] == '<binding agenda_room="signal:generated-room" label="Friends"/>'
+    assert row["room"] == 'room="«Friends»"'
 
 
 def test_compact_statement_scope_excludes_later_absent_call():
@@ -598,9 +672,13 @@ async def test_decision_deduplicates_verdicts_without_collapsing_sessions(tmp_pa
             models=["generated-a"], call=call))
         monkeypatch.setattr(spike, "load", lambda *args: None)
         output = tmp_path / "diagnostic"
-        result = await spike.run_diagnostic(SimpleNamespace(
+        from tests.integration.test_grading_contract import attach_archive_contract
+        args = SimpleNamespace(
             output=output, decision_judge=source_root, config=tmp_path / "generated.toml",
-            judge_a="generated-a", judge_b="generated-b"))
+            judge_a="generated-a", judge_b="generated-b")
+        args.config.write_text("# generated configuration\n")
+        attach_archive_contract(args, tmp_path, "diagnostic")
+        result = await spike.run_diagnostic(args)
     assert result["evidence"]["status"] == "PASS" and result["judge_unavailable"] == 0
     assert result["statements"] == len(calls) == 4
     assert [c["statement"]["kind"] for c in calls] == ["unsupported", "missed"] * 2
