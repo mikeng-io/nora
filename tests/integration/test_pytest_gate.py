@@ -106,11 +106,26 @@ def _pytest(
         env["NORA_TEST_MAX_WORKERS"] = max_workers
     if generation is not None:
         env["_NORA_PYTEST_GENERATION"] = generation
-    return subprocess.run(  # noqa: S603 — this interpreter, generated pytest project
-        [sys.executable, "-m", "pytest", "-q", *args], cwd=cwd or root,
-        env=env,
-        capture_output=True, text=True, timeout=30,
+    env["PYTHONFAULTHANDLER"] = "1"
+    command = [sys.executable, "-m", "pytest", "-q", *args]
+    proc = subprocess.Popen(  # noqa: S603 — this interpreter, generated pytest project
+        command, cwd=cwd or root, env=env, start_new_session=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
+    try:
+        out, err = proc.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        tree = subprocess.run(  # noqa: S603, S607
+            ["ps", "-eo", "pid,ppid,pgid,stat,etime,args", "--forest"],
+            capture_output=True, text=True, check=False,
+        ).stdout
+        alive = proc.poll()
+        os.killpg(proc.pid, signal.SIGABRT)
+        out, err = proc.communicate(timeout=20)
+        raise AssertionError(
+            f"HANG main_alive={alive is None}\n--stdout--\n{out}\n--stderr--\n{err}\n--ps--\n{tree}"
+        ) from None
+    return subprocess.CompletedProcess(command, proc.returncode, out, err)
 
 
 def test_raw_pytest_refuses_second_job_before_starting_workers_then_runs_normally(tmp_path):
