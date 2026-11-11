@@ -40,6 +40,7 @@ from nora.app.composition_agent import (
     backend,
     backends,
     backends_check,
+    build_registry,
     desk,
     mcp,
 )
@@ -554,16 +555,16 @@ async def build_dependencies(
     computer_tasks = _computer_queue.computer_tasks
     _computer_scoped = await _computer_wire.scoped(
         allowlist=allowlist,
-        browser_tabs=browser_tabs,
+        background=lambda: background, browser_tabs=browser_tabs,
         cfg=cfg,
         clock=clock,
         compute_jobs=compute_jobs,
         computer=computer,
         computer_admission=computer_admission,
-        computer_dm_scope_for=computer_dm_scope_for,
+        computer_context=lambda: computer_context, computer_dm_scope_for=computer_dm_scope_for,
         computer_events=computer_events,
         computer_metrics=computer_metrics,
-        computer_tasks=computer_tasks,
+        computer_probe=computer_probe, computer_tasks=computer_tasks,
         computer_token=computer_token,
         engine=engine,
         metrics=metrics,
@@ -636,7 +637,7 @@ async def build_dependencies(
     )
     subagents_context = _subagents_subjects.subagents_context
     _media_join = _media_wire.join(
-        cfg=cfg, content_checks=content_checks, media_objects=media_objects, metrics=metrics
+        cfg=cfg, media_objects=media_objects, metrics=metrics
     )
     media_join = _media_join.media_join
     _conversation_quote = _conversation_wire.quote(audit=audit, cfg=cfg, metrics=metrics)
@@ -906,7 +907,7 @@ async def build_dependencies(
     _conversation_relay = await _conversation_wire.relay(
         allowlist=allowlist,
         content_checks=content_checks,
-        metrics=metrics,
+        fire_path=lambda: fire_path, metrics=metrics,
         presence_reader=presence_reader,
         slots=slots,
     )
@@ -930,9 +931,8 @@ async def build_dependencies(
         cfg=cfg, clock=clock, compute_jobs=compute_jobs, document_service=document_service
     )
     subagent_desk = _agent_desk.subagent_desk
-    _agent_registry = registry(
-        allowlist=allowlist,
-        blobs=blobs,
+    _agent_registry = build_registry(
+        allowlist=allowlist, blobs=blobs,
         browser=browser,
         browser_manager=browser_manager,
         cfg=cfg,

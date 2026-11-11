@@ -6,7 +6,6 @@ from typing import Any
 from nora.app.composition_helpers import _music_channel_of, _reasoning_effort
 from nora.app.raw_clients import _DebriefModelClient, _NormaliseOnly
 from nora.app.voice_events import VoiceEventConsumer
-from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.ports import DiscordPresenceSource, Speaker, VoicePresenceSource
 from nora.infra.music import YtDlpSource
@@ -286,7 +285,7 @@ def platforms(
 
 
 def _speech_formatter(
-    cfg: Config,
+    cfg: Any,
     prompts: DoctrineStore,
     metrics: Metrics,
 ) -> SpeechTextFormatter | None:

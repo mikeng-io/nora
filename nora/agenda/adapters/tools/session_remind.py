@@ -34,6 +34,7 @@ async def _remind_subject_check(
         return {
             "status": "unresolved",
             "reason": "subject_unresolved",
+            "note": "The subject did not resolve to an open entry.",
             "detail": (
                 f"{subject!r} does not resolve to an open note, "
                 "decision, commitment, thread or event this act is "
@@ -122,7 +123,8 @@ async def _remind_destinations_check(
         # than narrowing it.
         return {"status": "unavailable",
                 "reason": "unit_scope_unavailable",
-                "detail": "the unit's room set could not be read"}
+                "detail": "the unit's room set could not be read",
+                "note": "The unit's room set could not be read."}
     delivered = await self._reminders.delivered_subject(
         unit_rooms, requester_person_id=self._ai_peer,
         subject_kind=subject_kind, subject_id=subject_id,
@@ -134,7 +136,8 @@ async def _remind_destinations_check(
         # established.
         return {"status": "unavailable",
                 "reason": "delivered_check_incomplete",
-                "detail": "the delivered check could not be completed"}
+                "detail": "the delivered check could not be completed",
+                "note": "The delivered check could not be completed."}
     if delivered:
         return _refused(
             "duplicate_pending",

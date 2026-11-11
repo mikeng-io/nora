@@ -263,6 +263,7 @@ def _character_collective_adaptors(
         }
     )
     schedules = {
+        **schedules,
         CHARACTER_NORA_ADAPTOR_NAME: AdaptorSchedule(
             min_interval_seconds=cfg.culture.stale_seconds,
             wake_batch=cfg.memory.profile.nora.update_every_replies,

@@ -82,7 +82,8 @@ def _memo_screen(
 
 def _memos_off() -> dict[str, object]:
     return {"status": "unavailable", "reason": "unwired",
-            "detail": "the memo store is not wired here; nothing was written"}
+            "detail": "the memo store is not wired here; nothing was written",
+            "note": "Memo operations are unavailable in this session."}
 
 
 async def _memo_body(d: SessionDeps,
@@ -748,7 +749,8 @@ def _make_profile_read(d: SessionDeps) -> Any:
             entity: The profile subject kind and id: person, room, unit or nora.
         """
         if self._memory is None:
-            return {"status": "unavailable"}
+            return {"status": "unavailable",
+                    "note": "Profile reads are unavailable in this session."}
         result: dict[str, Any] = await self._memory.account_view(state, entity)
         return result
     return profile_read
@@ -776,7 +778,8 @@ def _make_profile_revise(d: SessionDeps) -> Any:
                 source is cited as `<kind>:<id>`.
         """
         if self._memory is None:
-            return {"status": "unavailable"}
+            return {"status": "unavailable",
+                    "note": "Profile writes are unavailable in this session."}
         key = await self._memory.act_key(state, "profile_revise",
                                          {"entity": entity, "ops": ops})
         result: dict[str, Any] = await self._memory.profile(

@@ -13,7 +13,7 @@ compute poller therefore never delivers), `cancel` is a no-op, nothing calls a m
 THE SEAM. `build_dependencies` takes no collaborators, deliberately (this package's
 docstring), and an eval branch inside production composition is the thing
 the boundaries rules refuse. The one name composition resolves at call time for
-this is the module-level `build_subagent_backend`; `recording_subagent_worker`
+this is `nora.app.composition_agent.build_subagent_backend`; `recording_subagent_worker`
 replaces it for the span of one composition and puts it back.
 """
 
@@ -72,9 +72,9 @@ def recording_subagent_worker() -> Iterator[None]:
     cannot restore each other's patch: the depth and the original live on the
     installed replacement itself (no module-level state), and the original goes
     back only when the LAST block leaves."""
-    from nora.app import composition
+    from nora.app import composition_agent
 
-    current: Any = composition.build_subagent_backend
+    current: Any = composition_agent.build_subagent_backend
     if getattr(current, "_recording", False):
         recorder = current
     else:
@@ -84,11 +84,11 @@ def recording_subagent_worker() -> Iterator[None]:
         recorder._recording = True  # type: ignore[attr-defined]
         recorder._depth = 0  # type: ignore[attr-defined]
         recorder._original = current  # type: ignore[attr-defined]
-        composition.build_subagent_backend = recorder  # type: ignore[assignment]
+        composition_agent.build_subagent_backend = recorder  # type: ignore[assignment]
     recorder._depth += 1
     try:
         yield
     finally:
         recorder._depth -= 1
         if recorder._depth == 0:
-            composition.build_subagent_backend = recorder._original
+            composition_agent.build_subagent_backend = recorder._original

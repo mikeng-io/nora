@@ -102,6 +102,14 @@ def _gate_client_classes() -> tuple[dict[str, str], set[str]]:
             )
             if built in classes:
                 resolved[rel] = str(built)
+                continue
+            # An imported client resolves to the module that defines it —
+            # the area/layer split moves construction off the owning file.
+            imported = _module_file(_module_of(rel, tree).get(built or ""))
+            if imported is not None and isinstance(
+                _defs_in(_tree(imported)).get(built), ast.ClassDef
+            ):
+                resolved[imported] = str(built)
             else:
                 unresolved.add(rel)
     return resolved, unresolved

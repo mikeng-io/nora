@@ -85,15 +85,15 @@
   },
   {
     "name": "cognition_session: event_set_status actually declares typed parameters, not **kwargs",
-    "file": "nora/app/cognition_session.py",
-    "old": "        async def event_set_status(\n            event_id: str, status: Literal[\"confirmed\", \"cancelled\", \"happened\", \"lapsed\"],\n            reasoning: Literal[\"told\", \"deduced\", \"abduced\"],\n            confidence: Literal[\"low\", \"medium\", \"high\"], cited_ids: list[str],\n            base_revision_id: str = \"\", room: str = \"\", item: int | None = None,\n        ) -> dict[str, object]:",
+    "file": "nora/agenda/adapters/tools/session.py",
+    "old": "    async def event_set_status(\n        event_id: str, status: Literal[\"confirmed\", \"cancelled\", \"happened\", \"lapsed\"],\n        reasoning: Literal[\"told\", \"deduced\", \"abduced\"],\n        confidence: Literal[\"low\", \"medium\", \"high\"], cited_ids: list[str],\n        base_revision_id: str = \"\", room: str = \"\", item: int | None = None,\n    ) -> dict[str, object]:",
     "new": "        async def event_set_status(**kwargs: object) -> dict[str, object]:",
     "target": "tests/unit/test_cognition_session_tool_specs.py -k event_set_status"
   },
   {
     "name": "cognition_session: wake_at actually types its list items (not an array of nothing)",
-    "file": "nora/app/cognition_session.py",
-    "old": "        async def wake_at(\n            subject_rows: list[str], at: str, why: str,\n        ) -> dict[str, object]:",
+    "file": "nora/agenda/adapters/tools/session.py",
+    "old": "    async def wake_at(\n        subject_rows: list[str], at: str, why: str,\n    ) -> dict[str, object]:",
     "new": "        async def wake_at(\n            subject_rows: list, at: str, why: str,\n        ) -> dict[str, object]:",
     "target": "tests/unit/test_cognition_session_tool_specs.py -k wake_at"
   },
@@ -197,30 +197,30 @@
   },
   {
     "name": "cognition_session: the pace call actually holds the unit's lock",
-    "file": "nora/app/cognition_session.py",
-    "old": "            async with self._lock(unit):\n                # The REAL clock",
-    "new": "            if True:\n                # The REAL clock",
+    "file": "nora/agenda/adapters/tools/session.py",
+    "old": "        async with self._lock(unit):\n            # The REAL clock",
+    "new": "        if True:\n            # The REAL clock",
     "target": "tests/unit/test_cognition_session_lifecycle.py -k test_two_concurrent_wake_at_calls_cannot_both_pass_the_pending_cap"
   },
   {
     "name": "cognition_session: a self-wake set by an earlier session can actually be cancelled",
-    "file": "nora/app/cognition_session.py",
-    "old": "                    now_ms=call_ms, pending=pending, created_by_session_id=None,\n                )\n            if not answer.refused:\n                self._inc(\"nora_self_wake_total\", outcome=\"cancelled\")",
+    "file": "nora/agenda/adapters/tools/session.py",
+    "old": "                now_ms=call_ms, pending=pending, created_by_session_id=None,\n            )\n        if not answer.refused:\n            self._inc(\"nora_self_wake_total\", outcome=\"cancelled\")",
     "new": "                    now_ms=call_ms, pending=pending, created_by_session_id=state.session_id,\n                )\n            if not answer.refused:\n                self._inc(\"nora_self_wake_total\", outcome=\"cancelled\")",
     "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_cancelled_self_wake_never_fires"
   },
   {
     "name": "cognition_session: a multi-room agenda actually needs a named room",
-    "file": "nora/app/cognition_session.py",
+    "file": "nora/app/session_verbs.py",
     "old": "    if len(state.rooms) == 1:\n        key = next(iter(state.rooms))\n        return _room_of(key, state)",
     "new": "    if state.rooms:\n        key = next(iter(state.rooms))\n        return _room_of(key, state)",
     "target": "tests/unit/test_cognition_live_writes.py::test_multi_room_agenda_keeps_explicit_destination_and_unit_boundary"
   },
   {
     "name": "cognition_session: a destination outside the unit is actually refused",
-    "file": "nora/app/cognition_session.py",
-    "old": "        found = state.allowed_rooms.get(room)\n        if found is None:",
-    "new": "        found = state.allowed_rooms.get(room) or next(iter(state.allowed_rooms.values()))\n        if found is None:",
+    "file": "nora/app/session_verbs.py",
+    "old": "        found: tuple[str, str] | None = state.allowed_rooms.get(room)\n        if found is None:",
+    "new": "        found: tuple[str, str] | None = state.allowed_rooms.get(room) or next(iter(state.allowed_rooms.values()))\n        if found is None:",
     "target": "tests/unit/test_cognition_live_writes.py::test_multi_room_agenda_keeps_explicit_destination_and_unit_boundary"
   },
   {
@@ -421,9 +421,9 @@
   },
   {
     "name": "cognition_session: wake_at actually reads the clock at the call, not the session's start",
-    "file": "nora/app/cognition_session.py",
-    "old": "                call_ms = self._now_ms()\n                pending = await self._pending(unit, call_ms)\n                created_today",
-    "new": "                call_ms = now_ms\n                pending = await self._pending(unit, call_ms)\n                created_today",
+    "file": "nora/agenda/adapters/tools/session.py",
+    "old": "            call_ms = self._now_ms()\n            pending = await self._pending(unit, call_ms)\n            created_today",
+    "new": "            call_ms = now_ms\n            pending = await self._pending(unit, call_ms)\n            created_today",
     "target": "tests/unit/test_cognition_session_lifecycle.py::test_the_per_day_cap_counts_back_from_the_call_not_from_the_sessions_start"
   },
   {

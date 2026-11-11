@@ -2033,20 +2033,20 @@ async def test_an_eval_subject_with_the_subagent_on_builds_the_tools_and_a_recor
     enabled`): the four tools are offered, the desk and the poller hold a recorder under kind
     `subagent`, and no worker is built, so nothing can start. The patch is gone afterwards."""
     from nora.agent.catalog.groups import SUBAGENT_TOOLS
-    from nora.app import composition
+    from nora.app import composition_agent
     from nora.subject.recording_subagent import (
         RecordingSubagentBackend,
         recording_subagent_worker,
     )
 
-    real = composition.build_subagent_backend
+    real = composition_agent.build_subagent_backend
     on = override_config(cfg, {
         "dreamer.enabled": True, "compute.enabled": True, "subagent.enabled": True,
         "heartbeat.enabled": False,
     })
     with recording_subagent_worker():
         deps = await build_dependencies(on)
-    assert composition.build_subagent_backend is real
+    assert composition_agent.build_subagent_backend is real
     try:
         recorder = deps.subagent_backend
         assert isinstance(recorder, RecordingSubagentBackend)

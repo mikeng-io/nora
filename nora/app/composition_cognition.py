@@ -220,6 +220,7 @@ def _session_readers(
             for unit in unit_scopes()
         }
     )
+    cognition_upcoming = None
     if cfg.cognition.upcoming_days > 0:
         upcoming_rooms = LiveMapping(
             lambda: {

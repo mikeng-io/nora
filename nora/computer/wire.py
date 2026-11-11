@@ -15,7 +15,6 @@ from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
 from nora.app.startup import StartupError
 from nora.computer.adapters.tools import build as _build
-from nora.config import Config
 from nora.domain.computer import ComputerToolSettings
 from nora.domain.computer_context import ComputerContextCaps
 from nora.domain.computer_events import ComputerEvent, ComputerEventStore
@@ -63,7 +62,9 @@ def stores(cfg: Any, engine: Any, metrics: Any)-> StoresWiring:
     # (see the settings below for the rest of `[computer]`). Built here,
     # before the assembler, because `<computer>` reads it on every turn.
     computer: SandboxRuntime | None = None
+    computer_metrics: ComputerMetrics | None = None
     computer_probe: ComputerdProbe | None = None
+    computer_token: str | None = None
     if cfg.computer.enabled:
         from nora.infra.computer.client import ComputerdRuntime
 
@@ -152,10 +153,10 @@ async def scoped(
     allowlist: Any, background: Any, browser_tabs: Any, computer_context: Any,
     cfg: Any, clock: Any, compute_jobs: Any, computer: Any,
     computer_admission: Any, computer_dm_scope_for: Any, computer_events: Any,
-    computer_metrics: Any, computer_tasks: Any, computer_token: Any, engine: Any,
-    metrics: Any, op_clock: Any,
+    computer_metrics: Any, computer_probe: Any, computer_tasks: Any,
+    computer_token: Any, engine: Any, metrics: Any, op_clock: Any,
 ) -> ScopedWiring:
-    browser_manager = computer_probe = computer_queue_runner = None
+    browser_manager = computer_queue_runner = None
     computer_scope_for = computer_task_backend = None
     if cfg.computer.enabled and cfg.computer.scoped.enabled:
         rt = _scoped_computer_runtime(
@@ -640,7 +641,7 @@ def sweeper(
     return SweeperWiring(computer_sweeper=computer_sweeper)
 
 
-def _computer_token(cfg: Config)-> str:
+def _computer_token(cfg: Any)-> str:
 
     """computerd's bearer token, checked at BOOT when `[computer] enabled`:"""
     token = cfg.credentials.get(cfg.computer.token_env, "")

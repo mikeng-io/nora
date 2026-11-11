@@ -120,7 +120,7 @@
   },
   {
     "name": "composition: the runner's hook reaches the evaluator",
-    "file": "nora/app/composition.py",
+    "file": "nora/app/composition_dreamer.py",
     "old": "            on_wake=cognition_runner.wake_hook if cognition_runner is not None else None,",
     "new": "            on_wake=None,",
     "target": "tests/test_composition.py -k cognition_on_builds_one_runner"

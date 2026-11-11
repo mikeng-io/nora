@@ -22,15 +22,15 @@
   },
   {
     "name": "whatsapp_inbound_bridge_media_source",
-    "file": "nora/app/composition.py",
-    "old": "if cfg.platforms.whatsapp.mode == \"bridge\" else []",
-    "new": "if False else []",
+    "file": "nora/app/composition_media.py",
+    "old": "                if cfg.platforms.whatsapp.mode == \"bridge\"\n                else []",
+    "new": "                if False\n                else []",
     "target": "tests/integration/test_composition_bridge.py::test_all_bridge_media_sources_fetch_every_attachment_type[whatsapp]"
   },
   {
     "name": "instagram_inbound_bridge_media_source",
-    "file": "nora/app/composition.py",
-    "old": "if cfg.platforms.instagram.mode == \"bridge\"\n            else InstagramMediaSource(",
+    "file": "nora/app/composition_media.py",
+    "old": "                if cfg.platforms.instagram.mode == \"bridge\"\n                else InstagramMediaSource(",
     "new": "if False\n            else InstagramMediaSource(",
     "target": "tests/integration/test_composition_bridge.py::test_all_bridge_media_sources_fetch_every_attachment_type[instagram]"
   },

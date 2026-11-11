@@ -59,10 +59,11 @@ class JoinWiring:
     media_join: Any
 
 
-def join(cfg, content_checks, media_objects, metrics) -> JoinWiring:
+def join(cfg, media_objects, metrics) -> JoinWiring:
     # ONE media join for the whole process, handed to every transcript builder there is: the
     # tag assembler, the fire path, the tag-path debrief, the Cognition session and lazy
     # adoption, so none renders bare handles where another renders the comprehension.…
+    content_checks = cfg.content_checks.enabled
     media_join = MediaJoin(
         store=media_objects,
         screen=functools.partial(scan_identifiers, content_checks=content_checks),

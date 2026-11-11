@@ -505,6 +505,7 @@ def build_gate(
 ) -> GateWiring:
     # Bound in the branch below, beside the trigger that holds it.
     gate: RelevanceGate | None = None
+    participation_trigger: ParticipationTrigger | None = None
     if cfg.relevance_gate.enabled and fire_path is not None:
         # The gate is built HERE and not beside the other model clients, because it is the only
         # one whose absence would change behaviour silently: a trigger with `gate=None` admits

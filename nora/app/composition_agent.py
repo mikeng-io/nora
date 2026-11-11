@@ -99,7 +99,7 @@ class RegistryWiring:
     tool_registry: Any
 
 
-def registry(
+def build_registry(
     allowlist: Any, blobs: Any, browser: Any, browser_manager: Any,
     cfg: Any, clock: Any, computer: Any, computer_admission: Any,
     computer_context: Any, computer_dm_scope_for: Any, computer_events: Any,

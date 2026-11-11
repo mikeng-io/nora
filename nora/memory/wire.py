@@ -182,6 +182,7 @@ def graph(
     tier,
     unit_scopes,
 ) -> GraphWiring:
+    cognition_memory = None
     if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
         from nora.infra.sql.memory_graph import SqlMemoryGraph
 
