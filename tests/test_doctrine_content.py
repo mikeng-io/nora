@@ -273,7 +273,7 @@ def test_no_doctrine_file_carries_a_tool_catalogue():
     also ordinary English, and `identity.md` says "I don't know" and "what you
     remember" in prose that is exactly what this file is supposed to encourage.
     """
-    from nora.agent.tools import NATIVE_TOOL_BUDGETS
+    from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
 
     tools = (*NATIVE_TOOL_BUDGETS, "feed_honcho")
     for path in DOCTRINE_DIR.glob("**/*.md"):

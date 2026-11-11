@@ -18,10 +18,30 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+#: The tool bodies moved out of `nora/agent/tools.py` into each area's
+#: `adapters/tools*` (ADR 0037); those files plus the agent-side toolkit are
+#: enumerated by `_TOOL_MODULES` (new result-bearing modules join it here).
+def _tool_modules() -> tuple[str, ...]:
+    out = ["nora/agent/runtime_tools.py"]
+    out += sorted(
+        p.relative_to(ROOT).as_posix()
+        for p in (ROOT / "nora" / "agent" / "toolkit").rglob("*.py")
+    )
+    for area in sorted((ROOT / "nora").iterdir()):
+        adapters = area / "adapters"
+        if not adapters.is_dir():
+            continue
+        out += sorted(p.relative_to(ROOT).as_posix() for p in adapters.glob("tools.py"))
+        out += sorted(
+            p.relative_to(ROOT).as_posix() for p in (adapters / "tools").rglob("*.py")
+        )
+    return tuple(out)
+
+
 #: Every module a tool result is assembled in. A module that starts returning
 #: tool results is added here in the same commit.
 RESULT_MODULES = (
-    "nora/agent/tools.py",
+    *_tool_modules(),
     "nora/agent/whereis.py",
     "nora/agent/relay.py",
     "nora/agent/surface.py",

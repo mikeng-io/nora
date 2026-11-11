@@ -1,5 +1,29 @@
 # Changelog
 
+## [7.17.7](https://github.com/mikeng-io/nora/compare/v7.17.6...v7.17.7) (2026-11-11)
+
+
+### Maintenance
+
+* **agent:** drop trailing blank lines in moved tool files ([ffd7e27](https://github.com/mikeng-io/nora/commit/ffd7e277271b78cfd65c411103691e7926a3949d))
+* **agent:** name the split steps and keep the size floor ([1e722a8](https://github.com/mikeng-io/nora/commit/1e722a8e6963852185c869fd2892800b331c37b4))
+* **agent:** split build_tool_specs into the area adapters ADR 0037 defines ([cad5d6d](https://github.com/mikeng-io/nora/commit/cad5d6dd011786376052560b6dedc27f4cc36851))
+
+## [7.17.6](https://github.com/mikeng-io/nora/compare/v7.17.5...v7.17.6) (2026-11-11)
+
+
+### Maintenance
+
+* **architecture:** group code by area with inward-only layers ([fc6c9cb](https://github.com/mikeng-io/nora/commit/fc6c9cb985a78d0c222d3eb79165616fa18110e7))
+
+## [7.17.5](https://github.com/mikeng-io/nora/compare/v7.17.4...v7.17.5) (2026-11-10)
+
+
+### Maintenance
+
+* **conventions:** apply review findings to the guidance rewrite ([fc827e6](https://github.com/mikeng-io/nora/commit/fc827e6fb1f644e07f4692b883788ea61bad1a69))
+* **conventions:** make the design bundle the anchor and stop append-only guidance ([26cf07a](https://github.com/mikeng-io/nora/commit/26cf07aca2c3945e9ffb1b118a57ba858f2a0f4f))
+
 ## [7.17.4](https://github.com/mikeng-io/nora/compare/v7.17.3...v7.17.4) (2026-11-10)
 
 

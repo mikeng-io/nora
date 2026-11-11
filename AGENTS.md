@@ -93,7 +93,7 @@ the decisions that hold now, each with its test or `NOT ENFORCED` (`nora-decisio
 - **A docstring says what the thing is**; an internal (`_name`) function gets
   one line or none. A model-facing tool docstring is behaviour (`nora-tool`).
 - **Size**: a file at most 800 lines, a function at most 120, `AGENTS.md` at
-  most 250, a design subject file at most 300. Split by responsibility.
+  most 250, a design subject file at most 300. Split by area and layer.
 
 Gates under `tests/architecture/` hold existing debt to baselines that only
 shrink; a cleanup rewrites its baseline (`python -m scripts.code_size --write`,
@@ -162,7 +162,8 @@ reversal condition when you decide. A decision the operator locked is closed.
 
 ## Code conventions
 
-- One stage, one module, one public entry point (responsibilities, not lines).
+- Code is grouped by area in three layers that import inward (ARCHITECTURE.md
+  «Code map», `nora/AGENTS.md`, ADR 0037); `nora-structure` places the code.
 - Collaborators come through `__init__`: no `*_fn` hooks, no `_for_test`
   parameters, no mutable module singletons.
 - A port gains a second implementation, a test fake included, only with a
@@ -220,10 +221,10 @@ here and its link in the same commit.
 | reading a trace, a metric, a row or a log as evidence | `nora-readback` |
 | confirming a built prompt, doctrine, tool-text or routing fix with the eval suite (find the cause offline first) | `nora-eval` |
 | proving a fix is guarded (revert, watch a named test go red, restore) | `nora-prove-fix` |
+| adding a module, or moving or splitting code | `nora-structure` |
 | adding or changing one of Nora's tools | `nora-tool` |
 | adding or changing one of Nora's runtime skills in `nora/skills/` | `nora-runtime-skill` |
 | creating or editing digital 3D assets with Meshy | `meshy-3d-generation` |
-
 
 ## Reading order
 

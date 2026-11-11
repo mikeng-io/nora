@@ -13,7 +13,7 @@ from its link, so it is never claimed).
 
 The three-by-three matrix at the bottom of this file covers `x_read`,
 `linkedin_read` and `instagram_read`, which call `owner_of` (through
-`nora.agent.tools._other_link_owner`, which filters out a claim on the asking
+`nora.agent.toolkit.files._other_link_owner`, which filters out a claim on the asking
 tool's OWN network — Instagram's and LinkedIn's unreadable mobile shape is a
 claim on their OWN network too) from the exact spot their own `parse_link`
 returned `None`.
@@ -26,6 +26,7 @@ import typing
 
 import pytest
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.link_owners import (
     _INSTAGRAM_MOBILE_PAGE_LINK,
     _INSTAGRAM_PAGE_LINK,
@@ -39,7 +40,6 @@ from nora.agent.link_owners import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import NATIVE_TOOLS
 from nora.obs.metrics import Metrics
 from nora.testing import FakeMemoryStore
 from nora.testing.external_files import FakeExternalFilesSource, FakeFile
@@ -485,7 +485,7 @@ async def test_with_no_files_source_a_file_link_is_not_redirected_to_file_fetch(
 
 
 async def test_with_no_files_source_a_fetcher_runs_on_a_file_link():
-    from nora.agent.tools import _link_owner_wrapped
+    from nora.agent.catalog.surface import _link_owner_wrapped
 
     ran: list[str] = []
 

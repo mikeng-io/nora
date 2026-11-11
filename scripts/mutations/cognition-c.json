@@ -36,14 +36,14 @@
  },
  {
   "name": "major 2: record_query prints no number for the Cognition session",
-  "file": "nora/agent/tools.py",
+  "file": "nora/conversation/adapters/tools/query.py",
   "old": "with_ids=dream_adaptor == COGNITION_ADAPTOR,",
   "new": "with_ids=False,",
   "target": "tests/unit/test_cognition_record_query_ids.py::test_the_cognition_sessions_record_query_rows_carry_their_number tests/unit/test_cognition_record_query_ids.py::test_what_the_real_record_query_returns_is_what_the_watcher_keeps tests/unit/test_cognition_record_query_ids.py::test_a_note_citing_a_message_the_real_record_query_returned_is_checked_against_its_sender"
  },
  {
   "name": "major 2: record_query prints a number on every turn",
-  "file": "nora/agent/tools.py",
+  "file": "nora/conversation/adapters/tools/query.py",
   "old": "with_ids=dream_adaptor == COGNITION_ADAPTOR,",
   "new": "with_ids=True,",
   "target": "tests/unit/test_cognition_record_query_ids.py::test_a_tag_turns_record_query_prints_no_ids"

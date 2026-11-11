@@ -21,17 +21,13 @@ from pathlib import Path
 
 import pytest
 
+from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
 from nora.agent.egress import scan_identifiers
 from nora.agent.guards import Deliverer
+from nora.agent.link_owners import _INSTAGRAM_MOBILE_PAGE_LINK, _INSTAGRAM_PAGE_LINK
 from nora.agent.room import Room
-from nora.agent.tools import (
-    _COVER_NOTE,
-    _INSTAGRAM_MOBILE_PAGE_LINK,
-    _INSTAGRAM_PAGE_LINK,
-    _MEDIA_READING_NOTE,
-    NATIVE_TOOL_BUDGETS,
-    build_tools,
-)
+from nora.agent.toolkit.files import _COVER_NOTE, _MEDIA_READING_NOTE
+from nora.agent.tools import build_tools
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.blocks import wrap_outside_text
 from nora.domain.media import MediaBlob, MediaObject
@@ -214,7 +210,7 @@ async def test_a_url_is_downloaded_and_described_like_a_code(wiring, monkeypatch
     async def fake_download(url: str) -> tuple[bytes, str]:
         assert url == "https://x.com/pic.jpg"
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
     out = await _call(wiring["build"](), url="https://x.com/pic.jpg")
     assert out["status"] == "ok"
     assert out["description"] == "A red one-pixel square."
@@ -228,7 +224,7 @@ async def test_a_url_is_downloaded_and_described_like_a_code(wiring, monkeypatch
 async def _fake_download(monkeypatch, data=RED_PNG, media_type="image/png"):
     async def fake_download(url: str) -> tuple[bytes, str]:
         return data, media_type
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
 
 async def test_a_looked_at_web_picture_is_kept_and_gets_a_code(wiring, monkeypatch):
@@ -321,7 +317,7 @@ async def test_a_clip_from_a_url_is_never_kept(wiring, monkeypatch):
 async def test_an_automatic_reading_keeps_nothing(wiring, monkeypatch):
     """`instagram_read` and a summons look through `media_look`; only a look
     the model asked for is kept."""
-    from nora.agent.tools import media_look
+    from nora.agent.toolkit.media import media_look
     await _fake_download(monkeypatch)
     index = FakeMediaObjectStore([])
     tool = wiring["build"](media_store=index)
@@ -343,7 +339,7 @@ async def test_a_url_cache_hit_makes_no_vision_call(wiring, monkeypatch):
 
     async def fake_download(url: str) -> tuple[bytes, str]:
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
     second = await _call(wiring["build"](), url="https://x.com/same.jpg")
     assert second["status"] == "ok"
     assert second["description"] == first["description"]
@@ -353,7 +349,7 @@ async def test_a_url_cache_hit_makes_no_vision_call(wiring, monkeypatch):
 async def test_a_failed_download_is_unavailable_not_a_guess(wiring, monkeypatch):
     async def fake_download(url: str) -> tuple[bytes, str]:
         return b"", ""
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
     out = await _call(wiring["build"](), url="https://x.com/dead.jpg")
     assert out["status"] == "unavailable"
     assert wiring["vision"].calls == 0
@@ -365,7 +361,7 @@ async def test_a_url_with_an_identifier_is_refused_before_any_download(wiring, m
     async def fake_download(url: str) -> tuple[bytes, str]:
         calls.append(url)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
     out = await _call(wiring["build"](), url="https://x.com/p.jpg?u=%2B85212345678")
     assert out["status"] == "nothing_found"
     assert calls == []  # the egress screen ran first
@@ -377,7 +373,7 @@ async def test_a_non_http_url_is_refused(wiring, monkeypatch):
     async def fake_download(url: str) -> tuple[bytes, str]:
         calls.append(url)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
     out = await _call(wiring["build"](), url="file:///etc/passwd")
     assert out["status"] == "nothing_found"
     assert calls == []
@@ -408,7 +404,7 @@ async def test_an_instagram_page_link_is_sent_to_instagram_read_without_a_downlo
     async def fake_download(got: str) -> tuple[bytes, str]:
         calls.append(got)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
     out = await _call(wiring["build"](), url=url)
 
@@ -442,7 +438,7 @@ async def test_a_page_link_without_a_scheme_gets_the_page_link_note(wiring, monk
     async def fake_download(got: str) -> tuple[bytes, str]:
         calls.append(got)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
     out = await _call(wiring["build"](), url=url)
 
@@ -466,7 +462,7 @@ async def test_a_mobile_page_link_is_refused_and_asks_for_the_www_link(wiring, m
     async def fake_download(got: str) -> tuple[bytes, str]:
         calls.append(got)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
     out = await _call(wiring["build"](), url=url)
 
@@ -490,7 +486,7 @@ async def test_a_url_that_is_not_an_instagram_page_still_downloads(wiring, monke
     async def fake_download(got: str) -> tuple[bytes, str]:
         calls.append(got)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
     out = await _call(wiring["build"](), url=url)
 
@@ -516,7 +512,7 @@ async def test_an_x_link_is_sent_to_x_read_without_a_download(wiring, monkeypatc
     async def fake_download(got: str) -> tuple[bytes, str]:
         calls.append(got)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
     out = await _call(wiring["build"](), url=url)
 
@@ -539,7 +535,7 @@ async def test_an_x_shaped_url_that_is_not_a_page_still_downloads(wiring, monkey
     async def fake_download(got: str) -> tuple[bytes, str]:
         calls.append(got)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
     out = await _call(wiring["build"](), url=url)
 
@@ -560,7 +556,7 @@ async def test_a_linkedin_person_or_company_link_is_sent_to_linkedin_read(wiring
     async def fake_download(got: str) -> tuple[bytes, str]:
         calls.append(got)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
     out = await _call(wiring["build"](), url=url)
 
@@ -588,7 +584,7 @@ async def test_a_mobile_linkedin_link_is_refused_and_asks_for_the_www_link(
     async def fake_download(got: str) -> tuple[bytes, str]:
         calls.append(got)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
     out = await _call(wiring["build"](), url=url)
 
@@ -612,7 +608,7 @@ async def test_a_url_that_is_not_a_linkedin_page_still_downloads(wiring, monkeyp
     async def fake_download(got: str) -> tuple[bytes, str]:
         calls.append(got)
         return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
     out = await _call(wiring["build"](), url=url)
 
@@ -654,7 +650,7 @@ async def test_a_url_describes_a_video_with_the_video_model(wiring, monkeypatch)
     uses [media.describe.video]'s model, never the image default."""
     async def fake_download(url: str) -> tuple[bytes, str]:
         return b"\x00\x00\x00\x18ftypmp42", "video/mp4"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
     tool = wiring["build"](
         describe_models={"image": "test/image-model", "video": "test/video-model"},
     )
@@ -2026,7 +2022,7 @@ async def test_every_non_ok_status_carries_a_note(wiring, monkeypatch):
     async def dead_download(url: str) -> tuple[bytes, str]:
         return b"", ""
 
-    monkeypatch.setattr("nora.agent.tools._download_media", dead_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", dead_download)
     a, b = "abcdef" + "0" * 58, "abcdef" + "1" * 58
     await _append_image(wiring["store"], conversation_id="g1", sha256=a, ts=100)
     await _append_image(wiring["store"], conversation_id="g1", sha256=b, ts=101)
@@ -2104,7 +2100,7 @@ def test_the_reading_note_says_what_she_is_reading_and_never_asks_for_a_report()
 def _video_download(monkeypatch, data: bytes = b"reel-bytes"):
     async def fake_download(url: str) -> tuple[bytes, str]:
         return data, "video/mp4"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", fake_download)
 
 
 async def test_a_second_look_at_the_same_url_clip_makes_no_model_call(
@@ -2275,8 +2271,8 @@ async def test_changing_any_input_of_a_reading_misses_the_cache(
     view that no longer exists: the same model name through OmniRoute answers
     «I cannot see any video» as a 200, and a new prompt or encode is a new
     view of the clip."""
-    from nora.agent import tools as tools_module
     from nora.infra.vision import preprocess as _pre
+    from nora.media.adapters.tools import fetch as tools_module
     from nora.testing import FakeVideoReadingStore
 
     monkeypatch.setattr(_pre, "_run_video", _ffmpeg("15.0"))

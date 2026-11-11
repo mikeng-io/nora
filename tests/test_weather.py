@@ -142,8 +142,8 @@ def test_render_always_carries_warnings_and_omits_empty_fields():
     """`_weather_result` keeps the input lean (the fetch-token lesson): warnings
     ride EVERY result (may be []), but an empty outlook / absent typhoon / absent
     forecast are dropped rather than sent as blanks re-billed each turn."""
-    from nora.agent.tools import _weather_result
     from nora.domain.models import WeatherObservation
+    from nora.location.adapters.tools.shared import _weather_result
 
     obs = WeatherObservation(
         as_of="2026-08-08T18:00:00+08:00",
@@ -167,8 +167,8 @@ def test_render_always_carries_warnings_and_omits_empty_fields():
 
 
 def test_render_no_warnings_still_carries_an_empty_list():
-    from nora.agent.tools import _weather_result
     from nora.domain.models import WeatherObservation
+    from nora.location.adapters.tools.shared import _weather_result
 
     obs = WeatherObservation(
         as_of="t", temperatures=(("HKO", 30.0),), humidity_pct=None,
@@ -186,8 +186,8 @@ def test_render_no_warnings_still_carries_an_empty_list():
 def test_an_ok_note_leads_with_a_warning_only_when_there_is_one():
     """«Lead with the warning» and «use the nearest station» left the
     description; each arrives only with the field it is about."""
-    from nora.agent.tools import _weather_result
     from nora.domain.models import WeatherObservation
+    from nora.location.adapters.tools.shared import _weather_result
 
     def obs(warnings, temperatures):
         return WeatherObservation(

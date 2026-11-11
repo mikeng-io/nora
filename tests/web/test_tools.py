@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from nora.agent.tools import NATIVE_TOOLS
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.web.tools import build_tools_payload
 
 

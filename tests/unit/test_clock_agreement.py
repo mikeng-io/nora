@@ -12,7 +12,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta, timezone
 
 from nora.agent import clock, prefill
-from nora.agent import tools as tools_module
+from nora.agent import runtime_tools as tools_module
 from nora.agent.room import Room
 from nora.agent.tools import build_tool_specs
 from nora.obs.metrics import Metrics

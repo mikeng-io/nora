@@ -25,14 +25,15 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nora.agent import tools as tools_module
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.catalog.groups import HOT_TOOLS
 from nora.agent.dreamer import UNIT_SAFE_TOOLS
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import HOT_TOOLS, NATIVE_TOOLS, social_read_vocabulary
-from nora.infra.social import InstagramSocialClient, SocialRouter
-from nora.infra.social.instagram_client import SEARCH_MAX_ACCOUNTS
+from nora.infra.social.instagram_client import SEARCH_MAX_ACCOUNTS, InstagramSocialClient
+from nora.infra.social.router import SocialRouter
 from nora.obs.metrics import Metrics
+from nora.social.adapters.tools.shared import _INSTAGRAM_SEARCH_MAX_ACCOUNTS, social_read_vocabulary
 from nora.testing import FakeMemoryStore, FakeSocialProvider
 from tests.fakes import SinkSender
 
@@ -255,7 +256,7 @@ async def test_at_most_the_stated_number_of_accounts_come_back(world):
     assert len(out["accounts"]) == SEARCH_MAX_ACCOUNTS == 5
     assert out["truncated"] is True
     assert [a["username"] for a in out["accounts"]] == [f"example_{i}" for i in range(5)]
-    assert tools_module._INSTAGRAM_SEARCH_MAX_ACCOUNTS == SEARCH_MAX_ACCOUNTS
+    assert _INSTAGRAM_SEARCH_MAX_ACCOUNTS == SEARCH_MAX_ACCOUNTS
     assert f"up to {SEARCH_MAX_ACCOUNTS}" in " ".join(_doc().split())
 
 

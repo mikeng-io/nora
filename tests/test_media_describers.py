@@ -289,7 +289,7 @@ def test_every_describable_modality_has_an_authored_prompt():
     dispatch list, and the prompt table — are written in three files. A modality
     in one and not another is a silent `_PROMPT` fallback ("Describe this image"
     asked about a voice note)."""
-    from nora.agent.tools import _MODALITIES
+    from nora.agent.toolkit.media import _MODALITIES
     from nora.config import DescribersConfig
 
     assert set(_MODALITIES) == set(DESCRIBE_PROMPTS)

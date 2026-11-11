@@ -23,10 +23,11 @@ from unittest.mock import patch
 
 import pytest
 
+from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
 from nora.agent.egress import scan_identifiers
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
-from nora.agent.tools import NATIVE_TOOL_BUDGETS, build_tools
+from nora.agent.tools import build_tools
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget, DeliveryStatus, TranscriptRow
 from nora.infra.transit import TransitClient

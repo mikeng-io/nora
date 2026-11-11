@@ -56,6 +56,10 @@ SKIP_PREFIX: tuple[str, ...] = (
     # landed in the sandbox by `nora.subject.sandbox_signal`.
     "platforms.signal.account",
     "platforms.signal.base_url",
+    # `[google] account` is the mailbox `file_fetch` names in its NOT_SHARED
+    # note — a per-deployment identity, like the signal account above; the
+    # example's placeholder is the subject's shape too.
+    "google.account",
     "platforms.discord.token_env",
     "platforms.whatsapp.base_url",
     "media.rustfs.",           # endpoint resolves only inside the deploy network

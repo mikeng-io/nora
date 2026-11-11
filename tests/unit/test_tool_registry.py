@@ -10,12 +10,7 @@ from typing import Any
 import pytest
 
 from nora.agent import factory
-from nora.agent.guards import Deliverer, ReplyGuard
-from nora.agent.mcp import McpToolGroup
-from nora.agent.registry import ToolRegistry, aggregate_budgeted_tools
-from nora.agent.room import Room
-from nora.agent.surface import WORKER_ONLY_TOOLS
-from nora.agent.tools import (
+from nora.agent.catalog.groups import (
     COMPUTER_TOOLS,
     GRAPH_MEMORY_TOOLS,
     LOADER_TOOL,
@@ -23,6 +18,11 @@ from nora.agent.tools import (
     SUBAGENT_TOOLS,
     VIDEO_TOOLS,
 )
+from nora.agent.guards import Deliverer, ReplyGuard
+from nora.agent.mcp import McpToolGroup
+from nora.agent.registry import ToolRegistry, aggregate_budgeted_tools
+from nora.agent.room import Room
+from nora.agent.surface import WORKER_ONLY_TOOLS
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
@@ -548,7 +548,7 @@ def test_budgets_do_not_require_runtime_dependencies():
 
 
 def test_specs_carry_the_same_budgets_as_budgets():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     registry = ToolRegistry()
     specs = registry.specs(
@@ -623,7 +623,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
     that the SPEC carries the table's value — `_spec()` silently dropping the
     field would give every tool the dataclass default, and a live-only tool
     quietly declaring it never goes stale is the failure worth catching."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     registry = ToolRegistry()
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
@@ -644,7 +644,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
 
 
 def test_transit_is_declared_live_only_and_not_terminal():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     assert NATIVE_TOOLS["transit"].time_shiftable is False
     assert NATIVE_TOOLS["transit"].terminal is False
     assert "transit" not in ToolRegistry().terminal_tools()
@@ -710,7 +710,7 @@ def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
     """The taxonomy must stay COMPLETE over the tools routing actually confuses —
     a new local tool added untagged would silently sit outside the priority. Pins
     the tier of each tool in the seed confusability clusters."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     expected = {
         "weather": "confirmed", "transit": "confirmed", "route": "confirmed",
         "place_info": "confirmed", "where_is": "confirmed",
@@ -746,7 +746,7 @@ def test_skills_is_budgeted_so_r7_admits_it_but_the_registry_does_not_build_it()
 
 
 def test_skills_declares_terminal_false_and_no_time_dimension():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     spec = NATIVE_TOOLS["skills"]
     assert spec.plugin is True
     assert spec.terminal is False
@@ -1082,7 +1082,7 @@ def test_every_registered_tool_declares_whether_it_only_reads():
     the activation is registered by Strands' own plugin, so there is nothing
     here to classify. It is excluded from the Dreamer by the fail-closed
     default, which is the correct answer for a tool nobody here builds."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     unclassified = {
         name for name, spec in NATIVE_TOOLS.items()
@@ -1113,7 +1113,7 @@ def test_the_read_and_act_halves_partition_the_table():
     failure this guards is a tool added to one list and forgotten in the other
     — the exact failure `NativeTool`'s own docstring says the table exists to
     prevent."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     assert READ_ONLY | ACT_VERBS | {"skills"} == set(NATIVE_TOOLS)
     assert not READ_ONLY & ACT_VERBS

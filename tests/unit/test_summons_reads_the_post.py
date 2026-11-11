@@ -33,8 +33,8 @@ from typing import Any
 
 import pytest
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.registry import ToolRegistry
-from nora.agent.tools import NATIVE_TOOLS
 from nora.app.summons import SUMMONS_WEB_SEARCHES, SummonsOccasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.summons import MAX_ITEMS_SHOWN, SummonsCard
@@ -175,7 +175,7 @@ class World:
     def __init__(self, fake: FakeSummonsBridge, url: str, tmp_path, monkeypatch) -> None:
         self.fake = fake
         self.downloads = Downloads()
-        monkeypatch.setattr("nora.agent.tools._download_media", self.downloads)
+        monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", self.downloads)
         monkeypatch.setattr(_preprocess, "_run_video", _one_window_clip)
         self.vision = RecordingVision()
         self.blobs = FakeBlobStore()

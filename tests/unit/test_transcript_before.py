@@ -14,7 +14,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from nora.agent.room import Room
-from nora.agent.tools import _before_bound, build_tools
+from nora.agent.toolkit.transcript import _before_bound
+from nora.agent.tools import build_tools
 from nora.domain.models import NormalizedMessage
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics

@@ -123,6 +123,9 @@ _SPECS_ONLY = frozenset({
     # composition root through `ToolRegistry.build` like `browser`; its tests
     # build through `build_tool_specs` (tests/unit/test_file_fetch_tool.py).
     "external_files",
+    # `[google] account`: config value `ToolRegistry` holds and hands to
+    # `build_tool_specs` at `specs()` time, like `external_files` above.
+    "google_account",
 })
 
 

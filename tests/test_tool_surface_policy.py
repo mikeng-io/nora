@@ -29,8 +29,16 @@ from pathlib import Path
 import pytest
 
 from nora.agent.registry import _opening
+from tests.tool_view import (
+    _TOOL_SOURCES,
+    _func_docs,
+    _helper_closure_params,
+    _tool_view,
+    _tuple_bound_helper,
+)
 
-TOOLS_PATH = Path(__file__).parent.parent / "nora" / "agent" / "tools.py"
+_ROOT = Path(__file__).parent.parent
+
 
 #: When-to-call trigger frames, in the tool's own register. A description
 #: opening must contain at least one of these after the what-clause.
@@ -72,19 +80,18 @@ QUOTED_RE = re.compile(r"(?:「[^「」]*」|«[^«»]*»)")
 
 def _model_facing_docstrings() -> list[tuple[str, str]]:
     """(tool_name, docstring) for every tool registered via `_spec(...)`."""
-    src = TOOLS_PATH.read_text()
-    tree = ast.parse(src)
-    func_docs: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            doc = ast.get_docstring(node) or ""
-            if len(doc.strip()) >= 40:
-                func_docs[node.name] = doc
     out: list[tuple[str, str]] = []
-    for m in re.finditer(r'_spec\("([^"]+)",\s*([a-z_]+)', src):
-        name, fname = m.group(1), m.group(2)
-        if fname in func_docs:
-            out.append((name, func_docs[fname]))
+    for path, (src, _) in _TOOL_SOURCES.items():
+        for m in re.finditer(r'_spec\("([^"]+)",\s*([a-z_]+)', src):
+            name, fname = m.group(1), m.group(2)
+            docs = _func_docs(fname)
+            for doc_path, doc in docs:
+                if doc_path == path:
+                    out.append((name, doc))
+                    break
+            else:
+                for _, doc in docs:
+                    out.append((name, doc))
     return out
 
 
@@ -330,7 +337,7 @@ def _sent_specs() -> dict[str, str]:
 
 
 def _rewritten() -> list[str]:
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     # A plugin tool (`skills`) is built and described by its plugin, not by
     # this repo, so there is no text of ours for these rules to govern.
@@ -358,7 +365,7 @@ def test_send_reply_is_held_to_the_policy_like_every_other_tool() -> None:
     `sent`/`held_for_review`/`refused` contract, which stays in the
     description because the tool returns a bare string and has no `note` to
     carry it."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     assert "send_reply" in _rewritten()
     assert NATIVE_TOOLS["send_reply"].level == 3
@@ -369,7 +376,7 @@ def test_send_reply_is_held_to_the_policy_like_every_other_tool() -> None:
 
 
 def test_every_rewritten_tool_declares_a_level() -> None:
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     bad = {n: NATIVE_TOOLS[n].level for n in _rewritten()
            if NATIVE_TOOLS[n].level not in LEVEL_CEILINGS}
@@ -377,7 +384,7 @@ def test_every_rewritten_tool_declares_a_level() -> None:
 
 
 def test_every_declared_level_is_on_the_ladder() -> None:
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     bad = {n: s.level for n, s in NATIVE_TOOLS.items()
            if s.level is not None and s.level not in LEVEL_CEILINGS}
@@ -387,7 +394,7 @@ def test_every_declared_level_is_on_the_ladder() -> None:
 def test_a_rewritten_description_fits_its_level() -> None:
     import tiktoken
 
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     enc = tiktoken.get_encoding("cl100k_base")
     sent = _sent_descriptions()
@@ -583,22 +590,11 @@ _DELEGATE_REACHABLE_STATUSES: dict[str, frozenset[str]] = {
 
 
 def _level3_three_state_tools() -> list[str]:
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     return sorted(
         n for n, spec in NATIVE_TOOLS.items()
         if spec.level == 3 and spec.output_contract == "three_state"
-    )
-
-
-def _tool_function_node(name: str) -> ast.AsyncFunctionDef:
-    src = TOOLS_PATH.read_text()
-    tree = ast.parse(src)
-    spec_targets = dict(re.findall(r'_spec\("([^"]+)",\s*([a-z_]+)', src))
-    fname = spec_targets[name]
-    return next(
-        node for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fname
     )
 
 
@@ -650,59 +646,6 @@ def _required_statuses(doc: str) -> set[str]:
     assert listed, f"no status words (of {sorted(OUTPUT_STATUSES)}) found in {window!r}"
     excepted = set(_EXCEPTION_RE.findall(doc))
     return listed - excepted
-
-
-def _scan_dict_constants(container: ast.AST) -> dict[str, ast.Dict]:
-    """name -> its `ast.Dict` literal, for every `NAME = {...}`, `NAME: T =
-    {...}` or `NAME: T = MappingProxyType({...})` assignment DIRECTLY in
-    `container`'s own body (module level, or one function's own top-level
-    body -- not recursing into a nested `if`/`try`, matching how these are
-    actually declared). Most of this file's shared payload constants carry a
-    type annotation, e.g. `_X_NOTES: Mapping[str, str] =
-    MappingProxyType({...})`, so both `ast.Assign` and `ast.AnnAssign` must
-    be read."""
-    out: dict[str, ast.Dict] = {}
-    for node in ast.iter_child_nodes(container):
-        target: ast.expr | None
-        value: ast.expr | None
-        if isinstance(node, ast.Assign) and len(node.targets) == 1:
-            target, value = node.targets[0], node.value
-        elif isinstance(node, ast.AnnAssign):
-            target, value = node.target, node.value
-        else:
-            continue
-        if not isinstance(target, ast.Name) or value is None:
-            continue
-        if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
-                and value.func.id == "MappingProxyType" and value.args
-                and isinstance(value.args[0], ast.Dict)):
-            value = value.args[0]
-        if isinstance(value, ast.Dict):
-            out[target.id] = value
-    return out
-
-
-def _all_dict_constants(tree: ast.Module, functions: dict[str, ast.AST]) -> dict[str, ast.Dict]:
-    """Module-level constants PLUS `build_tool_specs`'s OWN body-level ones.
-    Every Level 3 tool is a closure nested inside `build_tool_specs`, and a
-    few shared payloads are declared once there rather than at module scope
-    -- `notes_off` (`remind`'s `dict(notes_off)`), visible to `remind` the
-    same way `_X_OFF` is visible at module scope: Python closures see both."""
-    out = _scan_dict_constants(tree)
-    outer = functions.get("build_tool_specs")
-    if outer is not None:
-        for name, node in _scan_dict_constants(outer).items():
-            out.setdefault(name, node)
-    return out
-
-
-def _module_functions(tree: ast.Module) -> dict[str, ast.AST]:
-    """name -> node, for every module-level `def`/`async def` in tools.py --
-    the one-level helper-following rule (see the module comment above)."""
-    return {
-        node.name: node for node in ast.iter_child_nodes(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
 
 
 def _local_closures(fn: ast.AST) -> dict[str, ast.AST]:
@@ -1228,9 +1171,9 @@ def _classify_value(
         if reason is not None:
             return [("bad", f"bare name {value.id!r}, {reason}")]
         return [("delegate", frozenset())]
-    # A module-level helper taking no arguments, followed ONE level.
+    # A module-level helper, followed ONE level; params stay opaque names.
     if (allow_helper and isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
-            and value.func.id in functions and not value.args and not value.keywords):
+            and value.func.id in functions):
         inner = functions[value.func.id]
         inner_returns = _own_returns(inner)
         if not inner_returns:
@@ -1284,14 +1227,14 @@ def _copy_in_call(ret: ast.Return) -> ast.Call | None:
 
 
 def _expand_copy_in(
-    fn: ast.AST, call: ast.Call, tree: ast.Module,
+    fn: ast.AST, call: ast.Call, functions: dict[str, ast.AST],
 ) -> tuple[list[tuple[ast.Return, ast.expr, ast.AST]], list[str]]:
     """Shape (g): the `(return, value, owning function)` triples a
     `_computer_copy_in` return stands for, and the problems found reading
     them."""
     problems: list[str] = []
     out: list[tuple[ast.Return, ast.expr, ast.AST]] = []
-    shared = _named_def(tree, _COPY_IN)
+    shared = functions.get(_COPY_IN)
     if shared is None or len(call.args) != 4 or not all(
             isinstance(a, ast.Name) for a in call.args[2:]):
         return [], [f"{_COPY_IN}(...) not readable: {ast.unparse(call)[:80]}"]
@@ -1304,6 +1247,26 @@ def _expand_copy_in(
         if (isinstance(v, ast.Call) and isinstance(v.func, ast.Name)
                 and v.func.id == copied_param):
             continue  # the caller's `copied`, read below
+        if isinstance(v, ast.Name):
+            helper = _tuple_bound_helper(shared, v.id, functions)
+            if helper is None:
+                out.append((r, v, shared))
+                continue
+            closures = _helper_closure_params(helper[2], helper[0], fn)
+            for hr in _own_returns(helper[0]):
+                hv = hr.value
+                if isinstance(hv, ast.Tuple) and len(hv.elts) > helper[1]:
+                    elt = hv.elts[helper[1]]
+                    if (isinstance(elt, ast.Call) and isinstance(elt.func, ast.Name)
+                            and elt.func.id in closures):
+                        continue  # the caller's `copied`, read below
+                    out.append((hr, elt, helper[0]))
+                else:
+                    problems.append(
+                        f"{helper[0].name}: a return that is not the "
+                        f"{helper[1] + 1}-tuple the call site unpacks"
+                    )
+            continue
         if v is not None:
             out.append((r, v, shared))
     take_name, copied_name = call.args[2].id, call.args[3].id  # type: ignore[attr-defined]
@@ -1341,11 +1304,7 @@ def _check_tool(tool: str, doc: str) -> list[str]:
     """Every problem found for `tool` (empty = every return whose status is
     one this tool's docstring lists carries a note). See the module comment
     above for the shapes and what is and is not verified."""
-    src = TOOLS_PATH.read_text()
-    tree = ast.parse(src)
-    fn = _tool_function_node(tool)
-    functions = _module_functions(tree)
-    constants = _all_dict_constants(tree, functions)
+    fn, functions, constants = _tool_view(tool)
     required = _required_statuses(doc)
     backend = _backend_notes().get(tool, set())
     reachable = _DELEGATE_REACHABLE_STATUSES.get(tool, frozenset())
@@ -1362,7 +1321,7 @@ def _check_tool(tool: str, doc: str) -> list[str]:
         if call is None:
             triples.append((ret, ret.value, fn))
             continue
-        expanded, found = _expand_copy_in(fn, call, tree)
+        expanded, found = _expand_copy_in(fn, call, functions)
         triples += expanded
         problems += found
 
