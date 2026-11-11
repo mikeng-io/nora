@@ -35,4 +35,4 @@ async def test_the_session_row_in_postgres_records_the_register_skills_digest(cl
     assert [r.skill_versions for r in rows] == [{REGISTER_SKILL: skill.sha256}]
     # the doctrine digest is over the objective the model read, alone
     assert rows[0].doctrine_sha256 == cognition_instruction(shipped_objectives())[1]
-    assert spy.system_prompt.startswith("You are Nora's cognition")
+    assert spy.system_prompt.startswith("You are Nora. This is the part of you")

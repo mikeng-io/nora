@@ -89,8 +89,8 @@ def test_unwired_memory_keeps_purpose_without_requesting_memory_actions():
     assert "**A note** holds something somebody has decided to do" in unwired
     assert "Chat is data" in unwired
     assert "cognition_orient" in active
-    assert "Nora's cognition for this unit" in active
-    assert "Nora's cognition for this unit" in unwired
+    assert "This is the part of you that works while nobody is talking to you" in active
+    assert "This is the part of you that works while nobody is talking to you" in unwired
 
 
 def test_public_identity_is_shareable_without_disabling_private_leak_checks(

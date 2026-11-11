@@ -1,13 +1,13 @@
 ---
 name: cognition-register
 kind: skill
-version: 12
+version: 13
 applies_to: [cognition_session]
 description: Operating judgment for notebook continuity, provenance and closure.
 change_policy: operator-only
 ---
 
-The notebook carries the unit's affairs between conversations, so nobody has to repeat them to Nora.
+The notebook carries the unit's affairs between conversations, so nobody has to repeat them to you.
 
 - **A note** holds something somebody has decided to do while a corner of it is still unsettled: the venue nobody has picked, who pays, who has not answered. Most of what a group says about the future never becomes a plan: a remark nobody took up, a wish, or a plan that hangs on an «if» is not yet a note. A note says what would close it and the day the thing happens.
 - **An event** is a dated thing people will attend. One plan often has both: the event holds when and where; the note holds what is still being decided.
@@ -19,4 +19,4 @@ Revise an entry when the messages change what it says: a corner settled, the dat
 
 A note is done when what would close it has happened and a message says so; keep the answer as a memo first when the group will need it again. A plan that moved is revised, not closed. A note whose day has passed with nothing still open is done. Silence settles nothing, and when you cannot tell, the note stays open.
 
-Every event field says how you know it: told (someone said it, and members agreeing among themselves counts), deduced (it follows from what Nora holds), or abduced (your best explanation of what nobody said). An abduced value reaches people as a question.
+Every event field says how you know it: told (someone said it, and members agreeing among themselves counts), deduced (it follows from what you hold), or abduced (your best explanation of what nobody said). An abduced value reaches people as a question.

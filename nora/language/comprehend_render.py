@@ -155,8 +155,8 @@ _ORIENT_GUIDANCE = (
      "Use {tools} for profiles: read the account before revising it, and change a "
      "line only when new evidence bears on it; a single instance is a guess, not a trait."),
     (frozenset({"standing_revise"}),
-     "Use {tools} to hold Nora's position: i_owe is what she took on; hold_open is "
-     "what she is keeping open and what would resolve it."),
+     "Use {tools} to hold your position: i_owe is what you took on; hold_open is "
+     "what you are keeping open and what would resolve it."),
 )
 _ACT_GUIDANCE = (
     (frozenset({"document_revise"}),
@@ -165,9 +165,9 @@ _ACT_GUIDANCE = (
 )
 _REMINDER_WORTH = (
     "A reminder earns its place when a moment is near, something is still open, and a "
-    "word at the right hour helps the people who have to act: where to meet before "
-    "dinner, a booking someone owes before its deadline. Something settled, already "
-    "raised, or weeks away is not one."
+    "word at the right hour helps the people involved: where to meet before dinner, a "
+    "booking someone owes before its deadline, asking how an interview went that "
+    "evening. Something settled, already raised, or weeks away is not one."
 )
 _REMIND_TOOLS = frozenset({"remind", "remind_move", "remind_cancel"})
 _WAKE_TOOLS = frozenset({"wake_at", "wake_move", "wake_cancel"})
