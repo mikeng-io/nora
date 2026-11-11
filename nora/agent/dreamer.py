@@ -70,7 +70,6 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import inspect
 import json
 import logging
 import time
@@ -87,7 +86,6 @@ from ..domain.ports import (
     Proposal,
     RosterSource,
     SessionAdaptor,
-    VerbProvenance,
 )
 from ..domain.reasoning_strip import dreamer_path
 from ..domain.turn_deadline import turn_deadline
@@ -1505,7 +1503,7 @@ class DreamerRuntime:
             verbs = getattr(adaptor, "verbs", None)
             own = (
                 [_as_tool(self._screened(adaptor.name, v))
-                 for v in self._bind_verbs(adaptor, key, verbs, sha)]
+                 for v in self._bind_verbs(adaptor, key, verbs)]
                 if verbs is not None else []
             )
             # The BUDGETS, not the guard. A `DreamGuard` owns a `CallLedger`, and a
@@ -1779,21 +1777,12 @@ class DreamerRuntime:
         return items, stop_reason
 
     def _bind_verbs(
-        self, adaptor: DreamAdaptor, key: str, verbs: Callable[..., Any], sha: str,
+        self, adaptor: DreamAdaptor, key: str, verbs: Callable[..., Any],
     ) -> Sequence[Callable[..., Any]]:
-        """`adaptor.verbs(key=key)`, plus `provenance` when the adaptor's `verbs`
-        takes it: a verb that WRITES when called (Lessons) stamps what a `Proposal`
-        would carry, so its rows name the same run and the same instruction digest
-        an envelope adaptor's do. A staging verb (Character) takes none."""
-        if "provenance" not in inspect.signature(verbs).parameters:
-            bound: Sequence[Callable[..., Any]] = verbs(key=key)
-            return bound
-        provenance = VerbProvenance(
-            instruction_sha256=sha, model=self._model_name,
-            established_by=f"dream:{adaptor.name}:{key}:{int(time.time() * 1000)}",
-        )
-        written: Sequence[Callable[..., Any]] = verbs(key=key, provenance=provenance)
-        return written
+        """`adaptor.verbs(key=key)`: the verbs stage their writes, and `commit`
+        stamps the run's provenance onto every envelope it lands."""
+        bound: Sequence[Callable[..., Any]] = verbs(key=key)
+        return bound
 
     def _screened(
         self, adaptor: str, verb: Callable[..., Any],
