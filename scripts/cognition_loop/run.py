@@ -26,6 +26,7 @@ from nora.infra.sql.schema import COGNITION_WAKE
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.subject import SubjectSpec, obtain, sandbox_as_of
 from nora.subject.eval_evidence import read_events
+from nora.subject.memory_workspace import draw_workspace_id
 from nora.subject.sandbox_signal import landed_signal_sends
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.advance import advance_record, bump_sequences
@@ -51,27 +52,68 @@ async def _wake_reason(source: AsyncEngine, wake_id: int) -> str:
     return str(row)
 
 
-def _profile_keys(subject: Any) -> list[str]:
-    persons = subject.listed_persons or ()
+def _profile_keys(subject: Any, unit: str) -> list[str]:
+    """Every person listed in ANY of the unit's rooms — not only the
+    composed room — plus Nora and the unit's own culture keys. A room
+    listing everyone (`persons` unset) means every person in identity."""
+    allowlist = subject.deps.config_reload.policy
+    persons: set[str] = set()
+    for convo in allowlist.rooms():
+        if convo.unit != unit:
+            continue
+        persons |= (set(subject.deps.persons.by_person)
+                    if convo.persons is None else set(convo.persons))
     return [
-        nora_character_key(subject.unit), unit_culture_key(subject.unit),
-        *(character_key(subject.unit, p) for p in persons),
+        nora_character_key(unit), unit_culture_key(unit),
+        *(character_key(unit, p) for p in sorted(persons)),
     ]
 
 
 async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
-                   policy_text: str, identity_text: str) -> Any:
+                   policy_text: str, identity_text: str,
+                   workspace: str = "") -> Any:
+    overrides = {
+        "cognition.enabled": True,
+        "memory.graph.enabled": True,
+        "memory.graph.comprehend.enabled": True,
+        # Workers that could reach the world are never composed; the
+        # no-egress assertion refuses anything that still is.
+        "computer.enabled": False,
+        "computer.scoped.enabled": False,
+    }
+    if workspace:
+        # Each case writes its own Honcho workspace (a draw inside the
+        # eval namespace), never the deployment's or a shared sibling's.
+        overrides["honcho.workspace_id"] = workspace
+    overrides.update(getattr(spec_args, "overrides", {}))
     return await obtain(SubjectSpec(
         database_url=url, workdir=Path(spec_args.workdir),
         room=(room.platform, room.primary_id), now=_dt(at_ms),
         identity=identity_text, policy=policy_text,
-        overrides={
-            "cognition.enabled": True,
-            "memory.graph.enabled": True,
-            "memory.graph.comprehend.enabled": True,
-            **getattr(spec_args, "overrides", {}),
-        },
+        overrides=overrides,
     ))
+
+
+def validate_recorded_wakes(
+    records: list[tuple[int, str, int]], unit: str,
+) -> str | None:
+    """Every recorded wake is the case's unit and strictly later than the
+    previous — a case that names another unit's wake, or an order the
+    source contradicts, is an error, never a run."""
+    previous_ms: int | None = None
+    for wake_id, wake_unit, at_ms in records:
+        if wake_unit != unit:
+            return (
+                f"recorded wake {wake_id} belongs to unit {wake_unit!r}, "
+                f"not the case's {unit!r}"
+            )
+        if previous_ms is not None and at_ms <= previous_ms:
+            return (
+                f"recorded wake {wake_id} at {at_ms} does not follow "
+                f"the previous wake at {previous_ms}"
+            )
+        previous_ms = at_ms
+    return None
 
 
 async def run_case(
@@ -81,17 +123,30 @@ async def run_case(
     """One case end to end. `judges` is None under `--inspect-only`."""
     roll = Rollup()
     wakes_report: list[dict[str, Any]] = []
-    instants: dict[int, int] = {}
+    records: list[tuple[int, str, int]] = []
     recorded_reasons: dict[int, str] = {}
     for i, wake_id in enumerate(case.wakes):
-        at_ms, _ = await recorded_wake(source, wake_id)
-        instants[i] = at_ms
+        at_ms, view = await recorded_wake(source, wake_id)
+        records.append((wake_id, view.unit, at_ms))
         recorded_reasons[i] = await _wake_reason(source, wake_id)
+    problem = validate_recorded_wakes(records, case.unit)
+    if problem is not None:
+        roll.error(problem)
+        return _report(case, roll, wakes_report)
+    instants = {i: at_ms for i, (_, _, at_ms) in enumerate(records)}
     room = next((c for c in policy.rooms() if c.unit == case.unit), None)
     if room is None:
         roll.error(f"case unit {case.unit!r} names no policy room")
         return _report(case, roll, wakes_report)
 
+    deployment = getattr(args, "deployment_workspace", "")
+    # One draw workspace per CASE — its writes carry into its later wakes;
+    # the nonce is drawn once, not per wake.
+    workspace = (
+        draw_workspace_id(deployment, run_id=getattr(args, "run_id", "run"),
+                          case=case.name)
+        if deployment else ""
+    )
     first = datetime.fromtimestamp(instants[0] / 1000, UTC)
     with TemporaryDirectory(prefix="nora-cognition-loop-") as workdir:
         args.workdir = workdir
@@ -123,7 +178,7 @@ async def run_case(
                             wakes_report.append(await _run_wake(
                                 args, case, i, wake_id, at_ms, url,
                                 recorded_reasons[i], judges, evidence, output,
-                                room,
+                                room, workspace,
                             ))
                     except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
                         roll.error(f"wake {i} (recorded {wake_id}): {exc!r}")
@@ -144,13 +199,13 @@ async def run_case(
 async def _run_wake(
     args: Any, case: Any, index: int, wake_id: int, at_ms: int, url: str,
     reason: str, judges: Any | None, evidence: Any, output: Path,
-    room: Any,
+    room: Any, workspace: str,
 ) -> dict[str, Any]:
     """One wake: compose, assert no egress, record, run live, diff, judge."""
     with landed_signal_sends():
         subject = await _compose(
             args, url, at_ms, room, args.policy.read_text(),
-            args.identity.read_text(),
+            args.identity.read_text(), workspace=workspace,
         )
     egress = assert_no_egress(subject)
     await index_replay_sandbox(subject, source_url=args.database_url)
@@ -178,7 +233,7 @@ async def _run_wake(
         )
         before = await state_mod.snapshot(
             engine, unit=case.unit, rooms=rooms,
-            profile_keys=_profile_keys(subject), now_ms=at_ms,
+            profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
             metrics=subject.deps.metrics,
         )
         tokens_before = subject.deps.metrics.get(
@@ -197,11 +252,14 @@ async def _run_wake(
                   - tokens_before)
         after = await state_mod.snapshot(
             engine, unit=case.unit, rooms=rooms,
-            profile_keys=_profile_keys(subject), now_ms=at_ms,
+            profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
             metrics=subject.deps.metrics,
         )
         diff = state_mod.diff(before, after)
-        events = session_events(read_events(evidence.path))
+        events = session_events(
+            read_events(evidence.path), session_id=session_id,
+            wake_id=wake.wake_id,
+        )
         trajectory = wake_trajectory(
             events, wake_id=wake.wake_id, session_id=session_id,
             tokens=tokens or None,
@@ -221,37 +279,54 @@ async def _run_wake(
                     "verdict_obj": verdict_obj,
                     "answers": [asdict(a) for a in verdict_obj.answers],
                 })
-        freeze(output / f"wake-{index}-{wake_id}.json", {
-            "trajectory": trajectory,
-            "diff": {
-                k: {s: [asdict(e) for e in entries]
-                    for s, entries in (
-                        ("created", d.created), ("revised", d.revised),
-                        ("retired", d.retired), ("unchanged", d.unchanged))}
-                for k, d in diff.kinds.items()
-            },
-            "expectations": [
-                {k: v for k, v in e.items() if k != "verdict_obj"}
-                for e in expectations
-            ],
-        })
-        return {
-            "recorded_wake_id": wake_id, "wake_id": wake.wake_id,
-            "at_ms": at_ms, "reason": reason, "forced": wake.forced,
-            "status": "PASS",
-            "session_id": session_id, "egress": egress,
-            "model_calls": bool(judges),
-            "diff_counts": {
-                k: {"created": len(d.created), "revised": len(d.revised),
-                    "retired": len(d.retired), "unchanged": len(d.unchanged)}
-                for k, d in diff.kinds.items()
-            },
-            "trajectory": trajectory,
-            "expectations": expectations,
-            "_state_before": after,
-        }
+        return _freeze_wake(
+            output, index, wake_id, wake, at_ms, reason, session_id,
+            egress, judges is not None, diff, trajectory, expectations, after,
+        )
     finally:
-        await engine.dispose()
+        try:
+            from evals.backbone import _close
+            await _close(subject)
+        finally:
+            await engine.dispose()
+
+
+def _freeze_wake(
+    output: Path, index: int, wake_id: int, wake: Any, at_ms: int,
+    reason: str, session_id: str | None, egress: dict[str, Any],
+    model_calls: bool, diff: Any, trajectory: dict[str, Any],
+    expectations: list[dict[str, Any]], state_after: Any,
+) -> dict[str, Any]:
+    """The wake's private evidence file and its report row."""
+    freeze(output / f"wake-{index}-{wake_id}.json", {
+        "trajectory": trajectory,
+        "diff": {
+            k: {s: [asdict(e) for e in entries]
+                for s, entries in (
+                    ("created", d.created), ("revised", d.revised),
+                    ("retired", d.retired), ("unchanged", d.unchanged))}
+            for k, d in diff.kinds.items()
+        },
+        "expectations": [
+            {k: v for k, v in e.items() if k != "verdict_obj"}
+            for e in expectations
+        ],
+    })
+    return {
+        "recorded_wake_id": wake_id, "wake_id": wake.wake_id,
+        "at_ms": at_ms, "reason": reason, "forced": wake.forced,
+        "status": "PASS",
+        "session_id": session_id, "egress": egress,
+        "model_calls": model_calls,
+        "diff_counts": {
+            k: {"created": len(d.created), "revised": len(d.revised),
+                "retired": len(d.retired), "unchanged": len(d.unchanged)}
+            for k, d in diff.kinds.items()
+        },
+        "trajectory": trajectory,
+        "expectations": expectations,
+        "_state_before": state_after,
+    }
 
 
 def _rooms(subject: Any, unit: str) -> list[tuple[str, str]]:

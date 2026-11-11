@@ -5,9 +5,8 @@ sandbox engine — `SqlNoteStore.standing`, `SqlMemoStore.kept`,
 `SqlGatheringStore.list_for_conversation`, `SqlReminderStore.all_pending`,
 `SqlStandingStore.read_head`, `SqlStandingLedger.read`,
 `SqlLessonStore.lessons`, `SqlProfileStore.account_heads`,
-`SqlMemoryGraph.aliases`, the `relation` table scanned through
-`relation_row` (no store verb returns the full set — `walk` is scoped),
-and the stimulus store's `view`
+`SqlMemoryGraph.aliases`, the graph's full relation set through
+`unit_relations`, and the stimulus store's `view`
 plus `pending_self_wakes` — never an eval-side SQL projection. Entries
 key by the store's own id; the diff classifies created / revised
 (before and after) / retired-or-closed / unchanged.
@@ -19,18 +18,17 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.infra.sql.cognition_store import SqlCognitionStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.memo import SqlMemoStore
-from nora.infra.sql.memory_graph import SqlMemoryGraph, relation_row
+from nora.infra.sql.memory_graph import SqlMemoryGraph
+from nora.infra.sql.memory_relations import unit_relations
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.reminders import SqlReminderStore
-from nora.infra.sql.schema import RELATION
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.standing_ledger import SqlStandingLedger
 from nora.infra.sql.stimuli import SqlStimulusStore
@@ -98,6 +96,13 @@ def _payload(obj: Any) -> Mapping[str, Any]:
     return {k: str(v) for k, v in sorted(out.items())}
 
 
+def reminder_in_rooms(reminder: Any, rooms: Sequence[tuple[str, str]]) -> bool:
+    """A reminder is in scope only through one of the unit's own rooms —
+    `all_pending` is global, and a reminder carrying no unit key must
+    never read as another unit's."""
+    return (reminder.platform, reminder.conversation_id) in set(rooms)
+
+
 async def snapshot(
     engine: AsyncEngine, *, unit: str,
     rooms: Sequence[tuple[str, str]],
@@ -127,7 +132,7 @@ async def snapshot(
     kinds["reminder"] = {
         str(r.id): _payload(r)
         for r in await reminders.all_pending(limit=10000)
-        if getattr(r, "unit", unit) == unit
+        if reminder_in_rooms(r, rooms)
     }
 
     standing_store = SqlStandingStore(engine)
@@ -157,14 +162,9 @@ async def snapshot(
     kinds["profile"] = profile
 
     graph = SqlMemoryGraph(engine)
-    async with engine.connect() as conn:
-        relations = (await conn.execute(
-            sa.select(RELATION).where(RELATION.c.unit == unit)
-            .order_by(RELATION.c.asserted_at, RELATION.c.id)
-        )).mappings().all()
     kinds["graph"] = {
         f"{r.rel}:{r.id}": _payload(r)
-        for r in (relation_row(row) for row in relations)
+        for r in await unit_relations(engine, unit=unit)
     }
     anchors = {f"anchor:{n}": {"kind": k[0], "id": k[1]}
                for n, k in (await graph.aliases(unit=unit)).items()}
