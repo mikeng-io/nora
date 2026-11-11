@@ -1688,7 +1688,8 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     # runner injects the Register skill for a `message` agenda and records it;
     # `time` is mapped, so the floors wake.
     text, sha = runner._doctrine()
-    assert text.startswith("You are Nora. This is the part of you") and "<dreamer_" not in text and sha
+    assert text.startswith("You are Nora. This is the part of you")
+    assert "<dreamer_" not in text and sha
     assert runner._skill_text_for()
     assert set(runner._skill_versions_for()) == {"cognition-register"}
     assert evaluator._floors_ready is True
