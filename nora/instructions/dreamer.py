@@ -48,9 +48,8 @@ RELOAD_FAILURES_COUNTER = "nora_dreamer_instruction_reload_failures_total"
 
 DOCTRINE_KIND = "dreamer-doctrine"
 OBJECTIVE_KIND = "objective"
-PRELUDE_KIND = "dreamer-prelude"
 SKILL_KIND = "skill"
-KINDS = (DOCTRINE_KIND, OBJECTIVE_KIND, PRELUDE_KIND, SKILL_KIND)
+KINDS = (DOCTRINE_KIND, OBJECTIVE_KIND, SKILL_KIND)
 
 CHANGE_POLICIES = ("operator-only", "agent-may-edit")
 
@@ -68,7 +67,6 @@ _OBJECTIVES_SUBDIR = "objectives"
 # `doctrine/` fails startup ("expected exactly one Dreamer doctrine file"), and
 # `nora/dreamer` is bind-mounted, so it can reach an older image that scans
 # only `doctrine/` and `objectives/`. A new directory is one it never reads.
-_PRELUDES_SUBDIR = "preludes"
 _SKILLS_SUBDIR = "skills"
 
 # The two tags the assembled system prompt is made of. They are DIFFERENT tags
@@ -155,25 +153,17 @@ class DreamerSkill:
 class _Corpus:
     doctrine: ParsedDocument
     objectives: dict[str, ParsedDocument]
-    #: Objective name -> the prelude it reads INSTEAD of the shared doctrine.
-    preludes: dict[str, ParsedDocument]
     skills: dict[str, ParsedDocument]
 
 
 class DreamerInstructions:
     """`nora/dreamer/` — `doctrine/` (exactly one file), `objectives/`, and
-    `preludes/` and `skills/`, which only the Cognition session reads so far.
+    `skills/`, which only the Cognition session reads.
 
-    **A prelude replaces the shared doctrine for the objectives it names**
-    (`applies_to`, objective names). The shared doctrine tells every Dreamer
-    «Nobody is waiting for you, nobody sees this… You look; you do not act»,
-    which is true of a judge and false of the Cognition session, whose verbs
-    write the group's notebook. Editing the
-    shared file would change every adaptor's instruction and digest at once;
-    a prelude changes the one adaptor that needs it, and every other adaptor's
-    assembled text stays byte-identical
-    (`tests/unit/test_dreamer_instruction_goldens.py`). The digest still covers
-    the pair, the prelude in the doctrine's place.
+    Every adaptor's instruction is the shared doctrine plus its objective
+    (`for_objective`). The Cognition session is not a Dreamer judge: its
+    objective is its whole instruction (`objective_body`), without the shared
+    doctrine's «you look; you do not act».
 
     **A skill** is a text the Cognition session injects after its instruction
     as part of its tool-gated guidance (`DreamerSkill`, `skill`). It lives here, not in
@@ -229,9 +219,7 @@ class DreamerInstructions:
         if cached is not None:
             return cached
         objective = self._objective(corpus, name)
-        # The objective's own prelude when it has one, else the shared doctrine:
-        # the half that says what the runtime is, under the same tag either way.
-        doctrine = corpus.preludes.get(name, corpus.doctrine)
+        doctrine = corpus.doctrine
         # The joiner is `nora.domain.provenance.instruction_sha256`'s, which is
         # `nora.doctrine.loader._assemble`'s, which is "\n". Assembling the text
         # one way and hashing it another is how a digest stops naming what was
@@ -312,7 +300,7 @@ class DreamerInstructions:
         versions = {corpus.doctrine.name: _version(corpus.doctrine)}
         for name in sorted(corpus.objectives):
             versions[name] = _version(corpus.objectives[name])
-        for doc in (*corpus.preludes.values(), *corpus.skills.values()):
+        for doc in corpus.skills.values():
             versions[doc.name] = _version(doc)
         return versions
 
@@ -358,7 +346,6 @@ class DreamerInstructions:
             objectives[parsed.name] = parsed
         return _Corpus(
             doctrine=doctrine, objectives=objectives,
-            preludes=self._preludes(objectives),
             skills=self._named(_SKILLS_SUBDIR, SKILL_KIND),
         )
 
@@ -377,36 +364,6 @@ class DreamerInstructions:
                 )
             out[parsed.name] = parsed
         return out
-
-    def _preludes(
-        self, objectives: dict[str, ParsedDocument],
-    ) -> dict[str, ParsedDocument]:
-        """Objective name -> its prelude, from each prelude's `applies_to`.
-
-        An objective named by two preludes is refused for the reason a second
-        doctrine file is: which one is served, and so the digest, would depend
-        on a filename. A prelude naming no loaded objective is refused too: a
-        typo there would serve the shared doctrine to the objective it meant,
-        silently, which is the very text the prelude exists to replace."""
-        by_objective: dict[str, ParsedDocument] = {}
-        for prelude in self._named(_PRELUDES_SUBDIR, PRELUDE_KIND).values():
-            for name in _applies_to(prelude):
-                if name not in objectives:
-                    # Lenient mode skipped a broken objective: it is absent, and
-                    # `for_objective` already fails it loudly by name.
-                    if not self._strict:
-                        continue
-                    raise InstructionError(
-                        f"{prelude.path.name}: applies_to names {name!r}, which is not a "
-                        f"loaded objective"
-                    )
-                if name in by_objective:
-                    raise InstructionError(
-                        f"objective {name!r} has two preludes: "
-                        f"{by_objective[name].path.name}, {prelude.path.name}"
-                    )
-                by_objective[name] = prelude
-        return by_objective
 
     def _parse(self, path: Path, *, expected_kind: str) -> ParsedDocument | None:
         try:
@@ -428,36 +385,12 @@ class DreamerInstructions:
                     f"{', '.join(CHANGE_POLICIES)}"
                 )
             _version(parsed)                      # int(), or an InstructionError
-            if kind == PRELUDE_KIND:
-                _applies_to(parsed)               # a list of names, or an InstructionError
         except InstructionError:
             if self._strict:
                 raise
             log.warning("skipping invalid Dreamer instruction file %s", path.name)
             return None
         return parsed
-
-
-def _applies_to(doc: ParsedDocument) -> list[str]:
-    """A prelude's `applies_to`: a non-empty list of objective names, and nothing else.
-
-    Anything else (a number, a bool, a bare string, a nested list, a mapping,
-    a null) is an `InstructionError`, because the reload watcher tolerates only
-    that error: a `TypeError` out of here would escape it and fail every
-    `for_objective` until the file was fixed, and at startup would crash-loop
-    the process. A list holding a non-string is refused for the same reason,
-    and so that an unhashable item never reaches a dict lookup. An EMPTY list is
-    refused for `_preludes`'s own reason: a prelude that applies to nothing is
-    the same silent fallback to the shared doctrine as a typo in a name."""
-    applies = doc.meta.get("applies_to")
-    if not applies or not isinstance(applies, list) or not all(
-        isinstance(n, str) for n in applies
-    ):
-        raise InstructionError(
-            f"{doc.path.name}: applies_to must be a non-empty list of objective names, "
-            f"got {applies!r}"
-        )
-    return list(applies)
 
 
 def _version(doc: ParsedDocument) -> int:

@@ -1683,13 +1683,12 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     # R-99 admits the agenda binding independently of a read's own room destination.
     assert all({"agenda_room", "room"} <= names for names in agent._param_names.values())
     assert set(agent._param_names) <= runner._read_only_tools
-    # The session's instruction is the Dreamer's objective for it, read from
-    # the bind-mounted corpus, its own prelude first (not the shared doctrine),
-    # and the composed runner injects the Register skill for a
-    # `message` agenda and records it; `time` is mapped, so the floors wake.
+    # The session's instruction is its own objective alone, read from the
+    # bind-mounted corpus (never the shared Dreamer doctrine), and the composed
+    # runner injects the Register skill for a `message` agenda and records it;
+    # `time` is mapped, so the floors wake.
     text, sha = runner._doctrine()
-    assert text.startswith('<dreamer_doctrine name="cognition-prelude">')
-    assert '<dreamer_objective name="cognition">' in text and sha
+    assert text.startswith("You are Nora's cognition") and "<dreamer_" not in text and sha
     assert runner._skill_text_for()
     assert set(runner._skill_versions_for()) == {"cognition-register"}
     assert evaluator._floors_ready is True
@@ -1708,58 +1707,31 @@ def _dreamer_tree(tmp_path: Path) -> Path:
     return root
 
 
-@pytest.mark.parametrize("how", ["prelude deleted", "prelude applies to nothing",
-                                 "prelude applies elsewhere", "skill deleted"])
-async def test_a_session_whose_prelude_or_skill_is_missing_is_a_startup_error(
+@pytest.mark.parametrize("how", ["objective deleted", "skill deleted"])
+async def test_a_session_whose_objective_or_skill_is_missing_is_a_startup_error(
     cfg, tmp_path, how,
 ):
-    """Without its prelude, `cognition` silently reads the shared Dreamer doctrine («you
-    look; you do not act»), and a mapped skill that is not installed would raise a raw
-    `LookupError` out of the composition. Both must be a named `StartupError`."""
+    """A missing `cognition` objective, or a mapped skill that is not installed, would
+    raise a raw `LookupError` out of the composition. Both must be a named
+    `StartupError`."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     root = _dreamer_tree(tmp_path)
-    prelude = root / "preludes" / "cognition-prelude.md"
-    if how == "prelude deleted":
-        prelude.unlink()
-    elif how == "skill deleted":
-        (root / "skills" / "cognition-register.md").unlink()
+    if how == "objective deleted":
+        (root / "objectives" / "cognition.md").unlink()
     else:
-        applies = "[]" if how == "prelude applies to nothing" else "[note-merge]"
-        prelude.write_text(
-            prelude.read_text(encoding="utf-8").replace(
-                "applies_to: [cognition]", f"applies_to: {applies}",
-            ),
-            encoding="utf-8",
-        )
-    expect = "cognition-register" if how == "skill deleted" else "cognition-prelude"
+        (root / "skills" / "cognition-register.md").unlink()
+    expect = "cognition-register" if how == "skill deleted" else "cognition"
     with pytest.raises(StartupError, match=expect):
         await build_dependencies(override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}))
 
 
 async def test_the_same_tree_builds_when_nothing_is_taken_out_of_it(cfg, tmp_path):
-    """The positive control of the three refusals above: an untouched copy is accepted."""
+    """The positive control of the refusals above: an untouched copy is accepted."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "dreamer.dir": _dreamer_tree(tmp_path)},
     ))
     assert deps.cognition_runner is not None
-
-
-async def test_a_prelude_deleted_after_startup_is_refused_per_session(cfg, tmp_path):
-    """Hot reload: the file goes after a good start. The next session's instruction would
-    be the shared doctrine; it is refused by name instead."""
-    from nora.app.cognition_wiring import PreludeMissingError
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    root = _dreamer_tree(tmp_path)
-    deps = await build_dependencies(override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}))
-    runner = deps.cognition_runner
-    assert runner is not None and runner._doctrine()[0].startswith(
-        '<dreamer_doctrine name="cognition-prelude">',
-    )
-    (root / "preludes" / "cognition-prelude.md").unlink()
-    with pytest.raises(PreludeMissingError, match="cognition-prelude"):
-        runner._doctrine()
 
 
 async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withholds(

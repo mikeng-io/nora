@@ -135,11 +135,11 @@ def memory_result_text(text: str, *, query: str, depth: int) -> str:
 
 
 MEMORY_CRITERIA = (
-    "Use `memory_propose` for relations first, a reading only when no relation holds "
-    "the fact, and a correction for a contradicted shown relation. Record what a row "
-    "says about a person, plan, offer or preference even when it needs no reply and "
-    "is not addressed to you; chatter that adds no claim needs no write. "
-    "likes/dislikes concerns a specific thing; interested_in a subject."
+    "Keep what a row tells about a person, a plan, an offer or a preference with "
+    "`memory_propose`, even when it needs no reply and is not addressed to you. Use a "
+    "relation when one of its types fits, a reading for anything else, and a "
+    "correction for a shown relation the rows contradict. likes/dislikes concerns a "
+    "specific thing; interested_in a subject. Chatter that adds no claim needs no write."
 )
 
 
@@ -198,8 +198,10 @@ def render_session_system(doctrine: str, skills: str, *, tool_names: frozenset[s
     if "memory_propose" in tool_names:
         sections.append(
             "Examples (synthetic): Ada says in row 5201, 'I love Lantern Game': "
-            "propose Ada likes Lantern Game, citing 5201. Row 5230 says 'lol nice' "
-            "with a bare link: no statement or action is needed.")
+            "propose Ada likes Lantern Game, citing 5201. Ben says in row 5210 he has "
+            "two spare tickets for Saturday's show: propose a reading of that offer, "
+            "citing 5210, though nobody asked you. Row 5230 says 'lol nice' with a "
+            "bare link: nothing to keep.")
     orient = assemble([restamp(ContextBlock(
         name="cognition_orient", body=compose_body(
             "# Orient\n\n" + "\n\n".join(sections) if sections else "")), _ROW)])

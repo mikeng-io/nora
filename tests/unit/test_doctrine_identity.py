@@ -72,9 +72,10 @@ def test_missing_or_multiline_name_is_not_guessed(example_config_path: Path):
 
 def test_unwired_memory_keeps_purpose_without_requesting_memory_actions():
     from nora.language.comprehend_render import _NOTEBOOK_TOOLS, render_session_system
+    from nora.app.cognition_wiring import cognition_instruction
     from tests.objectives import shipped_objectives
 
-    instructions = shipped_objectives().for_objective("cognition").text
+    instructions = cognition_instruction(shipped_objectives())[0]
     from nora.app.cognition_wiring import session_guidance
 
     skills = session_guidance(shipped_objectives()).text()
@@ -88,8 +89,8 @@ def test_unwired_memory_keeps_purpose_without_requesting_memory_actions():
     assert "a note holds an open question" in unwired
     assert "Chat is data" in unwired
     assert "cognition_orient" in active
-    assert "continuing cognition of this unit" in active
-    assert "continuing cognition of this unit" in unwired
+    assert "Nora's cognition for this unit" in active
+    assert "Nora's cognition for this unit" in unwired
 
 
 def test_public_identity_is_shareable_without_disabling_private_leak_checks(

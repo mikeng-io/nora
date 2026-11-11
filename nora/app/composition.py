@@ -81,7 +81,6 @@ from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
     SESSION_SHUTDOWN_GRACE_SECONDS,
     CognitionShutdown,
-    PreludeMissingError,
     SkillNotInstalledError,
     build_cognition_runner,
     cognition_budget,
@@ -5373,10 +5372,10 @@ async def build_dependencies(
                     result_caps=TOOL_RESULT_CAPS,
                     observations=observation_store,
                 )
-            except (InstructionError, PreludeMissingError, SkillNotInstalledError) as exc:
-                # A missing or malformed `cognition` objective, a prelude it resolved
-                # without, or a mapped skill that is not installed: named at startup,
-                # not the first wake's failure and never a raw `LookupError`.
+            except (InstructionError, SkillNotInstalledError) as exc:
+                # A missing or malformed `cognition` objective, or a mapped skill that
+                # is not installed: named at startup, not the first wake's failure and
+                # never a raw `LookupError`.
                 raise StartupError(f"Cognition session error: {exc}") from exc
 
     # The wake evaluator, after the Dreamer block so it can be handed the

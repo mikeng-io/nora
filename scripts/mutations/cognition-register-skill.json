@@ -7,18 +7,11 @@
   "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_probe_an_eval_arm_drives_records_the_skill_it_injects"
  },
  {
-  "name": "(f) the shared doctrine edited instead of adding a prelude",
+  "name": "(f) the shared Dreamer doctrine edited",
   "file": "nora/dreamer/doctrine/dreamer.md",
   "old": "You have no independent conversation with the room and no authority beyond this job.",
   "new": "You have an independent conversation with the room and authority beyond this job.",
   "target": "tests/unit/test_dreamer_instruction_goldens.py"
- },
- {
-  "name": "(f2) prelude selection reverted in the loader",
-  "file": "nora/instructions/dreamer.py",
-  "old": "doctrine = corpus.preludes.get(name, corpus.doctrine)",
-  "new": "doctrine = corpus.doctrine",
-  "target": "tests/unit/test_dreamer_instructions.py"
  },
  {
   "name": "startup check removed",
@@ -28,46 +21,11 @@
   "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_mapped_skill_that_is_not_installed_stops_the_runner_at_startup"
  },
  {
-  "name": "(1a) applies_to type check removed",
-  "file": "nora/instructions/dreamer.py",
-  "old": "    if not applies or not isinstance(applies, list) or not all(\n        isinstance(n, str) for n in applies\n    ):",
-  "new": "    if False:",
-  "target": "tests/unit/test_dreamer_instructions.py -k applies_to"
- },
- {
-  "name": "(1b) applies_to items not checked",
-  "file": "nora/instructions/dreamer.py",
-  "old": "not isinstance(applies, list) or not all(\n        isinstance(n, str) for n in applies\n    ):",
-  "new": "not isinstance(applies, list):",
-  "target": "tests/unit/test_dreamer_instructions.py -k applies_to"
- },
- {
-  "name": "(1c) a prelude's applies_to checked only in the scan, not at parse (lenient mode raises)",
-  "file": "nora/instructions/dreamer.py",
-  "old": "            if kind == PRELUDE_KIND:\n                _applies_to(parsed)               # a list of names, or an InstructionError\n",
-  "new": "",
-  "target": "tests/unit/test_dreamer_instructions.py -k lenient_mode_skips_a_prelude"
- },
- {
-  "name": "(7) prelude startup check removed",
-  "file": "nora/app/cognition_wiring.py",
-  "old": "        if COGNITION_PRELUDE not in loaded.versions:",
-  "new": "        if False:",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k no_prelude_stops_the_runner_at_startup"
- },
- {
-  "name": "(7b) prelude check removed, seen through the composition",
-  "file": "nora/app/cognition_wiring.py",
-  "old": "        if COGNITION_PRELUDE not in loaded.versions:",
-  "new": "        if False:",
-  "target": "tests/test_composition.py -k prelude"
- },
- {
   "name": "(8a) composition lets the wiring's errors through raw",
   "file": "nora/app/composition.py",
-  "old": "            except (InstructionError, PreludeMissingError, SkillNotInstalledError) as exc:",
+  "old": "            except (InstructionError, SkillNotInstalledError) as exc:",
   "new": "            except InstructionError as exc:",
-  "target": "tests/test_composition.py -k test_a_session_whose_prelude_or_skill_is_missing_is_a_startup_error"
+  "target": "tests/test_composition.py -k test_a_session_whose_objective_or_skill_is_missing_is_a_startup_error"
  },
  {
   "name": "(8b) the prompt reads the skill from a second resolution",
@@ -82,12 +40,5 @@
   "old": "            raise SkillNotInstalledError(f\"session skill {REGISTER_SKILL!r} is not installed\")",
   "new": "            return \"\", {}",
   "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_mapped_skill_deleted_by_a_hot_reload"
- },
- {
-  "name": "(1d) an empty applies_to is accepted again",
-  "file": "nora/instructions/dreamer.py",
-  "old": "    if not applies or not isinstance(applies, list) or not all(",
-  "new": "    if not isinstance(applies, list) or not all(",
-  "target": "tests/unit/test_dreamer_instructions.py -k applies_to"
  }
 ]

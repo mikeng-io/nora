@@ -14,6 +14,7 @@ from nora.app.cognition_wiring import (
     REGISTER_SKILL,
     SessionGuidance,
     SkillNotInstalledError,
+    cognition_instruction,
     session_guidance,
 )
 from nora.domain.cognition_session import Room
@@ -62,7 +63,7 @@ def build_runner(
     store: Any, spy: _Spy, stimuli: Any, *, skills: SessionGuidance | None = None,
     grounder: Any = None, memory: Any = None,
 ) -> CognitionSessionRunner:
-    """A runner with the production objective, prelude and skills, wired as
+    """A runner with the production objective and skills, wired as
     `build_cognition_runner` wires them (the text, the versions and the one
     resolution that carries both)."""
     skills = skills or production_skills()
@@ -73,14 +74,14 @@ def build_runner(
     async def no_head(*args: Any, **kwargs: Any) -> Any:
         return None
 
-    loaded = shipped_objectives().for_objective("cognition")
+    text, sha = cognition_instruction(shipped_objectives())
     return CognitionSessionRunner(
         store=store, stimulus_store=stimuli, agent_runner=spy, memory=memory,
         home_rooms={"u": Room("signal", "room-a")}, read_tools_for=lambda u, r: [],
         skill_text_for=skills.text, skill_versions_for=skills.versions,
         skills_for=skills.resolved,
-        grounder=grounder or EmptyGrounder(), doctrine_text=loaded.text,
-        doctrine_sha256=loaded.sha256,
+        grounder=grounder or EmptyGrounder(), doctrine_text=text,
+        doctrine_sha256=sha,
         open_note_titles=none, open_events=none, prior_standing=no_head,
         budget=AdaptorBudget(turns=1, total_tokens=1, output_tokens=1, timeout_seconds=5),
         cooldown_seconds=300, units=("u",), session_timeout_seconds=900.0, max_items=12,
@@ -312,6 +313,20 @@ def _build_with(instructions: Any, skills: SessionGuidance) -> Any:
     )
 
 
+def test_the_cognition_instruction_is_its_objective_alone():
+    """No shared Dreamer doctrine (a judge's «you look; you do not act») and no
+    wrapper tag: the objective body is the whole instruction, and its digest."""
+    import hashlib
+
+    store = shipped_objectives()
+    text, sha = cognition_instruction(store)
+    assert text == store.objective_body("cognition").strip()
+    assert sha == hashlib.sha256(text.encode()).hexdigest()
+    assert "<dreamer_" not in text
+    assert "one bounded reflection" not in text
+    assert "Only tool calls last" in text
+
+
 def test_a_mapped_skill_that_is_not_installed_stops_the_runner_at_startup():
     """Not the first wake's failure: a pull that ships the mapping's image without
     the skill file (or a typo in its name) is refused where the composition can
@@ -321,34 +336,3 @@ def test_a_mapped_skill_that_is_not_installed_stops_the_runner_at_startup():
         _build_with(shipped_objectives(), missing)
 
 
-PRELUDE_FILE = Path("preludes") / "cognition-prelude.md"
-
-
-def _without_prelude(tmp_path: Path, how: str) -> DreamerInstructions:
-    """The shipped tree with its Cognition prelude gone, emptied of what it applies
-    to, or aimed at another objective: each leaves a tree the LOADER accepts and
-    serves the shared Dreamer doctrine («you look; you do not act») to `cognition`."""
-    root = _editable_tree(tmp_path)
-    path = root / PRELUDE_FILE
-    if how == "deleted":
-        path.unlink()
-    else:
-        assert how == "elsewhere"            # an empty list is the loader's own refusal
-        text = path.read_text(encoding="utf-8")
-        assert "applies_to: [cognition]" in text
-        path.write_text(text.replace("applies_to: [cognition]", "applies_to: [culture]"),
-                        encoding="utf-8")
-    return DreamerInstructions(root, metrics=Metrics())
-
-
-@pytest.mark.parametrize("how", ["deleted", "elsewhere"])
-def test_a_cognition_objective_with_no_prelude_stops_the_runner_at_startup(tmp_path, how):
-    """The silent fallback: the loader serves the shared doctrine to an objective that
-    has no prelude, with no error and no counter."""
-    from nora.app.cognition_wiring import PreludeMissingError
-
-    instructions = _without_prelude(tmp_path, how)
-    served = instructions.for_objective("cognition")
-    assert "one bounded reflection" in served.text, "the loader falls back, silently"
-    with pytest.raises(PreludeMissingError, match="cognition-prelude"):
-        _build_with(instructions, production_skills())

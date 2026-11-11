@@ -50,6 +50,7 @@ from nora.domain.gatherings import (
 )
 from nora.domain.live import LiveMapping
 from nora.domain.ports import CognitionStore, StimulusStore
+from nora.domain.provenance import instruction_sha256
 from nora.domain.reminders import ReminderCaps
 from nora.domain.standing import StandingHead
 
@@ -330,17 +331,14 @@ class SkillNotInstalledError(LookupError):
     pending and never runs without it."""
 
 
-class PreludeMissingError(RuntimeError):
-    """The `cognition` objective resolved WITHOUT its prelude: the file is gone,
-    or its `applies_to` no longer names `cognition`. The loader serves the
-    shared Dreamer doctrine to an objective that has no prelude, and that text
-    says «Nobody is waiting for you… You look; you do not act», which is false
-    of a session whose verbs write the notebook. Raised at startup, and again at
-    the start of every session, so a hot reload cannot swap it in unseen."""
-
-
-COGNITION_PRELUDE = "cognition-prelude"
 REGISTER_SKILL = "cognition-register"
+
+
+def cognition_instruction(instructions: Any) -> tuple[str, str]:
+    """The session's whole instruction and its digest: the `cognition` objective
+    alone, with no shared Dreamer doctrine and no wrapper tag around it."""
+    body = instructions.objective_body(COGNITION_OBJECTIVE).strip()
+    return body, instruction_sha256(body)
 
 
 @dataclass(frozen=True)
@@ -576,26 +574,12 @@ def build_cognition_runner(
     )
 
     def doctrine() -> tuple[str, str | None]:
-        loaded = instructions.for_objective(COGNITION_OBJECTIVE)
-        # A prelude that is gone, or whose `applies_to` no longer names this
-        # objective, is NOT an error to the loader: the objective then reads the
-        # shared doctrine (a judge's «you look; you do not act»). Refused here,
-        # at startup and at the start of every session, with its name.
-        if COGNITION_PRELUDE not in loaded.versions:
-            raise PreludeMissingError(
-                f"the {COGNITION_OBJECTIVE!r} objective resolved without its prelude "
-                f"{COGNITION_PRELUDE!r} (resolved: {', '.join(sorted(loaded.versions))}): "
-                "it would read the shared Dreamer doctrine, which says a judge looks and "
-                "does not act"
-            )
-        return loaded.text, loaded.sha256
+        return cognition_instruction(instructions)
 
-    # Read once here so a missing or malformed objective, a missing prelude, or a
-    # session skill that is not installed, is a startup failure with its name, not
-    # the first wake's (`DreamerInstructions` raises `InstructionError`,
-    # `doctrine` raises `PreludeMissingError`, `SessionGuidance` raises
-    # `SkillNotInstalledError`; the composition turns all three into a
-    # `StartupError`).
+    # Read once here so a missing or malformed objective, or a session skill that
+    # is not installed, is a startup failure with its name, not the first wake's
+    # (`DreamerInstructions` raises `InstructionError`, `SessionGuidance` raises
+    # `SkillNotInstalledError`; the composition turns both into a `StartupError`).
     text, sha = doctrine()
     skills.resolved()
     home_rooms = LiveMapping(lambda: _by_home_room(homes))
@@ -652,16 +636,15 @@ def build_cognition_runner(
 __all__ = [
     "COGNITION_ADAPTOR_NAME",
     "COGNITION_OBJECTIVE",
-    "COGNITION_PRELUDE",
     "COGNITION_READ_CATALOGUE",
-    "REGISTER_SKILL",
     "CognitionShutdown",
-    "PreludeMissingError",
+    "REGISTER_SKILL",
     "ReadSurface",
     "SessionGuidance",
     "SkillNotInstalledError",
     "build_cognition_runner",
     "cognition_budget",
+    "cognition_instruction",
     "read_surface",
     "read_tools_for",
     "require_session_hook",

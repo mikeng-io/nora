@@ -1165,7 +1165,7 @@ class CognitionSessionRunner:
         )
         # One hand-written item is the whole input — so the assembly is the
         # wake's own `_session_input`, not a parallel partial copy of it: the
-        # SAME instruction (prelude, objective and tool-gated guidance), the SAME
+        # SAME instruction (objective and tool-gated guidance), the SAME
         # tools built the same way, the SAME `render_agenda` call — over a
         # view and grounding that are honestly EMPTY (no stimuli, no observed
         # objects, nothing fetched yet), because a probe item is a sentence,

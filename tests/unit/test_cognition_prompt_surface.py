@@ -17,7 +17,7 @@ from tests.unit.test_cognition_session_runner import NOW, _pending, _runner, wak
 
 
 async def rendered_session(*, historical: bool, documents: bool = False) -> str:
-    from nora.app.cognition_wiring import COGNITION_READ_CATALOGUE
+    from nora.app.cognition_wiring import COGNITION_READ_CATALOGUE, cognition_instruction
 
     # Inspect the declared read surface without invoking any collaborator.
     reads = []
@@ -35,7 +35,7 @@ async def rendered_session(*, historical: bool, documents: bool = False) -> str:
         runner._documents = object()
         runner._documents_context = object()
     store = shipped_objectives()
-    runner._doctrine_text = store.for_objective("cognition").text
+    runner._doctrine_text = cognition_instruction(store)[0]
     from nora.app.cognition_wiring import session_guidance
 
     runner._skill_text_for = session_guidance(store).text
