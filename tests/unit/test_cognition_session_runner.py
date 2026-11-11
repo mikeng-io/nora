@@ -50,12 +50,14 @@ class FakeCognitionAgentRunner:
     calls: int = 0
     results: list[object] = field(default_factory=list)
     last_tool_names: list[str] = field(default_factory=list)
+    last_prompt: str = ""
 
     async def run(
         self, *, system_prompt: str, prompt: str, tools: list[Any],
         budget: AdaptorBudget, trace_attributes: Mapping[str, str],
     ) -> CognitionRunResult:
         self.calls += 1
+        self.last_prompt = prompt
         by_name = {getattr(t, "__name__", None): t for t in tools}
         self.last_tool_names = sorted(n for n in by_name if n)
         for name, kwargs in self.script:
@@ -87,7 +89,7 @@ def _runner(
     store: InMemoryCognitionStore | None = None,
     stimuli: InMemoryStimulusStore | None = None,
     memory: Any = None, grounder: Any = None,
-    read_tools_for: Any = None, read_only_tools: frozenset[str] = frozenset(),
+    read_tools_for: Any = None, read_only_tools: frozenset[str] = frozenset(), lessons: Any = None,
 ) -> tuple[CognitionSessionRunner, InMemoryCognitionStore, FakeCognitionAgentRunner]:
     store = store or InMemoryCognitionStore()
     fake = agent_runner or FakeCognitionAgentRunner()
@@ -102,7 +104,7 @@ def _runner(
         doctrine_sha256="sha", open_note_titles=_async_const(()),
         open_events=_async_const2(()), prior_standing=_async_const2(None),
         budget=BUDGET, cooldown_seconds=300.0, max_items=12,
-        mint_ref=_counting_ref(), clock=lambda: NOW / 1000,
+        mint_ref=_counting_ref(), clock=lambda: NOW / 1000, lessons=lessons,
     )
     return runner, store, fake
 
@@ -1352,5 +1354,3 @@ async def test_session_manifest_keeps_pending_stimulus_refs():
         {"id": 1, "kind": "message", "ref": "messages:1"},
         {"id": 2, "kind": "social", "ref": "social_read:generated-read"},
     ]
-
-

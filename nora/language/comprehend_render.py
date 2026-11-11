@@ -158,6 +158,15 @@ _ORIENT_GUIDANCE = (
      "Use {tools} only to correct your Standing when it is wrong or missing something: "
      "i_owe is what you took on; hold_open is what you are keeping open and what would "
      "resolve it."),
+    (frozenset({"lesson_write", "lesson_retire"}),
+     "Use {tools} for lessons. One reply, reaction or silence is a weak signal: write "
+     "a lesson only for a pattern across several episodes, or for a real correction "
+     "someone gave you, and only when you can say what to do differently. Say it short, "
+     "as practice, in the language you speak here, citing the episodes or the "
+     "correction it rests on. One person's ask is how that person wants you to act; it "
+     "becomes the group's only when the episodes agree. To reinforce or reword a lesson "
+     "you hold, revise it rather than writing a second; retire one these episodes show "
+     "no longer holds. Most wakes teach nothing new."),
 )
 _ACT_GUIDANCE = (
     (frozenset({"document_revise"}),

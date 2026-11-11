@@ -2738,37 +2738,31 @@ class MemoryConfig(BaseModel):
 
 
 class LessonsConfig(BaseModel):
-    """`[lessons]`: the Lessons session: one Dreamer session per unit, woken by
-    closed `response` episodes, writing lessons through `lesson_write` and
-    `lesson_retire`.
+    """`[lessons]`: lessons, written by the unit's Cognition session, which is
+    shown the closed `response` episodes past its lessons cursor and writes
+    through `lesson_write` and `lesson_retire`.
 
     **Off by default, and off is the safe reading.** On, the session writes lessons
-    into its store; `render` decides whether they reach a prompt. Needs `[dreamer]
-    enabled`.
+    into its store; `render` decides whether they reach a prompt. Needs
+    `[cognition] enabled`.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
 
-    #: Closed episodes in a unit (her sends with what followed, `unanswered`
-    #: included) that wake its session at once. **50**; every quieter unit is woken by
-    #: `stale_seconds` instead. A lower value would induce lessons from too few days
-    #: of one unit.
-    wake_batch: int = Field(default=50, ge=1)
-
-    #: Seconds after a unit's last session at which ANY new closed episode
-    #: wakes it, so a quiet unit is still read weekly. **604800** (7 days), the
-    #: Character sessions' rule; a unit with nothing new never fires.
+    #: How far back the correction fast path looks on a unit's first session
+    #: (the lower edge of its window when no session has settled yet).
+    #: **604800** (7 days): a unit's whole history is not handed in as
+    #: corrections.
     stale_seconds: int = Field(default=604_800, ge=3600)
 
     #: A lesson not re-evidenced (written or reinforced) for this long is
     #: retired by code. **5184000** (60 days); unmeasured.
     horizon_seconds: int = Field(default=5_184_000, ge=86_400)
 
-    #: Closed episodes one session is handed, the newest. Twice `wake_batch`,
-    #: so a stale wake after a long gap reads two batches, not the whole gap;
-    #: what is past it is consumed, as a Character session's backlog is.
+    #: Closed episodes one session is handed, the newest. What is past it is
+    #: consumed, as a Character session's backlog is.
     batch_limit: int = Field(default=100, ge=1)
 
     #: Render the unit's active lessons as `<lessons>` on tag and fire turns, after
@@ -2779,8 +2773,8 @@ class LessonsConfig(BaseModel):
     render: bool = False
 
     #: The correction fast path: a message that speaks to her and reads as an
-    #: instruction about how she acts wakes the unit's session once it is this many
-    #: seconds old, instead of waiting for `wake_batch` episodes. **600** (10
+    #: instruction about how she acts is shown to the next session once it is
+    #: this many seconds old, not held for the episode count. **600** (10
     #: minutes): long enough for the conversation around it to settle, short enough
     #: that the lesson lands the same evening. `0` turns the fast path off.
     correction_quiet_seconds: int = Field(default=600, ge=0)
@@ -4557,13 +4551,15 @@ class Config(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _lessons_need_the_dreamer(self) -> Config:
-        """A Lessons session is a Dreamer adaptor; `[lessons] enabled` without
-        the Dreamer would build nothing and say nothing."""
-        if self.lessons.enabled and not self.dreamer.enabled:
+    def _lessons_need_cognition(self) -> Config:
+        """Lessons are written by the Cognition session (its `lesson_write`
+        and `lesson_retire` verbs); `[lessons] enabled` without Cognition
+        would build nothing and say nothing. Cognition itself needs the
+        Dreamer, checked above."""
+        if self.lessons.enabled and not self.cognition.enabled:
             raise ValueError(
-                "[lessons] enabled = true needs [dreamer] enabled = true: "
-                "the Lessons session runs on the Dreamer"
+                "[lessons] enabled = true needs [cognition] enabled = true: "
+                "the Cognition session writes lessons"
             )
         # The doctrine check is "a model other than the session": a judge on the
         # writer's own model grades its own homework. Compared by the configured

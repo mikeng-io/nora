@@ -90,7 +90,7 @@ that share the same capture mechanism; no row relies on a mutable parsed object.
 | RegistryToolSource and proactive runner | unit home rooms, scope rooms, location flags | Hot maps, including initially empty maps; runner is available before the first home room is added |
 | Dreamer scope/unit callbacks and Culture account reads | current room and unit populations, label, description, members | Hot callbacks |
 | Character person/unit/Nora adaptors and evidence | current key populations, identity/name, rooms | Hot key maps and populations recomputed at use |
-| Profile person/collective/verdict and Lessons adaptors/evidence | current accounts, labels, descriptions, docket members and rooms | Hot key/member maps and populations |
+| Profile person/collective/verdict adaptors/evidence and the lesson evidence seam | current accounts, labels, descriptions, docket members and rooms | Hot key/member maps and populations |
 | Cognition grounder, upcoming reads, session runner and WakeEvaluator | unit rooms, labels, members, home rooms and runnable units | Hot maps/sets, including room removal and home-room flag changes |
 | Social subjects, poller, perception and SqlSocialStreamStore readers | account owners, per-person social flags, units/rooms and opted-out IDs | Hot holders/projections; no copied opt-out set |
 | PresenceCollector composition, summaries, member refresh and circle loops | identity membership and circle subscriptions | Hot sequence; supervisor adds/cancels circle loops, and each collection cycle rereads the circle's membership |

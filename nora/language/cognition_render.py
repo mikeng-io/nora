@@ -100,7 +100,7 @@ from nora.language.context_render import (
     render_transcript,
     transcript_rows,
 )
-from nora.language.lesson_render import render_lessons
+from nora.language.lesson_render import lesson_evidence_blocks, render_lessons
 from nora.language.profile_render import render_profile, render_profile_people
 from nora.language.register_render import render_register
 from nora.language.shared_render import render_shared_state
@@ -138,6 +138,15 @@ _BLOCKS: tuple[BlockDeclaration, ...] = (
         "graph", 60, "match an existing entity or create one; correct a contradiction"
     ),
     BlockDeclaration("lessons", 65, "how she should write, from past corrections"),
+    BlockDeclaration(
+        "held_lessons", 66, "reinforce or reword a held lesson, or retire one"
+    ),
+    BlockDeclaration(
+        "lesson_corrections", 67, "write a lesson from a correction, or not"
+    ),
+    BlockDeclaration(
+        "lesson_episodes", 68, "write a lesson from how people responded, or not"
+    ),
     BlockDeclaration(
         "documents",
         70,
@@ -779,12 +788,8 @@ def _item_blocks(
         ]
         return [restamp(ContextBlock(name="agenda", body=compose_body("\n".join(elements))), _ROW)]
     needs = _needs(
-        items,
-        stimuli,
-        grounding,
-        now_ms=now_ms,
-        tz=tz,
-        message_chars=budget.message_chars,
+        items, stimuli, grounding,
+        now_ms=now_ms, tz=tz, message_chars=budget.message_chars,
         memory_items=memory_items,
     )
     room_rows: dict[str, list[Any]] = {}
@@ -851,10 +856,7 @@ def _item_blocks(
         kept_transcript.pop(0)
         dropped += 1
     transcript_block = render_transcript(
-        kept_transcript,
-        display_name="Nora",
-        now=now,
-        not_listed=dropped,
+        kept_transcript, display_name="Nora", now=now, not_listed=dropped,
         read_limited=grounding.transcript_more,
         withheld=dict(grounding.context_withheld).get("transcript", 0),
     )
@@ -878,8 +880,6 @@ def _item_blocks(
         *render_register(rooms, grounding, now_ms=now_ms, tz=tz, budget=budget, placement=_ROW),
         restamp(transcript_block, _ROW),
     ]
-
-
 def _grounded_blocks(grounding: Grounding, now: datetime) -> list[ContextBlock]:
     """What the grounding read for the prompt: profiles, members, rooms,
     documents and lessons, each a self-describing block."""
@@ -928,9 +928,15 @@ def _grounded_blocks(grounding: Grounding, now: datetime) -> list[ContextBlock]:
     blocks.extend(
         b for view in grounding.documents if (b := render_documents(view)) is not None
     )
-    lesson_block = render_lessons(grounding.lessons)
-    if lesson_block is not None:
-        blocks.append(lesson_block)
+    if grounding.lesson_evidence is not None:
+        # A session shown the evidence holds the lessons by `L` handle, so
+        # `held_lessons` IS its lessons list; the bodies-only `lessons`
+        # block stays for sessions handed none (historical, feature off).
+        blocks.extend(lesson_evidence_blocks(grounding.lesson_evidence, now=now))
+    else:
+        lesson_block = render_lessons(grounding.lessons)
+        if lesson_block is not None:
+            blocks.append(lesson_block)
     return blocks
 
 
@@ -938,14 +944,10 @@ def render_agenda(
     items: Sequence[AgendaItem],
     *,
     stimuli: Mapping[int, Stimulus] | None = None,
-    grounding: Grounding | None = None,
-    reads_note: str = "",
-    now_ms: int | None = None,
-    last_session_ms: int | None = None,
-    tz: tzinfo = UTC,
-    budget: RenderBudget | None = None,
-    graph: str | None = None,
-    memory_items: Mapping[int, Any] | None = None,
+    grounding: Grounding | None = None, reads_note: str = "",
+    now_ms: int | None = None, last_session_ms: int | None = None,
+    tz: tzinfo = UTC, budget: RenderBudget | None = None,
+    graph: str | None = None, memory_items: Mapping[int, Any] | None = None,
     shared: SharedView | None = None,
 ) -> str:
     """The session's prompt. `stimuli` is the claimed stimuli by id (an item
@@ -1004,12 +1006,8 @@ def render_agenda(
         memory_item.snapshot["messages"] = candidates
         memory_item.snapshot["source_keys"] = keys
     item_blocks = _item_blocks(
-        items,
-        stimuli or {},
-        grounding or Grounding(),
-        now_ms=now_ms,
-        tz=tz,
-        budget=budget or RenderBudget(),
+        items, stimuli or {}, grounding or Grounding(),
+        now_ms=now_ms, tz=tz, budget=budget or RenderBudget(),
         memory_items=memory_items,
     )
     blocks += item_blocks

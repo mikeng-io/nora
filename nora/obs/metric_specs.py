@@ -1683,11 +1683,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_lessons_session_total",
-        "Lessons sessions and their writes by outcome ("
+        "Lesson writes by outcome ("
         + " / ".join(sorted(LESSONS_OUTCOMES)) + "). written / retired count "
-        "verb calls that landed; kept a session closed unchanged; unsettled a "
-        "session that did none (its batch is held); abandoned the third "
-        "unsettled run of one batch; decayed a lesson retired at its horizon.",
+        "lesson_write / lesson_retire calls that landed in a live Cognition "
+        "session; decayed a lesson retired by code at its horizon.",
         ("outcome",),
     ),
     # The doctrine check and the tension rows it writes. An `error` refused the
@@ -1701,8 +1700,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_lessons_correction_wake_total",
-        "Lessons sessions woken by the correction fast path (L4): a message "
-        "that spoke to her and read as an instruction about how she acts.",
+        "Cognition sessions handed a correction by the fast path (L4): a "
+        "message that spoke to her and read as an instruction about how she "
+        "acts.",
         (),
     ),
     _CounterSpec(

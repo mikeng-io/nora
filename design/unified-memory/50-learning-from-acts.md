@@ -90,6 +90,7 @@ Distinguish three claims: **saved**, **used later**, and **supported as useful**
 A successful write proves only persistence. Context injection proves availability,
 not use. A later good result alone does not prove the revision caused it.
 
+
 Use the existing bounded journey and capture path to inspect original sources,
 held understanding, revision, actual later input/action and outcome. Compare
 like-for-like evidence where available; report unsupported interpretation,

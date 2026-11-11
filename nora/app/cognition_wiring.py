@@ -597,15 +597,13 @@ def build_cognition_runner(
     cfg: Any,
     tag_trace_store: Any = None, memory: Any = None,
     models: Any,
-    retry: Any,
-    metrics: Any,
+    retry: Any, metrics: Any,
     tools: DreamToolSource,
     instructions: Any,
     store: CognitionStore,
     stimulus_store: StimulusStore,
     note_titles: Callable[[str], Awaitable[Sequence[str]]],
-    notes: Any,
-    events: Any,
+    notes: Any, events: Any,
     standing: Any,
     reminders: Any,
     ai_peer: str,
@@ -615,8 +613,7 @@ def build_cognition_runner(
     standing_of: Callable[[str, str], Awaitable[StandingHead | None]],
     roster_of: Callable[[str, str], Awaitable[Mapping[str, str] | None]] | None = None,
     nora_names: frozenset[str] = frozenset(),
-    homes: Mapping[str, Any],
-    units: Sequence[str],
+    homes: Mapping[str, Any], units: Sequence[str],
     skills: SessionGuidance,
     grounder: Any,
     person_known: Callable[[str], bool] | None = None,
@@ -635,6 +632,8 @@ def build_cognition_runner(
     observations: Any = None,
     documents: Any = None, documents_context: Any = None,
     runtime: Any = None,
+    # `CognitionLessons`; None ([lessons] disabled) offers no lesson verbs.
+    lessons: Any = None,
 ) -> Any:
     """The session executor: a `SubconsciousExecutor` whose hook the wake
     evaluator is handed, running each admitted wake through
@@ -725,6 +724,7 @@ def build_cognition_runner(
         # against: no store, no ref write (`unavailable`, never accepted
         # unchecked).
         observations=observations,
+        lessons=lessons,
     )
     # Cognition hosted as a Dreamer adaptor (node 30): the evaluator's hook
     # is the executor's, and every admitted wake executes inside

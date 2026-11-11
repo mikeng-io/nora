@@ -507,8 +507,8 @@ still contributes to a row until the next analytics pass diffs it out.
   window and row count, and answers 503 when no build is current. See
   [the portal and web API](portal-and-web-api.md).
 
-The `response` rollup is read by the Lessons adaptor, not by a session — see
-[contextual learning](../concepts/contextual-learning.md).
+The `response` rollup reaches the Cognition session as lesson evidence, not as a
+stimulus — see [contextual learning](../concepts/contextual-learning.md).
 
 ## Failure semantics, in one table
 

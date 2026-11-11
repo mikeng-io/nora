@@ -87,6 +87,9 @@ serve a reply in one room, most of them for no decision this session makes.
 | whether something should reach a room as a reminder | the note or rows it rests on, and whether one is already pending | `notes`, `agenda` |
 | set, move or cancel a self-wake | her pending self-wakes, by id, due time and subject: already in `standing`'s Waiting section (`nora/app/cognition_session.py` ~1342 passes them into the shared view, `nora/agent/shared_state.py` ~340 makes them pending `wake` entries, `nora/language/shared_render.py` renders them) | `standing` (kept) |
 | how she should write, from past corrections | her lessons for the unit | `lessons` |
+| reinforce or reword a held lesson, or retire one | the unit's held lessons, by `L` handle | `held_lessons` |
+| write a lesson from a correction, or not | the corrections aimed at her since the cursor | `lesson_corrections` |
+| write a lesson from how people responded, or not | the closed `response` episodes past the cursor | `lesson_episodes` |
 | when, and how long ago | now, and her last session | `clock` |
 | which rooms the read tools look through | the read scope | `reads` |
 | detect documentation superseded by agenda evidence; read its current revision and revise it | the agenda-room shared document index, then its full current revision and cited rows | `documents`, `agenda`, `transcript` |

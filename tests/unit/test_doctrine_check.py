@@ -26,7 +26,7 @@ from nora.domain.doctrine_check import CheckVerdict, LawRule, Tension, parse_ver
 from nora.language.doctrine_check import DoctrineCheck, render_check_input
 from nora.language.lesson_book import LessonBook
 from nora.obs.metrics import Metrics
-from tests.unit.test_lessons_adaptor import _Clock, _Store
+from tests.unit.test_cognition_lessons import _Clock, _Store
 
 RULES = (
     LawRule(file="core/constraints.md", line=10, text="Never share where a member is."),
