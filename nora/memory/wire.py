@@ -6,7 +6,7 @@ from nora.agent.dream_screen import text_offence
 from nora.agent.memory_search import MemorySearch
 from nora.agent.room import Room
 from nora.app.cognition_grounding import place_release
-from nora.app.composition_dreamer import _unified_profile_writers_retired
+from nora.app.composition_helpers import _unified_profile_writers_retired
 from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.startup import StartupError
 from nora.domain.live import LiveMapping

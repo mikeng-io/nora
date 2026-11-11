@@ -413,7 +413,7 @@ def test_profile_writer_ownership_matrix() -> None:
     """One account writer per flag combination: the Dreamer writers retire
     exactly where the unified session is wired; the verdict judge and tag
     told/dispute paths never."""
-    from nora.app.composition_dreamer import _unified_profile_writers_retired
+    from nora.app.composition_helpers import _unified_profile_writers_retired
     from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
     from nora.language.profile_collective import (
         PROFILE_NORA_ADAPTOR_NAME,
@@ -465,7 +465,7 @@ async def test_explicit_relation_premises_replace_instead_of_carrying() -> None:
 
 
 def test_writers_stay_without_cognition_or_complete_unit_coverage() -> None:
-    from nora.app.composition_dreamer import _unified_profile_writers_retired
+    from nora.app.composition_helpers import _unified_profile_writers_retired
     flags = {"profile_index": True, "graph_comprehend": True,
              "cognition_enabled": True, "units": frozenset({"one", "two"}),
              "home_units": frozenset({"one", "two"})}

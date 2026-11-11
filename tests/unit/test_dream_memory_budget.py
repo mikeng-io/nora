@@ -678,7 +678,7 @@ def test_the_configured_memory_ceiling_reaches_the_runtime():
     every field before it a dropped conversion raises nothing: the runtime just
     gets 2 while the operator reads 5 in their config.
     """
-    from nora.app.composition_dreamer import _adaptor_budget
+    from nora.app.composition_helpers import _adaptor_budget
     from nora.config import DreamBudgetConfig
 
     configured = DreamBudgetConfig(

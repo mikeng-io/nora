@@ -6,14 +6,28 @@ from typing import Any, cast
 
 from openai.types.shared.reasoning_effort import ReasoningEffort
 
+from nora.agent.dreamer import AdaptorBudget
 from nora.agent.room import Room
 from nora.app.startup import StartupError
-from nora.config import Config
+from nora.config import Config, DreamBudgetConfig
 from nora.domain.culture import character_key, unit_culture_key
 from nora.domain.ports import RosterSource
 from nora.engagement.self_presence import PresenceReader
-from nora.language.character import CharacterRoom, PersonKey, UnitKey
-from nora.language.profile_collective import CollectiveKey
+from nora.language.character import (
+    CHARACTER_NORA_ADAPTOR_NAME,
+    CHARACTER_PERSON_ADAPTOR_NAME,
+    CHARACTER_UNIT_ADAPTOR_NAME,
+    CharacterRoom,
+    PersonKey,
+    UnitKey,
+)
+from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
+from nora.language.profile_collective import (
+    PROFILE_NORA_ADAPTOR_NAME,
+    PROFILE_ROOM_ADAPTOR_NAME,
+    PROFILE_UNIT_ADAPTOR_NAME,
+    CollectiveKey,
+)
 from nora.persons import Persons
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.bridge_control import BridgeDiscordAdapter
@@ -236,3 +250,56 @@ def _music_channel_of(policy: Policy) -> Callable[[str], str | None]:
         return policy.music_channel_for("discord", guild_id)
 
     return _resolve
+
+
+CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (
+    CHARACTER_PERSON_ADAPTOR_NAME,
+    CHARACTER_UNIT_ADAPTOR_NAME,
+    CHARACTER_NORA_ADAPTOR_NAME,
+)
+
+
+
+def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
+    """`DreamBudgetConfig` -> `AdaptorBudget`: the one place the two shapes meet."""
+    return AdaptorBudget(
+        turns=b.turns,
+        total_tokens=b.total_tokens,
+        output_tokens=b.output_tokens,
+        timeout_seconds=b.timeout_seconds,
+        max_memory_calls=b.max_memory_calls,
+        # Copied, not aliased: `DreamBudgetConfig` is frozen but its `dict`
+        # field is not, and an `AdaptorBudget` handed the same object would
+        # share it with the config tree for the process's life.
+        tool_calls=dict(b.tool_calls),
+        max_tool_calls=b.max_tool_calls,
+    )
+
+
+def _unified_profile_writers_retired(
+    *,
+    profile_index: bool,
+    graph_comprehend: bool,
+    cognition_enabled: bool,
+    units: frozenset[str],
+    home_units: frozenset[str],
+) -> frozenset[str]:
+    """The Dreamer profile writers the unified Cognition session replaces —"""
+    return (
+        frozenset(
+            {
+                PROFILE_PERSON_ADAPTOR_NAME,
+                PROFILE_ROOM_ADAPTOR_NAME,
+                PROFILE_UNIT_ADAPTOR_NAME,
+                PROFILE_NORA_ADAPTOR_NAME,
+            }
+        )
+        if (
+            profile_index
+            and graph_comprehend
+            and cognition_enabled
+            and units
+            and units <= home_units
+        )
+        else frozenset()
+    )
