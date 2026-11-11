@@ -47,12 +47,14 @@ import ast
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-#: Production's call sites, split across the step modules the area/layer
-#: rules produce — the parity each asserts is against the OFFLINE mirror,
-#: never against a file name.
-PRODUCTION = (
-    REPO_ROOT / "nora" / "app" / "composition_fire.py",
-    REPO_ROOT / "nora" / "app" / "composition_pipelines.py",
+#: The whole composition root: every `nora/app/composition*.py` step module
+#: and every area's `wire.py`. The parity each asserts is against the OFFLINE
+#: mirror, so a construction moved to another step module stays in scope.
+PRODUCTION = tuple(
+    sorted(
+        [*(REPO_ROOT / "nora" / "app").glob("composition*.py"),
+         *(REPO_ROOT / "nora").glob("*/wire.py")]
+    )
 )
 #: The offline mirror of production's composition; the PARITY checked is
 #: between the two.

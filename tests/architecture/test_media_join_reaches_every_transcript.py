@@ -516,8 +516,11 @@ def test_the_join_is_constructed_exactly_once() -> None:
     """ONE instance for the process. Per-builder copies would each be a chance to
     disagree about what a picture shows, with their own render bounds and
     screens."""
-    composition = _source("nora/media/wire.py")
-    assert composition.count("MediaJoin(") == 1, (
+    roots = sorted(
+        [*(ROOT / "nora" / "app").glob("composition*.py"), *(ROOT / "nora").glob("*/wire.py")]
+    )
+    count = sum(path.read_text(encoding="utf-8").count("MediaJoin(") for path in roots)
+    assert count == 1, (
         "the composition root builds more than one MediaJoin; every consumer "
         "must hold the same instance"
     )
