@@ -79,7 +79,7 @@ MODEL_CONFIGS: dict[str, dict[str, Any]] = {
     "sensevoice": {
         "backend": "funasr",
         "model": "iic/SenseVoiceSmall",
-        "vad_model": "fsmn-vad",
+        "vad_model": "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
         "vad_kwargs": {"max_single_segment_time": 30000},
         # SenseVoice is multilingual but its native LID tags the audio; we keep
         # language="auto" (see module docstring) and let OpenCC post-process.
@@ -90,11 +90,24 @@ MODEL_REGISTRY: dict = {}
 _cc = OpenCC("s2t")
 
 
+def _modelscope_dir(model_id: str) -> str:
+    """The cached snapshot of a ModelScope model; the hub only when none is cached."""
+    from modelscope.hub.errors import CacheNotFound
+    from modelscope.hub.snapshot_download import snapshot_download
+
+    try:
+        return snapshot_download(model_id, local_files_only=True)
+    except CacheNotFound:
+        return snapshot_download(model_id)
+
+
 def _load_funasr(cfg: dict[str, Any]):
     from funasr import AutoModel
 
     _LOADER_KEYS = ("backend", "generate_kwargs", "default_language")
     kwargs = {k: v for k, v in cfg.items() if k not in _LOADER_KEYS}
+    kwargs["model"] = _modelscope_dir(kwargs["model"])
+    kwargs["vad_model"] = _modelscope_dir(kwargs["vad_model"])
     kwargs["device"] = DEVICE
     kwargs["disable_update"] = True
     return AutoModel(**kwargs)
