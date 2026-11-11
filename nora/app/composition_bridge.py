@@ -21,21 +21,10 @@ class RuntimeWiring:
 
 
 async def runtime(
-    allowlist,
-    cfg,
-    engagement,
-    engine,
-    fire_path,
-    ingest,
-    memory,
-    metrics,
-    observation_store,
-    participation_trigger,
-    persons,
-    policy,
-    registry,
-    slots,
-    stimulus_wiring,
+    allowlist: Any, cfg: Any, engagement: Any, engine: Any,
+    fire_path: Any, ingest: Any, memory: Any, metrics: Any,
+    observation_store: Any, participation_trigger: Any, persons: Any, policy: Any,
+    registry: Any, slots: Any, stimulus_wiring: Any,
 ) -> RuntimeWiring:
 
     # ---- platform bridges (design/platform-bridges) ------------------------- Any platform
@@ -63,9 +52,7 @@ async def runtime(
             # watermark + candidate folds + fire row in ONE commit, so a force-recreate never finds
             # a judged window whose turn nobody owns.
             async def close_participation_window(
-                platform: str,
-                conversation_id: str,
-                window_end_ms: int,
+                platform: str, conversation_id: str, window_end_ms: int,
                 conversation_type: str,
             ) -> None:
                 await bridge_store.close_participation_window(

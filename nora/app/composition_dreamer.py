@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
     AdaptorSchedule,
     DreamerRuntime,
+    verify_tool_subsets,
 )
 from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
@@ -19,10 +21,12 @@ from nora.app.cognition_wiring import (
 from nora.app.cognition_wiring import session_guidance as cognition_session_guidance
 from nora.app.composition_cognition import cognition_session
 from nora.app.composition_dream import (
+    _dream_grants_and_budgets,
     _dream_objectives,
-    _dreamer_runtime,
+    _dream_tool_source,
     _lessons_evidence,
 )
+from nora.app.composition_helpers import _adaptor_budget, _reasoning_effort
 from nora.app.startup import StartupError
 from nora.app.wake import Floor, WakeEvaluator
 from nora.config import Config
@@ -42,14 +46,9 @@ log = logging.getLogger("nora.app.composition")
 
 
 def _build_wake_evaluator(
-    cfg: Config,
-    *,
-    store: SqlStimulusStore,
-    units: Callable[[], Sequence[str]],
-    metrics: Metrics,
-    on_wake: WakeHook | None,
-    session_units: Callable[[], Collection[str]] | None = None,
-    floors_ready: bool = True,
+    cfg: Config, store: SqlStimulusStore, units: Callable[[], Sequence[str]],
+    metrics: Metrics, on_wake: WakeHook | None,
+    session_units: Callable[[], Collection[str]] | None = None, floors_ready: bool = True,
     upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None,
 ) -> WakeEvaluator:
     """The cognition loop's wake evaluator: every"""
@@ -88,7 +87,8 @@ class PreambleWiring:
     dreamer_runtime: Any
 
 
-def preamble(engine) -> PreambleWiring:
+def preamble(engine: Any)-> PreambleWiring:
+
 
     # ---- the Dreamer runtime -------------------- Constructed only when `[dreamer]
     # enabled` is true, the shape every gated subsystem in this file uses: a subsystem that
@@ -116,7 +116,8 @@ class GuidanceWiring:
     session_guidance: Any
 
 
-def guidance(dreamer_instructions) -> GuidanceWiring:
+def guidance(dreamer_instructions: Any)-> GuidanceWiring:
+
     # The Cognition session: built inside the Dreamer block below ONLY under `[cognition]
     # enabled`; off builds nothing here, no model client and no agent-runner import. : Hot-
     # loaded session guidance, gated by the offered tools during assembly.
@@ -161,15 +162,20 @@ class EnabledWiring:
 
 
 async def enabled(
-    allowlist, audit, cfg, clock, cognition_context_screen, cognition_lessons,
-    cognition_memory, content_checks, culture_reader, doctrine_store, document_service,
-    documents_context, dream_adaptors, dream_schedules, dreamer_instructions,
-    dreamer_runtime, engine, event_store, events, ledger_store, lineage, media_join,
-    memo_store, memory, metrics, mobility, model_client_for, note_store, observation_store,
-    persons, presence_circles, presence_reader, proactive_homes, profile_index,
-    profile_reader, reasoning_strip_store, registry, reminder_caps, reminders, rosters,
-    route_model, session_guidance, shared, standing_fold, standing_store, stimulus_store,
-    tag_trace_store, tier, tool_registry, unit_rooms, unit_scopes
+    allowlist: Any, audit: Any, cfg: Any, clock: Any,
+    cognition_context_screen: Any, cognition_lessons: Any, cognition_memory: Any,
+    content_checks: Any, culture_reader: Any, doctrine_store: Any, document_service: Any,
+    documents_context: Any, dream_adaptors: Any, dream_schedules: Any,
+    dreamer_instructions: Any, dreamer_runtime: Any, engine: Any, event_store: Any,
+    events: Any, ledger_store: Any, lineage: Any, media_join: Any,
+    memo_store: Any, memory: Any, metrics: Any, mobility: Any,
+    model_client_for: Any, note_store: Any, observation_store: Any, persons: Any,
+    presence_circles: Any, presence_reader: Any, proactive_homes: Any, profile_index: Any,
+    profile_reader: Any, reasoning_strip_store: Any, registry: Any, reminder_caps: Any,
+    reminders: Any, rosters: Any, route_model: Any, session_guidance: Any,
+    shared: Any, standing_fold: Any, standing_store: Any, stimulus_store: Any,
+    tag_trace_store: Any, tier: Any, tool_registry: Any, unit_rooms: Any,
+    unit_scopes: Any,
 ) -> EnabledWiring:
     dream_adaptors = ()
     dreamer_runtime = None
@@ -256,7 +262,8 @@ class WakeWiring:
 
 
 def wake(
-    cfg, cognition_runner, cognition_session_units, cognition_upcoming, metrics, stimulus_store
+    cfg: Any, cognition_runner: Any, cognition_session_units: Any, cognition_upcoming: Any,
+    metrics: Any, stimulus_store: Any,
 ) -> WakeWiring:
 
     # The wake evaluator, after the Dreamer block so it can be handed the
@@ -293,3 +300,90 @@ def wake(
     except RuntimeError as exc:
         raise StartupError(str(exc)) from exc
     return WakeWiring(cognition_shutdown=cognition_shutdown, wake_evaluator=wake_evaluator)
+
+
+@dataclass(frozen=True)
+class DreamerRuntimeWiring:
+    dream_model: Any
+    dream_models: Any
+    dream_tools: Any
+    dreamer_runtime: Any
+
+
+def _dreamer_runtime(
+    allowlist: Any, audit: Any, cfg: Any, content_checks: Any,
+    dream_adaptors: Any, dream_schedules: Any, dreamer_instructions: Any, memory: Any,
+    metrics: Any, model_client_for: Any, persons: Any, proactive_homes: Any,
+    reasoning_strip_store: Any, registry: Any, rosters: Any, route_model: Any,
+    tier: Any, tool_registry: Any,
+) -> DreamerRuntimeWiring:
+    """The DreamerRuntime the loop hosts every adaptor on."""
+    dream_model = route_model("dreamer", cfg.dreamer_model())
+    dream_effort = cfg.dreamer.reasoning_effort or tier.reasoning_effort
+    _reasoning_effort(
+        dream_effort,
+        source="[dreamer] reasoning_effort (or [llm]'s, inherited)",
+    )
+    dream_models = factory.ModelSource(
+        client=model_client_for("dreamer"),
+        spec=factory.ModelSpec(
+            # `cfg.dreamer_max_tokens()` and NOT `tier.max_tokens`. The tier's number is size…
+            # TAG TURN; a batch pass whose objective asks for one verdict per message has an…
+            # that scales with the batch, and a tag-sized ceiling fails every run with…
+            model=dream_model,
+            max_tokens=cfg.dreamer_max_tokens(),
+            temperature=tier.temperature,
+            # `[dreamer] reasoning_effort` where set, else the tier's. At the tier's "low" this
+            # model reasons its way to `{"candidates": []}` on a transcript that plainly cont…
+            # claims, and to `MaxTokensReachedException` on a real one — reasoning is billed as…
+            reasoning_effort=dream_effort,
+            tool_choice=tool_choice.AFTER_SPEAKING,
+        ),
+    )
+    dream_tools = _dream_tool_source(
+        allowlist=allowlist, audit=audit, cfg=cfg, memory=memory,
+        metrics=metrics, persons=persons, proactive_homes=proactive_homes,
+        registry=registry, rosters=rosters, tool_registry=tool_registry,
+    )
+    dream_grants, dream_budgets, fallback = _dream_grants_and_budgets(cfg)
+    dreamer_runtime = DreamerRuntime(
+        models=dream_models,
+        instructions=dreamer_instructions,
+        tools=dream_tools,
+        budgets=dream_budgets,
+        default_budget=_adaptor_budget(fallback),
+        # The SAME derivation the tag path uses, so a throttle can never be
+        # misreported as a timeout (`factory.build_retry_policy`).
+        retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
+        metrics=metrics,
+        model_name=dream_model,
+        schedules=dream_schedules,
+        # The SAME `[llm.budgets]` the tag path applies through
+        # `ToolRegistry(budget_overrides=...)`, so one number in
+        # `config.toml` is one ceiling whichever loop asks.
+        tool_budget_overrides=cfg.llm.budgets,
+        grants=dream_grants,
+        # The per-CALL-SITE allowance for `inputs`/`commit`,
+        # multiplied by each adaptor's own declared `store_calls_per_tick`.
+        store_timeout_seconds=cfg.dreamer.store_timeout_seconds,
+        # The Dreamer's reasoning-strip store: a tool-using run at `[dreamer] reasoning_effort =
+        # low` is the multi-turn shape the transport strips. Low-traffic and judgement-forming,
+        # so a discarded reasoning there is both closer to being the verdict and harder to…
+        reasoning_strip_store=reasoning_strip_store,
+        content_checks=content_checks,
+    )
+    verify_tool_subsets(
+        dream_adaptors,
+        tools=dream_tools,
+        grants=dream_grants,
+        # The per-adaptor per-tool ceilings, read off the SAME budgets the runtime got above —
+        # so «this ceiling names a tool the adaptor does not hold» is a boot failure rather than
+        # a raise the operator made that quietly does nothing.
+        tool_calls={name: b.tool_calls for name, b in cfg.dreamer.budgets.items()},
+    )
+    return DreamerRuntimeWiring(
+        dream_model=dream_model,
+        dream_models=dream_models,
+        dream_tools=dream_tools,
+        dreamer_runtime=dreamer_runtime,
+    )

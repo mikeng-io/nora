@@ -34,7 +34,8 @@ class InboxWiring:
     summons_wired: Any
 
 
-def inbox(cfg, metrics) -> InboxWiring:
+def inbox(cfg: Any, metrics: Any)-> InboxWiring:
+
     # The public Instagram summons' intake: the Instagram adapter hands every `summons` SSE
     # event here. ALWAYS built, so a card that arrives while the summons is off is counted
     # `disabled` rather than silently absent; `enabled` only under BOTH `[social.instagram]…
@@ -49,22 +50,10 @@ class SummonsWiring:
 
 
 def summons(
-    background,
-    cfg,
-    clock,
-    content_checks,
-    doctrine_store,
-    engine,
-    limits,
-    metrics,
-    persons,
-    registry,
-    social_subjects,
-    summons_inbox,
-    summons_runner,
-    summons_wired,
-    tier,
-    tool_registry,
+    background: Any, cfg: Any, clock: Any, content_checks: Any,
+    doctrine_store: Any, engine: Any, limits: Any, metrics: Any,
+    persons: Any, registry: Any, social_subjects: Any, summons_inbox: Any,
+    summons_runner: Any, summons_wired: Any, tier: Any, tool_registry: Any,
 ) -> SummonsWiring:
 
     # The public Instagram summons consumer, gated on BOTH `[social.instagram] enabled` and
@@ -127,17 +116,9 @@ class PollerWiring:
 
 
 def poller(
-    allowlist,
-    blobs,
-    cfg,
-    comprehension,
-    engine,
-    media_objects,
-    media_sources,
-    metrics,
-    persons,
-    social_subjects,
-    stimulus_store,
+    allowlist: Any, blobs: Any, cfg: Any, comprehension: Any,
+    engine: Any, media_objects: Any, media_sources: Any, metrics: Any,
+    persons: Any, social_subjects: Any, stimulus_store: Any,
 ) -> PollerWiring:
 
     # The social stream's poller (design/cognition-loop/22-social-stream.md): built here,
@@ -197,7 +178,8 @@ class ExpiryWiring:
     story_expiry: Any
 
 
-def expiry(blobs, cfg, engine, metrics) -> ExpiryWiring:
+def expiry(blobs: Any, cfg: Any, engine: Any, metrics: Any)-> ExpiryWiring:
+
     # The bound is on bytes the poller already kept, so it holds while the
     # poller is off; it reads every person's frames, opted out or not.
     story_expiry = (

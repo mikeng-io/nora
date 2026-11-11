@@ -46,7 +46,8 @@ _REASONING_EFFORTS: frozenset[str] = frozenset(
 
 
 
-def _room_claims(allowlist: Policy) -> dict[str, frozenset[tuple[str, str]]]:
+def _room_claims(allowlist: Policy)-> dict[str, frozenset[tuple[str, str]]]:
+
     """Conversation id -> every `(unit, platform)` pair policy.toml assigns it,"""
     out: dict[str, set[tuple[str, str]]] = {}
     for conv in allowlist.rooms():
@@ -56,8 +57,7 @@ def _room_claims(allowlist: Policy) -> dict[str, frozenset[tuple[str, str]]]:
 
 
 def _collective_members(
-    policy: Policy,
-    keys: Mapping[str, CollectiveKey],
+    policy: Policy, keys: Mapping[str, CollectiveKey],
 ) -> dict[str, tuple[str, ...]]:
     return {
         k: tuple(
@@ -76,9 +76,7 @@ def _collective_members(
 
 
 def _presence_reader(
-    cfg: Config,
-    allowlist: Policy,
-    registry: AdapterRegistry,
+    cfg: Config, allowlist: Policy, registry: AdapterRegistry,
     rosters: Mapping[str, RosterSource] | None = None,
 ) -> PresenceReader:
     """The one `PresenceReader`."""
@@ -102,7 +100,8 @@ def _presence_reader(
     )
 
 
-def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
+def _reasoning_effort(value: str, *, source: str)-> ReasoningEffort:
+
     """Narrow a config string to the provider's closed set, or refuse to start."""
     if value not in _REASONING_EFFORTS:
         raise StartupError(
@@ -116,7 +115,8 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
 
 
 
-def _otp_secrets(cfg: Config) -> tuple[bytes, str]:
+def _otp_secrets(cfg: Config)-> tuple[bytes, str]:
+
     """The HMAC key and the API bearer token, checked at BOOT when `[otp]"""
     values = []
     for name in (cfg.otp.secret_env, cfg.otp.api_token_env):
@@ -135,7 +135,8 @@ def _now_ms() -> int:
     return int(datetime.now(UTC).timestamp() * 1000)
 
 
-def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
+def character_unit_keys(allowlist: Any)-> dict[str, UnitKey]:
+
     """One key per unit, with its rooms in policy order."""
     rooms_of: dict[str, list[CharacterRoom]] = {}
     for conv in allowlist.rooms():
@@ -153,7 +154,8 @@ def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
     }
 
 
-def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
+def character_person_keys(allowlist: Any, persons: Any)-> dict[str, PersonKey]:
+
     """One key per (unit, person listed in any of that unit's rooms), from
     `policy.toml` and `identity.toml`. A
     person's evidence and room cultures are the unit's rooms, in policy order;
@@ -187,7 +189,8 @@ def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
     }
 
 
-def _profile_room_keys(allowlist: Any) -> dict[str, CollectiveKey]:
+def _profile_room_keys(allowlist: Any)-> dict[str, CollectiveKey]:
+
     """Room `primary_id` -> the room's CollectiveKey, for every room policy"""
     return {
         conv.primary_id: CollectiveKey(
@@ -202,13 +205,12 @@ def _profile_room_keys(allowlist: Any) -> dict[str, CollectiveKey]:
 
 
 def _roster_names_of(
-    rosters: Mapping[str, RosterSource],
-    persons: Persons,
-    self_ids: frozenset[str],
+    rosters: Mapping[str, RosterSource], persons: Persons, self_ids: frozenset[str],
 ) -> Callable[[str, str], Awaitable[Mapping[str, str] | None]]:
     """A cognition session's roster seam: the room's roster NAMES with their"""
 
-    async def roster_of(platform: str, conversation_id: str) -> Mapping[str, str] | None:
+    async def roster_of(platform: str, conversation_id: str)-> Mapping[str, str] | None:
+
         view = await Room(
             platform=platform,
             conversation_id=conversation_id,
@@ -223,30 +225,36 @@ def _roster_names_of(
     return roster_of
 
 
-def _note_unit_of(policy: Policy) -> Callable[[str, str], str | None]:
+def _note_unit_of(policy: Policy)-> Callable[[str, str], str | None]:
+
     """`(platform, conversation_id)` → the room's unit, or `None`."""
 
-    def _resolve(platform: str, conversation_id: str) -> str | None:
+    def _resolve(platform: str, conversation_id: str)-> str | None:
+
         convo = policy.conversation(platform, conversation_id)
         return convo.unit if convo is not None else None
 
     return _resolve
 
 
-def _room_ids_of(policy: Policy) -> Callable[[str, str], frozenset[str]]:
+def _room_ids_of(policy: Policy)-> Callable[[str, str], frozenset[str]]:
+
     """Every id the room `(platform, conversation_id)` answers to (`Conversation.ids`),"""
 
-    def room_ids(platform: str, conversation_id: str) -> frozenset[str]:
+    def room_ids(platform: str, conversation_id: str)-> frozenset[str]:
+
         convo = policy.conversation(platform, conversation_id)
         return convo.ids if convo is not None else frozenset({conversation_id})
 
     return room_ids
 
 
-def _music_channel_of(policy: Policy) -> Callable[[str], str | None]:
+def _music_channel_of(policy: Policy)-> Callable[[str], str | None]:
+
     """A Discord `guild_id` → the CHANNEL id its music announcements are"""
 
-    def _resolve(guild_id: str) -> str | None:
+    def _resolve(guild_id: str)-> str | None:
+
         return policy.music_channel_for("discord", guild_id)
 
     return _resolve
@@ -260,7 +268,8 @@ CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (
 
 
 
-def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
+def _adaptor_budget(b: DreamBudgetConfig)-> AdaptorBudget:
+
     """`DreamBudgetConfig` -> `AdaptorBudget`: the one place the two shapes meet."""
     return AdaptorBudget(
         turns=b.turns,
@@ -277,12 +286,8 @@ def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
 
 
 def _unified_profile_writers_retired(
-    *,
-    profile_index: bool,
-    graph_comprehend: bool,
-    cognition_enabled: bool,
-    units: frozenset[str],
-    home_units: frozenset[str],
+    profile_index: bool, graph_comprehend: bool, cognition_enabled: bool,
+    units: frozenset[str], home_units: frozenset[str],
 ) -> frozenset[str]:
     """The Dreamer profile writers the unified Cognition session replaces —"""
     return (

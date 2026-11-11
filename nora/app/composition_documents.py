@@ -19,18 +19,10 @@ class ServiceWiring:
 
 
 def service(
-    allowlist,
-    audit,
-    cfg,
-    clock,
-    cognition_context_screen,
-    cognition_shared_document_room,
-    content_checks,
-    documents_store,
-    media_objects,
-    metrics,
-    persons,
-    route_client,
+    allowlist: Any, audit: Any, cfg: Any, clock: Any,
+    cognition_context_screen: Any, cognition_shared_document_room: Any, content_checks: Any,
+    documents_store: Any, media_objects: Any, metrics: Any, persons: Any,
+    route_client: Any,
 ) -> ServiceWiring:
 
     document_service = DocumentService(

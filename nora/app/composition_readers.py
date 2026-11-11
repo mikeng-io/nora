@@ -20,7 +20,8 @@ from nora.infra.google.auth import GoogleCredentials
 log = logging.getLogger("nora.app.composition")
 
 
-def search_provider(cfg: Config) -> SearchProvider | None:
+def search_provider(cfg: Config)-> SearchProvider | None:
+
     """The configured web search backend, or None when it is off or has no key."""
     search_client: SearchProvider | None = None
     if cfg.search.enabled:
@@ -63,7 +64,8 @@ def search_provider(cfg: Config) -> SearchProvider | None:
     return search_client
 
 
-def fetch_provider(cfg: Config) -> SearchProvider | None:
+def fetch_provider(cfg: Config)-> SearchProvider | None:
+
     """The backend `web_fetch` extracts through, or `None` to reuse `provider`.
 
     `None` is the un-configured state (`fetch_provider` unset or equal to
@@ -121,7 +123,8 @@ def fetch_provider(cfg: Config) -> SearchProvider | None:
     )
 
 
-def google_credentials(cfg: Config, *, metrics: Any) -> GoogleCredentials | None:
+def google_credentials(cfg: Config, *, metrics: Any)-> GoogleCredentials | None:
+
     """Nora's ONE Google identity (`[google]`), or
     None. Built when a Google service is switched on (shared files today) and
     all three values `[google]` names are in the environment (DEC-8). A value
@@ -151,9 +154,7 @@ def google_credentials(cfg: Config, *, metrics: Any) -> GoogleCredentials | None
 
 
 def external_files_source(
-    cfg: Config,
-    *,
-    google: GoogleCredentials | None,
+    cfg: Config, google: GoogleCredentials | None,
 ) -> ExternalFilesSource | None:
     """The shared-file source the open tool reads through, or None:
     `[external_files]` off, or no Google identity (`google_credentials`). None answers the open
@@ -165,7 +166,8 @@ def external_files_source(
     return GoogleDriveSource(credentials=google)
 
 
-def scope_home_rooms(allowlist: Any) -> dict[str, HomeRoom]:
+def scope_home_rooms(allowlist: Any)-> dict[str, HomeRoom]:
+
     """`conversation id -> the room it names`, for every id form in policy.
 
     A scope-keyed adaptor's key IS a conversation id, so this map is the whole
@@ -199,7 +201,8 @@ def scope_home_rooms(allowlist: Any) -> dict[str, HomeRoom]:
     return out
 
 
-def social_person_units(allowlist: Any) -> dict[str, tuple[str, ...]]:
+def social_person_units(allowlist: Any)-> dict[str, tuple[str, ...]]:
+
     """Each person LISTED by id in a room, and the units of the rooms that list
     them, in policy order: the units a social item of theirs is charged to and
     announced in. A `*` room lists nobody, the rule `SocialSubjectIndex.members`
@@ -218,7 +221,8 @@ def social_person_units(allowlist: Any) -> dict[str, tuple[str, ...]]:
     return {person: tuple(units) for person, units in out.items()}
 
 
-def social_person_rooms(allowlist: Any) -> dict[tuple[str, str], tuple[str, str]]:
+def social_person_rooms(allowlist: Any)-> dict[tuple[str, str], tuple[str, str]]:
+
     """`(person, unit) -> (platform, conversation_id)`: the room a social
     stimulus of theirs binds in that unit, the unit's home room when it lists
     them and otherwise the first room of the unit that does, in policy order.
@@ -234,7 +238,8 @@ def social_person_rooms(allowlist: Any) -> dict[tuple[str, str], tuple[str, str]
     return out
 
 
-def social_unit_rooms(allowlist: Any) -> dict[str, tuple[tuple[str, str], ...]]:
+def social_unit_rooms(allowlist: Any)-> dict[str, tuple[tuple[str, str], ...]]:
+
     """`unit -> every (platform, conversation_id)` of its rooms, sorted: the
     rooms the social poller may read an item through. `rooms()`, not
     `conversations`, so a channel discovered through a server entry counts."""
@@ -247,13 +252,13 @@ def social_unit_rooms(allowlist: Any) -> dict[str, tuple[tuple[str, str], ...]]:
 
 
 def _story_frames_embedded(
-    engine: AsyncEngine,
-    model: str,
+    engine: AsyncEngine, model: str,
 ) -> Callable[[Sequence[tuple[str, str]]], Awaitable[set[tuple[str, str]]]]:
     """The memory index's answer to which story frames are embedded under the"""
     from nora.infra.sql.memory_index import story_frame_embedded
 
     async def embedded(frames: Sequence[tuple[str, str]]) -> set[tuple[str, str]]:
+
         async with engine.connect() as conn:
             return await story_frame_embedded(conn, frames, model=model)
 
@@ -261,10 +266,7 @@ def _story_frames_embedded(
 
 
 def reverse_geocoder(
-    cfg: Config,
-    environ: Mapping[str, str],
-    *,
-    cache_store: Any,
+    cfg: Config, environ: Mapping[str, str], cache_store: Any,
 ) -> ReverseGeocoder | None:
     """The on-demand reverse-geocoder `[presence] geocode_provider` names, or
     `None` when that backend's credential (read from `environ` under the env

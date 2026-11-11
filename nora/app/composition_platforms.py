@@ -40,13 +40,8 @@ from nora.policy import Policy
 
 
 async def _presence_preflight(
-    *,
-    allowlist: Policy,
-    rosters: Mapping[str, RosterSource],
-    persons: Persons,
-    circles: Sequence[Circle],
-    metrics: Metrics,
-    self_ids: frozenset[str] = frozenset(),
+    allowlist: Policy, rosters: Mapping[str, RosterSource], persons: Persons,
+    circles: Sequence[Circle], metrics: Metrics, self_ids: frozenset[str] = frozenset(),
 ) -> None:
     """The R-21/R-31 disclosure pre-flight: for every policy"""
     for conv in allowlist.rooms():
@@ -129,7 +124,8 @@ class ChannelsWiring:
     discord_control: Any
 
 
-def channels(cfg, reload_files) -> ChannelsWiring:
+def channels(cfg: Any, reload_files: Any)-> ChannelsWiring:
+
     discord_box: dict[str, Any] = {}
     # Discord bridge mode: the standalone discord-bridge owns the Gateway, the music
     # manager, the voice-controller hub and the controller-event consumer. This process
@@ -180,17 +176,9 @@ class AdaptersWiring:
 
 
 async def adapters(
-    cfg,
-    discord_box,
-    discord_token,
-    metrics,
-    music_manager,
-    persons,
-    resolve_music_channel,
-    speaker,
-    summons_inbox,
-    voice_guild_ids,
-    voice_hub,
+    cfg: Any, discord_box: Any, discord_token: Any, metrics: Any,
+    music_manager: Any, persons: Any, resolve_music_channel: Any, speaker: Any,
+    summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any,
 ) -> AdaptersWiring:
     try:
         registry = await AdapterRegistry.from_config(
@@ -243,7 +231,11 @@ class PoliciesWiring:
     rosters: Any
 
 
-def policies(allowlist, cfg, discord_control, discord_token, registry) -> PoliciesWiring:
+def policies(
+    allowlist: Any, cfg: Any, discord_control: Any, discord_token: Any,
+    registry: Any,
+) -> PoliciesWiring:
+
 
     # First match wins, deterministic text first. The mention policy uses the same alias set
     # R-12 uses to refuse self-tags — an @-mention arrives as U+FFFC in the body plus a
@@ -317,15 +309,9 @@ class PresencePreflightWiring:
 
 
 def presence_preflight(
-    allowlist,
-    background,
-    content_checks,
-    metrics,
-    persons,
-    presence_circles,
-    presence_store,
-    registry,
-    rosters,
+    allowlist: Any, background: Any, content_checks: Any, metrics: Any,
+    persons: Any, presence_circles: Any, presence_store: Any, registry: Any,
+    rosters: Any,
 ) -> PresencePreflightWiring:
     if presence_store is not None and content_checks:
         # The R-21/R-31 startup invariant (DEC-54(4)): alarm the day a policy conversation is no

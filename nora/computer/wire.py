@@ -32,7 +32,8 @@ from nora.infra.sql.computer_sessions import SqlComputerSessionStore
 """Compose this area's tool adapters from shared dependencies."""
 
 
-def tool_specs(deps):
+def tool_specs(deps: Any) -> Any:
+
     return _build(deps)
 
 
@@ -47,7 +48,8 @@ class StoresWiring:
     computer_token: Any
 
 
-def stores(cfg, engine, metrics) -> StoresWiring:
+def stores(cfg: Any, engine: Any, metrics: Any)-> StoresWiring:
+
     # The computer audit log (DEC-243). Built UNCONDITIONALLY, like `tool_call_log_store`:
     # the computer tools write a row on every call, `unavailable` included, so a call made
     # while `[computer]` is off is audited too. Only the runtime is behind the flag.
@@ -147,23 +149,11 @@ class ScopedWiring:
 
 
 async def scoped(
-    allowlist,
-    background,
-    browser_tabs,
-    computer_context,
-    cfg,
-    clock,
-    compute_jobs,
-    computer,
-    computer_admission,
-    computer_dm_scope_for,
-    computer_events,
-    computer_metrics,
-    computer_tasks,
-    computer_token,
-    engine,
-    metrics,
-    op_clock,
+    allowlist: Any, background: Any, browser_tabs: Any, computer_context: Any,
+    cfg: Any, clock: Any, compute_jobs: Any, computer: Any,
+    computer_admission: Any, computer_dm_scope_for: Any, computer_events: Any,
+    computer_metrics: Any, computer_tasks: Any, computer_token: Any, engine: Any,
+    metrics: Any, op_clock: Any,
 ) -> ScopedWiring:
     browser_manager = computer_probe = computer_queue_runner = None
     computer_scope_for = computer_task_backend = None
@@ -217,7 +207,10 @@ class ScopedRuntimeWiring:
     lifecycle: Any
 
 
-def _scoped_computer_runtime(cfg, computer_metrics, computer_token, engine) -> ScopedRuntimeWiring:
+def _scoped_computer_runtime(
+    cfg: Any, computer_metrics: Any, computer_token: Any, engine: Any,
+) -> ScopedRuntimeWiring:
+
     """The scoped-computer daemon handle plus the stores and registries it drives."""
     scoped_cfg = cfg.computer.scoped
     if not scoped_cfg.registry:
@@ -272,12 +265,11 @@ class ScopedQueuesWiring:
 
 
 async def _scoped_computer_queues(
-    allowlist, background, clock, compute_jobs, computer, computer_context,
-    computer_events, computer_redis, computer_segments, computer_tasks,
-    computer_token, lifecycle, metrics, op_clock, scoped_cfg, tabs,
+    allowlist, background, clock, compute_jobs, computer, computer_context, computer_events,
+    computer_redis, computer_segments, computer_tasks, computer_token, lifecycle, metrics,
+    op_clock, scoped_cfg, tabs,
 ) -> ScopedQueuesWiring:
-    """The admission FIFO, task backend, queue runner and tab manager that sit
-    over the scoped runtime."""
+    """The admission FIFO, task backend, queue runner and tab manager."""
     from nora.app.computer_queue import (
         ComputerAdmission,
         ComputerQueueRunner,
@@ -292,12 +284,14 @@ async def _scoped_computer_queues(
         computer_context=computer_context, computer_events=computer_events,
     )
 
-    async def _deliver_computer_task(row: Any) -> None:
+    async def _deliver_computer_task(row: Any)-> None:
+
         await deliver_computer_task(
             row, jobs=compute_jobs, tasks=computer_tasks, clock=op_clock
         )
 
-    async def _reconcile_scope(scope: str) -> str:
+    async def _reconcile_scope(scope: str)-> str:
+
         """Is work REALLY running on the scope's VM? Read through"""
         state = await computer.state(scope=scope)
         verdict = anything_running(state)
@@ -345,10 +339,11 @@ async def _scoped_computer_queues(
 
 
 def _computer_event_callbacks(
-    background, clock, computer_context, computer_events
-):
+    background, clock, computer_context, computer_events,
+) -> Any:
     """The ComputerEvent writers the queue and tab manager publish through."""
-    async def _queue_audit(task: Any, transition: str) -> None:
+    async def _queue_audit(task: Any, transition: str)-> None:
+
         """A queue lifecycle transition (granted/cancelled/interrupted/"""
         if computer_events is None:
             return
@@ -377,7 +372,8 @@ def _computer_event_callbacks(
             )
         )
 
-    def _browser_event(scope: str, transition: str, subject: Any) -> Any:
+    def _browser_event(scope: str, transition: str, subject: Any)-> Any:
+
         """A browser lifecycle transition (tab expired, browser stopped)"""
         ctx = computer_context()
         if ctx is not None:
@@ -422,20 +418,20 @@ class ScopeResolversWiring:
     computer_scope_for: Any
 
 
-def _computer_scope_resolvers(allowlist) -> ScopeResolversWiring:
+def _computer_scope_resolvers(allowlist: Any)-> ScopeResolversWiring:
+
     """Room -> the canonical VM scope it is pinned to (DM pair or unit)."""
     from nora.domain.computer import computer_dm_scope, computer_unit_scope, dm_scope_id
 
-    def computer_dm_scope_for(platform: str, conversation_id: str) -> str | None:
+    def computer_dm_scope_for(platform: str, conversation_id: str)-> str | None:
+
         convo = allowlist.conversation(platform, conversation_id)
         if convo is None or convo.persons is None or len(convo.persons) != 1:
             return None
         return dm_scope_id(next(iter(convo.persons)), convo.unit)
 
     def computer_scope_for(
-        platform: str,
-        conversation_id: str,
-        conversation_type: str,
+        platform: str, conversation_id: str, conversation_type: str,
     ) -> str:
         if conversation_type == "group":
             unit = _note_unit_of(allowlist)(platform, conversation_id)
@@ -456,15 +452,9 @@ class ContextWiring:
 
 
 def context(
-    allowlist,
-    browser_tabs,
-    cfg,
-    computer,
-    computer_events,
-    computer_scope_for,
-    computer_sessions,
-    computer_tasks,
-    metrics,
+    allowlist: Any, browser_tabs: Any, cfg: Any, computer: Any,
+    computer_events: Any, computer_scope_for: Any, computer_sessions: Any,
+    computer_tasks: Any, metrics: Any,
 ) -> ContextWiring:
     # `<computer>`: the one reader the tag
     # path and the fire path share. `None` while `[computer]` is off, so no
@@ -505,7 +495,11 @@ class BrowseWiring:
     browser: Any
 
 
-def browse(browser_manager, cfg, computer, model_client_for, route_model) -> BrowseWiring:
+def browse(
+    browser_manager: Any, cfg: Any, computer: Any, model_client_for: Any,
+    route_model: Any,
+) -> BrowseWiring:
+
     # `computer_browse` (ADR 0022): a sub-agent in the room's own browser, with a model
     # source of its own (one model per task, the tag path's reason above). `None` unless
     # `[computer]` AND `[computer.browse]` are on, so the registry withholds the tool.
@@ -546,7 +540,8 @@ class SettingsWiring:
     computer_settings: Any
 
 
-def settings(cfg) -> SettingsWiring:
+def settings(cfg: Any)-> SettingsWiring:
+
     # Nora's computer (DEC-243): `ComputerdRuntime`, built ONLY when `[computer] enabled`.
     # Off leaves it `None` and every computer tool answers `unavailable` (R-5).
     # `ComputerToolSettings` is the conversion point from config to a domain value…
@@ -569,7 +564,8 @@ class ExportsWiring:
     computer_exports: Any
 
 
-def exports(engine) -> ExportsWiring:
+def exports(engine: Any)-> ExportsWiring:
+
     # `computer_export`: its record of what left the computer, built unconditionally like
     # the audit store. The same store is the portal's Artifacts read (ADR 0023), and a link
     # is the portal's `<[documents] public_url>/artifacts/<artifact_id>`: without a…
@@ -583,18 +579,9 @@ class DispatchWiring:
 
 
 def dispatch(
-    allowlist,
-    audit,
-    compute_backends,
-    computer_queue_runner,
-    computer_scope_for,
-    computer_task_backend,
-    memory,
-    metrics,
-    persons,
-    registry,
-    rosters,
-    tool_registry,
+    allowlist: Any, audit: Any, compute_backends: Any, computer_queue_runner: Any,
+    computer_scope_for: Any, computer_task_backend: Any, memory: Any, metrics: Any,
+    persons: Any, registry: Any, rosters: Any, tool_registry: Any,
 ) -> DispatchWiring:
     if computer_queue_runner is not None:
         # The queue's executor for durable `native`/`browse`/`capture` rows: each is re-entered
@@ -631,7 +618,7 @@ class SweeperWiring:
 
 
 def sweeper(
-    cfg, computer, computer_events, computer_leases, computer_sessions, metrics
+    cfg, computer, computer_events, computer_leases, computer_sessions, metrics,
 ) -> SweeperWiring:
     computer_sweeper = (
         ComputerSessionSweeper(
@@ -653,7 +640,8 @@ def sweeper(
     return SweeperWiring(computer_sweeper=computer_sweeper)
 
 
-def _computer_token(cfg: Config) -> str:
+def _computer_token(cfg: Config)-> str:
+
     """computerd's bearer token, checked at BOOT when `[computer] enabled`:"""
     token = cfg.credentials.get(cfg.computer.token_env, "")
     if not token.strip():

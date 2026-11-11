@@ -515,7 +515,7 @@ async def build_dependencies(
     _social_wire = importlib.import_module("nora.social").wire
     _subagents_wire = importlib.import_module("nora.subagents").wire
     _voice_wire = importlib.import_module("nora.voice").wire
-    _platforms_channels = channels(cfg=cfg)
+    _platforms_channels = channels(cfg=cfg, reload_files=lambda: reload_files)
     _discord_bridge = _platforms_channels._discord_bridge
     channel_directory = _platforms_channels.channel_directory
     discord_box = _platforms_channels.discord_box
@@ -523,7 +523,7 @@ async def build_dependencies(
     _stores_identity = identity(cfg=cfg, channel_directory=channel_directory, metrics=metrics)
     allowlist = _stores_identity.allowlist
     persons = _stores_identity.persons
-    reload_files = _stores_identity.reload_files
+    reload_files: ReloadFiles = _stores_identity.reload_files
     _stores_database = database(allowlist=allowlist, cfg=cfg, metrics=metrics, persons=persons)
     engine = _stores_database.engine
     _stores_audit = build_audit(cfg=cfg, engine=engine, metrics=metrics)
@@ -662,7 +662,7 @@ async def build_dependencies(
     voice_hub = _voice_speech.voice_hub
     _stores_doctrine = build_doctrine(cfg=cfg, content_checks=content_checks, metrics=metrics)
     doctrine = _stores_doctrine.doctrine
-    doctrine_store = _stores_doctrine.doctrine_store
+    doctrine_store: DoctrineStore = _stores_doctrine.doctrine_store
     _voice_speaker = _voice_wire.speaker(cfg=cfg, doctrine_store=doctrine_store, metrics=metrics)
     speaker = _voice_speaker.speaker
     _voice_rooms = _voice_wire.rooms(

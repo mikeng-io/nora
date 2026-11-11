@@ -51,7 +51,8 @@ class McpWiring:
     version_manifest: Any
 
 
-def mcp(cfg) -> McpWiring:
+def mcp(cfg: Any)-> McpWiring:
+
     # `nora.agent` may not import `nora.config` (import-linter's "only app and
     # __main__ read config") — this is the conversion point, the same shape
     # `ReminderCaps(**cfg.reminders.model_dump())` already uses just below.
@@ -76,7 +77,8 @@ class DeskWiring:
     subagent_desk: Any
 
 
-def desk(cfg, clock, compute_jobs, document_service) -> DeskWiring:
+def desk(cfg: Any, clock: Any, compute_jobs: Any, document_service: Any)-> DeskWiring:
+
     # The sub-agent desk the four `subagent_*` tools call: built ONLY under
     # `[subagent] enabled`, so off the registry withholds the tools. The worker is attached below,
     # once built, because its closed tool list is built from this registry.
@@ -98,18 +100,22 @@ class RegistryWiring:
 
 
 def registry(
-    allowlist, blobs, browser, browser_manager, cfg, clock, computer, computer_admission,
-    computer_context, computer_dm_scope_for, computer_events, computer_exports,
-    computer_leases, computer_sessions, computer_settings, content_checks, culture_reader,
-    discord_presence, document_service, engine, events, fetch_client, geocoder,
-    giphy_client, image_generator, image_refs_allowed, ledger_store, lineage,
-    mcp_tool_groups, media_descriptions, media_join, media_objects, memo_store,
-    memory_search, metrics, mobility, music_bridge, note_store, observation_store, persons,
-    presence_circles, presence_reader, presence_store, profile_index, profile_reader,
-    reaction_picker, refresher, relay, reminder_caps, reminders, route_client,
-    search_client, social_client, standing_store, steam_client, subagent_desk,
-    tool_call_log_store, version_manifest, video_desk, vision_client, voice_presence,
-    weather_client
+    allowlist: Any, blobs: Any, browser: Any, browser_manager: Any,
+    cfg: Any, clock: Any, computer: Any, computer_admission: Any,
+    computer_context: Any, computer_dm_scope_for: Any, computer_events: Any,
+    computer_exports: Any, computer_leases: Any, computer_sessions: Any,
+    computer_settings: Any, content_checks: Any, culture_reader: Any, discord_presence: Any,
+    document_service: Any, engine: Any, events: Any, fetch_client: Any,
+    geocoder: Any, giphy_client: Any, image_generator: Any, image_refs_allowed: Any,
+    ledger_store: Any, lineage: Any, mcp_tool_groups: Any, media_descriptions: Any,
+    media_join: Any, media_objects: Any, memo_store: Any, memory_search: Any,
+    metrics: Any, mobility: Any, music_bridge: Any, note_store: Any,
+    observation_store: Any, persons: Any, presence_circles: Any, presence_reader: Any,
+    presence_store: Any, profile_index: Any, profile_reader: Any, reaction_picker: Any,
+    refresher: Any, relay: Any, reminder_caps: Any, reminders: Any,
+    route_client: Any, search_client: Any, social_client: Any, standing_store: Any,
+    steam_client: Any, subagent_desk: Any, tool_call_log_store: Any, version_manifest: Any,
+    video_desk: Any, vision_client: Any, voice_presence: Any, weather_client: Any,
 ) -> RegistryWiring:
     return RegistryWiring(
         tool_registry=_build_tool_registry(
@@ -143,19 +149,23 @@ def registry(
 
 
 def _build_tool_registry(
-    profile_index, browser_manager, music_bridge, presence_circles, reaction_picker,
-    steam_client, cfg, route_client, computer_admission, computer_sessions, video_desk,
-    fetch_client, persons, computer_leases, media_descriptions, media_join, geocoder,
-    metrics, note_store, media_objects, computer_dm_scope_for, content_checks,
-    culture_reader, subagent_desk, giphy_client, discord_presence, computer,
-    presence_store, mcp_tool_groups, image_generator, ledger_store, memo_store,
-    memory_search, profile_reader, observation_store, browser, computer_context,
-    computer_settings, presence_reader, search_client, engine, events, version_manifest,
-    allowlist, voice_presence, relay, weather_client, vision_client, refresher,
-    image_refs_allowed, clock, document_service, lineage, blobs, standing_store, reminders,
-    reminder_caps, tool_call_log_store, social_client, computer_exports, mobility,
-    computer_events
-):
+    profile_index: Any, browser_manager: Any, music_bridge: Any, presence_circles: Any,
+    reaction_picker: Any, steam_client: Any, cfg: Any, route_client: Any,
+    computer_admission: Any, computer_sessions: Any, video_desk: Any, fetch_client: Any,
+    persons: Any, computer_leases: Any, media_descriptions: Any, media_join: Any,
+    geocoder: Any, metrics: Any, note_store: Any, media_objects: Any,
+    computer_dm_scope_for: Any, content_checks: Any, culture_reader: Any,
+    subagent_desk: Any, giphy_client: Any, discord_presence: Any, computer: Any,
+    presence_store: Any, mcp_tool_groups: Any, image_generator: Any, ledger_store: Any,
+    memo_store: Any, memory_search: Any, profile_reader: Any, observation_store: Any,
+    browser: Any, computer_context: Any, computer_settings: Any, presence_reader: Any,
+    search_client: Any, engine: Any, events: Any, version_manifest: Any,
+    allowlist: Any, voice_presence: Any, relay: Any, weather_client: Any,
+    vision_client: Any, refresher: Any, image_refs_allowed: Any, clock: Any,
+    document_service: Any, lineage: Any, blobs: Any, standing_store: Any,
+    reminders: Any, reminder_caps: Any, tool_call_log_store: Any, social_client: Any,
+    computer_exports: Any, mobility: Any, computer_events: Any,
+) -> Any:
     """The native tool surface's collaborator registry."""
     return ToolRegistry(
         display_name=cfg.doctrine.display_name,
@@ -228,18 +238,10 @@ def _build_tool_registry(
 
 
 def _memory_tool_args(
-    cfg,
-    content_checks,
-    culture_reader,
-    engine,
-    ledger_store,
-    lineage,
-    memo_store,
-    memory_search,
-    profile_index,
-    profile_reader,
-    standing_store,
-):
+    cfg: Any, content_checks: Any, culture_reader: Any, engine: Any,
+    ledger_store: Any, lineage: Any, memo_store: Any, memory_search: Any,
+    profile_index: Any, profile_reader: Any, standing_store: Any,
+) -> Any:
     """The memory tier's tools: index search, graph verbs, standing, ledger."""
     return {
         # `[memory.index] read` (ships off): one memory surface: `memory_search` over the index;
@@ -277,7 +279,11 @@ def _memory_tool_args(
     }
 
 
-def _record_tool_args(cfg, engine, observation_store, persons, tool_call_log_store):
+def _record_tool_args(
+    cfg: Any, engine: Any, observation_store: Any, persons: Any,
+    tool_call_log_store: Any,
+) -> Any:
+
     """The Record surface's tools: queries, observations, social items, call log."""
     return {
         # `[record_query] enabled` (ships off): without the read the registry
@@ -302,16 +308,10 @@ def _record_tool_args(cfg, engine, observation_store, persons, tool_call_log_sto
 
 
 def _media_tool_args(
-    blobs,
-    cfg,
-    engine,
-    image_generator,
-    image_refs_allowed,
-    media_descriptions,
-    media_join,
-    media_objects,
-    video_desk,
-):
+    blobs: Any, cfg: Any, engine: Any, image_generator: Any,
+    image_refs_allowed: Any, media_descriptions: Any, media_join: Any, media_objects: Any,
+    video_desk: Any,
+) -> Any:
     """The media tier's tools: describe geometry, blobs, readings, generators."""
     return {
         "video": video_desk,
@@ -344,19 +344,11 @@ def _media_tool_args(
 
 
 def _computer_tool_args(
-    browser,
-    browser_manager,
-    cfg,
-    computer,
-    computer_admission,
-    computer_context,
-    computer_dm_scope_for,
-    computer_events,
-    computer_exports,
-    computer_leases,
-    computer_sessions,
-    computer_settings,
-):
+    browser: Any, browser_manager: Any, cfg: Any, computer: Any,
+    computer_admission: Any, computer_context: Any, computer_dm_scope_for: Any,
+    computer_events: Any, computer_exports: Any, computer_leases: Any,
+    computer_sessions: Any, computer_settings: Any,
+) -> Any:
     """The computer tier's tools: runtime, queues, sessions, exports."""
     return {
         # Nora's computer: `computer` is `None` whenever `[computer] enabled`
@@ -385,16 +377,10 @@ def _computer_tool_args(
 
 
 def _room_tool_args(
-    discord_presence,
-    geocoder,
-    mobility,
-    presence_circles,
-    presence_reader,
-    presence_store,
-    steam_client,
-    voice_presence,
-    weather_client,
-):
+    discord_presence: Any, geocoder: Any, mobility: Any, presence_circles: Any,
+    presence_reader: Any, presence_store: Any, steam_client: Any, voice_presence: Any,
+    weather_client: Any,
+) -> Any:
     """The room-aware tools: presence, where-been, weather, online state."""
     return {
         "weather": weather_client,
@@ -418,7 +404,11 @@ def _room_tool_args(
     }
 
 
-def _note_tool_args(allowlist, clock, note_store, reminder_caps, reminders):
+def _note_tool_args(
+    allowlist: Any, clock: Any, note_store: Any, reminder_caps: Any,
+    reminders: Any,
+) -> Any:
+
     """The note tier's tools plus the `remind` store and caps."""
     return {
         # The SAME store the tick reads from — two would be two queues, and the
@@ -449,19 +439,10 @@ def _note_tool_args(allowlist, clock, note_store, reminder_caps, reminders):
 
 
 def _lookup_tool_args(
-    cfg,
-    fetch_client,
-    giphy_client,
-    music_bridge,
-    reaction_picker,
-    refresher,
-    relay,
-    route_client,
-    search_client,
-    social_client,
-    version_manifest,
-    vision_client,
-):
+    cfg: Any, fetch_client: Any, giphy_client: Any, music_bridge: Any,
+    reaction_picker: Any, refresher: Any, relay: Any, route_client: Any,
+    search_client: Any, social_client: Any, version_manifest: Any, vision_client: Any,
+) -> Any:
     """The outbound-lookup tools: search, fetch, route, vision, social, media lookups."""
     return {
         "route": route_client,
@@ -489,24 +470,11 @@ class SubagentBackendWiring:
 
 
 def backend(
-    audit,
-    cfg,
-    clock,
-    compute_backends,
-    compute_jobs,
-    computer_admission,
-    computer_scope_for,
-    memory,
-    metrics,
-    model_client_for,
-    persons,
-    registry,
-    rosters,
-    route_model,
-    subagent_desk,
-    subagents_context,
-    tier,
-    tool_registry,
+    audit: Any, cfg: Any, clock: Any, compute_backends: Any,
+    compute_jobs: Any, computer_admission: Any, computer_scope_for: Any, memory: Any,
+    metrics: Any, model_client_for: Any, persons: Any, registry: Any,
+    rosters: Any, route_model: Any, subagent_desk: Any, subagents_context: Any,
+    tier: Any, tool_registry: Any,
 ) -> SubagentBackendWiring:
     # The sub-agent worker, registered under its kind for the poller below.
     # OFF by default: nothing is built and `compute_backends` stays empty. It needs the tool
@@ -552,7 +520,8 @@ class BackendsCheckWiring:
     pass
 
 
-def backends_check(cfg, compute_backends) -> BackendsCheckWiring:
+def backends_check(cfg: Any, compute_backends: Any)-> BackendsCheckWiring:
+
     if cfg.compute.enabled and not compute_backends:
         log.warning(
             "[compute] enabled = true but no ComputeBackend is registered (the "

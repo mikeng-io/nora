@@ -9,17 +9,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from nora.agent import factory, tool_choice
 from nora.agent.dream_screen import offence as dream_offence
 from nora.agent.dream_screen import text_offence
 from nora.agent.dreamer import (
     AdaptorGrant,
     AdaptorSchedule,
-    DreamerRuntime,
     HomeRoom,
     RegistryToolSource,
     culture_grant,
-    verify_tool_subsets,
 )
 from nora.agent.egress import scan_identifiers
 from nora.agent.security import looks_like_coordinate
@@ -99,16 +96,9 @@ class ProfileAdaptorWiring:
     schedules: Any
 
 
-@dataclass(frozen=True)
-class DreamerRuntimeWiring:
-    dream_model: Any
-    dream_models: Any
-    dream_tools: Any
-    dreamer_runtime: Any
-
-
 def _character_adaptors(
-    allowlist, cfg, content_checks, engine, metrics, note_store, persons
+    allowlist: Any, cfg: Any, content_checks: Any, engine: Any,
+    metrics: Any, note_store: Any, persons: Any,
 ) -> CharacterAdaptorWiring:
     """Culture's room fold and the Character sessions (person, unit, Nora)."""
     schedules, adaptors = _culture_adaptor(
@@ -135,7 +125,11 @@ def _character_adaptors(
     )
 
 
-def _culture_adaptor(allowlist, cfg, engine, metrics, note_store, persons):
+def _culture_adaptor(
+    allowlist: Any, cfg: Any, engine: Any, metrics: Any,
+    note_store: Any, persons: Any,
+) -> Any:
+
     # THE CULTURE TIER (DEC-182..185) is the first schedule registered.
     schedules = {
         "culture": AdaptorSchedule(
@@ -208,8 +202,9 @@ def _culture_adaptor(allowlist, cfg, engine, metrics, note_store, persons):
 
 
 def _character_person_adaptor(
-    cfg, content_checks, culture_store, engine, metrics, person_keys, persons
-):
+    cfg: Any, content_checks: Any, culture_store: Any, engine: Any,
+    metrics: Any, person_keys: Any, persons: Any,
+) -> Any:
     schedules = {
         CHARACTER_PERSON_ADAPTOR_NAME: AdaptorSchedule(
             min_interval_seconds=cfg.culture.stale_seconds,
@@ -243,7 +238,11 @@ def _character_person_adaptor(
     return schedules, adaptors
 
 
-def _character_collective_adaptors(allowlist, cfg, culture_store, engine, metrics, persons):
+def _character_collective_adaptors(
+    allowlist: Any, cfg: Any, culture_store: Any, engine: Any,
+    metrics: Any, persons: Any,
+) -> Any:
+
 
     # CHARACTER · UNIT: one session per unit, woken by new
     # revisions of its rooms' cultures.
@@ -270,7 +269,7 @@ def _character_collective_adaptors(allowlist, cfg, culture_store, engine, metric
             batch_limit=cfg.memory.profile.nora.update_every_replies,
         ),
     }
-    adaptors = (
+    adaptors: tuple[Any, ...] = (
         CharacterNoraAdaptor(
             culture=culture_store,
             evidence=NoraEvidence(
@@ -287,6 +286,7 @@ def _character_collective_adaptors(allowlist, cfg, culture_store, engine, metric
         ),
     )
     adaptors = (
+        *adaptors,
         CharacterUnitAdaptor(
             culture=culture_store,
             evidence=UnitEvidence(
@@ -301,8 +301,9 @@ def _character_collective_adaptors(allowlist, cfg, culture_store, engine, metric
 
 
 def _profile_adaptors(
-    allowlist, cfg, character, clock, content_checks, engine, media_join,
-    metrics, persons, profile_index,
+    allowlist: Any, cfg: Any, character: Any, clock: Any,
+    content_checks: Any, engine: Any, media_join: Any, metrics: Any,
+    persons: Any, profile_index: Any,
 ) -> ProfileAdaptorWiring:
     """The Profile sessions (person, verdict judge, collectives), in shadow."""
 
@@ -359,9 +360,10 @@ def _profile_adaptors(
 
 
 def _profile_person_adaptors(
-    allowlist, cfg, character, clock, content_checks, engine, media_join,
-    metrics, persons, profile_collective_keys, profile_index,
-):
+    allowlist: Any, cfg: Any, character: Any, clock: Any,
+    content_checks: Any, engine: Any, media_join: Any, metrics: Any,
+    persons: Any, profile_collective_keys: Any, profile_index: Any,
+) -> Any:
     """The person account's session and the verdict judge."""
     profile_store = SqlProfileStore(
         engine,
@@ -470,10 +472,11 @@ def _profile_person_adaptors(
 
 
 def _profile_collective_adaptors(
-    allowlist, cfg, character, content_checks, engine, media_join, metrics,
-    persons, profile_index, profile_reads, profile_room_keys, profile_social,
-    profile_store, profile_unit_keys, profile_nora_keys,
-):
+    allowlist: Any, cfg: Any, character: Any, content_checks: Any,
+    engine: Any, media_join: Any, metrics: Any, persons: Any,
+    profile_index: Any, profile_reads: Any, profile_room_keys: Any, profile_social: Any,
+    profile_store: Any, profile_unit_keys: Any, profile_nora_keys: Any,
+) -> Any:
     """The room, unit and Nora collective accounts."""
     schedules = {
         PROFILE_ROOM_ADAPTOR_NAME: AdaptorSchedule(
@@ -548,12 +551,13 @@ class DreamObjectivesWiring:
 
 
 def _dream_objectives(
-    allowlist, cfg, clock, content_checks, engine, media_join, metrics,
-    note_store, persons, profile_index, unit_scopes,
+    allowlist: Any, cfg: Any, clock: Any, content_checks: Any,
+    engine: Any, media_join: Any, metrics: Any, note_store: Any,
+    persons: Any, profile_index: Any, unit_scopes: Any,
 ) -> DreamObjectivesWiring:
     """Every objective session and its wake schedule, minus the retired."""
-    adaptors: tuple = ()
-    schedules: dict = {}
+    adaptors: tuple[Any, ...] = ()
+    schedules: dict[str, Any] = {}
     if cfg.culture.enabled or cfg.memory.profile.write:
         character = _character_adaptors(
             allowlist=allowlist, cfg=cfg, content_checks=content_checks,
@@ -589,9 +593,10 @@ def _dream_objectives(
     return DreamObjectivesWiring(adaptors=adaptors, schedules=schedules)
 
 def _lessons_evidence(
-    allowlist, cfg, content_checks, doctrine_store, dreamer_instructions,
-    engine, metrics, model_client_for, persons, registry, route_model,
-):
+    allowlist: Any, cfg: Any, content_checks: Any, doctrine_store: Any,
+    dreamer_instructions: Any, engine: Any, metrics: Any, model_client_for: Any,
+    persons: Any, registry: Any, route_model: Any,
+) -> Any:
     """The lesson evidence seam the Cognition session reads and settles."""
     if not cfg.lessons.enabled:
         return None
@@ -665,9 +670,10 @@ def _lessons_evidence(
 
 
 def _dream_tool_source(
-    allowlist, audit, cfg, memory, metrics, persons, proactive_homes,
-    registry, rosters, tool_registry,
-):
+    allowlist: Any, audit: Any, cfg: Any, memory: Any,
+    metrics: Any, persons: Any, proactive_homes: Any, registry: Any,
+    rosters: Any, tool_registry: Any,
+) -> Any:
     """The registry-backed tool source every Dreamer session speaks through."""
     return RegistryToolSource(
         registry=tool_registry,
@@ -703,7 +709,8 @@ def _dream_tool_source(
     )
 
 
-def _dream_grants_and_budgets(cfg):
+def _dream_grants_and_budgets(cfg: Any) -> Any:
+
     """Adaptor grants and the per-objective budget table."""
     dream_grants: dict[str, AdaptorGrant] = {
         # The culture adaptor's own room, and no act verb (`culture_grant`). SCOPE-keyed, so
@@ -737,79 +744,3 @@ def _dream_grants_and_budgets(cfg):
     return dream_grants, dream_budgets, fallback
 
 
-def _dreamer_runtime(
-    allowlist, audit, cfg, content_checks, dream_adaptors, dream_schedules,
-    dreamer_instructions, memory, metrics, model_client_for, persons,
-    proactive_homes, reasoning_strip_store, registry, rosters, route_model,
-    tier, tool_registry,
-) -> DreamerRuntimeWiring:
-    """The DreamerRuntime the loop hosts every adaptor on."""
-    dream_model = route_model("dreamer", cfg.dreamer_model())
-    dream_effort = cfg.dreamer.reasoning_effort or tier.reasoning_effort
-    _reasoning_effort(
-        dream_effort,
-        source="[dreamer] reasoning_effort (or [llm]'s, inherited)",
-    )
-    dream_models = factory.ModelSource(
-        client=model_client_for("dreamer"),
-        spec=factory.ModelSpec(
-            # `cfg.dreamer_max_tokens()` and NOT `tier.max_tokens`. The tier's number is size…
-            # TAG TURN; a batch pass whose objective asks for one verdict per message has an…
-            # that scales with the batch, and a tag-sized ceiling fails every run with…
-            model=dream_model,
-            max_tokens=cfg.dreamer_max_tokens(),
-            temperature=tier.temperature,
-            # `[dreamer] reasoning_effort` where set, else the tier's. At the tier's "low" this
-            # model reasons its way to `{"candidates": []}` on a transcript that plainly cont…
-            # claims, and to `MaxTokensReachedException` on a real one — reasoning is billed as…
-            reasoning_effort=dream_effort,
-            tool_choice=tool_choice.AFTER_SPEAKING,
-        ),
-    )
-    dream_tools = _dream_tool_source(
-        allowlist=allowlist, audit=audit, cfg=cfg, memory=memory,
-        metrics=metrics, persons=persons, proactive_homes=proactive_homes,
-        registry=registry, rosters=rosters, tool_registry=tool_registry,
-    )
-    dream_grants, dream_budgets, fallback = _dream_grants_and_budgets(cfg)
-    dreamer_runtime = DreamerRuntime(
-        models=dream_models,
-        instructions=dreamer_instructions,
-        tools=dream_tools,
-        budgets=dream_budgets,
-        default_budget=_adaptor_budget(fallback),
-        # The SAME derivation the tag path uses, so a throttle can never be
-        # misreported as a timeout (`factory.build_retry_policy`).
-        retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
-        metrics=metrics,
-        model_name=dream_model,
-        schedules=dream_schedules,
-        # The SAME `[llm.budgets]` the tag path applies through
-        # `ToolRegistry(budget_overrides=...)`, so one number in
-        # `config.toml` is one ceiling whichever loop asks.
-        tool_budget_overrides=cfg.llm.budgets,
-        grants=dream_grants,
-        # The per-CALL-SITE allowance for `inputs`/`commit`,
-        # multiplied by each adaptor's own declared `store_calls_per_tick`.
-        store_timeout_seconds=cfg.dreamer.store_timeout_seconds,
-        # The Dreamer's reasoning-strip store: a tool-using run at `[dreamer] reasoning_effort =
-        # low` is the multi-turn shape the transport strips. Low-traffic and judgement-forming,
-        # so a discarded reasoning there is both closer to being the verdict and harder to…
-        reasoning_strip_store=reasoning_strip_store,
-        content_checks=content_checks,
-    )
-    verify_tool_subsets(
-        dream_adaptors,
-        tools=dream_tools,
-        grants=dream_grants,
-        # The per-adaptor per-tool ceilings, read off the SAME budgets the runtime got above —
-        # so «this ceiling names a tool the adaptor does not hold» is a boot failure rather than
-        # a raise the operator made that quietly does nothing.
-        tool_calls={name: b.tool_calls for name, b in cfg.dreamer.budgets.items()},
-    )
-    return DreamerRuntimeWiring(
-        dream_model=dream_model,
-        dream_models=dream_models,
-        dream_tools=dream_tools,
-        dreamer_runtime=dreamer_runtime,
-    )

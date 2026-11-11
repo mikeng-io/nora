@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from openai import AsyncOpenAI
 
@@ -21,7 +21,8 @@ class LaneWiring:
     tier: Any
 
 
-def lane(cfg) -> LaneWiring:
+def lane(cfg: Any)-> LaneWiring:
+
 
     tier = cfg.llm
     url, api_key, _ = cfg.endpoint("tag")
@@ -29,7 +30,8 @@ def lane(cfg) -> LaneWiring:
     routed_clients: dict[str, AsyncOpenAI] = {}
     extra_model_clients: list[AsyncOpenAI] = []
 
-    def model_client_for(purpose: str) -> AsyncOpenAI:
+    def model_client_for(purpose: str)-> AsyncOpenAI:
+
         url, key, _ = cfg.endpoint(purpose)
         if (url, key) == cfg.endpoint("tag")[:2]:
             return client
@@ -41,7 +43,8 @@ def lane(cfg) -> LaneWiring:
         return routed_clients[name]
 
     def route_model(purpose: str, model: str = "") -> str:
-        return cfg.endpoint(purpose, model)[2]
+
+        return cast(str, cfg.endpoint(purpose, model)[2])
 
     return LaneWiring(
         client=client,
@@ -57,7 +60,8 @@ class SourceWiring:
     models: Any
 
 
-def source(client, route_model, tier) -> SourceWiring:
+def source(client: Any, route_model: Any, tier: Any)-> SourceWiring:
+
     # One CLIENT (DEC-13), MANY MODELS — one per tag, built by this source. The model
     # carries `tool_choice`, which `ReplyGuard` flips mid-turn from `required` to `auto`, so
     # it is per-turn mutable state and two concurrent conversations must not share it.
@@ -78,7 +82,8 @@ class RunnerWiring:
     runner: Any
 
 
-def build_runner(cfg, metrics, models, tier) -> RunnerWiring:
+def build_runner(cfg: Any, metrics: Any, models: Any, tier: Any)-> RunnerWiring:
+
     runner = LiveAgentRunner(
         models=models,
         # Derived from the same `timeout_seconds` the invoke stage enforces, so
@@ -105,13 +110,14 @@ class RunnersWiring:
     summons_runner: Any
 
 
-def runners(cfg, metrics, model_client_for, route_model, summons_wired, tier) -> RunnersWiring:
+def runners(
+    cfg: Any, metrics: Any, model_client_for: Any, route_model: Any,
+    summons_wired: Any, tier: Any,
+) -> RunnersWiring:
+
 
     def _auto_runner(
-        effort: str,
-        source: str,
-        *,
-        max_tokens: int | None = None,
+        effort: str, source: str, max_tokens: int | None = None,
     ) -> LiveAgentRunner:
         return LiveAgentRunner(
             models=factory.ModelSource(

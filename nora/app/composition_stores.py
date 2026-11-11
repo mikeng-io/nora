@@ -51,7 +51,8 @@ class IdentityWiring:
     reload_files: Any
 
 
-def identity(cfg, channel_directory, metrics) -> IdentityWiring:
+def identity(cfg: Any, channel_directory: Any, metrics: Any)-> IdentityWiring:
+
     try:
         reload_files = ReloadFiles(
             policy_path=cfg.policy_file,
@@ -78,7 +79,8 @@ class DatabaseWiring:
     engine: Any
 
 
-def database(allowlist, cfg, metrics, persons) -> DatabaseWiring:
+def database(allowlist: Any, cfg: Any, metrics: Any, persons: Any)-> DatabaseWiring:
+
 
     database_url = cfg.credentials.get(cfg.store.database_url_env, "")
     if not database_url:
@@ -116,7 +118,8 @@ class AuditWiring:
     audit: Any
 
 
-def build_audit(cfg, engine, metrics) -> AuditWiring:
+def build_audit(cfg: Any, engine: Any, metrics: Any)-> AuditWiring:
+
     audit = SqlRecordStore(
         engine,
         max_per_conversation=cfg.store.max_per_conversation,
@@ -131,7 +134,8 @@ class RuntimeStoresWiring:
     tool_call_log_store: Any
 
 
-def runtime_stores(engine) -> RuntimeStoresWiring:
+def runtime_stores(engine: Any)-> RuntimeStoresWiring:
+
     # The compute-job outbox, REUSING `engine` for the same reason `reminders` does above.
     # Built HERE, unconditionally, beside the other stores: boot recovery a few hundred
     # lines down (beside `reminders`' own unconditional sweep) must find a store to sweep…
@@ -146,7 +150,8 @@ class ObsStoresWiring:
     tag_trace_store: Any
 
 
-def obs_stores(engine) -> ObsStoresWiring:
+def obs_stores(engine: Any)-> ObsStoresWiring:
+
     # The durable half of the reasoning-strip counter (`reasoning_strip_log`, ADR 0013),
     # REUSING `engine` for the same reason the three stores above do. UNCONDITIONAL and
     # behind no flag: an instrument that is off by default answers nothing, and the…
@@ -165,7 +170,8 @@ class ObservationWiring:
     observation_store: Any
 
 
-def observation(engine) -> ObservationWiring:
+def observation(engine: Any)-> ObservationWiring:
+
     # The typed platform-observation Record (design/platform-observations 02): persisted
     # whenever a bridge ingests typed source evidence. Cognition OFF still retains the rows
     # — they simply wake no session (the obligation enqueued in the append's transaction is…
@@ -178,7 +184,8 @@ class DecisionLogWiring:
     decision_log: Any
 
 
-def build_decision_log(allowlist, clock, engine, metrics) -> DecisionLogWiring:
+def build_decision_log(allowlist: Any, clock: Any, engine: Any, metrics: Any)-> DecisionLogWiring:
+
     # The shared decision log. Built unconditionally beside `standing_store` for its reason
     # — it costs one attribute where nothing reads it — and there is a second reason here:
     # the log has FOUR writers on three different paths, so a flag gating it would be four…
@@ -200,7 +207,8 @@ class LanguageStoreWiring:
     language_store: Any
 
 
-def build_language_store(cfg, engine, metrics) -> LanguageStoreWiring:
+def build_language_store(cfg: Any, engine: Any, metrics: Any)-> LanguageStoreWiring:
+
     # The Dreamer's CURSOR, REUSING `engine` for the same reason
     # `reminders`/`compute_jobs`/`tool_call_log_store` do above. UNLIKE those, this one IS
     # gated on the feature flag: `SqlLanguageStore` owns `consolidation_watermark` —…
@@ -216,7 +224,8 @@ class DoctrineWiring:
     doctrine_store: Any
 
 
-def build_doctrine(cfg, content_checks, metrics) -> DoctrineWiring:
+def build_doctrine(cfg: Any, content_checks: Any, metrics: Any)-> DoctrineWiring:
+
     # `[speech.tts]`'s speaker: wired ONLY when enabled AND a provider is named AND that
     # provider's key is present — the same inert-ship rule as the transcriber above, plus
     # the keyless- `route`/`search` shape. Off (or providerless, or keyless) leaves no…
@@ -243,7 +252,8 @@ class InstructionsWiring:
     dreamer_instructions: Any
 
 
-def instructions(cfg, metrics) -> InstructionsWiring:
+def instructions(cfg: Any, metrics: Any)-> InstructionsWiring:
+
 
     # The Dreamer's own instruction corpus — its doctrine plus one objective per adaptor.
     # Bind-mounted read-only the way `nora/doctrine` is, so an operator edit is live on the
@@ -282,7 +292,8 @@ class ReadersWiring:
     profile_store_reader: Any
 
 
-def readers(cfg, content_checks, engine) -> ReadersWiring:
+def readers(cfg: Any, content_checks: Any, engine: Any)-> ReadersWiring:
+
     # THE CULTURE TIER'S READ HALF (DEC-207): ONE read-only reader, handed to the tag path's
     # assembler, the fire path and every Dreamer adaptor whose prompt carries `<culture>`.
     # `None` while `[culture] enabled = false`, the shipped default, so no occasion renders…
@@ -322,7 +333,8 @@ class LanguageScopesWiring:
     language_scopes: Any
 
 
-def build_language_scopes(allowlist) -> LanguageScopesWiring:
+def build_language_scopes(allowlist: Any)-> LanguageScopesWiring:
+
 
     # `dream_loop`'s `scopes` callable — the policy.toml conversations, re-evaluated fresh
     # each tick through the live policy holder. No platform filter: this loop only READS
@@ -339,7 +351,11 @@ class OtpWiring:
     otp_api_token: Any
 
 
-def build_otp(audit, cfg, doctrine_store, engine, metrics, persons, registry) -> OtpWiring:
+def build_otp(
+    audit: Any, cfg: Any, doctrine_store: Any, engine: Any,
+    metrics: Any, persons: Any, registry: Any,
+) -> OtpWiring:
+
 
     otp: OtpService | None = None
     otp_api_token = ""

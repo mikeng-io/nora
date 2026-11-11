@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from nora.agent import factory
@@ -65,15 +65,18 @@ class SessionReadersWiring:
 
 
 async def cognition_session(
-    allowlist, audit, cfg, clock, cognition_context_screen, cognition_lessons,
-    cognition_memory, content_checks, culture_reader, document_service,
-    documents_context, dream_model, dream_models, dream_tools, dreamer_instructions,
-    dreamer_runtime, engine, event_store, events, ledger_store, lineage,
-    media_join, memo_store, metrics, mobility, note_store, observation_store,
-    persons, presence_circles, presence_reader, profile_reader, registry,
-    reminder_caps, reminders, rosters, session_guidance, shared, standing_fold,
-    standing_store, stimulus_store, tag_trace_store, tier, tool_registry,
-    unit_rooms, unit_scopes,
+    allowlist: Any, audit: Any, cfg: Any, clock: Any,
+    cognition_context_screen: Any, cognition_lessons: Any, cognition_memory: Any,
+    content_checks: Any, culture_reader: Any, document_service: Any, documents_context: Any,
+    dream_model: Any, dream_models: Any, dream_tools: Any, dreamer_instructions: Any,
+    dreamer_runtime: Any, engine: Any, event_store: Any, events: Any,
+    ledger_store: Any, lineage: Any, media_join: Any, memo_store: Any,
+    metrics: Any, mobility: Any, note_store: Any, observation_store: Any,
+    persons: Any, presence_circles: Any, presence_reader: Any, profile_reader: Any,
+    registry: Any, reminder_caps: Any, reminders: Any, rosters: Any,
+    session_guidance: Any, shared: Any, standing_fold: Any, standing_store: Any,
+    stimulus_store: Any, tag_trace_store: Any, tier: Any, tool_registry: Any,
+    unit_rooms: Any, unit_scopes: Any,
 ) -> CognitionSessionWiring:
     """A Cognition session per unit with a home room, hosted on the Dreamer."""
     cognition_upcoming = None
@@ -141,7 +144,11 @@ async def cognition_session(
     )
 
 
-def _session_units(allowlist, cfg, metrics, note_store, unit_scopes) -> SessionUnitsWiring:
+def _session_units(
+    allowlist: Any, cfg: Any, metrics: Any, note_store: Any,
+    unit_scopes: Any,
+) -> SessionUnitsWiring:
+
     """The units a session can run for (a home room each); only they are woken."""
     homes = LiveMapping(lambda: allowlist.home_rooms())
     cognition_wakeable, cognition_skipped = units_with_home_rooms(
@@ -180,17 +187,23 @@ def _session_units(allowlist, cfg, metrics, note_store, unit_scopes) -> SessionU
     )
 
 
-def _session_readers(allowlist, cfg, event_store, note_store, unit_scopes) -> SessionReadersWiring:
+def _session_readers(
+    allowlist: Any, cfg: Any, event_store: Any, note_store: Any,
+    unit_scopes: Any,
+) -> SessionReadersWiring:
+
     """The note/event/unit-room readers a session grounds on."""
-    async def _note_titles(unit: str) -> Sequence[str]:
+    async def _note_titles(unit: str)-> Sequence[str]:
+
         if note_store is None:
             return ()
         return [n.title for n in await note_store.standing(unit=unit)]
 
-    async def _note_index(unit: str) -> Sequence[Any]:
+    async def _note_index(unit: str)-> Sequence[Any]:
+
         if note_store is None:
             return ()
-        return await note_store.standing(unit=unit)
+        return cast(Sequence[Any], await note_store.standing(unit=unit))
 
     _open_events = open_events_reader(event_store)
 
@@ -247,12 +260,14 @@ def _session_readers(allowlist, cfg, event_store, note_store, unit_scopes) -> Se
 
 
 def _session_grounder(
-    allowlist, audit, cfg, clock, cognition_context_screen, content_checks,
-    culture_reader, documents_context, engine, lineage, media_join, memo_store,
-    metrics, mobility, observation_store, persons, presence_circles,
-    presence_reader, profile_reader, readers, registry, reminders, rosters,
-    unit_rooms,
-):
+    allowlist: Any, audit: Any, cfg: Any, clock: Any,
+    cognition_context_screen: Any, content_checks: Any, culture_reader: Any,
+    documents_context: Any, engine: Any, lineage: Any, media_join: Any,
+    memo_store: Any, metrics: Any, mobility: Any, observation_store: Any,
+    persons: Any, presence_circles: Any, presence_reader: Any, profile_reader: Any,
+    readers: Any, registry: Any, reminders: Any, rosters: Any,
+    unit_rooms: Any,
+) -> Any:
     """The grounding read a session is built on."""
     cognition_context = cognition_context_reader(
         engine=engine,
@@ -346,14 +361,16 @@ def _session_grounder(
 
 
 def _session_runner(
-    allowlist, cfg, clock, cognition_lessons, cognition_memory,
-    document_service, documents_context, dream_model, dream_models,
-    dream_tools, dreamer_instructions, dreamer_runtime, engine, events,
-    grounder, ledger_store, memo_store, metrics, note_store, observation_store,
-    persons, readers, registry, reminder_caps, reminders, rosters,
-    session_guidance, shared, standing_fold, standing_store, stimulus_store,
-    surface, tag_trace_store, tier, unit_rooms, units,
-):
+    allowlist: Any, cfg: Any, clock: Any, cognition_lessons: Any,
+    cognition_memory: Any, document_service: Any, documents_context: Any, dream_model: Any,
+    dream_models: Any, dream_tools: Any, dreamer_instructions: Any, dreamer_runtime: Any,
+    engine: Any, events: Any, grounder: Any, ledger_store: Any,
+    memo_store: Any, metrics: Any, note_store: Any, observation_store: Any,
+    persons: Any, readers: Any, registry: Any, reminder_caps: Any,
+    reminders: Any, rosters: Any, session_guidance: Any, shared: Any,
+    standing_fold: Any, standing_store: Any, stimulus_store: Any, surface: Any,
+    tag_trace_store: Any, tier: Any, unit_rooms: Any, units: Any,
+) -> Any:
     """The runner itself; a bad objective or skill names the fault at startup."""
     try:
         cognition_runner = build_cognition_runner(

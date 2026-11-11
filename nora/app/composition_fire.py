@@ -28,11 +28,7 @@ log = logging.getLogger("nora.app.composition")
 
 
 async def _tell_about_lost_jobs(
-    *,
-    jobs: list[Any],
-    speak: Any,
-    slots: ConversationSlots,
-    metrics: Metrics,
+    jobs: list[Any], speak: Any, slots: ConversationSlots, metrics: Metrics,
     policy: Policy,
 ) -> None:
     """Close the promise each lost job left open, one room at a time."""
@@ -75,7 +71,11 @@ class RecoverWiring:
     lost_jobs: Any
 
 
-async def build_recover(clock, compute_backends, compute_jobs, metrics, reminders) -> RecoverWiring:
+async def build_recover(
+    clock: Any, compute_backends: Any, compute_jobs: Any, metrics: Any,
+    reminders: Any,
+) -> RecoverWiring:
+
     # The Dispatcher is built LATE, below the fire path — the participation
     # trigger it may carry needs `fire_path.speak`, which does not exist yet
     # here. Nothing between here and there consumes it.
@@ -108,42 +108,16 @@ class PathWiring:
 
 
 def path(
-    allowlist,
-    audit,
-    background,
-    cfg,
-    clock,
-    computer_context,
-    culture_reader,
-    decision_log,
-    doctrine_store,
-    documents_context,
-    lessons_reader,
-    limits,
-    lineage,
-    llm_state,
-    lost_jobs,
-    media_join,
-    memo_store,
-    memory,
-    metrics,
-    note_store,
-    participation_runner,
-    persons,
-    presence_reader,
-    preview_source,
-    proactive_runner,
-    profile_reader,
-    quote_window,
-    reasoning_strip_store,
-    registry,
-    rosters,
-    runner,
-    shared,
-    slots,
-    tag_trace_store,
-    tool_call_log_store,
-    tool_registry,
+    allowlist: Any, audit: Any, background: Any, cfg: Any,
+    clock: Any, computer_context: Any, culture_reader: Any, decision_log: Any,
+    doctrine_store: Any, documents_context: Any, lessons_reader: Any, limits: Any,
+    lineage: Any, llm_state: Any, lost_jobs: Any, media_join: Any,
+    memo_store: Any, memory: Any, metrics: Any, note_store: Any,
+    participation_runner: Any, persons: Any, presence_reader: Any, preview_source: Any,
+    proactive_runner: Any, profile_reader: Any, quote_window: Any,
+    reasoning_strip_store: Any, registry: Any, rosters: Any, runner: Any,
+    shared: Any, slots: Any, tag_trace_store: Any, tool_call_log_store: Any,
+    tool_registry: Any,
 ) -> PathWiring:
     # Three occasions need a fire turn: a reminder coming due, a compute job
     # that has finished and needs delivering, and a participation decision.
@@ -183,45 +157,20 @@ def path(
         tool_call_log_store,
     )
     _path_lost_jobs(metrics, background, lost_jobs, slots, allowlist, fire_path)
+    return PathWiring(fire_path=fire_path)
 
 
 def _fire_turn_args(
-    metrics,
-    quote_window,
-    reasoning_strip_store,
-    llm_state,
-    presence_reader,
-    audit,
-    lessons_reader,
-    profile_reader,
-    computer_context,
-    registry,
-    limits,
-    lineage,
-    memo_store,
-    rosters,
-    documents_context,
-    note_store,
-    doctrine_store,
-    participation_runner,
-    tag_trace_store,
-    cfg,
-    media_join,
-    decision_log,
-    clock,
-    tool_registry,
-    preview_source,
-    shared,
-    runner,
-    persons,
-    proactive_runner,
-    memory,
-    culture_reader,
-    tool_call_log_store,
-):
-    """The collaborators a fire turn shares with the tag path: one record store,
-    one Honcho client, one runner, one tool registry — a second set would be a
-    second Nora."""
+    metrics: Any, quote_window: Any, reasoning_strip_store: Any, llm_state: Any,
+    presence_reader: Any, audit: Any, lessons_reader: Any, profile_reader: Any,
+    computer_context: Any, registry: Any, limits: Any, lineage: Any,
+    memo_store: Any, rosters: Any, documents_context: Any, note_store: Any,
+    doctrine_store: Any, participation_runner: Any, tag_trace_store: Any, cfg: Any,
+    media_join: Any, decision_log: Any, clock: Any, tool_registry: Any,
+    preview_source: Any, shared: Any, runner: Any, persons: Any,
+    proactive_runner: Any, memory: Any, culture_reader: Any, tool_call_log_store: Any,
+) -> Any:
+    """The collaborators a fire turn shares with the tag path — one of each."""
     return {
         "tag_trace_store": tag_trace_store,
         "persons": persons,
@@ -262,21 +211,11 @@ def _fire_turn_args(
 
 
 def _fire_grounding_args(
-    allowlist,
-    cfg,
-    clock,
-    computer_context,
-    culture_reader,
-    decision_log,
-    documents_context,
-    lessons_reader,
-    memo_store,
-    note_store,
-    presence_reader,
-    profile_reader,
-):
-    """The read-side grounding a fire determination grounds on: standing,
-    notes, presence and the shared decision log."""
+    allowlist: Any, cfg: Any, clock: Any, computer_context: Any,
+    culture_reader: Any, decision_log: Any, documents_context: Any, lessons_reader: Any,
+    memo_store: Any, note_store: Any, presence_reader: Any, profile_reader: Any,
+) -> Any:
+    """The read-side grounding a fire determination grounds on."""
     return {
         # The reminder-derived Event registry (DEC-139): kind -> factory, wired here at the
         # composition root so the domain type stays free of app wiring. The registry holds the
@@ -322,7 +261,8 @@ def _fire_grounding_args(
     }
 
 
-def _fire_occasion_args(cfg, participation_runner, proactive_runner):
+def _fire_occasion_args(cfg: Any, participation_runner: Any, proactive_runner: Any) -> Any:
+
     """The runners and shadow-review channels only certain fire occasions use."""
     return {
         # The participation occasion's own runner — None whenever the
@@ -355,40 +295,16 @@ def _fire_occasion_args(cfg, participation_runner, proactive_runner):
 
 
 def _wire_fire_path(
-    metrics,
-    quote_window,
-    reasoning_strip_store,
-    llm_state,
-    allowlist,
-    presence_reader,
-    audit,
-    lessons_reader,
-    profile_reader,
-    computer_context,
-    registry,
-    limits,
-    lineage,
-    memo_store,
-    rosters,
-    documents_context,
-    note_store,
-    doctrine_store,
-    participation_runner,
-    tag_trace_store,
-    cfg,
-    media_join,
-    decision_log,
-    clock,
-    tool_registry,
-    preview_source,
-    shared,
-    runner,
-    persons,
-    proactive_runner,
-    memory,
-    culture_reader,
-    tool_call_log_store,
-):
+    metrics: Any, quote_window: Any, reasoning_strip_store: Any, llm_state: Any,
+    allowlist: Any, presence_reader: Any, audit: Any, lessons_reader: Any,
+    profile_reader: Any, computer_context: Any, registry: Any, limits: Any,
+    lineage: Any, memo_store: Any, rosters: Any, documents_context: Any,
+    note_store: Any, doctrine_store: Any, participation_runner: Any, tag_trace_store: Any,
+    cfg: Any, media_join: Any, decision_log: Any, clock: Any,
+    tool_registry: Any, preview_source: Any, shared: Any, runner: Any,
+    persons: Any, proactive_runner: Any, memory: Any, culture_reader: Any,
+    tool_call_log_store: Any,
+) -> Any:
     """The real fire turn, built only when some occasion can fire one."""
     if not (
         cfg.heartbeat.enabled or cfg.compute.enabled or cfg.participation.enabled
@@ -452,7 +368,11 @@ def _wire_fire_path(
     )
 
 
-def _path_lost_jobs(metrics, background, lost_jobs, slots, allowlist, fire_path):
+def _path_lost_jobs(
+    metrics: Any, background: Any, lost_jobs: Any, slots: Any,
+    allowlist: Any, fire_path: Any,
+) -> Any:
+
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and
         # `BackgroundTasks` holds the strong reference, exactly as the
@@ -484,7 +404,9 @@ class HeartbeatWiring:
 
 
 def heartbeat(
-    allowlist, background, cfg, clock, fire_path, metrics, note_store, reminders, slots
+    allowlist: Any, background: Any, cfg: Any, clock: Any,
+    fire_path: Any, metrics: Any, note_store: Any, reminders: Any,
+    slots: Any,
 ) -> HeartbeatWiring:
 
     # THE FIRE-TIME SCREEN for a `kind="proactive"` row, built unconditionally. It is a pure
@@ -521,18 +443,9 @@ class ComputePollerWiring:
 
 
 def compute_poller(
-    allowlist,
-    background,
-    blobs,
-    cfg,
-    clock,
-    compute_backends,
-    compute_jobs,
-    document_service,
-    fire_path,
-    media_objects,
-    metrics,
-    slots,
+    allowlist: Any, background: Any, blobs: Any, cfg: Any,
+    clock: Any, compute_backends: Any, compute_jobs: Any, document_service: Any,
+    fire_path: Any, media_objects: Any, metrics: Any, slots: Any,
 ) -> ComputePollerWiring:
 
     # The compute-job poller: a background loop, gated on BOTH the feature flag and a live
@@ -586,18 +499,9 @@ class GateWiring:
 
 
 def build_gate(
-    audit,
-    cfg,
-    doctrine_store,
-    engine,
-    fire_path,
-    media_join,
-    metrics,
-    model_client_for,
-    persons,
-    route_model,
-    slots,
-    standing_store,
+    audit: Any, cfg: Any, doctrine_store: Any, engine: Any,
+    fire_path: Any, media_join: Any, metrics: Any, model_client_for: Any,
+    persons: Any, route_model: Any, slots: Any, standing_store: Any,
 ) -> GateWiring:
     # Bound in the branch below, beside the trigger that holds it.
     gate: RelevanceGate | None = None

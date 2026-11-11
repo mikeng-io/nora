@@ -23,7 +23,8 @@ class TasksWiring:
     llm_state: Any
 
 
-async def tasks(cfg, channel_directory, engine, reload_files) -> TasksWiring:
+async def tasks(cfg: Any, channel_directory: Any, engine: Any, reload_files: Any)-> TasksWiring:
+
 
     llm_state = LLMState()
     background = BackgroundTasks()
@@ -52,7 +53,8 @@ class SlotsWiring:
     slots: Any
 
 
-def build_slots(background, cfg) -> SlotsWiring:
+def build_slots(background: Any, cfg: Any)-> SlotsWiring:
+
     # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here. Every path that
     # may speak into a conversation holds this same instance — two would be two locks and no
     # serialisation at all. Built HERE, above the registry, because the relay below needs…
@@ -66,7 +68,8 @@ class StimulusWiring:
     stimulus_wiring: Any
 
 
-def stimulus(allowlist, cfg, engine, registry) -> StimulusWiring:
+def stimulus(allowlist: Any, cfg: Any, engine: Any, registry: Any)-> StimulusWiring:
+
 
     # The cognition loop's stimuli: OFF under `[cognition] enabled = false`, the shipped
     # default. On, the ingest pipeline appends one stimulus per recorded person-authored

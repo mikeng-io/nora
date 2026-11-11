@@ -418,16 +418,15 @@
   "internal_docstrings": 3
  },
  "nora/app/cognition_session.py": {
-  "comment_blocks": 29,
-  "file_lines": 3526,
+  "comment_blocks": 28,
+  "file_lines": 2052,
   "functions": {
    "CognitionSessionRunner.__init__": 124,
-   "CognitionSessionRunner._build_tools": 1672,
-   "CognitionSessionRunner._build_tools.remind": 222,
+   "CognitionSessionRunner._build_tools": 351,
    "CognitionSessionRunner._run_session": 160,
    "CognitionSessionRunner.on_wake": 190
   },
-  "internal_docstrings": 28
+  "internal_docstrings": 18
  },
  "nora/app/cognition_wiring.py": {
   "comment_blocks": 10,
@@ -442,23 +441,6 @@
    "build_dependencies": 1008
   },
   "internal_docstrings": 1
- },
- "nora/app/composition_agent.py": {
-  "functions": {
-   "_registry_to_tool_registry": 241,
-   "registry": 129
-  }
- },
- "nora/app/composition_dreamer.py": {
-  "file_lines": 1247,
-  "functions": {
-   "enabled": 909
-  }
- },
- "nora/app/composition_fire.py": {
-  "functions": {
-   "_path_to_fire_path": 145
-  }
  },
  "nora/app/comprehend.py": {
   "functions": {
@@ -614,11 +596,6 @@
  "nora/app/wake.py": {
   "comment_blocks": 2,
   "internal_docstrings": 4
- },
- "nora/computer/wire.py": {
-  "functions": {
-   "scoped": 212
-  }
  },
  "nora/config.py": {
   "comment_blocks": 109,

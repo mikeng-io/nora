@@ -25,35 +25,14 @@ class SharedWiring:
 
 
 def build_shared(
-    allowlist,
-    audit,
-    background,
-    cfg,
-    clock,
-    computer_context,
-    culture_reader,
-    documents_context,
-    engine,
-    ledger_store,
-    lessons_reader,
-    media_join,
-    memo_store,
-    memory,
-    memory_search,
-    metrics,
-    note_store,
-    observation_store,
-    persons,
-    presence_reader,
-    profile_reader,
-    quote_window,
-    registry,
-    reminders,
-    rosters,
-    standing_store,
-    subagents_context,
-    tag_trace_store,
-    unit_rooms,
+    allowlist: Any, audit: Any, background: Any, cfg: Any,
+    clock: Any, computer_context: Any, culture_reader: Any, documents_context: Any,
+    engine: Any, ledger_store: Any, lessons_reader: Any, media_join: Any,
+    memo_store: Any, memory: Any, memory_search: Any, metrics: Any,
+    note_store: Any, observation_store: Any, persons: Any, presence_reader: Any,
+    profile_reader: Any, quote_window: Any, registry: Any, reminders: Any,
+    rosters: Any, standing_store: Any, subagents_context: Any, tag_trace_store: Any,
+    unit_rooms: Any,
 ) -> SharedWiring:
     shared = shared_reader(
         ledger=ledger_store,
@@ -114,6 +93,7 @@ def build_shared(
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
+
         # IngestPipeline's `spawn` is `Callable[[Coroutine], None]` — it never needs the Task
         # back. `BackgroundTasks.spawn` returns one (callers that DO want it, like Dispatcher,
         # call it directly), so this drops the return value rather than widening the pipeline's…
@@ -128,21 +108,10 @@ class IngestWiring:
 
 
 def build_ingest(
-    _spawn,
-    allowlist,
-    audit,
-    blobs,
-    cfg,
-    comprehension,
-    media_objects,
-    media_sources,
-    memory,
-    metrics,
-    persons,
-    policy,
-    sticker_reader,
-    stimulus_wiring,
-    transcriber,
+    _spawn: Any, allowlist: Any, audit: Any, blobs: Any,
+    cfg: Any, comprehension: Any, media_objects: Any, media_sources: Any,
+    memory: Any, metrics: Any, persons: Any, policy: Any,
+    sticker_reader: Any, stimulus_wiring: Any, transcriber: Any,
 ) -> IngestWiring:
     ingest = IngestPipeline(
         audit=audit,
@@ -171,17 +140,9 @@ class StandingWiring:
 
 
 async def standing(
-    audit,
-    cfg,
-    clock,
-    content_checks,
-    dreamer_instructions,
-    ledger_store,
-    lineage,
-    media_join,
-    metrics,
-    standing_store,
-    tag_trace_store,
+    audit: Any, cfg: Any, clock: Any, content_checks: Any,
+    dreamer_instructions: Any, ledger_store: Any, lineage: Any, media_join: Any,
+    metrics: Any, standing_store: Any, tag_trace_store: Any,
 ) -> StandingWiring:
     # The debrief's collaborators, as ONE object that is either present or absent
     # (`debrief.Wiring` — the shape is deliberate: four optional parameters would let a
@@ -226,10 +187,7 @@ async def standing(
     if debrief_wiring is not None:
 
         async def standing_fold(
-            *,
-            trace: Any,
-            unit: str,
-            rooms: tuple[tuple[str, str], ...],
+            trace: Any, unit: str, rooms: tuple[tuple[str, str], ...],
         ) -> None:
             from nora.engagement.stages import debrief as _debrief_stage
 
@@ -261,31 +219,13 @@ class EngagementWiring:
 
 
 def build_engagement(
-    allowlist,
-    assembler,
-    audit,
-    background,
-    cfg,
-    clock,
-    debounce,
-    debrief_wiring,
-    decision_log,
-    doctrine_store,
-    limits,
-    llm_state,
-    memory,
-    metrics,
-    persons,
-    preview_source,
-    reasoning_strip_store,
-    registry,
-    rosters,
-    runner,
-    slots,
-    tag_trace_store,
-    tier,
-    tool_call_log_store,
-    tool_registry,
+    allowlist: Any, assembler: Any, audit: Any, background: Any,
+    cfg: Any, clock: Any, debounce: Any, debrief_wiring: Any,
+    decision_log: Any, doctrine_store: Any, limits: Any, llm_state: Any,
+    memory: Any, metrics: Any, persons: Any, preview_source: Any,
+    reasoning_strip_store: Any, registry: Any, rosters: Any, runner: Any,
+    slots: Any, tag_trace_store: Any, tier: Any, tool_call_log_store: Any,
+    tool_registry: Any,
 ) -> EngagementWiring:
 
     engagement = EngagementPipeline(
@@ -337,7 +277,10 @@ class DispatcherWiring:
     dispatcher: Any
 
 
-def build_dispatcher(background, engagement, ingest, participation_trigger) -> DispatcherWiring:
+def build_dispatcher(
+    background: Any, engagement: Any, ingest: Any, participation_trigger: Any,
+) -> DispatcherWiring:
+
     dispatcher = Dispatcher(
         ingest=ingest,
         engagement=engagement,
