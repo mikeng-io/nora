@@ -30,7 +30,7 @@ visible to those units.
 
 ## Terms and promises
 
-There is no separate private persona, private synthetic unit, second Cognition
+There is no separate private profile, private synthetic unit, second Cognition
 engine or automatic shared-memory feed. The canonical person profile remains
 one per unit. A DM may read every unit that explicitly lists its owner, but only
 through the per-room disclosure predicates; publication remains anchored to the

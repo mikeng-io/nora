@@ -11,7 +11,7 @@
 //     slot {stream_url, title, duration_seconds, playback_id, generation,
 //     resumable, pauseRequested} remembered as suspended; when the speech
 //     queue drains a RESUMABLE track is revived FROM THE CUT POSITION
-//     (design/voice-channel/audio.md «Speech and music arbitration» B7, phase 2): the position is the slot's start offset plus the
+//     (design/voice-channel/audio.md «Speech and music arbitration»): the position is the slot's start offset plus the
 //     resource's playbackDuration at the cut, and the revived ffmpeg seeks
 //     there (`-ss` before `-i`); position_policy is approximate_seek — the
 //     player's consumed-frames count, not a sample-exact cursor. Measured
@@ -29,7 +29,7 @@
 //     stream is intentionally paused (a paused pipe produces no bytes, so
 //     the watchdog must not read that as a stall).
 //
-// ffmpeg ownership (design/voice-channel/audio.md «Speech and music arbitration» B13): at most one LIVE music process. Replacement
+// ffmpeg ownership (design/voice-channel/audio.md «Speech and music arbitration»): at most one LIVE music process. Replacement
 // kills with a SIGTERM -> (grace) -> SIGKILL escalation, reaped via 'close';
 // a new spawn WAITS for every killed process's close before it starts, so
 // the TERM grace never overlaps two live ffmpegs. A 30s no-bytes watch on
@@ -572,7 +572,7 @@ export function createArbiter({
       });
       return;
     }
-    // design/voice-channel/audio.md «Speech and music arbitration» B7: same playback_id, ffmpeg seeks to the cut position.
+    // design/voice-channel/audio.md «Speech and music arbitration»: same playback_id, ffmpeg seeks to the cut position.
     const revived = newSlot({ ...s, startOffsetMs: s.cutAtMs ?? 0 });
     slot = revived;
     startFfmpeg(revived, 'resuming');

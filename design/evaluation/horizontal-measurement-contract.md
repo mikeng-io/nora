@@ -221,30 +221,24 @@ and longer-term usefulness separately. A report distinguishes a Nora failure,
 an instrument defect and unavailable evidence without making the latter two
 into passes. A content-quality failure is not permission to retry until green.
 
-## Source audit and current limits
+## Source audit and its limits
 
-Source census at `3430b67d17615bea3812303d38b671c1976c9112` through the real
-registry/loader: 24 registered corpora and 365 unparked cases. These are not
-365 runnable or accepted cases; anchor/runtime prerequisites remain separate.
-The fifteen-session memory spike is another entrypoint and must be included in
-the same methodology audit, not lost in the CLI census.
+The audit counts cases through the real registry and loader, never by reading
+files. A registered, unparked case is not a runnable or accepted one: anchor
+and runtime prerequisites are counted separately. Every entry point that
+produces a quality claim is in the same audit, including sessions run outside
+the CLI. Each acceptance requirement in a case names the consumer that reads
+it; a requirement no consumer reads is a silently dropped expectation and a
+finding.
 
-The inspected model-judged corpora contain 36 nonempty `expected_output` cases:
-13 use the social/contextual acceptance consumer, 16 use the fold consumer and
-7 use the lesson consumer. No current silently dropped requirement was found
-in that census. `criteria_for` supports appending acceptance only for
-`social_suitability` and `contextual_identity`; fold and lesson paths consume
-their requirements elsewhere. This is bounded source evidence, not validation
-of every semantic expectation or future metadata field.
-
-| Obligation | Current evidence boundary |
-|---|---|
-| Scenario loading and requirement consumers | Source inspected and census obtained without subjects or judges; not a full per-case ground-truth review. |
-| Fixed candidate-independent grading contract | The runner binds a supplied private reference and expected fingerprint before model work; source/case drift refuses. Reply doctrine and memory judge instructions are independent inputs. This binding does not validate the reference labels or establish audited contracts for every corpus. See the [binding procedure](../../docs/eval-sop.md#bind-the-selected-measurement). |
-| Raw request and operator trace visibility | Observability repair has separate source/synthetic evidence; final installed-runner acceptance remains pending. |
-| Judge calibration | The disputed-answer regrade is development calibration. A reviewed reference set and untouched controls for the next claim remain required. |
-| Memory usefulness | Isolated writer sessions do not establish learn → persist → retrieve → answer → correct. |
-| Doctrine behavior | Source/history correction is separate from fresh behavioral acceptance; original failed evidence remains. |
+Every obligation states its own evidence boundary: what was inspected, what was
+run, and what remains unproven. Source inspection is not ground-truth review;
+binding a private reference before model work does not validate the reference
+labels; development calibration is not untouched held-out confirmation;
+isolated writer sessions do not establish learn → persist → retrieve → answer →
+correct; correcting source or history is separate from fresh behavioural
+acceptance, and the original failed evidence is kept. A census and its
+boundaries are run evidence, recorded with the run they describe.
 
 The procedure holds unless new primary evidence changes a listed source fact or
 the operator changes the intended capability. Either change is recorded before

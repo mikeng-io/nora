@@ -1,7 +1,7 @@
 # 0020 · Documents are JSON specs the portal renders, not HTML a model writes
 
 - **Status:** accepted as built (2026-10-01, operator): documents are live. Amended in part by [0023](0023-artifacts-are-files-the-portal-shares-and-drop-retires.md) (point 5's "Drop's link shortener stays" is reversed: Drop and every shortener are retired) and by `design/artifact/README.md`
-  (design/artifact/lifecycle.md — the present view, print/PDF and revision history this text calls "not built" are built), §35 (web pictures are kept), §40 (a Map names its places) and §42 (the catalog has 19 components, not 21: no Tabs)
+  (design/artifact/lifecycle.md — the present view, print/PDF and revision history this text calls "not built" are built); web pictures are kept, a Map names its places, and the catalog has 19 components, not 21 (no Tabs)
 - **Date:** 2026-09-30
 - **Extends:** [0019](0019-noras-computer-runs-in-an-sbx-microvm.md): its `computer_export`
   publishes through Drop; this changes where a published result goes.

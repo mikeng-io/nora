@@ -57,12 +57,6 @@
    "Persona": 1
   }
  },
- "design/private-dm/README.md": {
-  "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
-  "matches": {
-   "persona": 1
-  }
- },
  "docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md": {
   "reason": "Historical decision text, including superseded ADR 0026 and the ADR 0029 rename contract.",
   "matches": {
