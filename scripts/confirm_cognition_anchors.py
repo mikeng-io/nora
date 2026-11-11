@@ -35,12 +35,13 @@ JUDGED = frozenset({1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13})
 def scenarios() -> dict[int, str]:
     """Use the scenario spec itself, including both must and must-not columns.
 
-    Only §2's table is read, and its scenario set must be exactly JUDGED plus
-    the code-test rows, so a stray table elsewhere can never rewrite a spec.
+    Only the spec's table is read, and its scenario set must be exactly JUDGED
+    plus the code-test rows, so a stray table elsewhere can never rewrite a
+    spec.
     """
     result = {}
-    doc = (ROOT / "design/unified-memory/understanding.md").read_text()
-    section = doc.split("## 2.", 1)[1].split("\n## ", 1)[0]
+    doc = (ROOT / "evals/COGNITION_SCENARIOS.md").read_text()
+    section = doc.split("## The thirteen scenarios", 1)[1].split("\n## ", 1)[0]
     for line in section.splitlines():
         columns = [c.strip() for c in line.split("|")]
         if len(columns) == 7 and columns[1].isdigit():

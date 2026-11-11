@@ -2,7 +2,7 @@
 version: 3
 slices:
   text_image:
-    description: A caption-less photo found by a description of what it shows (design/unified-memory/graph.md,
+    description: A caption-less photo found by a description of what it shows (design/unified-memory/20,
       conversational-recall dinner journey). Queries written blind, from the images only.
     items: media.yaml
     labels: labels.yaml
@@ -443,7 +443,7 @@ slices:
       text: 由高處影落去個城市，中間有個四方形護城河圍住嘅公園
   cantonese:
     description: 'A message found by a later question about it: written Cantonese, English, mixed script and
-      romanised Cantonese, with slang, near-duplicates and plans repeated at different times (design/unified-memory/graph.md).
+      romanised Cantonese, with slang, near-duplicates and plans repeated at different times (design/unified-memory/20).
       Pool and queries synthetic, written by separate fresh sessions.'
     items: texts.yaml
     labels: labels_text.yaml
@@ -1035,7 +1035,7 @@ slices:
       text: 上個月有人問中秋有咩好地方望月
   names:
     description: A message found by an invented game title, an invented handle or a Hong Kong place name inside
-      it (design/unified-memory/graph.md). The pool is the cantonese pool plus 60 messages about named things.
+      it (design/unified-memory/20). The pool is the cantonese pool plus 60 messages about named things.
     items: texts.yaml
     labels: labels_text.yaml
     as_of: '2026-10-15'
