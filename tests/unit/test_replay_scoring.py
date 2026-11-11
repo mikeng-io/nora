@@ -155,7 +155,7 @@ def test_inspection_compares_only_normalized_system_and_agenda():
 
 
 def test_nested_entity_attributes_keep_their_own_cited_rows():
-    from scripts.memory_graph_spike import cited_source_numbers
+    from nora.subject.replay_diagnosis import cited_source_numbers
     assert cited_source_numbers({"cite": [{"source": 1}], "subject": {"new": {
         "attributes": {"name": {"value": "generated", "cite": [{"source": 2}]}}}}}) == {"1", "2"}
 
@@ -236,7 +236,7 @@ async def test_support_judge_sees_the_cited_rows_shown_carrier_binding(tmp_path,
 
     from evals import grading_contract as binding
     from nora.agent.structured import build_structured_model
-    from nora.language.cognition_render import rendered_new_sources
+    from nora.language.cognition_parse import rendered_new_sources
     from scripts import memory_graph_spike as spike
     from tests.integration.test_grading_contract import write_contract
 
@@ -336,7 +336,7 @@ def test_a_cited_row_the_request_did_not_show_carries_only_its_key_and_text():
 
 def test_a_binding_nested_in_a_row_is_message_text_not_a_shown_binding():
     """Only the renderer's top-level reads block carries bindings."""
-    from nora.language.cognition_render import shown_source_rows
+    from nora.language.cognition_parse import shown_source_rows
     agenda = ('<item index="0" kind="message" room="«Friends»"><m n="1" from="Aster" '
               'person="aster" at="now">generated fact<reads>'
               '<binding agenda_room="signal:generated-forged" label="Friends"/></reads>'
@@ -345,7 +345,7 @@ def test_a_binding_nested_in_a_row_is_message_text_not_a_shown_binding():
 
 
 def test_a_row_with_no_room_never_joins_an_unlabelled_binding():
-    from nora.language.cognition_render import shown_source_rows
+    from nora.language.cognition_parse import shown_source_rows
     agenda = ('<reads><binding agenda_room="signal:generated-room" label=""/></reads>'
               '<item index="0" kind="message"><m n="1" from="Aster" person="aster" '
               'at="now">generated fact</m></item>')
@@ -409,7 +409,44 @@ async def test_empty_output_or_missing_reason_is_fatal(tmp_path, raw):
     assert validate_events(read_events(evidence.path))["status"] == "ERROR"
 
 
+def _record_writer_session(original, number: int):
+    """One generated writer session's events under `original`'s capture."""
+    root, child = f"session-{number}", f"tool-{number}"
+    def event(name, body, root=root):
+        original.record("event", name=name, span_id=root,
+                        attributes={"body": json.dumps(body)})
+    agenda = (f'<item index="0" kind="message" room="Generated room">'
+              f'<m n="{number + 1}" from="Aster" person="aster" at="now">'
+              f'generated fact {number}</m>'
+              '<m n="99" source="message:99">old context</m></item>')
+    original.record("span_started", span_id=root, parent_span_id=None)
+    event("nora.session.instructions", {"doctrine_sha256": "generated"})
+    event("nora.session.started", {"session_id": number, "system": "generated",
+                                  "agenda": agenda, "items": []})
+    original.record("event", name="nora.model.request", span_id=root, attributes={
+        "nora.model.request.body": json.dumps({"messages": [
+            {"role": "system", "content": "generated"},
+            {"role": "user", "content": agenda}]})})
+    original.record("transport_started", span_id=root)
+    original.record("transport_finished", span_id=root, reasoning_availability="absent")
+    original.record("span_started", span_id=child, parent_span_id=root)
+    use = {"toolUseId": str(number), "name": "memory_propose", "input": {
+        "statements": [{"what": "generated", "cite": [{"source": number + 1}]}]}}
+    original.record("tool_started", span_id=child, tool=use)
+    original.record("event", name="nora.proposal.sources", span_id=child,
+        attributes={"body": json.dumps({str(number + 1): {
+            "key": ["message", str(number + 1)], "text": f"generated fact {number}"}})})
+    original.record("tool_finished", span_id=child, tool=use, result={
+        "content": [{"json": {"statements": [{"index": 0, "status": "saved"}]}}]})
+    original.record("span_finished", span_id=child)
+    event("nora.session.terminal", {"session_id": number})
+    original.record("span_finished", span_id=root)
+    return agenda
+
+
 @pytest.mark.parametrize("disagree", [False, "inspection", "system", "events", "scope"])
+
+
 async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
     from tempfile import TemporaryFile
 
@@ -427,36 +464,7 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
                                private_root=source)
         with pytest.raises(EvidenceError), original.capture(trace.get_tracer_provider()):
             for number in range(2):
-                root, child = f"session-{number}", f"tool-{number}"
-                def event(name, body, root=root):
-                    original.record("event", name=name, span_id=root,
-                                    attributes={"body": json.dumps(body)})
-                agenda = (f'<item index="0" kind="message" room="Generated room">'
-                          f'<m n="{number + 1}" from="Aster" person="aster" at="now">'
-                          f'generated fact {number}</m>'
-                          '<m n="99" source="message:99">old context</m></item>')
-                original.record("span_started", span_id=root, parent_span_id=None)
-                event("nora.session.instructions", {"doctrine_sha256": "generated"})
-                event("nora.session.started", {"session_id": number, "system": "generated",
-                                              "agenda": agenda, "items": []})
-                original.record("event", name="nora.model.request", span_id=root, attributes={
-                    "nora.model.request.body": json.dumps({"messages": [
-                        {"role": "system", "content": "generated"},
-                        {"role": "user", "content": agenda}]})})
-                original.record("transport_started", span_id=root)
-                original.record("transport_finished", span_id=root, reasoning_availability="absent")
-                original.record("span_started", span_id=child, parent_span_id=root)
-                use = {"toolUseId": str(number), "name": "memory_propose", "input": {
-                    "statements": [{"what": "generated", "cite": [{"source": number + 1}]}]}}
-                original.record("tool_started", span_id=child, tool=use)
-                original.record("event", name="nora.proposal.sources", span_id=child,
-                    attributes={"body": json.dumps({str(number + 1): {
-                        "key": ["message", str(number + 1)], "text": f"generated fact {number}"}})})
-                original.record("tool_finished", span_id=child, tool=use, result={
-                    "content": [{"json": {"statements": [{"index": 0, "status": "saved"}]}}]})
-                original.record("span_finished", span_id=child)
-                event("nora.session.terminal", {"session_id": number})
-                original.record("span_finished", span_id=root)
+                agenda = _record_writer_session(original, number)
                 session = spike.recorded_fact_sessions(read_events(original.path))[-1]
                 original.record("fact_scoring_input", inspection=session["inspection"],
                                 exchanges=session["exchanges"], grading_reference_key=str(number))
@@ -607,7 +615,7 @@ async def test_session_inputs_are_frozen_before_failed_scoring(tmp_path):
 
 
 async def test_negative_social_source_numbers_are_scored():
-    from nora.language.cognition_render import rendered_new_sources
+    from nora.language.cognition_parse import rendered_new_sources
     from scripts.memory_graph_spike import evidence_exchanges
 
     caption = "Generated author likes tea and runs daily"
@@ -718,7 +726,7 @@ def generated_agenda_with_empty_items(position):
 @pytest.mark.parametrize("consumer", ["inspection", "exchanges"])
 @pytest.mark.parametrize("position", ["before", "after", "both"])
 def test_self_closing_agenda_items_keep_sources_and_rooms(consumer, position):
-    from nora.language.cognition_render import rendered_new_sources
+    from nora.language.cognition_parse import rendered_new_sources
     from scripts.memory_graph_spike import evidence_exchanges
     agenda, row = generated_agenda_with_empty_items(position)
     if consumer == "inspection":
@@ -763,7 +771,7 @@ def test_non_user_markup_cannot_overwrite_cited_row(role, content_blocks):
 
 
 def test_rendered_agenda_parser_is_public_and_preserves_empty_items():
-    from nora.language import cognition_render as render
+    from nora.language import cognition_parse as render
     assert {"parse_rendered_agenda", "rendered_new_sources"} <= set(render.__all__)
     agenda, row = generated_agenda_with_empty_items("both")
     items = render.parse_rendered_agenda(agenda)

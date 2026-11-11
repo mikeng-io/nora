@@ -623,12 +623,12 @@ def test_every_per_unit_table_covers_every_recurrence():
     watching, which is the worst place to find one. This is the gate that makes
     adding a unit fail here instead.
     """
-    from nora.agent.tools import _PERIOD_DAYS
+    from nora.agenda.adapters.tools.shared import _PERIOD_DAYS
     from nora.domain.framing import CADENCE_UNITS
 
     repeating = set(Recurrence) - {Recurrence.NONE}
     assert set(CADENCE_UNITS) == repeating, "nora.domain.framing.CADENCE_UNITS"
-    assert set(_PERIOD_DAYS) == repeating, "nora.agent.tools._PERIOD_DAYS"
+    assert set(_PERIOD_DAYS) == repeating, "nora.agenda.adapters.tools.shared._PERIOD_DAYS"
     # UNIT_SECONDS is deliberately PARTIAL — a calendar unit has no fixed
     # period — so it is checked as a subset with the sub-day units required.
     assert set(UNIT_SECONDS) == DURATION_UNITS

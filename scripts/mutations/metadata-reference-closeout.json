@@ -16,8 +16,8 @@
   {
     "name": "ambiguous cross-room handles never choose the last shown source",
     "file": "nora/app/cognition_session.py",
-    "old": "                shown_handles[handle] = None",
-    "new": "                shown_handles[handle] = room",
+    "old": "            shown[handle] = None",
+    "new": "            shown[handle] = room",
     "target": "tests/unit/test_platform_observation_wired.py::test_a_handle_shown_for_two_rooms_cannot_silently_bind_the_last_room"
   },
   {

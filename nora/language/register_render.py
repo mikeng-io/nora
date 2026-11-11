@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, tzinfo
+from functools import partial
 from typing import Any, Protocol
 
 from nora.domain.blocks import BlockKey, ContextBlock, render_elements, render_group, restamp
@@ -51,7 +52,7 @@ def render_register(
     placement: Mapping[str, tuple[int, BlockKey]],
 ) -> list[ContextBlock]:
     """The notes, the memos, and the events of each agenda room, already
-    recorded: a `notes` block, a `memos` block (DEC-306) and ONE `events`
+    recorded: a `notes` block, a `memos` block and ONE `events`
     block of `<room_events>` groups. At most
     `register_lines` rows of each list, and every row together within
     `register_chars` as rendered: a row that does not fit, and every row after
@@ -78,10 +79,56 @@ def render_register(
     )
     blocks.append(restamp(notes_block, placement))
     spent = len(notes_block.body.text) + (1 if notes_block.body else 0)
-    # Standing: each agenda room's folded source-object state (design 05) —
-    # the open poll, the pin set, the member count — typed rows under ONE
-    # block, on the Register's own budget row. A gap/unordered head says so
-    # (`ordering`); a partial snapshot says what it covers, never the whole.
+    standing_groups = _standing_groups(rooms, grounding, now_ms, tz, budget, listed)
+    if standing_groups:
+        blocks.append(
+            restamp(
+                ContextBlock(name="standing", body=compose_body("\n".join(standing_groups))),
+                placement,
+            )
+        )
+    groups: list[str] = []
+    for room in rooms:
+        events = [e for e in grounding.events if e.room == room]
+        if not events:
+            continue
+        rows = listed([render_event_rows([e], tz=tz) for e in events[: budget.register_lines]])
+        left_out = len(events) - len(rows)
+        groups.append(
+            render_group(
+                "room_events",
+                [
+                    ("room", room_label(room, grounding.room_labels)),
+                    ("not_listed", str(left_out) if left_out else None),
+                ],
+                "\n".join(rows),
+            )
+        )
+    if groups:
+        blocks.append(
+            restamp(ContextBlock(name="events", body=compose_body("\n".join(groups))), placement)
+        )
+    blocks.append(
+        restamp(
+            render_memos(grounding.memos, tz=tz, lines=budget.memo_lines, chars=budget.memo_chars),
+            placement,
+        )
+    )
+    return blocks
+
+
+def _standing_groups(
+    rooms: Sequence[Room],
+    grounding: Grounding,
+    now_ms: int,
+    tz: tzinfo,
+    budget: RegisterBudget,
+    listed: Callable[[list[str]], list[str]],
+) -> list[str]:
+    """The `standing` block's per-room groups: folded source objects, then the retained lane."""
+    # Standing: each agenda room's folded source-object state (design 05) — the
+    # open poll, the pin set, the member count — typed rows under ONE block, on
+    # the Register's own budget row. A gap/partial head says so, never the whole.
     annotated_ids = {r.message_id for r in grounding.records.values() if r.reactions is not None}
     reaction_targets = {
         e.handle: e.target_message_id
@@ -153,59 +200,15 @@ def render_register(
         retained = grounding.retained_objects.get(room_key(room), ())
         if not retained:
             continue
-        rows = []
-        for r in retained[: budget.register_lines]:
-            e = r.head
-            if e is None:
-                e = SourceEvent(
-                    ref="",
-                    kind=parse_handle(r.ref.handle)[0] or "object",
-                    operation="state",
-                    at_ms=0,
-                    time_quality="unknown",
-                    actor=None,
-                    actor_status="not_applicable",
-                    handle=r.ref.handle,
-                    summary="",
-                )
-
-            def _retained_attrs(
-                _e: Any,
-                _i: int,
-                _r: Any = r,
-            ) -> tuple[tuple[str, Any], ...]:
-                return (
-                    ("kind", _e.kind or None),
-                    ("object", _e.handle),
-                    ("matter", _r.matter or None),
-                    ("unresolved", "yes" if _r.head is None else None),
-                    ("ordering", _e.ordering or None),
-                    ("coverage", _e.coverage or None),
-                    ("rev", _e.revision or None),
-                    ("state", _e.state or None),
-                    ("time", _e.time_quality if _e.time_quality != "upstream" else None),
-                    (
-                        "observed",
-                        when(_e.at_ms, now_ms, tz)
-                        if _e.at_ms > 0 and _e.time_quality != "unknown"
-                        else None,
-                    ),
-                    (
-                        "received",
-                        when(_e.received_ms, now_ms, tz)
-                        if _e.received_ms and _e.time_quality != "upstream"
-                        else None,
-                    ),
-                )
-
-            rows.append(
-                render_elements(
-                    [e],
-                    tag="source_object",
-                    attrs=_retained_attrs,
-                    body=lambda _e: "",
-                )
+        rows = [
+            render_elements(
+                [_retained_event(r)],
+                tag="source_object",
+                attrs=partial(_retained_row_attrs, retained=r, now_ms=now_ms, tz=tz),
+                body=lambda _e: "",
             )
+            for r in retained[: budget.register_lines]
+        ]
         omitted = len(retained) - len(rows) + grounding.retained_objects_more.get(room_key(room), 0)
         standing_groups.append(
             render_group(
@@ -217,38 +220,58 @@ def render_register(
                 "\n".join(rows),
             )
         )
-    if standing_groups:
-        blocks.append(
-            restamp(
-                ContextBlock(name="standing", body=compose_body("\n".join(standing_groups))),
-                placement,
-            )
-        )
-    groups: list[str] = []
-    for room in rooms:
-        events = [e for e in grounding.events if e.room == room]
-        if not events:
-            continue
-        rows = listed([render_event_rows([e], tz=tz) for e in events[: budget.register_lines]])
-        left_out = len(events) - len(rows)
-        groups.append(
-            render_group(
-                "room_events",
-                [
-                    ("room", room_label(room, grounding.room_labels)),
-                    ("not_listed", str(left_out) if left_out else None),
-                ],
-                "\n".join(rows),
-            )
-        )
-    if groups:
-        blocks.append(
-            restamp(ContextBlock(name="events", body=compose_body("\n".join(groups))), placement)
-        )
-    blocks.append(
-        restamp(
-            render_memos(grounding.memos, tz=tz, lines=budget.memo_lines, chars=budget.memo_chars),
-            placement,
-        )
+    return standing_groups
+
+
+def _retained_row_attrs(
+    event: SourceEvent, _i: int, retained: Any, now_ms: int, tz: tzinfo
+) -> tuple[tuple[str, Any], ...]:
+    """The `render_elements` attrs signature over one retained row."""
+    return _retained_attrs(event, retained, now_ms, tz)
+
+
+def _retained_event(retained: Any) -> SourceEvent:
+    """The retained ref's resolved head, or the `unresolved` placeholder it renders as."""
+    if retained.head is not None:
+        head: SourceEvent = retained.head
+        return head
+    return SourceEvent(
+        ref="",
+        kind=parse_handle(retained.ref.handle)[0] or "object",
+        operation="state",
+        at_ms=0,
+        time_quality="unknown",
+        actor=None,
+        actor_status="not_applicable",
+        handle=retained.ref.handle,
+        summary="",
     )
-    return blocks
+
+
+def _retained_attrs(
+    event: SourceEvent, retained: Any, now_ms: int, tz: tzinfo,
+) -> tuple[tuple[str, Any], ...]:
+    """A retained lane row's attributes: the event's own plus `matter`/`unresolved`."""
+    return (
+        ("kind", event.kind or None),
+        ("object", event.handle),
+        ("matter", retained.matter or None),
+        ("unresolved", "yes" if retained.head is None else None),
+        ("ordering", event.ordering or None),
+        ("coverage", event.coverage or None),
+        ("rev", event.revision or None),
+        ("state", event.state or None),
+        ("time", event.time_quality if event.time_quality != "upstream" else None),
+        (
+            "observed",
+            when(event.at_ms, now_ms, tz)
+            if event.at_ms > 0 and event.time_quality != "unknown"
+            else None,
+        ),
+        (
+            "received",
+            when(event.received_ms, now_ms, tz)
+            if event.received_ms and event.time_quality != "upstream"
+            else None,
+        ),
+    )

@@ -1014,15 +1014,20 @@ class StimulusStore(Protocol):
         stale_before_ms: int | None = None,
     ) -> UnitView:
         """One tick's read for one unit: its newest wake in `mode`, the
-        stimuli pending against the WATERMARK (the newest wake whose session
-        did not fail; `UnitView.mark`) and due by `now_ms` (ascending id, at
-        most `limit`), plus the stimuli a closed session returned with a
-        strike (`UnitView.carry`, delivered `waits` when a person's wait
-        closed them), and the `recorded_at` of its newest person-authored item
-        (a `message` stimulus, `waits` included). A `self` stimulus that was
+        stimuli pending by `now_ms` (ascending id, at most `limit`) — pending
+        is a per-row fact: live, eligible, and NOT claimed by a wake that did
+        not fail (`stimulus_claim`), read through `stimulus_pending`, the
+        materialized «not permanently consumed» set per `(unit, mode)`, so
+        the walk visits the backlog itself and never consumed history — plus
+        the stimuli a closed session returned with a strike
+        (`UnitView.carry`, delivered `waits` when a person's wait closed
+        them), and the `recorded_at` of its newest person-authored item (a
+        `message` stimulus, `waits` included). A `self` stimulus that was
         retracted (`retract`) is never pending. A wake that claimed only the
-        stimuli of its own kind names the rest it left inside its range
-        (`WakeRow.unclaimed_ids`): those are pending too.
+        stimuli of its own kind still names the rest it left inside its
+        range (`WakeRow.unclaimed_ids`) — the early-door list a reader may
+        re-offer before they are due; they stay pending on their own, no
+        claim was ever written for them.
 
         `stale_before_ms` (a REAL clock, unlike `now_ms`, which is the settle
         cutoff): a TRACKED wake recorded before it with no outcome row is
@@ -1034,7 +1039,9 @@ class StimulusStore(Protocol):
         self, *, wake: NewWake, recorded_at_ms: int, guard: WakeGuard | None = None,
     ) -> int | None:
         """Append one wake row; it is the unit's new watermark in its mode
-        unless it fails or expires (see `view`). With `guard`, the write is
+        unless it fails or expires (see `view`). Its `claimed_ids` are written
+        as `stimulus_claim` rows — the append-only consumption fact `view`
+        reads. With `guard`, the write is
         made only if, under the unit's lock, the newest wake and its outcome
         are still what the guard says; otherwise nothing is written and the
         answer is None (the caller reads again next tick)."""
@@ -2185,8 +2192,10 @@ class SearchProvider(Protocol):
     an exception into the loop (R-5). A PORT so another backend plugs in with no
     tool change: `TavilySearchProvider` and `ExaSearchProvider` both implement
     it (DEC-157), selected by `[search] provider`, and the branch lives at the
-    composition root alone. `search` returns ranked results, `fetch` returns one
-    page's content; both `untrusted`-wrapped and clamped, and both backends pass
+    composition root alone. `search` returns ranked results `untrusted`-wrapped
+    and clamped; `fetch` returns one page's RAW text at `max_chars` (the tool
+    wraps each served slice itself, so one materialization feeds every
+    `offset`/`about` read); both backends pass
     the shared contract suite (`tests/contract/test_search_provider_contract.py`)
     — including the `unavailable` note, which is model-facing instruction and
     must not differ with the operator's billing preference. **No SSRF surface**
@@ -2199,7 +2208,7 @@ class SearchProvider(Protocol):
 
     async def search(self, *, query: str) -> dict[str, Any]: ...
 
-    async def fetch(self, *, url: str) -> dict[str, Any]: ...
+    async def fetch(self, *, url: str, max_chars: int | None = None) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -2825,6 +2834,38 @@ class DreamAdaptor(Protocol):
         that duplicates a standing note without adding anything — so a legal
         commit of three proposals can write one row. The count is what
         `nora_dream_written_total` reports."""
+        ...
+
+
+@runtime_checkable
+class SessionAdaptor(Protocol):
+    """The subconscious session shape — node 30's SECOND form of work the
+    `DreamerRuntime` lane admits, beside the envelope `DreamAdaptor`.
+
+    A session IS the work: `session_run` owns its agenda, its tools, its
+    outcome rows and its settlement, and the runtime contributes what it
+    contributes to every adaptor — admission, the lane task, cancellation,
+    the root span, the objective's digest, the sample metric and a counted
+    `unavailable`. It deliberately does NOT carry `DreamAdaptor`'s envelope
+    members: a session builds its prompt inside `session_run` through the
+    occasion's own context assembly, so an `inputs` here would name a prompt
+    builder that does not exist — a stub the `inputs` net reads as an
+    undeclared occasion.
+    """
+
+    name: str
+    """The metric label and trace name, same contract as `DreamAdaptor.name`."""
+
+    objective: str
+    """The objective FILE NAME resolved against `DreamerInstructions` — the
+    session reads its digest for the run's provenance, same rule as the
+    envelope shape."""
+
+    def session_run(self, *, key: str) -> Any:
+        """The bound `on_wake` — called `session_run(key=key)` inside the
+        lane task; its result's `stop_reason` annotates the outcome.
+        Declared as a method so the adaptor's own callable attribute
+        satisfies it."""
         ...
 
 

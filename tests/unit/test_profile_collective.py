@@ -5,7 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from strands.event_loop.event_loop import _check_limits
 
 from nora.agent.dreamer import _as_tool
 from nora.config import DreamBudgetConfig, DreamerConfig
@@ -27,6 +26,7 @@ from nora.language.profile_collective import (
 )
 from nora.obs.metrics import Metrics
 from nora.testing import FakeMediaObjectStore, InMemoryCharacterEvidence, InMemoryCultureStore
+from nora.testing.scripted_agent import limit_stop_reason
 
 NOW = 1_790_000_000_000
 
@@ -242,8 +242,10 @@ def test_collective_budgets_admit_bounded_first_call_and_one_repair(kind):
     assert budget.output_tokens > first_output + repair_output
     assert budget.turns >= 3  # first write, repair write, terminal response
     assert budget.timeout_seconds >= 2 * 120 + 30  # two calls plus tool time
-    # Use the SDK's actual >= cap check: neither the first result nor the repair
-    # may terminate the loop before it can continue after the tool's result.
+    # Use the >= cap check `limit_stop_reason` transcribes from the SDK (pinned
+    # against the real loop by tests/test_agent_runner_stop_reason.py): neither
+    # the first result nor the repair may terminate the loop before it can
+    # continue after the tool's result.
     limits = {name: getattr(budget, name) for name in (
         "turns", "total_tokens", "output_tokens")}
     for turns, total, output in (
@@ -251,10 +253,9 @@ def test_collective_budgets_admit_bounded_first_call_and_one_repair(kind):
         (2, first_input + first_output + repair_input + repair_output,
          first_output + repair_output),
     ):
-        agent = SimpleNamespace(event_loop_metrics=SimpleNamespace(
-            latest_agent_invocation=SimpleNamespace(cycles=[None] * turns,
-                usage={"totalTokens": total, "outputTokens": output})))
-        assert _check_limits(agent, limits) is None
+        assert limit_stop_reason(
+            cycles=turns, total_tokens=total, output_tokens=output, limits=limits,
+        ) is None
     # An explicit deployment override continues to win, including partial blocks.
     override = DreamBudgetConfig(total_tokens=200_000)
     assert DreamerConfig(budgets={f"profile-{kind}": override}).budget_for(

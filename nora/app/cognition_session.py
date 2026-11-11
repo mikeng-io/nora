@@ -72,6 +72,15 @@ from typing import Any, ClassVar, Literal, Protocol
 from nora.agent import cognition_pace as pace
 from nora.agent.dream_screen import offence
 from nora.agent.fetch_watch import Fetched, GraphFetched, watch_reads
+from nora.app.cognition_session_lessons import (
+    read as lesson_read,
+)
+from nora.app.cognition_session_lessons import (
+    settle as lesson_settle,
+)
+from nora.app.cognition_session_lessons import (
+    verbs as lesson_verbs,
+)
 from nora.app.comprehend import Statement
 from nora.app.proactive_screen import CANCELLED_NOTE_RETIRED
 from nora.domain.cognition_ground import Grounding, RecordItem, rollup_status
@@ -94,7 +103,6 @@ from nora.domain.cognition_session import (
     Situation,
     build_situation,
 )
-from nora.domain.culture import Citable
 from nora.domain.gatherings import (
     EVENT_PARTS,
     AmbiguousOpenGatheringsError,
@@ -173,10 +181,10 @@ from nora.domain.stimuli import (
 )
 from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
 from nora.infra.sql.standing_revise import standing_revise as live_standing_revise
+from nora.language.cognition_parse import rendered_new_sources
 from nora.language.cognition_render import (
     RenderBudget,
     render_agenda,
-    rendered_new_sources,
     room_key,
     room_label,
     speaker_of,
@@ -202,10 +210,6 @@ SESSION_VERB_NAMES: frozenset[str] = frozenset({
     "memory_propose", "profile_read", "profile_revise",
     "lesson_write", "lesson_retire",
 })
-
-#: The declared blocks one `shown` read feeds (`cognition_render._BLOCKS`):
-#: when that read fails they all render `status="unavailable"`, never empty.
-_LESSON_BLOCKS = ("held_lessons", "lesson_corrections", "lesson_episodes")
 
 _DAY_MS = 24 * 3600 * 1000
 _PACE_VERBS = frozenset({"wake_at", "wake_move", "wake_cancel"})
@@ -311,9 +315,10 @@ class CognitionRunResult:
 
 class CognitionAgentRunner(Protocol):
     """The test seam (CLAUDE.md's policy: a constructor argument, never an
-    `_fn` hook). `nora.app.cognition_agent_runner.LiveCognitionAgentRunner`
-    is the production implementation, wrapping `nora.agent.factory.
-    create_dream_agent`; `tests/behavioral/
+    `_fn` hook). `nora.app.cognition_agent_runner.DreamerAgentRunner`
+    is the production implementation, delegating to
+    `DreamerRuntime.run_agent` — the one model-invocation route (node 30);
+    `tests/behavioral/
     test_cognition_session_writes_nothing_live.py`'s `ScriptedAgentRunner`
     drives a fixed sequence of tool calls with no model and no Strands.
 
@@ -416,8 +421,9 @@ class TokenSpend:
 
 #: The session's `TokenSpend`, set around the model loop. A context variable and
 #: not a parameter of `CognitionAgentRunner.run`, so every runner double that
-#: predates it still satisfies the Protocol; a task started by `asyncio.wait_for`
-#: copies the context, and the holder is shared by reference.
+#: predates it still satisfies the Protocol; the loop runs inside
+#: `asyncio.timeout` in this task's own context, and the holder is shared by
+#: reference.
 SESSION_TOKENS: contextvars.ContextVar[TokenSpend | None] = contextvars.ContextVar(
     "cognition_session_tokens", default=None,
 )
@@ -481,10 +487,9 @@ class _RunState:
     document_evidence: list[tuple[int, str, str, str]] = field(default_factory=list)
     document_rooms: frozenset[tuple[str,str]] = frozenset()
     graph_text: str = ""
-    #: The lesson evidence THIS session was shown (`CognitionLessons.shown`),
-    #: whose `citable` is the ONLY evidence its `lesson_write` may cite and
-    #: whose cursor `take` writes when the session closes. None when
-    #: `[lessons]` is off, the lane is historical, or the read failed.
+    #: The evidence this session was shown (`CognitionLessons.shown`): its
+    #: `citable` is the only evidence `lesson_write` may cite; `take` writes
+    #: its cursor. None when [lessons] is off, historical, or the read failed.
     lesson_view: LessonEvidenceView | None = None
     historical: bool = False
     #: The line of the prompt that says which room(s) the read tools resolve
@@ -627,7 +632,155 @@ def _answer(answer: PaceAnswer, **ok: object) -> dict[str, object]:
     return {"status": "ok", **ok}
 
 
+def _shown_rooms(grounding: Grounding, view: UnitView) -> dict[str, tuple[str, str] | None]:
+    """The shown `object` handles, each to the room the grounder read it from."""
+    shown: dict[str, tuple[str, str] | None] = {}
+
+    def remember(handle: str, room: tuple[str, str]) -> None:
+        if handle not in shown:
+            shown[handle] = room
+        elif shown[handle] != room:
+            shown[handle] = None
+
+    for ref, e in grounding.observations.items():
+        stimulus = next((s for s in view.pending if s.ref == ref), None)
+        if (stimulus is not None and stimulus.platform is not None
+                and stimulus.conversation_id is not None):
+            remember(e.handle, (stimulus.platform, stimulus.conversation_id))
+    for key, events in grounding.source_objects.items():
+        platform, _, cid = key.partition(":")
+        for e in events:
+            remember(e.handle, (platform, cid))
+    for retained in grounding.retained_objects.values():
+        for r in retained:
+            if r.head is not None:
+                remember(r.ref.handle, (r.ref.platform, r.ref.conversation_id))
+    return shown
+
+
+def _shown_custody(
+    state: _RunState, prompt: str, grounding: Grounding, unit: str, memory: Any,
+) -> None:
+    """Citation custody follows the actual emitted elements, never loaded rows."""
+    from xml.etree import ElementTree
+
+    from nora.domain.blocks import render_group
+
+    root = ElementTree.fromstring(  # noqa: S314 - own escaped output
+        render_group("context", (), prompt)
+    )
+    emitted_objects = {element.attrib["object"] for element in root.iter()
+                       if "object" in element.attrib}
+    state.shown_handles = {key: room for key, room in state.shown_handles.items()
+                           if key in emitted_objects}
+    transcript_by_id = {line.row.id: line for line in grounding.transcript}
+    for element in root.findall("./transcript/m"):
+        mid = int(element.attrib["source_id"])
+        line = transcript_by_id[mid]
+        source_room = Room(line.platform, line.conversation_id)
+        if source_room is None:
+            continue
+        text = element.text or ""
+        if not line.row.is_nora and text == (line.row.body or ""):
+            state.document_evidence.append(
+                (mid, source_room.platform, source_room.conversation_id, text))
+        state.fetched.take(
+            "record_query",
+            {
+                "status": "ok",
+                "messages": [{"n": mid, "sender": element.attrib.get("from", "unknown")}],
+            },
+            _room_key(source_room),
+        )
+        if memory is not None and not line.row.is_nora and text:
+            state.graph_fetched.show(
+                Source(
+                    ("message", str(mid)),
+                    "record",
+                    unit,
+                    (line.row.person_id,) if line.row.person_id else (),
+                    text,
+                )
+            )
+    complete_record_text = {
+        r.message_id: r.text for r in grounding.records.values()
+        if r.kind in {"message", "edit"}
+    }
+    for item in root.findall("./agenda/item"):
+        index = int(item.attrib["index"])
+        source_room = state.items_by_index[index].room
+        for element in item.findall("m"):
+            mid = int(element.attrib["n"])
+            if (
+                mid > 0
+                and element.text
+                and element.text == complete_record_text.get(mid)
+                and not any(
+                    element.attrib.get(flag) == "yes"
+                    for flag in ("own", "deleted", "withdrawn")
+                )
+            ):
+                state.document_evidence.append(
+                    (mid, source_room.platform, source_room.conversation_id, element.text)
+                )
+    if memory is not None:
+        # ONE evidence custody: the agenda's emitted rows are the only
+        # sources a graph statement may cite (the loaded-but-clipped rest
+        # was never shown).
+        memory.register_shown(state)
+
+
 class CognitionSessionRunner:
+    """`doctrine_source`, when given, is read at the start of EVERY session
+    and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
+    as the constructor's fixed fallback for a caller with a fixed text):
+    the production composition passes the Dreamer's hot-reloading
+    objective through it. `skill_versions_for` records what
+    `skill_text_for` injected. `skills_for`, when given, replaces both: the
+    text and the versions come from one resolution, taken once per session
+    BEFORE the awaited grounding read and carried through (the production
+    composition passes it: a skill hot-reloads, and two reads of it could
+    straddle an edit).
+
+    `read_only_tools` is the allowlist `read_tools_for`'s result is
+    held to (the composition passes the registry's own read-only set,
+    `ToolRegistry.read_only_tools()`); empty, the default, refuses every
+    read tool: a session with no declared read surface has none.
+
+    `notes` (`SqlNoteStore`), `events` (`GatheringService`), `standing`
+    (`SqlStandingStore`) and `reminders` (`ReminderStore`) are the live
+    stores the tag path writes through; the session's writes land there.
+    `memos` (`SqlMemoStore`, DEC-306) is the memo tier's, which only a
+    session writes; None answers every memo verb `unavailable`.
+    `ai_peer` is Nora's own requester id, the owner of every reminder she
+    sets herself.
+
+    `units` (every unit the evaluator may wake) must each have a home room
+    and `budget.timeout_seconds` must end `SESSION_TIMEOUT_MARGIN_SECONDS`
+    before `session_timeout_seconds` (the evaluator's
+    `WakePolicy.session_timeout_seconds`, the wake's own clock): both are
+    refused HERE, at startup, not discovered per wake.
+
+    `person_known(person_id)` is the roster question a Rollup stimulus is
+    judged readable by (`nora.domain.cognition_ground.rollup_status`); None
+    knows everyone, so only a ref that does not parse is unreadable.
+
+    `roster_of` and `nora_names` are what a note write is held to with the
+    SAME validator the tag path runs (`nora.domain.note_body.parse_note_body`):
+    the room's roster (an `## Owed` owner must be on it; None here: no roster
+    is known, so every owner is refused) and the names Nora goes by (a line
+    may not be hers, nor owed by her).
+
+    `room_proactive`, `max_pending_per_requester`, `remind_min_lead_seconds`
+    and `remind_max_horizon_days` are what `remind` is held to: the room's
+    flag, and the tag `remind` tool's own `ReminderCaps`. None leaves that
+    check out, which only a test wants.
+
+    `model_window_tokens` (None: unknown) and `overflow_window_fraction`
+    are what a context overflow is PROVEN against (DEC-244): without a
+    known window no overflow is ever the agenda's, and every one is
+    `infra`."""
+
     def __init__(
         self,
         *,
@@ -651,100 +804,35 @@ class CognitionSessionRunner:
         max_self_wakes: int = 5,
         max_self_wakes_per_day: int = DEFAULT_MAX_SELF_WAKES_PER_DAY,
         read_only_tools: frozenset[str] = frozenset(),
-        model_id: str | None = None,
-        model_route: str | None = None,
-        metrics: Any = None,
-        mint_ref: Callable[[], str] = default_mint_ref,
+        model_id: str | None = None, model_route: str | None = None,
+        metrics: Any = None, mint_ref: Callable[[], str] = default_mint_ref,
         clock: Callable[[], float] = time.time,
         doctrine_source: DoctrineSource | None = None,
         skill_versions_for: SkillVersionsFor | None = None,
-        skills_for: SkillsResolvedFor | None = None,
-        tz: tzinfo = UTC,
-        render_budget: RenderBudget | None = None,
-        model_window_tokens: int | None = None,
+        skills_for: SkillsResolvedFor | None = None, tz: tzinfo = UTC,
+        render_budget: RenderBudget | None = None, model_window_tokens: int | None = None,
         overflow_window_fraction: float = 0.8,
-        person_known: Callable[[str], bool] | None = None,
-        roster_of: RosterOf | None = None,
-        nora_names: frozenset[str] = frozenset(),
-        room_proactive: RoomProactive | None = None,
+        person_known: Callable[[str], bool] | None = None, roster_of: RosterOf | None = None,
+        nora_names: frozenset[str] = frozenset(), room_proactive: RoomProactive | None = None,
         max_pending_per_requester: int | None = None,
-        remind_min_lead_seconds: int | None = None,
-        remind_max_horizon_days: int | None = None,
-        notes: Any = None,
-        events: Any = None,
-        standing: Any = None,
-        reminders: Any = None,
-        ai_peer: str = "nora",
-        memos: Any = None,
-        ledger: Any = None,
-        shared: Any = None,
-        standing_fold: Any = None,
+        remind_min_lead_seconds: int | None = None, remind_max_horizon_days: int | None = None,
+        notes: Any = None, events: Any = None,
+        standing: Any = None, reminders: Any = None,
+        ai_peer: str = "nora", memos: Any = None, ledger: Any = None,
+        shared: Any = None, standing_fold: Any = None,
         content_checks: bool = True,
-        tag_trace_store: Any = None,
-        memory: Any = None,
+        tag_trace_store: Any = None, memory: Any = None,
         rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
         # The observation Record the write verbs check `object_refs`
         # against: a ref must still resolve in its shown room to be
         # retained. None refuses a ref write `unavailable`, never accepts
         # one it cannot check.
         observations: Any = None,
-        documents: Any = None,
-        documents_context: Any = None,
-        # `CognitionLessons` (`nora.language.lessons`): the lesson evidence
-        # read and its settle — shown before the model call, the cursor
-        # advanced when the session closes. None ([lessons] disabled) offers
-        # no lesson verbs and reads nothing.
+        documents: Any = None, documents_context: Any = None,
+        # `CognitionLessons`; None ([lessons] disabled) offers no lesson verbs.
         lessons: Any = None,
     ) -> None:
-        """`doctrine_source`, when given, is read at the start of EVERY session
-        and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
-        as the constructor's fixed fallback for a caller with a fixed text):
-        the production composition passes the Dreamer's hot-reloading
-        objective through it. `skill_versions_for` records what
-        `skill_text_for` injected. `skills_for`, when given, replaces both: the
-        text and the versions come from one resolution, taken once per session
-        BEFORE the awaited grounding read and carried through (the production
-        composition passes it: a skill hot-reloads, and two reads of it could
-        straddle an edit).
-
-        `read_only_tools` is the allowlist `read_tools_for`'s result is
-        held to (the composition passes the registry's own read-only set,
-        `ToolRegistry.read_only_tools()`); empty, the default, refuses every
-        read tool: a session with no declared read surface has none.
-
-        `notes` (`SqlNoteStore`), `events` (`GatheringService`), `standing`
-        (`SqlStandingStore`) and `reminders` (`ReminderStore`) are the live
-        stores the tag path writes through; the session's writes land there.
-        `memos` (`SqlMemoStore`, DEC-306) is the memo tier's, which only a
-        session writes; None answers every memo verb `unavailable`.
-        `ai_peer` is Nora's own requester id, the owner of every reminder she
-        sets herself.
-
-        `units` (every unit the evaluator may wake) must each have a home room
-        and `budget.timeout_seconds` must end `SESSION_TIMEOUT_MARGIN_SECONDS`
-        before `session_timeout_seconds` (the evaluator's
-        `WakePolicy.session_timeout_seconds`, the wake's own clock): both are
-        refused HERE, at startup, not discovered per wake.
-
-        `person_known(person_id)` is the roster question a Rollup stimulus is
-        judged readable by (`nora.domain.cognition_ground.rollup_status`); None
-        knows everyone, so only a ref that does not parse is unreadable.
-
-        `roster_of` and `nora_names` are what a note write is held to with the
-        SAME validator the tag path runs (`nora.domain.note_body.parse_note_body`):
-        the room's roster (an `## Owed` owner must be on it; None here: no roster
-        is known, so every owner is refused) and the names Nora goes by (a line
-        may not be hers, nor owed by her).
-
-        `room_proactive`, `max_pending_per_requester`, `remind_min_lead_seconds`
-        and `remind_max_horizon_days` are what `remind` is held to: the room's
-        flag, and the tag `remind` tool's own `ReminderCaps`. None leaves that
-        check out, which only a test wants.
-
-        `model_window_tokens` (None: unknown) and `overflow_window_fraction`
-        are what a context overflow is PROVEN against (DEC-244): without a
-        known window no overflow is ever the agenda's, and every one is
-        `infra`."""
+        """The session runner's collaborators; see the class docstring."""
         self._documents = documents
         self._documents_context = documents_context
         self._lessons = lessons
@@ -809,11 +897,9 @@ class CognitionSessionRunner:
         #: model's window WITH the size evidence (in memory: a restart forgets
         #: it, which fails toward `infra`). A `closed` session clears it.
         self._overflowed: dict[str, frozenset[int]] = {}
-        #: Wake id -> the task running its session, for `shutdown`.
-        self._tasks: dict[int, asyncio.Task[Any]] = {}
         #: Outcome writes shielded from a second cancel (a `shutdown` and the
-        #: evaluator's `cancel_in_flight` both cancelling one task), held so
-        #: they are not garbage-collected while they finish.
+        #: Dreamer lane's `cancel_in_flight` both cancelling one task), held
+        #: so they are not garbage-collected while they finish.
         self._finishing: set[asyncio.Task[Any]] = set()
         #: One lock per unit around a pace or remind call's read-check-write:
         #: the model may issue two in one turn, and the pending cap and the
@@ -898,9 +984,6 @@ class CognitionSessionRunner:
         did not close. Every path writes the wake's outcome (or, if that write
         fails, leaves the wake OPEN until it expires): nothing here returns
         with the wake's stimuli consumed and unseen."""
-        task = asyncio.current_task()
-        if task is not None:
-            self._tasks[wake_id] = task
         session_id: int | None = None
         #: Offered to the model loop (`SESSION_TOKENS`) and read by EVERY path
         #: that records this wake's outcome, so a failed, timed-out or cancelled
@@ -1017,8 +1100,7 @@ class CognitionSessionRunner:
                     "work": [
                         {
                             "index": index,
-                            "work_id": item.work.id,
-                            "input_hash": item.work.input_hash,
+                            "work_id": item.work.id, "input_hash": item.work.input_hash,
                             "inputs": item.snapshot.get("stimulus_inputs", {}),
                         }
                         for index, item in sorted(state.memory_items.items())
@@ -1086,8 +1168,6 @@ class CognitionSessionRunner:
                 cause=classify_failure(exc),
             )
             raise
-        finally:
-            self._tasks.pop(wake_id, None)
 
     async def replay(self, *, view: UnitView, now_ms: int, historical: bool = False) -> Any:
         """Run the recorded batch through live assembly, using sandbox collaborators."""
@@ -1221,14 +1301,14 @@ class CognitionSessionRunner:
         )
 
     async def shutdown(self) -> None:
-        """Cancel every session still in flight and wait for it to record
-        itself `cancelled`. A session must not vanish with its wake still
-        reading «in flight» when it could have said otherwise."""
-        tasks = tuple(self._tasks.values())
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        """Wait for the finishing outcome writes to land. The tasks
+        themselves are not this runner's to cancel: a live session's task is
+        admitted on the Dreamer lane (`SubconsciousExecutor` →
+        `DreamerRuntime.dispatch`), and `CognitionShutdown` cancels it there
+        before calling this — the boundary that created the task cancels it
+        (node 18). What remains here is the settlement half: a session must
+        not vanish with its wake still reading «in flight» when it could
+        have said `cancelled`."""
         if self._finishing:
             await asyncio.gather(*tuple(self._finishing), return_exceptions=True)
 
@@ -1300,39 +1380,13 @@ class CognitionSessionRunner:
         one runs the model and records outcomes, the other returns what it
         built and persists nothing."""
         items = situation.agenda.items
-        # The `object` handles this session was shown, each to the room the
-        # grounder read it from — the evidence `object_refs` is held to.
-        shown_handles: dict[str, tuple[str, str] | None] = {}
-
-        def remember(handle: str, room: tuple[str, str]) -> None:
-            if handle not in shown_handles:
-                shown_handles[handle] = room
-            elif shown_handles[handle] != room:
-                shown_handles[handle] = None
-
-        for ref, e in grounding.observations.items():
-            stimulus = next((s for s in view.pending if s.ref == ref), None)
-            if (stimulus is not None and stimulus.platform is not None
-                    and stimulus.conversation_id is not None):
-                remember(e.handle, (stimulus.platform, stimulus.conversation_id))
-        for key, events in grounding.source_objects.items():
-            platform, _, cid = key.partition(":")
-            for e in events:
-                remember(e.handle, (platform, cid))
-        for retained in grounding.retained_objects.values():
-            for r in retained:
-                if r.head is not None:
-                    remember(r.ref.handle, (r.ref.platform, r.ref.conversation_id))
         state = _RunState(
             session_id=session_id,
             wake_id=wake_id,
-            document_rooms=grounding.document_rooms,
-            unit=unit,
-            now_ms=now_ms,
-            items_by_index=dict(enumerate(items)),
-            historical=historical,
+            document_rooms=grounding.document_rooms, unit=unit, now_ms=now_ms,
+            items_by_index=dict(enumerate(items)), historical=historical,
             rooms={_room_key(i.room): (i.room.platform, i.room.conversation_id) for i in items},
-            shown_handles=shown_handles,
+            shown_handles=_shown_rooms(grounding, view),
             # Her own sends in an item's window are SHOWN too (DEC-245), marked
             # as hers, so a note citing one is refused `cites_nora`, not `unknown_id`.
             records=(
@@ -1342,23 +1396,9 @@ class CognitionSessionRunner:
         )
         if self._memory is not None:
             await self._memory.prepare(state, {s.id: s for s in view.pending}, grounding)
-        # The outcomes of her own acts, riding along in this session's context:
-        # the closed `response` episodes and corrections past the unit's
-        # `lessons` cursor, with the held lessons by `L` handle and the
-        # `citable` its writes are held to. Live only — a historical session
-        # never reads or writes present-day practice — and a failed read is
-        # told as `unavailable`, never as an empty batch.
-        if self._lessons is not None and not historical:
-            try:
-                lesson_view = await self._lessons.shown(unit=unit)
-            except Exception:
-                log.exception("cognition lesson evidence read failed (unit=%s)", unit)
-                self._inc("nora_errors_total", stage="cognition_lessons")
-                grounding = replace(grounding, unavailable=(
-                    grounding.unavailable | frozenset(_LESSON_BLOCKS)))
-            else:
-                grounding = replace(grounding, lesson_evidence=lesson_view)
-                state.lesson_view = lesson_view
+        grounding = await lesson_read(
+            self._lessons, unit=unit, state=state, grounding=grounding,
+            historical=historical, inc=self._inc)
         tools = await self._build_tools(
             unit=unit, state=state, now_ms=now_ms, labels=grounding.room_labels,
             doctrine_sha256=doctrine_sha256,
@@ -1400,89 +1440,20 @@ class CognitionSessionRunner:
             grounding=grounding,
             reads_note=state.reads_note,
             now_ms=now_ms,
-            last_session_ms=situation.last_session_ms,
-            tz=self._tz,
+            last_session_ms=situation.last_session_ms, tz=self._tz,
             budget=self._render_budget,
             graph=state.graph_text if self._memory is not None else None,
             memory_items=state.memory_items,
             shared=shared_view,
         )
-        # Citation custody follows the actual emitted elements, never loaded rows.
-        from xml.etree import ElementTree
-
-        from nora.domain.blocks import render_group
-
-        root = ElementTree.fromstring(  # noqa: S314 - own escaped output
-            render_group("context", (), prompt)
-        )
-        emitted_objects = {element.attrib["object"] for element in root.iter()
-                           if "object" in element.attrib}
-        state.shown_handles = {key: room for key, room in state.shown_handles.items()
-                               if key in emitted_objects}
-        transcript_by_id = {line.row.id: line for line in grounding.transcript}
-        for element in root.findall("./transcript/m"):
-            mid = int(element.attrib["source_id"])
-            line = transcript_by_id[mid]
-            source_room = Room(line.platform, line.conversation_id)
-            if source_room is None:
-                continue
-            text = element.text or ""
-            if not line.row.is_nora and text == (line.row.body or ""):
-                state.document_evidence.append(
-                    (mid, source_room.platform, source_room.conversation_id, text))
-            state.fetched.take(
-                "record_query",
-                {
-                    "status": "ok",
-                    "messages": [{"n": mid, "sender": element.attrib.get("from", "unknown")}],
-                },
-                _room_key(source_room),
-            )
-            if self._memory is not None and not line.row.is_nora and text:
-                state.graph_fetched.show(
-                    Source(
-                        ("message", str(mid)),
-                        "record",
-                        unit,
-                        (line.row.person_id,) if line.row.person_id else (),
-                        text,
-                    )
-                )
-        complete_record_text = {
-            r.message_id: r.text for r in grounding.records.values()
-            if r.kind in {"message", "edit"}
-        }
-        for item in root.findall("./agenda/item"):
-            index = int(item.attrib["index"])
-            source_room = state.items_by_index[index].room
-            for element in item.findall("m"):
-                mid = int(element.attrib["n"])
-                if (
-                    mid > 0
-                    and element.text
-                    and element.text == complete_record_text.get(mid)
-                    and not any(
-                        element.attrib.get(flag) == "yes"
-                        for flag in ("own", "deleted", "withdrawn")
-                    )
-                ):
-                    state.document_evidence.append(
-                        (mid, source_room.platform, source_room.conversation_id, element.text)
-                    )
-        if self._memory is not None:
-            # ONE evidence custody: the agenda's emitted rows are the only
-            # sources a graph statement may cite (the loaded-but-clipped rest
-            # was never shown).
-            self._memory.register_shown(state)
+        _shown_custody(state, prompt, grounding, unit, self._memory)
         return state, surface, system_prompt, prompt
 
     async def _run_session(
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
         wake_id: int, now_ms: int, doctrine_text: str, skill_text: str,
-        grounding: Grounding, spend: TokenSpend,
-        retained: Sequence[int] = (),
-        replay: bool = False, historical: bool = False,
-        doctrine_sha256: str | None = None,
+        grounding: Grounding, spend: TokenSpend, retained: Sequence[int] = (),
+        replay: bool = False, historical: bool = False, doctrine_sha256: str | None = None,
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
         kinds = sorted({item.kind for item in items})
@@ -1506,9 +1477,11 @@ class CognitionSessionRunner:
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
         trace_outcome = "llm_error"
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._budget.timeout_seconds
         try:
-            result = await asyncio.wait_for(
-                self._run_agent(
+            async with asyncio.timeout_at(deadline):
+                result = await self._run_agent(
                     unit=unit, pending_ids=frozenset(s.id for s in view.pending),
                     system_prompt=system_prompt, prompt=prompt, tools=tools,
                     historical=historical,
@@ -1518,11 +1491,12 @@ class CognitionSessionRunner:
                         # scales by it: DEC-247).
                         "cognition.items": str(len(items)),
                     },
-                ),
-                timeout=self._budget.timeout_seconds,
-            )
+                )
             trace_outcome = "llm_error" if result.stop_reason in LIMIT_STOP_REASONS else "silent"
         except TimeoutError as exc:
+            # `asyncio.timeout` raises TimeoutError only after its own
+            # deadline callback fired; an external task.cancel() propagates
+            # as CancelledError, so TimeoutError here IS the wall clock.
             raise SessionTimeoutError(
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
@@ -1546,11 +1520,14 @@ class CognitionSessionRunner:
                 transcript=(), outcome=("timeout" if isinstance(
                     sys.exception(), SessionTimeoutError) else trace_outcome),
                 created_at=int(self._clock() * 1000), started_at=now_ms,
-                occasion="cognition", unit=unit,
-                bound_rooms=tuple(sorted(state.rooms)),
+                occasion="cognition", unit=unit, bound_rooms=tuple(sorted(state.rooms)),
             )
             if self._tag_trace_store is not None:
-                await asyncio.wait_for(self._tag_trace_store.save(trace), timeout=5.0)
+                save_deadline = loop.time() + 5.0
+                # TimeoutError here is the save's own deadline firing, same
+                # classification as the session clock above.
+                async with asyncio.timeout_at(save_deadline):
+                    await self._tag_trace_store.save(trace)
             # The SAME automatic completion hook the tag path holds (design
             # 20): the tools-less Standing fold runs on this session's
             # complete retained Record — including a silent or failed
@@ -1568,8 +1545,7 @@ class CognitionSessionRunner:
                 # Standing per bound room — the whole retained Record goes
                 # in once, never copied room-by-room.
                 await self._standing_fold(
-                    trace=trace, unit=unit,
-                    rooms=tuple(sorted(state.rooms.values())),
+                    trace=trace, unit=unit, rooms=tuple(sorted(state.rooms.values())),
                 )
             # What the loop spent counts whether it returned, failed, timed out or was
             # cut off: a session that raised is the costliest kind, and its usage is
@@ -1626,27 +1602,12 @@ class CognitionSessionRunner:
         self._overflowed.pop(unit, None)
         for carry in carries:
             self._inc("nora_cognition_carry_total", state=carry.state)
-        # The lessons cursor moves on the CLOSE, never before: a session that
-        # failed, timed out or was refused keeps its batch for the next one.
-        # The decay runs on every closed session — the old adaptor ran it on a
-        # blank run too, so a lesson due on a session handed nothing still
-        # retires. A failed settle is logged, not raised: the session closed
-        # and its writes stand; the batch is re-read next time.
-        if self._lessons is not None and not historical:
-            try:
-                if state.lesson_view is not None:
-                    await self._lessons.take(unit=unit, view=state.lesson_view)
-                await self._lessons.decay(
-                    unit=unit, now_ms=self._now_ms(),
-                    established_by=f"cognition:{unit}:{session_id}:horizon",
-                )
-            except Exception:
-                log.exception("cognition lesson settle failed (unit=%s)", unit)
-                self._inc("nora_errors_total", stage="cognition_lessons")
+        await lesson_settle(
+            self._lessons, unit=unit, state=state, session_id=session_id,
+            historical=historical, now_ms=self._now_ms(), inc=self._inc)
         await self._record_fired(state=state, situation=situation, view=view)
         return CognitionSessionOutcome(
-            session_id=session_id, items=len(items),
-            stop_reason=result.stop_reason,
+            session_id=session_id, items=len(items), stop_reason=result.stop_reason,
         )
 
     async def _run_agent(
@@ -1768,11 +1729,9 @@ class CognitionSessionRunner:
     async def _build_tools(
         self,
         *,
-        unit: str,
-        state: _RunState,
+        unit: str, state: _RunState,
         now_ms: int,
-        labels: Mapping[str, str] | None = None,
-        doctrine_sha256: str | None = None,
+        labels: Mapping[str, str] | None = None, doctrine_sha256: str | None = None,
     ) -> list[Any]:
         if self._rooms_of_unit is not None:
             state.unit_rooms = {
@@ -1897,8 +1856,7 @@ class CognitionSessionRunner:
                     }
                 roster = got
             return Shown(
-                rendered=tuple(rendered.values()),
-                carried=frozenset(fetched.carried_ids),
+                rendered=tuple(rendered.values()), carried=frozenset(fetched.carried_ids),
                 roster=roster, nora_names=self._nora_names,
                 rollup_keys=frozenset(fetched.rollup_keys),
                 turn_handles=frozenset(fetched.turn_handles),
@@ -1992,8 +1950,7 @@ class CognitionSessionRunner:
             title: str, description: str, uncertainty: str, closing_condition: str,
             body: str, anchor_date: str | None = None,
             anchor_entities: list[str] | None = None, room: str = "", item: int | None = None,
-            associations: list[list[str]] | None = None,
-            object_refs: list[str] | None = None,
+            associations: list[list[str]] | None = None, object_refs: list[str] | None = None,
         ) -> dict[str, object]:
             """Start carrying an open question that nothing here settles yet.
             Call this when a room is chewing on something that outlives this
@@ -2194,8 +2151,7 @@ class CognitionSessionRunner:
                 return _refused("bad_reason", "reason is settled or anchor_passed")
             retired = await self._notes.supersede(
                 key=unit, target=note_id, replaced_by=None, because=because,
-                source=None, now_ms=self._now_ms(),
-                expected_head=base_revision_id or None,
+                source=None, now_ms=self._now_ms(), expected_head=base_revision_id or None,
             )
             if not retired:
                 return _refused(
@@ -2297,8 +2253,7 @@ class CognitionSessionRunner:
 
         async def _memo_body(
             verb: str, title: str, body: str, platform: str, conversation_id: str,
-            carried: frozenset[int] = frozenset(),
-            carried_turns: frozenset[str] = frozenset(),
+            carried: frozenset[int] = frozenset(), carried_turns: frozenset[str] = frozenset(),
         ) -> tuple[Any, tuple[str, ...]] | dict[str, object]:
             """`(parsed body, citations)` of a memo write, or its refusal: the
             title and body caps, the note-body grammar over what this session
@@ -3072,10 +3027,8 @@ class CognitionSessionRunner:
                 )
                 refusal = check_remind(
                     subject_rows=subject_rows, intent=intent,
-                    platform=platform,
-                    conversation_id=conversation_id, pending=pending,
-                    context=context,
-                    subject=resolved_subject, action=action_key,
+                    platform=platform, conversation_id=conversation_id, pending=pending,
+                    context=context, subject=resolved_subject, action=action_key,
                     extra_destinations=destinations[1:],
                 )
                 if refusal is not None:
@@ -3360,9 +3313,7 @@ class CognitionSessionRunner:
             """
             if self._memory is None:
                 return {"status": "unavailable", "note": "Memory admission is unavailable."}
-            out: dict[str, Any] = await self._memory.propose(
-                state, statements=statements)
-            return out
+            return dict(await self._memory.propose(state, statements=statements))
 
         async def profile_read(
             entity: list[str],
@@ -3422,35 +3373,21 @@ class CognitionSessionRunner:
             # account heads (the store has no as-of view), so a session at
             # T would read — or revise — the future. History offers memory writes.
             verbs = (memory_propose,)
-        if self._lessons is not None and not state.historical:
-            # ponytail: history must not create present-day practice; the
-            # lesson verbs stay withheld in the historical lane. When the
-            # evidence read failed the session holds an EMPTY citable, so a
-            # write can cite nothing and refuses, never slips past unchecked.
-            verbs = (*verbs, *self._lessons.verbs(
-                unit=unit,
-                citable=(
-                    state.lesson_view.citable
-                    if state.lesson_view is not None else Citable()
-                ),
-                handles=(
-                    dict(state.lesson_view.handles)
-                    if state.lesson_view is not None else None
-                ),
-                established_by=established_by,
-                instruction_sha256=doctrine_sha256,
-                model=self._model_id,
-            ))
+        verbs = (*verbs, *lesson_verbs(
+            self._lessons, unit=unit, state=state, established_by=established_by,
+            doctrine_sha256=doctrine_sha256, model=self._model_id))
+        # `wire` is reached through the area root (`nora.documents` may be the
+        # only importer of `nora.documents.wire`): the root's lazy attribute
+        # resolves it, exactly as `build_tool_specs` reaches every area.
+        import importlib
+
         from nora.agent.ports import adapt
-        from nora.agent.tools import cognition_document_tools
         from nora.domain.documents import DocumentAuthority
-        document_specs = cognition_document_tools(
+        document_specs = importlib.import_module("nora.documents").wire.session_tool_specs(
             self._documents,
             self._documents_context,
             lambda: DocumentAuthority(
-                unit,
-                state.document_rooms,
-                state.session_id,
+                unit, state.document_rooms, state.session_id,
                 tuple(state.document_evidence), as_of_ms=state.now_ms, read_only=state.historical,
             ),
         )

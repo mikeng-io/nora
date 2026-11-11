@@ -17,7 +17,7 @@ from nora.domain.music import MusicSession, ensure_utc
 from nora.infra.sql.schema import MUSIC_SESSION
 
 
-def _row_to_session(row: Row[Any]) -> MusicSession:
+def _row_to_session(row: Row[*tuple[Any, ...]]) -> MusicSession:
     return MusicSession(
         guild_id=row.guild_id, voice_channel_id=row.voice_channel_id,
         notify_channel_id=row.notify_channel_id, now_playing_source=row.now_playing_source,

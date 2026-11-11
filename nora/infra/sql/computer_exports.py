@@ -38,7 +38,7 @@ _FIELDS = (
 )
 
 
-def _row_to_export(r: Row[Any]) -> ComputerExport:
+def _row_to_export(r: Row[*tuple[Any, ...]]) -> ComputerExport:
     return normalise_export(ComputerExport(**{f: getattr(r, f) for f in _FIELDS}))
 
 

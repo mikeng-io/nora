@@ -9,7 +9,7 @@ user *journey*, measure the *trajectory* she produces, serialize a *verdict*.
 ## Before a paid run
 
 Apply this order to every entrypoint, including memory-graph replay, diagnostic
-and rescore commands. The [horizontal measurement contract](../design/evaluation/12-horizontal-measurement-contract.md)
+and rescore commands. The [horizontal measurement contract](../design/evaluation/horizontal-measurement-contract.md)
 defines the axes, five-C checks and current delivery limits. Reuse the existing
 runner, corpus fields, private evidence and trace hierarchy.
 

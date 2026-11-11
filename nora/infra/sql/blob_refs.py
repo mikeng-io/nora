@@ -31,6 +31,7 @@ from nora.infra.sql.schema import (
     COMPUTER_EVENTS,
     COMPUTER_EXPORTS,
     DOCUMENT_REVISION,
+    FETCHED_PAGES,
     MEDIA_OBJECTS,
     MESSAGES,
     REMINDERS,
@@ -56,6 +57,8 @@ BLOB_KEY_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # A job or a reminder still to run may name the media it acts on.
     ("compute_jobs", "payload"),
     ("reminders", "payload"),
+    # A live fetched page's crate: deleting the blob would dangle the row.
+    ("fetched_pages", "blob_key"),
 })
 
 _LINEAGE = "source lineage and disclosure predicates, never blob custody"
@@ -94,6 +97,10 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("media_objects", "provenance"): (
         "a row's birth record; reference images a generation named are not "
         "needed to show what it made"
+    ),
+    ("fetched_pages", "provenance"): (
+        "the fetch's saved_copy/truncated flags and image LINKS; the page's "
+        "own bytes are `blob_key`, which is a held key"
     ),
     ("row_history", "image"): (
         "past versions of rows: a restore to before a deletion is incomplete "
@@ -248,6 +255,7 @@ async def held_elsewhere(
         sa.exists().where(text(COMPUTE_JOBS.c.payload).contains(k)),
         sa.exists().where(text(REMINDERS.c.payload).contains(k)),
         sa.exists().where(sa.or_(ex.c.sha256 == k, ex.c.blob_key == k)),
+        sa.exists().where(FETCHED_PAGES.c.blob_key == k),
         sa.exists().where(k == sa.any_(DOCUMENT_REVISION.c.media)),
         sa.exists().where(
             MEDIA_OBJECTS.c.sha256 == k, MEDIA_OBJECTS.c.source != SOCIAL_MEDIA_SOURCE,

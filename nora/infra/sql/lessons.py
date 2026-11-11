@@ -27,7 +27,7 @@ from nora.infra.sql.schema import LESSON, LESSON_REVISION
 __all__ = ["SqlLessonStore"]
 
 
-def _revision(row: sa.Row[Any]) -> LessonRevision:
+def _revision(row: sa.Row[*tuple[Any, ...]]) -> LessonRevision:
     return LessonRevision(
         id=row.id, lesson_id=row.lesson_id, seq=row.seq, body=row.body,
         citations=tuple(row.citations), state=row.state, retired_by=row.retired_by,

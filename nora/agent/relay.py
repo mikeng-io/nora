@@ -133,7 +133,7 @@ class Relay:
     def _find(self, room: str, *, unit: str) -> tuple[Conversation, ...]:
         """Resolve only within this unit, using the room tools' shared resolver."""
         # Local import: tools declares Relay and owns the shared name resolver.
-        from .tools import _find_room
+        from nora.agent.toolkit.rooms import _find_room
 
         candidates = tuple(c for c in self._policy.rooms() if c.unit == unit)
         known = tuple(KnownRoom(

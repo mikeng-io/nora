@@ -14,8 +14,8 @@ import re
 
 import pytest
 
-from nora.agent import tools as tools_module
-from nora.agent.tools import NATIVE_TOOLS
+from nora.agent.catalog import entries as _catalog_entries
+from nora.agent.catalog.entries import NATIVE_TOOLS
 
 #: Lower case, digits and `_`, at most 64 characters. Anthropic allows
 #: `[a-zA-Z0-9_-]{1,128}` and MCP allows `.` up to 128; this is the
@@ -169,8 +169,8 @@ def test_a_misnamed_new_tool_is_actually_caught(monkeypatch: pytest.MonkeyPatch)
     fake = dict(NATIVE_TOOLS)
     fake["read_instagram"] = NATIVE_TOOLS["web_fetch"]
     fake["instagram_read"] = NATIVE_TOOLS["web_fetch"]
-    monkeypatch.setattr(tools_module, "NATIVE_TOOLS", fake)
-    assert _misnamed(tools_module.NATIVE_TOOLS) == ["read_instagram"]
+    monkeypatch.setattr(_catalog_entries, "NATIVE_TOOLS", fake)
+    assert _misnamed(_catalog_entries.NATIVE_TOOLS) == ["read_instagram"]
 
 
 def test_the_snapshot_is_never_edited() -> None:
@@ -224,7 +224,6 @@ async def _session_names() -> set[str]:
 
 
 def _check_session_names(names: set[str]) -> None:
-    from nora.agent.tools import NATIVE_TOOLS
     # Shared native names pass the native naming contract above.
     names = names - NATIVE_TOOLS.keys()
     bad = sorted(n for n in names if not _CHARSET.fullmatch(n)

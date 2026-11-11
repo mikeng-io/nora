@@ -10,9 +10,16 @@ edges:
 
 # 70 · Migration
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the steps below are history up to the live cut-over (DEC-277). The forward order is [unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#15-order-of-work) §15: stores and steps ①–② in shadow, the spike, one backfill, then queries and the switch.
+> The steps below are history up to the live cut-over (DEC-277). The forward delivery order is owned by [unified-memory/31](../unified-memory/31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31).
 
 ## 1. Inside the Dreamer, not beside it
+
+**Delivery:** the runtime ownership stated in this section is built.
+Cognition's session executes as a Dreamer adaptor through
+`DreamerRuntime.dispatch`; [18](18-execution-and-time.md) owns the boundary,
+the shared clock and the delivery evidence. The historical steps below do not
+establish the Character/Lessons roster, which remains subject to
+[30](30-cognition.md)'s later three-step flow.
 
 The operator asked whether this is a great refactor or stays within the
 Dreamer. It stays within: the runtime that makes a background agent safe is

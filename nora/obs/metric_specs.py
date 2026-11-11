@@ -483,7 +483,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     # R-23. HOW the agent loop ended, every turn, straight off Strands'
     # `AgentResult.stop_reason`. The SDK reports a turn that ran out of budget by
-    # returning normally (`_check_limits` yields an `EventLoopStopEvent` with
+    # returning normally (the limit check, `_reached_own_limit`, yields an `EventLoopStopEvent` with
     # `stop_reason="limit_total_tokens"`): no exception, no log line. Without this
     # series a turn cut off by the token cap is byte-identical to a model that chose
     # not to call `send_reply`; both surface as

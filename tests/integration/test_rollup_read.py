@@ -426,7 +426,10 @@ async def test_every_call_is_counted_by_its_status(engine, built, tmp_path):
 def _permissive(monkeypatch):
     """Lineage that shows every row, so it cannot mask a filter that went missing:
     what these tests measure is the subject filter and nothing after it."""
-    monkeypatch.setattr("nora.agent.tools.visible_rows", lambda rows, target: (list(rows), 0))
+    monkeypatch.setattr(
+        "nora.memory.adapters.tools.standing.visible_rows",
+        lambda rows, target: (list(rows), 0),
+    )
 
 
 _NOBODY_HERE = FakeRosterSource(groups={"group-1": ()})

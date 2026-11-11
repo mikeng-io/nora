@@ -1,0 +1,13 @@
+[Unit]
+Description=Nora scoped VM lifecycle controller
+
+[Service]
+Type=simple
+WorkingDirectory=%h/workspace/nora
+ExecStart=%h/workspace/nora/deploy/computer/nora-computer controller --settings %h/.config/nora/computer-lifecycle.toml
+Restart=on-failure
+RestartSec=5
+UMask=0027
+
+[Install]
+WantedBy=default.target

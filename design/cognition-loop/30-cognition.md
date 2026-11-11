@@ -13,20 +13,14 @@ edges:
 
 # 30 · Cognition
 
-> **Authoritative amendments:** the operator's 2026-10-29
-> [one-session ruling](../unified-memory/29-one-cognition-session.md) supersedes
-> the three-session topology below. [One Standing](../notebook-memory-types/20-standing.md),
-> clarified 2026-10-31, owns input and completion: Cognition reads/thinks/decides
-> across the unit, then the existing Standing updater automatically organizes
-> its full retained Record and actual results. No `decision_conclude` verb or
-> extra self-report obligation. Room and unit state keep separate scope keys
-> under the common model; room is source/delivery context, not an agenda-based
-> read/edit boundary. Each consumer gets one `standing` block with appropriate
-> source/disclosure rules. Cognition retains substantive Notebook authority;
-> the updater adds no new judgment or independent wake. The tag-debrief writer
-> wording in §7 and destination/exact-citation dedupe description below are
-> historical where they conflict. The new node owns migration, automatic update
-> flow and unit-wide action arbitration. Design targets are not runtime claims.
+This node is the session's contract: what code hands it, the verbs it holds,
+what code enforces and what Assess measures, budgets, and what stays outside.
+The loop it serves, and why it is one session, is [00](00-intent.md). The
+one-session ruling ([unified-memory/29](../unified-memory/29-one-cognition-session.md))
+supersedes the step ①/②/③ wording that remains in the sections below: read
+each step as the same session. [One Standing](../notebook-memory-types/20-standing.md)
+owns Standing's input and completion; the tag-debrief writer wording in §7 is
+history where it conflicts. Cognition is live (DEC-277).
 
 > 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
 
@@ -43,6 +37,11 @@ The stages share one bounded session and the same committed stores. Searching,
 writing and acting are available together; model judgment orders them. The
 historical lane reads as of its evidence time and has no act verbs. Assess
 remains outside the writer, and historical work never takes a live slot.
+
+[00 §5](00-intent.md#5-per-item-machinery-is-deleted) (operator, 2026-11-11)
+deletes the per-item `close` reasons, strikes and the quiet-close stop of §2 and
+§5, and replaces the per-kind skills of §4. They run as built until that change
+lands.
 
 ## 1. What code hands it
 

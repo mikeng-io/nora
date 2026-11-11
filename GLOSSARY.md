@@ -137,30 +137,15 @@ is why `nora/infra`'s two clients have opposite error contracts.
 
 The most-used words in this repo.
 
-- **The Dreamer** — **the runtime, never a tier**
-  (`design/cognition-loop/10-tiers.md` §6: "Dreamer — the runtime hosting the
-  four adaptors | a tier; a background pass that never acts"), that runs
-  *between* turns, on its own clock (`[dreamer] tick_seconds`, every adaptor
-  on its own `AdaptorSchedule` today, moving to a per-adaptor wake rule,
-  `design/cognition-loop/20-observe.md` §3), and never in the reply path. It
-  reads what the record already holds and writes derived state back; **it
-  never speaks to a room directly** — its one bridge out is the Cognition
-  session's `remind` (DEC-277), a row the fire path composes and sends. It hosts
-  **adaptors** (`nora/language/`, wired in the composition root under
-  `dream_adaptors`; the settled set is Cognition, Character, Lessons and
-  Assess, `design/cognition-loop/00-intent.md` §3 — not "units", which
-  names the social unit, DEC-105, below), each with an **objective** — an
-  authored prompt file under `nora/dreamer/objectives/` — and each bounded by
-  a **DreamGuard** with its own budget. `design/dreamer-agent-loop/` designs
-  the runtime; `design/cognition-loop/` designs its adaptors.
-
-  **The live adaptors** are the four that `[culture] enabled` turns on:
-  `culture` (a room's entry), and `character-person`, `character-unit` and
-  `character-nora` (the Character sessions, below, DEC-290). The Cognition
-  session is the one background writer of notes, events, Standing and Nora's
-  own reminders (DEC-277). In `design/dreamer-agent-loop/`, nodes 20, 21, 23,
-  24, 25, 28, 31 and 32 describe deleted code (the knowledge and language
-  tiers).
+- **The Dreamer** — the subconscious execution runtime in the target architecture
+  ([execution and time](design/cognition-loop/18-execution-and-time.md)), never
+  a data tier or the name of every background task. Today `dream_loop` runs
+  registered adaptors through `DreamerRuntime`; Cognition has a separate
+  wake/session runner sharing the agent factory, guards, budget types, tool
+  source and instructions. Routing Cognition through Dreamer is remaining
+  implementation work. Its inward self-wakes stay subconscious; its outward
+  reminders become conscious fire turns. The later Cognition work flow owns
+  which reflection work is consolidated, rather than a fixed adaptor roster.
 
 - **culture** — her entry about what a room has BECOME: how they talk, how
   things get decided, what they call themselves (design/culture-tier/,
@@ -557,22 +542,30 @@ path's whole context assembler, a runtime rather than a block). The verb
 
 ## Reminders
 
+Time vocabulary is canonical in
+[execution and time](design/cognition-loop/18-execution-and-time.md). A logical
+**tick** is a position on the proposed fixed minute grid; an **evaluation pass**
+is an actual eligibility check. A **time slot** is an indexed schedule window,
+not the conversation concurrency permit below. Numbered reminder deadlines and
+aligned drivers are design targets, not implemented runtime behavior.
+
 - **reminder** — a *deferred request*: a row holding what someone asked for and
   when it comes due. Not a stored message to replay — at fire time it is put to
   her as a request and she answers it, so anything she can do now she can be
-  reminded to do later. A row has a **kind** — `reminder` (a person's), `gathering`
-  (an event's notify), `proactive` (her own, owner `nora`) — and each kind fires
+  reminded to do later. A row has a **kind** — `reminder` (a person's) or
+  `proactive` (her own) — and each kind fires
   through its own occasion. A `note` link on a reminder cancels it before it
   fires if the note is retired or a person revises it (39 D11).
-- **heartbeat** — the tick that wakes on an interval, finds due rows and runs
-  their turns. Knows that time passed; knows nothing about why it matters.
+- **heartbeat** — the driver that checks due reminder rows on each evaluation
+  pass and runs their conscious turns. Knows that time passed; knows nothing
+  about why it matters.
   (Not `nora.obs.logging.heartbeat`, which is a 60s counters log line.)
 - **claim** — `pending → firing` as a compare-and-set inside the statement, not
   a read-then-write. This is what makes a row fire *once, ever* (R-37).
 - **at-most-once** — the decision behind a crash. A row left `firing` by a dead
   process resolves to `failed`, never re-queued: losing one reminder visibly
   beats sending one twice (R-37b).
-- **the slot** — one in-flight turn per conversation, shared by both paths, so
+- **conversation slot** — one in-flight turn per conversation, shared by both paths, so
   a reminder and a tag can never run at once in the same room. Held by
   `ConversationSlots`; a tick that cannot take it defers to the next one.
 - **ownership** — group-owned in a group, person-owned in a DM. Not enforced

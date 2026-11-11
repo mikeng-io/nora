@@ -31,9 +31,8 @@ from pathlib import Path
 
 import pytest
 
-from nora.agent import tools
+from nora.agent.catalog.groups import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_MAX
 from nora.agent.registry import ToolRegistry
-from nora.agent.tools import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_MAX
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIGS = ("config.toml", "config.example.toml")
@@ -133,7 +132,7 @@ def test_both_config_files_declare_the_same_budget(config_name):
 
 @pytest.mark.parametrize("config_name", CONFIGS)
 def test_all_three_caps_are_declared(config_name):
-    """A cap absent from `limits` is not a cap: Strands' `_check_limits` skips
+    """A cap absent from `limits` is not a cap: Strands' `_reached_own_limit` skips
     one it cannot find, so an omitted `output_tokens` silently means
     "unbounded". `nora.config.LimitsConfig` makes all three required; this
     checks the files actually carry them."""
@@ -161,9 +160,15 @@ def test_the_model_is_told_the_same_ceiling_the_clamp_enforces():
     `__doc__` would be None. So the literal is checked here instead. A clamp
     the model is not told about produces a silently truncated answer it thinks
     is complete."""
-    source = (Path(tools.__file__)).read_text()
-    # Twice: `load_transcript` and `room_read` share the clamp. «recent» is not in
-    # the wording because `before` makes the window movable.
-    assert source.count(
-        f"limit: How many messages to fetch (max {LOAD_TRANSCRIPT_MAX})."
-    ) == 2
+    # Twice: `load_transcript` and `room_read` share the clamp; after the ADR
+    # 0037 split they live in `conversation`'s area adapters. «recent» is not
+    # in the wording because `before` makes the window movable.
+    from tests.tool_view import _tool_source_paths
+
+    count = sum(
+        path.read_text().count(
+            f"limit: How many messages to fetch (max {LOAD_TRANSCRIPT_MAX})."
+        )
+        for path in _tool_source_paths()
+    )
+    assert count == 2

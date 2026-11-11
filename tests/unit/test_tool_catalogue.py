@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import tiktoken
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.catalog.groups import HOT_TOOLS, LOADER_TOOL
+from nora.agent.catalog.surface import on_memory_surface
 from nora.agent.registry import ToolRegistry
 from nora.agent.surface import DREAMER_ONLY_TOOLS, ToolScope
-from nora.agent.tools import HOT_TOOLS, LOADER_TOOL, NATIVE_TOOLS, on_memory_surface
 
 ENC = tiktoken.get_encoding("cl100k_base")
 

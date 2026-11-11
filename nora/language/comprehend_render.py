@@ -205,8 +205,7 @@ def _tool_list(tool_names: frozenset[str]) -> str:
 
 
 def _guidance(
-    sections: tuple[tuple[frozenset[str], str], ...],
-    tool_names: frozenset[str],
+    sections: tuple[tuple[frozenset[str], str], ...], tool_names: frozenset[str]
 ) -> list[str]:
     return [text.format(tools=_tool_list(required & tool_names))
             for required, text in sections if required & tool_names]

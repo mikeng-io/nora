@@ -30,7 +30,7 @@ guard directly.
 
 THE OTHER HALF — the tool body never ran — is `nora_tool_calls_total{tool=
 "media_fetch"}` staying at zero: that counter increments from exactly one
-place too (`nora.agent.tools._record`), called only from inside the tool's own
+place too (`nora.agent.toolkit.results._record`), called only from inside the tool's own
 body, never from the guard.
 """
 

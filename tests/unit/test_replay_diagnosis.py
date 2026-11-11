@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from nora.subject.replay_diagnosis import diagnose
+from tests.integration.test_grading_contract import attach_archive_contract
 
 
 @pytest.fixture(autouse=True)
@@ -137,6 +138,23 @@ def test_unknown_event_cannot_ground_a_diagnostic():
     )
 
 
+def _record_uncited_tool_calls(source):
+    """The read then propose tool calls the `uncited` mode's trajectory needs."""
+    tool = {"toolUseId": "generated-read", "name": "load_transcript",
+            "input": {"items": [0]}}
+    source.record("tool_started", span_id="generated", tool=tool)
+    source.record("tool_finished", span_id="generated", tool=tool,
+                  result={"content": [{"text": "Generated context reply_to=2"}]})
+    saved = {"what": "Generated fact", "cite": [{"source": 1}]}
+    proposal = {"toolUseId": "generated-save", "name": "memory_propose",
+                "input": {"items": [0], "statements": [saved]}}
+    source.record("tool_started", span_id="generated", tool=proposal)
+    source.record("tool_finished", span_id="generated", tool=proposal,
+                  result={"content": [{"json": {"statements": [
+                      {"index": 0, "status": "saved"}]}}]})
+    return saved
+
+
 @pytest.mark.parametrize("mode", [
     "live", "rescore", "legacy", "tampered", "http400", "parse", "oversized", "absent",
     "missing_reason", "uncited",
@@ -177,18 +195,7 @@ async def test_decision_resolves_fingerprinted_writer_events(tmp_path, monkeypat
             source.record("transport_finished", span_id="generated",
                           reasoning_availability="absent" if mode == "absent" else "observed")
             if mode == "uncited":
-                tool = {"toolUseId": "generated-read", "name": "load_transcript",
-                        "input": {"items": [0]}}
-                source.record("tool_started", span_id="generated", tool=tool)
-                source.record("tool_finished", span_id="generated", tool=tool,
-                              result={"content": [{"text": "Generated context reply_to=2"}]})
-                saved = {"what": "Generated fact", "cite": [{"source": 1}]}
-                proposal = {"toolUseId": "generated-save", "name": "memory_propose",
-                            "input": {"items": [0], "statements": [saved]}}
-                source.record("tool_started", span_id="generated", tool=proposal)
-                source.record("tool_finished", span_id="generated", tool=proposal,
-                              result={"content": [{"json": {"statements": [
-                                  {"index": 0, "status": "saved"}]}}]})
+                saved = _record_uncited_tool_calls(source)
             source.record("event", name="nora.session.terminal", span_id="generated", attributes={
                 "body": json.dumps({"session_id": 1})})
             writer_ids = [e["event_id"] for e in read_events(source.path)
@@ -268,7 +275,6 @@ async def test_decision_resolves_fingerprinted_writer_events(tmp_path, monkeypat
             models=["generated"], call=diagnose))
         monkeypatch.setattr(spike, "load", lambda *args: None)
         output_root = tmp_path / "diagnostic"
-        from tests.integration.test_grading_contract import attach_archive_contract
         args = SimpleNamespace(output=output_root, decision_judge=target,
                                config=tmp_path / "generated.toml",
                                judge_a="generated-a", judge_b="generated-b")

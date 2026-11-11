@@ -31,9 +31,11 @@ import typing
 
 import pytest
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import _COMPUTER_BUSY_LIVE, _COMPUTER_OFF, NATIVE_TOOLS, build_tool_specs
+from nora.agent.tools import build_tool_specs
+from nora.computer.adapters.tools.shared import _COMPUTER_BUSY_LIVE, _COMPUTER_OFF
 from nora.domain.computer import ComputerToolSettings, computer_unit_scope
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.external_files import file_refs_in
@@ -142,7 +144,7 @@ def _tools(source, computer: _Computer, store=None, blobs=None) -> dict:
         room=room, transit_source=None, blob_store=blobs or FakeBlobStore(),
         computer=computer.runtime, computer_events=computer.events,
         computer_settings=computer.settings, computer_leases=computer.leases,
-        external_files=source,
+        external_files=source, google_account="nora@example.org",
     )
     return {s.name: s.call for s in specs}
 
@@ -246,7 +248,7 @@ async def test_the_suffix_follows_the_media_type_and_the_name_only_for_octet_str
 async def test_an_unshared_file_is_refused_with_how_to_share_it_and_nothing_is_written():
     computer = _Computer()
     out = await _import(_drive(_server()), computer)(link=UNSHARED_URL)
-    assert out["status"] == "refused" and "nora@67.zone" in out["note"]
+    assert out["status"] == "refused" and "nora@example.org" in out["note"]
     assert computer.files() == {}
     assert [r.phase for r in computer.rows()] == ["started", "finished"]
 

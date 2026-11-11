@@ -295,7 +295,7 @@ def test_the_tag_path_prefix_has_no_second_copy_in_its_producer():
     `make gate`'s mypy scope: the import is only load-bearing if nothing
     re-types the literal beside it.
     """
-    source = pathlib.Path("nora/agent/tools.py").read_text()
+    source = pathlib.Path("nora/memory/adapters/tools/notes.py").read_text()
 
     assert "TAG_PATH_PREFIX" in source, (
         "positive control: the producer imports the constant at all"

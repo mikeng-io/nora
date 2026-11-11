@@ -22,7 +22,7 @@
   },
   {
     "name": "every emitted field is explained by its declaration",
-    "file": "nora/domain/blocks.py",
+    "file": "nora/domain/blocks_declared.py",
     "old": "if unexplained:",
     "new": "if False:",
     "target": "tests/unit/test_cognition_shared_context.py::test_assembly_rejects_undeclared_fields_and_failed_content"

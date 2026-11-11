@@ -55,7 +55,7 @@ from nora.infra.sql.schema import PROFILE, PROFILE_DISPUTE, PROFILE_LINE
 __all__ = ["SqlProfileStore", "chain_heads", "row_to_line"]
 
 
-def row_to_line(row: sa.Row[Any]) -> ProfileLine:
+def row_to_line(row: sa.Row[*tuple[Any, ...]]) -> ProfileLine:
     return ProfileLine(
         content=row.content, location=row.location,
         source_medium=tuple(row.source_medium), strength=row.strength,

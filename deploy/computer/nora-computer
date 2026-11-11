@@ -965,12 +965,32 @@ scope_provision() {
     fi
     local state
     state=$(scope_state "$scope")
-    if [ "$state" != absent ]; then
+    local intent="$STATE_DIR/scope-owned-$scope" owned_boot="" live_boot=""
+    if [ "$state" = stopped ] && [ -f "$intent" ]; then
+        owned_boot=$(cat "$intent")
+        # A private successful-create receipt is the pre-publication ownership
+        # authority. Restart its retained disk, then publish the observed boot.
+        if [[ "$owned_boot" != "$box "* ]] || [ -z "${owned_boot#"$box "}" ]; then
+            log "conflicting partial scope ownership"; exit 4
+        fi
+        scope_egress "$box" || exit 4
+        sbx start "$box" </dev/null || exit 6
+        live_boot=$(sbx exec -u root "$box" cat /proc/sys/kernel/random/boot_id </dev/null) || exit 5
+        [ -n "$live_boot" ] || exit 5
+        printf '%s %s\n' "$box" "$live_boot" > "$intent" || exit 5
+        state=$(scope_state "$scope")
+    fi
+    if [ "$state" = running ] && [ -f "$intent" ]; then
+        owned_boot=$(cat "$intent")
+        live_boot=$(sbx exec -u root "$box" cat /proc/sys/kernel/random/boot_id </dev/null 2>/dev/null) || live_boot=""
+    fi
+    if [ "$state" != absent ] && ! { [ "$state" = running ] && [ -n "$live_boot" ] && [ "$owned_boot" = "$box $live_boot" ]; }; then
         # `running`, stopped, or `unknown` alike: a readable non-absent state
         # is unknown ownership to refuse; `unknown` is a read that cannot
         # prove the name is free — refusing is never a deletion to escape it.
         echo "scope: sandbox $box is $state with no record — refusing to adopt unknown ownership" >&2; exit 4
     fi
+    if [ "$state" = absent ]; then
     mkdir -p "$UNUSED_WORKSPACE-$box" && chmod 700 "$UNUSED_WORKSPACE-$box" || exit 5
     log "creating scope sandbox $box for $scope (detached)"
     if ! sbx run -d --name "$box" -m "$MEMORY" --cpus "$CPUS" --pull never -t "$IMAGE" \
@@ -980,7 +1000,13 @@ scope_provision() {
         log "scope create failed"
         exit 6
     fi
+    # Successful create ownership survives policy/publication failure. A crash
+    # before this receipt remains unavailable, never foreign adoption.
+    live_boot=$(sbx exec -u root "$box" cat /proc/sys/kernel/random/boot_id </dev/null) || exit 5
+    [ -n "$live_boot" ] || exit 5
+    printf '%s %s\n' "$box" "$live_boot" > "$intent" || exit 5
     record_event scope_create ok scope="$scope" name="$box" port="$port"
+    fi
     # The egress contract is a PRECONDITION to publication: the record Nora
     # resolves is only written after every deny reads back before the
     # wildcard allow. On failure the sandbox stays (nothing is deleted or
@@ -1000,6 +1026,7 @@ with open(record, "w") as f:
     json.dump({"scope": scope, "endpoint": endpoint, "name": name, "instance": ""}, f)
     f.write("\n")
 EOF
+    rm -f "$intent"
     record_event scope_provision ok scope="$scope" name="$box" port="$port"
     printf '%s\n' "$record"
 }
@@ -1337,12 +1364,40 @@ scope_revoke() {
         echo "scope: sandbox $box reads as $state, not gone; destroy it explicitly (sbx rm --force $box) before revoking — its /workspace may hold data" >&2
         exit 4
     fi
-    rm -f "$(scope_record "$scope")"
+    rm -f "$(scope_record "$scope")" "$STATE_DIR/scope-owned-$scope"
     record_event scope_revoke ok scope="$scope"
+}
+
+scope_lifetime() {
+    local action=$1 scope=${2:-} box record state known
+    scope_valid "$scope" || exit 2
+    box=$(scope_sandbox "$scope"); record=$(scope_record "$scope")
+    known=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(r.get("scope",""),r.get("name",""))' "$record" 2>/dev/null)
+    [ "$known" = "$scope $box" ] || { log "conflicting scope ownership"; exit 4; }
+    state=$(scope_state "$scope")
+    case "$action:$state" in
+        start:stopped)
+            scope_egress "$box" || exit 4
+            sbx start "$box" </dev/null || exit 6 ;;
+        start:running) ;;
+        stop:running)
+            systemctl --user stop "nora-computer-scope@$scope.service" || exit 6
+            sbx stop "$box" </dev/null || exit 6 ;;
+        stop:stopped) ;;
+        service-start:running)
+            systemctl --user start "nora-computer-scope@$scope.service" || exit 6 ;;
+        *) log "scope $action refused in $state"; exit 4 ;;
+    esac
+    case "$action" in
+        start) record_event scope_start ok scope="$scope" name="$box" ;;
+        stop) record_event scope_stop ok scope="$scope" name="$box" ;;
+        service-start) record_event scope_service_start ok scope="$scope" name="$box" ;;
+    esac
 }
 
 cmd_scope() {
     case "${1:-}" in
+        start|stop|service-start) scope_lifetime "$@" ;;
         provision) shift; scope_provision "$@" ;;
         observe) shift; scope_observe "$@" ;;
         serve) shift; scope_serve "$@" ;;
@@ -1358,6 +1413,11 @@ cmd_scope() {
 }
 
 case "${1:-}" in
+    controller)
+        shift
+        load_token
+        exec python3 "$HERE/lifecycle_controller.py" "$@" ;;
+    inventory) sbx ls --json </dev/null ;;
     build) cmd_build ;;
     serve) cmd_serve ;;
     status) cmd_status ;;

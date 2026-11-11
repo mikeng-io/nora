@@ -23,20 +23,20 @@
   {
     "name": "known argument rejections do not masquerade as service receipts",
     "file": "scripts/memory_graph_spike.py",
-    "old": "                            proposals = [e for e in proposals if e.get(\"argument_validation\")\n                                         != \"rejected_before_dispatch\"]\n",
+    "old": "    proposals = [e for e in proposals if e.get(\"argument_validation\")\n                 != \"rejected_before_dispatch\"]\n",
     "new": "",
     "target": "tests/integration/test_grading_contract.py::test_replay_recovers_only_proven_predispatch_argument_failures[arguments]"
   },
   {
     "name": "saved statements expose their own coverage index",
-    "file": "scripts/memory_graph_spike.py",
+    "file": "scripts/memory_graph_facts.py",
     "old": "                            {**statement, \"evidence_index\": index}\n                            if reference is not None else statement",
     "new": "                            statement",
     "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_wire_labels_sparse_saved_and_read_indices"
   },
   {
     "name": "shown reads expose their own coverage index",
-    "file": "scripts/memory_graph_spike.py",
+    "file": "scripts/memory_graph_facts.py",
     "old": "                            {**read, \"evidence_index\": index}",
     "new": "                            read",
     "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_wire_labels_sparse_saved_and_read_indices"
@@ -44,7 +44,7 @@
   {
     "name": "unrecovered tool arguments cannot pass a restraint case",
     "file": "scripts/memory_graph_spike.py",
-    "old": "                            if (proposals and proposals[-1].get(\"argument_validation\")\n                                    == \"rejected_before_dispatch\"):\n                                raise ValueError(\"unrecovered proposal argument error\")\n",
+    "old": "    if (proposals and proposals[-1].get(\"argument_validation\")\n            == \"rejected_before_dispatch\"):\n        raise ValueError(\"unrecovered proposal argument error\")\n",
     "new": "",
     "target": "tests/integration/test_grading_contract.py::test_replay_recovers_only_proven_predispatch_argument_failures[no_retry]"
   },

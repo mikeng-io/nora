@@ -6,6 +6,7 @@ import sqlalchemy as sa
 
 from evals.rebuilt.domain import Case
 from evals.rebuilt.entry import _cognition_replay
+from nora.domain.ticks import due_tick_of_ms
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import COGNITION_WAKE, STIMULUS
 from tests.contract.test_comprehend_records_contract import database  # noqa: F401
@@ -123,12 +124,13 @@ async def test_due_floor_replay_restores_the_session_clock_and_evidence(clean_pg
             sid = (await conn.execute(sa.insert(STIMULUS).values(
                 unit="unit-1", kind="time", item="floor", ref="floor:generated",
                 at_ms=cutoff - 1000, due_ms=cutoff - 1000, recorded_at=tick,
+                due_tick=due_tick_of_ms(cutoff - 1000),
             ).returning(STIMULUS.c.id))).scalar_one()
             # Unclaimed future rows must never become replay inputs.
             future = (await conn.execute(sa.insert(STIMULUS).values(
                 unit="unit-1", kind="time", item="floor", ref="floor:future",
                 at_ms=tick_ms + 1000, due_ms=tick_ms + 1000,
-                recorded_at=tick,
+                recorded_at=tick, due_tick=due_tick_of_ms(tick_ms + 1000),
             ).returning(STIMULUS.c.id))).scalar_one()
             wid = (await conn.execute(sa.insert(COGNITION_WAKE).values(
                 unit="unit-1", mode="live", reason="time", from_stimulus_id=0,
@@ -179,7 +181,7 @@ async def test_recorded_membership_refuses_missing_foreign_and_future_rows(clean
         async with engine.begin() as conn:
             sid = (await conn.execute(sa.insert(STIMULUS).values(
                 unit="unit-1", kind="time", item="floor", ref="floor:control",
-                at_ms=NOW, due_ms=NOW, recorded_at=at,
+                at_ms=NOW, due_ms=NOW, recorded_at=at, due_tick=due_tick_of_ms(NOW),
             ).returning(STIMULUS.c.id))).scalar_one()
             wid = (await conn.execute(sa.insert(COGNITION_WAKE).values(
                 unit="unit-1", mode="live", reason="time", from_stimulus_id=0,

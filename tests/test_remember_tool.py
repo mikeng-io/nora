@@ -16,9 +16,9 @@ shape, same `_tools` builder pattern).
 
 from __future__ import annotations
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import NATIVE_TOOLS
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
 from nora.testing import FakeMemoryStore, FakeRosterSource

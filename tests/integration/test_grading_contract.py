@@ -352,8 +352,11 @@ async def test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unsco
     original = structured.build_structured_model
     monkeypatch.setattr(spike, "build_structured_model", lambda **kwargs: original(
         **kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond))))
-    monkeypatch.setattr(spike, "_FACT_SUPPORT_INSTRUCTION", "CHANGED_CANDIDATE_SUPPORT")
-    monkeypatch.setattr(spike, "_MISSED_FACT_INSTRUCTION", "CHANGED_CANDIDATE_COVERAGE")
+    from scripts import memory_graph_facts
+    monkeypatch.setattr(
+        memory_graph_facts, "_FACT_SUPPORT_INSTRUCTION", "CHANGED_CANDIDATE_SUPPORT")
+    monkeypatch.setattr(
+        memory_graph_facts, "_MISSED_FACT_INSTRUCTION", "CHANGED_CANDIDATE_COVERAGE")
     judges = spike.Judges(SimpleNamespace(llm=SimpleNamespace(timeout_seconds=5)),
                           ["generated-a", "generated-b"], Path("generated.toml"))
     result = await spike.smoke_fact_support(judges, inspection, [exchange],
@@ -423,7 +426,7 @@ def test_scenario_binding_matches_actual_transport_without_trusting_work_metadat
 @pytest.mark.parametrize("drift", [False, True])
 async def test_real_replay_preflight_refuses_cohort_drift_before_writer(
         tmp_path, monkeypatch, drift):
-    from tests.unit.test_memory_graph_spike import generated_replay_environment
+    from tests.unit.memory_graph_env import generated_replay_environment
     env = generated_replay_environment(tmp_path, monkeypatch)
     monkeypatch.setattr(spike, "evaluation_export_for", lambda _: None)
     env.args.config.write_text("# generated configuration\n")
@@ -631,7 +634,7 @@ async def test_replay_recovers_only_proven_predispatch_argument_failures(
     from nora.agent.structured import build_structured_model
     from nora.obs.tracing import EVAL_EVIDENCE_KEY
     from nora.subject.eval_evidence import current
-    from tests.unit.test_memory_graph_spike import generated_replay_environment
+    from tests.unit.memory_graph_env import generated_replay_environment
 
     env = generated_replay_environment(tmp_path, monkeypatch)
     monkeypatch.setattr(spike, "evaluation_export_for", lambda _: None)

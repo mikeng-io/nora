@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from nora.language.cognition_render import (
+from nora.language.cognition_parse import (
     ledger_source_row,
     parse_rendered_agenda,
     shown_source_rows,

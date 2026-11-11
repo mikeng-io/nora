@@ -619,8 +619,7 @@ def build_grounder(
     ai_display_name: str = "you",
     room_label: Callable[[str, str], str] | None = None,
     clock: Callable[[], float] = time.time,
-    own_send_lookback_seconds: float = 1800.0,
-    own_sends_max: int = 6,
+    own_send_lookback_seconds: float = 1800.0, own_sends_max: int = 6,
     tz: tzinfo = UTC,
     stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
     place_release: Callable[[str, str], Awaitable[bool]] | None = None,
@@ -652,11 +651,11 @@ def build_grounder(
         unit: str, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
         now_ms: int | None = None,
     ) -> Grounding:
-        # `now_ms` is the SESSION's instant — a live wake's clock or a
-        # historical session's evidence time. Every read below that can be
-        # bounded by it is, so a session assembled for T shows what stood at
-        # T (edits, deletes, reactions, hides, her sends), not what stands
-        # now. None means "now" — the live callers' unchanged behavior.
+        # `now_ms` is the SESSION's instant — a live wake's clock or a historical
+        # session's evidence time. Every read that can be bounded by it is, so a
+        # session assembled for T shows what stood at T (edits, deletes,
+        # reactions, hides, her sends), not what stands now. None means "now" —
+        # the live callers' unchanged behavior.
         session_ms = now_ms if now_ms is not None else int(clock() * 1000)
         allowed = set(unit_rooms(unit))
         claimed = {sid for item in items for sid in item.stimulus_ids}
@@ -681,14 +680,13 @@ def build_grounder(
                 continue
             wanted.append((s, ref))
             wanted_rooms.add((s.platform, s.conversation_id))
-        # The utterance a typed source event was co-delivered as AND the
-        # recorded message it affected: the merged source obligation links
-        # the first through `delivered_message_id`, and a reaction's target
-        # or a pinned row through `target_message_id` — independent ids, so
-        # a co-delivered caption and the older message it touched are two
-        # reads, not one. Both read as `messages:<id>` records through the
-        # same `by_refs` seam and the same room check — evidence paths of
-        # the one event on the agenda, off one stimulus.
+        # The utterance a typed source event was co-delivered as AND the recorded
+        # message it affected: the merged source obligation links the first
+        # through `delivered_message_id`, and a reaction's target or a pinned
+        # row through `target_message_id` — independent ids, so a co-delivered
+        # caption and the older message it touched are two reads, not one. Both
+        # read as `messages:<id>` records through the same `by_refs` seam and the
+        # same room check — evidence paths of the one event, off one stimulus.
         sibling_wanted: list[tuple[Stimulus, tuple[str, int]]] = []
         for s in pending:
             if (s.id not in claimed or s.kind != "observation"
@@ -697,19 +695,15 @@ def build_grounder(
             event = observations_out.get(s.ref)
             if event is None:
                 continue
-            for message_id in (
-                event.delivered_message_id, event.target_message_id,
-            ):
+            for message_id in (event.delivered_message_id, event.target_message_id):
                 if message_id is not None:
                     sibling_wanted.append((s, ("messages", message_id)))
-            if event.delivered_message_id is not None or (
-                    event.target_message_id is not None):
+            if event.delivered_message_id is not None or (event.target_message_id is not None):
                 wanted_rooms.add((s.platform, s.conversation_id))
         found: dict[tuple[str, int], RecordRefHit] = {}
         refs = [r for _, r in wanted] + [r for _, r in sibling_wanted]
         if refs:
-            hits = await records.by_refs(
-                refs, sorted(wanted_rooms), as_of_ms=session_ms)
+            hits = await records.by_refs(refs, sorted(wanted_rooms), as_of_ms=session_ms)
             found = {(h.table, h.row_id): h for h in hits}
         rows = []
         pairs: list[tuple[Stimulus, tuple[str, int], RecordRefHit]] = []
@@ -751,11 +745,9 @@ def build_grounder(
             for r in agenda_rooms
         ]
         # `on` removes, `shadow` only REPORTS what it would have removed (a log
-        # line with the counts) and `off` applies nothing: the tag path's own
-        # reading (`nora.agent.prefill._enforced`: `shadow` computes the same
-        # answer and only reports it).
-        applies = lineage.mode != "off"
-        enforced = lineage.mode == "on"
+        # line with the counts) and `off` applies nothing — the tag path's own
+        # reading (`nora.agent.prefill._enforced`) computes the same answer.
+        applies, enforced = lineage.mode != "off", lineage.mode == "on"
         withheld = {"notes": 0, "events": 0}
         notes_out: list[NoteLine] = []
         # The notebook review's facts, marked on every agenda's index (the `time`

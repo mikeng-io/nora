@@ -116,10 +116,7 @@ from nora.domain.ports import (
     UsernameLookup,
 )
 from nora.domain.presence import haversine_distance_m
-from nora.domain.tool_call_log import (
-    ToolCallLogEntry,
-    normalise_tool_call_log_entry,
-)
+from nora.domain.tool_call_log import ToolCallLogEntry, normalise_tool_call_log_entry
 from nora.domain.utf16 import utf16_len
 
 
@@ -528,9 +525,7 @@ class FakeRecordStore:
         rows.sort(key=lambda r: r["id"])
         return [self._transcript_row(r) for r in rows[:limit]]
 
-    def _transcript_row(
-        self, r: dict[str, Any], *, as_of_ms: int | None = None,
-    ) -> TranscriptRow:
+    def _transcript_row(self, r: dict[str, Any], *, as_of_ms: int | None = None) -> TranscriptRow:
         """The shared row -> `TranscriptRow` mapping for `recent` and
         `since` — mirrors `SqlRecordStore._row` so the two stay legible
         side by side, the edit fold included. `as_of_ms` folds the row's
@@ -625,8 +620,7 @@ class FakeRecordStore:
 
     async def room_activity(
         self, *, conversation_id: str, since_ts: int,
-        platform: str | None = None, as_of_ms: int | None = None,
-    ) -> RoomActivity:
+        platform: str | None = None, as_of_ms: int | None = None) -> RoomActivity:
         """Mirrors `SqlRecordStore.room_activity`: human rows only, the count from
         `since_ts` on, the newest `ts` at any time, `None` when there is none.
         `fail_on_recent` covers this read too: it is the switch for «the
@@ -1486,15 +1480,11 @@ class FakeGeocodeCacheStore:
         ]
         return [k for d, _, k in sorted(found, key=lambda t: (t[0], t[1])) if d <= radius_m]
 
-    async def nearest_within(
-        self, *, lat: float, lng: float, radius_m: float
-    ) -> str | None:
+    async def nearest_within(self, *, lat: float, lng: float, radius_m: float) -> str | None:
         near = self._near(lat, lng, radius_m)
         return self._data[near[0]] if near else None
 
-    async def area_within(
-        self, *, lat: float, lng: float, radius_m: float
-    ) -> PlaceArea | None:
+    async def area_within(self, *, lat: float, lng: float, radius_m: float) -> PlaceArea | None:
         for key in self._near(lat, lng, radius_m):
             if self._areas[key]:
                 return self._areas[key]
@@ -1603,9 +1593,7 @@ class FakeTranscriber:
         self.reason = reason
         self.calls: list[tuple[bytes, str, str]] = []
 
-    async def transcribe(
-        self, *, data: bytes, media_type: str, language: str = ""
-    ) -> SttResult:
+    async def transcribe(self, *, data: bytes, media_type: str, language: str = "") -> SttResult:
         if media_type and not media_type.startswith("audio/"):
             return SttResult(available=False, reason="unsupported")
         self.calls.append((data, media_type, language))
@@ -1721,9 +1709,7 @@ class FakeComputeBackend:
         self._polls_before_done.setdefault(job_id, 0)
         return job_id
 
-    def set_result(
-        self, *, job_id: str, result: JobResult, polls_before_done: int = 0,
-    ) -> None:
+    def set_result(self, *, job_id: str, result: JobResult, polls_before_done: int = 0) -> None:
         self._results[job_id] = result
         self._polls_before_done[job_id] = polls_before_done
 
@@ -1999,9 +1985,7 @@ class FakeComputerEventStore:
         """The `finished` rows, in order: what a test asserts outcomes on."""
         return [e for e in self.events if e.phase == "finished"]
 
-    async def for_scope(
-        self, *, scope: str, since: datetime, limit: int,
-    ) -> list[ComputerEvent]:
+    async def for_scope(self, *, scope: str, since: datetime, limit: int) -> list[ComputerEvent]:
         scopes = {scope}
         if self._sessions is not None:
             scopes.update(s.scope for s in self._sessions.sessions.values()
@@ -2073,9 +2057,7 @@ class FakeComputerSessionStore:
                       key=lambda s: s.last_activity_at)
         return rows[:limit]
 
-    async def for_scope(
-        self, *, scope: str, limit: int,
-    ) -> list[ComputerSession]:
+    async def for_scope(self, *, scope: str, limit: int) -> list[ComputerSession]:
         self._check()
         rows = sorted(
             (s for s in self.sessions.values()
@@ -2157,9 +2139,7 @@ class FakeSocialProvider:
         self.unavailable = unavailable
         self.calls: list[tuple[str, str, str, int]] = []
 
-    async def read(
-        self, *, platform: str, what: str, target: str, limit: int,
-    ) -> dict[str, Any]:
+    async def read(self, *, platform: str, what: str, target: str, limit: int) -> dict[str, Any]:
         self.calls.append((platform, what, target, limit))
         if self.unavailable or (platform, what) not in self.serves:
             return {
@@ -2382,9 +2362,7 @@ class FakeSandboxRuntime:
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
-            return FileResult(
-                status=SandboxStatus.OK, binary=True, size=len(data), sha256=digest,
-            )
+            return FileResult(status=SandboxStatus.OK, binary=True, size=len(data), sha256=digest)
         lines = text.splitlines(keepends=True)
         chosen = "".join(lines[max(offset, 0):])
         # computerd's rule: absent or not positive means its ceiling.
@@ -2604,9 +2582,8 @@ class FakeDocumentStore:
         )
 
     @staticmethod
-    def _sees(
-        summary: DocumentSummary, person_id: str | DocumentAuthority, rooms: frozenset[RoomKey]
-    ) -> bool:
+    def _sees(summary: DocumentSummary, person_id: str | DocumentAuthority,
+              rooms: frozenset[RoomKey]) -> bool:
         from nora.domain.documents import may_read
         return may_read(summary, person_id, rooms)
 
@@ -2636,9 +2613,7 @@ class FakeDocumentStore:
         self._revisions[document_id].append((revision, self._now()))
         return RevisionOutcome("ok", self._stored(document_id))
 
-    async def set_state(
-        self, *, document_id: UUID, state: DocumentState, set_by: str,
-    ) -> bool:
+    async def set_state(self, *, document_id: UUID, state: DocumentState, set_by: str) -> bool:
         if document_id not in self._rooms:
             return False
         self._states.setdefault(document_id, []).append((state, set_by))
@@ -2700,15 +2675,10 @@ class FakeDocumentStore:
         person_id: str | DocumentAuthority, rooms: frozenset[RoomKey],
         states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
+        before_ms = person_id.as_of_ms if isinstance(person_id, DocumentAuthority) else None
         seen = [
-            d.summary
-            for doc_id in self._rooms
-            if (
-                d := self._stored(
-                    doc_id, person_id.as_of_ms if isinstance(person_id, DocumentAuthority) else None
-                )
-            )
-            is not None
+            d.summary for doc_id in self._rooms
+            if (d := self._stored(doc_id, before_ms)) is not None
             and d.summary.platform == platform
             and d.summary.conversation_id in conversation_ids
             and d.summary.state in states
@@ -2993,8 +2963,7 @@ class FakeStreamRedis:
     async def xgroup_create(self, stream: str, group: str, id: str = "0",
                             mkstream: bool = False) -> None:
         if group in self.groups.get(stream, set()):
-            raise RuntimeError(
-                f"BUSYGROUP Consumer Group name already exists: {group}")
+            raise RuntimeError(f"BUSYGROUP Consumer Group name already exists: {group}")
         self.groups.setdefault(stream, set()).add(group)
         self.streams.setdefault(stream, [])
 

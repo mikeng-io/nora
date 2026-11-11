@@ -32,7 +32,7 @@ _FIELDS = (
 )
 
 
-def _row(r: Row[Any]) -> BrowserTab:
+def _row(r: Row[*tuple[Any, ...]]) -> BrowserTab:
     return normalise_tab(BrowserTab(**{f: getattr(r, f) for f in _FIELDS}))
 
 

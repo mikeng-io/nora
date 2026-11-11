@@ -18,7 +18,7 @@ import logging
 import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, tzinfo
-from typing import Annotated, Any, Literal, get_args
+from typing import TYPE_CHECKING, Annotated, Any, Literal, get_args
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -68,10 +68,14 @@ class CitedValue(Shape):
     cite: list[Citation] = Field(default_factory=list)
 
 
-ProposedKind = Literal[tuple(PROPOSED_KINDS)]  # type: ignore[valid-type]
-ProposedRelation = Literal[tuple(
-    name for name, rule in RELATION_RULES.items() if rule.layer == "notebook"
-)]  # type: ignore[valid-type]
+if TYPE_CHECKING:
+    ProposedKind = str
+    ProposedRelation = str
+else:
+    ProposedKind = Literal[tuple(PROPOSED_KINDS)]
+    ProposedRelation = Literal[tuple(
+        name for name, rule in RELATION_RULES.items() if rule.layer == "notebook"
+    )]
 
 
 class NewEntity(Shape):
@@ -330,21 +334,7 @@ class MemoryProposalAdmission:
         self, new: NewEntity, work: WorkItem, fetched: GraphFetched,
         proposed: Entity, confirmed: Any,
     ) -> tuple[str, list[dict[str, Any]], set[Key], set[str]] | None:
-        """The resolution candidates (27 §7a) for a `{new: …}` endpoint's
-        name/kind in this unit. Returns `(reason, cards, keys, relation_ids)`
-        — the refusal reason, the candidate cards that go back to the model,
-        and exactly the handles and relation ids THOSE cards emit (shown
-        custody is registered from what is returned, never from what the
-        walk touched) — or None when the endpoint may proceed.
-
-        The lookup always runs: `new.distinct` never skips it, and a lookup
-        that fails is `unavailable` (R-27), never an admission. `distinct`
-        is honoured only to re-propose an endpoint this session already
-        refused `possible_existing` for the same name and kind (`confirmed`).
-        Two hard-refusal paths stay exactly as they were: the candidate that
-        IS `proposed` (same deterministic id — a retry of a statement this
-        session already admitted) is the duplicate-recovery path's business,
-        and an exact name/alias match is the store's own `duplicate_entity`."""
+        """The 27 §7a candidates for a `{new: …}` endpoint, or None to proceed."""
         try:
             candidates = await named_candidates(
                 self.graph, unit=work.unit, kind=new.kind, name=new.name,
@@ -386,18 +376,30 @@ class MemoryProposalAdmission:
                 relation_ids.add(e.relation.id)
         return "possible_existing", cards, keys, relation_ids
 
+    async def _refuse_possible_existing(
+        self, outcome: tuple[str, list[dict[str, Any]], set[Key], set[str]],
+        index: int, new: NewEntity, refuse: Any,
+        report: dict[int, dict[str, Any]], candidate_keys: set[Key],
+        candidate_relations: set[str],
+        possible_existing: set[tuple[str, str]],
+    ) -> None:
+        """Record a `_possible_existing` refusal and its candidate custody."""
+        reason, cards, keys_found, rel_ids = outcome
+        report[index] = {"status": "refused", "reason": reason,
+                         "kind": "relation",
+                         **({"candidates": cards} if cards else {})}
+        await refuse("entity", reason)
+        if reason == "possible_existing":
+            candidate_keys.update(keys_found)
+            candidate_relations.update(rel_ids)
+            possible_existing.add((new.kind, new.name.casefold()))
+
     async def _admit(
         self, work: WorkItem, output: Proposal, fetched: GraphFetched,
         session: int, scope: Scope, indices: list[int] | None = None,
         confirmed: Any = frozenset(),
     ) -> tuple[Admission, list[dict[str, str]], dict[str, Any]]:
-        """Flatten the statements into the existing domain objects, admit them,
-        and report one outcome per statement. `indices` maps each valid
-        statement's position back to its index in the original call, so a
-        schema-refused sibling neither shifts results nor withholds admission.
-        `confirmed` is the session's `(kind, name)` pairs a `possible_existing`
-        refusal was already returned for — the only endpoints `new.distinct`
-        may confirm."""
+        """Flatten the statements into domain objects, admit them, report each."""
         local_refusals: list[dict[str, str]] = []
         report: dict[int, dict[str, Any]] = {}
         candidate_keys: set[Key] = set()
@@ -460,18 +462,9 @@ class MemoryProposalAdmission:
                     outcome = await self._possible_existing(
                         endpoint.new, work, fetched, entity, confirmed)
                     if outcome is not None:
-                        reason, cards, keys_found, rel_ids = outcome
-                        report[index] = {
-                            "status": "refused", "reason": reason,
-                            "kind": "relation",
-                            **({"candidates": cards} if cards else {})}
-                        await refuse("entity", reason)
-                        if reason == "possible_existing":
-                            candidate_keys.update(keys_found)
-                            candidate_relations.update(rel_ids)
-                            possible_existing.add(
-                                (endpoint.new.kind,
-                                 endpoint.new.name.casefold()))
+                        await self._refuse_possible_existing(
+                            outcome, index, endpoint.new, refuse, report,
+                            candidate_keys, candidate_relations, possible_existing)
                         return None
                     entities.append(entity)
                     entity_stmt[entity.id] = index

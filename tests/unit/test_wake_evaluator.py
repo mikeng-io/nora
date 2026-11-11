@@ -374,9 +374,10 @@ async def test_a_due_later_wake_does_not_resurrect_stimuli_already_consumed():
 
 
 async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
-    """Concurrent ingests commit out of id order. With no settle margin a
-    read that saw id 2 before id 1 committed consumes id 1 unseen; with the
-    margin the read waits until both are in."""
+    """Concurrent ingests commit out of id order. Under the claim model the
+    race is LOSSLESS — the wake claimed only id 2, so id 1 commits into the
+    pending set and the next read offers it; the settle margin is what makes
+    one wake see both together rather than two wakes splitting them."""
     lost_ev, lost, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0))
     first = await _say(lost, clock)
     lost.uncommitted.add(first)
@@ -386,7 +387,9 @@ async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
     lost.uncommitted.clear()                     # id 1 commits
     assert lost.wakes[0].stimulus_count == 1
     view = await lost.view(unit="nora", mode="live", now_ms=clock.ms + 10**6, limit=100)
-    assert first not in [s.id for s in view.pending], "control: the race loses id 1"
+    assert first in [s.id for s in view.pending], (
+        "the race is lossless: id 1 was never claimed, so it stays pending"
+    )
 
     ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0), settle=5)
     first = await _say(store, clock)
@@ -531,7 +534,7 @@ async def test_a_self_wake_leaves_a_message_pending_and_a_time_wake_leaves_a_sel
     ev, store, clock, _ = _setup()
     await _say(store, clock, kind="self", ref="wake:1", due_ms=clock.ms + 100 * S)
     m = await _say(store, clock)
-    clock.advance(100)
+    clock.advance(120)               # due at +100s opens its tick at the +120s boundary
     await ev.tick()
     assert [w.reason for w in store.wakes] == ["self"]
     assert await _pending(store, clock=clock) == [(m, "message")]
@@ -694,28 +697,45 @@ def test_the_inert_kinds_are_time_only_while_tracked_and_no_skill_ships():
     assert inert_kinds_for(tracked=False, floors_ready=False) == frozenset()
 
 
-def test_an_unclaimed_id_is_not_consumed_by_the_range_that_covers_it():
-    from nora.domain.stimuli import Stimulus, Watermark
+def test_a_failed_runs_mark_unions_every_agenda_failed_wakes_claims():
+    """The strike's claimed set is the UNION of the run's agenda-failed wakes,
+    under the newest one's mark: two failed wakes that claimed different
+    stimuli strike both — and only those. A `closed` wake ends the run; an
+    infra failure is inside it but claims nothing new."""
+    from nora.domain.stimuli import WakeRow, failure_run, wake_state
 
-    s = Stimulus(id=3, unit="nora", kind="message", item="message", ref="messages:3",
-                 at_ms=10, recorded_at_ms=10)
-    assert Watermark(5, 100).consumed(s) is True
-    assert Watermark(5, 100, frozenset({3})).consumed(s) is False
+    def wake(wid: int, claimed: tuple[int, ...]) -> WakeRow:
+        return WakeRow(
+            id=wid, unit="nora", mode="live", reason="settled", from_stimulus_id=0,
+            through_stimulus_id=10 + wid, stimulus_count=len(claimed),
+            eligible_count=len(claimed), oldest_pending_ms=None, cut_cooldown=False,
+            at_ms=wid, recorded_at_ms=wid, claimed_ids=claimed,
+        )
 
+    def failed(wid: int, claimed: tuple[int, ...], cause: str = "agenda"):
+        return wake(wid, claimed), wake_state(
+            tracked=True, recorded_at_ms=wid, outcome="failed", outcome_at_ms=wid + 1,
+            stale_before_ms=None, cause=cause,
+        )
 
-def test_a_stimulus_due_after_the_watermarks_time_is_not_consumed_by_the_id_range():
-    """A `self` stimulus appended early (a low id) and due at 19:40 is under a
-    15:00 watermark's id but not yet pending at its time, so the wake that set
-    the watermark did not take it. `Watermark.consumed` is what strikes pending
-    stimuli after repeated failed agendas; reading only the id would strike one
-    nobody has seen. The control is the same stimulus once the watermark's time
-    has reached its due time."""
-    from nora.domain.stimuli import Stimulus, Watermark
+    n, agenda, mark = failure_run([
+        failed(3, (5,)),                       # the run's newest agenda failure
+        failed(2, (4,)),                       # an earlier one — claims union in
+        failed(1, (4, 9), cause="infra"),      # infra: in the streak, claims out
+    ])
+    assert (n, agenda) == (3, 2)
+    assert mark is not None and mark.claimed == frozenset({4, 5})
 
-    due_later = Stimulus(id=3, unit="nora", kind="self", item="self", ref="wake:1",
-                         at_ms=10, recorded_at_ms=10, due_ms=200)
-    assert Watermark(5, 100).consumed(due_later) is False
-    assert Watermark(5, 300).consumed(due_later) is True
+    # A `closed` wake under them ends the run: only the failures above it count.
+    n, agenda, mark = failure_run([
+        failed(3, (5,)),
+        (wake(2, (7,)), wake_state(
+            tracked=True, recorded_at_ms=2, outcome="closed", outcome_at_ms=3,
+            stale_before_ms=None)),
+        failed(1, (4,)),
+    ])
+    assert (n, agenda) == (1, 1)
+    assert mark is not None and mark.claimed == frozenset({5})
 
 
 # ── a strong cue does not chain (DEC-281) ────────────────────────────────────

@@ -473,7 +473,7 @@ async def test_a_route_naming_a_person_is_refused_before_egress():
     """R-28. A route query with a person's name or nickname in origin/
     destination is refused BEFORE any HTTP call — 「由陳生屋企去我公司」 must
     never resolve a person to a home address and send it to Google.
-    Revert the person block in `nora.agent.tools.route` and this reaches
+    Revert the person block in `nora.location.adapters.tools.routes.route` and this reaches
     the client instead: the assertion that `client.calls` is empty is exactly
     the probe.
     """
@@ -506,7 +506,7 @@ async def test_an_identifier_in_a_route_argument_is_refused_before_egress():
 async def test_a_raw_coordinate_in_a_route_argument_is_refused_before_egress():
     """R-28: a raw lat,lng — the shape a stored Life360
     position has — must never leave in a route argument. Refused before any HTTP
-    call; revert `_looks_like_coordinate` in `nora.agent.tools.route` and the
+    call; revert `_looks_like_coordinate` in `nora.location.adapters.tools.routes.route` and the
     coordinate reaches the client (the empty `client.calls` is the probe). A real
     place name with no decimal pair still routes."""
     client = _RecordingClient()
@@ -526,7 +526,7 @@ async def test_a_raw_coordinate_in_a_route_argument_is_refused_before_egress():
 
 async def test_the_tool_forwards_the_transit_preferences_to_the_client():
     """The tool wrapper must FORWARD by/prefer/depart_after to the client. Revert
-    the pass-through in `nora.agent.tools.route` and this goes red — without it
+    the pass-through in `nora.location.adapters.tools.routes.route` and this goes red — without it
     the feature ships inert while every body-assertion test (which calls the
     client directly) stays green."""
     client = _RecordingClient()

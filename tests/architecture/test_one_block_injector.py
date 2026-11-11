@@ -46,6 +46,8 @@ _CLOSE = re.compile(r"</([a-z_][a-z0-9_]*)>")
 #: borrows for the block and its catalogue line.
 _OWN_INJECTOR = {
     "nora/doctrine/loader.py": "`render_section` — doctrine's own injector",
+    "nora/language/cognition_parse.py":
+        "the `<root>` shim that parses a rendered agenda back; never prompt-bound",
 }
 
 #: Tags a module NAMES without BUILDING, with the reason. The discriminator
@@ -61,8 +63,6 @@ _OWN_INJECTOR = {
 _NOT_BUILT_HERE = {
     ("nora/ingest/relevance_gate.py", "nora_doctrine"):
         "strips the wrapper doctrine/loader.py builds",
-    ("nora/language/cognition_render.py", "root"):
-        "parse wrapper for reading a rendered agenda; it never reaches a prompt",
 }
 
 #: Constants that QUOTE the agenda's real elements in worked examples —

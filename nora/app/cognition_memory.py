@@ -145,12 +145,10 @@ class WakeMemory:
                 if row is not None and row.kind != "reaction" and row.text is not None:
                     sources.append(Source(("message", str(row.message_id)), "record", state.unit,
                                           (row.person_id,) if row.person_id else (), row.text))
-                    # `records.load` answers TODAY's projected source — its
-                    # text/reply/media fold can postdate the evidence instant
-                    # and would silently overwrite the as-of Source above on
-                    # dedup. A historical session takes the grounding's as-of
-                    # source alone (same ceiling as media: no as-of fold
-                    # exists to offer instead).
+                    # `records.load` answers TODAY's projected source — its fold
+                    # can postdate the evidence instant and would silently
+                    # overwrite the as-of Source on dedup; a historical session
+                    # takes the grounding's as-of source alone (same ceiling).
                     loaded = None if state.historical else await _load_message(
                         self.records, sid, row, state, at)
                     if loaded is not None:

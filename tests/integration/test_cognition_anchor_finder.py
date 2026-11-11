@@ -18,7 +18,7 @@ CREATE TABLE stimulus (
   id bigint PRIMARY KEY, unit text NOT NULL, kind text NOT NULL, item text NOT NULL,
   ref text NOT NULL, platform text, conversation_id text, person_id text,
   cues text[] NOT NULL DEFAULT '{}', waits int NOT NULL DEFAULT 0,
-  at_ms bigint NOT NULL, due_ms bigint, recorded_at timestamptz NOT NULL
+  at_ms bigint NOT NULL, due_ms bigint, due_tick bigint, recorded_at timestamptz NOT NULL
 );
 CREATE TABLE cognition_wake (
   id bigint PRIMARY KEY, unit text NOT NULL, mode text NOT NULL, reason text NOT NULL,

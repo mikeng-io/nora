@@ -65,8 +65,7 @@ __all__ = [
 
 #: The feature's watermark identity: the `consolidation_watermark` row the
 #: old adaptor wrote and `CognitionLessons` now reads and advances, so a
-#: deployment's cursor carries over, and the correction fast path's "last
-#: session here" reading (`last_run_ms`) means the same thing it did.
+#: deployment's cursor carries over (`last_run_ms` means the same thing).
 LESSONS_ADAPTOR_NAME = "lessons"
 
 #: The most corrections one session is handed (the newest). A unit that tells

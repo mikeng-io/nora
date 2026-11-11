@@ -192,8 +192,7 @@ async def test_a_store_that_cannot_be_read_folds_nothing():
 
     store = _Broken()
     _, metrics = await _run(store=store)
-    assert await InMemoryStandingStore.read(
-        store, platform="signal", conversation_id="g1") is None
+    assert await InMemoryStandingStore.read(store, platform="signal", conversation_id="g1") is None
     assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
 
 
@@ -1069,10 +1068,8 @@ async def test_a_dead_turn_never_becomes_a_claim_that_she_never_answered():
         p for p in client.prompts if p.startswith("OBJECTIVE-TEXT"))
     assert "this turn's model call failed, so THIS TURN sent nothing" in fold_prompt
     assert "does not describe what any other turn of yours sent" in fold_prompt
-    assert any(
-        'from="Nora"' in row and 'delivery="delivered">聽朝 10 點到數碼港' in row
-        for row in fold_prompt.splitlines()
-    )
+    needle = 'delivery="delivered">聽朝 10 點到數碼港'
+    assert any('from="Nora"' in row and needle in row for row in fold_prompt.splitlines())
 
 
 async def test_a_dead_turn_still_revises_the_position():

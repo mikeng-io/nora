@@ -21,7 +21,7 @@ from tests.integration.test_grading_contract import (
     attach_replay_contract,
     completion,
 )
-from tests.unit.test_memory_graph_spike import generated_replay_environment
+from tests.unit.memory_graph_env import generated_replay_environment
 from tests.unit.test_replay_scoring import generated_completion
 
 

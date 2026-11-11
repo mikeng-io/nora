@@ -13,6 +13,58 @@ Corrections from the re-check are marked **Corrected**. VRAM figures in §5
 are arithmetic (weights plus about 1 GB for cache and a 3–4k-token page),
 not measurements.
 
+## Lightpanda compatibility (2026-11-09)
+
+Primary-source review, not a Nora benchmark or an installed browser trial:
+[Lightpanda repository](https://github.com/lightpanda-io/browser),
+[architecture](https://lightpanda.io/docs/core-concepts/architecture-overview)
+and [browser tools](https://lightpanda.io/docs/reference/browser-tools).
+Lightpanda implements JavaScript/DOM automation and CDP, with no graphical
+rendering pipeline. Its documentation distinguishes placeholder CDP captures
+and its own text-layout PNG from a real rendered page. Element positions are
+simulated, not Chrome's visual layout. A tool named screenshot is therefore
+insufficient evidence of screenshot compatibility.
+
+At Nora master `6e3de0a75556c2ffc95ee2cd8628a019c679b35b`,
+`nora/infra/computer/browser.py` reads `Accessibility.getFullAXTree`, uses
+`DOM.getBoxModel` and mouse events for clicks/marks, and uses
+`Page.captureScreenshot` and `Page.getLayoutMetrics` for viewport/full-page
+images. This is a richer contract than connecting to any CDP endpoint.
+
+| Nora operation | Assessment |
+|---|---|
+| Navigation, JavaScript and DOM/text extraction | Candidate fit; API coverage and task correctness need an actual compatibility check. No Nora result is measured here. |
+| Real viewport/full-page capture and exported image | Not equivalent: text-layout/placeholder bytes cannot be reported as the actual rendered tab. |
+| Visual grounding, element geometry and marked captures | No equivalent graphics/layout contract; existing visual behavior must remain on native Chrome. |
+| General desktop computer use | A DOM automation engine supplies no rendered desktop or native application control. |
+| Transparent Chrome fallback | Not selected. Opening the same URL in another engine does not preserve tab identity, cookies, JS state or the original capture provenance. |
+
+Retain native Google Chrome Stable and the existing executor for the current
+slice. Lightpanda may be considered for a separately selected text-only task
+path later, with an explicit engine choice at task creation and the same scope,
+egress, ownership and audit requirements. Do not install both engines or add a
+fallback cascade merely because vendor memory benchmarks look attractive.
+Reopen replacement only if equivalent required visual behavior is demonstrated,
+or the operator explicitly selects a narrower text-only contract.
+
+The host snapshot from this discussion is not a guest browser benchmark. VM
+resident memory excluded swapped pages; host Chrome processes were not attributed
+to Nora's guest. Neither the snapshot nor vendor claims establishes that Chrome
+dominates Nora's VM cost. Measure browser descendants inside the guest and the
+whole VM's resident/PSS, swap and pressure under equivalent tasks before claiming
+resource savings.
+
+## Docker Sandbox lifecycle selection (2026-11-09)
+
+The operator selected existing sbx rather than OpenSandbox. Docker's
+[local lifecycle documentation](https://docs.docker.com/ai/sandboxes/get-started/)
+describes detached operation, stop/restart and persistence until removal. These
+are reusable primitives, not Nora's admission/idle controller. Hosted Docker
+API TTL/SDK features are not evidence that the installed local daemon has them.
+The [lifecycle design](05-microvm-lifecycle.md) therefore reuses the host wrapper,
+retains scope/governance in Nora and separately specifies installed capability
+checks. No new platform dependency or cloud service is selected.
+
 ## Design refresh (2026-11-04)
 
 This refresh separates product layers; the October survey below is historical,

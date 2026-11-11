@@ -354,11 +354,9 @@ class Grounding:
     transcript_more: int = 0
     context_withheld: tuple[tuple[str, int], ...] = ()
     lessons: tuple[str, ...] = ()
-    #: A live session's lesson evidence (`CognitionLessons.shown`): the closed
-    #: `response` episodes and corrections past the unit's `lessons` cursor,
-    #: the held lessons by `L` handle, and the `citable` a write is held to.
-    #: None when `[lessons]` is off, the lane is historical, or the read
-    #: failed — whose blocks render `unavailable`, never as empty.
+    #: A live session's lesson evidence (`CognitionLessons.shown`): episodes,
+    #: corrections, held lessons and the `citable` a write is held to. None
+    #: when [lessons] is off, historical, or the read failed (unavailable).
     lesson_evidence: LessonEvidenceView | None = None
     unavailable: frozenset[str] = frozenset()
 

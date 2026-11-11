@@ -31,6 +31,11 @@ This skill supplies the order, not another policy or automatic enforcement.
    Check: classify each obligation met, unmet or unavailable with a locator.
    A structural check proves structure, not runtime behavior. Missing evidence
    does not establish missing code, and passing tests do not establish deployment.
+   **Documents and comments** (`nora-design`, AGENTS.md «Design, documents
+   and comments»): new text placed beside the section that already owns its
+   subject, or repeating or contradicting it, is a finding; so is a bundle
+   holding spec, plan, log or status claims, an architecture change with no
+   bundle edit, or a comment that retells history.
 4. **Report and stop.** Apply `REVIEW.md`'s finding contract and the policy's
    dispositions/class grouping. Lead with APPROVE or REQUEST CHANGES, name the
    base/head/tier, and give acceptance coverage, findings and unverified limits.

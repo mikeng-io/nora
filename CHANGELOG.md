@@ -1,5 +1,77 @@
 # Changelog
 
+## [7.17.6](https://github.com/mikeng-io/nora/compare/v7.17.5...v7.17.6) (2026-11-11)
+
+
+### Maintenance
+
+* **architecture:** group code by area with inward-only layers ([fc6c9cb](https://github.com/mikeng-io/nora/commit/fc6c9cb985a78d0c222d3eb79165616fa18110e7))
+
+## [7.17.5](https://github.com/mikeng-io/nora/compare/v7.17.4...v7.17.5) (2026-11-10)
+
+
+### Maintenance
+
+* **conventions:** apply review findings to the guidance rewrite ([fc827e6](https://github.com/mikeng-io/nora/commit/fc827e6fb1f644e07f4692b883788ea61bad1a69))
+* **conventions:** make the design bundle the anchor and stop append-only guidance ([26cf07a](https://github.com/mikeng-io/nora/commit/26cf07aca2c3945e9ffb1b118a57ba858f2a0f4f))
+
+## [7.17.4](https://github.com/mikeng-io/nora/compare/v7.17.3...v7.17.4) (2026-11-10)
+
+
+### Maintenance
+
+* **conventions:** make git the decision log and ratchet code size ([99d1f96](https://github.com/mikeng-io/nora/commit/99d1f966a8c53905159b98e5ac2c86671f9946de))
+
+## [7.17.3](https://github.com/mikeng-io/nora/compare/v7.17.2...v7.17.3) (2026-11-10)
+
+
+### Features
+
+* materialize web_fetch pages into fetched_pages, serve offset/about ([852cc11](https://github.com/mikeng-io/nora/commit/852cc119ab5e08e07409f49c714d4ac46c6e65d2))
+
+
+### Bug Fixes
+
+* **web_fetch:** purge expired fetched pages and hedge an about miss ([92131c1](https://github.com/mikeng-io/nora/commit/92131c1d5187c016cd7fd00e255c2735c9d682cf))
+* drop env-name interpolation CodeQL flags in fetch_provider warnings ([6535791](https://github.com/mikeng-io/nora/commit/65357917aa115c13dac10cdfb2b840476ab7ad38))
+
+## [7.17.2](https://github.com/mikeng-io/nora/compare/v7.17.1...v7.17.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* **cognition:** carry the deployed session timeout into the claim backfill ([bc83d10](https://github.com/mikeng-io/nora/commit/bc83d10397d9baf8adb6cc80ea5675464923fa39))
+
+## [7.17.1](https://github.com/mikeng-io/nora/compare/v7.17.0...v7.17.1) (2026-11-10)
+
+
+### Features
+
+* **cognition:** execute subconscious sessions through DreamerRuntime under one due_tick authority ([34420c0](https://github.com/mikeng-io/nora/commit/34420c00fc8a0200c1d7df735dd0eb1c16de625b))
+
+
+### Bug Fixes
+
+* **cognition:** bound the pending read by a materialized set, not a scan ([9040393](https://github.com/mikeng-io/nora/commit/9040393d8d922b7a63d2cab4e5b069b2a7dc1110))
+* **cognition:** consume stimuli by claim rows, not an enumerated watermark ([749ab17](https://github.com/mikeng-io/nora/commit/749ab172d57144e2ee6a7453fe88c776d9ebbd47))
+* **cognition:** own session tasks on the Dreamer lane; exact arrivals; lossless bounds ([30ea66f](https://github.com/mikeng-io/nora/commit/30ea66fba9cd4aabae42e4a8a379bc01d880ad07))
+* **cognition:** restore session spending, due_tick authority and bounded reads ([8ff8baa](https://github.com/mikeng-io/nora/commit/8ff8baa22803657ebf38ca674bde9f8b506513cb))
+* **cognition:** serialize pending-set seeding with concurrent appends ([19be04b](https://github.com/mikeng-io/nora/commit/19be04ba274104c513a6e5296b4404d507c73cee))
+* **cognition:** type the session dispatch and run_agent defaults; lint clean ([6e7a66e](https://github.com/mikeng-io/nora/commit/6e7a66edc4afec27293310d99dcddd643d59aeae))
+* **evals:** make the run-budget guard and evidence joins hold on openai 3 and Strands 1.64 ([53c28a8](https://github.com/mikeng-io/nora/commit/53c28a82f03f1305c61213056a24a3684b3392b9))
+
+## [7.17.0](https://github.com/mikeng-io/nora/compare/v7.16.7...v7.17.0) (2026-11-09)
+
+
+### Features
+
+* **computer:** acquire scoped VMs on demand and stop quiet owned disks ([e8b9c22](https://github.com/mikeng-io/nora/commit/e8b9c227cfcac1c78677b33736a02932afeb2244))
+
+
+### Bug Fixes
+
+* **computer:** reconcile real guest quiet state and owned VM recovery ([905e137](https://github.com/mikeng-io/nora/commit/905e13706a133bcb97984d6958d2f6dcb58c188c))
+
 ## [7.16.7](https://github.com/mikeng-io/nora/compare/v7.16.6...v7.16.7) (2026-11-09)
 
 

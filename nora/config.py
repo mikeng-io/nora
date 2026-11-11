@@ -271,7 +271,7 @@ class LimitsConfig(BaseModel):
     `nora.agent.factory.build_limits`.
 
     None of the three is optional. A missing `output_tokens` would silently mean
-    "unbounded" to Strands (`_check_limits` skips a cap it cannot find).
+    "unbounded" to Strands (`_reached_own_limit` skips a cap it cannot find).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -351,7 +351,7 @@ class LLMConfig(BaseModel):
         # contract), so this edge has no return path. It validates against the LIVE table,
         # so adding or removing a tool changes what is accepted with no second list to
         # maintain.
-        from nora.agent.tools import NATIVE_TOOLS
+        from nora.agent.catalog.entries import NATIVE_TOOLS
 
         for name, value in self.budgets.items():
             if name not in NATIVE_TOOLS:
@@ -1457,12 +1457,23 @@ class SearchConfig(BaseModel):
     higher than `content_max_chars` because a page is one whole document rather
     than a snippet, but still bounded: a tool result is re-sent on every
     subsequent model call, so what accumulates must be bounded.
+
+    `fetch_provider` selects the backend `web_fetch` EXTRACTS through when it
+    should differ from `provider` (the search backend). Empty means "the same
+    as `provider`" — the shape that existed before the split. The split exists
+    because the two verbs want different ceilings: `web_fetch` materializes a
+    whole page into `fetched_pages` (the stored copy serves every later
+    `offset`/`about` read), so its bound is the provider's own text ceiling,
+    not `extract_max_chars`. Tavily `/extract` returns full `raw_content`;
+    Exa `/contents` stops at 10k characters, so `exa` as fetch backend is a
+    real ceiling, honestly reported as `truncated`.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     provider: Literal["tavily", "exa"] = "tavily"
+    fetch_provider: Literal["", "tavily", "exa"] = ""
     max_results: int = Field(default=5, ge=1, le=20)
     content_max_chars: int = Field(default=1500, ge=1)
     extract_max_chars: int = Field(default=3000, ge=1)
@@ -2301,6 +2312,7 @@ class ComputerScopedConfig(BaseModel):
 
     enabled: bool = False
     registry: str = ""
+    lifecycle_socket: str = ""
     redis_url_env: str = "NORA_COMPUTER_REDIS_URL"
     browser_idle_seconds: float = Field(default=600.0, gt=0)
     browser_sweep_seconds: float = Field(default=30.0, gt=0)
@@ -3071,7 +3083,7 @@ class DreamBudgetConfig(BaseModel):
 
     `turns`/`total_tokens`/`output_tokens` are `LimitsConfig`'s three caps —
     R-8's, applied to a Dreamer run instead of a tag turn — and are three
-    fields for `LimitsConfig`'s own reason: Strands' `_check_limits` SKIPS a
+    fields for `LimitsConfig`'s own reason: Strands' `_reached_own_limit` SKIPS a
     cap it cannot find, so a missing one means "unbounded" rather than
     "default".
 
@@ -3738,19 +3750,19 @@ class DocumentsConfig(BaseModel):
 
 
 class GoogleConfig(BaseModel):
-    """Nora's ONE Google identity: one Desktop-app OAuth client and one refresh token
-    for her own account (`nora@67.zone`), shared by every Google service she uses
-    (shared files today), never a client or variable per service. Each field NAMES the
-    environment variable that holds the value (DEC-8), never the value. The scopes are
-    declared by each service in code (`nora.infra.google.scopes`) and granted together
-    by `scripts/google_auth.py`. An API KEY (the Maps key under `[route]`) is a
-    different mechanism and stays with its feature."""
+    """Nora's ONE Google identity: one OAuth client and one refresh token for her own
+    Google account (`account`), shared by every Google service she uses (shared files
+    today), never a client or variable per service. Each `*_env` field NAMES the environment
+    variable that holds the value (DEC-8), never the value; `account` is the mailbox itself
+    (empty → "Nora's Google account" in the note). The scopes are declared by each service
+    in code (`nora.infra.google.scopes`); the Maps API KEY under `[route]` stays separate."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     client_id_env: str = "GOOGLE_OAUTH_CLIENT_ID"
     client_secret_env: str = "GOOGLE_OAUTH_CLIENT_SECRET"  # noqa: S105 — names an env var, not a secret
     refresh_token_env: str = "GOOGLE_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
+    account: str = ""
 
 
 class ExternalFilesConfig(BaseModel):

@@ -1078,6 +1078,38 @@ async def test_a_scheduled_watermark_free_adaptor_fires_again_after_the_interval
     assert len(calls) >= 2, "must fire again, not just once"
 
 
+async def test_a_backward_clock_move_does_not_reopen_a_consumed_slot():
+    """The `<=` guard: slot 5 fires; the wall clock stepping BACK to slot 4
+    — or any slot at or under the consumed one — holds, where equality alone
+    would re-run it. A genuinely later slot fires once, and an `unavailable`
+    run never stamps the slot (it stays open for the retry)."""
+    clock = InMemoryDreamScheduleClock()
+    runner = _RecordingRunner()
+    adaptor = _StubAdaptor("curator", uses_watermark=False)
+    sched = AdaptorSchedule(min_interval_seconds=86_400, batch_limit=10)
+    kwargs: dict = {
+        "adaptor": adaptor, "runtime": runner, "record": _FakeRecord({}),
+        "language": _KeyedLanguage(), "metrics": Metrics(), "key": "g1",
+        "safety_lag": 0, "quiet_seconds": 0.0, "max_age_seconds": 1e9,
+        "batch_limit": 10, "schedules": {"curator": sched}, "clock": clock,
+    }
+    t0 = 1_800_000_000_000
+    day = 86_400_000
+    assert await _dream_adaptor_once(**kwargs, now_ms=t0) == "ok"
+    # Backward into a CONSUMED slot, then forward inside the same slot: held.
+    assert await _dream_adaptor_once(**kwargs, now_ms=t0 - 4 * day) is None
+    assert await _dream_adaptor_once(**kwargs, now_ms=t0 + 60_000) is None
+    # A later slot fires exactly once.
+    assert await _dream_adaptor_once(**kwargs, now_ms=t0 + day) == "ok"
+    assert await _dream_adaptor_once(**kwargs, now_ms=t0 + day + 60_000) is None
+    # `unavailable` never stamps: the SAME later slot stays open for the retry.
+    runner._unavailable_for = "curator"
+    assert await _dream_adaptor_once(**kwargs, now_ms=t0 + 2 * day) == "unavailable"
+    runner._unavailable_for = None
+    assert await _dream_adaptor_once(**kwargs, now_ms=t0 + 2 * day) == "ok"
+    assert len([c for c in runner.calls if c[0] == "curator"]) == 4
+
+
 async def test_a_watermark_free_adaptor_without_a_schedule_still_runs_every_tick():
     """The invariant the schedule path must not disturb: NO entry in the
     mapping is every-tick, exactly as without schedules."""

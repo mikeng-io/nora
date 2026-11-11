@@ -1,51 +1,51 @@
 [
-  {
-    "name": "empty grant never widens",
-    "file": "nora/app/computer_dispatch.py",
-    "old": "grant = None if raw_grant is None else frozenset(str(g) for g in raw_grant)",
-    "new": "grant = None if not raw_grant else frozenset(str(g) for g in raw_grant)",
-    "target": "tests/integration/test_computer_readiness_review.py::test_dispatch_anonymous_revocation_and_empty_grant"
-  },
-  {
-    "name": "terminal cancel connection stays live",
-    "file": "nora/infra/sql/computer_tasks.py",
-    "old": "            if row is None:\n                row = (await conn.execute(\n                    sa.select(T).where(T.c.id == task_id))).first()",
-    "new": "        if row is None:\n            row = (await conn.execute(\n                sa.select(T).where(T.c.id == task_id))).first()",
-    "target": "tests/contract/test_computer_task_store_contract.py::test_cancel_terminal_and_absent_task"
-  },
-  {
-    "name": "outbox failure does not stamp result",
-    "file": "nora/testing/fakes.py",
-    "old": "            if job is not None and self._outbox is not None:\n                previous =",
-    "new": "            self._save(replace(task, delivered_at=now, updated_at=now))\n            if job is not None and self._outbox is not None:\n                previous =",
-    "target": "tests/unit/test_pr584_astra_readiness.py::test_fake_election_rolls_back_on_outbox_failure"
-  },
-  {
-    "name": "malformed PNG cannot be successful",
-    "file": "nora/infra/computer/browser.py",
-    "old": "        from io import BytesIO\n\n        from PIL import Image\n\n        try:\n            with Image.open(BytesIO(png)) as image:\n                if image.format != \"PNG\":\n                    raise ValueError(\"capture is not PNG\")\n                image.verify()\n        except (OSError, SyntaxError, ValueError) as exc:\n            raise BrowserError(\"the screenshot was not a valid PNG\") from exc\n",
-    "new": "",
-    "target": "tests/unit/test_pr584_astra_readiness.py::test_malformed_nonempty_capture_is_refused"
-  },
-  {
-    "name": "lifecycle remains retryable until drained",
-    "file": "nora/app/runtime.py",
-    "old": "            if self._closed:\n                return\n            if self._runner is not None:\n                self._runner.stop_admission()",
-    "new": "            if self._closed:\n                return\n            self._closed = True\n            if self._runner is not None:\n                self._runner.stop_admission()",
-    "target": "tests/integration/test_computer_readiness_review.py::test_lifecycle_timeout_retains_journal_and_close_can_retry"
-  },
-  {
-    "name": "export path must equal captured path",
-    "file": "evals/backbone.py",
-    "old": "args.get(\"path\") != capture[\"path\"]",
-    "new": "False",
-    "target": "tests/unit/test_pr584_astra_readiness.py::test_real_journey_accepts_successful_keep_receipt"
-  },
-  {
-    "name": "cancel reaches actual browse kind",
-    "file": "nora/agent/tools.py",
-    "old": "row.status != \"running\" and row.kind == \"browse\"",
-    "new": "row.status != \"running\" and row.kind == \"browser\"",
-    "target": "tests/integration/test_computer_readiness_review.py::test_cancel_browse_closes_mapped_browser_task"
-  }
+ {
+  "name": "empty grant never widens",
+  "file": "nora/app/computer_dispatch.py",
+  "old": "grant = None if raw_grant is None else frozenset(str(g) for g in raw_grant)",
+  "new": "grant = None if not raw_grant else frozenset(str(g) for g in raw_grant)",
+  "target": "tests/integration/test_computer_readiness_review.py::test_dispatch_anonymous_revocation_and_empty_grant"
+ },
+ {
+  "name": "terminal cancel connection stays live",
+  "file": "nora/infra/sql/computer_tasks.py",
+  "old": "            if row is None:\n                row = (await conn.execute(\n                    sa.select(T).where(T.c.id == task_id))).first()",
+  "new": "        if row is None:\n            row = (await conn.execute(\n                sa.select(T).where(T.c.id == task_id))).first()",
+  "target": "tests/contract/test_computer_task_store_contract.py::test_cancel_terminal_and_absent_task"
+ },
+ {
+  "name": "outbox failure does not stamp result",
+  "file": "nora/testing/fakes.py",
+  "old": "            if job is not None and self._outbox is not None:\n                previous =",
+  "new": "            self._save(replace(task, delivered_at=now, updated_at=now))\n            if job is not None and self._outbox is not None:\n                previous =",
+  "target": "tests/unit/test_pr584_astra_readiness.py::test_fake_election_rolls_back_on_outbox_failure"
+ },
+ {
+  "name": "malformed PNG cannot be successful",
+  "file": "nora/infra/computer/browser.py",
+  "old": "        from io import BytesIO\n\n        from PIL import Image\n\n        try:\n            with Image.open(BytesIO(png)) as image:\n                if image.format != \"PNG\":\n                    raise ValueError(\"capture is not PNG\")\n                image.verify()\n        except (OSError, SyntaxError, ValueError) as exc:\n            raise BrowserError(\"the screenshot was not a valid PNG\") from exc\n",
+  "new": "",
+  "target": "tests/unit/test_pr584_astra_readiness.py::test_malformed_nonempty_capture_is_refused"
+ },
+ {
+  "name": "lifecycle remains retryable until drained",
+  "file": "nora/app/runtime.py",
+  "old": "            if self._closed:\n                return\n            if self._runner is not None:\n                self._runner.stop_admission()",
+  "new": "            if self._closed:\n                return\n            self._closed = True\n            if self._runner is not None:\n                self._runner.stop_admission()",
+  "target": "tests/integration/test_computer_readiness_review.py::test_lifecycle_timeout_retains_journal_and_close_can_retry"
+ },
+ {
+  "name": "export path must equal captured path",
+  "file": "evals/backbone.py",
+  "old": "args.get(\"path\") != capture[\"path\"]",
+  "new": "False",
+  "target": "tests/unit/test_pr584_astra_readiness.py::test_real_journey_accepts_successful_keep_receipt"
+ },
+ {
+  "name": "cancel reaches actual browse kind",
+  "file": "nora/computer/adapters/tools/sessions.py",
+  "old": "row.status != \"running\" and row.kind == \"browse\"",
+  "new": "row.status != \"running\" and row.kind == \"browser\"",
+  "target": "tests/integration/test_computer_readiness_review.py::test_cancel_browse_closes_mapped_browser_task"
+ }
 ]

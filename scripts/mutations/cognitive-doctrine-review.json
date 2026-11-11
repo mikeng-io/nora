@@ -9,27 +9,27 @@
   {
     "name": "the Strands wrapper forwards the configured self name",
     "file": "nora/agent/tools.py",
-    "old": "        ai_peer=ai_peer, display_name=display_name,",
+    "old": "ai_peer=ai_peer,\n        display_name=display_name,\n        f",
     "new": "        ai_peer=ai_peer,",
     "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
   },
   {
     "name": "transcript reads keep the configured self label",
-    "file": "nora/agent/tools.py",
-    "old": "            rows, now=now, with_ids=on_rows is not None, display_name=display_name,\n            source_events=this_events",
-    "new": "            rows, now=now, with_ids=on_rows is not None,\n            source_events=this_events",
+    "file": "nora/conversation/adapters/tools/record.py",
+    "old": "c.rows,\n        now=c.now,\n        with_ids=c.on_rows is not None,\n        display_name=c.display_name,\n        source_events=c.this_events",
+    "new": "            c.rows, c.now=c.now, with_ids=c.on_rows is not None,\n            source_events=c.this_events",
     "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
   },
   {
     "name": "tag note validation recognises the configured self name",
-    "file": "nora/agent/tools.py",
+    "file": "nora/memory/adapters/tools/notes.py",
     "old": "nora_names=frozenset({display_name}) if display_name else frozenset(),",
     "new": "nora_names=frozenset(),",
     "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools_and_note_validation"
   },
   {
     "name": "the reaction picker sees the configured self name",
-    "file": "nora/agent/tools.py",
+    "file": "nora/conversation/adapters/tools/replies.py",
     "old": "recent=render_recent(bound_window, display_name=display_name), reply=clean",
     "new": "recent=render_recent(bound_window), reply=clean",
     "target": "tests/test_tools.py::test_the_reaction_picker_reads_the_canonical_public_name"

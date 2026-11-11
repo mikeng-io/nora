@@ -16,14 +16,14 @@
  {
   "name": "major 1: a failing agenda is never struck",
   "file": "nora/app/wake.py",
-  "old": "        struck = [s for s in view.pending if mark.consumed(s)]",
+  "old": "        struck = [s for s in view.pending if s.id in mark.claimed]",
   "new": "        struck = []",
   "target": "tests/unit/test_cognition_failure_backoff.py::test_an_always_failing_static_agenda_stops_after_five_sessions tests/unit/test_cognition_failure_backoff.py::test_an_always_failing_chatty_room_is_10_sessions_on_day_one_and_4_a_day_after"
  },
  {
   "name": "major 1: the strike takes everything pending, not what the failing wakes claimed",
   "file": "nora/app/wake.py",
-  "old": "        struck = [s for s in view.pending if mark.consumed(s)]",
+  "old": "        struck = [s for s in view.pending if s.id in mark.claimed]",
   "new": "        struck = list(view.pending)",
   "target": "tests/unit/test_cognition_failure_backoff.py::test_a_stimulus_that_arrived_after_the_failed_wakes_is_not_struck_unseen"
  },

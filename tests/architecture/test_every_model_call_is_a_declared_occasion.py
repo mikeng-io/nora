@@ -74,10 +74,13 @@ _EXTRA_DOORS = (
 )
 
 #: Calls that send a prompt to a model, matched on the callee's trailing name
-#: and on the name it was imported under.
+#: and on the name it was imported under. `run_agent` is
+#: `DreamerRuntime`'s one model-invocation route (node 30): the session's
+#: delegate (`DreamerAgentRunner`) and every adaptor's `_sample` reach the
+#: model through it.
 _MODEL_CALLS = {
     "create_agent", "create_dream_agent", "create_browse_agent",
-    "ask_text", "ask_structured", "invoke_async",
+    "ask_text", "ask_structured", "invoke_async", "run_agent",
 }
 #: Agent methods that send a prompt, matched on the trailing name alone.
 _MODEL_METHODS = {"stream_async", "structured_output", "structured_output_async"}
@@ -561,6 +564,7 @@ def test_the_net_follows_an_alias_and_a_wider_receiver(source):
     "ask_text(client, prompt)\n",
     "ask_structured(client, prompt)\n",
     "await invoke_async(agent, prompt)\n",
+    "await runtime.run_agent(system_prompt='s', prompt='p')\n",
     "agent.stream_async(prompt)\n",
     "agent.structured_output(Model, prompt)\n",
     "agent.structured_output_async(Model, prompt)\n",
@@ -571,6 +575,7 @@ def test_the_net_follows_an_alias_and_a_wider_receiver(source):
 ], ids=[
     "create_agent", "factory.create_agent", "create_dream_agent",
     "factory.create_dream_agent", "ask_text", "ask_structured", "invoke_async",
+    "run_agent",
     "stream_async", "structured_output", "structured_output_async",
     "completions.create", "messages.create", "responses.create", "complete",
 ])

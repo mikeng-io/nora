@@ -36,9 +36,7 @@ from nora.infra.sql.character import _in_rooms
 from nora.infra.sql.mobility import SqlMobilityStore, current_build_id
 from nora.infra.sql.rollup_read import SqlRollupRead, _row
 from nora.infra.sql.rollups import SqlRollupStore
-from nora.infra.sql.schema import (
-    CONSOLIDATION_WATERMARK as W,
-)
+from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
 from nora.infra.sql.schema import (
     EVENT_REVISION,
     EVENTS,

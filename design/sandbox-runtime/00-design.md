@@ -9,15 +9,15 @@ status: partly-built
 
 # Nora's computer
 
-> **Current target, 2026-11-02 — NOT BUILT:** one microVM per policy unit or
-> canonical private-DM scope, with on-demand anonymous headed Chrome. Native
-> tools and Pi/ACP resolve the same scoped VM; the browser loop remains outside.
-> [The current browser contract](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
-> owns session/tab lifetime, direct screenshots, routed management/CDP,
-> concurrency and data-preserving migration acceptance. The shared-VM topology
-> below remains the baseline; dated S-stage observations are historical. The later
-> [unit workspace cutover](../computer-unit-scope/01-migration.md) shipped within
-> that shared VM. Neither that cutover nor this docs update built per-scope VMs.
+> **Current topology:** per-unit/canonical private-DM VM routing and scoped
+> browser source merged in [PR #584](https://github.com/mikeng-io/nora/pull/584).
+> See the [current browser contract](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
+> for source delivery and the limits of live acceptance. Registry provisioning
+> supports manual mode and opt-in automatic lifecycle source in
+> [automatic Docker Sandbox lifecycle](../browser-runtime/05-microvm-lifecycle.md),
+> pending stack review, installation and live acceptance. The shared-VM observations below are historical;
+> the shipped [unit workspace cutover](../computer-unit-scope/01-migration.md)
+> remains intact. Source implementation does not install or deploy the host controller.
 
 Status (2026-10-01): **partly built.** S0, S2a, S2b-1, S2b-2, S3a and S3b are
 merged and live (#631, #636, #639, #645, #649, #672). **S1 (Chromium RSS) and

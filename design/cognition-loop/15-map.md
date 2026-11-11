@@ -12,12 +12,12 @@ edges:
 
 # 15 · Map
 
-> 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
+> Cognition is live and the one background writer of notes, events, Standing and her reminders (DEC-277); shadow-mode and clocked-adaptor wording below is history.
 
 
 ## 1. Every store, by layer
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): read "the Character adaptor" and "the Lessons adaptor" below as that session, which maintains profiles (traits and guesses; facts are rendered by code), culture and lessons while it orients.
 
 The layers are [05](05-data-model.md) §1's (DEC-249); "Live" is part of what a View assembles per turn, and Memory and the operator-only rows sit outside the flow.
 
@@ -147,7 +147,7 @@ item's room-scoped reads resolve through it ([30](30-cognition.md) §1).
 
 ## 5. The flow, drawn as a graph
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): read "the Character adaptor" and "the Lessons adaptor" below as that session, which maintains profiles (traits and guesses; facts are rendered by code), culture and lessons while it orients.
 
 A graph here is a way of reading the typed references between rows (cites,
 about, links), not a store: nothing is a knowledge graph, and the storage is
@@ -215,7 +215,7 @@ Record and as ordinary Register and Standing writes.
 
 ## 6. Who may write what
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character adaptor's and Lessons adaptor's rows below move to the Cognition loop's step ②, and a new row, step ①, writes the memory graph ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §7a). Read the table with that substitution.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): the Character and Lessons adaptor rows below are that session, which also writes the memory graph ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §7a).
 
 | writer | Record | Rollup | Register | Character | Lessons | Standing | tension | memory | doctrine |
 |---|---|---|---|---|---|---|---|---|---|

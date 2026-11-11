@@ -26,15 +26,11 @@ from pathlib import Path
 
 import pytest
 
-from nora.agent.tools import (
-    IDEMPOTENCY_VALUES,
-    NATIVE_TOOLS,
-    RETRY_POLICIES,
-    SIDE_EFFECT_STATES,
-    _spec,
-)
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.catalog.model import IDEMPOTENCY_VALUES, RETRY_POLICIES, SIDE_EFFECT_STATES
+from nora.agent.toolkit.spec import _spec
 
-TOOLS_PATH = Path(__file__).parent.parent / "nora" / "agent" / "tools.py"
+ENTRIES_DIR = Path(__file__).parent.parent / "nora" / "agent" / "catalog" / "entries"
 
 #: The three fields, named once. Every test below derives from this rather than
 #: repeating the names, so adding a fourth contract field is one edit here.
@@ -70,12 +66,26 @@ def _declared_kwargs() -> dict[str, dict[str, str]]:
     `test_every_tool_declares_all_three_explicitly` fails on — at runtime the
     two are indistinguishable.
     """
-    tree = ast.parse(TOOLS_PATH.read_text())
-    table = None
-    for node in ast.walk(tree):
-        if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "NATIVE_TOOLS":
-            table = node.value
-    assert isinstance(table, ast.Dict), "NATIVE_TOOLS is no longer a dict literal"
+    entries = []
+    for path in sorted(ENTRIES_DIR.glob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+            elif isinstance(node, ast.Assign):
+                targets = node.targets
+            else:
+                continue
+            if (isinstance(node.value, ast.Dict)
+                    and any(isinstance(t, ast.Name) and t.id == "TOOLS" for t in targets)):
+                entries.append(node.value)
+    assert entries, "no per-area TOOLS dict literal found in catalog entries"
+    table = ast.Dict(
+        keys=[k for e in entries for k in e.keys],
+        values=[v for e in entries for v in e.values],
+    )
 
     out: dict[str, dict[str, str]] = {}
     for key, value in zip(table.keys, table.values, strict=True):

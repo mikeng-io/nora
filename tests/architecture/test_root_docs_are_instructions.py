@@ -1,7 +1,8 @@
-"""Root guides and agent-skill bodies state current rules, not a change log.
+"""Root guides and agent-skill bodies state current rules, not a change log,
+within a line budget: a new rule revises the section that owns it.
 
 History lives in git, CHANGELOG.md, the ADRs and the decision index
-(AGENTS.md «Comments and maintained documentation»). A dated note or an
+(AGENTS.md «Design, documents and comments»). A dated note or an
 issue/PR number in a guide is provenance written into an instruction.
 """
 
@@ -68,3 +69,23 @@ def test_names_are_not_history(sample: str) -> None:
 @pytest.mark.parametrize("path", GUIDES, ids=lambda p: p.relative_to(ROOT).as_posix())
 def test_guide_carries_no_history(path: Path) -> None:
     assert history_in(path.read_text(encoding="utf-8")) == []
+
+
+# AGENTS.md has a fixed budget; every other guide is capped at its size, so it
+# can only be consolidated, never extended.
+BUDGET = {
+    "AGENTS.md": 250, "ARCHITECTURE.md": 176, "CLAUDE.md": 19, "CODE_OF_CONDUCT.md": 85,
+    "CONTRIBUTING.md": 198, "DESIGN.md": 519, "GLOSSARY.md": 692, "ORCHESTRATION.md": 293,
+    "README.md": 247, "REVIEW.md": 51, "SECURITY.md": 25, "SECURITY_MODEL.md": 90,
+}
+ROOT_GUIDES = [p for p in GUIDES if p.parent == ROOT]
+
+
+@pytest.mark.parametrize("path", ROOT_GUIDES, ids=lambda p: p.name)
+def test_guide_is_within_its_budget(path: Path) -> None:
+    assert path.name in BUDGET, f"{path.name} needs a line budget"
+    lines = len(path.read_text(encoding="utf-8").splitlines())
+    assert lines <= BUDGET[path.name], (
+        f"{path.name} is {lines} lines, budget {BUDGET[path.name]}: revise or consolidate "
+        "the section that owns the subject instead of adding to it"
+    )

@@ -72,8 +72,8 @@ def limit_stop_reason(
 ) -> str | None:
     """The `stop_reason` Strands would return for this much spend — or None.
 
-    A faithful transcription of `strands.event_loop.event_loop._check_limits`
-    (strands 1.50.2), INCLUDING its priority order — turns, then
+    A faithful transcription of `strands.agent.invocation_context._reached_own_limit`
+    (strands 1.64.0), INCLUDING its priority order — turns, then
     total_tokens, then output_tokens — and its `>=` comparisons. The order is
     load-bearing rather than cosmetic: it is what decides which cap gets the
     blame when a turn crosses two at once, and the whole point of R-23 is that
@@ -83,7 +83,7 @@ def limit_stop_reason(
     incomplete `limits` dict silently means "unbounded" for whatever it omits,
     which is why `nora.config.LimitsConfig` makes all three required.
 
-    **A cap can only bind on a cycle that used tools.** `_check_limits` runs
+    **A cap can only bind on a cycle that used tools.** `_reached_own_limit` runs
     at the TOP of an event-loop cycle, and the loop only reaches another cycle
     when the previous one ended in `tool_use` — so a turn that answers in one
     shot can never trip a limit however much it spent. Callers must therefore
@@ -225,7 +225,7 @@ class _AfterToolCall:
 #: `nora.agent.tool_choice.FIRST_CALL`, transcribed rather than imported —
 #: `nora.testing` sits BELOW `nora.agent` in the layers contract
 #: (`pyproject.toml`'s import-linter config), the same reason
-#: `limit_stop_reason` above transcribes Strands' `_check_limits`.
+#: `limit_stop_reason` above transcribes Strands' `_reached_own_limit`.
 #: `tests/test_scripted_agent_fidelity.py` asserts the two agree, so the copy
 #: cannot drift silently.
 TOOL_CHOICE_FIRST_CALL = "required"

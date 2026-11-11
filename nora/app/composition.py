@@ -35,6 +35,7 @@ from opentelemetry.util.types import AttributeValue
 
 from nora.agent import factory, tool_choice
 from nora.agent.browse import BrowseAgentRunner, BrowseSettings
+from nora.agent.catalog.groups import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.dream_screen import offence as dream_offence
 from nora.agent.dream_screen import text_offence
 from nora.agent.dreamer import (
@@ -65,7 +66,6 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.video_desk import VideoDesk
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.bridge_queue import BridgeRuntime, DbSpeakingLocks, StreamReader, WorkRunner
@@ -87,12 +87,13 @@ from nora.app.cognition_wiring import (
     open_events_reader,
     read_surface,
     require_session_hook,
+    shared_document_room,
     units_with_home_rooms,
     upcoming_reader,
 )
-from nora.app.cognition_wiring import (
-    session_guidance as cognition_session_guidance,
-)
+from nora.app.cognition_wiring import build_context_reader as cognition_context_reader
+from nora.app.cognition_wiring import context_screen as cognition_context_screen_fn
+from nora.app.cognition_wiring import session_guidance as cognition_session_guidance
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
 from nora.app.documents_service import DocumentService, room_label, rooms_named
@@ -188,6 +189,7 @@ from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
+from nora.infra.sql.fetched_pages import SqlFetchedPageStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.lessons import SqlLessonStore
@@ -402,6 +404,60 @@ def search_provider(cfg: Config) -> SearchProvider | None:
                 cfg.search.api_key_env,
             )
     return search_client
+
+
+def fetch_provider(cfg: Config) -> SearchProvider | None:
+    """The backend `web_fetch` extracts through, or `None` to reuse `provider`.
+
+    `None` is the un-configured state (`fetch_provider` unset or equal to
+    `provider`): the composition then hands the ONE search client to both
+    verbs, exactly as before. A keyless configured backend warns and falls
+    back the same way, so a wiring gap degrades to the search backend's own
+    ceiling rather than to `unavailable`.
+    """
+    name = cfg.search.fetch_provider
+    if not cfg.search.enabled or not name or name == cfg.search.provider:
+        return None
+    if name == "exa":
+        key_env = cfg.search.exa.api_key_env
+        key = cfg.credentials.get(key_env, "")
+        if not key:
+            log.warning(
+                "fetch_provider exa configured but its key env is unset — "
+                "falling back to the search backend")
+            return None
+        from nora.infra.search import ExaSearchProvider
+        return ExaSearchProvider(
+            api_key=key,
+            url=cfg.search.exa.url,
+            contents_url=cfg.search.exa.contents_url,
+            search_type=cfg.search.exa.type,
+            max_results=cfg.search.max_results,
+            content_max_chars=cfg.search.content_max_chars,
+            extract_max_chars=cfg.search.extract_max_chars,
+            fetch_max_age_hours=cfg.search.exa.fetch_max_age_hours,
+            timeout_seconds=cfg.search.timeout_seconds,
+        )
+    key_env = cfg.search.tavily.api_key_env
+    key = cfg.credentials.get(key_env, "")
+    if not key:
+        log.warning(
+            "fetch_provider tavily configured but its key env is unset — "
+            "falling back to the search backend")
+        return None
+    from nora.infra.search import TavilySearchProvider
+    return TavilySearchProvider(
+        api_key=key,
+        url=cfg.search.tavily.url,
+        max_results=cfg.search.max_results,
+        search_depth=cfg.search.tavily.search_depth,
+        content_max_chars=cfg.search.content_max_chars,
+        timeout_seconds=cfg.search.timeout_seconds,
+        extract_url=cfg.search.tavily.extract_url,
+        extract_depth=cfg.search.tavily.extract_depth,
+        extract_max_chars=cfg.search.extract_max_chars,
+        min_score=cfg.search.tavily.min_score,
+    )
 
 
 def _room_claims(allowlist: Policy) -> dict[str, frozenset[tuple[str, str]]]:
@@ -1814,11 +1870,15 @@ async def build_dependencies(
             dm_scope_id,
         )
         from nora.domain.computer_vms import FileScopeEndpoints
+        from nora.infra.computer.lifecycle import HostLifecycleClient
         from nora.infra.computer.manager import ScopeBrowserManager
         from nora.infra.computer.scoped import ScopedComputerdRuntime
         from nora.infra.sql.browser_tabs import SqlBrowserTabStore
         from nora.infra.sql.computer_tasks import SqlComputerTaskStore
 
+        lifecycle = (HostLifecycleClient(socket=scoped_cfg.lifecycle_socket,
+                                      token=computer_token)
+                     if scoped_cfg.lifecycle_socket else None)
         computer_redis = aioredis.from_url(computer_redis_url)
         computer = ScopedComputerdRuntime(
             endpoints=FileScopeEndpoints(scoped_cfg.registry),
@@ -1851,6 +1911,10 @@ async def build_dependencies(
             not proof the old command stopped)."""
             state = await computer.state(scope=scope)
             verdict = anything_running(state)
+            if verdict is None and lifecycle is not None:
+                observed = await lifecycle.request("observe", scope, str(uuid.uuid4()))
+                if observed.get("status") == "ok" and observed.get("state") == "stopped":
+                    return "quiet"  # host positively confirmed this owned VM is stopped
             return ("busy" if verdict is True
                     else "quiet" if verdict is False else "unknown")
 
@@ -1903,19 +1967,19 @@ async def build_dependencies(
         computer_admission = ComputerAdmission(
             tasks=computer_tasks, redis=computer_redis, clock=op_clock,
             executors=computer_segments, reconcile=_reconcile_scope,
-            audit=_queue_audit)
+            audit=_queue_audit, lifecycle=lifecycle)
         browser_manager = ScopeBrowserManager(
             runtime=computer, tabs=browser_tabs, tasks=computer_tasks,
             segments=computer_admission,
             token=computer_token, clock=op_clock,
             idle_after=timedelta(seconds=scoped_cfg.browser_idle_seconds),
-            on_event=_browser_event)
+            on_event=_browser_event, lifecycle=lifecycle)
         computer_task_backend = ComputerTaskBackend(tasks=computer_tasks)
         computer_queue_runner = ComputerQueueRunner(
             tasks=computer_tasks, redis=computer_redis, clock=op_clock,
             metrics=metrics, on_terminal=_deliver_computer_task,
             reconcile=_reconcile_scope, executors=computer_segments,
-            audit=_queue_audit)
+            audit=_queue_audit, lifecycle=lifecycle)
 
         # The canonical scope resolver the WHOLE feature shares — native
         # tools, the context block and worker jobs must land on the same VM:
@@ -2021,20 +2085,12 @@ async def build_dependencies(
                 "route enabled but %s is unset — routing stays unavailable",
                 cfg.route.api_key_env,
             )
-    _require_a_sendable_public_url(
-        cfg.documents.public_url, content_checks=content_checks,
+    _require_a_sendable_public_url(cfg.documents.public_url, content_checks=content_checks)
+    cognition_context_screen = cognition_context_screen_fn(
+        content_checks=content_checks, doctrine_store=lambda: doctrine_store,
+        canary=cfg.doctrine.canary,
     )
-    def cognition_context_screen(text: str) -> str | None:
-        from nora.agent.egress import LeakGuard, scan_reply
-
-        return scan_reply(text, content_checks=content_checks) or LeakGuard(
-            doctrine_store.get(applies_to="cognition"), cfg.doctrine.canary
-        ).check(text)
-
-    def cognition_shared_document_room(unit: str, platform: str, cid: str) -> bool:
-        c = allowlist.conversation(platform, cid)
-        return bool(c is not None and c.unit == unit and c.persons
-                    and c.persons <= persons.by_person.keys())
+    cognition_shared_document_room = shared_document_room(allowlist=allowlist, persons=persons)
 
     document_service = DocumentService(
         store=documents_store, records=audit, media=media_objects,
@@ -2156,9 +2212,7 @@ async def build_dependencies(
     # `SqlNoteStore.__init__` takes an engine and nothing else on purpose (its
     # own docstring), and the one read on the critical path is counted by
     # `_notes` instead.
-    note_store: SqlNoteStore | None = (
-        SqlNoteStore(engine) if cfg.notes.enabled else None
-    )
+    note_store: SqlNoteStore | None = SqlNoteStore(engine) if cfg.notes.enabled else None
     # The memo tier (DEC-306): what a unit settled and keeps. No flag: only a
     # Cognition session writes a memo (`[cognition] enabled`), and with none
     # kept every read renders nothing. ONE instance for the tag and fire
@@ -2346,9 +2400,7 @@ async def build_dependencies(
     # counted `disabled` rather than silently absent; `enabled` only under BOTH
     # `[social.instagram] enabled` and `[social.instagram.summons] enabled`,
     # exactly when the consumer below is spawned to drain it.
-    summons_wired = bool(
-        cfg.social.instagram.enabled and cfg.social.instagram.summons.enabled
-    )
+    summons_wired = bool(cfg.social.instagram.enabled and cfg.social.instagram.summons.enabled)
     summons_inbox = SummonsInbox(enabled=summons_wired, metrics=metrics)
     try:
         registry = await AdapterRegistry.from_config(
@@ -3094,9 +3146,7 @@ async def build_dependencies(
     # two would be two locks and no serialisation at all. Built HERE, above the
     # registry, because the relay below needs it and the registry needs the
     # relay.
-    slots = ConversationSlots(
-        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
-    )
+    slots = ConversationSlots(maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn)
 
     # The cognition loop's stimuli: OFF
     # under `[cognition] enabled = false`, the shipped default. On, the ingest
@@ -3139,6 +3189,9 @@ async def build_dependencies(
     # needs an SSRF gate: each crawls from its OWN servers, never Nora's,
     # whether it is handed a query or a url.
     search_client = search_provider(cfg)
+    # `web_fetch`'s OWN backend (`[search] fetch_provider`): None means the
+    # one search client serves both verbs, the pre-split shape.
+    fetch_client = fetch_provider(cfg)
     # `x_read`, `x_search` (DEC-201), `instagram_read` and `instagram_search`
     # get ONE `SocialProvider` — `SocialRouter`
     # — and the registry stays unaware that there are two backends under it.
@@ -3266,9 +3319,7 @@ async def build_dependencies(
     # one the adapter holds: one asyncio lock, so the keeper and a call never
     # both spend a rotating token. `nora/__main__.py` starts the keeper; the
     # eval subject composes the same graph and never does.
-    image_refs_allowed = (
-        cfg.image_gen.enabled and cfg.image_gen.allow_reference_images
-    )
+    image_refs_allowed = cfg.image_gen.enabled and cfg.image_gen.allow_reference_images
     # Image custody: generated images are stored in Nora's
     # OWN blob_store (rustfs) and sent as platform attachments.
     image_generator, oauth_keepalive = _image_gen_wiring(
@@ -3529,9 +3580,8 @@ async def build_dependencies(
         display_name=cfg.doctrine.display_name,
         # `[external_files]` (ships off): the source a shared file link is
         # opened through; None answers the open `unavailable`.
-        external_files=external_files_source(
-            cfg, google=google_credentials(cfg, metrics=metrics),
-        ),
+        external_files=external_files_source(cfg, google=google_credentials(cfg, metrics=metrics)),
+        google_account=cfg.google.account,
         subagent=subagent_desk,
         video=video_desk,
         video_ref_kinds=frozenset(
@@ -3592,6 +3642,10 @@ async def build_dependencies(
         describe_max_bytes=_describe_max_bytes(cfg),
         blobs=blobs, descriptions=media_descriptions,
         video_readings=SqlVideoReadingStore(engine), search=search_client,
+        # `web_fetch`'s own backend ([search] fetch_provider) and the page
+        # index its offset/about reads answer from; the store is unconditional
+        # like `tool_call_log_store` (one pool, one lifecycle).
+        fetch=fetch_client, fetched_pages=SqlFetchedPageStore(engine),
         social=social_client,
         # The same router, for the two LinkedIn tools, only when LinkedIn is
         # switched on. The config
@@ -4460,9 +4514,7 @@ async def build_dependencies(
         # Zero-series for the counters the runtime increments — the REAL
         # work-kind and action-op tuples, so `increase()` over a series the
         # first event creates does not lose it.
-        prime_queue_metrics(
-            metrics, bridge_platforms,
-            work_kinds=sorted(WORK_KINDS))
+        prime_queue_metrics(metrics, bridge_platforms, work_kinds=sorted(WORK_KINDS))
 
     # ---- the Dreamer runtime --------------------
     #
@@ -4900,11 +4952,8 @@ async def build_dependencies(
             dream_schedules = {k: v for k, v in dream_schedules.items() if k not in retired}
 
         # LESSONS: written by the unit's Cognition session (design
-        # `cognition-loop/50 §6`), not by a session of their own. What the
-        # retired adaptor left behind is kept: the doctrine check, the checked
-        # book, and the evidence read — now handed to the session as context
-        # and settled by its close. Gated on `[lessons] enabled` alone (off
-        # by default); the config validator makes it need `[cognition]`.
+        # `cognition-loop/50 §6`), not by a session of their own; gated on
+        # `[lessons] enabled` alone (off by default).
         if cfg.lessons.enabled:
             lessons_keys = LiveMapping(lambda: {
                 uk.unit: LessonsKey(unit=uk.unit, rooms=uk.rooms)
@@ -5088,9 +5137,7 @@ async def build_dependencies(
         # converter (`_adaptor_budget` above): the same five numbers across the
         # `nora.agent` may-not-import-`nora.config` boundary, carried in one
         # place rather than written out at each construction site.
-        dream_budgets = {
-            name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()
-        }
+        dream_budgets = {name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()}
         # A Character session with no block of its own runs on the room
         # fold's numbers when the deployment set them: the same loop shape (a
         # handed batch, a few reads, one account written), and a live config
@@ -5229,34 +5276,17 @@ async def build_dependencies(
                 )
             # The policy's label for each of those ids: the prompt calls a
             # room by it and never by the conversation id.
-            cognition_room_labels: Mapping[tuple[str, str], str] = LiveMapping(
-                lambda: {
-                    (conv.platform, cid): conv.label
-                    for conv in allowlist.rooms()
-                    for cid in conv.ids
-                }
-            )
+            cognition_room_labels: Mapping[tuple[str, str], str] = LiveMapping(lambda: {
+                (conv.platform, cid): conv.label
+                for conv in allowlist.rooms() for cid in conv.ids})
 
-            async def _room_events(
-                unit: str, platform: str, conversation_id: str,
-            ) -> Sequence[Any]:
-                return await _open_events(unit, platform, conversation_id)
-
-            from nora.app.cognition_context import CognitionContextReader
-            cognition_profile_reader = SqlProfileStore(
-                engine,
-                screen=functools.partial(text_offence, content_checks=content_checks),
-            )
-            cognition_context = CognitionContextReader(
-                policy=allowlist, persons=persons, lineage=lineage,
-                records=SqlRecordQuery(engine), directory=presence_reader, audit=audit,
-                profiles=cognition_profile_reader,
-                lessons=ActiveLessons(SqlLessonStore(engine)), media_join=media_join,
-                room_for=lambda platform, cid: Room(platform=platform, conversation_id=cid,
-                    roster_source=rosters.get(platform), persons=persons,
-                    self_ids=registry.self_aliases()),
-                screen=cognition_context_screen,
-                record_chars=cfg.cognition.record_chars, documents=documents_context,
+            cognition_context = cognition_context_reader(
+                engine=engine, allowlist=allowlist, persons=persons,
+                lineage=lineage, presence_reader=presence_reader, audit=audit,
+                rosters=rosters, registry=registry, media_join=media_join,
+                record_chars=cfg.cognition.record_chars,
+                documents_context=documents_context,
+                screen=cognition_context_screen, content_checks=content_checks,
             )
             grounder = build_grounder(
                 # NOT `tool_registry`'s `record`, which is None unless `[record_query]
@@ -5264,7 +5294,7 @@ async def build_dependencies(
                 # session must be grounded with the tool off.
                 records=SqlRecordQuery(engine), persons=persons, media_join=media_join,
                 context=cognition_context,
-                note_index=_note_index, events_in=_room_events,
+                note_index=_note_index, events_in=_open_events,
                 memo_index=lambda unit: memo_store.kept(unit=unit),
                 pending_reminds=lambda: reminders.pending_of(cfg.honcho.ai_peer),
                 lineage=lineage,
@@ -5367,6 +5397,11 @@ async def build_dependencies(
                     budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
                     result_caps=TOOL_RESULT_CAPS,
                     observations=observation_store,
+                    # Cognition hosted as a Dreamer adaptor (node 30): every
+                    # admitted wake is dispatched onto this runtime's lane —
+                    # the same instance `dream_loop` runs the other adaptors
+                    # through.
+                    runtime=dreamer_runtime,
                     lessons=cognition_lessons,
                 )
             except (InstructionError, SkillNotInstalledError) as exc:

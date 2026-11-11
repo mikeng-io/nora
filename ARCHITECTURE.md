@@ -1,9 +1,8 @@
 # Nora — Architecture
 
-This is the current implementation map. Decisions and their trade-offs belong
-in [ADRs](docs/adr/README.md) and the [design index](design/09-decision-index.md).
-Design proposals do not imply a deployed feature.
-Enabled capabilities and room grants are deployment configuration.
+The map of the system: how it runs and where its code lives. Decisions and their
+costs are in [ADRs](docs/adr/README.md) and the [decision index](design/09-decision-index.md);
+enabled capabilities and room grants are deployment configuration.
 
 ## Continuity beyond a session
 
@@ -65,45 +64,55 @@ unavailability. Policy controls disclosure and whether Nora may speak in a
 room, including when queued work is delivered.
 
 Cognition processes stimuli and maintains working state, notes, events and
-reminders. The Dreamer supplies background research, including culture work.
+reminders; the Dreamer supplies background research, including culture work.
+Both share one agent factory, tool set and instruction infrastructure
+([execution and time](design/cognition-loop/18-execution-and-time.md)). The
+reminder heartbeat drives deferred conscious turns; addressed turns continue
+through engagement.
+
 Voice and asynchronous compute are additional paths into this runtime, not
 independent copies of Nora's policy or memory.
 
 ## Code map
 
-Import contracts in `pyproject.toml` and architectural tests enforce boundaries.
-The domain is framework-free; application composition supplies infrastructure
-and configuration to the runtime.
+Code is grouped by **area**, one package per subject designed under `design/`
+([ADR 0037](docs/adr/0037-code-is-grouped-by-area-and-depends-inward.md)), in
+three layers importing inward ([rules](nora/AGENTS.md), enforced in `pyproject.toml`).
 
-| Package or module under `nora/` | Responsibility |
+| layer | holds | may import |
+|---|---|---|
+| `domain/` | models, rules, the ports the area needs | stdlib, `nora.domain` |
+| `app/` | the area's use cases | its domain |
+| `adapters/` | stores, clients, tools and context blocks | its app and domain, frameworks, `nora.infra` |
+
+`wire.py` builds an area's adapters and the composition root assembles areas;
+an area reaches another only through its root. New code goes to its area.
+
+| area | subject |
 |---|---|
-| `app/` | Composition, dispatch, background lifecycle and cognition wiring |
-| `domain/` | Shared models, ports and domain rules |
-| `platform/` | Messaging adapters and platform-specific transport |
-| `ingest/` | Normalize the processing path, record events, media and stimuli |
-| `engagement/` | Admission, context, invocation, delivery and feedback |
-| `agent/` | Strands integration, tools and context assembly |
-| `infra/` | SQL stores and migrations, memory clients and external services |
-| `presence/`, `analytics/` | Presence collection and derived location history |
-| `language/` | Shared context renderers and background adaptors |
-| `doctrine/` | Character content, audience selection and validated loading |
-| `instructions/` | Shared instruction parsing, hashing and reload |
-| `dreamer/`, `subagent/` | Model-facing instruction corpora |
-| `skills/` | On-demand runtime skills and their loader |
-| `documents/` | Structured document validation |
-| `web/` | Portal API and web-facing application services |
-| `obs/` | Health, metrics, logging and tracing |
-| `subject/`, `testing/` | Evaluation subject and shared test doubles |
-| `config.py` | Validated deployment configuration |
-| `secret.py` | Private credential resolution and atomic bootstrap writes |
-| `persons.py`, `persons_file.py` | Identity resolution and identity-file loading |
-| `policy.py` | Room membership and grants |
-| `config_reload.py` | Validated identity/policy holders and per-process reload polling |
-| `memory_routing.py` | Shared workspace validation and live conversation routing |
-| `tag.py` | Trigger matching and debounce helpers |
+| `conversation/` | rooms, the Record, messages, threads, edits, reactions, polls, replies |
+| `memory/` | the Notebook, notes, memos, Standing, rollups, profiles, recall |
+| `people/` | identity, policy, units, who is online |
+| `location/` | presence, places, movement, routes, transit, parking, weather |
+| `media/` | images and video: custody, comprehension, generation |
+| `social/` | web search and fetch, the social networks |
+| `computer/` | the computer unit, its sessions, the browser, artifacts |
+| `documents/` | structured documents the portal renders |
+| `agenda/` | gatherings, reminders, wakes |
+| `voice/` | voice channels, speech, music |
+| `subagents/` | delegated agent work |
+| `self` | culture, lessons, her account of herself |
 
-The portal frontend is in `app/`; the public site is in `site/`. Service
-implementations and container build contexts live under `deploy/`.
+The shared runtime: `platform/`, `ingest/`, `engagement/`,
+`agent/` (Strands, tool registry, context assembly), `app/` (dispatch,
+lifecycle, composition root), `language/`, `doctrine/`, `instructions/`,
+`skills/`, `dreamer/`, `subagent/`, `web/` (portal API), `obs/`, `infra/`,
+`presence/`, `analytics/`, `subject/`, `testing/`, `config.py`, `secret.py`,
+`config_reload.py`, `memory_routing.py`, `tag.py`, and `domain/`, the shared
+kernel. `documents/` and `persons.py`, `persons_file.py`, `policy.py` (`people`)
+are area code still to move.
+
+Outside `nora/`: the portal in `app/`, the site in `site/`, services in `deploy/`.
 
 ## State and trust boundaries
 

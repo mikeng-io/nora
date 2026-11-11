@@ -22,14 +22,14 @@
   },
   {
     "name": "reaction context is not new source evidence",
-    "file": "nora/language/cognition_render.py",
+    "file": "nora/language/cognition_parse.py",
     "old": "                    or row.attributes.get(\"reaction\")):",
     "new": "):",
     "target": "tests/unit/test_cognition_source_rows.py::test_reaction_alone_neither_makes_target_citable_nor_shows_reactor"
   },
   {
     "name": "reaction context cannot overwrite the support judges cited row",
-    "file": "nora/language/cognition_render.py",
+    "file": "nora/language/cognition_parse.py",
     "old": "            if row.attributes.get(\"reaction\"):\n                continue\n",
     "new": "",
     "target": "tests/unit/test_cognition_source_rows.py::test_reaction_cannot_replace_message_author_or_grant_reactor_authority"
@@ -64,7 +64,7 @@
   },
   {
     "name": "invalid structured source types are judge errors",
-    "file": "scripts/memory_graph_spike.py",
+    "file": "scripts/memory_graph_facts.py",
     "old": "                    or any(type(n) is not int for n in entry[\"sources\"])\n",
     "new": "",
     "target": "tests/unit/test_replay_scoring.py::test_structured_missed_sources_reach_the_real_scoring_boundary"

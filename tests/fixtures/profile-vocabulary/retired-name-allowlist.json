@@ -180,14 +180,6 @@
       "persona": 1
     }
   },
-  "design/unified-memory/00-intent.md": {
-    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
-    "matches": {
-      "Persona": 13,
-      "persona": 15,
-      "persona_write": 1
-    }
-  },
   "design/unified-memory/10-honcho-audit.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
@@ -196,11 +188,9 @@
     }
   },
   "design/unified-memory/15-memory-map.md": {
-    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "reason": "Links to existing historical design filenames; no active retired terminology.",
     "matches": {
-      "Persona": 4,
-      "persona": 6,
-      "persona_dispute": 1
+      "persona": 1
     }
   },
   "design/unified-memory/18-extraction.md": {
@@ -220,9 +210,9 @@
     }
   },
   "design/unified-memory/27-the-memory-is-a-graph.md": {
-    "reason": "Links to existing node file names (35-persona, 45-persona-adaptor); no new identifier.",
+    "reason": "Links to existing historical design filenames; no active retired terminology.",
     "matches": {
-      "persona": 7
+      "persona": 3
     }
   },
   "design/unified-memory/30-identity-and-character.md": {
@@ -282,10 +272,9 @@
     }
   },
   "design/unified-memory/50-learning-from-acts.md": {
-    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "reason": "Links to existing historical design filenames; no active retired terminology.",
     "matches": {
-      "Persona": 9,
-      "persona": 4
+      "persona": 1
     }
   },
   "design/unified-memory/60-build-step-3.md": {
@@ -330,11 +319,9 @@
     }
   },
   "design/unified-memory/_index.yaml": {
-    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
+    "reason": "Links to existing historical design filenames; no active retired terminology.",
     "matches": {
-      "Persona": 2,
-      "persona": 12,
-      "persona_write": 1
+      "persona": 12
     }
   },
   "docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md": {
@@ -742,6 +729,18 @@
     "reason": "Generated historical evidence index; refreshed only through its owning generator.",
     "matches": {
       "persona": 1
+    }
+  },
+  "tests/architecture/code_size_baseline.json": {
+    "reason": "Generated size baseline naming a function its source file already allowlists.",
+    "matches": {
+      "_persona": 1
+    }
+  },
+  "tests/architecture/design_shape_baseline.json": {
+    "reason": "Generated design-shape baseline naming design files whose paths the gate already allows.",
+    "matches": {
+      "persona": 2
     }
   },
   "tests/architecture/test_doc_references_resolve.py": {

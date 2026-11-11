@@ -155,7 +155,7 @@
  },
  {
   "name": "review: the egress note reads the head only",
-  "file": "nora/agent/tools.py",
+  "file": "nora/memory/adapters/tools/memos.py",
   "old": "for t in (memo.head.body, *superseded)",
   "new": "for t in (memo.head.body,)",
   "target": "tests/unit/test_memo_read.py::test_a_value_only_an_earlier_revision_held_still_comes_with_the_note"

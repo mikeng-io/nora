@@ -3074,7 +3074,7 @@ async def test_a_deferred_participation_turn_gets_the_same_surface_as_a_tag(
     SAME `ToolRegistry.surface()` the tag path does, so `[llm] defer_tools`
     means the same thing on both — hot tools plus the loader, the catalogue
     in the prompt, one more turn for the load."""
-    from nora.agent.tools import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
 
     calls: list = []
     path = _fire_path(

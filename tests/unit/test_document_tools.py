@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 from nora.agent.egress import scan_identifiers, scan_reply
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.toolkit.ports import DocumentPublisher
 from nora.app.documents_service import DocumentService
 from nora.domain.documents import handle_of
 from nora.domain.models import PersonRef
@@ -586,9 +587,7 @@ async def test_an_address_reverse_geocode_gave_out_this_turn_cannot_be_pinned_on
     service = _map_service(asked)
     tools = _tools(service)
     # the closure's own set is what `reverse_geocode` fills; reach it the way the tool does
-    from nora.agent import tools as tools_module
-
-    assert "live_addresses" in tools_module.DocumentPublisher.publish.__annotations__
+    assert "live_addresses" in DocumentPublisher.publish.__annotations__
     out = await service.publish(
         platform="signal", conversation_id=ROOM, person_id="miles",
         raw=_map_spec("Flat 5A, 12 Nathan Road"), written_by="t",
@@ -603,6 +602,4 @@ def test_the_document_publisher_read_takes_the_requester() -> None:
     `DocumentPublisher` protocol must declare it. Without it the typecheck fails at the call."""
     import inspect
 
-    from nora.agent import tools as tools_module
-
-    assert "person_id" in inspect.signature(tools_module.DocumentPublisher.read).parameters
+    assert "person_id" in inspect.signature(DocumentPublisher.read).parameters

@@ -30,7 +30,7 @@ from nora.infra.sql.schema import INSTAGRAM_SUMMONS
 SWEPT_AT_BOOT = "swept_at_boot"
 
 
-def _row(r: Row[Any]) -> SummonsRow:
+def _row(r: Row[*tuple[Any, ...]]) -> SummonsRow:
     return SummonsRow(
         id=r.id, message_id=r.message_id, comment_id=r.comment_id,
         media_id=r.media_id, shortcode=r.shortcode,
@@ -64,7 +64,7 @@ class SqlSummonsLedger:
             .returning(INSTAGRAM_SUMMONS.c.id)
         )
         async with self._engine.begin() as conn:
-            got = (await conn.execute(stmt)).scalar_one_or_none()
+            got: UUID | None = (await conn.execute(stmt)).scalar_one_or_none()
         return got
 
     async def bind_comment(

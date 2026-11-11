@@ -11,7 +11,7 @@ COMPOSERS = frozenset(
     {
         "nora.language.register_render:render_register",
         "nora.language.cognition_render:_item_blocks",
-        "nora.language.cognition_render:_lesson_evidence_blocks",
+        "nora.language.lesson_render:lesson_evidence_blocks",
         "nora.language.cognition_render:render_agenda",
         "nora.language.context_render:render_clock",
         "nora.language.context_render:render_reads",
@@ -25,7 +25,7 @@ COMPOSERS = frozenset(
         "nora.agent.prefill:_transcript_block",
         "nora.agent.reaction:ReactionPicker._pick",
         "nora.domain.blocks:wrap_outside_text",
-        "nora.domain.blocks:assemble_declared",
+        "nora.domain.blocks_declared:assemble_declared",
         "nora.domain.decision_log:render_decisions",
         "nora.domain.summons:_social_post",
         "nora.engagement.debrief_render:_standing_ledger_prior",

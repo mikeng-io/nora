@@ -1,0 +1,7 @@
+# Explicit operator-installed overlay, added to the installed application stack.
+# Set NORA_COMPUTER_STATE_DIR to the host wrapper's private state root.
+services:
+  nora:
+    volumes:
+      - ${NORA_COMPUTER_STATE_DIR:?set host state root}/control:/run/nora-computer-control:ro
+      - ${NORA_COMPUTER_STATE_DIR:?set host state root}/scope-endpoints:/run/nora-computer-scopes:ro

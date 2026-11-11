@@ -1,8 +1,8 @@
 [
   {
     "name": "document_read: the handle is never passed to the service, so a link's code reads nothing",
-    "file": "nora/agent/tools.py",
-    "old": "                conversation_id=bound_conversation_id, document_id=target,\n                handle=\"\" if target is not None else handle,\n                person_id=tagger.person_id if tagger is not None else None,\n            )\n        except Exception:\n            log.exception(\"document_read failed\")",
+    "file": "nora/documents/adapters/tools.py",
+    "old": "conversation_id=bound_conversation_id,\n                document_id=target,\n                handle=\"\" if target is not None else handle,\n                person_id=tagger.person_id if tagger is not None else None,\n            )\n        except Exception:\n            log.exception(\"document_read failed\")",
     "new": "                conversation_id=bound_conversation_id, document_id=target,\n                person_id=tagger.person_id if tagger is not None else None,\n            )\n        except Exception:\n            log.exception(\"document_read failed\")",
     "target": "tests/unit/test_document_tools.py::test_a_document_is_read_by_the_handle_its_link_carries_and_by_that_alone"
   },

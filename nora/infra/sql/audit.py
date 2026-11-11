@@ -70,11 +70,8 @@ def _latest_edit(*, edits_before: int | None = None, known_before: int | None = 
     `edits_before` is the as-of bound `nora.infra.sql.snapshot` reads at: an
     edit made after the instant being reconstructed had not happened yet."""
     stmt = sa.select(
-        MESSAGE_EDIT.c.ts,
-        MESSAGE_EDIT.c.body,
-        MESSAGE_EDIT.c.raw_json,
-        MESSAGE_EDIT.c.mentions_json,
-        MESSAGE_EDIT.c.mention_persons_json,
+        MESSAGE_EDIT.c.ts, MESSAGE_EDIT.c.body, MESSAGE_EDIT.c.raw_json,
+        MESSAGE_EDIT.c.mentions_json, MESSAGE_EDIT.c.mention_persons_json,
     ).where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
     if edits_before is not None:
         stmt = stmt.where(MESSAGE_EDIT.c.ts <= edits_before)
@@ -88,11 +85,7 @@ def _latest_edit(*, edits_before: int | None = None, known_before: int | None = 
     # a device whose clock is behind — so the last row written IS the current
     # version, and ordering on `ts` would put a skewed-clock edit behind the
     # one it replaced.
-    return (
-        stmt.order_by(MESSAGE_EDIT.c.id.desc())
-        .limit(1)
-        .lateral("latest_edit")
-    )
+    return stmt.order_by(MESSAGE_EDIT.c.id.desc()).limit(1).lateral("latest_edit")
 
 
 def turn_id_for_message(messages: Any = MESSAGES) -> Any:
@@ -109,11 +102,7 @@ def turn_id_for_message(messages: Any = MESSAGES) -> Any:
     )
 
 
-def transcript_select(
-    *,
-    edits_before: int | None = None,
-    known_before: int | None = None,
-) -> Any:
+def transcript_select(*, edits_before: int | None = None, known_before: int | None = None) -> Any:
     """The columns every transcript read returns, with the newest edit
     folded in. ONE select for `recent`, `since`, `since_including_nora`,
     `record_query` and the snapshot's as-of read, so the fold cannot reach
@@ -134,32 +123,20 @@ def transcript_select(
     turn_id = turn_id_for_message()
     hidden: sa.ColumnElement[bool] = MESSAGES.c.hidden_at.is_(None)
     if known_before is not None:
-        hidden = sa.and_(
-            hidden,
-            sa.cast(MESSAGES.c.created_at, sa.DateTime(timezone=True))
-            <= datetime.fromtimestamp(known_before / 1000, UTC),
-        )
+        hidden = sa.and_(hidden, sa.cast(MESSAGES.c.created_at, sa.DateTime(timezone=True))
+                         <= datetime.fromtimestamp(known_before / 1000, UTC))
     return (
         sa.select(
-            MESSAGES.c.id,
-            MESSAGES.c.sender_id,
-            MESSAGES.c.sender_name,
-            MESSAGES.c.ts,
-            MESSAGES.c.body,
-            MESSAGES.c.is_nora,
-            MESSAGES.c.delivery_status,
-            MESSAGES.c.raw_json,
-            MESSAGES.c.quoted_ts,
-            MESSAGES.c.media_json,
-            MESSAGES.c.person_id,
+            MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
+            MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
+            MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
+            MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
             MESSAGES.c.external_files_json,
             turn_id.label("turn_id"),
-            latest.c.ts.label("edit_ts"),
-            latest.c.body.label("edit_body"),
+            latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
             latest.c.raw_json.label("edit_raw_json"),
-            sa.func.coalesce(latest.c.mention_persons_json, MESSAGES.c.mention_persons_json).label(
-                "mention_persons_json"
-            ),
+            sa.func.coalesce(latest.c.mention_persons_json, MESSAGES.c.mention_persons_json)
+            .label("mention_persons_json"),
         )
         .select_from(MESSAGES.outerjoin(latest, sa.true()))
         .where(hidden)
@@ -225,15 +202,11 @@ async def reaction_states(
         return {}
     obs = PLATFORM_OBSERVATION
     in_targets: sa.ColumnElement[bool] = MESSAGE_REACTION.c.message_id.in_(message_ids)
-    in_obs = sa.and_(
-        obs.c.kind == "reaction",
-        obs.c.target_message_id.in_(message_ids))
+    in_obs = sa.and_(obs.c.kind == "reaction", obs.c.target_message_id.in_(message_ids))
     if before_ms is not None:
         in_targets = sa.and_(in_targets, MESSAGE_REACTION.c.ts <= before_ms)
         in_obs = sa.and_(
-            in_obs,
-            sa.func.coalesce(obs.c.occurred_ms, obs.c.received_ms) <= before_ms,
-        )
+            in_obs, sa.func.coalesce(obs.c.occurred_ms, obs.c.received_ms) <= before_ms)
     meta = (
         sa.select(
             MESSAGE_REACTION.c.message_id,
@@ -352,13 +325,11 @@ async def reaction_states(
                 emoji=str(r.f), removed=bool(r.d), ts=int(r.b),
                 created_at=int(r.c)))
         elif r.j is not None:
-            stored = _stored_from_json(
-                r.j if isinstance(r.j, dict) else json.loads(r.j))
+            stored = _stored_from_json(r.j if isinstance(r.j, dict) else json.loads(r.j))
             if stored is None:
                 skipped[mid] = skipped.get(mid, 0) + 1
             else:
-                typed.setdefault(mid, []).append(dataclasses.replace(
-                    stored, recorded_at=int(r.b)))
+                typed.setdefault(mid, []).append(dataclasses.replace(stored, recorded_at=int(r.b)))
     out: dict[int, RowReactions] = {}
     for mid, (recorded, observed, expected_n, typed_total) in meta_by.items():
         partial = (
@@ -693,9 +664,7 @@ class SqlRecordStore:
             # keep are the leading `limit`. Cutting after the reverse would
             # drop the newest rows and keep the oldest — the opposite of what
             # this reads.
-            kept = cut(
-                rows, limit=limit, site="audit.recent", metrics=self._metrics,
-            )
+            kept = cut(rows, limit=limit, site="audit.recent", metrics=self._metrics)
             states = await reaction_states(conn, [r.id for r in kept], before_ms=as_of_ms)
         return with_reactions([self._row(r) for r in reversed(kept)], states)
 
@@ -977,9 +946,7 @@ class SqlRecordStore:
             if result.rowcount:
                 # A hidden message is never a hit: its node, its attachments'
                 # nodes and their edges go in the hide's own write.
-                await memory_index.project(
-                    conn, "message", message_id, metrics=self._metrics,
-                )
+                await memory_index.project(conn, "message", message_id, metrics=self._metrics)
         return bool(result.rowcount)
 
     async def aclose(self) -> None:
@@ -1102,23 +1069,15 @@ class SqlRecordStore:
         the row may have been pruned out from under the backfill between the
         scan and this call, which is harmless, not a failure.
         """
-        stmt = (
-            sa.update(MESSAGES)
-            .where(MESSAGES.c.id == row_id)
-            .values(person_id=person_id)
-        )
+        stmt = sa.update(MESSAGES).where(MESSAGES.c.id == row_id).values(person_id=person_id)
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
             # The attribution is the `authored_by` and `shared_by` edges.
             await memory_index.project(conn, "message", row_id, metrics=self._metrics)
 
     async def room_activity(
-        self,
-        *,
-        conversation_id: str,
-        since_ts: int,
-        platform: str | None = None,
-        as_of_ms: int | None = None,
+        self, *, conversation_id: str, since_ts: int,
+        platform: str | None = None, as_of_ms: int | None = None,
     ) -> RoomActivity:
         """See `nora.domain.ports.RecordStore.room_activity`.
 
@@ -1142,11 +1101,9 @@ class SqlRecordStore:
         if platform is not None:
             stmt = stmt.where(MESSAGES.c.platform == platform)
         if as_of_ms is not None:
-            stmt = stmt.where(
-                MESSAGES.c.ts <= as_of_ms,
-                sa.cast(MESSAGES.c.created_at, sa.DateTime(timezone=True))
-                <= datetime.fromtimestamp(as_of_ms / 1000, UTC),
-            )
+            stmt = stmt.where(MESSAGES.c.ts <= as_of_ms,
+                              sa.cast(MESSAGES.c.created_at, sa.DateTime(timezone=True))
+                              <= datetime.fromtimestamp(as_of_ms / 1000, UTC))
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).one()
         return RoomActivity(
@@ -1211,9 +1168,7 @@ class SqlRecordStore:
             .label("rank"),
         ).subquery()
         doomed = sa.select(ranked.c.id).where(ranked.c.rank > keep)
-        stmt = (
-            sa.delete(MESSAGES).where(MESSAGES.c.id.in_(doomed)).returning(MESSAGES.c.id)
-        )
+        stmt = sa.delete(MESSAGES).where(MESSAGES.c.id.in_(doomed)).returning(MESSAGES.c.id)
         async with self._engine.begin() as conn:
             pruned = list((await conn.execute(stmt)).scalars())
             # A pruned message's node goes with it.
