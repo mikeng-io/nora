@@ -53,4 +53,4 @@ async def test_wrong_call_shape_can_be_corrected_in_the_one_session(implementati
         assert tools[1]["result"]["status"] == "success"
         assert "argument_validation" not in tools[1]
     assert len(store.sessions) == 1
-    assert list(memory.records.claims.values()) == [[]]
+    assert list(memory.records.claims.values()) == []

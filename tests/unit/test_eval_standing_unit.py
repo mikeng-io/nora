@@ -208,9 +208,11 @@ async def test_a_dead_or_empty_unit_fold_is_not_a_semantic_pass(monkeypatch, out
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("verb", ["close", "note_create"])
+@pytest.mark.parametrize("verb", ["wake_at", "note_create"])
 @pytest.mark.parametrize("unknown_read", [False, True])
 async def test_native_activity_is_citable_without_erasing_unknown_sources(verb, unknown_read):
+    from datetime import UTC, datetime
+
     from nora.agent.turn_recording import TurnRecording, record_requirement
     from nora.domain.note_body import NoteBodyError
     from nora.domain.turn_record import DisclosureRequirement, cited_turn_lineage
@@ -218,7 +220,9 @@ async def test_native_activity_is_citable_without_erasing_unknown_sources(verb, 
 
     recording = TurnRecording()
     result = {}
-    arguments = ({"item_index": 0, "reason": "no_change"} if verb == "close"
+    arguments = ({"subject_rows": ["m-11"],
+                  "at": datetime.fromtimestamp(NOW / 1000 + 3600, UTC).isoformat(),
+                  "why": "check again"} if verb == "wake_at"
                  else {"body": GOOD_BODY, **NOTE})
 
     async def behave(by, tools):
