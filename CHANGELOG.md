@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.17.6](https://github.com/mikeng-io/nora/compare/v7.17.5...v7.17.6) (2026-11-11)
+
+
+### Maintenance
+
+* **architecture:** group code by area with inward-only layers ([fc6c9cb](https://github.com/mikeng-io/nora/commit/fc6c9cb985a78d0c222d3eb79165616fa18110e7))
+
 ## [7.17.5](https://github.com/mikeng-io/nora/compare/v7.17.4...v7.17.5) (2026-11-10)
 
 
