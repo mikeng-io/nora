@@ -352,7 +352,9 @@ class CognitionContextReader:
                     rows = screened
                     transcript.extend(
                         TranscriptLine(
-                            row,
+                            # The grounding never holds the raw platform id;
+                            # renderers speak `person_name`/`sender_name`.
+                            replace(row, sender_id=""),
                             room.label,
                             item_of.get(row.id),
                             *source_rooms[row.id],
