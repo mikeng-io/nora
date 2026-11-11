@@ -553,21 +553,20 @@ async def build_dependencies(
     computer_scope_for = _computer_queue.computer_scope_for
     computer_task_backend = _computer_queue.computer_task_backend
     computer_tasks = _computer_queue.computer_tasks
+    # Forward declarations: the thunks below resolve these at use time.
+    background: BackgroundTasks
+    computer_context: Any
+    fire_path: FirePath | None
     _computer_scoped = await _computer_wire.scoped(
-        allowlist=allowlist,
-        background=lambda: background, browser_tabs=browser_tabs,
-        cfg=cfg,
-        clock=clock,
-        compute_jobs=compute_jobs,
-        computer=computer,
+        allowlist=allowlist, background=lambda: background, browser_tabs=browser_tabs,
+        cfg=cfg, clock=clock,
+        compute_jobs=compute_jobs, computer=computer,
         computer_admission=computer_admission,
         computer_context=lambda: computer_context, computer_dm_scope_for=computer_dm_scope_for,
-        computer_events=computer_events,
-        computer_metrics=computer_metrics,
+        computer_events=computer_events, computer_metrics=computer_metrics,
         computer_probe=computer_probe, computer_tasks=computer_tasks,
         computer_token=computer_token,
-        engine=engine,
-        metrics=metrics,
+        engine=engine, metrics=metrics,
         op_clock=op_clock,
     )
     browser_manager = _computer_scoped.browser_manager
