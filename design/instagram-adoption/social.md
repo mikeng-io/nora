@@ -20,10 +20,12 @@ substitution of a different question when a read fails.
 ## Story and shared-content scope
 
 Stories open only when a person asks, and only for a listed person in the
-asking room. Handle and link forms check the exact account named, then apply
-the same roster rule, so a story link cannot become an oracle for membership
-in another room. A profile does not inherit the story's reach rule, but shared
-posts and reels still require an asked turn.
+asking room; a `persons = "*"` room or a `[dm] persons` grant does not count
+as listing a person, and a refused read returns one identical sentence
+whatever the reason. Handle and link forms check the exact account named, then
+apply the same roster rule, so a story link cannot become an oracle for
+membership in another room. A profile does not inherit the story's reach rule,
+but shared posts and reels still require an asked turn.
 
 Background social observation is separate from interactive reads. It polls
 only listed members who have not opted out, records their items and perceptions,

@@ -72,3 +72,26 @@ The architecture gate finds model calls and requires declaration and assembly.
 Its limits are covered by focused tests and review for hand-built text inside
 runners, unfamiliar model doors and indirect calls, not by a debt ledger of
 permitted exceptions.
+
+## How a new occasion joins
+
+An occasion is anywhere a prompt reaches a model. Joining the assembly is the
+same contract for all of them, in order:
+
+1. Declare the occasion's `_BLOCKS` table: one row per block, in the order the
+   model reads.
+2. Walk it with `assemble`; a hand-rolled join of rendered blocks is a hand
+   join whatever it is named.
+3. Build a shared block through its owning builder; a second builder for a
+   meaning that already has one forks its reading.
+4. Declare the block's `BlockType`: what it is and how to read its fields, the
+   one channel that tells the model what it is reading.
+5. Put member and stranger text in through the shared renderers and escaping,
+   never by interpolation.
+6. Keep authored framing in `framing.py` as typed builders.
+7. Classify a module that runs a prompt it does not build MECHANISM, RUNNER or
+   EXEMPT; a runner names the builders it imports.
+8. Capture an existing occasion's goldens before refactoring it; a change
+   declared byte-identical that is not is a defect.
+9. Prove the join by reverting it: a hand join where `assemble` stood goes
+   red.

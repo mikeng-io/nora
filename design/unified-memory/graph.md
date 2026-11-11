@@ -5,7 +5,8 @@
 Source and entry stores retain their content, heads and lifecycles. The graph
 adds persistent entities, semantic relations and evidence links. Its index
 projects searchable pointers, text, vectors, times and scope from those owners;
-it never becomes another source of truth.
+it never becomes another source of truth. Raw presence fixes are never indexed;
+only computed episodes — stays, trips — are a read surface.
 
 A persistent entity is a person, room, unit, Nora, place, event, work,
 organisation or topic. People and collectives are pointers to authored identity,
@@ -71,6 +72,9 @@ is limited to a small fixed core, code prefetch starts from structural anchors,
 and tools provide depth on demand. Preview rows carry kind, identity, time,
 state, layer and evidence availability so the model can tell a cancelled plan
 from a supported current fact.
+
+A public social item scoped to a person is readable in any room that lists
+that person.
 
 ## Named places
 

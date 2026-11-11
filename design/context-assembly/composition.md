@@ -18,10 +18,11 @@ succeeded.
 
 ## Floor and selectable units
 
-The current and quoted messages, the reply header, the identity seed and hard
-privacy and safety law are fixed. Tool admission, roster and presence facts are
-not relevance choices. Transcript extent cannot change without preserving quote
-resolution and every positional reference across prompt and tools.
+The current and quoted messages, the reply header, the clock, the identity
+seed and hard privacy and safety law are fixed. Tool admission, roster and
+presence facts are not relevance choices. Transcript extent cannot change
+without preserving quote resolution and every positional reference across
+prompt and tools.
 
 Advisory situation blocks are candidates for selection: documents, delegated
 work, optional history and other context whose absence costs an affordance

@@ -40,6 +40,12 @@ unknown attribute has no invented default, and a temporary plan does not become
 a stable fact. If the supported qualification cannot be represented, the source
 remains a reading rather than becoming a falsely precise typed value.
 
+Depicting or sharing something does not establish ownership, residence,
+expertise or liking, and incidental activity — a borrowed car, a friend's dog
+walked once — establishes no durable identity. Copies of the same bytes or the
+same occasion add no support, and another agent's output is never evidence
+about the person who runs it.
+
 Location and other sensitive material follow the same accuracy rules as other
 claims: supported named places and patterns may be stored without raw
 coordinates or traces. This does not widen room permission. Existing disclosure
@@ -48,6 +54,7 @@ enrichment never includes private identity.
 
 ## Disputes and removal
 
+Every line Nora holds about a person is visible to that person on the portal.
 Anyone may dispute a line. The dispute is a Record item with its author and
 evidence, and it wakes reconsideration.
 

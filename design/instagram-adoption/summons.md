@@ -32,7 +32,11 @@ and what to say, never where to publish.
 The bridge independently verifies that comment writes are enabled, the session
 is ready, a recent served summons exists, its sender wrote the target comment
 mentioning Nora, no earlier reply exists, and rate and freshness guards pass.
-These checks run in the writing process, not in model instructions.
+These checks run in the writing process, not in model instructions. The only
+guard that reads Instagram runs after every local guard has passed, so no
+other refusal costs an upstream call on the shared session; the claim
+transaction then re-runs every ledger guard and re-checks the author against
+live summonses, so a window that closes during the read authorizes nothing.
 
 Publication is claimed before the upstream call. An ambiguous result never
 retries into a possible duplicate public comment. Explicitly safe staged

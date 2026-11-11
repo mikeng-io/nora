@@ -125,12 +125,11 @@ components:
 This file binds every visual surface of Nora: the web portal (`app/`), her
 social profiles, the images she generates of herself, stickers and icons, and
 any 3D or spatial form she is given. Her character is specified in
-`design/self-reference/identity.md` (the operator's Mini spec,
-verbatim), with Mini's eyes in `design/self-reference/identity.md`,
-and `design/self-reference/identity.md` (the approved human
-visual anchor). They govern their respective forms and take precedence over
-this file on appearance; where `design/self-reference/modeling.md`
-disagrees with 08, 08 holds. This file derives a system from these sources.
+`design/self-reference/identity.md` — the identity anchors: Mini's form and
+eyes, and the approved human visual form. They govern their respective forms
+and take precedence over this file on appearance; where
+`design/self-reference/modeling.md` disagrees with `identity.md`,
+`identity.md` holds. This file derives a system from these sources.
 
 ## 1. Overview
 

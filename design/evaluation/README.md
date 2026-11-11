@@ -33,7 +33,8 @@ verdicts](measurement.md), and [scenario coverage](coverage.md).
 ## Invariants
 
 - The eval layer composes nothing. Production owns the graph; evaluation owns
-  only the case, isolation, drive and measurement.
+  only the case, isolation, drive and measurement. Evaluation depends on Nora,
+  never the reverse.
 - The deployment's own model, configuration and feature flags are the baseline.
   An example configuration or a reduced prompt is a different subject.
 - ERROR is not FAIL and is never PASS. Missing, truncated, unmatched or

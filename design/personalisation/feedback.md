@@ -47,10 +47,11 @@ posterior estimates whether a proposal will be picked or engaged. Cognition
 samples it when a trigger fires and proposes only above the type's threshold.
 Restricted outcomes cannot be smuggled into a unit-wide posterior.
 
-The weekly cap is absolute and checked before sampling. A capped or held
-trigger is not sent. Asking for a recommendation bypasses sampling, not the
-cap, disclosure or action authority. Every sampled decision and its value is
-logged for later offline evaluation.
+The weekly cap is absolute and checked before sampling; it binds unsolicited
+proposals, and a capped or held trigger is not sent. An asked-for
+recommendation is answered, never cap-refused: asking bypasses sampling, not
+disclosure or action authority. Every sampled decision and its value is logged
+for later offline evaluation.
 
 Feature weights and evidence half-lives stay reviewed recommendation-type
 data until a sufficiently large held-out replay shows learned values beating

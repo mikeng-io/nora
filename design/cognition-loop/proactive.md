@@ -6,7 +6,9 @@ Cognition notices a situation and may write a reminder for a room and time. The
 reminder preserves an intention and references, not words to replay. It may
 become stale or overlap another reminder without either fact being a failure.
 
-When due, the fire path opens a conscious turn in the target room. That turn
+When due, the fire path opens a conscious turn in the room the note was
+established in. A row whose room does not resolve is refused, never redirected
+to a fallback room or a guessed one. That turn
 reads the present transcript, Nora's subsequent messages, the current state of
 the referenced affairs and any presence or social information the room may
 see. Newer evidence outranks the earlier intention.
@@ -23,6 +25,9 @@ policy, disclosure, custody and delivery rules, and reruns them against the
 current roster and content. A value resting only on abduction is framed as a
 question. A person excluded from an affair is not revealed through a reminder
 or its assembled context.
+
+`remind` refuses inside a fire turn: a reminder that can set a reminder is an
+unbounded loop. A note carries at most one open proactive row.
 
 There is no additional model-written guard between deciding and firing. An
 incorrect act is corrected by improving the conscious turn's situation,

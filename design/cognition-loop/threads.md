@@ -58,7 +58,8 @@ A useful noticing need not become a scheduled interruption.
 The thread is the channel between these exits, not a new message pipe. Waiting
 can have its own cost: when a state reaches its expiry or the opportunity is
 about to disappear, choosing a moment may replace waiting. A room that never
-offers a natural turn cannot make the first exit the only correct one.
+offers a natural turn starves the conversational exit — which is what the
+scheduled exit and `holds_until` are for.
 
 An outside fact is relevant when it bears on a held thread, not because it is
 new or searchable. Already answered material and a state already used do not

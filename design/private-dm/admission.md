@@ -8,9 +8,10 @@ resolve independently to that same person through operator-authored account
 identifiers. Display names, profile names and text claims never match.
 
 The anchor must explicitly list the person. An operator may choose it; inference
-is allowed only when exactly one unit is eligible. Zero or ambiguous eligibility,
-an invalid explicit choice or an unknown direct peer refuses before Record,
-media custody, memory feeds, stimulus, provider creation or filesystem work.
+is allowed only when exactly one unit is eligible. Zero or ambiguous eligibility
+or an unknown direct peer refuses before Record, media custody, memory feeds,
+stimulus, provider creation or filesystem work; an invalid explicit choice is an
+invalid configuration and fails startup.
 
 Linked platforms are admitted within that grant by default, with an explicit
 per-platform opt-out applying to both inbound work and later sends. A supported

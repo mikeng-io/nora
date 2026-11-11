@@ -32,7 +32,8 @@ native media semantics.
 The bot uses a dedicated account, never the operator's personal account. It is
 conversational and reply-oriented: no bulk campaigns, broadcasts or outbound
 automation to unknown people. A narrowly admitted direct-code flow is an
-exception to that shape, not a general direct-message grant.
+exception to that shape, not a general direct-message grant. Voice calls are
+never answered; only messages are handled.
 
 A phone number and a LID are different identifiers that may map to one person.
 A display name is never an identity key. Unknown rooms and senders fail closed

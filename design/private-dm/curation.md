@@ -5,7 +5,10 @@
 The existing unit Cognition and profile writers remain canonical. A private
 stimulus can wake a restricted curation session for one owner and anchor,
 giving it the bound raw DM evidence and permitted shared context. It does not
-pool every member's private transcripts or create a second memory tier.
+pool every member's private transcripts or create a second memory tier. A DM
+is evidence for its owner's profile only: discussing somebody else in a DM
+does not make that DM evidence for that person's profile, because curation of
+person facts honours the subject's listed-source rule.
 
 That session may propose curated writes but cannot send to a group, create
 shared reminders, export private artifacts, invoke computer work or use an

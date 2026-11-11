@@ -22,7 +22,9 @@ capability reserved for a person's turn.
 A catalogue line is the tool description's opening paragraph: what the tool
 does, when to reach for it and, where needed, what it returns. Confusable
 siblings spend their few words on the discriminator between them, not on
-parameters, status catalogs, examples or reporting instructions.
+parameters, status catalogs, examples or reporting instructions. A hard cap is
+never stated in catalogue text: stating one makes the model decline work it
+could do.
 
 The opening is a gated tool-authored surface, not a second summary maintained
 beside the docstring. Detailed invocation constraints belong later in the

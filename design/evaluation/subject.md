@@ -62,4 +62,6 @@ Any remaining divergence is explicit: unavailable adapters, unrecoverable
 history, media not reconstructed, held transport health, or an external store
 with no point-in-time restore. These are not passed off as production parity.
 Where a platform cannot execute the entry point, the case errors rather than
-becoming an easier scenario.
+becoming an easier scenario. Every tool an eval turn can reach is stated or
+refused; a tool call with no stated result is an ERROR, never a live or billed
+external call.

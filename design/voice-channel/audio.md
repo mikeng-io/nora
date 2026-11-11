@@ -54,9 +54,10 @@ membership observation starts the owned leave policy; Nora itself does not
 count as a listener.
 
 Track failure is distinct from natural completion. Nora may refresh the source
-session and re-resolve the same track within a bounded budget before advancing.
-A stale failure neither retries nor advances. These decisions use the same
-per-guild serialization as play, skip and teardown.
+session and re-resolve the same track within a bounded budget keyed by the
+stream locator before advancing. A stale failure neither retries nor advances.
+These decisions use the same per-guild serialization as play, skip and
+teardown.
 
 ## Events, resources and failure
 
