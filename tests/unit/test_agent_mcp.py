@@ -14,8 +14,8 @@ import uvicorn
 from mcp.server.mcpserver import MCPServer
 from mcp.types import PaginatedRequestParams
 
+from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
 from nora.agent.mcp import McpMount, build_mcp_tools
-from nora.agent.tools import NATIVE_TOOL_BUDGETS
 
 
 def _free_port() -> int:

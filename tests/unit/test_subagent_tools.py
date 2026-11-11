@@ -20,11 +20,11 @@ from uuid import UUID
 
 import pytest
 
+from nora.agent.catalog.groups import SUBAGENT_TOOLS
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.subagent_desk import SubagentDesk
 from nora.agent.subagent_tools import NEVER, NOT_LOOKUPS, SubagentToolSource, granted_names
-from nora.agent.tools import SUBAGENT_TOOLS
 from nora.app.compute_poller import ComputeJobPoller
 from nora.app.documents_service import DocumentService
 from nora.domain.compute import ComputeJobState

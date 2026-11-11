@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from nora.agent.prefill import render_transcript
-from nora.agent.tools import _transcript_messages
+from nora.agent.toolkit.transcript import _transcript_messages
 from nora.app.cognition_grounding import _record_item
 from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.cognition_ground import RecordItem

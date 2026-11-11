@@ -35,6 +35,7 @@ from opentelemetry.util.types import AttributeValue
 
 from nora.agent import factory, tool_choice
 from nora.agent.browse import BrowseAgentRunner, BrowseSettings
+from nora.agent.catalog.groups import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.dream_screen import offence as dream_offence
 from nora.agent.dream_screen import text_offence
 from nora.agent.dreamer import (
@@ -65,7 +66,6 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.video_desk import VideoDesk
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.bridge_queue import BridgeRuntime, DbSpeakingLocks, StreamReader, WorkRunner
@@ -3582,9 +3582,8 @@ async def build_dependencies(
         display_name=cfg.doctrine.display_name,
         # `[external_files]` (ships off): the source a shared file link is
         # opened through; None answers the open `unavailable`.
-        external_files=external_files_source(
-            cfg, google=google_credentials(cfg, metrics=metrics),
-        ),
+        external_files=external_files_source(cfg, google=google_credentials(cfg, metrics=metrics)),
+        google_account=cfg.google.account,
         subagent=subagent_desk,
         video=video_desk,
         video_ref_kinds=frozenset(

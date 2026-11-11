@@ -1,6 +1,6 @@
 """`GoogleDriveSource`: the first `ExternalFilesSource`, Google Drive read-only.
 
-Nora's own account (`nora@67.zone`), through her ONE Google identity
+Nora's own Google account (`[google] account`), through her ONE Google identity
 (`nora.infra.google.auth.GoogleCredentials`, shared by every Google service
 she uses). This adapter declares ONE scope, `drive.readonly`
 (`nora.infra.google.scopes`): nothing here can write, comment or share, and

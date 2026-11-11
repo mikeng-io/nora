@@ -4,21 +4,20 @@ from pathlib import Path
 
 import pytest
 
+from nora.agent.catalog.groups import (
+    LOAD_TRANSCRIPT_DEFAULT,
+    LOAD_TRANSCRIPT_MAX,
+    NATIVE_TOOL_BUDGETS,
+)
 from nora.agent.guards import Deliverer
 from nora.agent.markdown import render_markdown
 from nora.agent.outbound import OutboundComposer
 from nora.agent.room import Room
-from nora.agent.tools import (
-    LOAD_TRANSCRIPT_DEFAULT,
-    LOAD_TRANSCRIPT_MAX,
-    NATIVE_TOOL_BUDGETS,
-    build_tool_specs,
-    build_tools,
-    note_handle,
-)
+from nora.agent.tools import build_tool_specs, build_tools
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import GifCandidate, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
+from nora.domain.notes import note_handle
 from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment, SendResult
 from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
@@ -240,14 +239,14 @@ def test_read_peer_card_is_gone_from_the_table():
     the two places a tool can exist: `NATIVE_TOOLS` (what makes a tool callable
     at all — R-7 default-denies anything absent) and the budgets table.
     Re-adding the tool turns this red."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     assert "read_peer_card" not in NATIVE_TOOLS
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
 
 
 def test_exactly_these_tools_are_cacheable():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
     assert cacheable == {
         "place_info", "route", "web_search", "web_fetch", "weather", "transit",
@@ -583,7 +582,7 @@ def test_strip_media_markers_covers_all_marker_shapes():
     The image is already delivered as a real attachment, so a model that
     quotes the raw handle leaks internal identifiers to the group. The
     stripper is the hard enforcement; these shapes must all collapse."""
-    from nora.agent.tools import _strip_media_markers as strip
+    from nora.agent.toolkit.transcript import _strip_media_markers as strip
 
     cases = (
         ("改完 [image c6a9cd]", "改完 "),
@@ -1893,7 +1892,7 @@ def test_a_quote_finds_the_platform_id_under_EITHER_spelling():
 
     PROBE: drop `message_id` from the tuple and the Instagram case reds.
     """
-    from nora.agent.tools import platform_message_id_of
+    from nora.conversation.adapters.tools.shared import platform_message_id_of
 
     assert platform_message_id_of({"id": "1234567890"}) == "1234567890"
     assert platform_message_id_of({"message_id": "mid.$gAASG4nv"}) == "mid.$gAASG4nv"
@@ -1907,7 +1906,7 @@ def test_a_quote_id_is_never_guessed_from_an_unusable_row():
     worse than not threading it, so anything unusable is None rather than
     coerced — including `True`, which `str()` would happily turn into the
     message id "True"."""
-    from nora.agent.tools import platform_message_id_of
+    from nora.conversation.adapters.tools.shared import platform_message_id_of
 
     assert platform_message_id_of({}) is None
     assert platform_message_id_of({"id": ""}) is None

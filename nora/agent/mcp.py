@@ -19,7 +19,7 @@ from typing import Any
 
 from strands.tools.mcp.mcp_client import MCPClient
 
-from .tools import NATIVE_TOOL_BUDGETS
+from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
 
 log = logging.getLogger("nora.agent.mcp")
 

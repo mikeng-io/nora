@@ -207,8 +207,8 @@ def doctrine(tmp_path):
 
 
 def _deliverer(store, doctrine, sink, links, metrics=None):
+    from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
     from nora.agent.guards import Deliverer
-    from nora.agent.tools import NATIVE_TOOL_BUDGETS
 
     return Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                      canary="CANARY-1", tag_id="tag-1", nora_sender_id="nora",
@@ -285,8 +285,8 @@ async def test_the_leak_guard_sees_the_appended_bytes(store, doctrine):
 async def test_a_deliverer_built_without_a_carrier_behaves_exactly_as_before(store, doctrine):
     """The inert case is a working case, not a broken one — the reason `links`
     is defaulted here the way `composer` is."""
+    from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
     from nora.agent.guards import Deliverer
-    from nora.agent.tools import NATIVE_TOOL_BUDGETS
 
     sink = SinkSender()
     d = Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
@@ -303,7 +303,7 @@ async def test_deliver_build_hands_out_the_same_carrier_it_gave_the_sender(store
     """Two carriers is a feature that collects perfectly and appends nothing —
     DEC-42's failure shape. `deliver.build` mints ONE and the handle exposes it,
     so a caller cannot wire the tools to a carrier the sender never reads."""
-    from nora.agent.tools import NATIVE_TOOL_BUDGETS
+    from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
     from nora.engagement.stages import deliver
 
     handle = deliver.build(
@@ -321,7 +321,7 @@ async def test_place_info_through_a_shared_carrier_reaches_the_group(store, doct
     """END TO END, and the only test here that catches the dropped-link
     defect: the tool mints, the model writes a reply that names the place and
     forgets the link, and the group gets the link anyway."""
-    from nora.agent.tools import NATIVE_TOOL_BUDGETS
+    from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
     from nora.engagement.stages import deliver
 
     sink = SinkSender()

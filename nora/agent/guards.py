@@ -21,6 +21,9 @@ from strands.hooks import (
     HookRegistry,
 )
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.toolkit.clock import utc_now
+
 from ..doctrine.loader import Doctrine
 from ..domain.actions import ActionOwner
 from ..domain.media import MediaBlob
@@ -32,6 +35,7 @@ from ..domain.models import (
     Touch,
     TranscriptRow,
 )
+from ..domain.notes import note_handle
 from ..domain.ports import OutboundAttachment, OutboundQuote, SendResult, Styled
 from ..obs.metrics import Metrics
 from . import tool_choice
@@ -40,7 +44,6 @@ from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
 from .markdown import render_markdown
 from .outbound import Outbound, OutboundComposer
-from .tools import NATIVE_TOOLS, note_handle, utc_now
 
 log = logging.getLogger("nora.guards")
 
@@ -502,22 +505,17 @@ class Deliverer:
             self._last_outcome = "doctrine_leak"
             return False
 
-        # R-18: see `nora.agent.egress` for what it deliberately does not match.
-        # This is the one caller of `scan_reply`: `text` here is addressed to the
-        # group, so the identifier floor applies at its strictest. The model-name
-        # veto is disabled (`x_read` relays third-party content that names
-        # models).
-        #
-        # BOTH forms, as with R-6, and this is the sharper case. Every identifier
-        # pattern is `\b`-anchored, and removing an asterisk BETWEEN two word
-        # characters joins them and destroys the boundary:
-        #
-        #   "*a*deadbeef-1234-5678-9abc-def012345678"  raw->uuid   converted->None
-        #   "*+85298765432*a"                          raw->phone  converted->None
-        #
-        # so a member's real number wrapped in emphasis would otherwise be sent
-        # (in bold). A text transformation must never sit in front of a
-        # fail-closed guard without the guard seeing both sides.
+        # R-18: see `nora.agent.egress` for what it deliberately does not match. This
+        # is the one caller of `scan_reply`: `text` here is addressed to the group,
+        # so the identifier floor applies at its strictest. The model-name veto is
+        # disabled (`x_read` relays third-party content that names models).  BOTH
+        # forms, as with R-6, and this is the sharper case. Every identifier pattern
+        # is `\b`-anchored, and removing an asterisk BETWEEN two word characters
+        # joins them and destroys the boundary:  "*a*deadbeef-1234-5678-9abc-
+        # def012345678"  raw->uuid   converted->None "*+85298765432*a"
+        # raw->phone  converted->None  so a member's real number wrapped in emphasis
+        # would otherwise be sent (in bold). A text transformation must never sit in
+        # front of a fail-closed guard without the guard seeing both sides.
         kind = scan_reply(styled.text, content_checks=self._content_checks) or scan_reply(
             drafted, content_checks=self._content_checks
         )

@@ -90,17 +90,17 @@ an area reaches another only through its root. New code goes to its area.
 
 | area | subject |
 |---|---|
-| `conversation` | rooms, the Record, messages, threads, edits, reactions, polls, replies |
-| `memory` | the Notebook, notes, memos, Standing, rollups, profiles, recall |
-| `people` | identity, policy, units, who is online |
-| `location` | presence, places, movement, routes, transit, parking, weather |
-| `media` | images and video: custody, comprehension, generation |
-| `social` | web search and fetch, the social networks |
-| `computer` | the computer unit, its sessions, the browser, artifacts |
-| `documents` | structured documents the portal renders |
-| `agenda` | gatherings, reminders, wakes |
-| `voice` | voice channels, speech, music |
-| `subagents` | delegated agent work |
+| `conversation/` | rooms, the Record, messages, threads, edits, reactions, polls, replies |
+| `memory/` | the Notebook, notes, memos, Standing, rollups, profiles, recall |
+| `people/` | identity, policy, units, who is online |
+| `location/` | presence, places, movement, routes, transit, parking, weather |
+| `media/` | images and video: custody, comprehension, generation |
+| `social/` | web search and fetch, the social networks |
+| `computer/` | the computer unit, its sessions, the browser, artifacts |
+| `documents/` | structured documents the portal renders |
+| `agenda/` | gatherings, reminders, wakes |
+| `voice/` | voice channels, speech, music |
+| `subagents/` | delegated agent work |
 | `self` | culture, lessons, her account of herself |
 
 The shared runtime: `platform/`, `ingest/`, `engagement/`,

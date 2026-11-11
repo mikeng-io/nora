@@ -467,7 +467,7 @@ async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
     hot tools plus `load_tools`, the prompt carries `<tool_catalogue>`, and
     the loop gets one more turn for the load. All three come from ONE
     `ToolSurface`, so they cannot disagree about what was deferred."""
-    from nora.agent.tools import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
 
     pipeline, _metrics, _audit, _memory, background = _build_pipeline(defer_tools=True)
     await pipeline.run(_request())
@@ -487,8 +487,8 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
     tools declared `hot_on` voice and the same words typed do not."""
     import dataclasses
 
+    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
     from nora.agent.surface import DISCORD_ONLY_TOOLS
-    from nora.agent.tools import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
 
     seen: list = []
 
@@ -516,7 +516,7 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
 async def test_without_deferral_nothing_changes():
     """`defer_tools = false`: every admitted schema,
     no loader, no catalogue block, the configured turn ceiling."""
-    from nora.agent.tools import LOADER_TOOL
+    from nora.agent.catalog.groups import LOADER_TOOL
 
     pipeline, _metrics, _audit, _memory, background = _build_pipeline()
     await pipeline.run(_request())

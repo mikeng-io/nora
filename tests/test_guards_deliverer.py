@@ -2,12 +2,12 @@ import time
 
 import pytest
 
+from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
 from nora.agent.egress import scan_reply
 from nora.agent.guards import Deliverer
 from nora.agent.links import LinkCarry
 from nora.agent.markdown import render_markdown, strip_markdown
 from nora.agent.outbound import Outbound
-from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget
 from nora.domain.ports import Mention, Style, Styled

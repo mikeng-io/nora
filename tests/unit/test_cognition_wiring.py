@@ -19,8 +19,8 @@ from typing import Any, ClassVar
 import pytest
 
 from nora.agent import factory
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.dreamer import AdaptorGrant, cognition_grant
-from nora.agent.tools import NATIVE_TOOLS
 from nora.app import cognition_agent_runner as agent_runner_module
 from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import (

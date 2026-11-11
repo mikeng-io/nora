@@ -16,6 +16,7 @@ from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.domain.lineage import RoomFacts
 from nora.domain.memory_index import IndexedNode
+from nora.language.culture import CULTURE_ADAPTOR_NAME
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeMemoryStore, FakeRosterSource
@@ -263,7 +264,6 @@ async def test_on_a_person_the_room_does_not_list_is_unavailable_not_nothing(per
 async def test_a_culture_pass_never_reads_another_rooms_line(persons):
     from dataclasses import replace
 
-    from nora.agent.tools import CULTURE_ADAPTOR_NAME
     other = RoomFacts('signal', frozenset({'generated-other'}), 'u1', _FRIENDS.persons)
     lineage = LineagePolicy(rooms=(_FRIENDS, other),
         _by_id={('signal', GROUP): _FRIENDS, ('signal', 'generated-other'): other})

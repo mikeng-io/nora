@@ -7,7 +7,7 @@ import pytest
 from nora.agent.lineage import LineagePolicy
 from nora.agent.prefill import render_transcript
 from nora.agent.room import Room
-from nora.agent.tools import _transcript_messages
+from nora.agent.toolkit.transcript import _transcript_messages
 from nora.agent.turn_record import turn_record_view
 from nora.domain.lineage import LineageEntry, RenderRoom, RoomFacts, message
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow

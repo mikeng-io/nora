@@ -71,6 +71,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
+from nora.agent.catalog.model import turn_occasion
 from nora.agent.guards import ReplyGuard
 from nora.agent.lineage import (
     LineagePolicy,
@@ -87,7 +88,6 @@ from nora.agent.prefill import (
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.standing_ledger import ledger_permits, ledger_target
-from nora.agent.tools import turn_occasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
 from nora.domain.blocks import RowStyle, render_rows
