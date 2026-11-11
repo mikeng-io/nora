@@ -31,10 +31,16 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 
-from nora.domain.culture import Citable, Refusal, check_revision
+from nora.domain.culture import (
+    Citable,
+    Episode,
+    Refusal,
+    RoomMessage,
+    check_revision,
+)
 
 __all__ = [
     "ECHO_COVERAGE",
@@ -49,6 +55,7 @@ __all__ = [
     "NAMES_HER",
     "Lesson",
     "LessonConflictError",
+    "LessonEvidenceView",
     "LessonRevision",
     "check_lesson",
     "echoes",
@@ -85,13 +92,9 @@ class LessonConflictError(Exception):
 LESSON_MIN_EPISODES = 3
 
 #: `nora_lessons_session_total`'s `outcome`: `written` and `retired` count
-#: verb calls that landed, `kept` a session closed with `lessons_no_change`,
-#: `unsettled` a session that did none of those (the batch is held),
-#: `abandoned` the third unsettled run of one batch (it advances; DEC-280), and
-#: `decayed` a lesson retired by code at its horizon.
-LESSONS_OUTCOMES = frozenset({
-    "written", "retired", "kept", "unsettled", "abandoned", "decayed",
-})
+#: `lesson_write` / `lesson_retire` calls that landed in a live Cognition
+#: session, and `decayed` a lesson retired by code at its horizon.
+LESSONS_OUTCOMES = frozenset({"written", "retired", "decayed"})
 
 #: Active lessons a unit holds at once, and the characters they hold together.
 LESSON_MAX_ACTIVE = 12
@@ -165,6 +168,29 @@ class Lesson:
     @property
     def active(self) -> bool:
         return self.head.state == "active"
+
+
+@dataclass(frozen=True, slots=True)
+class LessonEvidenceView:
+    """What one live Cognition session is handed for lesson work: the closed
+    `response` episodes and corrections past the unit's `lessons` cursor, the
+    held lessons by their `L` handles, and `citable` — the evidence a write
+    may cite, built from THIS view alone, so a citation can only ever name an
+    episode or row the session was shown. `names` and `labels` are the words
+    the render speaks in (never an id); `cursor` is where `take` moves the
+    watermark when the session closes."""
+
+    episodes: tuple[Episode, ...] = ()
+    corrections: tuple[RoomMessage, ...] = ()
+    held: tuple[Lesson, ...] = ()
+    #: `L1` ... -> the lesson id, the same handles the book's verbs resolve.
+    handles: Mapping[str, str] = field(default_factory=dict)
+    #: person_id -> the name the render calls them by (a roster name).
+    names: Mapping[str, str] = field(default_factory=dict)
+    #: conversation_id -> the room's label.
+    labels: Mapping[str, str] = field(default_factory=dict)
+    citable: Citable = field(default_factory=Citable)
+    cursor: int = 0
 
 
 def _norm(text: str) -> str:

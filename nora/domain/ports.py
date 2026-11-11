@@ -2519,9 +2519,9 @@ class ContextAssembler(Protocol):
 
 @dataclass(frozen=True)
 class VerbProvenance:
-    """`Proposal`'s three provenance fields, for an adaptor whose write verbs
+    """`Proposal`'s three provenance fields, for a session whose write verbs
     WRITE when called instead of staging for `commit`
-    (`nora.language.lessons.LessonsAdaptor`: a lesson's cap is judged against
+    (`nora.language.lesson_book.LessonBook`: a lesson's cap is judged against
     what the unit holds now, so a retirement must land before the next write is
     judged). The runtime hands it to `verbs(key=..., provenance=...)` when the
     adaptor's `verbs` takes the argument; the values are the ones it stamps on a

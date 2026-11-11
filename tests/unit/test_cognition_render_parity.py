@@ -261,6 +261,9 @@ def new_facts(text: str) -> Facts:
             "memos",
             "graph",
             "lessons",
+            "held_lessons",
+            "lesson_corrections",
+            "lesson_episodes",
             "documents",
         }:
             # This corpus predates the added sources: it supplies none of them.

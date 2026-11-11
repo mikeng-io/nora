@@ -11,6 +11,7 @@ COMPOSERS = frozenset(
     {
         "nora.language.register_render:render_register",
         "nora.language.cognition_render:_item_blocks",
+        "nora.language.cognition_render:_lesson_evidence_blocks",
         "nora.language.cognition_render:render_agenda",
         "nora.language.context_render:render_clock",
         "nora.language.context_render:render_reads",
@@ -80,7 +81,6 @@ LEGACY_COMPOSERS = frozenset(
         "nora.language.character:room_cultures_block",
         "nora.language.confirmation_render:confirmation_prompts",
         "nora.language.culture:CultureAdaptor.inputs",
-        "nora.language.lessons:LessonsAdaptor.inputs",
         "nora.language.profile:ProfilePersonAdaptor.inputs",
         "nora.language.profile_collective:ProfileCollectiveAdaptor.inputs",
         "nora.language.profile_collective:ProfileCollectiveAdaptor.inputs.source_block",

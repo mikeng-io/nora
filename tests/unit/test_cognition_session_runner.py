@@ -50,12 +50,16 @@ class FakeCognitionAgentRunner:
     calls: int = 0
     results: list[object] = field(default_factory=list)
     last_tool_names: list[str] = field(default_factory=list)
+    last_prompt: str = ""
+    last_system_prompt: str = ""
 
     async def run(
         self, *, system_prompt: str, prompt: str, tools: list[Any],
         budget: AdaptorBudget, trace_attributes: Mapping[str, str],
     ) -> CognitionRunResult:
         self.calls += 1
+        self.last_prompt = prompt
+        self.last_system_prompt = system_prompt
         by_name = {getattr(t, "__name__", None): t for t in tools}
         self.last_tool_names = sorted(n for n in by_name if n)
         for name, kwargs in self.script:
@@ -88,6 +92,7 @@ def _runner(
     stimuli: InMemoryStimulusStore | None = None,
     memory: Any = None, grounder: Any = None,
     read_tools_for: Any = None, read_only_tools: frozenset[str] = frozenset(),
+    lessons: Any = None,
 ) -> tuple[CognitionSessionRunner, InMemoryCognitionStore, FakeCognitionAgentRunner]:
     store = store or InMemoryCognitionStore()
     fake = agent_runner or FakeCognitionAgentRunner()
@@ -103,6 +108,7 @@ def _runner(
         open_events=_async_const2(()), prior_standing=_async_const2(None),
         budget=BUDGET, cooldown_seconds=300.0, max_items=12,
         mint_ref=_counting_ref(), clock=lambda: NOW / 1000,
+        lessons=lessons,
     )
     return runner, store, fake
 
@@ -1608,3 +1614,153 @@ async def test_candidate_custody_is_exactly_what_the_cards_emit():
     assert ("place", "p3") not in aux["candidate_keys"]
     assert aux["candidate_relations"] == {
         r["id"] for r in entry["candidates"][0]["relations"]}
+
+
+# --------------------------------------------------------------------------
+# lessons: evidence rides the context, verbs are live-only, the cursor
+# settles on close
+# --------------------------------------------------------------------------
+
+
+def _lesson_seam():
+    """The real `CognitionLessons` over the in-memory fakes: a session's
+    writes go through `LessonBook`'s own checked verbs."""
+    from nora.agent.dream_screen import offence
+    from nora.domain.lessons import LESSON_MIN_EPISODES  # noqa: F401 - shape note
+    from nora.language.character import CharacterRoom
+    from nora.language.lesson_book import LessonBook
+    from nora.language.lessons import (
+        CognitionLessons,
+        LessonEvidence,
+        LessonsKey,
+    )
+    from nora.obs.metrics import Metrics
+    from nora.testing import InMemoryCharacterEvidence
+    from tests.unit.test_cognition_lessons import _Clock, _Cursor, _Store
+
+    clock = _Clock(NOW)
+    store = _Store()
+    book = LessonBook(store=store, law=lambda: ["Never share a location."],
+                      screen=offence, clock_ms=clock)
+    evidence_store = InMemoryCharacterEvidence()
+    keys = {"unit-1": LessonsKey(unit="unit-1", rooms=(
+        CharacterRoom(key="home-room", platform="signal", label="Home"),))}
+    evidence = LessonEvidence(
+        store=evidence_store, book=book, keys=keys, clock_ms=clock)
+    cursor = _Cursor(evidence_store, clock)
+    lessons = CognitionLessons(
+        evidence=evidence, book=book, keys=keys, cursor=cursor,
+        batch_limit=100, horizon_seconds=5_184_000,
+        name_of=lambda pid: "someone", clock_ms=clock, metrics=Metrics())
+    return lessons, store, evidence_store, cursor
+
+
+def _seed_episodes(evidence_store, *send_ids: int) -> None:
+    from nora.domain.culture import Episode
+
+    for sid in send_ids:
+        evidence_store.add_episode(unit="unit-1", episode=Episode(
+            send_id=sid, room="home-room", text="dinner at 8?",
+            outcome="responded", reactions=1, edits=0))
+
+
+async def test_a_live_session_is_offered_lesson_verbs_and_writes_citing_a_shown_episode():
+    lessons, _store, evidence_store, cursor = _lesson_seam()
+    _seed_episodes(evidence_store, 100, 110, 120)
+    fake = FakeCognitionAgentRunner(script=[(
+        "lesson_write",
+        {"body": "when someone asks where to eat, name one place and why",
+         "citations": ["response:100", "response:110", "response:120"]},
+    )])
+    runner, _, fake = _runner(agent_runner=fake, lessons=lessons)
+    view = UnitView(unit="unit-1", pending=_pending("unit-1"),
+                    last_activity_ms=None, last_wake=None)
+    await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
+    assert {"lesson_write", "lesson_retire"} <= set(fake.last_tool_names)
+    assert fake.results[0]["status"] == "ok"
+    [lesson] = await lessons._book.active(unit="unit-1")
+    assert lesson.head.established_by == "cognition:unit-1"
+    assert lesson.head.instruction_sha256 == "sha"
+    assert cursor.at == 120
+
+
+async def test_a_lesson_citing_an_episode_the_session_was_not_shown_is_refused():
+    lessons, _store, evidence_store, _cursor = _lesson_seam()
+    _seed_episodes(evidence_store, 100, 110, 120)
+    fake = FakeCognitionAgentRunner(script=[(
+        "lesson_write",
+        {"body": "when someone asks where to eat, name one place and why",
+         "citations": ["response:999", "response:110", "response:120"]},
+    )])
+    runner, _, fake = _runner(agent_runner=fake, lessons=lessons)
+    view = UnitView(unit="unit-1", pending=_pending("unit-1"),
+                    last_activity_ms=None, last_wake=None)
+    await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
+    out = fake.results[0]
+    assert (out["status"], out["reason"]) == ("refused", "unresolved_citation")
+    assert await lessons._book.active(unit="unit-1") == ()
+
+
+async def test_closed_episodes_reach_the_session_context_with_citable_ids():
+    lessons, _store, evidence_store, _cursor = _lesson_seam()
+    _seed_episodes(evidence_store, 100, 110, 120)
+    fake = FakeCognitionAgentRunner(script=[])
+    runner, _, fake = _runner(agent_runner=fake, lessons=lessons)
+    view = UnitView(unit="unit-1", pending=_pending("unit-1"),
+                    last_activity_ms=None, last_wake=None)
+    await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
+    for n in (100, 110, 120):
+        assert f'n="response:{n}"' in fake.last_prompt
+    assert "<lesson_episodes" in fake.last_prompt
+
+
+async def test_a_historical_session_neither_reads_nor_holds_lesson_verbs():
+    class _Spy:
+        def __init__(self, inner):
+            self.inner = inner
+            self.shown_calls = 0
+            self.take_calls = 0
+            self.decay_calls = 0
+
+        async def shown(self, *, unit):
+            self.shown_calls += 1
+            return await self.inner.shown(unit=unit)
+
+        def verbs(self, **kw):
+            return self.inner.verbs(**kw)
+
+        async def take(self, **kw):
+            self.take_calls += 1
+            return await self.inner.take(**kw)
+
+        async def decay(self, **kw):
+            self.decay_calls += 1
+            return await self.inner.decay(**kw)
+
+    lessons, _store, evidence_store, _cursor = _lesson_seam()
+    _seed_episodes(evidence_store, 100, 110, 120)
+    spy = _Spy(lessons)
+    fake = FakeCognitionAgentRunner(script=[])
+    runner, _, fake = _runner(agent_runner=fake, lessons=spy)
+    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+        last_activity_ms=None, last_wake=None), now_ms=NOW, historical=True)
+    assert not {"lesson_write", "lesson_retire"} & set(fake.last_tool_names)
+    assert (spy.shown_calls, spy.take_calls, spy.decay_calls) == (0, 0, 0)
+    assert "response:100" not in fake.last_prompt
+
+
+async def test_a_failed_session_does_not_consume_the_lesson_batch():
+    lessons, _store, evidence_store, cursor = _lesson_seam()
+    _seed_episodes(evidence_store, 100, 110, 120)
+
+    class _Doomed(FakeCognitionAgentRunner):
+        async def run(self, **kw):
+            raise RuntimeError("model unreachable")
+
+    fake = _Doomed()
+    runner, _store, fake = _runner(agent_runner=fake, lessons=lessons)
+    view = UnitView(unit="unit-1", pending=_pending("unit-1"),
+                    last_activity_ms=None, last_wake=None)
+    with pytest.raises(RuntimeError):
+        await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
+    assert cursor.at == 0

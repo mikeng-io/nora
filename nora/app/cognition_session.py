@@ -94,6 +94,7 @@ from nora.domain.cognition_session import (
     Situation,
     build_situation,
 )
+from nora.domain.culture import Citable
 from nora.domain.gatherings import (
     EVENT_PARTS,
     AmbiguousOpenGatheringsError,
@@ -106,6 +107,7 @@ from nora.domain.gatherings import (
     StaleEventRevisionError,
     field_mode,
 )
+from nora.domain.lessons import LessonEvidenceView
 from nora.domain.memo import (
     MEMO_BODY_MAX_CHARS,
     MEMO_TITLE_MAX_CHARS,
@@ -198,7 +200,12 @@ SESSION_VERB_NAMES: frozenset[str] = frozenset({
     "event_set_status", "standing_revise",
     "wake_at", "wake_move", "wake_cancel", "remind", "remind_move", "remind_cancel",
     "memory_propose", "profile_read", "profile_revise",
+    "lesson_write", "lesson_retire",
 })
+
+#: The declared blocks one `shown` read feeds (`cognition_render._BLOCKS`):
+#: when that read fails they all render `status="unavailable"`, never empty.
+_LESSON_BLOCKS = ("held_lessons", "lesson_corrections", "lesson_episodes")
 
 _DAY_MS = 24 * 3600 * 1000
 _PACE_VERBS = frozenset({"wake_at", "wake_move", "wake_cancel"})
@@ -474,6 +481,11 @@ class _RunState:
     document_evidence: list[tuple[int, str, str, str]] = field(default_factory=list)
     document_rooms: frozenset[tuple[str,str]] = frozenset()
     graph_text: str = ""
+    #: The lesson evidence THIS session was shown (`CognitionLessons.shown`),
+    #: whose `citable` is the ONLY evidence its `lesson_write` may cite and
+    #: whose cursor `take` writes when the session closes. None when
+    #: `[lessons]` is off, the lane is historical, or the read failed.
+    lesson_view: LessonEvidenceView | None = None
     historical: bool = False
     #: The line of the prompt that says which room(s) the read tools resolve
     #: through (`_build_tools`).
@@ -678,6 +690,11 @@ class CognitionSessionRunner:
         observations: Any = None,
         documents: Any = None,
         documents_context: Any = None,
+        # `CognitionLessons` (`nora.language.lessons`): the lesson evidence
+        # read and its settle — shown before the model call, the cursor
+        # advanced when the session closes. None ([lessons] disabled) offers
+        # no lesson verbs and reads nothing.
+        lessons: Any = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -730,6 +747,7 @@ class CognitionSessionRunner:
         `infra`."""
         self._documents = documents
         self._documents_context = documents_context
+        self._lessons = lessons
         self._memory = memory
         self._content_checks = content_checks
         self._tag_trace_store = tag_trace_store
@@ -990,7 +1008,7 @@ class CognitionSessionRunner:
                     unit=unit, view=view, situation=situation, session_id=0,
                     wake_id=0, now_ms=now_ms, doctrine_text=doctrine_text,
                     skill_text=skill_text, grounding=grounding,
-                    historical=historical,
+                    historical=historical, doctrine_sha256=doctrine_sha256,
                 )
                 return {
                     "system": system, "agenda": agenda,
@@ -1036,6 +1054,7 @@ class CognitionSessionRunner:
             return await self._run_session(
                 unit=unit, view=view, situation=situation, session_id=session_id,
                 wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
+                doctrine_sha256=doctrine_sha256,
                 skill_text=skill_text, grounding=grounding, retained=sorted(retained),
                 spend=spend, replay=replay, historical=historical,
             )
@@ -1179,6 +1198,7 @@ class CognitionSessionRunner:
             unit=unit, view=view, situation=situation, session_id=session_id,
             wake_id=0, now_ms=now_ms, doctrine_text=doctrine_text,
             skill_text=skill_text, grounding=Grounding(),
+            doctrine_sha256=doctrine_sha256,
         )
         return await self._agent_runner.run(
             system_prompt=system_prompt, prompt=prompt,
@@ -1272,6 +1292,7 @@ class CognitionSessionRunner:
         skill_text: str,
         grounding: Grounding,
         historical: bool = False,
+        doctrine_sha256: str | None = None,
     ) -> tuple[_RunState, Any, str, str]:
         """Everything a session assembles before the model call: the run
         state, the tools, the system prompt and the agenda text. A live
@@ -1321,8 +1342,26 @@ class CognitionSessionRunner:
         )
         if self._memory is not None:
             await self._memory.prepare(state, {s.id: s for s in view.pending}, grounding)
+        # The outcomes of her own acts, riding along in this session's context:
+        # the closed `response` episodes and corrections past the unit's
+        # `lessons` cursor, with the held lessons by `L` handle and the
+        # `citable` its writes are held to. Live only — a historical session
+        # never reads or writes present-day practice — and a failed read is
+        # told as `unavailable`, never as an empty batch.
+        if self._lessons is not None and not historical:
+            try:
+                lesson_view = await self._lessons.shown(unit=unit)
+            except Exception:
+                log.exception("cognition lesson evidence read failed (unit=%s)", unit)
+                self._inc("nora_errors_total", stage="cognition_lessons")
+                grounding = replace(grounding, unavailable=(
+                    grounding.unavailable | frozenset(_LESSON_BLOCKS)))
+            else:
+                grounding = replace(grounding, lesson_evidence=lesson_view)
+                state.lesson_view = lesson_view
         tools = await self._build_tools(
             unit=unit, state=state, now_ms=now_ms, labels=grounding.room_labels,
+            doctrine_sha256=doctrine_sha256,
         )
         from nora.agent.surface import deferred_surface
 
@@ -1443,6 +1482,7 @@ class CognitionSessionRunner:
         grounding: Grounding, spend: TokenSpend,
         retained: Sequence[int] = (),
         replay: bool = False, historical: bool = False,
+        doctrine_sha256: str | None = None,
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
         kinds = sorted({item.kind for item in items})
@@ -1450,6 +1490,7 @@ class CognitionSessionRunner:
             unit=unit, view=view, situation=situation, session_id=session_id,
             wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
             skill_text=skill_text, grounding=grounding, historical=historical,
+            doctrine_sha256=doctrine_sha256,
         )
         from dataclasses import asdict
 
@@ -1585,6 +1626,23 @@ class CognitionSessionRunner:
         self._overflowed.pop(unit, None)
         for carry in carries:
             self._inc("nora_cognition_carry_total", state=carry.state)
+        # The lessons cursor moves on the CLOSE, never before: a session that
+        # failed, timed out or was refused keeps its batch for the next one.
+        # The decay runs on every closed session — the old adaptor ran it on a
+        # blank run too, so a lesson due on a session handed nothing still
+        # retires. A failed settle is logged, not raised: the session closed
+        # and its writes stand; the batch is re-read next time.
+        if self._lessons is not None and not historical:
+            try:
+                if state.lesson_view is not None:
+                    await self._lessons.take(unit=unit, view=state.lesson_view)
+                await self._lessons.decay(
+                    unit=unit, now_ms=self._now_ms(),
+                    established_by=f"cognition:{unit}:{session_id}:horizon",
+                )
+            except Exception:
+                log.exception("cognition lesson settle failed (unit=%s)", unit)
+                self._inc("nora_errors_total", stage="cognition_lessons")
         await self._record_fired(state=state, situation=situation, view=view)
         return CognitionSessionOutcome(
             session_id=session_id, items=len(items),
@@ -1714,6 +1772,7 @@ class CognitionSessionRunner:
         state: _RunState,
         now_ms: int,
         labels: Mapping[str, str] | None = None,
+        doctrine_sha256: str | None = None,
     ) -> list[Any]:
         if self._rooms_of_unit is not None:
             state.unit_rooms = {
@@ -3301,7 +3360,9 @@ class CognitionSessionRunner:
             """
             if self._memory is None:
                 return {"status": "unavailable", "note": "Memory admission is unavailable."}
-            return await self._memory.propose(state, statements=statements)
+            out: dict[str, Any] = await self._memory.propose(
+                state, statements=statements)
+            return out
 
         async def profile_read(
             entity: list[str],
@@ -3361,6 +3422,25 @@ class CognitionSessionRunner:
             # account heads (the store has no as-of view), so a session at
             # T would read — or revise — the future. History offers memory writes.
             verbs = (memory_propose,)
+        if self._lessons is not None and not state.historical:
+            # ponytail: history must not create present-day practice; the
+            # lesson verbs stay withheld in the historical lane. When the
+            # evidence read failed the session holds an EMPTY citable, so a
+            # write can cite nothing and refuses, never slips past unchecked.
+            verbs = (*verbs, *self._lessons.verbs(
+                unit=unit,
+                citable=(
+                    state.lesson_view.citable
+                    if state.lesson_view is not None else Citable()
+                ),
+                handles=(
+                    dict(state.lesson_view.handles)
+                    if state.lesson_view is not None else None
+                ),
+                established_by=established_by,
+                instruction_sha256=doctrine_sha256,
+                model=self._model_id,
+            ))
         from nora.agent.ports import adapt
         from nora.agent.tools import cognition_document_tools
         from nora.domain.documents import DocumentAuthority

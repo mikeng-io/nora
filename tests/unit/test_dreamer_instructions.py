@@ -484,8 +484,6 @@ NATIVELY_AUTHORED = {
     "profile-room",
     "profile-unit",
     "profile-nora",
-    # The Lessons session.
-    "lessons",
     # The doctrine check: an instrument's instruction, read through
     # `objective_body`, never with the Dreamer doctrine.
     "doctrine-check",

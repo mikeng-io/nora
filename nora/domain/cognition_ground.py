@@ -36,6 +36,7 @@ from nora.domain.cognition_session import Room
 from nora.domain.context_data import MembersView, RoomLine, TranscriptLine
 from nora.domain.culture import CultureRevision
 from nora.domain.documents_context import DocumentsView
+from nora.domain.lessons import LessonEvidenceView
 from nora.domain.memo import Memo
 from nora.domain.models import RowReactions
 from nora.domain.notes import RetainedSource
@@ -353,6 +354,12 @@ class Grounding:
     transcript_more: int = 0
     context_withheld: tuple[tuple[str, int], ...] = ()
     lessons: tuple[str, ...] = ()
+    #: A live session's lesson evidence (`CognitionLessons.shown`): the closed
+    #: `response` episodes and corrections past the unit's `lessons` cursor,
+    #: the held lessons by `L` handle, and the `citable` a write is held to.
+    #: None when `[lessons]` is off, the lane is historical, or the read
+    #: failed — whose blocks render `unavailable`, never as empty.
+    lesson_evidence: LessonEvidenceView | None = None
     unavailable: frozenset[str] = frozenset()
 
     def as_dict(self) -> dict[str, object]:
@@ -409,6 +416,18 @@ class Grounding:
                           "words_shown": m.text is not None} for m in sends]
                 for i, sends in self.own_sends.items()
             },
+            # The episodes and corrections the lesson evidence handed over,
+            # by the id a citation would name (send ids and row ids), and the
+            # cursor `take` would write.
+            "lesson_episodes": (
+                None if self.lesson_evidence is None
+                else [e.send_id for e in self.lesson_evidence.episodes]),
+            "lesson_corrections": (
+                None if self.lesson_evidence is None
+                else [m.row.id for m in self.lesson_evidence.corrections]),
+            "lessons_cursor": (
+                None if self.lesson_evidence is None
+                else self.lesson_evidence.cursor),
         }
 
 

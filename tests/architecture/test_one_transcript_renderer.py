@@ -60,7 +60,6 @@ CONVERTED = {
         "replies",
     "nora/language/profile_verdict.py":
         "the window's Record rows the verdict judge reads",
-    "nora/language/lessons.py": "her sends and their quoted replies a Lessons session reads",
     "nora/engagement/debrief_render.py":
         "the window the fold and the grounding verdict read",
     "nora/language/context_render.py": "shared chronological transcript via render_messages",

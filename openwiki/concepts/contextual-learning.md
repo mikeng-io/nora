@@ -148,7 +148,7 @@ none came. An episode whose only responses are unquoted follows is *not* evidenc
 because the session is shown her send and nothing of the follow messages
 (`nora/domain/culture.py#L522-L540`). The `response` rollups are not exposed through
 the `rollup_read` tool — that tool reads `stay`, `trip`, `colocation`, `outing`,
-`daybook` and `tie`, and `response` is "the Lessons adaptor's, not a session's"
+`daybook` and `tie`, and `response` is lesson evidence for the Cognition session, not a read tool's
 (`nora/domain/rollup_read.py#L34-L40`).
 
 ## Three learning inputs, three authorities
@@ -435,7 +435,7 @@ runs with it and is the doctrine check's job
 Caps, all of them refusal thresholds (`nora/domain/lessons.py#L59-L98`): a body of at
 most 400 characters and at least 12 normalised characters; at most 12 active lessons
 and 2400 characters of them per unit; at least 3 distinct episodes per write
-(`LESSON_MIN_EPISODES`), a floor not lowered to what a stale wake happened to show,
+(`LESSON_MIN_EPISODES`), a floor not lowered to what a stale session happened to show,
 because a lesson changes what she *does*. A lesson citing a correction — a message
 that told her how to act — is exempt from the three-episode floor: one correction is
 enough on its own, which is the point of the fast path.
@@ -466,37 +466,36 @@ returns an empty answer on a live lesson, and empty is an `error`
 (`nora/app/composition.py#L4188-L4214`). Operator-facing tension rows are readable
 with `nora lessons tensions`.
 
-### Waking, handing over, and decaying
+### Handing over and decaying
 
-A Lessons session is one Dreamer adaptor per unit, and its evidence is **closed**
-response episodes — `unanswered` included, `open` and `unknown` never
-(`nora/language/lessons.py#L1-L16`). Three things wake a unit's key
-(`nora/language/lessons.py#L149-L227`):
+Lessons are written by the unit's Cognition session — the same session that reads
+the wake — not by a separate adaptor, and nothing wakes for lessons alone. A live
+session's context carries three lesson blocks: its held lessons by `L` handle, the
+corrections aimed at her since the cursor, and the **closed** `response` episodes
+past the unit's `lessons` watermark — `unanswered` included, `open` and `unknown`
+never (`nora/language/lessons.py`). The watermark advances when a session that was
+handed the evidence closes; a session that fails or never closes leaves it
+unmoved, so the batch is shown again.
 
-1. `[lessons] wake_batch` closed episodes past the key's watermark;
-2. `[lessons] stale_seconds` with any new episode;
-3. a held lesson reaching `[lessons] horizon_seconds` — which counts as a full batch
-   so the key wakes and `commit` can retire it.
+Corrections ride the same handoff: a message addressed to her that reads as an
+instruction about how she acts ("stop", "next time", "唔好", "下次") is handed to the
+next session once it is `correction_quiet_seconds` old, so the conversation around
+it has settled. The pattern is deliberately recall-leaning — a false positive
+costs one session that judges it and writes nothing, a miss costs only the wait —
+and it is never the correction's content that a session acts on
+(`nora/domain/lessons.py#L270-L299`).
 
-There is a fourth, faster path: a message addressed to her that reads as an
-instruction about how she acts ("stop", "next time", "唔好", "下次") wakes the unit
-once it is `correction_quiet_seconds` old, so the conversation around it has settled.
-The pattern is deliberately recall-leaning — a false positive costs one session that
-judges it and closes unchanged, a miss costs only the wait for the batch — and it is
-never the correction's content that a session acts on (`nora/domain/lessons.py#L270-L299`).
-A known gap is stated in the code: a correction sent during the quiet window of a
-running session is not fast-pathed, though it still reaches a session through the
-episodes it is part of.
+Two handing-over rules keep a session honest. `newest` returns no episodes and the
+cursor stays unmoved when fewer than `LESSON_MIN_EPISODES` arrived, because no
+write could cite so few — though the corrections and held lessons still reach the
+session, and close still runs the decay. And **a lesson is never shown by id**:
+the verbs refuse any argument carrying a UUID, so each held lesson is shown as
+`L1`, `L2`, …, and a refusal's `detail` is rewritten to use the handle — or, for
+a lesson the session never saw, "a lesson the operator retired"
+(`nora/language/lesson_book.py#L144-L182`).
 
-Two handing-over rules keep a session honest. `newest` returns nothing and leaves the
-cursor **unmoved** when fewer than `LESSON_MIN_EPISODES` arrived, because no write
-could cite so few; the run is then blank and `commit` still runs the decay. And **a
-lesson is never shown by id**: the Dreamer's screen refuses any verb argument carrying
-a UUID, so each held lesson is shown as `L1`, `L2`, …, and a refusal's `detail` is
-rewritten to use the handle — or, for a lesson the session never saw, "a lesson the
-operator retired" (`nora/language/lesson_book.py#L144-L182`).
-
-Decay is code, in `commit`, and it runs on every run including a blank one: a lesson
+Decay is code, in `CognitionLessons.decay`, and it runs at every session close: a
+lesson
 whose head is older than `[lessons] horizon_seconds` after the session ran — it may
 have just reinforced it — is retired, counted `decayed`
 (`nora/language/lessons.py#L490-L514`).
@@ -599,9 +598,9 @@ answering must cost a thinner prompt on the next decision, never a dropped reply
 | `[standing] max_chars` / `fold_batch` / `timeout_seconds` / `store_timeout_seconds` | 1200 / 40 / 20.0 / 5.0 | operating cap, rows per fold, model call, each store await |
 | `[standing] max_slot_hold_seconds` | 60.0 (shipped file: 150.0) | startup gate on the whole hold: `timeout_seconds + STANDING_STORE_CALLS_PER_FOLD × store_timeout_seconds` |
 | `[culture] enabled` and its batch keys | false | room, person, unit and Nora sessions, plus `<culture>`, `<unit_culture>`, `<character>`, `<self>` |
-| `[lessons] enabled` | false | builds the Lessons adaptor; requires `[dreamer] enabled` |
+| `[lessons] enabled` | false | hands lesson evidence and the lesson verbs to live Cognition sessions; requires `[cognition] enabled` |
 | `[lessons] render` | false | wires `ActiveLessons`, so `<lessons>` appears at all |
-| `[lessons] wake_batch` / `stale_seconds` / `horizon_seconds` / `batch_limit` | 50 / 604800 / 5184000 / 100 | waking, the 60-day decay, and how much one session reads |
+| `[lessons] stale_seconds` / `horizon_seconds` / `batch_limit` | 604800 / 5184000 / 100 | the correction lookback, the 60-day decay, and how much one session reads |
 | `[lessons] correction_quiet_seconds` | 600 | the correction fast path; 0 is off |
 | `[lessons] check_model` and `check_*` | inherit `[llm]` | the doctrine check's model, budget and timeout |
 
@@ -624,8 +623,8 @@ Operationally, the metrics that answer "did it learn anything, and where did it 
 | `nora_debrief_prior_total{prior}` | `read` vs `absent` — makes "this fold read nothing" a reading rather than an assumption |
 | `nora_standing_overflow_refusals_total{stage}` | `first` (it retried) vs `final` (the prior stands) |
 | `nora_standing_working_set_unsourced_dropped_total`, `…_expired_dropped_total`, `…_overflow_refusals_total` | which rule dropped the item |
-| `nora_lessons_session_total{outcome}` | `written`, `retired`, `kept`, `unsettled`, `abandoned`, `decayed` |
-| `nora_lessons_correction_wake_total`, `nora_self_tension_total{doctrine_file}` | the fast path fired; a lesson pulled against law |
+| `nora_lessons_session_total{outcome}` | `written`, `retired`, `decayed` |
+| `nora_lessons_correction_wake_total`, `nora_self_tension_total{doctrine_file}` | a session was handed correction context; a lesson pulled against law |
 | `nora_culture_fold_total{outcome}`, `nora_character_session_total{outcome}` | the account sessions' settle states |
 
 ## Failure modes worth recognising
@@ -636,8 +635,8 @@ Operationally, the metrics that answer "did it learn anything, and where did it 
 | `malformed` rises | the objective text or the schema drifted | `nora/dreamer/objectives/standing-debrief.md`, `_body` |
 | `nora_standing_overflow_refusals_total{stage="final"}` | the model cannot consolidate under `max_chars`; the prior stands and nothing is written | `_fold`, the consolidate prompt |
 | a debrief log says "whether it committed is unknown from here" | the write was cancelled mid-statement; the next fold reads whatever landed | the `standing_revise` `except` |
-| `nora_lessons_session_total{outcome="unsettled"}` | the session neither wrote, retired, nor closed, so the watermark holds | `LessonsAdaptor.accept` |
-| `abandoned` | the third unsettled run of one batch; the batch is consumed | `_reject` |
+| a session closed with no lesson writes | nothing was written; the cursor still advanced, so the next batch is fresh | `CognitionLessons.take` |
+| a session failed or never closed | the watermark holds and the same batch is shown again | `CognitionLessons.shown` |
 | a lesson refused `check_unavailable` on every attempt | no law, an empty objective file, or the judge's model is answering empty | `DoctrineCheck`, `[lessons] check_model` |
 | `nora_errors_total{stage="standing"}`, `"tag_lessons"` or `"fire_lessons"` | the read failed; the turn ran with a thinner prompt | the fail-soft readers in `nora/engagement/context.py` and `nora/app/fire.py` |
 
@@ -661,8 +660,8 @@ whole tier is built to have.
   — staged writes, the echo rule, `min_episodes`, and the head/parent chain.
 - `tests/unit/test_lessons_checks.py` — the echo test by coverage of 5-character runs,
   the no-relearn floor, the caps, and that every refusal reason is in the vocabulary.
-- `tests/unit/test_lessons_adaptor.py` — handles never ids, the three-episode floor,
-  settle-versus-abandon, the horizon wake and the correction fast path.
+- `tests/unit/test_cognition_lessons.py` — handles never ids, the three-episode floor,
+  settle-versus-abandon, the horizon retirement and the correction fast path.
 - `tests/infra/test_lessons.py` — the append-only store, the compare-and-set conflict,
   an operator retirement that cannot be re-learned from the same evidence, rollback
   undoing a retirement, and the CLI round trip.

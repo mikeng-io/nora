@@ -62,7 +62,7 @@ all options. Read the decision's close alongside that evidence:
   its resolved classification once; if a source is revised, recompute from
   the eligible outcome records rather than adding another update. Do not
   count the same choice again through both an episode and a decision close.
-- **Lessons**, unchanged: the Lessons adaptor already learns from response
+- **Lessons**, unchanged: the Cognition session already learns from response
   episodes in prose ("give two options, not five"). The engine does not write
   lessons; it reads none either, so the two cannot reinforce each other's
   mistakes.

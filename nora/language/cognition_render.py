@@ -86,10 +86,12 @@ from nora.domain.cognition_ground import (
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.composed import compose_body
 from nora.domain.context_data import TranscriptLine
+from nora.domain.culture import Episode
 from nora.domain.external_files import render_file_links
+from nora.domain.lessons import LessonEvidenceView
 from nora.domain.models import REACTION_LABEL_MAX, emoji_display
 from nora.domain.observations import SourceEvent
-from nora.domain.prompt import ago, clip, escape, escape_attr, legal, one_line
+from nora.domain.prompt import age, ago, clip, escape, escape_attr, legal, one_line
 from nora.domain.shared_state import SharedView
 from nora.domain.social_stream import describe_read
 from nora.domain.stimuli import Stimulus
@@ -139,6 +141,15 @@ _BLOCKS: tuple[BlockDeclaration, ...] = (
         "graph", 60, "match an existing entity or create one; correct a contradiction"
     ),
     BlockDeclaration("lessons", 65, "how she should write, from past corrections"),
+    BlockDeclaration(
+        "held_lessons", 66, "reinforce or reword a held lesson, or retire one"
+    ),
+    BlockDeclaration(
+        "lesson_corrections", 67, "write a lesson from a correction, or not"
+    ),
+    BlockDeclaration(
+        "lesson_episodes", 68, "write a lesson from how people responded, or not"
+    ),
     BlockDeclaration(
         "documents",
         70,
@@ -1027,6 +1038,76 @@ def _item_blocks(
     ]
 
 
+def _lesson_episode(
+    e: Episode, *, names: Mapping[str, str], labels: Mapping[str, str],
+) -> str:
+    """One `<episode>`: her send and the replies that quoted it, each an `m`
+    with its Record id, inside one element carrying the handle, room, outcome
+    and counts. `follows` is a count of unquoted answers (inferred), so it is
+    shown apart from the quoted replies."""
+    rows = render_row_window(
+        [(e.send_id, "you", e.text), *(
+            (r.id, names.get(r.person_id or "", "someone"), r.body or "")
+            for r in e.replies
+        )],
+        row_id=lambda m: m[0],
+        turn=lambda m: e.turn_handle if m[0] == e.send_id else None,
+        attrs=lambda m: (("from", m[1]),),
+        body=lambda m: m[2],
+    )
+    return render_group("episode", [
+        ("n", f"response:{e.send_id}"),
+        ("room", labels.get(e.room) or UNNAMED_ROOM),
+        ("outcome", e.outcome),
+        ("reactions", str(e.reactions)),
+        ("edits", str(e.edits)),
+        ("follows", str(e.follows)),
+    ], rows)
+
+
+def _lesson_evidence_blocks(
+    view: LessonEvidenceView, *, now: datetime,
+) -> list[ContextBlock]:
+    """The lesson evidence a live session was handed, as its three declared
+    blocks — empty lanes self-close, so a session handed episodes and no
+    corrections is not told about a corrections list."""
+    out: list[ContextBlock] = []
+    if view.held:
+        handle_of = {i: h for h, i in view.handles.items()}
+        out.append(ContextBlock(
+            name="held_lessons",
+            body=compose_body(render_elements(
+                view.held, tag="lesson",
+                attrs=lambda x, _i: (
+                    ("id", handle_of.get(x.id) or x.id),
+                    ("written", age(x.head.written_at, now)),
+                    ("revision", str(x.head.seq)),
+                ),
+                body=lambda x: x.head.body,
+            )),
+        ))
+    if view.corrections:
+        out.append(ContextBlock(
+            name="lesson_corrections",
+            body=compose_body(render_row_window(
+                view.corrections, row_id=lambda m: m.row.id,
+                attrs=lambda m: (
+                    ("from", view.names.get(m.row.person_id or "", "someone")),
+                    ("room", view.labels.get(m.room) or UNNAMED_ROOM),
+                ),
+                body=lambda m: m.row.body or "",
+            )),
+        ))
+    if view.episodes:
+        out.append(ContextBlock(
+            name="lesson_episodes",
+            body=compose_body("\n".join(
+                _lesson_episode(e, names=view.names, labels=view.labels)
+                for e in view.episodes)),
+        ))
+    return out
+
+
 def render_agenda(
     items: Sequence[AgendaItem],
     *,
@@ -1107,9 +1188,16 @@ def render_agenda(
         blocks.extend(
             b for view in grounding.documents if (b := render_documents(view)) is not None
         )
-        lesson_block = render_lessons(grounding.lessons)
-        if lesson_block is not None:
-            blocks.append(lesson_block)
+        if grounding.lesson_evidence is not None:
+            # A session shown the evidence holds the lessons by `L` handle, so
+            # `held_lessons` IS its lessons list; the bodies-only `lessons`
+            # block stays for sessions (historical, feature off) that were
+            # handed none.
+            blocks.extend(_lesson_evidence_blocks(grounding.lesson_evidence, now=now))
+        else:
+            lesson_block = render_lessons(grounding.lessons)
+            if lesson_block is not None:
+                blocks.append(lesson_block)
     blocks.append(
         render_reads(
             tuple(

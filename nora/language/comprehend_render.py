@@ -158,6 +158,12 @@ _ORIENT_GUIDANCE = (
      "Use {tools} only to correct your Standing when it is wrong or missing something: "
      "i_owe is what you took on; hold_open is what you are keeping open and what would "
      "resolve it."),
+    (frozenset({"lesson_write", "lesson_retire"}),
+     "Use {tools} to record what you have learned: a lesson is one practice for "
+     "how to act here, learned from how people responded to what you did, citing "
+     "the response episodes it rests on. Reinforce or reword a held lesson instead "
+     "of writing a second; retire one that no longer holds. A single outcome is "
+     "weak evidence."),
 )
 _ACT_GUIDANCE = (
     (frozenset({"document_revise"}),
@@ -195,7 +201,10 @@ def _tool_list(tool_names: frozenset[str]) -> str:
     return ", ".join(f"`{name}`" for name in sorted(tool_names))
 
 
-def _guidance(sections: tuple, tool_names: frozenset[str]) -> list[str]:
+def _guidance(
+    sections: tuple[tuple[frozenset[str], str], ...],
+    tool_names: frozenset[str],
+) -> list[str]:
     return [text.format(tools=_tool_list(required & tool_names))
             for required, text in sections if required & tool_names]
 

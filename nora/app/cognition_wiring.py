@@ -550,6 +550,10 @@ def build_cognition_runner(
     rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
     observations: Any = None,
     documents: Any = None, documents_context: Any = None,
+    # `CognitionLessons` (`nora.language.lessons`): the unit's lesson
+    # evidence and its settle. None ([lessons] disabled) offers no lesson
+    # verbs and reads nothing.
+    lessons: Any = None,
 ) -> Any:
     """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
     with it Strands) is loaded only when a session will actually run."""
@@ -630,6 +634,7 @@ def build_cognition_runner(
         # against: no store, no ref write (`unavailable`, never accepted
         # unchecked).
         observations=observations,
+        lessons=lessons,
     )
 
 
@@ -637,8 +642,8 @@ __all__ = [
     "COGNITION_ADAPTOR_NAME",
     "COGNITION_OBJECTIVE",
     "COGNITION_READ_CATALOGUE",
-    "CognitionShutdown",
     "REGISTER_SKILL",
+    "CognitionShutdown",
     "ReadSurface",
     "SessionGuidance",
     "SkillNotInstalledError",

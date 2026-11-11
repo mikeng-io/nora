@@ -264,9 +264,8 @@ from nora.language.doctrine_check import CHECK_OBJECTIVE, DoctrineCheck
 from nora.language.lesson_book import LessonBook
 from nora.language.lesson_render import ActiveLessons
 from nora.language.lessons import (
-    LESSONS_ADAPTOR_NAME,
+    CognitionLessons,
     LessonEvidence,
-    LessonsAdaptor,
     LessonsKey,
 )
 from nora.language.profile import (
@@ -4488,6 +4487,10 @@ async def build_dependencies(
     session_guidance = cognition_session_guidance(dreamer_instructions)
     cognition_runner: CognitionSessionRunner | None = None
     cognition_memory = None
+    # The lesson evidence seam the session reads and settles (`[lessons]
+    # enabled` fills it inside the Dreamer block below; Cognition needs the
+    # Dreamer anyway — `_lessons_need_cognition`).
+    cognition_lessons: CognitionLessons | None = None
     if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
         from nora.infra.sql.memory_graph import SqlMemoryGraph
         memory_graph = SqlMemoryGraph(engine, metrics=metrics)
@@ -4896,9 +4899,12 @@ async def build_dependencies(
             dream_adaptors = tuple(a for a in dream_adaptors if a.name not in retired)
             dream_schedules = {k: v for k, v in dream_schedules.items() if k not in retired}
 
-        # LESSONS: one session per unit, woken by
-        # closed response episodes, writing through the book's checked verbs.
-        # Gated on `[lessons] enabled` alone (off by default).
+        # LESSONS: written by the unit's Cognition session (design
+        # `cognition-loop/50 §6`), not by a session of their own. What the
+        # retired adaptor left behind is kept: the doctrine check, the checked
+        # book, and the evidence read — now handed to the session as context
+        # and settled by its close. Gated on `[lessons] enabled` alone (off
+        # by default); the config validator makes it need `[cognition]`.
         if cfg.lessons.enabled:
             lessons_keys = LiveMapping(lambda: {
                 uk.unit: LessonsKey(unit=uk.unit, rooms=uk.rooms)
@@ -4938,36 +4944,27 @@ async def build_dependencies(
                 clock_ms=_now_ms,
                 check=lesson_check, tensions=SqlTensionStore(engine), metrics=metrics,
             )
-            dream_schedules = {
-                **dream_schedules,
-                LESSONS_ADAPTOR_NAME: AdaptorSchedule(
-                    min_interval_seconds=cfg.lessons.stale_seconds,
-                    wake_batch=cfg.lessons.wake_batch,
-                    batch_limit=cfg.lessons.batch_limit,
+            cognition_lessons = CognitionLessons(
+                evidence=LessonEvidence(
+                    store=SqlCharacterEvidence(engine), book=lesson_book,
+                    keys=lessons_keys, clock_ms=_now_ms,
+                    correction_quiet_seconds=(
+                        cfg.lessons.correction_quiet_seconds or None),
+                    stale_seconds=cfg.lessons.stale_seconds,
+                    self_ids=frozenset(registry.self_aliases()),
                 ),
-            }
-            dream_adaptors = (
-                *dream_adaptors,
-                LessonsAdaptor(
-                    book=lesson_book,
-                    evidence=LessonEvidence(
-                        store=SqlCharacterEvidence(engine), book=lesson_book,
-                        keys=lessons_keys, wake_batch=cfg.lessons.wake_batch,
-                        horizon_seconds=cfg.lessons.horizon_seconds,
-                        clock_ms=_now_ms,
-                        correction_quiet_seconds=(
-                            cfg.lessons.correction_quiet_seconds or None),
-                        stale_seconds=cfg.lessons.stale_seconds, metrics=metrics,
-                        self_ids=frozenset(registry.self_aliases()),
-                    ),
-                    keys=lessons_keys,
-                    name_of=lambda pid: (
-                        ref.name if pid and (ref := persons.by_person.get(pid)) is not None
-                        else "someone"
-                    ),
-                    horizon_seconds=cfg.lessons.horizon_seconds,
-                    metrics=metrics,
+                book=lesson_book, keys=lessons_keys,
+                # The `lessons` row of the consolidation watermark table: the
+                # cursor the retired adaptor wrote, read and advanced from
+                # here so a deployment's progress carries over.
+                cursor=SqlLanguageStore(engine),
+                batch_limit=cfg.lessons.batch_limit,
+                horizon_seconds=cfg.lessons.horizon_seconds,
+                name_of=lambda pid: (
+                    ref.name if pid and (ref := persons.by_person.get(pid)) is not None
+                    else "someone"
                 ),
+                clock_ms=_now_ms, metrics=metrics,
             )
 
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
@@ -5097,10 +5094,9 @@ async def build_dependencies(
         # A Character session with no block of its own runs on the room
         # fold's numbers when the deployment set them: the same loop shape (a
         # handed batch, a few reads, one account written), and a live config
-        # needs no new block for it. The Lessons session too: a handed batch
-        # and a few checked writes.
+        # needs no new block for it.
         if "culture" in dream_budgets:
-            for name in (*CHARACTER_ADAPTOR_NAMES, LESSONS_ADAPTOR_NAME,
+            for name in (*CHARACTER_ADAPTOR_NAMES,
                          PROFILE_PERSON_ADAPTOR_NAME, PROFILE_VERDICT_ADAPTOR_NAME,
                          *PROFILE_COLLECTIVE_ADAPTOR_NAMES):
                 dream_budgets.setdefault(name, dream_budgets["culture"])
@@ -5371,6 +5367,7 @@ async def build_dependencies(
                     budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
                     result_caps=TOOL_RESULT_CAPS,
                     observations=observation_store,
+                    lessons=cognition_lessons,
                 )
             except (InstructionError, SkillNotInstalledError) as exc:
                 # A missing or malformed `cognition` objective, or a mapped skill that

@@ -40,7 +40,6 @@ _INITIAL_LEGACY = frozenset(
         "nora.language.character:room_cultures_block",
         "nora.language.confirmation_render:confirmation_prompts",
         "nora.language.culture:CultureAdaptor.inputs",
-        "nora.language.lessons:LessonsAdaptor.inputs",
         "nora.language.profile:ProfilePersonAdaptor.inputs",
         "nora.language.profile_collective:ProfileCollectiveAdaptor.inputs",
         "nora.language.profile_collective:ProfileCollectiveAdaptor.inputs.source_block",

@@ -282,7 +282,6 @@ batch_limit = 300
 
 [lessons]
 enabled = false
-wake_batch = 50
 stale_seconds = 604800
 horizon_seconds = 5184000
 batch_limit = 100

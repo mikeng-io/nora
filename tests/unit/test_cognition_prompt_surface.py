@@ -16,7 +16,8 @@ from tests.objectives import shipped_objectives
 from tests.unit.test_cognition_session_runner import NOW, _pending, _runner, wake_memory
 
 
-async def rendered_session(*, historical: bool, documents: bool = False) -> str:
+async def rendered_session(*, historical: bool, documents: bool = False,
+                           lessons: object = None) -> str:
     from nora.app.cognition_wiring import COGNITION_READ_CATALOGUE, cognition_instruction
 
     # Inspect the declared read surface without invoking any collaborator.
@@ -28,7 +29,7 @@ async def rendered_session(*, historical: bool, documents: bool = False) -> str:
         reads.append(read)
     runner, _, agent = _runner(
         memory=wake_memory(), read_tools_for=lambda *args, **kwargs: reads,
-        read_only_tools=frozenset(COGNITION_READ_CATALOGUE),
+        read_only_tools=frozenset(COGNITION_READ_CATALOGUE), lessons=lessons,
     )
     if documents:
         # Presence-only collaborators: no document method runs during inspection.
@@ -84,6 +85,47 @@ async def test_document_guidance_requires_a_wired_writable_surface():
     live = await rendered_session(historical=False, documents=True)
     assert "shared document" not in historical
     assert "shared document" in live
+
+
+class _LessonProbe:
+    """The `CognitionLessons` seam, emptied: `inspect` must not touch the
+    stores, and an empty view is what a session with nothing new holds."""
+
+    def __init__(self) -> None:
+        self.shown_calls = 0
+
+    async def shown(self, *, unit: str):
+        from nora.domain.lessons import LessonEvidenceView
+        self.shown_calls += 1
+        return LessonEvidenceView()
+
+    def verbs(self, **kw):
+        async def lesson_write(**kw2):
+            return {"status": "unavailable"}
+        async def lesson_retire(**kw2):
+            return {"status": "unavailable"}
+        return [lesson_write, lesson_retire]
+
+    async def take(self, **kw):
+        raise AssertionError("inspection settles nothing")
+
+    async def decay(self, **kw):
+        raise AssertionError("inspection settles nothing")
+
+
+async def test_lesson_guidance_appears_only_when_the_verbs_are_offered():
+    live = await rendered_session(historical=False, lessons=_LessonProbe())
+    assert "lesson_write" in live and "one practice for" in live
+    assert "A single outcome is weak evidence" in live
+    without = await rendered_session(historical=False)
+    assert "lesson_write" not in without
+
+
+async def test_lesson_guidance_and_verbs_never_reach_the_historical_lane():
+    probe = _LessonProbe()
+    historical = await rendered_session(historical=True, lessons=probe)
+    assert "lesson_write" not in historical
+    assert probe.shown_calls == 0
 
 
 @pytest.mark.parametrize("offered", [frozenset(), frozenset({"note_create"}),

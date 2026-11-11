@@ -129,5 +129,5 @@ claimed none was, which was not yet true): reply rates and feedback balance
 are computed by code from the episodes, which no adaptor writes. A
 hypothesis's verdict is set by code or a separate judge when its window
 closes, never by the adaptor that wrote it (45 §3). Lesson re-support is
-decided by the Lessons adaptor itself, so it is reported as that adaptor's
+decided by the Cognition session itself, so it is reported as that session's
 claim until a separate judge regrades a blind sample of it.
