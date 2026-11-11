@@ -135,11 +135,10 @@ def memory_result_text(text: str, *, query: str, depth: int) -> str:
 
 
 MEMORY_CRITERIA = (
-    "Keep what a row tells about a person, a plan, an offer or a preference with "
-    "`memory_propose`, even when it needs no reply and is not addressed to you. Use a "
-    "relation when one of its types fits, a reading for anything else, and a "
-    "correction for a shown relation the rows contradict. likes/dislikes concerns a "
-    "specific thing; interested_in a subject. Chatter that adds no claim needs no write."
+    "Write to the memory graph with `memory_propose`: a relation when one of its "
+    "types fits, a reading for anything else worth keeping, and a correction for a "
+    "shown relation the rows contradict. likes/dislikes concerns a specific thing; "
+    "interested_in a subject."
 )
 
 
@@ -148,16 +147,27 @@ _ORIENT_GUIDANCE = (
     (frozenset({"memory_search", "memory_read"}),
      "Use {tools} to find and inspect held memory before forming a new entity or relation."),
     (frozenset({"memory_propose"}), MEMORY_CRITERIA),
+    (frozenset({"memory_propose"}),
+     "Examples (synthetic): Ada says in row 5201, 'I love Lantern Game': propose Ada "
+     "likes Lantern Game, citing 5201. Row 5230 says 'lol nice' with a bare link: "
+     "nothing to keep."),
     (frozenset({"profile_read", "profile_revise"}),
-     "Use {tools} to connect changed relations to held accounts; read before revising."),
+     "Use {tools} for profiles: read the account before revising it, and change a "
+     "line only when new evidence bears on it; a single instance is a guess, not a trait."),
+    (frozenset({"standing_revise"}),
+     "Use {tools} to hold Nora's position: i_owe is what she took on; hold_open is "
+     "what she is keeping open and what would resolve it."),
 )
 _ACT_GUIDANCE = (
-    (frozenset({"standing_revise"}),
-     "Use {tools} to hold your position: i_owe is what you took on; hold_open is "
-     "what you are keeping open and what would resolve it."),
     (frozenset({"document_revise"}),
      "Use {tools} to carry a settled change into a shared document, preserving "
      "unrelated content."),
+)
+_REMINDER_WORTH = (
+    "A reminder earns its place when a moment is near, something is still open, and a "
+    "word at the right hour helps the people who have to act: where to meet before "
+    "dinner, a booking someone owes before its deadline. Something settled, already "
+    "raised, or weeks away is not one."
 )
 _REMIND_TOOLS = frozenset({"remind", "remind_move", "remind_cancel"})
 _WAKE_TOOLS = frozenset({"wake_at", "wake_move", "wake_cancel"})
@@ -186,35 +196,29 @@ def _remind_and_wake_guidance(tool_names: frozenset[str]) -> str | None:
     wake = "`wake_at`" if "wake_at" in tool_names else _tool_list(wakes)
     if reminders and wakes:
         return (f"Use {reminder} for a later room turn and {wake} for your own later look; "
-                "move or cancel either as the matter changes.")
+                f"move or cancel either as the matter changes. {_REMINDER_WORTH}")
     if reminders:
-        return f"Use {reminder} for a later room turn; move or cancel it as the matter changes."
+        return (f"Use {reminder} for a later room turn; move or cancel it as the matter "
+                f"changes. {_REMINDER_WORTH}")
     return f"Use {wake} for your own later look; move or cancel it as its reason changes."
 
 
 def render_session_system(doctrine: str, skills: str, *, tool_names: frozenset[str]) -> str:
     """Assemble each stage from the session's actual offered tools."""
     sections = _guidance(_ORIENT_GUIDANCE, tool_names)
-    if "memory_propose" in tool_names:
-        sections.append(
-            "Examples (synthetic): Ada says in row 5201, 'I love Lantern Game': "
-            "propose Ada likes Lantern Game, citing 5201. Ben says in row 5210 he has "
-            "two spare tickets for Saturday's show: propose a reading of that offer, "
-            "citing 5210, though nobody asked you. Row 5230 says 'lol nice' with a "
-            "bare link: nothing to keep.")
+    if tool_names & _NOTEBOOK_TOOLS:
+        sections.append(skills)
     orient = assemble([restamp(ContextBlock(
         name="cognition_orient", body=compose_body(
-            "# Orient\n\n" + "\n\n".join(sections) if sections else "")), _ROW)])
+            "\n\n".join(sections))), _ROW)])
     actions = []
-    if tool_names & _NOTEBOOK_TOOLS:
-        actions.append(skills)
     pace = _remind_and_wake_guidance(tool_names)
     if pace is not None:
         actions.append(pace)
     actions.extend(_guidance(_ACT_GUIDANCE, tool_names))
     act = assemble([restamp(ContextBlock(
         name="cognition_act", body=compose_body(
-            "# Act\n\n" + "\n\n".join(actions) if actions else "")), _ROW)])
+            "\n\n".join(actions))), _ROW)])
     orient_marker, act_marker = "<!-- cognition-orient -->", "<!-- cognition-act-skill -->"
     doctrine = (doctrine.replace(orient_marker, orient) if orient_marker in doctrine
                 else doctrine + orient)

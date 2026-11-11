@@ -103,9 +103,9 @@ _SHARED: dict[str, str] = {
 #: field's meaning («`n` is the message id to cite in `message_ids`») is an
 #: annotation, not part of the description.
 BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
-    _t("cognition_orient", "Guidance for orienting against memory and profiles. "
+    _t("cognition_orient", "How to keep each kind of memory with the tools this session offers. "
        "These are instructions, not evidence."),
-    _t("cognition_act", "Guidance for the actions offered in this session. "
+    _t("cognition_act", "How to carry out a decision with the tools this session offers. "
        "These are instructions, not evidence about the group."),
     _t("memory", "A scoped memory subgraph returned by a read tool. Layer words distinguish "
        "said, computed, judgement and found; evidence counts are not proof. "

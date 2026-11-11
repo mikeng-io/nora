@@ -274,13 +274,13 @@ def test_a_skill_edited_on_the_bind_mount_is_live_at_the_next_session(tmp_path):
     store = DreamerInstructions(root, metrics=Metrics())        # reload = mtime
     skills = session_guidance(store)
     before_text, before = skills.resolved()
-    assert "Use the notebook to continue the same matter" in before_text
+    assert "The notebook carries the unit's affairs between conversations" in before_text
 
     path = root / "skills" / "cognition-register.md"
     path.write_text(
         path.read_text(encoding="utf-8").replace(
-            "Use the notebook to continue the same matter",
-            "Use the notebook to continue the existing matter",
+            "The notebook carries the unit's affairs between conversations",
+            "The notebook carries the unit's open affairs between conversations",
         ),
         encoding="utf-8",
     )
@@ -288,7 +288,7 @@ def test_a_skill_edited_on_the_bind_mount_is_live_at_the_next_session(tmp_path):
     os.utime(path, (future, future))
 
     after_text, after = skills.resolved()
-    assert "Use the notebook to continue the existing matter" in after_text
+    assert "The notebook carries the unit's open affairs between conversations" in after_text
     assert after != before
 
 
