@@ -319,10 +319,6 @@ def test_compare_reports_prints_each_row_and_delta():
 
 
 
-def test_report_error_exit_is_distinct_from_fail():
-    assert spike.report_exit({"row": {"status": "PASS"}}) == 0
-    assert spike.report_exit({"row": {"status": "FAIL"}}) == 1
-    assert spike.report_exit({"row": {"status": "REPORTED", "usage": {"status": "ERROR"}}}) == 2
 
 
 @pytest.mark.parametrize("key", ["sample_sha256", "seed", "judges", "effective_judges", "strata"])
@@ -469,21 +465,3 @@ def test_expanded_sample_retains_the_five_original_sessions_and_exact_seeded_cou
 
 
 
-@pytest.mark.parametrize("delta,status", [
-    ({}, "PASS"),
-    ({"facts_saved": 1, "facts_supported": 1}, "PASS"),
-    ({"facts_saved": 1, "facts_unsupported": 1}, "FAIL"),
-    ({"facts_missed": 1}, "FAIL"),
-    ({"facts_judge_errors": 1}, "ERROR"),
-    ({"facts_saved": 1, "facts_unsure": 1}, "ERROR"),
-    ({"facts_saved": 1}, "ERROR"),
-])
-def test_memory_quality_never_confuses_completion_with_correctness(delta, status):
-    scored = dict.fromkeys(("facts_saved", "facts_supported", "facts_unsupported",
-                           "facts_unsure", "facts_missed", "facts_judge_errors"), 0)
-    scored.update(delta)
-    quality = spike.fact_quality(scored)
-    assert quality["status"] == status
-    assert spike.report_exit({"execution": {"status": "PASS"}, "memory_quality": quality}) == {
-        "PASS": 0, "FAIL": 1, "ERROR": 2}[status]
-    assert spike.fact_quality({})["status"] == "ERROR"

@@ -8,8 +8,7 @@ user *journey*, measure the *trajectory* she produces, serialize a *verdict*.
 
 ## Before a paid run
 
-Apply this order to every entrypoint, including memory-graph replay, diagnostic
-and rescore commands. The [horizontal measurement contract](../design/evaluation/horizontal-measurement-contract.md)
+Apply this order to every entrypoint. The [horizontal measurement contract](../design/evaluation/horizontal-measurement-contract.md)
 defines the axes, five-C checks and current delivery limits. Reuse the existing
 runner, corpus fields, private evidence and trace hierarchy.
 
@@ -82,7 +81,7 @@ harness or run models to discover a cause already visible in retained evidence.
 
 ### Bind the selected measurement
 
-Paid standard evaluations and memory replay, rescore and diagnostic entries
+Paid standard evaluations
 require `--grading-contract <private.json>` and
 `--grading-contract-sha256 <expected-sha256>`. Select the reference independently
 of the candidate; never regenerate its normative text from the current writer
@@ -90,11 +89,9 @@ merely to make preflight pass. Inspection, listing and source export remain
 zero-dispatch operations. The standard zero-dispatch commands refuse unused
 contract flags; memory inspection validates an explicitly supplied contract.
 
-Memory replay, rescore and decision diagnostics accept `--stop-after-tokens N`.
+Entries sharing `measured_run_budget` accept `--stop-after-tokens N`.
 With that flag, they share one measured input-plus-output budget across all model
 calls in that invocation, also capped at 1000 requests and 600,000 output tokens.
-Without it, the non-inspection legacy path installs no measured budget.
-Inspection-only always installs a zero-request budget, with or without the cutoff.
 Neither path grants
 permission to spend. Once usage reaches the cutoff, subsequent calls refuse; the last
 admitted call may overrun it. Unknown usage blocks later spending. A stopped run
@@ -328,11 +325,10 @@ raw model paths retain their existing SDK span contents rather than gaining a
 second model wrapper. Run/case IDs and trace/span IDs correlate the records.
 
 
-The memory-graph command shares this automatic operator export: replay,
-`--rescore` and `--decision-judge` all require the configured owner-local sink
+The Cognition-loop evaluator shares this automatic operator export: it
+requires the configured owner-local sink
 before execution. Stderr prints the trace ID; stdout retains the JSON report.
-Replay cases group one selected wake's writer and both judges with the frozen
-sample and snapshot provenance. No paid replay/rescore is authorized by the
+No paid run is authorized by the
 source tests or a previous synthetic trace.
 
 Read the printed run directory privately. `run_finished` carries the CLI exit

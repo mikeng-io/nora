@@ -9,8 +9,6 @@ import os
 import random
 import re
 import statistics
-import sys
-import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,10 +19,8 @@ import sqlalchemy as sa
 from jsonschema import ValidationError, validate
 from sqlalchemy.engine import make_url
 
-from evals.grading_contract import GradingContract, contract_for
 from evals.rebuilt.judge import criterion_verdict, parse_json_response
 from nora.agent.structured import ask_text, build_structured_model
-from nora.config import load
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.composed import compose_body
 from nora.domain.memory_graph import Walk
@@ -34,12 +30,10 @@ from nora.infra.sql.memory_graph import WALK_SQL, walk_parameters
 from nora.infra.sql.schema import METADATA
 from nora.language.cognition_parse import ledger_source_row, shown_source_rows
 from nora.subject.eval_evidence import (
-    EvidenceError,
     RunEvidence,
-    evaluation_export_for,
+    evaluation_export_for,  # noqa: F401  (tests patch it through this module)
     fingerprint,
     read_events,
-    revision,
     validate_events,
 )
 from nora.subject.obtain import model_endpoint
@@ -51,12 +45,10 @@ from nora.subject.sandbox_index import (
 from scripts.memory_graph_facts import (
     _FIXED_COVERAGE_OUTPUT,  # noqa: F401  (tests read it through this module)
     _FIXED_SUPPORT_OUTPUT,  # noqa: F401
-    decision_judge,
     miss_in_new_sources,  # noqa: F401  (tests import it through this module)
     parse_fact_output,
     recorded_fact_sessions,  # noqa: F401
-    rescore_facts,
-)
+    )
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (("cited_sources", 10, "turn"),)
 _ROW = {n: (o, k) for n, o, k in _BLOCKS}
@@ -681,34 +673,6 @@ async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex
     )
 
 
-def spike_contract(args: Any, entrypoint: str) -> GradingContract | None:
-    if entrypoint != "replay" and (
-        getattr(args, "inspect_only", False) or getattr(args, "project_only", False)
-    ):
-        raise EvidenceError("inspection and projection cover the replay path only")
-    if getattr(args, "project_only", False) and (
-        getattr(args, "grading_contract", None) or getattr(args, "grading_contract_sha256", None)
-    ):
-        raise EvidenceError("project-only does not consume a grading contract")
-    if (getattr(args, "inspect_only", False) or getattr(args, "project_only", False)) and not (
-        getattr(args, "grading_contract", None) or getattr(args, "grading_contract_sha256", None)
-    ):
-        return None
-    if not getattr(args, "grading_contract", None) or not getattr(
-        args, "grading_contract_sha256", None
-    ):
-        raise EvidenceError("paid evaluation requires --grading-contract and its SHA256")
-    if entrypoint == "replay":
-        selection = {
-            k: getattr(args, k, None)
-            for k in ("seed", "per_stratum", "minimum", "smoke", "session_count")
-        }
-    else:
-        source = args.rescore if entrypoint == "rescore" else args.decision_judge
-        selection = {"source_sha256": fingerprint(evidence_file(source))}
-    return contract_for(
-        args, entrypoint=entrypoint, judges=(args.judge_a, args.judge_b), selection=selection
-    )
 
 
 @contextmanager
@@ -755,122 +719,20 @@ def evidence_file(directory: Path) -> Path:
     return paths[0]
 
 
-async def run_rescore(args: Any) -> dict[str, Any]:
-    from tempfile import TemporaryFile
-
-    from opentelemetry import trace
-
-    from evals.backbone import _prefill_capture
-
-    args.bound_contract = spike_contract(args, "rescore")
-    export = evaluation_export_for(args.config)
-    _prefill_capture()
-    output = private_directory(args.output)
-    with TemporaryFile() as lock:
-        evidence = RunEvidence(
-            run_id=f"rescore-{uuid.uuid4().hex}",
-            metadata={
-                "grading_contract": args.bound_contract.receipt(),
-                **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
-                "config_sha256": fingerprint(args.config),
-                "source_locator_sha256": hashlib.sha256(str(args.rescore).encode()).hexdigest(),
-            },
-            lock_fd=lock.fileno(),
-            private_root=output,
-        )
-        report: dict[str, Any] = {"status": "ERROR"}
-        try:
-            with evidence.capture(trace.get_tracer_provider(), export=export):
-                trace_id = trace.get_current_span().get_span_context().trace_id
-                print(f"eval trace: {trace_id:032x}", file=sys.stderr)
-                args.bound_contract.record()
-                with measured_run_budget(args, evidence, output, report):
-                    report.update(await rescore_facts(
-                        args.rescore,
-                        Judges(load(args.config), [args.judge_a, args.judge_b], args.config),
-                        contract=args.bound_contract,
-                    ))
-        except Exception:  # noqa: BLE001 - the private record retains failure details
-            report["status"] = "ERROR"
-        report["evidence"] = validate_events(read_events(evidence.path))
-        report["grading_contract"] = args.bound_contract.receipt()
-        freeze(output / "report.json", report)
-    return report
 
 
-async def run_diagnostic(args: Any) -> dict[str, Any]:
-    from tempfile import TemporaryFile
-
-    from opentelemetry import trace
-
-    from evals.backbone import _prefill_capture
-
-    args.bound_contract = spike_contract(args, "diagnostic")
-    export = evaluation_export_for(args.config)
-    _prefill_capture()
-    output = private_directory(args.output)
-    with TemporaryFile() as lock:
-        evidence = RunEvidence(
-            run_id=f"diagnostic-{uuid.uuid4().hex}",
-            metadata={
-                "grading_contract": args.bound_contract.receipt(),
-                **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
-                "config_sha256": fingerprint(args.config),
-                "source_locator_sha256": hashlib.sha256(
-                    str(args.decision_judge).encode()
-                ).hexdigest(),
-            },
-            lock_fd=lock.fileno(),
-            private_root=output,
-        )
-        report: dict[str, Any] = {"status": "ERROR"}
-        try:
-            with evidence.capture(trace.get_tracer_provider(), export=export):
-                trace_id = trace.get_current_span().get_span_context().trace_id
-                print(f"eval trace: {trace_id:032x}", file=sys.stderr)
-                args.bound_contract.record()
-                with measured_run_budget(args, evidence, output, report):
-                    report.update(await decision_judge(args.decision_judge,
-                        Judges(load(args.config), [args.judge_a, args.judge_b], args.config)))
-        except Exception:  # noqa: BLE001 - only the private evidence records failure details
-            report["status"] = "ERROR"
-        report["evidence"] = validate_events(read_events(evidence.path))
-        report["grading_contract"] = args.bound_contract.receipt()
-        freeze(output / "report.json", report)
-    return report
 
 
 def main() -> int:
-    """The graph-only replay scorer is retired: `python -m scripts.cognition_loop`
-    is the evaluator. The helpers below stay for the tests and the frozen-
-    evidence rescore/diagnostic entries that still import them."""
+    """The graph-only replay scorer and its frozen-evidence entries are
+    retired: `python -m scripts.cognition_loop` is the evaluator. The
+    helpers below stay for the tests that still import them."""
     raise SystemExit(
         "the graph-only replay scorer is retired; "
         "use `python -m scripts.cognition_loop`"
     )
 
 
-def report_exit(report: Any) -> int:
-    statuses = []
-
-    def collect(value: Any) -> None:
-        if isinstance(value, dict):
-            if "status" in value:
-                statuses.append(value["status"])
-            for child in value.values():
-                collect(child)
-        elif isinstance(value, list):
-            for child in value:
-                collect(child)
-
-    collect(report)
-    return (
-        2
-        if "ERROR" in statuses
-        else 1
-        if any(s not in {"PASS", "REPORTED", "ok", "nothing_found"} for s in statuses)
-        else 0
-    )
 
 
 if __name__ == "__main__":

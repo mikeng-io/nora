@@ -42,13 +42,6 @@
     "target": "tests/integration/test_grading_contract.py::test_required_acceptance_cannot_bind_without_a_judge"
   },
   {
-    "name": "scoring shares the measured transport budget and persists terminal counters",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "    token = active_run_budget.set(budget) if budget else None",
-    "new": "    token = None",
-    "target": "tests/integration/test_spike_visibility.py::test_scoring_entrypoints_share_the_measured_budget_and_persist_it"
-  },
-  {
     "name": "final budget trace survives budget file failure",
     "file": "scripts/memory_graph_spike.py",
     "old": "                evidence.record(\"run_budget_final\", **metadata)\n                freeze(output / \"run_budget.json\", metadata)",

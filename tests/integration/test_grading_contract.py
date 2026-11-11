@@ -47,28 +47,8 @@ def load_generated(tmp_path, **kwargs):
                                  selection=kwargs.get("selection", {}))
 
 
-def attach_replay_contract(args, tmp_path, inspection=None, *, wakes=()):
-    """An explicit synthetic run contract for existing real-entry checks."""
-    args.judge_a = getattr(args, "judge_a", "generated-a")
-    args.judge_b = getattr(args, "judge_b", "generated-b")
-    selection = {k: getattr(args, k, None) for k in
-                 ("seed", "per_stratum", "minimum", "smoke", "session_count")}
-    sample_bytes = (json.dumps(list(wakes), sort_keys=True, ensure_ascii=False) + "\n").encode()
-    args.grading_contract, args.grading_contract_sha256 = write_contract(
-        tmp_path, judges=(args.judge_a, args.judge_b), selection=selection,
-        sample_sha256=hashlib.sha256(sample_bytes).hexdigest(), cases={
-            str(w["id"]): memory_reference(inspection, units=False) for w in wakes})
 
 
-def attach_archive_contract(args, tmp_path, entrypoint, *, cases=None):
-    source = args.rescore if entrypoint == "rescore" else args.decision_judge
-    source.mkdir(exist_ok=True)
-    if not list(source.glob("*/events.jsonl")) and not (source / "events.jsonl").exists():
-        (source / "events.jsonl").write_text("")
-    args.grading_contract, args.grading_contract_sha256 = write_contract(
-        tmp_path, entrypoint=entrypoint, purpose="diagnosis", cases=cases,
-        judges=(args.judge_a, args.judge_b),
-        selection={"source_sha256": spike.fingerprint(spike.evidence_file(source))})
 
 
 def eval_contract_flags(tmp_path, *, names, only=(), sample=1, judges=(), judge_samples=3,
@@ -425,25 +405,8 @@ def test_scenario_binding_matches_actual_transport_without_trusting_work_metadat
 
 
 
-@pytest.mark.parametrize("entrypoint", ["run_rescore", "run_diagnostic"])
-async def test_paid_spike_entrypoints_require_contract_before_export(
-        tmp_path, monkeypatch, entrypoint):
-    def forbidden(_):
-        pytest.fail("missing contract reached exporter setup")
-    monkeypatch.setattr(spike, "evaluation_export_for", forbidden)
-    with pytest.raises(EvidenceError, match="requires --grading-contract"):
-        await getattr(spike, entrypoint)(SimpleNamespace(config=tmp_path / "unused.toml"))
 
 
-def test_inspection_does_not_require_or_silently_ignore_a_contract(tmp_path):
-    args = SimpleNamespace(inspect_only=True)
-    assert spike.spike_contract(args, "replay") is None
-    args.grading_contract = tmp_path / "not-a-contract"
-    with pytest.raises(EvidenceError, match="requires --grading-contract"):
-        spike.spike_contract(args, "replay")
-    with pytest.raises(EvidenceError, match="does not consume"):
-        spike.spike_contract(SimpleNamespace(project_only=True,
-                                             grading_contract=tmp_path / "unused"), "replay")
 
 
 def test_acceptance_without_a_consumer_refuses_before_subject(tmp_path):
