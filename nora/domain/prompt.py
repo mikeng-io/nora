@@ -29,6 +29,7 @@ tests stayed green.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from xml.sax.saxutils import escape as _escape
 
@@ -50,6 +51,40 @@ _XML_FORBIDDEN = {
     c: None for c in [*range(0x20), 0x7F]
     if c not in (0x09, 0x0A, 0x0D)
 }
+
+
+# U+2014 EM DASH and U+2015 HORIZONTAL BAR (the 「――」 some IMEs produce),
+# with any spacing around them. NOT U+2013: the en dash marks a range (2 to 5 days)
+# and carries meaning.
+_DASH = re.compile(r"[ \t]*[\u2014\u2015]+[ \t]*")
+
+
+def _is_cjk(ch: str) -> bool:
+    return ch >= "\u2e80"
+
+
+def undash(text: str) -> str:
+    """Every em dash becomes a comma: full-width when either side of it is
+    Chinese («link——冇人接» is a Cantonese line), «, » otherwise."""
+    if "\u2014" not in text and "\u2015" not in text:
+        return text
+
+    def repl(m: re.Match[str]) -> str:
+        before = text[m.start() - 1] if m.start() else ""
+        after = text[m.end()] if m.end() < len(text) else ""
+        cjk = any(ch and _is_cjk(ch) for ch in (before, after))
+        return "\uff0c" if cjk else ", "
+
+    return _DASH.sub(repl, text)
+
+
+def contains_source_span(span: str, body: str) -> bool:
+    """An exact span in the source or its existing model-visible punctuation.
+
+    Keep source snapshots unchanged; the transport's comma spelling must not
+    reject a quote the model copied. No additional normalization or fuzzy matching.
+    """
+    return span in body or span in undash(body)
 
 
 def legal(text: object) -> str:

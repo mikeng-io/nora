@@ -12,8 +12,8 @@ and none of it may import `strands`. This module owns only the two things
 that genuinely need `strands.telemetry` itself: provider/exporter setup
 (`setup_agent_tracing`) and the span pair a RAW `chat.completions.create` call
 needs to open/close in the SDK's own vocabulary
-(`start_raw_model_span`/`end_raw_model_span`) — `nora.app.composition`'s
-`_RelevanceGateModelClient` imports these thin wrappers rather than reaching
+(`start_raw_model_span`/`end_raw_model_span`) — the relevance gate and eval
+judge use these thin wrappers rather than reaching
 `strands.telemetry.tracer.get_tracer()` itself, the same pattern
 `ask_text`/`ask_structured` already use for a full Agent invocation.
 
@@ -181,10 +181,10 @@ def start_raw_model_span(
     gate's hot path: a broken tracer must not turn into a suppressed
     admission decision.
 
-    Currently used by exactly one caller —
-    `nora.app.composition._RelevanceGateModelClient`, which stays off the
+    The relevance gate's `_RelevanceGateModelClient` stays off the
     Agent SDK because its verdict must not go through `ask_structured`
-    (see `nora.agent.structured`'s own docstring for the reason).
+    (see `nora.agent.structured`'s own docstring for the reason). The eval
+    judge also uses these helpers through `nora.subject.raw_model`.
     `nora.infra.vision.client` is also a raw call but does NOT use this —
     this module's own docstring explains why (`nora.infra` cannot reach it).
 
@@ -384,5 +384,106 @@ def record_eval_model_request(request: Mapping[str, Any]) -> None:
     """The formatted request body, without transport credentials, for private eval capture."""
     if baggage.get_baggage("nora.eval.capture") == "true" and not _REQUEST_PROBE.get():
         record("event", name="nora.model.request", attributes={
-            "nora.model.request.body": json.dumps(request, ensure_ascii=False),
+            "nora.model.request.body": json.dumps({
+                key: value for key, value in request.items()
+                if key not in {"api_key", "extra_headers", "headers", "authorization"}
+            }, ensure_ascii=False),
         })
+        span = trace.get_current_span()
+        if span.is_recording() and getattr(span, "attributes", {}).get("nora.eval.run_id"):
+            span.set_attribute("gen_ai.tool.definitions", json.dumps(request.get("tools", [])))
+
+
+class EvaluationExportError(RuntimeError):
+    """Operator visibility is unavailable; semantic scoring cannot validate it."""
+
+
+def evaluation_export(tracing: Mapping[str, Any]):
+    """One authorized owner-local sink, never ambient SDK/cloud exporters.
+
+    The deployment config selects the existing SigNoz collector. Host evals use
+    its loopback publication; container evals use its fixed Compose alias.
+    """
+    from urllib.parse import urlsplit
+
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
+
+    from ..obs.tracing import resolve_otlp_headers
+
+    endpoint = str(tracing.get("endpoint", ""))
+    url = urlsplit(endpoint)
+    if (not tracing.get("enabled") or tracing.get("exporter") != "otlp_http"
+            or url.scheme != "http" or url.username or url.password or url.query or url.fragment
+            or url.path != "/v1/traces"
+            or (url.hostname, url.port) not in {
+                ("127.0.0.1", 14318), ("localhost", 14318), ("::1", 14318),
+                ("signoz-ingester", 4318)}):
+        raise EvaluationExportError(
+            "evaluation requires the configured owner-local SigNoz collector")
+    delegate = OTLPSpanExporter(endpoint=endpoint, headers=resolve_otlp_headers(
+        str(tracing.get("headers_env", ""))), timeout=10)
+
+    class CheckedExport(SpanExporter):
+        failed = False
+        count = 0
+
+        def export(self, spans):
+            try:
+                # OTel otherwise silently drops events/attributes at its limits.
+                self.failed |= any(s.dropped_attributes or s.dropped_events
+                                   or s.dropped_links or any(e.dropped_attributes for e in s.events)
+                                   for s in spans)
+                # The eval SDK mapper reads native message EVENTS; SigNoz AI
+                # Thread reads ATTRIBUTES. Promote the SDK's own payload only on
+                # the exported copy so both consumers retain their native input.
+                import copy
+                exported = []
+                for span in spans:
+                    selected = copy.copy(span)
+                    attrs = dict(span.attributes or {})
+                    for event in span.events:
+                        if event.name == "gen_ai.client.inference.operation.details":
+                            attrs.update(event.attributes or {})
+                    if attrs.get("nora.model.served"):
+                        attrs["gen_ai.response.model"] = attrs["nora.model.served"]
+                    if attrs.get("nora.model.provider"):
+                        attrs["gen_ai.provider.name"] = attrs["nora.model.provider"]
+                    selected._attributes = attrs
+                    exported.append(selected)
+                result = delegate.export(exported)
+                self.failed |= result is not SpanExportResult.SUCCESS
+                self.count += len(spans)
+                return result
+            except Exception:  # noqa: BLE001 - exporter failure becomes invalid evidence
+                self.failed = True
+                return SpanExportResult.FAILURE
+
+        def shutdown(self):
+            delegate.shutdown()
+
+        def check(self):
+            if self.failed or not self.count:
+                raise EvaluationExportError(
+                    "evaluation capture/export unavailable or dropped; run invalid")
+
+    return SimpleSpanProcessor(CheckedExport())
+
+
+@contextmanager
+def evaluation_content_format() -> Iterator[None]:
+    """Select the installed SDK's readable GenAI format for the isolated run."""
+    tracer = get_tracer()
+    fields = {name: getattr(tracer, name) for name in (
+        "use_latest_genai_conventions", "_span_attributes_only", "_include_tool_definitions",
+        "_redaction_enabled")}
+    try:
+        tracer.use_latest_genai_conventions = True
+        tracer._span_attributes_only = False
+        tracer._include_tool_definitions = True
+        # Full evaluation content is authorized only inside the gated sink context.
+        tracer._redaction_enabled = False
+        yield
+    finally:
+        for name, value in fields.items():
+            setattr(tracer, name, value)

@@ -3728,8 +3728,8 @@ IDX_COGNITION_SESSION_UNIT_ID = sa.Index(
     "idx_cognition_session_unit_id", COGNITION_SESSION.c.unit, COGNITION_SESSION.c.id,
 )
 
-# One row per agenda item's close: `written`,
-# `no_change`, `waiting`, `covered`, or code's own `struck` at `max_strikes`.
+# Legacy per-item close rows, retained for schema history and snapshots.
+# Session outcomes no longer write this table.
 COGNITION_SESSION_CLOSE = sa.Table(
     "cognition_session_close",
     METADATA,

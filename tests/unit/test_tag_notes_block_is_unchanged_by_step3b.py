@@ -1,15 +1,6 @@
-"""The shared note renderer (`nora.language.note_render.render_note_rows`) has an
-opt-in to carry a note's REAL id as `n`, for the Cognition session. The tag path
-keeps the positional `n` (`1..N`, remapped back by `resolve_positions`), and not
-one byte of its `<notes>` block may change.
+"""The tag note index keeps positional handles and note text through shared assembly.
 
-**The fixture is the criterion**, captured before the opt-in existed:
-`build_prefill`'s whole `<notes ...>...</notes>` block over several note sets
-(one, several, an anchor in each distance wording, a retired note that must not
-render, titles and descriptions carrying markup, a newline, a dash, and a
-quote). What is compared is the block's bytes, not a substring. The existing
-renderer tests (`test_note_render.py`, `test_prefill.py`) pass beside it.
-Nothing here regenerates the fixture.
+Shared field descriptions and explicit id_kind are captured with generated fixtures.
 """
 
 from __future__ import annotations

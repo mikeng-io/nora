@@ -38,6 +38,22 @@ contains an intention and subject references, not final prose. A person's own
 reminder remains under the conscious path's authority except where a validated
 event cancellation necessarily changes it.
 
+These are the live session's verbs, and they do not wait on one another: an
+act does not depend on a memory proposal being saved first. The historical
+lane reads evidence and proposes memory only — it holds no act verbs, no
+lesson writes and no access to current profiles.
+
+## The instruction follows the surface
+
+The prelude states Cognition's purpose as Nora's subconscious and the
+objective holds the stages and the few rules code cannot enforce. Guidance is
+tool-gated: context assembly injects the short guidance of each offered tool —
+the notebook guidance whenever any tool it teaches is offered — so the
+instruction follows the session's actual surface rather than the agenda's
+kinds. Every admitted tool is resident and nothing is loaded mid-session. The
+historical lane's surface omits act verbs, and its instruction omits act
+guidance with them.
+
 ## Validation before commit
 
 Every persistent write passes code validation before its store call:

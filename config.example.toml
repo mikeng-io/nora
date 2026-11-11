@@ -207,7 +207,6 @@ floor_grace_seconds = 3600
 upcoming_days = 3
 store_timeout_seconds = 5
 max_items = 12                        # items per session
-max_strikes = 3
 # session_timeout_seconds = 3900
 max_self_wakes = 5
 max_self_wakes_per_day = 12
@@ -283,7 +282,6 @@ batch_limit = 300
 
 [lessons]
 enabled = false
-wake_batch = 50
 stale_seconds = 604800
 horizon_seconds = 5184000
 batch_limit = 100

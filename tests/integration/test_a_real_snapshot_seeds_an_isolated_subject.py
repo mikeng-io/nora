@@ -286,9 +286,12 @@ async def test_the_judges_source_names_every_speaker_and_marks_hers(sandbox, sou
     one, because the judge is a third-party call."""
     seeded = await _seed(sandbox, source)
     assert seeded.transcript == (
-        '<m n="1" age="10m ago" from="Miles">are we still on for friday</m>',
-        '<m n="2" age="4m ago" from="Miles">i can\'t make it</m>',
-        '<m n="3" age="just now" from="Nora">want me to move it?</m>',
+        '<m n="1" age="10m ago" from="Miles" author_id="miles_novak" '
+        'at="2025-07-08T18:30:00+00:00">are we still on for friday</m>',
+        '<m n="2" age="4m ago" from="Miles" author_id="unknown" '
+        'at="2025-07-08T18:36:00+00:00">i can\'t make it</m>',
+        '<m n="3" age="just now" from="Nora" author_id="nora" '
+        'at="2025-07-08T18:39:00+00:00" delivery="not delivered">want me to move it?</m>',
     )
     joined = "\n".join(seeded.transcript)
     sender_ids = {r.sender_id for r in await _rows(sandbox)}
@@ -372,9 +375,7 @@ async def test_a_reminder_resolved_after_the_instant_comes_back_pending(
     assert chased.outcome is None
 
 
-async def test_a_reminder_already_fired_by_then_is_not_in_the_queue(
-    sandbox, source,
-) -> None:
+async def test_a_reminder_already_fired_by_then_is_not_in_the_queue(sandbox, source) -> None:
     """It was not something the room was waiting on, so it is not seeded —
     the same rule that keeps a note retired before the instant out."""
     await _seed(sandbox, source)
@@ -386,9 +387,7 @@ async def test_a_reminder_written_after_the_instant_is_not_there(sandbox, source
     assert "book saturday instead" not in {r.text for r in await _pending(sandbox)}
 
 
-async def test_a_cancelled_reminder_is_omitted_rather_than_guessed(
-    sandbox, source,
-) -> None:
+async def test_a_cancelled_reminder_is_omitted_rather_than_guessed(sandbox, source) -> None:
     """`cancel()` records no instant, so «cancelled» carries no when — see
     `snapshot.py`'s module docstring. It is left OUT rather than seeded
     pending, because a pending row is what fires and reconstructing one the
@@ -466,9 +465,7 @@ async def test_a_subject_whose_clock_is_not_the_moment_is_refused(
             await _close(subject)
 
 
-async def test_a_moment_before_the_first_row_is_refused(
-    source, pg_template, tmp_path,
-) -> None:
+async def test_a_moment_before_the_first_row_is_refused(source, pg_template, tmp_path) -> None:
     """An empty reconstruction is what a mistyped id reads as too."""
     early = BEFORE_MS - 11 * MINUTE
     async with sandbox_database(source.url, template=pg_template) as url:

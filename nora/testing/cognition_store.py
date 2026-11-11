@@ -16,7 +16,6 @@ from nora.domain.cognition_pace import PaceRow, PendingSelfWake, fold_self_wakes
 from nora.domain.ports import (
     NewCognitionPace,
     NewCognitionSession,
-    NewCognitionSessionClose,
 )
 from nora.testing.stimuli import live_stimulus
 
@@ -24,10 +23,8 @@ from nora.testing.stimuli import live_stimulus
 class InMemoryCognitionStore:
     def __init__(self) -> None:
         self._session_ids = itertools.count(1)
-        self._close_ids = itertools.count(1)
         self._pace_ids = itertools.count(1)
         self.sessions: list[tuple[int, NewCognitionSession, int]] = []
-        self.closes: list[tuple[int, NewCognitionSessionClose, int]] = []
         self.paces: list[tuple[int, NewCognitionPace, int]] = []
         #: The retracted stimulus ids of the database this ledger shares with
         #: an `InMemoryStimulusStore(ledger=self)`: ONE set, as the SQL twins
@@ -49,12 +46,6 @@ class InMemoryCognitionStore:
         self.sessions.append((session_id, session, recorded_at_ms))
         return session_id
 
-    async def record_close(
-        self, *, close: NewCognitionSessionClose, recorded_at_ms: int,
-    ) -> int:
-        close_id = next(self._close_ids)
-        self.closes.append((close_id, close, recorded_at_ms))
-        return close_id
 
     async def record_pace(
         self, *, pace: NewCognitionPace, recorded_at_ms: int,

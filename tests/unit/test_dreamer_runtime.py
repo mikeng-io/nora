@@ -778,9 +778,8 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
     room_scoped = {
         "transit", "route", "where_is", "place_info", "saved_places",
         # `where_been` (DEC-155) answers from the derived substrate but is
-        # gated by the SAME R-31 room/circle seam as `where_is` — the guard is
-        # the room, which a unit-keyed Dreamer tick does not have, so
-        # room-scoped is the fail-closed side and the correct one. (It is
+        # gated by the SAME R-31 room/circle seam as `where_is` — a unit-keyed
+        # Dreamer tick has no room, so room-scoped is fail-closed. (It is
         # deliberately NOT in UNIT_SAFE_TOOLS.)
         "where_been",
         # `routine_read`: the same substrate behind the SAME
@@ -890,6 +889,7 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # workspace, keyed on the room's (platform, conversation_id); a
         # unit-keyed tick's synthetic room has no workspace of its own, and
         # nobody has decided a background loop may read one. Fail-closed.
+        "document_list",  # Explicit agenda-room capability; never unit-safe.
         "computer_read",
         # `computer_session_list` reads the
         # ROOM's own sessions and workspace state; same reason, fail-closed.
@@ -2354,40 +2354,13 @@ async def test_a_verb_adaptor_that_staged_nothing_is_nothing_found(monkeypatch):
     assert sink.commits == [("g1", ())]
 
 
-class _WritingVerbAdaptor(_VerbAdaptor):
-    """A verb that WRITES when called (the Lessons shape): it asks for the
-    run's provenance, which a staging verb never sees."""
-
-    def __init__(self, *, sink: _Sink) -> None:
-        super().__init__(sink=sink)
-        self.provenance: list[Any] = []
-
-    def verbs(self, *, key: str, provenance):  # type: ignore[override]
-        self.provenance.append(provenance)
-        return super().verbs(key=key)
-
-
-async def test_a_verb_that_writes_when_called_is_handed_the_runs_provenance(monkeypatch):
-    """The three fields a `Proposal` carries reach a verb that takes
-    `provenance`: the instruction digest read for
-    THIS run, the model, and an `established_by` naming the adaptor and key. A
-    staging verb (no such argument) is called exactly as before, above."""
-    sink = _Sink()
-    adaptor = _WritingVerbAdaptor(sink=sink)
-    runtime, _ = _runtime(monkeypatch, raw="")
-    await runtime.run(adaptor=adaptor, key="g1", batch=())
-    (prov,) = adaptor.provenance
-    assert prov.instruction_sha256 == SHA and prov.model == "deepseek-v4-flash"
-    assert prov.established_by.startswith("dream:test-adaptor:g1:")
-
-
 async def test_a_run_whose_verbs_wrote_is_ok_not_nothing_found(monkeypatch):
-    """A verb that writes when called answers through what `commit` says
-    landed (DEC-299 (4)): lessons written must not read as `nothing_found`,
-    which says «there was nothing»."""
+    """A verb whose calls wrote answers through what `commit` says landed
+    (DEC-299 (4)): writes must not read as `nothing_found`, which says
+    «there was nothing»."""
     sink = _Sink()
 
-    class _Landed(_WritingVerbAdaptor):
+    class _Landed(_VerbAdaptor):
         async def commit(self, *, key, proposals, now_ms):
             await super().commit(key=key, proposals=proposals, now_ms=now_ms)
             return 1

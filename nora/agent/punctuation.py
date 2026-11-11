@@ -24,37 +24,14 @@ audit rows, the transcript table and every outbound message are untouched.
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from strands.models.openai import OpenAIModel
 
+from nora.domain.prompt import undash as undash
+
 from .replay_capture import client_capture
 from .telemetry import record_eval_model_request
-
-# U+2014 EM DASH and U+2015 HORIZONTAL BAR (the 「――」 some IMEs produce),
-# with any spacing around them. NOT U+2013: the en dash marks a range (2 to 5 days)
-# and carries meaning.
-_DASH = re.compile(r"[ \t]*[\u2014\u2015]+[ \t]*")
-
-
-def _is_cjk(ch: str) -> bool:
-    return ch >= "\u2e80"
-
-
-def undash(text: str) -> str:
-    """Every em dash becomes a comma: full-width when either side of it is
-    Chinese («link——冇人接» is a Cantonese line), «, » otherwise."""
-    if "\u2014" not in text and "\u2015" not in text:
-        return text
-
-    def repl(m: re.Match[str]) -> str:
-        before = text[m.start() - 1] if m.start() else ""
-        after = text[m.end()] if m.end() < len(text) else ""
-        cjk = any(ch and _is_cjk(ch) for ch in (before, after))
-        return "\uff0c" if cjk else ", "
-
-    return _DASH.sub(repl, text)
 
 
 def _clean(value: Any) -> Any:

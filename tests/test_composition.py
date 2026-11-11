@@ -1642,24 +1642,6 @@ async def test_cognition_off_imports_no_model_machinery(cfg, tmp_path, monkeypat
     assert "nora.app.cognition_agent_runner" not in sys.modules
 
 
-async def test_the_evaluators_floors_ready_follows_the_one_agenda_table(
-    cfg, tmp_path, monkeypatch,
-):
-    """`nora.app.cognition_wiring.AGENDA_SKILLS` is the table the evaluator and the age gauge
-    both read. Production maps the `time` skill, so floors are ready; a table without it
-    must leave every floor inert (a root that hard-coded the answer would not follow it)."""
-    from types import MappingProxyType
-
-    import nora.app.cognition_wiring as wiring
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    shipped = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert shipped.wake_evaluator is not None and shipped.wake_evaluator._floors_ready is True
-    monkeypatch.setattr(wiring, "AGENDA_SKILLS", MappingProxyType(
-        {k: v for k, v in wiring.AGENDA_SKILLS.items() if k != "time"},
-    ))
-    patched = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert patched.wake_evaluator is not None and patched.wake_evaluator._floors_ready is False
 
 
 async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator(
@@ -1705,15 +1687,15 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     # R-99 admits the agenda binding independently of a read's own room destination.
     assert all({"agenda_room", "room"} <= names for names in agent._param_names.values())
     assert set(agent._param_names) <= runner._read_only_tools
-    # The session's instruction is the Dreamer's objective for it, read from
-    # the bind-mounted corpus, its own prelude first (not the shared doctrine),
-    # and the composed runner injects the Register skill for a
-    # `message` agenda and records it; `time` is mapped, so the floors wake.
+    # The session's instruction is its own objective alone, read from the
+    # bind-mounted corpus (never the shared Dreamer doctrine), and the composed
+    # runner injects the Register skill for a `message` agenda and records it;
+    # `time` is mapped, so the floors wake.
     text, sha = runner._doctrine()
-    assert text.startswith('<dreamer_doctrine name="cognition-prelude">')
-    assert '<dreamer_objective name="cognition">' in text and sha
-    assert "# Skill: cognition-register" in runner._skill_text_for(["message"])
-    assert set(runner._skill_versions_for(["message"])) == {"cognition-register"}
+    assert text.startswith("You are Nora. This is the part of you")
+    assert "<dreamer_" not in text and sha
+    assert runner._skill_text_for()
+    assert set(runner._skill_versions_for()) == {"cognition-register"}
     assert evaluator._floors_ready is True
     # Only units with a home room are woken: `wedding` names none.
     assert sorted(evaluator._units()) == ["friends"]
@@ -1730,58 +1712,31 @@ def _dreamer_tree(tmp_path: Path) -> Path:
     return root
 
 
-@pytest.mark.parametrize("how", ["prelude deleted", "prelude applies to nothing",
-                                 "prelude applies elsewhere", "skill deleted"])
-async def test_a_session_whose_prelude_or_skill_is_missing_is_a_startup_error(
+@pytest.mark.parametrize("how", ["objective deleted", "skill deleted"])
+async def test_a_session_whose_objective_or_skill_is_missing_is_a_startup_error(
     cfg, tmp_path, how,
 ):
-    """Without its prelude, `cognition` silently reads the shared Dreamer doctrine («you
-    look; you do not act»), and a mapped skill that is not installed would raise a raw
-    `LookupError` out of the composition. Both must be a named `StartupError`."""
+    """A missing `cognition` objective, or a mapped skill that is not installed, would
+    raise a raw `LookupError` out of the composition. Both must be a named
+    `StartupError`."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     root = _dreamer_tree(tmp_path)
-    prelude = root / "preludes" / "cognition-prelude.md"
-    if how == "prelude deleted":
-        prelude.unlink()
-    elif how == "skill deleted":
-        (root / "skills" / "cognition-register.md").unlink()
+    if how == "objective deleted":
+        (root / "objectives" / "cognition.md").unlink()
     else:
-        applies = "[]" if how == "prelude applies to nothing" else "[note-merge]"
-        prelude.write_text(
-            prelude.read_text(encoding="utf-8").replace(
-                "applies_to: [cognition]", f"applies_to: {applies}",
-            ),
-            encoding="utf-8",
-        )
-    expect = "cognition-register" if how == "skill deleted" else "cognition-prelude"
+        (root / "skills" / "cognition-register.md").unlink()
+    expect = "cognition-register" if how == "skill deleted" else "cognition"
     with pytest.raises(StartupError, match=expect):
         await build_dependencies(override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}))
 
 
 async def test_the_same_tree_builds_when_nothing_is_taken_out_of_it(cfg, tmp_path):
-    """The positive control of the three refusals above: an untouched copy is accepted."""
+    """The positive control of the refusals above: an untouched copy is accepted."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "dreamer.dir": _dreamer_tree(tmp_path)},
     ))
     assert deps.cognition_runner is not None
-
-
-async def test_a_prelude_deleted_after_startup_is_refused_per_session(cfg, tmp_path):
-    """Hot reload: the file goes after a good start. The next session's instruction would
-    be the shared doctrine; it is refused by name instead."""
-    from nora.app.cognition_wiring import PreludeMissingError
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    root = _dreamer_tree(tmp_path)
-    deps = await build_dependencies(override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}))
-    runner = deps.cognition_runner._runner
-    assert runner is not None and runner._doctrine()[0].startswith(
-        '<dreamer_doctrine name="cognition-prelude">',
-    )
-    (root / "preludes" / "cognition-prelude.md").unlink()
-    with pytest.raises(PreludeMissingError, match="cognition-prelude"):
-        runner._doctrine()
 
 
 async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withholds(
@@ -1886,12 +1841,26 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
         unit="friends", pending=pending, home_room=Room("signal", "g1"), now_ms=now,
         last_session_ms=None,
     )
+    with pytest.raises(ValueError, match="outside the unit"):
+        await deps.cognition_runner._runner._grounder(
+            "friends", situation.agenda.items, pending)
+    valid = build_situation(unit="friends", pending=pending[:2], home_room=Room("signal", "g1"),
+                            now_ms=now, last_session_ms=None)
     grounding = await deps.cognition_runner._runner._grounder(
-        "friends", situation.agenda.items, pending)
+        "friends", valid.agenda.items, pending[:2])
     said = {r.message_id: r for r in grounding.records.values()}
     assert set(said) == {ids[0]}                    # the hidden one and the OTHER UNIT's are absent
     assert said[ids[0]].text == "dinner friday?" and said[ids[0]].room == Room("signal", "g1")
     assert "+852" not in repr(grounding)            # R-18: no platform id reaches the prompt
+    from datetime import UTC
+
+    from nora.language.cognition_render import render_agenda
+    prompt = render_agenda(valid.agenda.items, stimuli={s.id: s for s in pending[:2]},
+                           grounding=grounding,
+                           now_ms=now, tz=UTC)
+    assert "dinner friday?" in prompt
+    assert "+852" not in prompt
+    assert "other unit words" not in prompt and "a hidden one" not in prompt
 
 
 async def test_shadow_sessions_with_no_unit_that_can_run_them_refuse_to_boot(cfg, tmp_path):

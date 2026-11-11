@@ -100,7 +100,7 @@ def _make_reaction_send(deps):
 
         Args:
             emoji: The emoji you choose for this conversation.
-            reply_to: The message's `n` in `group_transcript`.
+            reply_to: The message's `n` in `transcript`.
             more: True if another message or action follows this reaction.
         """
         quote = _resolve_quote(reply_to)
@@ -174,7 +174,7 @@ def _make_send_reply(deps):
                 "@Jordan somebody here wants to know how tall you are"; a name
                 that is not here reaches nobody.
             reply_to: Optional. The `n` of the `m` element you are answering, as
-                it appears in `group_transcript`. Use it when the room has more
+                it appears in `transcript`. Use it when the room has more
                 than one thread open and it would otherwise be unclear which one
                 you picked up. Leave it out when only one thing is happening,
                 since a reply threaded onto the obvious message is clutter. Never

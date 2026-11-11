@@ -7,11 +7,15 @@ The unit of evidence is a closed response episode: her send together with the
 quoted replies, reactions, edits and separately identified inferred follows in
 its observation window. An open episode cannot teach a settled pattern.
 
-The Lessons Dreamer session wakes on accumulated closed episodes, a lesson due
-for reconsideration or an explicit correction addressed to Nora. It reads the
-new episodes and active lessons, then writes, reinforces, consolidates or
-retires through checked verbs. A session must settle with a write, retirement
-or explicit no-change outcome.
+Closed episodes and corrections reach the unit's one Cognition session as
+context, not as a stimulus: the session is shown the episodes past the unit's
+lessons cursor and the corrections aimed at her, alongside the lessons already
+held, and the live session alone holds the checked write verbs — the
+historical lane never does. Fewer than three new closed episodes are neither
+shown nor consumed, since no write could cite them, while a correction rides
+the next session once its quiet has passed however few episodes stand beside
+it. A session that closes normally consumes what it was shown and runs decay;
+a failed, timed-out or refused session keeps its batch for the next one.
 
 A correction from a person can ground a lesson without waiting for the ordinary
 multi-episode pattern. Detection addresses Nora through a quote, structured
@@ -65,9 +69,9 @@ normal declared context and tools without creating another lesson store.
 ## Failure behaviour
 
 Failed citation, screening, capacity or doctrine checks commit nothing. A
-doctrine-check outage is `unavailable`, never consistency. An unsettled session
-holds its evidence for bounded retry, while an actual write is a positive
-outcome rather than `nothing_found`.
+doctrine-check outage is `unavailable`, never consistency. A failed session
+leaves its evidence at the cursor for the next one, while an actual write is a
+positive outcome rather than `nothing_found`.
 
 A failed lesson read omits the block without failing the turn. Missing lessons
 mean no derived practice, not permission to invent one. The previous validated

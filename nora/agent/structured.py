@@ -121,7 +121,7 @@ def build_structured_model(
     (notes, the standing position, a reaction pick) is read back into her
     prompt, so a dash here reappears there (`nora.agent.punctuation`).
     """
-    client_args = {"api_key": api_key, "base_url": base_url,
+    client_args: dict[str, Any] = {"api_key": api_key, "base_url": base_url,
                    **({"default_headers": default_headers} if default_headers else {})}
     # A bounded run gates the SDK-owned client too: `bounded_http_client`
     # wraps whatever transport is present (a real one when unset) so the
@@ -131,6 +131,9 @@ def build_structured_model(
     bounded = bounded_http_client(http_client)
     if bounded is not None:
         client_args["http_client"] = bounded
+        from ..domain.run_budget import active_run_budget
+        if active_run_budget.get() is not None:
+            client_args["max_retries"] = 0
     return DashFreeOpenAIModel(
         client_args=client_args,
         model_id=model_id,

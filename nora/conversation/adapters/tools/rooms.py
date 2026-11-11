@@ -399,7 +399,7 @@ async def _room_list__unit(c):
     async def _activity(r: KnownRoom) -> tuple[object, object, object]:
         try:
             act = await c.store.room_activity(
-                conversation_id=r.conversation_id, since_ts=c.since_ms
+                conversation_id=r.conversation_id, since_ts=c.since_ms, platform=r.platform,
             )
         except Exception:
             log.warning("room_list: activity read failed for a %s room", r.platform, exc_info=True)

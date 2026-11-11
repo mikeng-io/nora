@@ -70,7 +70,6 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import inspect
 import json
 import logging
 import time
@@ -87,7 +86,6 @@ from ..domain.ports import (
     Proposal,
     RosterSource,
     SessionAdaptor,
-    VerbProvenance,
 )
 from ..domain.reasoning_strip import dreamer_path
 from ..domain.turn_deadline import turn_deadline
@@ -1505,7 +1503,7 @@ class DreamerRuntime:
             verbs = getattr(adaptor, "verbs", None)
             own = (
                 [_as_tool(self._screened(adaptor.name, v))
-                 for v in self._bind_verbs(adaptor, key, verbs, sha)]
+                 for v in self._bind_verbs(adaptor, key, verbs)]
                 if verbs is not None else []
             )
             # The BUDGETS, not the guard. A `DreamGuard` owns a `CallLedger`, and a
@@ -1779,21 +1777,12 @@ class DreamerRuntime:
         return items, stop_reason
 
     def _bind_verbs(
-        self, adaptor: DreamAdaptor, key: str, verbs: Callable[..., Any], sha: str,
+        self, adaptor: DreamAdaptor, key: str, verbs: Callable[..., Any],
     ) -> Sequence[Callable[..., Any]]:
-        """`adaptor.verbs(key=key)`, plus `provenance` when the adaptor's `verbs`
-        takes it: a verb that WRITES when called (Lessons) stamps what a `Proposal`
-        would carry, so its rows name the same run and the same instruction digest
-        an envelope adaptor's do. A staging verb (Character) takes none."""
-        if "provenance" not in inspect.signature(verbs).parameters:
-            bound: Sequence[Callable[..., Any]] = verbs(key=key)
-            return bound
-        provenance = VerbProvenance(
-            instruction_sha256=sha, model=self._model_name,
-            established_by=f"dream:{adaptor.name}:{key}:{int(time.time() * 1000)}",
-        )
-        written: Sequence[Callable[..., Any]] = verbs(key=key, provenance=provenance)
-        return written
+        """`adaptor.verbs(key=key)`: the verbs stage their writes, and `commit`
+        stamps the run's provenance onto every envelope it lands."""
+        bound: Sequence[Callable[..., Any]] = verbs(key=key)
+        return bound
 
     def _screened(
         self, adaptor: str, verb: Callable[..., Any],
@@ -1854,6 +1843,7 @@ class DreamerRuntime:
         agent_name: str = "session", spend: Any = None,
         max_trace_chars: int = 10_000,
         reservation: TokenReservation | None = None,
+        tool_hooks: Sequence[Any] = (),
     ) -> AgentRunResult:
         """ONE bounded agent loop — the only model-invocation route
         (node 30). Every session-shaped adaptor's turn and every envelope
@@ -1863,10 +1853,11 @@ class DreamerRuntime:
         own agent, so the sibling model-invocation route is gone rather
         than renamed.
 
-        `spend` is the caller's mutable holder: its `.total`, `.messages`
-        and `.requirements` are filled even on a failed or cancelled loop,
-        because a failed session is the costliest kind. An unread usage
-        stays `None` — `unavailable`, never a quiet zero."""
+        `spend` is the caller's mutable holder: its `.total`, `.messages` and
+        `.requirements` are filled even on a failed or cancelled loop, because
+        a failed session is the costliest kind. An unread usage stays `None`
+        — `unavailable`, never a quiet zero. `tool_hooks` adds a surface's own
+        providers (a `ToolSurface` shelf loader) beside the recording."""
         b = budget if budget is not None else self.budget_for(agent_name)
         # The default guard is the SESSION shape (DEC-247): the tools passed
         # are the R-7 membership set, R-99 reads the runtime's own
@@ -1892,7 +1883,7 @@ class DreamerRuntime:
             guard=g, budget=b,
             trace_attributes=attributes, agent_name=agent_name,
             max_trace_chars=max_trace_chars, reservation=reservation,
-            spend=spend,
+            spend=spend, tool_hooks=tool_hooks,
         )
 
     async def _invoke_agent(
@@ -1900,7 +1891,7 @@ class DreamerRuntime:
         guard: DreamGuard, budget: AdaptorBudget,
         trace_attributes: Mapping[str, str], agent_name: str,
         max_trace_chars: int, reservation: TokenReservation | None,
-        spend: Any,
+        spend: Any, tool_hooks: Sequence[Any] = (),
     ) -> AgentRunResult:
         """One bounded agent loop: `_invoke_once` creates the agent and runs
         it inside the deadline and the reservation, then this reads its
@@ -1914,15 +1905,13 @@ class DreamerRuntime:
         recording = TurnRecording()
         created: dict[str, Any] = {}
         result: Any = None
+        extra = (reservation,) if reservation is not None else ()
         try:
             _agent, _baseline, result = await self._invoke_once(
                 system_prompt=system_prompt, prompt=prompt, tools=tools,
                 guard=guard, budget=budget, trace_attributes=trace_attributes,
                 agent_name=agent_name,
-                tool_hooks=(
-                    (recording, reservation) if reservation is not None
-                    else (recording,)
-                ),
+                tool_hooks=(*tool_hooks, recording, *extra),
                 agent_out=created,
             )
             stop_reason = (

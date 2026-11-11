@@ -14,17 +14,10 @@
   "target": "tests/unit/test_cognition_source_rows.py::test_a_loaded_but_unemitted_row_cannot_be_cited"
  },
  {
-  "name": "a refused statement never withholds covered items",
-  "file": "nora/app/cognition_memory.py",
-  "old": "        if admitted:",
-  "new": "        if admitted and not refused:",
-  "target": "tests/unit/test_orient_kind_table.py::test_one_slip_isolates_the_slipping_statement"
- },
- {
   "name": "the memory_propose schema is generated from the statement types",
   "file": "nora/app/cognition_session.py",
-  "old": "            items: list[int], statements: list[Statement],",
-  "new": "            items: list[int], statements: list[dict[str, Any]],",
+  "old": "        async def memory_propose(statements: list[Statement]) -> dict[str, Any]:",
+  "new": "        async def memory_propose(statements: list[dict[str, Any]]) -> dict[str, Any]:",
   "target": "tests/unit/test_orient_kind_table.py::test_memory_propose_schema_is_derived_from_the_proposal_types"
  },
  {
@@ -65,7 +58,7 @@
  {
   "name": "a correction cite quote must appear in the shown source",
   "file": "nora/app/comprehend.py",
-  "old": "                bad_quote = next(\n                    (c for c in st.cite\n                     if c.quote is not None and c.quote not in sources[\n                         scope.catalogue.get(c.source)\n                         or (\"message\", str(c.source))].text),\n                    None,\n                )\n                if bad_quote is not None:",
+  "old": "                bad_quote = next(\n                    (c for c in st.cite\n                     if c.quote is not None and not contains_source_span(c.quote, sources[\n                         scope.catalogue.get(c.source)\n                         or (\"message\", str(c.source))].text)),\n                    None,\n                )\n                if bad_quote is not None:",
   "new": "                bad_quote = None\n                if bad_quote is not None:",
   "target": "tests/unit/test_orient_kind_table.py::test_a_correction_cannot_cite_a_fabricated_quote"
  },

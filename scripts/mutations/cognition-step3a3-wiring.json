@@ -65,16 +65,9 @@
   {
     "name": "session runner: the prompt carries the clock",
     "file": "nora/language/cognition_render.py",
-    "old": "    if now_ms is not None:\n        blocks.append(restamp(ContextBlock(\n            name=\"clock\",",
-    "new": "    if False:\n        blocks.append(restamp(ContextBlock(\n            name=\"clock\",",
+    "old": "if now is not None:\n        blocks.append(render_clock(now=now, last_session_ms=last_session_ms))",
+    "new": "if False:\n        blocks.append(render_clock(now=now, last_session_ms=last_session_ms))",
     "target": "tests/unit/test_cognition_wiring.py -k says_what_time_it_is"
-  },
-  {
-    "name": "session runner: skill versions are recorded on the session",
-    "file": "nora/app/cognition_session.py",
-    "old": "            {} if self._skill_versions_for is None else dict(self._skill_versions_for(kinds))",
-    "new": "            {}",
-    "target": "tests/unit/test_cognition_wiring.py -k skills_injected_for_the_agenda_kinds"
   },
   {
     "name": "agent runner: the root span keeps the trace in Langfuse",
@@ -152,5 +145,12 @@
     "old": "            for n, names in tools.tool_param_names().items() if n in surface.wired",
     "new": "            for n, names in tools.tool_param_names().items()",
     "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+  },
+  {
+    "name": "session runner: skill versions are recorded on the session",
+    "file": "nora/app/cognition_session.py",
+    "old": "            {} if self._skill_versions_for is None else dict(self._skill_versions_for())",
+    "new": "            {}",
+    "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_session_row_records_the_skill_it_ran_with"
   }
 ]

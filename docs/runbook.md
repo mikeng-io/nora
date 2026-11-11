@@ -944,11 +944,13 @@ intermittent one. The fix is the request shape itself (the carry above). See `do
 
 ## 7. "Where do eval results live?"
 
-The current entry point is `uv run python -m evals <corpus-name>`.
+The current entry point is `uv run python -m evals <corpus-name>
+--grading-contract <private-file> --grading-contract-sha256 <expected-sha256>`.
 `uv run python -m evals --list` lists the selectable corpora without running one;
 `--class` and `--all` select broader runs. Live runs need the configured model,
 source clone and backing services and can spend model calls. Use the
-[eval SOP](eval-sop.md) for setup and the results/trace readback procedure.
+[eval SOP](eval-sop.md#bind-the-selected-measurement) for the independently reviewed
+contract, setup and the results/trace readback procedure.
 The runner prints measurements; retain its output and exit code with the source
 revision. Langfuse traces are separate evidence, not a substitute for the runner's
 verdict. A timeout or error is never a pass.

@@ -1,0 +1,100 @@
+[
+  {
+    "name": "a changed grading artifact refuses before execution",
+    "file": "evals/grading_contract.py",
+    "old": "if hashlib.sha256(raw).hexdigest() != expected:",
+    "new": "if False:",
+    "target": "tests/integration/test_grading_contract.py::test_contract_drift_is_refused_and_valid_binding_is_immutable"
+  },
+  {
+    "name": "reply judge uses independent doctrine, not candidate policy",
+    "file": "evals/rebuilt/grading.py",
+    "old": "doctrine_text=(self.contract.data[\"reference_doctrine\"]\n                           if self.contract is not None else doctrine),",
+    "new": "doctrine_text=doctrine,",
+    "target": "tests/integration/test_grading_contract.py::test_actual_reply_judge_uses_fixed_reference_when_writer_changes"
+  },
+  {
+    "name": "memory judges receive fixed instructions",
+    "file": "scripts/memory_graph_facts.py",
+    "old": "        contract.instruction(\"memory_support\") + _FIXED_SUPPORT_OUTPUT\n        if contract is not None\n        else _FACT_SUPPORT_INSTRUCTION",
+    "new": "        _FACT_SUPPORT_INSTRUCTION + _FIXED_SUPPORT_OUTPUT",
+    "target": "tests/integration/test_grading_contract.py::test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unscored"
+  },
+  {
+    "name": "the exact cohort is verified before the writer",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "            contract.verify_sample(sample_sha256, list(selected.values()))",
+    "new": "            pass",
+    "target": "tests/integration/test_grading_contract.py::test_real_replay_preflight_refuses_cohort_drift_before_writer"
+  },
+  {
+    "name": "judges cannot silently replace the required units",
+    "file": "scripts/memory_graph_facts.py",
+    "old": "                    or {row[\"id\"] for row in rows} != expected",
+    "new": "                    or False",
+    "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_is_total_and_requires_shown_evidence"
+  },
+  {
+    "name": "capture and export code belong to the fixed instrument",
+    "file": "evals/grading_contract.py",
+    "old": "            \"nora/agent/telemetry.py\",\n            \"nora/obs/tracing.py\",\n            \"nora/subject/eval_evidence.py\",\n",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_capture_or_export_change_invalidates_the_fixed_measurement"
+  },
+  {
+    "name": "semantic acceptance needs a judge in this actual run",
+    "file": "evals/grading_contract.py",
+    "old": "            if not self.data[\"judges\"]:\n                raise EvidenceError(\"case acceptance requires an active judge\")\n",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_required_acceptance_cannot_bind_without_a_judge"
+  },
+  {
+    "name": "scoring shares the measured transport budget and persists terminal counters",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    token = active_run_budget.set(budget) if budget else None",
+    "new": "    token = None",
+    "target": "tests/integration/test_spike_visibility.py::test_scoring_entrypoints_share_the_measured_budget_and_persist_it"
+  },
+  {
+    "name": "normal replay replaces the failure placeholder",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                    report.clear()\n",
+    "new": "",
+    "target": "tests/integration/test_spike_visibility.py::test_memory_graph_replay_exports_writer_and_judges[False]"
+  },
+  {
+    "name": "final budget trace survives budget file failure",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                evidence.record(\"run_budget_final\", **metadata)\n                freeze(output / \"run_budget.json\", metadata)",
+    "new": "                freeze(output / \"run_budget.json\", metadata)\n                evidence.record(\"run_budget_final\", **metadata)",
+    "target": "tests/integration/test_spike_visibility.py::test_budget_file_failure_retains_terminal_trace_counters"
+  },
+  {
+    "name": "bounded SDK-owned judge client disables automatic retries",
+    "file": "nora/agent/structured.py",
+    "old": "            client_args[\"max_retries\"] = 0\n",
+    "new": "            client_args[\"max_retries\"] = 2\n",
+    "target": "tests/integration/test_eval_run_budget_wired.py::test_sdk_owned_client_retry_setting_matches_the_run_boundary"
+  },
+  {
+    "name": "direct reply judges keep the exact formatted request in capture",
+    "file": "evals/rebuilt/grading.py",
+    "old": "                    record_eval_model_request(request)\n",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_raw_reply_judge_captures_its_request_response_and_model_span"
+  },
+  {
+    "name": "judge truncation remains REVIEW without discarding capture",
+    "file": "nora/subject/eval_evidence.py",
+    "old": " and event.get(\"model_role\") != \"judge\"",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_raw_reply_judge_captures_its_request_response_and_model_span"
+  },
+  {
+    "name": "raw judge facade and transport implementation are fixed measurement inputs",
+    "file": "evals/grading_contract.py",
+    "old": "            \"nora/agent/replay_capture.py\",\n",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_capture_or_export_change_invalidates_the_fixed_measurement"
+  }
+]

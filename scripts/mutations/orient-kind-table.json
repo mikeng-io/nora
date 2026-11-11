@@ -1,31 +1,10 @@
 [
  {
-  "name": "Orient renders the admitted relations from the vocabulary",
-  "file": "nora/language/comprehend_render.py",
-  "old": "\", \".join(_ADMITTED_RELATIONS)",
-  "new": "\", \".join(RELATION_RULES)",
-  "target": "tests/unit/test_orient_kind_table.py::test_orient_renders_the_vocabulary_from_the_admission_constants"
- },
- {
-  "name": "Entity admission uses kind rows",
-  "file": "nora/app/comprehend.py",
-  "old": "            if e.kind not in PROPOSED_KINDS or not any(\n                    row.kind == e.kind for row in MEMORY_KINDS):",
-  "new": "            if False:",
-  "target": "tests/unit/test_orient_kind_table.py::test_admission_uses_the_kind_constant[work-entity]"
- },
- {
   "name": "A Notebook row is never a graph entity kind",
   "file": "nora/app/comprehend.py",
   "old": "            if e.kind not in PROPOSED_KINDS or not any(",
   "new": "            if not any(",
   "target": "tests/unit/test_orient_kind_table.py::test_a_notebook_row_is_refused_as_an_entity_kind"
- },
- {
-  "name": "Relation admission uses kind rows",
-  "file": "nora/app/comprehend.py",
-  "old": "            if not any(st.rel in row.relates_by for row in MEMORY_KINDS):",
-  "new": "            if False:",
-  "target": "tests/unit/test_orient_kind_table.py::test_admission_uses_the_kind_constant[likes-relation]"
  },
  {
   "name": "The live preview includes resolution candidates",
@@ -47,12 +26,5 @@
   "old": "            corrections=tuple(corrections),",
   "new": "            corrections=(),",
   "target": "tests/unit/test_orient_kind_table.py::test_later_contradiction_supersedes_current_relation"
- },
- {
-  "name": "Orient precedes Act in the actual wake input",
-  "file": "nora/language/comprehend_render.py",
-  "old": "        return doctrine.replace(\"<!-- cognition-orient -->\", orient).replace(\n            \"<!-- cognition-act-skill -->\", skills)",
-  "new": "        return doctrine.replace(\"<!-- cognition-orient -->\", \"\").replace(\n            \"<!-- cognition-act-skill -->\", skills) + orient",
-  "target": "tests/unit/test_orient_kind_table.py::test_assembled_session_puts_orient_before_act"
  }
 ]

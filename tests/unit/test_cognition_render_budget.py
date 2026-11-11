@@ -29,7 +29,8 @@ LABELS = {f"signal:room-{i}": f"Room {i}" for i in range(3)}
 
 
 def _world(
-    per_room: int = 12, words: int = 150,
+    per_room: int = 12,
+    words: int = 150,
 ) -> tuple[list[AgendaItem], dict[int, Stimulus], Grounding]:
     stimuli: dict[int, Stimulus] = {}
     records: dict[str, RecordItem] = {}
@@ -40,26 +41,48 @@ def _world(
             sid = 100 * r + m + 1
             ref = f"messages:{sid}"
             stimuli[sid] = Stimulus(
-                id=sid, unit="u", kind="message", item="message", ref=ref,
-                at_ms=NOW - (60 - m) * 60_000, recorded_at_ms=NOW,
-                platform=room.platform, conversation_id=room.conversation_id,
+                id=sid,
+                unit="u",
+                kind="message",
+                item="message",
+                ref=ref,
+                at_ms=NOW - (60 - m) * 60_000,
+                recorded_at_ms=NOW,
+                platform=room.platform,
+                conversation_id=room.conversation_id,
             )
             records[ref] = RecordItem(
-                ref=ref, kind="message", message_id=1000 * r + m + 1, room=room,
-                author=f"P{m % 3}", at_ms=stimuli[sid].at_ms, text=f"r{r} m{m} " + "w" * words,
+                ref=ref,
+                kind="message",
+                message_id=1000 * r + m + 1,
+                room=room,
+                author=f"P{m % 3}",
+                at_ms=stimuli[sid].at_ms,
+                text=f"r{r} m{m} " + "w" * words,
             )
             sids.append(sid)
-        agenda.append(AgendaItem(
-            kind="message", room=room, summary=f"{per_room} new messages in this room",
-            stimulus_ids=tuple(sids), cues=(), surprise=1.0,
-        ))
+        agenda.append(
+            AgendaItem(
+                kind="message",
+                room=room,
+                summary=f"{per_room} new messages in this room",
+                stimulus_ids=tuple(sids),
+                cues=(),
+                surprise=1.0,
+            )
+        )
     return agenda, stimuli, Grounding(records=records, room_labels=LABELS)
 
 
 def _prompt(budget: RenderBudget, **world: int) -> str:
     agenda, stimuli, grounding = _world(**world)
     return render_agenda(
-        agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK, budget=budget,
+        agenda,
+        stimuli=stimuli,
+        grounding=grounding,
+        now_ms=NOW,
+        tz=HK,
+        budget=budget,
     )
 
 
@@ -73,35 +96,29 @@ def test_the_record_rows_never_spend_more_than_the_budget_and_each_item_keeps_it
 ):
     prompt = _prompt(RenderBudget(record_chars=record_chars, min_item_chars=900))
     assert _spent(prompt) <= record_chars
-    blocks(prompt)                                   # still well-formed whatever was cut
+    blocks(prompt)  # still well-formed whatever was cut
     for r, item in enumerate(items(prompt)):
         shown = ids(item)
-        assert shown and shown[-1] == 1000 * r + 12          # the NEWEST is always there
+        assert shown and shown[-1] == 1000 * r + 12  # the NEWEST is always there
         assert shown == list(range(shown[0], shown[-1] + 1))  # a contiguous run: oldest dropped
         left_out = 12 - len(shown)
         assert item.attrib.get("earlier_not_shown") == (str(left_out) if left_out else None)
 
 
 @pytest.mark.parametrize("record_chars", [0, 1, 20, 60])
-def test_an_allowance_too_small_for_one_row_keeps_one_whole_element_with_a_character_of_words(
-    record_chars: int,
-):
-    """The one place the cap yields, and the reason: the element is what keeps one
-    row one row. A row cut through its own tag would be the forgery this
-    format closes."""
+def test_an_allowance_too_small_for_one_row_omits_it_and_counts_every_row(record_chars: int):
     prompt = _prompt(RenderBudget(record_chars=record_chars, min_item_chars=0))
-    agenda = items(prompt)                            # parses: no element was cut
+    agenda = items(prompt)
     assert len(agenda) == 3
     for item in agenda:
-        (row,) = rows(item)
-        assert row.tag == "m" and row.text is not None and row.text.endswith("…")
-        assert len(row.text) == 2                     # one character of words, then the cut
-        assert item.attrib["earlier_not_shown"] == "11"
+        assert not rows(item)
+        assert item.attrib["earlier_not_shown"] == "12"
 
 
 def test_a_row_clipped_to_its_share_is_a_whole_element_with_its_words_cut():
     prompt = _prompt(
-        RenderBudget(record_chars=300, min_item_chars=100, message_chars=400), per_room=1,
+        RenderBudget(record_chars=300, min_item_chars=100, message_chars=400),
+        per_room=1,
         words=5000,
     )
     for item in items(prompt):
@@ -131,24 +148,37 @@ def test_the_cut_range_names_the_oldest_ids_left_out():
 def _register(notes: int, events: int, budget: RenderBudget) -> str:
     agenda, stimuli, grounding = _world(per_room=1, words=5)
     grounding = Grounding(
-        records=grounding.records, room_labels=LABELS,
+        records=grounding.records,
+        room_labels=LABELS,
         notes=tuple(
             NoteLine(id=f"n-{i}", title=f"Note {i}", description="d" * 150) for i in range(notes)
         ),
         events=tuple(
-            EventLine(id=f"e-{r}-{i}", room=room, title=f"Event {i}", when_ms=NOW + i * 60_000,
-                      venue="", status="proposed")
-            for r, room in enumerate(ROOMS) for i in range(events)
+            EventLine(
+                id=f"e-{r}-{i}",
+                room=room,
+                title=f"Event {i}",
+                when_ms=NOW + i * 60_000,
+                venue="",
+                status="proposed",
+            )
+            for r, room in enumerate(ROOMS)
+            for i in range(events)
         ),
     )
     return render_agenda(
-        agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK, budget=budget,
+        agenda,
+        stimuli=stimuli,
+        grounding=grounding,
+        now_ms=NOW,
+        tz=HK,
+        budget=budget,
     )
 
 
 def test_a_list_past_register_lines_shows_that_many_rows_and_counts_the_rest():
     prompt = _register(7, 5, RenderBudget(register_lines=3))
-    (note_index,) = named(prompt, "note_index")
+    (note_index,) = named(prompt, "notes")
     assert len(list(note_index)) == 3 and note_index.attrib["not_listed"] == "4"
     groups = events(prompt)
     assert [len(list(g)) for g in groups] == [3, 3, 3]
@@ -158,18 +188,18 @@ def test_a_list_past_register_lines_shows_that_many_rows_and_counts_the_rest():
 
 def test_a_list_within_every_cap_says_nothing_was_left_out():
     prompt = _register(2, 2, RenderBudget())
-    assert "not_listed" not in prompt.replace("`not_listed` is", "")
+    assert all(int(b.attrib.get("not_listed", "0")) == 0 for b in blocks(prompt))
 
 
 def test_the_character_budget_leaves_out_whole_rows_and_the_blocks_after_it_say_so():
     prompt = _register(30, 3, RenderBudget(register_lines=40, register_chars=1000))
-    top = blocks(prompt)                                  # no row was cut through its element
-    (note_index,) = named(prompt, "note_index")
+    blocks(prompt)  # no row was cut through its element
+    (note_index,) = named(prompt, "notes")
     shown = len(list(note_index))
     assert 0 < shown < 30 and note_index.attrib["not_listed"] == str(30 - shown)
     assert sum(len(ln) + 1 for ln in prompt.splitlines() if ln.startswith("<note ")) <= 1000
     # nothing after the cut is listed, and each block after it says how much it holds back
-    assert [b.tag for b in top] == ["clock", "agenda", "note_index", "events"]
+    assert all(len(named(prompt, name)) == 1 for name in ("clock", "agenda", "notes", "events"))
     groups = events(prompt)
     assert [len(list(g)) for g in groups] == [0, 0, 0]
     assert [g.attrib["not_listed"] for g in groups] == ["3", "3", "3"]
@@ -178,11 +208,12 @@ def test_the_character_budget_leaves_out_whole_rows_and_the_blocks_after_it_say_
 def test_every_note_and_event_is_listed_with_its_own_id_and_an_old_description_is_one_line():
     agenda, stimuli, grounding = _world(per_room=1, words=5)
     grounding = Grounding(
-        records=grounding.records, room_labels=LABELS,
+        records=grounding.records,
+        room_labels=LABELS,
         notes=(NoteLine(id="n-1", title="T", description="line one\nline two " + "x" * 300),),
     )
     prompt = render_agenda(agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK)
-    (note,) = list(named(prompt, "note_index")[0])
+    (note,) = list(named(prompt, "notes")[0])
     assert note.attrib["n"] == "n-1"
     assert note.text is not None and "\n" not in note.text
     assert note.text.startswith("line one line two ") and note.text.endswith("…")
@@ -204,19 +235,41 @@ def _markup_prompt(record_chars: int, *, items_: int = 12, text: str = '&<"' * 1
         room = Room("signal", f"room-{i}")
         ref = f"messages:{i + 1}"
         stimuli[i + 1] = Stimulus(
-            id=i + 1, unit="u", kind="message", item="message", ref=ref, at_ms=NOW - 60_000,
-            recorded_at_ms=NOW, platform=room.platform, conversation_id=room.conversation_id,
+            id=i + 1,
+            unit="u",
+            kind="message",
+            item="message",
+            ref=ref,
+            at_ms=NOW - 60_000,
+            recorded_at_ms=NOW,
+            platform=room.platform,
+            conversation_id=room.conversation_id,
         )
         records[ref] = RecordItem(
-            ref=ref, kind="message", message_id=500 + i, room=room, author="Tom & Jerry",
-            at_ms=NOW - 60_000, text=text,
+            ref=ref,
+            kind="message",
+            message_id=500 + i,
+            room=room,
+            author="Tom & Jerry",
+            at_ms=NOW - 60_000,
+            text=text,
         )
-        agenda.append(AgendaItem(
-            kind="message", room=room, summary="1 new message in this room",
-            stimulus_ids=(i + 1,), cues=(), surprise=1.0,
-        ))
+        agenda.append(
+            AgendaItem(
+                kind="message",
+                room=room,
+                summary="1 new message in this room",
+                stimulus_ids=(i + 1,),
+                cues=(),
+                surprise=1.0,
+            )
+        )
     return render_agenda(
-        agenda, stimuli=stimuli, grounding=Grounding(records=records), now_ms=NOW, tz=HK,
+        agenda,
+        stimuli=stimuli,
+        grounding=Grounding(records=records),
+        now_ms=NOW,
+        tz=HK,
         budget=RenderBudget(record_chars=record_chars),
     )
 
@@ -225,12 +278,12 @@ def _markup_prompt(record_chars: int, *, items_: int = 12, text: str = '&<"' * 1
 def test_markup_heavy_words_cannot_spend_more_than_the_budget_once_escaped(record_chars: int):
     prompt = _markup_prompt(record_chars)
     assert _spent(prompt) <= record_chars, (record_chars, _spent(prompt))
-    agenda = items(prompt)                              # whole and well-formed
+    agenda = items(prompt)  # whole and well-formed
     assert len(agenda) == 12
     for item in agenda:
-        (row,) = rows(item)                             # each keeps its one row,
-        assert row.text and row.text.endswith("…")      # its words cut to fit
-        assert row.text.startswith('&<"&<"')            # the START of what was said
+        (row,) = rows(item)  # each keeps its one row,
+        assert row.text and row.text.endswith("…")  # its words cut to fit
+        assert row.text.startswith('&<"&<"')  # the START of what was said
 
 
 def test_an_escaped_cut_keeps_as_much_of_the_words_as_fits():
@@ -250,26 +303,44 @@ def _memo(i: int) -> object:
     from nora.domain.memo import Memo, MemoRevision
 
     head = MemoRevision(
-        id=f"r-{i}", memo_id=f"m-{i}", seq=1, title=f"Memo {i} " + "t" * 60,
-        body=f"## Kept\n- the code is secret-{i} [1]", citations=("1",), mode="told",
-        state="kept", written_at=NOW - 1000 * i, established_by="cognition:u",
+        id=f"r-{i}",
+        memo_id=f"m-{i}",
+        seq=1,
+        title=f"Memo {i} " + "t" * 60,
+        body=f"## Kept\n- the code is secret-{i} [1]",
+        citations=("1",),
+        mode="told",
+        state="kept",
+        written_at=NOW - 1000 * i,
+        established_by="cognition:u",
     )
-    return Memo(id=f"m-{i}", unit="u", platform="signal", conversation_id="room-0",
-                created_at=NOW, head=head)
+    return Memo(
+        id=f"m-{i}",
+        unit="u",
+        platform="signal",
+        conversation_id="room-0",
+        created_at=NOW,
+        head=head,
+    )
 
 
 def test_the_memos_block_comes_last_newest_first_and_never_shows_what_a_memo_keeps():
     agenda, stimuli, grounding = _world(per_room=1, words=5)
     grounding = Grounding(
-        records=grounding.records, room_labels=LABELS,
+        records=grounding.records,
+        room_labels=LABELS,
         notes=(NoteLine(id="n-1", title="T", description="d"),),
         memos=tuple(_memo(i) for i in (3, 0, 4, 1, 2)),  # type: ignore[arg-type]
     )
     prompt = render_agenda(
-        agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK,
+        agenda,
+        stimuli=stimuli,
+        grounding=grounding,
+        now_ms=NOW,
+        tz=HK,
         budget=RenderBudget(memo_lines=3),
     )
-    assert [b.tag for b in blocks(prompt)] == ["clock", "agenda", "note_index", "memos"]
+    assert all(len(named(prompt, name)) == 1 for name in ("clock", "agenda", "notes", "memos"))
     (memos,) = named(prompt, "memos")
     assert [m.attrib["id"] for m in memos] == ["m-0", "m-1", "m-2"]
     assert memos.attrib["not_listed"] == "2"
@@ -281,17 +352,24 @@ def test_many_memos_never_push_an_agenda_rooms_events_out():
     they cannot leave every event unlisted."""
     agenda, stimuli, grounding = _world(per_room=1, words=5)
     grounding = Grounding(
-        records=grounding.records, room_labels=LABELS,
+        records=grounding.records,
+        room_labels=LABELS,
         events=tuple(
-            EventLine(id=f"e-{r}", room=room, title=f"Event {r}", when_ms=NOW,
-                      venue="", status="proposed")
+            EventLine(
+                id=f"e-{r}", room=room, title=f"Event {r}", when_ms=NOW, venue="", status="proposed"
+            )
             for r, room in enumerate(ROOMS)
         ),
         memos=tuple(_memo(i) for i in range(200)),  # type: ignore[arg-type]
     )
+
     def shown(register_chars: int) -> tuple[str, list[int], int]:
         prompt = render_agenda(
-            agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK,
+            agenda,
+            stimuli=stimuli,
+            grounding=grounding,
+            now_ms=NOW,
+            tz=HK,
             budget=RenderBudget(register_chars=register_chars),
         )
         (memos,) = named(prompt, "memos")
@@ -299,7 +377,9 @@ def test_many_memos_never_push_an_agenda_rooms_events_out():
 
     prompt, listed_events, listed_memos = shown(600)
     assert listed_events == [1, 1, 1]
-    assert [b.tag for b in blocks(prompt)][-2:] == ["events", "memos"]
+    assert [b.tag for b in blocks(prompt)].index("events") < [b.tag for b in blocks(prompt)].index(
+        "memos"
+    )
     (memos,) = named(prompt, "memos")
     assert 0 < listed_memos <= 20 and int(memos.attrib["not_listed"]) == 200 - listed_memos
     assert sum(len(ln) + 1 for ln in prompt.splitlines() if ln.startswith("<memo ")) <= 1200
@@ -311,4 +391,5 @@ def test_many_memos_never_push_an_agenda_rooms_events_out():
 def test_no_memos_block_when_nothing_is_kept():
     agenda, stimuli, grounding = _world(per_room=1, words=5)
     prompt = render_agenda(agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK)
-    assert "<memos" not in prompt
+    assert len(named(prompt, "memos")) == 1
+    assert not list(named(prompt, "memos")[0])

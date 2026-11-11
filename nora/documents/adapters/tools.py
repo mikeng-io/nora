@@ -538,6 +538,154 @@ async def _document_publish__record(c):
     return (False, None, None)
 
 
+def _session_target(authority):
+    def target(agenda_room: str):
+        grant = authority()
+        p, _, cid = agenda_room.partition(":")
+        return (grant, p, cid) if grant is not None and (p, cid) in grant.rooms else (None, "", "")
+
+    return target
+
+
+def _make_session_document_list(reader, target, render):
+    async def document_list(agenda_room: str) -> dict:
+        """List shared document revisions. Call this when checking documentation.
+
+        Returns status ok with the accessible index, nothing_found if empty, or
+        unavailable when authority or the shared source cannot be checked.
+        """
+        grant, p, cid = target(agenda_room)
+        if grant is None or reader is None:
+            return {
+                "status": "unavailable",
+                "note": "The shared document index could not be checked.",
+            }
+        view = await reader.read(platform=p, conversation_id=cid, person_id=grant)
+        if view is None or view.unavailable:
+            return {
+                "status": "unavailable",
+                "note": "The shared document index could not be checked.",
+            }
+        return {
+            "status": "ok" if view.lines else "nothing_found",
+            "index": (block.render() if (block := render(view)) is not None else ""),
+            "note": "Only shared active documents in this agenda room are listed.",
+        }
+
+    return document_list
+
+
+def _make_session_document_read(service, target, read_revisions, document_id_of):
+    async def document_read(document_id: str, agenda_room: str) -> dict:
+        """Read a shared document revision. Call this before revising documentation.
+
+        Returns status ok with document_id, revision and spec; nothing_found
+        without private metadata when absent, or unavailable when the source or
+        authority cannot be checked.
+        """
+        grant, p, cid = target(agenda_room)
+        if grant is None or service is None:
+            return {"status": "unavailable", "note": "The shared document could not be checked."}
+        doc = document_id_of(document_id)
+        handle = document_id if doc is None and _is_document_handle(document_id) else ""
+        out = await service.read(
+            platform=p, conversation_id=cid, person_id=grant, document_id=doc, handle=handle
+        )
+        if out.status != "ok" or out.state != "active":
+            return {
+                "status": "unavailable" if out.status == "unavailable" else "nothing_found",
+                "note": "No readable active shared document was returned.",
+            }
+        read_revisions[(agenda_room, str(out.document_id))] = out.revision
+        return {
+            "status": "ok",
+            "document_id": str(out.document_id),
+            "revision": out.revision,
+            "spec": out.spec,
+            "note": "Revise only information superseded by cited agenda evidence.",
+        }
+
+    return document_read
+
+
+def _make_session_document_revise(service, target, read_revisions, document_id_of):
+    async def document_revise(
+        document_id: str,
+        base_revision: int,
+        changes: list[dict],
+        agenda_room: str,
+    ) -> dict:
+        """Revise shared documentation. Call this when evidence supersedes its revision.
+
+        Each change has path (JSON pointer), old, new and sources (shown message ids).
+        MUST preserve unrelated content and uncertainty; new text quotes cited evidence.
+        A conflict needs a fresh read and decision, never an automatic overwrite.
+        Returns status ok with saved revision, refused when evidence or the base
+        revision fails validation, or unavailable when authority/readback fails.
+        """
+        grant, p, cid = target(agenda_room)
+        doc = document_id_of(document_id)
+        if grant is None or service is None or doc is None:
+            return {
+                "status": "unavailable",
+                "note": "The revision authority could not be established.",
+            }
+        if read_revisions.get((agenda_room, str(doc))) != base_revision:
+            return {"status": "refused", "note": "Read the current revision before changing it."}
+        out = await service.publish(
+            platform=p,
+            conversation_id=cid,
+            person_id=grant,
+            document_id=doc,
+            base_revision=base_revision,
+            raw={"changes": changes},
+            written_by="",
+        )
+        read_revisions.pop((agenda_room, str(doc)), None)
+        if out.status != "ok":
+            return {
+                "status": out.status,
+                "note": out.note or "The revision was refused; nothing changed.",
+            }
+        saved = await service.read(
+            platform=p, conversation_id=cid, person_id=grant, document_id=doc
+        )
+        if saved.status != "ok" or saved.revision != out.revision:
+            return {
+                "status": "unavailable",
+                "write_may_have_succeeded": True,
+                "note": "The write could not be read back; do not retry it blindly.",
+            }
+        return {
+            "status": "ok",
+            "document_id": str(doc),
+            "revision": saved.revision,
+            "note": "The revised shared document was saved and read back.",
+        }
+
+    return document_revise
+
+
+def session_tool_specs(service, reader, authority) -> list[Any]:
+    """Bind the shared document service to a session capability, never a human identity."""
+    from nora.language.documents_render import render_documents
+
+    target = _session_target(authority)
+    document_id_of = _make__document_id(None)
+    read_revisions: dict[tuple[str, str], int] = {}
+    return [
+        _spec("document_list", _make_session_document_list(reader, target, render_documents)),
+        _spec(
+            "document_read",
+            _make_session_document_read(service, target, read_revisions, document_id_of),
+        ),
+        _spec(
+            "document_revise",
+            _make_session_document_revise(service, target, read_revisions, document_id_of),
+        ),
+    ]
+
+
 def build(deps):
     document_publish = _make_document_publish(deps)
     document_read = _make_document_read(deps)
@@ -545,5 +693,7 @@ def build(deps):
     return (
         _spec("document_publish", document_publish),
         _spec("document_read", document_read),
+        *(s for s in session_tool_specs(deps.documents, None, lambda: None)
+          if s.name != "document_read"),
         _spec("document_set_status", document_set_status),
     )

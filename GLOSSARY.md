@@ -369,10 +369,10 @@ no entry.
     neither holds its batch and is given up on the third try.
 - **Lessons** — what Nora has learned about how to act in a unit: short
   prescriptive lines, each with the outcomes that taught it. Written only by
-  the Lessons adaptor, through `lesson_write`/`lesson_retire`; a session that
-  changes nothing closes with `lessons_no_change` (DEC-297, off by default
-  behind `[lessons] enabled`). Not doctrine (a rule she may not break) and not
-  a runtime skill. Every lesson passes the **doctrine check** first (DEC-298).
+  the Cognition session, through `lesson_write`/`lesson_retire`, citing the
+  evidence it was shown (DEC-297, off by default behind `[lessons] enabled`).
+  Not doctrine (a rule she may not break) and not a runtime skill. Every
+  lesson passes the **doctrine check** first (DEC-298).
 - **Tension** — a lesson the doctrine check refused because acting on it would
   loosen or contradict a law rule: the rule quoted, what the lesson would have
   said, its evidence (`self_tension`, `nora lessons tensions`). Operator-only;

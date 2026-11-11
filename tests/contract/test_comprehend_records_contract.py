@@ -337,3 +337,16 @@ async def test_a_withheld_social_item_is_skipped_but_projection_lag_still_fails(
             SOCIAL_ITEM.c.item_id == "generated-visible").values(read_id=None))
     with pytest.raises(WithheldSourceError):
         await records.load(work(("social_read", read)))
+
+
+async def test_a_quiet_session_has_one_completion_receipt_independent_of_readings(store):
+    records, engine = store
+    await records.complete_session("generated-unit", 77, {"1": "digest-one", "2": "digest-two"})
+    if engine is None:
+        payloads = [r["payload"] for r in records.receipts if r["part"] == "session_complete"]
+    else:
+        async with engine.connect() as conn:
+            payloads = list((await conn.execute(sa.select(COMPREHEND_RESULT.c.payload).where(
+                COMPREHEND_RESULT.c.part == "session_complete"))).scalars())
+    assert payloads == [{"unit": "generated-unit",
+                         "inputs": {"1": "digest-one", "2": "digest-two"}}]

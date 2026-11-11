@@ -224,6 +224,8 @@ async def _session_names() -> set[str]:
 
 
 def _check_session_names(names: set[str]) -> None:
+    # Shared native names pass the native naming contract above.
+    names = names - NATIVE_TOOLS.keys()
     bad = sorted(n for n in names if not _CHARSET.fullmatch(n)
                  or (n not in _SESSION_CONTROLS and not _shape().fullmatch(n)))
     assert not bad, f"misnamed session tools: {bad}"

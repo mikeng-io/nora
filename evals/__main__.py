@@ -11,7 +11,6 @@ import argparse
 import asyncio
 import hashlib
 import json
-import math
 import os
 import signal
 import statistics
@@ -42,7 +41,9 @@ from evals.backbone import (
     read,
     sample_read,
 )
-from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES, Judge
+from evals.cli import BUDGET_MINUTES, eval_parser
+from evals.grading_contract import GradingContract
+from evals.rebuilt.grading import DEFAULT_SAMPLES, Judge
 from evals.scenarios import (
     CORPUS_ENTRY,
     FULL_RESTORE_CORPORA,
@@ -71,7 +72,13 @@ from nora.subject import (
     sweep_stale_private_blank_templates,
 )
 from nora.subject.context_filter import exposure
-from nora.subject.eval_evidence import EvidenceError, RunEvidence, fingerprint, revision
+from nora.subject.eval_evidence import (
+    EvidenceError,
+    RunEvidence,
+    evaluation_export_for,
+    fingerprint,
+    revision,
+)
 from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
 
 #: Coarse S-class grouping for `--class`. Approximate on purpose where a
@@ -133,14 +140,8 @@ JUDGE_SAMPLE_SECONDS = (JUDGED_DRAW_SECONDS - UNJUDGED_DRAW_SECONDS) / DEFAULT_S
 #: The longest run `python -m evals` starts without `--allow-long`. The deploy
 #: host has ONE eval lock (`/tmp/nora-eval.lock`), shared by every session:
 #: a run that holds it past an hour blocks every other session's PR.
-BUDGET_MINUTES = 60
 
 
-def judge_timeout(value: str) -> float:
-    seconds = float(value)
-    if not math.isfinite(seconds) or not 0 < seconds <= 300:
-        raise argparse.ArgumentTypeError("judge timeout must be finite and >0 and <=300 seconds")
-    return seconds
 
 
 @dataclass(frozen=True)
@@ -407,10 +408,12 @@ def _run_one(
     context_receipts: list[dict] | None = None,
     memory_index: bool = False,
     subject_overrides: dict[str, Any] | None = None,
+    contract: GradingContract | None = None,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
         memory_index=memory_index, overrides=subject_overrides,
+        contract=contract,
     )
     report = experiment.run_evaluations(task=task)
     from nora.subject.eval_evidence import current
@@ -557,133 +560,11 @@ def main() -> int:
 
 
 def _main(*, lock_fd: int = -1) -> int:
-    ap = argparse.ArgumentParser(prog="python -m evals")
-    ap.add_argument("corpus", nargs="*", help="corpus name(s) — see --list")
-    ap.add_argument("--class", dest="cls", action="append",
-                     help="run every corpus in this S-class (e.g. S7); repeatable")
-    ap.add_argument("--all", action="store_true", help="run every corpus")
-    ap.add_argument("--list", action="store_true", help="list corpora and exit")
-    ap.add_argument(
-        "--case", action="append", dest="cases", metavar="NAME",
-        help="run only these cases of the named corpus; repeatable. A "
-             "re-measurement asks about the cases that moved, and paying for "
-             "a whole corpus to re-draw four of them is how a sample count "
-             "gets chosen by budget instead of by the question.",
-    )
-    ap.add_argument(
-        "--print-input", metavar="CASE",
-        help="render CASE's model input (the standing fold's system and user "
-             "prompt) and print it, calling no model — run on each arm and "
-             "diff, before any suite is paid for. One corpus only. The MASTER "
-             "arm is master with the harness commit applied (it applies "
-             "unchanged: evals/, nora/subject/standing_fold.py, the corpus); "
-             "the branch arm is the branch. See evals/corpora/standing.yaml.",
-    )
-    ap.add_argument(
-        "--source-url", default=os.environ.get("NORA_EVAL_SOURCE_URL", ""),
-        help="the deployment's CLONE (nora_eval), read and never written; "
-             "every case composes against a sandbox database cloned beside "
-             "it. Defaults to the clone on the deploy host, derived from its "
-             "credentials (process env > .env > secret.toml). "
-             "A name that is not a clone's is refused.",
-    )
-    ap.add_argument(
-        "--deployment-config",
-        default=os.environ.get("NORA_CONFIG")
-        or str(Path.home() / "workspace" / "nora" / "config.toml"),
-        help="the DEPLOYMENT's config.toml. Every subject is composed from it "
-             "(rebuilt into config.evaluation.toml per run), because the "
-             "example ships with almost everything off and running against it "
-             "measures a different Nora.",
-    )
-    ap.add_argument(
-        "--judge", nargs="?", const=DEFAULT_JUDGE_MODEL, default=None,
-        help=(
-            "grade JUDGED_CORPORA (S3/S9) with a model, not just structurally. "
-            "Optional value overrides the judge model"
-        ),
-    )
-    ap.add_argument("--coverage-timeout", type=float, default=90.0,
-                    help="coverage wall-clock seconds per batch; plan must fit 55 minutes")
-    ap.add_argument("--judge-base-url", default="http://127.0.0.1:20128/v1")
-    ap.add_argument("--config", type=Path,
-                    help="config.toml selecting the eval_judge provider and credentials")
-    ap.add_argument("--judge-timeout", type=judge_timeout, default=300.0,
-                    help="wall-clock seconds per non-coverage judge draw (>0 and <=300)")
-    ap.add_argument(
-        "--judge-samples", type=int, default=DEFAULT_SAMPLES,
-        help=(
-            f"judge draws per case (default {DEFAULT_SAMPLES}). MEASURED at "
-            "~211s a draw — lower it deliberately for a cheap run and say so"
-        ),
-    )
-    ap.add_argument(
-        "--positions", action="store_true",
-        help="print every draw's written standing position and its length "
-             "(the standing corpus; #445). Terminal only: it is a room's own "
-             "position, never paste it anywhere public",
-    )
-    ap.add_argument(
-        "--reasons", action="store_true",
-        help="print every case's grader reason, PASS included — for a "
-             "routing corpus that is the list of tools each draw executed",
-    )
-    ap.add_argument(
-        "--sample", type=int, default=1,
-        help=(
-            "draw each case this many times (evals.backbone.sampled/"
-            "sample_read) rather than once. One draw of a stochastic "
-            "process is not a reading of it; the default of 1 is a cheap "
-            "smoke run and says so"
-        ),
-    )
-    ap.add_argument(
-        "--memory-index", action="store_true",
-        help="compose every subject with [memory.index] read = true: the "
-             "memory graph's tool surface (memory_search, no Honcho memory "
-             "verb; DEC-316). The after arm of a memory routing run while the "
-             "deployment runs the Honcho surface. A subject override, so the "
-             "drift gate is unchanged. Needs the embedder's loopback publish "
-             "and a source holding the model's vectors (make eval-source); "
-             "each sandbox's index is built and gets the source's vectors",
-    )
-    ap.add_argument(
-        "--allow-long", action="store_true",
-        help=f"start a run estimated over {BUDGET_MINUTES} minutes. Only when the "
-             "operator asked for a full run: the host's eval lock is shared",
-    )
-    ap.add_argument("--context-arm", choices=("full", "rules", "flash"), default="full",
-                    help="experiment-only tag exposure filter; retrieval stays unchanged")
-    ap.add_argument("--context-report", type=Path,
-                    help="write selector receipts and exposure sizes, without room content")
-    ap.add_argument("--coverage-export", type=Path, metavar="PRIVATE_OUTPUT",
-                    help="no-call frozen input export using readonly stores; refuses overwriting")
-    ap.add_argument("--coverage-inventory", type=Path)
-    ap.add_argument("--coverage-semantic", type=Path)
-    ap.add_argument("--coverage-recovery", type=Path)
-    ap.add_argument("--coverage-identity", type=Path)
-    ap.add_argument("--coverage-freeze-input", type=Path,
-                    help="no-call pin of ORIGINAL export reconciled to original source files")
-    ap.add_argument("--coverage-manifest", type=Path,
-                    help="exclusive private manifest destination; never derived from input name")
-    ap.add_argument(
-        "--subject-overrides", type=Path, metavar="FILE",
-        help="a JSON object of dotted `SubjectSpec.overrides` keys applied to "
-             "every composed subject (e.g. `computer.scoped.enabled`, "
-             "`computer.scoped.registry`). The file's content and sha256 are "
-             "recorded in `run_started` before any case composes — a declared "
-             "subject seam, not a hidden patch.")
-    ap.add_argument(
-        "--run-budget", metavar="REQUESTS[,IN[,OUT[,MINUTES]]]",
-        help="a hard dispatch bound installed before the first case composes: "
-             "max model requests, max input tokens, max output tokens, max "
-             "active minutes (defaults 40/measured/40000/30). An empty or "
-             "`none` IN field means input is measured from provider usage, "
-             "not capped — a strict input-token bound has no honest "
-             "pre-dispatch measure and refuses every call. `chat.completions` "
-             "calls that would cross it raise RunBudgetError BEFORE leaving — "
-             "budget exhaustion is ERROR, never PASS.")
+    ap = eval_parser()
     args = ap.parse_args()
+    if (args.list or args.print_input or args.coverage_freeze_input or args.coverage_export) and (
+            args.grading_contract or args.grading_contract_sha256):
+        ap.error("this zero-dispatch operation does not consume a grading contract")
     if args.coverage_freeze_input:
         from evals.profile_coverage_input import freeze_manifest
         try:
@@ -750,6 +631,12 @@ def _main(*, lock_fd: int = -1) -> int:
         return 2
     if args.print_input:
         return _execute(args, names, only)
+    from evals.grading_contract import contract_for
+    args.bound_contract = contract_for(
+        args, entrypoint="eval", judges=(args.judge,) if args.judge else (),
+        selection={"corpora": names, "only": sorted(only or ()),
+                   "sample": args.sample, "judge_samples": args.judge_samples},
+    )
     from opentelemetry import trace
 
     from nora.subject.sandbox import EVAL_HOST_LOCK
@@ -808,8 +695,10 @@ def _main(*, lock_fd: int = -1) -> int:
             max_output_tokens=vals[2],
             deadline=time.monotonic() + vals[3] * 60,
             output_reserve=4000)
+    export = evaluation_export_for(Path(args.deployment_config))
     try:
         evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
+            "grading_contract": args.bound_contract.receipt(),
             **revision(_REPO_ROOT), "corpora": names, "cases": sorted(only or ()),
             "sample": args.sample, "judge": args.judge, "judge_samples": args.judge_samples,
             "deployment_config_sha256": fingerprint(Path(args.deployment_config)),
@@ -826,7 +715,10 @@ def _main(*, lock_fd: int = -1) -> int:
     from nora.domain.run_budget import active_run_budget
     token = active_run_budget.set(budget) if budget is not None else None
     try:
-        with evidence.capture(trace.get_tracer_provider()):
+        with evidence.capture(trace.get_tracer_provider(), export=export):
+            args.bound_contract.record()
+            trace_id = trace.get_current_span().get_span_context().trace_id
+            print(f"eval trace: {trace_id:032x}")
             rc = _execute(args, names, only, subject_overrides=subject_overrides)
             if budget is not None:
                 evidence.record("run_budget_final", **budget.as_metadata())
@@ -843,32 +735,40 @@ def _main(*, lock_fd: int = -1) -> int:
 
 
 
+def _coverage_execute(args: argparse.Namespace, names: list[str],
+                      only: frozenset[str] | None) -> int:
+    """Frozen read-only census: same task, graders and reports, no subject/sandbox."""
+    if names != ["profile_coverage"] or args.sample != 1:
+        print("coverage requires one corpus, one frozen census draw", file=sys.stderr)
+        return 2
+    from evals.rebuilt.profile_coverage import load_input, plan
+    try:
+        doc = load_input(gold=not bool(args.print_input))
+        print("coverage plan:", json.dumps(plan(doc), sort_keys=True))
+        if args.print_input:
+            return _print_input(names[0], args.print_input, source_url="")
+        if not args.judge:
+            raise ValueError("coverage requires --judge")
+        contract = getattr(args, "bound_contract", None)
+        judge = Judge(base_url=args.judge_base_url, model=args.judge,
+                      config_path=args.config, contract=contract,
+                      samples=1, timeout_seconds=args.coverage_timeout)
+        ok = _run_one(names[0], source_url="", judge=judge, sample=1,
+                      only=only, all_reasons=args.reasons, positions=args.positions,
+                      contract=contract)
+        return 0 if ok else 1
+    except (ValueError, KeyError, OSError) as exc:
+        print(f"coverage ERROR: {exc}", file=sys.stderr)
+        return 2
+
+
 def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | None,
              *, subject_overrides: dict[str, Any] | None = None) -> int:
     if "profile_coverage" in names:
-        # A frozen read-only measurement has no subject to compose, sandbox to
-        # mutate or Honcho workspace to create. It still runs the same task,
-        # Experiment, Outcome grader, spend and positions report as every entry.
-        if names != ["profile_coverage"] or args.sample != 1:
-            print("coverage requires one corpus, one frozen census draw", file=sys.stderr)
-            return 2
-        from evals.rebuilt.profile_coverage import load_input, plan
-        try:
-            doc = load_input(gold=not bool(args.print_input))
-            print("coverage plan:", json.dumps(plan(doc), sort_keys=True))
-            if args.print_input:
-                return _print_input(names[0], args.print_input, source_url="")
-            if not args.judge:
-                raise ValueError("coverage requires --judge")
-            judge = Judge(base_url=args.judge_base_url, model=args.judge,
-                          config_path=args.config,
-                          samples=1, timeout_seconds=args.coverage_timeout)
-            ok = _run_one(names[0], source_url="", judge=judge, sample=1,
-                          only=only, all_reasons=args.reasons, positions=args.positions)
-            return 0 if ok else 1
-        except (ValueError, KeyError, OSError) as exc:
-            print(f"coverage ERROR: {exc}", file=sys.stderr)
-            return 2
+        if contract := getattr(args, "bound_contract", None):
+            contract.verify_cases({f"{n}:{c.name}": c for n in names
+                                   for c in selected_cases(n, only=only)})
+        return _coverage_execute(args, names, only)
     try:
         source_url = source_url_for(args.source_url, Path(args.deployment_config).parent)
     except ValueError as exc:
@@ -986,6 +886,9 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             if (why := over_budget(est, allow_long=args.allow_long)) is not None:
                 print(f"refusing to run: {why}", file=sys.stderr)
                 return 2
+            if contract := getattr(args, "bound_contract", None):
+                contract.verify_cases({f"{n}:{c.name}": c for n in names
+                    for c in selected_cases(n, only=only, memory_index=graph)})
             if graph:
                 try:
                     for line in graph_surface_lines(
@@ -1000,6 +903,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                 base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,
                 config_path=args.config,
                 timeout_seconds=args.judge_timeout,
+                contract=getattr(args, "bound_contract", None),
             )
 
             ok = True
@@ -1011,6 +915,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                         memory_index=graph, subject_overrides=subject_overrides,
                         context_receipts=(receipts if args.context_arm != "full"
                                           or args.context_report else None),
+                        contract=getattr(args, "bound_contract", None),
                     ) and ok
                 # Successful Nora replies under fallback cannot pass the selector experiment.
                 ok = ok and not any("selector_error" in r for r in receipts)

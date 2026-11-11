@@ -111,6 +111,8 @@ _KEY_ORDER = [
     "computer_cancel",
     "document_publish",
     "document_read",
+    "document_list",
+    "document_revise",
     "document_set_status",
     "subagent_create",
     "subagent_list",

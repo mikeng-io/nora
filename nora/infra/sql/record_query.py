@@ -33,6 +33,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.cognition_ground import RECORD_REF_TABLES
@@ -60,7 +61,10 @@ class SqlRecordQuery:
         self._engine = engine
 
     async def query(
-        self, q: RecordQuery, *, as_of_ms: int | None = None,
+        self,
+        q: RecordQuery,
+        *,
+        as_of_ms: int | None = None,
     ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]:
         """The hits, oldest first; whether more matched than were returned;
         and the ids of hits that only NEAR-match `q.text` (no literal
@@ -68,7 +72,27 @@ class SqlRecordQuery:
         `as_of_ms` folds edits, reactions and deletes at the caller's instant
         and caps the window at it — the same bound `by_refs` carries, for the
         one `record_query` branch a session's bound clock replays."""
-        limit = max(0, min(q.limit, RECORD_QUERY_MAX))
+        return await self._query(q, as_of_ms=as_of_ms, limit=max(0, min(q.limit, RECORD_QUERY_MAX)))
+
+    async def context_rows(
+        self,
+        q: RecordQuery,
+        *,
+        as_of_ms: int,
+    ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]:
+        """Code-selected context read. Its dynamic limit comes from the rendered
+        character budget; model-facing query retains its existing row ceiling.
+        """
+        return await self._query(q, as_of_ms=as_of_ms, limit=max(0, q.limit), known_before=as_of_ms)
+
+    async def _query(
+        self,
+        q: RecordQuery,
+        *,
+        as_of_ms: int | None,
+        limit: int,
+        known_before: int | None = None,
+    ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]:
         if not q.rooms or limit == 0 or q.end_ms <= q.start_ms:
             return (), False, frozenset()
         in_rooms = sa.or_(*(
@@ -76,12 +100,21 @@ class SqlRecordQuery:
             for platform, cid in q.rooms
         ))
         stmt = (
-            transcript_select(edits_before=as_of_ms)
+            transcript_select(edits_before=as_of_ms, known_before=known_before)
             .add_columns(MESSAGES.c.platform, MESSAGES.c.conversation_id)
             .where(in_rooms, MESSAGES.c.ts >= q.start_ms, MESSAGES.c.ts < q.end_ms)
         )
         if as_of_ms is not None:
             stmt = stmt.where(MESSAGES.c.ts < as_of_ms + 1)
+        if q.related_persons:
+            stmt = stmt.where(
+                sa.or_(
+                    MESSAGES.c.person_id.in_(q.related_persons),
+                    sa.cast(
+                        sa.func.coalesce(stmt.selected_columns.mention_persons_json, "[]"), JSONB
+                    ).op("?|")(array(q.related_persons, type_=sa.Text)),
+                )
+            )
         if q.person_id is not None:
             stmt = stmt.where(MESSAGES.c.person_id == q.person_id)
         needle = (q.text or "").strip()

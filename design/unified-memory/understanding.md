@@ -17,7 +17,9 @@ Resolution precedes creation. Code supplies same-scope candidates; the session
 matches, creates, relates, corrects or enriches. An unresolved person stays a
 reading rather than becoming a model-authored identity. An association selected
 by the session is persisted with its Register row and retried against that same
-row if linking fails.
+row if linking fails. Proposals do not unlock acts: the session may act on what
+it was shown without first saving a statement, and an act's own checks still
+apply.
 
 ## A vocabulary for what may be written
 
@@ -40,11 +42,19 @@ unknown. A later build never turns an old intention into a current fact.
 
 ## Historical understanding
 
-Backfill uses the same session in source-time order with act tools withheld.
+Backfill uses the same session in source-time order with act verbs and
+current-profile access withheld — evidence reads and memory proposals only.
 Reads and relative-time resolution use the evidence instant, excluding later
 knowledge that was not available then. History creates understanding, not
 present-day reminders, sends or obligations. A later catch-up considers only
 work still open under the real clock.
+
+A replayed session that ended normally records one completion receipt naming
+the exact inputs it observed; resume verifies their identities and hashes
+rather than trusting that statements were written. A failed or bounded replay
+writes no receipt and keeps its own failure accounting, never taking a live
+slot. Memory itself updates at wake time, so a strong cue can wake a unit
+quickly and a quiet room is revisited after settling.
 
 Edits, late media and new evidence reconsider affected inputs rather than
 requiring an indiscriminate replay. Superseded readings remain provenance, not

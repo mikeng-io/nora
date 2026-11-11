@@ -6,7 +6,11 @@ import json
 import re
 from typing import Any
 
-from nora.language.cognition_render import parse_rendered_agenda
+from nora.language.cognition_parse import (
+    ledger_source_row,
+    parse_rendered_agenda,
+    shown_source_rows,
+)
 
 OBSERVATIONS_BY_KIND = {
     "unsupported": frozenset({
@@ -33,6 +37,18 @@ OBSERVATIONS = frozenset().union(*OBSERVATIONS_BY_KIND.values())
 MAX_DIAGNOSTIC_INPUT_BYTES = 64_000
 
 
+def memory_scenario(inspection: dict[str, Any]) -> dict[str, Any]:
+    """Shown agenda/NEW custody after the existing transport normalization.
+
+    Work bookkeeping is not model input. The candidate's instruction is a
+    separate arm; authoritative archived requests reconstruct this same view.
+    """
+    from nora.agent.punctuation import _clean
+
+    return _clean({"agenda": inspection.get("agenda", ""),
+                   "new_sources": inspection.get("new_sources", {})})
+
+
 def cited_source_numbers(value: Any) -> set[str]:
     if isinstance(value, list):
         return set().union(*(cited_source_numbers(v) for v in value))
@@ -43,11 +59,32 @@ def cited_source_numbers(value: Any) -> set[str]:
     return set()
 
 
+def missed_source_numbers(entry: dict[str, Any]) -> list[str]:
+    """Structured ids are authoritative; old captures may name rows in prose."""
+    if "sources" in entry:
+        source_ids = entry["sources"]
+        if not isinstance(source_ids, list) or any(type(n) is not int for n in source_ids):
+            return []
+        return list(dict.fromkeys(str(n) for n in source_ids))
+    location = str(entry.get("location", "")).strip()
+    number = r"-?\d+(?!\w|[.-]\d|\s+(?:context\s+)?rows?\b)"
+    ids = rf"{number}(?:\s*(?:/|,|\band\b)\s*{number})*"
+    if re.fullmatch(ids, location):
+        references = location
+    else:
+        references = " / ".join(re.findall(
+            rf"\b(?:new\s+)?(?:sources?(?:\s+rows?)?|messages?|rows?)\s*(?:[=:]\s*)?"
+            rf"({ids})(?!\w|[.-]\d)",
+            location, re.IGNORECASE))
+    return list(dict.fromkeys(re.findall(r"-?\d+", references)))
+
+
 
 def _items(request: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"index": int(item.attributes.get("index", str(index))),
              "rendered": item.rendered, "rows": item.rows,
-             "numbers": {row.attributes["n"] for row in item.rows}}
+             "numbers": {row.attributes["n"] for row in item.rows
+                         if not row.attributes.get("reaction")}}
             for index, item in enumerate(parse_rendered_agenda(request))]
 
 
@@ -100,7 +137,7 @@ def compact_trajectory(statement: dict[str, Any], events: list[dict[str, Any]]) 
     """Project one item's call interval; assemble chunks once, retaining real source anchors."""
     end, item_indices = _proposal_end(statement, events)
     numbers = (cited_source_numbers(statement["statement"]) if statement["kind"] == "unsupported"
-               else set(re.findall(r"-?\d+", str(statement.get("location", "")))))
+               else set(missed_source_numbers(statement)))
     shown = None
     selected = []
     for index, event in enumerate(events[:end + 1]):
@@ -122,13 +159,14 @@ def compact_trajectory(statement: dict[str, Any], events: list[dict[str, Any]]) 
     for event in events[:end + 1]:
         if event.get("name") == "nora.proposal.sources":
             rows = json.loads(event["attributes"]["body"])
-            cited.update({n: {**row, "event_id": event["event_id"]}
+            cited.update({n: {**ledger_source_row(row), "event_id": event["event_id"]}
                           for n, row in rows.items() if n in numbers})
+    shown_rows = shown_source_rows(request)
     for item in selected:
         for row in item["rows"]:
             n = row.attributes["n"]
-            if n in numbers:
-                cited[n] = {"rendered": row.rendered, "event_id": events[shown]["event_id"]}
+            if n in numbers and not row.attributes.get("reaction"):
+                cited[n] = {**shown_rows[n], "event_id": events[shown]["event_id"]}
     calls = []
     active: dict[tuple[Any, Any], dict[str, Any]] = {}
     tools = []

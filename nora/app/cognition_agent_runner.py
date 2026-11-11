@@ -6,7 +6,10 @@ What this class still owns is only what is genuinely session-shaped: the
 `CognitionAgentRunner` signature, the guard's vocabulary (R-99's declared
 argument names and the result-size caps — the session holds no per-tool call
 ceiling, DEC-247), the `SESSION_TOKENS` spend handoff and the trace
-annotations a session's outcome is read by.
+annotations a session's outcome is read by. A `ToolSurface` hand is unwrapped
+here: its resident tools are what the agent holds, its hooks (the shelf
+loader) register on the agent, and a shelved set earns the loop one extra
+turn for the `load_tools` call itself.
 
 The model is resolved by the runtime's `ModelSource` — built by the
 composition root from `[dreamer]`'s model alias — never a second
@@ -29,6 +32,7 @@ from nora.agent.dreamer import (
     DreamerRuntime,
     as_strands_tools,
 )
+from nora.agent.surface import ToolSurface
 from nora.agent.token_reservation import TokenReservation
 from nora.app.agent_runner import DEFAULT_MAX_TRACE_CHARS
 from nora.app.cognition_session import SESSION_TOKENS, AdaptorBudget, CognitionRunResult
@@ -65,10 +69,19 @@ class DreamerAgentRunner:
         self._result_caps = dict(result_caps or {})
 
     async def run(
-        self, *, system_prompt: str, prompt: str, tools: list[Any],
-        budget: AdaptorBudget, trace_attributes: Mapping[str, str],
+        self,
+        *,
+        system_prompt: str,
+        prompt: str,
+        tools: list[Any],
+        budget: AdaptorBudget,
+        trace_attributes: Mapping[str, str],
     ) -> CognitionRunResult:
         tool_names = [getattr(t, "tool_name", None) or t.__name__ for t in tools]
+        surface = tools if isinstance(tools, ToolSurface) else None
+        strands_tools = (
+            list(surface.tools) if surface is not None else as_strands_tools(tools)
+        )
         guard = self._guard(tool_names)
         reservation = (
             TokenReservation(budget.total_tokens) if budget.reserve_tokens else None
@@ -84,9 +97,11 @@ class DreamerAgentRunner:
             try:
                 result = await self._runtime.run_agent(
                     system_prompt=system_prompt, prompt=prompt,
-                    strands_tools=tools, guard=guard,
+                    strands_tools=strands_tools, guard=guard,
                     budget=DreamerBudget(
-                        turns=budget.turns, total_tokens=budget.total_tokens,
+                        turns=budget.turns
+                        + int(surface is not None and bool(surface.shelf)),
+                        total_tokens=budget.total_tokens,
                         output_tokens=budget.output_tokens,
                         timeout_seconds=budget.timeout_seconds,
                     ),
@@ -95,6 +110,7 @@ class DreamerAgentRunner:
                     spend=SESSION_TOKENS.get(),
                     max_trace_chars=DEFAULT_MAX_TRACE_CHARS,
                     reservation=reservation,
+                    tool_hooks=surface.hooks if surface is not None else (),
                 )
             except TimeoutError:
                 annotate(**{"nora.outcome": "timeout"})
@@ -129,4 +145,3 @@ class DreamerAgentRunner:
             param_names=self._param_names,
             per_tool_ceilings=False,
         )
-

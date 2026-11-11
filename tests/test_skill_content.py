@@ -1048,12 +1048,12 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
     # presence of a block proves ON, absence proves NOTHING, so wording like
     # «only your own turns say what is on» would invite reading an absence as
     # "off" — the fail-open direction. Grounded on the renderer: with nothing
-    # standing it returns None (no block to inject), so a turn with no `<notes>`
-    # is byte-identical whether the tier is switched off or merely has nothing to
-    # say.
+    # standing it emits a declared empty index. Missing input is still not
+    # evidence that a deployment disabled the tier.
     from nora.language.note_render import render_notes
 
-    assert render_notes(()) is None
+    assert render_notes(()).body.text == ""
+    assert render_notes(()).when_empty == "self_close"
     assert _flat(
         "only your own turns say what is on, never what is missing from one"
     ) in _flat(self_account)

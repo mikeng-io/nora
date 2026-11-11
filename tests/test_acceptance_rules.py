@@ -89,7 +89,7 @@ RULE_TESTS = {
     # — applied by `render_rows` to every accessor, on every one of the eight
     # line grammars in the tree, and
     # `tests/architecture/test_one_row_renders_one_line.py` is what stops the
-    # ninth shipping without it. In the tag prefill's `<group_transcript>` there
+    # ninth shipping without it. In the tag prefill's `<transcript>` there
     # are no lines: `render_messages` gives each message its own `<m>` element,
     # so the forgery needs a `</m>` and `escape` is what refuses it. The named
     # test below reads that block, so it asserts the second shape.
@@ -367,7 +367,7 @@ RULE_TESTS = {
     "R-70": "test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit",
     # R-71 and R-72 are retired; the numbers are not reused.
     # R-73 points at `who_said`'s enforcement of the principle; the decision
-    # index's R-73 row cites that test as a satisfying one.
+    # index's R-73 row cites that test, owner-local eval export excepted.
     "R-73": "test_neither_the_words_nor_a_line_reaches_the_collector",
     # R-76 names the CHILD test rather than either drop test, and that is the
     # deliberate choice: «ingest is not exported» is the symptom everyone
@@ -869,9 +869,7 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     names = sorted(vocabulary)
     for i, a in enumerate(names):
         for b in names[i + 1:]:
-            assert not (vocabulary[a] & vocabulary[b]), (
-                f"a social read has two tools: {a} and {b}"
-            )
+            assert not (vocabulary[a] & vocabulary[b]), f"a social read has two tools: {a} and {b}"
     x_reads = vocabulary["x_read"] | vocabulary["x_search"]
     linkedin_reads = vocabulary["linkedin_read"] | vocabulary["linkedin_search"]
     read, search = vocabulary["instagram_read"], vocabulary["instagram_search"]

@@ -75,11 +75,12 @@ async def test_cognition_session_persists_its_exchange(tag_trace_engine):
 
     traces = SqlTagTraceStore(tag_trace_engine)
     exchange = ({"role": "assistant", "content": [{"toolUse": {
-        "toolUseId": "call-1", "name": "close", "input": {"item": 0},
+        "toolUseId": "call-1", "name": "note_create", "input": {"item": 0},
     }}]},)
 
     async def behave(by, tools):
-        await by["close"](item=0, reason="no_change", detail="nothing changed")
+        # The turn ends the session now; there is no close verb to call.
+        pass
 
     # The session seam returns the exchange a production runner captured.
     from unittest.mock import patch

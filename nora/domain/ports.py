@@ -964,7 +964,10 @@ class RecordStore(Protocol):
 
     async def set_person_id(self, *, row_id: int, person_id: str) -> None: ...
 
-    async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
+    async def room_activity(
+        self, *, conversation_id: str, since_ts: int,
+        platform: str | None = None, as_of_ms: int | None = None,
+    ) -> RoomActivity:
         """People's messages in this conversation at or after `since_ts`, how
         many distinct people sent them, and the newest person's `ts` at any
         time (`RoomActivity`). One indexed
@@ -1100,10 +1103,11 @@ class StimulusStore(Protocol):
 
 @dataclass(frozen=True)
 class NewCarry:
-    """A stimulus's standing after a CLOSED wake: it returns to the next agenda
-    with a strike, and at `max_strikes` code closes it `struck`. `waits`: it rides
-    the next wake and never starts one.
-    Written only with its wake's `closed` outcome (`record_outcome`)."""
+    """An unseen stimulus deferred by a closed wake, committed with its outcome.
+
+    `strike` is a legacy storage column, always zero for new carries.
+    `waits` retains unreadable input without starting a wake by itself.
+    """
 
     unit: str
     stimulus_id: int
@@ -1166,16 +1170,6 @@ class NewCognitionSession:
     wake_id: int | None = None
 
 
-@dataclass(frozen=True)
-class NewCognitionSessionClose:
-    """One agenda item's close, `nora.domain.cognition_session.CloseOutcome`
-    as stored."""
-
-    session_id: int
-    item_index: int
-    kind: str
-    reason: str
-    strike: int = 0
 
 
 @runtime_checkable
@@ -1308,8 +1302,8 @@ class ObservationStore(Protocol):
 
 @runtime_checkable
 class CognitionStore(Protocol):
-    """A Cognition session's own bookkeeping: `cognition_session`,
-    `cognition_session_close` and `cognition_self_wake`, each append-only. The
+    """A Cognition session's own bookkeeping: `cognition_session` and
+    `cognition_self_wake`, each append-only. The
     session's writes to the tiers go to the tiers' own stores (notes, events,
     Standing, reminders), never here.
     Implementations: `nora.infra.sql.cognition_store.SqlCognitionStore`,
@@ -1322,11 +1316,6 @@ class CognitionStore(Protocol):
         """Append the session row and return its id."""
         ...
 
-    async def record_close(
-        self, *, close: NewCognitionSessionClose, recorded_at_ms: int,
-    ) -> int:
-        """Append one agenda item's close row and return its id."""
-        ...
 
     async def record_pace(
         self, *, pace: NewCognitionPace, recorded_at_ms: int,
@@ -2535,21 +2524,6 @@ class EngagePolicy(Protocol):
 @runtime_checkable
 class ContextAssembler(Protocol):
     async def assemble(self, *, request: EngagementRequest) -> TagContext: ...
-
-
-@dataclass(frozen=True)
-class VerbProvenance:
-    """`Proposal`'s three provenance fields, for an adaptor whose write verbs
-    WRITE when called instead of staging for `commit`
-    (`nora.language.lessons.LessonsAdaptor`: a lesson's cap is judged against
-    what the unit holds now, so a retirement must land before the next write is
-    judged). The runtime hands it to `verbs(key=..., provenance=...)` when the
-    adaptor's `verbs` takes the argument; the values are the ones it stamps on a
-    `Proposal`, read for the same run."""
-
-    instruction_sha256: str
-    model: str
-    established_by: str
 
 
 @dataclass(frozen=True)

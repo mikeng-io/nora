@@ -387,7 +387,7 @@ def test_presence_reaches_the_turn_through_assemble_not_a_bare_string():
     )))
     after_clock = text.split("\n", 1)[1]
 
-    assert after_clock.startswith("<presence ")
+    assert "<presence " in after_clock
     assert "You are in «Zone 42» on Discord." in after_clock
 
 

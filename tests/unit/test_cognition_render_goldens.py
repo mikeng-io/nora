@@ -26,8 +26,8 @@ stripped before the comparison, and
 `test_every_block_carries_exactly_its_types_description_and_fields` holds each
 one to the registry's own text, so what a model reads is still pinned.
 
-Nothing here regenerates a golden. Changing one is a model-visible change and
-belongs in a step that says so.
+The shared Cognition assembly intentionally refreshes these generated captures:
+all declared states, typed bindings and the common register format are model-visible.
 """
 
 from __future__ import annotations
@@ -131,12 +131,12 @@ def _g(*recs: RecordItem, **kw: Any) -> Grounding:
 
 
 def _render(
-    stimuli: list[Stimulus], grounding: Grounding | None, *, strikes: dict[int, int] | None = None,
+    stimuli: list[Stimulus], grounding: Grounding | None, *,
     items: tuple[AgendaItem, ...] | None = None, now_ms: int | None = NOW,
     last_session_ms: int | None = None, tz: Any = HK, **kw: Any,
 ) -> str:
     agenda = items if items is not None else build_agenda(
-        stimuli, home_room=HOME, strikes=strikes,
+        stimuli, home_room=HOME,
     ).items
     return cr.render_agenda(
         agenda, stimuli={s.id: s for s in stimuli}, grounding=grounding,
@@ -200,9 +200,6 @@ def _() -> str:
     return "\n".join(f"{s}: {ago(s)}" for s in spans)
 
 
-@_case("returning-wording")
-def _() -> str:
-    return "\n".join(f"{n}: {cr.returning(n)!r}" for n in (-1, 0, 1, 2, 3))
 
 
 @_case("room-label-and-key")
@@ -530,15 +527,6 @@ def _() -> str:
 # =============================================================================
 
 
-@_case("returning-items-one-and-many-sessions")
-def _() -> str:
-    s1, s2, s3, s4 = (_stim(i, A, ago=50 - i * 10, mid=i) for i in (1, 2, 3, 4))
-    return _render([s1, s2, s3, s4], _g(
-        _rec(s1, author="Ada", text="left open once"),
-        _rec(s2, author="Ben", text="left open twice"),
-        _rec(s3, author="Ada", text="also twice"),
-        _rec(s4, author="Chloe", text="fresh"),
-    ), strikes={1: 1, 2: 2, 3: 2})
 
 
 @_case("social-play-time-self-and-unknown-items")
@@ -618,9 +606,9 @@ def _() -> str:
         AgendaItem(kind="message", room=A, summary="2 new messages in this room",
                    stimulus_ids=(1, 2), cues=(), surprise=1.0),
         AgendaItem(kind="message", room=B, summary="1 new message in this room",
-                   stimulus_ids=(3,), cues=(), surprise=1.0, strike=1),
+                   stimulus_ids=(3,), cues=(), surprise=1.0),
         AgendaItem(kind="time", room=C, summary="a time stimulus is due: dinner",
-                   stimulus_ids=(4,), cues=(), surprise=1.0, strike=2),
+                   stimulus_ids=(4,), cues=(), surprise=1.0),
     )
     return cr.render_agenda(items, grounding=Grounding(
         room_labels=LABELS, notes=(NoteLine(id="n-1", title="ignored", description="ignored"),),
@@ -790,7 +778,7 @@ def _() -> str:
         events=(EventLine(id="e-9", room=A, title="Dinner", when_ms=NOW + 2 * DAY, venue="Ramen Ya",
                           status="proposed", revision="rev-3"),),
         room_labels=LABELS,
-    ), strikes={6: 1}, last_session_ms=NOW - (2 * HOUR + 10 * MIN),
+    ), last_session_ms=NOW - (2 * HOUR + 10 * MIN),
         reads_note="Your read tools look through room «Room A».")
 
 
@@ -822,8 +810,16 @@ def test_every_block_carries_exactly_its_types_description_and_fields(name: str)
             continue       # an element (`m`, `note`, ...), not a block: a block says what it is
         block_type = BLOCK_TYPES[tag]
         want = f' description="{escape_attr(block_type.description)}"'
-        if block_type.annotations:
-            fields = "; ".join(f"`{k}` is {v}" for k, v in block_type.annotations)
+        pairs = block_type.annotations
+        if ' status="' in attrs:
+            pairs += (
+                (
+                    "status",
+                    "unavailable means the read failed; empty means a successful read held none",
+                ),
+            )
+        if pairs:
+            fields = "; ".join(f"`{k}` is {v}" for k, v in pairs)
             want += f' fields="{escape_attr(fields)}"'
         assert attrs.endswith(want), (name, tag)
 
@@ -850,10 +846,6 @@ def test_the_goldens_vary_what_this_step_is_about():
         "budget-drops-exactly-one-earlier-message": ('earlier_not_shown="',),
         "could-not-be-shown-singular-and-plural-with-readable-lines": ('unreadable="4"',),
         "could-not-be-shown-exactly-one": ('unreadable="1"',),
-        "returning-items-one-and-many-sessions": (
-            'returning="left open by 1 earlier session"',
-            'returning="left open by 2 earlier sessions"',
-        ),
         "social-play-time-self-and-unknown-items": (
             "new social items", "Ada posted 2 story frames</social>",
             "Ben posted a collab post and a reel</social>", "new play sample",
@@ -863,25 +855,24 @@ def test_the_goldens_vary_what_this_step_is_about():
         "several-rooms-with-an-unlabelled-one-and-events": (
             "«a room with no name»", '<room_events room="«Room B»">',
         ),
-        "reads-line-one-room": ("<reads>\nYour read tools look through room «Room A».\n</reads>",),
+        "reads-line-one-room": ('agenda_room="signal:room-a" label="Room A"',),
         "reads-line-several-rooms-with-first-look": (
-            "Your read tools take a `room`, one of:", "This is your first look",
+            'agenda_room="signal:room-a"', "This is your first look",
         ),
         "reads-line-and-a-return": ("You last looked at this group 3 h ago.",),
-        "register-notes-only": ("<note_index>", 'n="n-77"'),
+        "register-notes-only": ('id_kind="real"', 'n="n-77"'),
         "register-events-only": ('when="no time set"', 'revision="rev-3"'),
         "register-note-and-event-line-caps": ('not_listed="4"',),
         "register-cut-at-its-character-budget": ('not_listed="',),
-        "probe-no-clock-no-grounding": ('returning="left open by 2 earlier sessions"',),
-        "a-whole-session": ("<note_index>", "<events>", 'own="yes"', "returning"),
+        "a-whole-session": ('id_kind="real"', "<events>", 'own="yes"'),
     }
     for name, parts in must.items():
         for part in parts:
             assert part in GOLDEN[name], (name, part)
-    assert "<note_index" not in GOLDEN["register-none-has-no-trailing-block"]
-    assert GOLDEN["register-none-has-no-trailing-block"].endswith("</agenda>")
-    assert "<clock" not in GOLDEN["probe-no-clock-no-grounding"]
+    assert '<notes id_kind="real"/>' in GOLDEN["register-none-has-no-trailing-block"]
+    assert GOLDEN["register-none-has-no-trailing-block"].endswith("<documents/>")
+    assert '<clock status="unavailable"/>' in GOLDEN["probe-no-clock-no-grounding"]
     assert "<m " not in GOLDEN["probe-no-clock-with-grounding-ignored"]
-    assert "<note_index" not in GOLDEN["register-never-shown-in-a-probe"]
-    assert GOLDEN["no-items-no-clock"] == ""
+    assert "<notes/>" in GOLDEN["register-never-shown-in-a-probe"]
+    assert "<agenda/>" in GOLDEN["no-items-no-clock"]
     assert "LEAK" not in GOLDEN["could-not-be-shown-singular-and-plural-with-readable-lines"]

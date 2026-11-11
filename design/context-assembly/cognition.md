@@ -16,12 +16,24 @@ it:
 - reminder and self-wake changes read pending intentions with their subjects
   and due state;
 - lessons, Standing and the clock ground practice, position and freshness;
+- a lesson write reads the unit's held lessons by handle, the corrections
+  aimed at her since the lessons cursor and the closed response episodes past
+  it;
 - the room catalogue and deferred tool catalogue name available destinations
   and reads without injecting unrelated inventories.
 
-A block exists only when a decision reads it. Documents and other large stores
-are pulled through deferred tools unless a session decision specifically needs
-their index. Related profiles replace older peer, culture and character blocks
+A block exists only when a decision reads it. Documents are the exception in
+kind, not in rule: the session decides whether agenda evidence supersedes
+shared documentation, so the agenda-room document index is injected while
+bodies and revisions stay deferred tools. A revision requires the document's
+current revision read inside the session, its exact base and fully shown
+sources — clipped rows cannot authorize one — and reaches only an active
+document shared with the whole agenda room under an explicit named-audience
+policy whose named people are all known. A stale base is refused, never
+retried automatically; creator-only documents, their metadata and their
+counts never enter the index or an error. Other large stores are pulled
+through deferred tools unless a session decision specifically needs their
+index. Related profiles replace older peer, culture and character blocks
 rather than rendering several accounts of the same subject.
 
 ## Related selection
@@ -55,7 +67,10 @@ transcript visibility does not widen what any destination may later be told.
 
 Stores keep one block type across occasions. A field needed only by Cognition
 is a field of that type, not a parallel block name. Profile subjects are
-attributes; per-room variants are not new type names.
+attributes; per-room variants are not new type names. An entity reference
+keeps the canonical source or tool id under `of` and carries the kind
+separately under `entity`; a room profile uses its stored id and no kind
+prefix is added to a person id.
 
 Every declared block renders with content, empty or unavailable. An empty store
 and a failed read therefore remain distinguishable, while an undeclared block

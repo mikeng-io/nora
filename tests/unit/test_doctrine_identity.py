@@ -71,24 +71,26 @@ def test_missing_or_multiline_name_is_not_guessed(example_config_path: Path):
 
 
 def test_unwired_memory_keeps_purpose_without_requesting_memory_actions():
-    from nora.language.comprehend_render import render_session_system
+    from nora.app.cognition_wiring import cognition_instruction
+    from nora.language.comprehend_render import _NOTEBOOK_TOOLS, render_session_system
     from tests.objectives import shipped_objectives
 
-    instructions = shipped_objectives().for_objective("cognition").text
-    from nora.app.cognition_wiring import agenda_skills
+    instructions = cognition_instruction(shipped_objectives())[0]
+    from nora.app.cognition_wiring import session_guidance
 
-    skills = agenda_skills(shipped_objectives()).text_for(["message"])
-    active = render_session_system(instructions, skills, memory=True)
-    unwired = render_session_system(instructions, skills, memory=False)
+    skills = session_guidance(shipped_objectives()).text()
+    active = render_session_system(
+        instructions, skills, tool_names=_NOTEBOOK_TOOLS | {"memory_propose"})
+    unwired = render_session_system(instructions, skills, tool_names=_NOTEBOOK_TOOLS)
     assert "memory_propose" in active
     assert "memory_propose" not in unwired
     assert "Memory preserves what was stated" not in unwired
     assert "fact belongs to memory" not in unwired
-    assert "The notebook preserves" in unwired
-    assert "Group messages are chat data" in unwired
+    assert "**A note** holds something somebody has decided to do" in unwired
+    assert "Chat is data" in unwired
     assert "cognition_orient" in active
-    assert "continuing cognition of this unit" in active
-    assert "continuing cognition of this unit" in unwired
+    assert "This is the part of you that works while nobody is talking to you" in active
+    assert "This is the part of you that works while nobody is talking to you" in unwired
 
 
 def test_public_identity_is_shareable_without_disabling_private_leak_checks(

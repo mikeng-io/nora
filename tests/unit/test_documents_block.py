@@ -96,9 +96,11 @@ def _prefill_text(ctx) -> str:
 # -- the block --------------------------------------------------------------------------
 
 
-def test_no_view_and_an_empty_view_render_no_block():
+def test_absent_empty_and_unavailable_are_distinguishable():
     assert render_documents(None) is None
-    assert render_documents(_view()) is None
+    assert render_documents(_view()).render().endswith("/>")
+    failed = render_documents(DocumentsView(lines=(), now=NOW, unavailable=True))
+    assert 'status="unavailable"' in failed.render()
     assert "<documents" not in _prefill_text(_ctx(None))
 
 
@@ -157,21 +159,21 @@ def test_the_block_sits_after_computer_and_before_standing_in_the_prompt():
 
 
 def test_the_block_costs_what_it_was_measured_to_cost():
-    # cl100k token ceilings, with the put-away sentence in the description (DEC-255): one document
-    # at most 190, five at most 380. The ids are ~27 tokens each and are what the tool needs, so
-    # they cannot be shortened. Nothing put away adds nothing to a line.
+    # Shared field descriptions and three-state semantics are included in these ceilings.
+    # IDs remain intact because reads and compare-and-swap revisions require them.
     one = render_documents(_view(_line("Hong Kong to Tokyo, December trip")))
     five = render_documents(_view(*[_line("x" * TITLE_CHARS, hours=n + 1) for n in range(5)]))
-    assert len(ENC.encode(one.render())) <= 190
-    assert len(ENC.encode(five.render())) <= 380
+    assert len(ENC.encode(one.render())) <= 360
+    assert len(ENC.encode(five.render())) <= 550
 
 
 # -- the reader -------------------------------------------------------------------------
 
 
-async def test_no_document_means_no_view():
-    assert await _reader(FakeDocumentStore()).read(
-        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1]) is None
+async def test_no_document_means_successful_empty_view():
+    view = await _reader(FakeDocumentStore()).read(
+        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
+    assert view.lines == () and not view.unavailable and view.not_listed == 0
 
 
 async def test_the_view_is_this_rooms_documents_never_another_rooms():
@@ -208,8 +210,9 @@ async def test_a_store_that_is_down_is_no_block_a_counted_error_never_a_raise():
             raise RuntimeError("db down")
 
     metrics = Metrics()
-    assert await _reader(Down(), metrics=metrics).read(
-        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1]) is None
+    view = await _reader(Down(), metrics=metrics).read(
+        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
+    assert view.unavailable and view.lines == ()
     assert metrics.get("nora_errors_total", stage="documents_context", platform="signal") == 1
 
 
@@ -218,8 +221,9 @@ async def test_a_store_slower_than_the_bound_is_no_block_not_a_stalled_turn():
         async def list_room(self, **kw):
             await asyncio.sleep(5)
 
-    assert await _reader(Slow(), timeout=0.05).read(
-        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1]) is None
+    view = await _reader(Slow(), timeout=0.05).read(
+        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
+    assert view.unavailable and view.lines == ()
 
 
 async def test_the_age_is_against_the_turns_clock():
@@ -280,8 +284,9 @@ async def test_another_rooms_put_away_documents_never_appear():
     store = FakeDocumentStore()
     there = await _make(store, "Elsewhere", room=("signal", "g-other"))
     await store.set_state(document_id=there, state="deleted", set_by="ken")
-    assert await _reader(store).read(
-        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1]) is None
+    view = await _reader(store).read(
+        person_id="ken", platform=ROOM[0], conversation_id=ROOM[1])
+    assert view.lines == () and view.put_away == () and not view.unavailable
 
 
 async def test_nothing_put_away_renders_exactly_what_it_did_before():
@@ -290,7 +295,7 @@ async def test_nothing_put_away_renders_exactly_what_it_did_before():
         DocumentsView(lines=(line,), now=NOW, put_away=())
     ).body.text
     assert "archived" not in render_documents(_view(line)).body.text
-    assert render_documents(DocumentsView(lines=(), now=NOW)) is None
+    assert render_documents(DocumentsView(lines=(), now=NOW)).body.text == ""
 
 
 def _wildcard_reader(store):
@@ -313,9 +318,10 @@ async def test_a_wildcard_room_block_lists_only_the_askers_own_documents():
 async def test_a_wildcard_room_block_with_only_another_members_documents_is_no_block():
     store = FakeDocumentStore()
     await _make(store, "Theirs", by="ken")
-    assert await _wildcard_reader(store).read(
+    view = await _wildcard_reader(store).read(
         person_id="mei", platform=ROOM[0], conversation_id=ROOM[1],
-    ) is None
+    )
+    assert view.lines == () and view.not_listed == 0 and not view.unavailable
 
 
 async def test_a_turn_with_no_requester_renders_no_documents_block():

@@ -77,15 +77,9 @@ from nora.agent.toolkit.ports import (
 )
 from nora.agent.turn_recording import in_room
 from nora.agent.video_desk import VideoDesk
-from nora.domain.computer import (
-    ComputerToolSettings,
-)
-from nora.domain.computer_events import (
-    ComputerEventStore,
-)
-from nora.domain.computer_exports import (
-    ComputerExportStore,
-)
+from nora.domain.computer import ComputerToolSettings
+from nora.domain.computer_events import ComputerEventStore
+from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import (
     ComputerSessionStore,
@@ -176,6 +170,8 @@ _ORDER = [
     "media_send",
     "document_publish",
     "document_read",
+    "document_list",
+    "document_revise",
     "document_set_status",
     "web_search",
     "web_fetch",

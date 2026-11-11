@@ -33,6 +33,7 @@ from strands_evals import Case, Experiment
 
 from evals import pseudonyms
 from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, ToolRouteGrader, nora_task
+from evals.grading_contract import GradingContract
 from evals.recall import evidence_problems
 from nora.subject.sandbox_index import EMBEDDER_FROM_HOST
 from nora.subject.transport import TRANSPORT_STATES
@@ -564,6 +565,7 @@ def experiment_for(
     name: str, *, source_url: str, judge: Any = None, sample: int = 1,
     only: frozenset[str] | None = None, memory_index: bool = False,
     overrides: dict[str, Any] | None = None,
+    contract: GradingContract | None = None,
 ) -> tuple[Experiment, Any]:
     """A ready-to-run `(Experiment, task)` pair for one corpus.
 
@@ -589,6 +591,8 @@ def experiment_for(
     from evals.backbone import sampled
 
     cases = selected_cases(name, only=only, memory_index=memory_index)
+    if contract is not None:
+        cases = [contract.bind_case(name, case) for case in cases]
     if sample > 1:
         cases = [draw for base in cases for draw in sampled(base, sample)]
     spec = Spec(

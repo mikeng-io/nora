@@ -514,9 +514,8 @@ class WakePolicy:
     #: after a failed session.
     backoff_max_seconds: float = 21600.0
     #: After this many consecutive failures the stimuli the failing wakes
-    #: claimed are struck (retracted, reason `failed`): an always-failing agenda
-    #: stops instead of retrying the same input for ever (`max_strikes`
-    #: is the item-level twin for a session that ran).
+    #: claimed are parked (retracted, reason `failed`): an always-failing agenda
+    #: stops instead of retrying the same input for ever.
     max_consecutive_failures: int = 5
 
 

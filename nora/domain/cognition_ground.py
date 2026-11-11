@@ -3,8 +3,8 @@
 **The failure this exists for.** An agenda line is a count: «room R has 23 new
 messages». A session handed only that has nothing to tell a plan from a joke,
 cannot cite a message id in a note (a body line MUST end in the ids it rests on,
-`nora.domain.note_body`) and cannot see what is already recorded, so it writes
-a duplicate or closes `no_change` on a room it never read. AGENTS.md's spine
+`nora.domain.note_body`) and cannot see what is already recorded, so it duplicates
+or contradicts what the room already holds. AGENTS.md's spine
 says it once for every model that judges: the input has to explain itself, and
 a judgement whose input cannot ground it does not fail loudly, it answers
 wrong at a rate nothing reports. So code hands it, for
@@ -33,7 +33,10 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from nora.domain.cognition_session import Room
+from nora.domain.context_data import MembersView, RoomLine, TranscriptLine
 from nora.domain.culture import CultureRevision
+from nora.domain.documents_context import DocumentsView
+from nora.domain.lessons import LessonEvidenceView
 from nora.domain.memo import Memo
 from nora.domain.models import RowReactions
 from nora.domain.notes import RetainedSource
@@ -341,6 +344,22 @@ class Grounding:
     self_profile: ProfileView | None = None
     profile_names: Mapping[str, str] = field(default_factory=dict)
 
+    documents: tuple[DocumentsView, ...] = ()
+    document_rooms: frozenset[tuple[str,str]] = frozenset()
+    profiles: tuple[ProfileView, ...] = ()
+    profile_unavailable: tuple[tuple[str, str], ...] = ()
+    members: tuple[MembersView, ...] = ()
+    rooms: tuple[RoomLine, ...] = ()
+    transcript: tuple[TranscriptLine, ...] = ()
+    transcript_more: int = 0
+    context_withheld: tuple[tuple[str, int], ...] = ()
+    lessons: tuple[str, ...] = ()
+    #: A live session's lesson evidence (`CognitionLessons.shown`): episodes,
+    #: corrections, held lessons and the `citable` a write is held to. None
+    #: when [lessons] is off, historical, or the read failed (unavailable).
+    lesson_evidence: LessonEvidenceView | None = None
+    unavailable: frozenset[str] = frozenset()
+
     def as_dict(self) -> dict[str, object]:
         """The JSON the session row keeps: what she was shown, by reference
         (a message id, a note id), not the bodies and NEVER a name: the row is
@@ -395,6 +414,18 @@ class Grounding:
                           "words_shown": m.text is not None} for m in sends]
                 for i, sends in self.own_sends.items()
             },
+            # The episodes and corrections the lesson evidence handed over,
+            # by the id a citation would name (send ids and row ids), and the
+            # cursor `take` would write.
+            "lesson_episodes": (
+                None if self.lesson_evidence is None
+                else [e.send_id for e in self.lesson_evidence.episodes]),
+            "lesson_corrections": (
+                None if self.lesson_evidence is None
+                else [m.row.id for m in self.lesson_evidence.corrections]),
+            "lessons_cursor": (
+                None if self.lesson_evidence is None
+                else self.lesson_evidence.cursor),
         }
 
 

@@ -84,7 +84,7 @@ def _rooms_by_label(prompt: str) -> dict[str, str]:
     """`room` argument by label, read off the reads line the way a model does:
     `` `signal:room-a` («Weekend Plans») ``."""
     (reads,) = named(prompt, "reads")
-    return {m[2]: m[1] for m in re.finditer(r"`([^`]+)` \(«(.*?)»\)", reads.text or "")}
+    return {b.attrib["label"]: b.attrib["agenda_room"] for b in reads}
 
 
 @dataclass
@@ -163,11 +163,11 @@ async def _wake(names: tuple[str, ...]) -> tuple[ReadingModel, InMemoryCognition
         store=store, stimulus_store=stimulus_store, agent_runner=model,
         units=("u",), session_timeout_seconds=900.0, home_rooms={"u": A},
         read_tools_for=lambda unit, rooms: [], read_only_tools=frozenset(),
-        skill_text_for=lambda kinds: "", grounder=StaticGrounder(grounding),
+        skill_text_for=lambda: "", grounder=StaticGrounder(grounding),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=none, open_events=none,
         prior_standing=none,
         budget=BUDGET, cooldown_seconds=300.0, max_items=12,
-        max_strikes=3, clock=lambda: NOW / 1000, nora_names=frozenset({"Nora"}), tz=HK,
+        clock=lambda: NOW / 1000, nora_names=frozenset({"Nora"}), tz=HK,
         notes=InMemoryNoteStore(),
     )
     view = UnitView(unit="u", pending=tuple(stimuli), last_activity_ms=None, last_wake=None)
@@ -239,11 +239,11 @@ async def test_a_reaction_is_not_citable_from_its_own_row():
         store=store, stimulus_store=stimulus_store, agent_runner=Citer(),
         units=("u",), session_timeout_seconds=900.0, home_rooms={"u": A},
         read_tools_for=lambda unit, rooms: [], read_only_tools=frozenset(),
-        skill_text_for=lambda kinds: "", grounder=StaticGrounder(grounding),
+        skill_text_for=lambda: "", grounder=StaticGrounder(grounding),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=none, open_events=none,
         prior_standing=none,
         budget=BUDGET, cooldown_seconds=300.0, max_items=12,
-        max_strikes=3, clock=lambda: NOW / 1000, nora_names=frozenset({"Nora"}), tz=HK,
+        clock=lambda: NOW / 1000, nora_names=frozenset({"Nora"}), tz=HK,
     )
     view = UnitView(unit="u", pending=(react,), last_activity_ms=None, last_wake=None)
     await runner.on_wake(unit="u", view=view, now_ms=NOW, wake_id=1)
@@ -304,7 +304,9 @@ def test_hostile_words_names_titles_labels_and_summaries_write_no_element():
     prompt, n_items, _ = _hostile_prompt()
     top = blocks(prompt)                                     # raises if not well-formed
     assert [b.tag for b in top] == [
-        "clock", "reads", "agenda", "note_index", "events",
+        "profile", "clock", "reads", "rooms", "members", "transcript", "agenda",
+        "notes", "standing", "events", "memos", "graph", "lessons",
+        "held_lessons", "lesson_corrections", "lesson_episodes", "documents",
     ]
     agenda = items(prompt)
     assert len(agenda) == n_items and [i.attrib["index"] for i in agenda] == ["0", "1"]
@@ -319,7 +321,7 @@ def test_hostile_words_names_titles_labels_and_summaries_write_no_element():
     # one row, one line, whatever the words held
     assert sum(1 for ln in prompt.splitlines() if ln.startswith("<m ")) == 2
     # the register: one note, one event, ids and titles are values
-    (note_index,) = named(prompt, "note_index")
+    (note_index,) = named(prompt, "notes")
     (note,) = list(note_index)
     assert note.attrib["n"] == f'n"{FORGE}' and note.attrib["title"].startswith("a & ")
     (group,) = events(prompt)
@@ -328,7 +330,8 @@ def test_hostile_words_names_titles_labels_and_summaries_write_no_element():
     # the room label and the reads line are values too
     assert agenda[0].attrib["room"].startswith("«a & ")
     (reads,) = named(prompt, "reads")
-    assert "forged" in (reads.text or "") and list(reads) == []
+    assert all(b.tag == "binding" and not list(b) for b in reads)
+    assert any("forged" in b.attrib["label"] for b in reads)
     (clock,) = named(prompt, "clock")
     assert (clock.text or "").strip().startswith("It is ")
 

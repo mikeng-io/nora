@@ -12,6 +12,14 @@ import pytest
 from nora.agent.comprehend_tools import egress_reason
 from nora.app.composition import search_provider
 from scripts import memory_graph_spike as spike
+from tests.unit.memory_graph_env import generated_replay_environment
+
+
+@pytest.fixture(autouse=True)
+def private_unit_export(monkeypatch):
+    from scripts import memory_graph_spike
+    monkeypatch.setattr(memory_graph_spike, "evaluation_export_for", lambda _: None)
+
 
 
 @pytest.fixture(autouse=True)
@@ -292,13 +300,11 @@ def test_session_smoke_marks():
             "admitted": 1,
             "refused": 0,
             "acts": 0,
-            "refused_consumed": 0,
         }
         for _ in range(5)
     ]
     assert spike.session_smoke(healthy)["status"] == "PASS"
-    for field in ("acts", "refused_consumed"):
-        assert spike.session_smoke([*healthy[:-1], {**healthy[-1], field: 1}])["status"] == "FAIL"
+    assert spike.session_smoke([*healthy[:-1], {**healthy[-1], "acts": 1}])["status"] == "FAIL"
     assert (
         spike.session_smoke([*healthy[:-1], {**healthy[-1], "tokens": None}])["status"] == "ERROR"
     )
@@ -386,7 +392,7 @@ async def test_session_quality_uses_shown_input_and_only_committed_relations():
                 "name": "memory_propose",
                 "input": {"statements": [{"type": "reading", "what": "Generated claim"}]},
                 "result": {
-                    "admitted": [0],
+                    "statements": [{"index": 0, "status": "saved", "kind": "reading"}],
                     "committed": ["generated-committed", "generated-merge"],
                     "connected": connected,
                 },
@@ -428,7 +434,7 @@ async def test_session_quality_marks_unscored_committed_as_missing():
                 "name": "memory_propose",
                 "input": {},
                 "result": {
-                    "admitted": [],
+                    "statements": [],
                     "committed": ["generated-committed"],
                     "connected": {"status": "ok", "nodes": [], "relations": []},
                 },
@@ -437,7 +443,7 @@ async def test_session_quality_marks_unscored_committed_as_missing():
                 "name": "memory_propose",
                 "input": {},
                 "result": {
-                    "admitted": [],
+                    "statements": [],
                     "committed": ["generated-scored"],
                     "connected": {
                         "status": "ok",
@@ -575,174 +581,19 @@ async def test_judges_dial_the_eval_route_where_the_measurer_runs(
     assert all(d["stream"] is False for d in dialed)
 
 
-async def test_age_comparison_measures_the_source_once_outside_replay(
-    tmp_path, monkeypatch
-):
-    """The engine comparison binds the frozen projected source once per run;
-    the as-of sandbox — correctly holding no graph rows at the wake instant —
-    serves the session replay and is never asked for the graph population."""
-    import contextlib
-
-    import evals.backbone
-    import nora.subject
-    from nora.infra.sql import cognition_replay
-
-    source_url = "postgresql+asyncpg://127.0.0.1:9/generated-source"
-    sandbox_url = "postgresql+asyncpg://127.0.0.1:9/generated-sandbox"
-    calls = []
-
-    class FakeEngine:
-        def __init__(self, url):
-            self.url = url
-
-        async def dispose(self):
-            assert logging.root.manager.disable == logging.CRITICAL
-
-    def create(url):
-        assert logging.root.manager.disable == logging.CRITICAL
-        return FakeEngine(url)
-
-    async def generated_rows(engine, sql, params=None):
-        if "FROM alembic_version" in sql:
-            return [{"version_num": "generated-revision"}]
-        calls.append((engine.url, sql))
-        if "FROM cognition_wake" in sql:
-            return [{"id": 1, "at_ms": 1}, {"id": 2, "at_ms": 2}]
-        if "SELECT body FROM messages" in sql:
-            body = "[image generated]" if params["id"] == 2 else "generated text"
-            return [{"body": body}]
-        if "is_nora" in sql:
-            return [{"n": 0}]
-        if "string_agg" in sql:
-            return [{"digest": "generated-" + engine.url}]
-        if "FROM tag_trace" in sql:
-            return [{"messages": []}]
-        if "FROM relation" in sql:
-            # The projected source holds the relation population; the restored
-            # sandbox holds none at the wake instant.
-            return [
-                {
-                    "unit": "generated-unit",
-                    "persons": ["generated-person"],
-                    "src_kind": "event",
-                    "src_id": "generated-edge",
-                    "dst_kind": "topic",
-                    "dst_id": "generated-topic",
-                    "rel": "concerns",
-                }
-            ] if engine.url == source_url else []
-        raise AssertionError(f"unexpected SQL on {engine.url}: {sql}")
-
-    async def fake_wake(engine, wake_id):
-        return (
-            1_700_000_000_000 + wake_id,
-            SimpleNamespace(
-                unit="generated-unit",
-                pending=[
-                    SimpleNamespace(kind="message", ref=f"messages:{wake_id}")
-                ],
-            ),
-        )
-
-    @contextlib.asynccontextmanager
-    async def fake_sandbox(database_url, at):
-        yield sandbox_url, SimpleNamespace()
-
-    class FakeMetrics:
-        def __init__(self):
-            self.values = iter([0, 7, 0])
-
-        def get(self, name):
-            return next(self.values, 0)
-
-    async def replay(**kwargs):
-        from nora.subject.eval_evidence import current
-        evidence = current()
-        evidence.record("event", name="nora.session.started", attributes={"body": "{}"})
-        evidence.record("event", name="nora.model.request", attributes={
-            "nora.model.request.body": json.dumps({"messages": [
-                {"role": "system", "content": "generated"},
-                {"role": "user", "content": "generated"}]})})
-        evidence.record("event", name="nora.session.terminal", attributes={"body": "{}"})
-        return SimpleNamespace(session_id="generated-session", closed=[])
-
-    runner = SimpleNamespace(
-        inspect=AsyncMock(return_value={"system": "generated", "agenda": "generated"}),
-        replay=AsyncMock(side_effect=replay),
-    )
-
-    async def fake_obtain(spec):
-        return SimpleNamespace(
-            database_url=spec.database_url,
-            cfg=SimpleNamespace(),
-            deps=SimpleNamespace(cognition_runner=runner, metrics=FakeMetrics()),
-        )
-
-    cfg = SimpleNamespace(
-        store=SimpleNamespace(database_url_env="GENERATED_DB"),
-        llm=SimpleNamespace(
-            model="generated-session", timeout_seconds=1, model_dump=dict
-        ),
-        providers={},
-        model_routes={},
-        cognition=SimpleNamespace(model_dump=dict),
-    )
-    policy_file = tmp_path / "policy.toml"
-    policy_file.write_text("generated")
-    identity_file = tmp_path / "identity.toml"
-    identity_file.write_text("generated")
-    bound = []
-    real_age = spike.age_comparison
-
-    async def spy(engine, age_url, judges, output_dir, minimum):
-        bound.append(engine.url)
-        return await real_age(engine, age_url, judges, output_dir, minimum)
-
-    quality = AsyncMock(
-        return_value={"verdicts": {}, "population": {"committed": 0, "missing": 0}}
-    )
-    monkeypatch.setattr(spike, "age_comparison", spy)
-    monkeypatch.setattr(spike, "session_quality", quality)
-    monkeypatch.setattr(spike, "smoke_fact_support", AsyncMock(return_value={}))
-    monkeypatch.setattr(spike, "index_replay_sandbox", AsyncMock(
-        return_value=SimpleNamespace(line=lambda: "generated-index")))
-    monkeypatch.setattr(spike, "sql_answer", AsyncMock(return_value=["event:generated-edge"]))
-    monkeypatch.setattr(spike, "model_endpoint",
-                        lambda path, purpose, model="": ("generated-url", "", model))
-    monkeypatch.setattr(spike, "load", lambda path: cfg)
-    monkeypatch.setattr(spike, "credentials", lambda: {
-        "GENERATED_DB": "postgresql+asyncpg://127.0.0.1:9/generated-production"})
-    monkeypatch.setattr(spike, "create_sql_engine", create)
-    monkeypatch.setattr(spike, "rows", generated_rows)
-    monkeypatch.setattr(spike, "load_policy", lambda path: SimpleNamespace(
-        rooms=lambda: [SimpleNamespace(
-            unit="generated-unit", platform="signal", primary_id="generated-room")]))
-    monkeypatch.setattr(spike, "load_persons", lambda path: SimpleNamespace(by_person={}))
-    monkeypatch.setattr(spike, "projection_context", lambda *a, **k: SimpleNamespace())
-    monkeypatch.setattr(cognition_replay, "recorded_wake", fake_wake)
-    monkeypatch.setattr(nora.subject, "sandbox_as_of", fake_sandbox)
-    monkeypatch.setattr(nora.subject, "obtain", fake_obtain)
-    monkeypatch.setattr(evals.backbone, "_close", AsyncMock())
-
-    args = SimpleNamespace(
-        config=tmp_path / "config.toml",
-        policy=policy_file,
-        identity=identity_file,
-        database_url=source_url,
-        snapshot=True,
-        age_url=None,
-        judge_a="generated-judge-a",
-        judge_b="generated-judge-b",
-        output=tmp_path / "out",
-        per_stratum=1,
-        minimum=1,
-        seed=17,
-        projection_rate=100,
-        project_only=False,
-        skip_projection=True,
-        smoke=False,
-    )
-    report = await spike.run(args)
+async def test_age_comparison_measures_the_source_once_outside_replay(tmp_path, monkeypatch):
+    env = generated_replay_environment(tmp_path, monkeypatch)
+    from tests.integration.test_grading_contract import attach_replay_contract
+    env.args.config.write_text("# generated configuration\n")
+    attach_replay_contract(env.args, tmp_path, env.runner.inspect.return_value, wakes=[
+        {"id": 1, "at_ms": 1, "strata": ["text"]},
+        {"id": 2, "at_ms": 2, "strata": ["attachment"]}])
+    bound, calls, runner = env.bound, env.calls, env.runner
+    quality, source_url = env.quality, env.source_url
+    report = await spike.run(env.args)
+    budget_receipt = json.loads((env.args.output / "run_budget.json").read_text())
+    assert budget_receipt == report["run_budget"]
+    assert budget_receipt["stop_after_total_tokens"] == 100
 
     # The comparison ran once, against the populated source — never the
     # empty-at-the-instant sandbox the session runner replayed in.
@@ -873,3 +724,89 @@ def test_prompt_composer_is_registered_when_the_script_runs_directly():
     assert direct_prompt({"source": "Generated evidence"}) == spike.prompt(
         {"source": "Generated evidence"}
     )
+
+
+@pytest.mark.parametrize("mode", ["--rescore", "--decision-judge"])
+@pytest.mark.parametrize("option", [
+    ["--inspect-only"], ["--project-only"], ["--sample-sha256", "generated-digest"],
+    ["--smoke", "--session-count", "15"],
+])
+def test_replay_only_flags_refuse_scoring_modes_before_any_run(monkeypatch, mode, option):
+    import sys
+
+    def must_not_run(*args, **kwargs):
+        pytest.fail("a refused CLI combination reached a runner")
+
+    monkeypatch.setattr(spike, "run_rescore", must_not_run)
+    monkeypatch.setattr(spike, "run_diagnostic", must_not_run)
+    monkeypatch.setattr(sys, "argv", [
+        "memory_graph_spike", "--config", "generated.toml", "--output", "generated-out",
+        mode, "generated-recording", *option,
+    ])
+    with pytest.raises(SystemExit) as exc:
+        spike.main()
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("mode,runner", [
+    ("--rescore", "run_rescore"), ("--decision-judge", "run_diagnostic"),
+])
+def test_scoring_cli_forwards_the_measured_cutoff(monkeypatch, mode, runner):
+    import sys
+
+    reached = []
+
+    async def run(args):
+        reached.append(args.stop_after_tokens)
+        return {"status": "REPORTED"}
+
+    monkeypatch.setattr(spike, runner, run)
+    monkeypatch.setattr(sys, "argv", [
+        "memory_graph_spike", "--config", "generated.toml", "--output", "generated-out",
+        mode, "generated-recording", "--stop-after-tokens", "100",
+    ])
+    assert spike.main() == 0
+    assert reached == [100]
+
+
+def test_expanded_sample_retains_the_five_original_sessions_and_exact_seeded_count():
+    candidates = [{"id": n, "at_ms": n * 1000, "strata": ["text"]} for n in range(30)]
+    original = {n: candidates[n] for n in [8, 3, 11, 2, 19]}
+    expanded = spike.extend_sample(candidates, original, size=15, seed=71)
+    assert list(expanded)[:5] == list(original)
+    assert len(expanded) == 15
+    assert expanded == spike.extend_sample(candidates, original, size=15, seed=71)
+    assert list(expanded) != list(spike.extend_sample(candidates, original, size=15, seed=72))
+    assert len(original) == 5
+    with pytest.raises(ValueError, match="discard original"):
+        spike.extend_sample(candidates, original, size=4, seed=71)
+    with pytest.raises(ValueError, match="fewer distinct"):
+        spike.extend_sample(candidates[:5] + candidates[:5], {}, size=15, seed=71)
+
+
+def test_expanded_session_completion_requires_all_fifteen():
+    good = {"status": "PASS", "tokens": 10, "admitted": 1, "refused": 0, "acts": 0}
+    assert spike.session_smoke([good] * 6)["status"] == "PASS"
+    assert spike.session_smoke([good] * 15, expected=15)["status"] == "PASS"
+    assert spike.session_smoke([good] * 14, expected=15)["status"] == "ERROR"
+    assert spike.session_smoke([good] * 15, expected=15)["marks"]["sample"] == 15
+
+
+@pytest.mark.parametrize("delta,status", [
+    ({}, "PASS"),
+    ({"facts_saved": 1, "facts_supported": 1}, "PASS"),
+    ({"facts_saved": 1, "facts_unsupported": 1}, "FAIL"),
+    ({"facts_missed": 1}, "FAIL"),
+    ({"facts_judge_errors": 1}, "ERROR"),
+    ({"facts_saved": 1, "facts_unsure": 1}, "ERROR"),
+    ({"facts_saved": 1}, "ERROR"),
+])
+def test_memory_quality_never_confuses_completion_with_correctness(delta, status):
+    scored = dict.fromkeys(("facts_saved", "facts_supported", "facts_unsupported",
+                           "facts_unsure", "facts_missed", "facts_judge_errors"), 0)
+    scored.update(delta)
+    quality = spike.fact_quality(scored)
+    assert quality["status"] == status
+    assert spike.report_exit({"execution": {"status": "PASS"}, "memory_quality": quality}) == {
+        "PASS": 0, "FAIL": 1, "ERROR": 2}[status]
+    assert spike.fact_quality({})["status"] == "ERROR"

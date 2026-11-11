@@ -2,14 +2,14 @@
   {
     "name": "FIX 1 beta client surface",
     "file": "nora/agent/replay_capture.py",
-    "old": "            beta=SimpleNamespace(chat=SimpleNamespace(\n                completions=_Completions(client.beta.chat.completions))),",
+    "old": "            beta=SimpleNamespace(chat=SimpleNamespace(\n                completions=_Completions(client.beta.chat.completions, role))),",
     "new": "",
     "target": "tests/integration/test_eval_observability.py::test_structured_call_captures_beta_parse"
   },
   {
     "name": "FIX 1 beta parse response capture",
     "file": "nora/agent/replay_capture.py",
-    "old": "            beta=SimpleNamespace(chat=SimpleNamespace(\n                completions=_Completions(client.beta.chat.completions))),",
+    "old": "            beta=SimpleNamespace(chat=SimpleNamespace(\n                completions=_Completions(client.beta.chat.completions, role))),",
     "new": "            beta=client.beta,",
     "target": "tests/integration/test_eval_observability.py::test_structured_call_captures_beta_parse"
   },

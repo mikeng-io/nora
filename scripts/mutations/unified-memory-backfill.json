@@ -28,13 +28,6 @@
     "target": "tests/unit/test_unified_backfill_boundaries.py::test_run_deadline_encloses_each_phase"
   },
   {
-    "name": "completion pointers commit with the union extraction",
-    "file": "nora/infra/sql/comprehend.py",
-    "old": "            for completed in item.snapshot.get(\"completion\", []):",
-    "new": "            for completed in []:",
-    "target": "tests/infra/test_unified_backfill_sql.py::test_multi_item_receipt_covers_each_admitted_work"
-  },
-  {
     "name": "catch-up selects graph-only plans",
     "file": "nora/infra/sql/unified_backfill.py",
     "old": "            for row in relations],",

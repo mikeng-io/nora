@@ -62,12 +62,11 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any
 from xml.etree import ElementTree
-from xml.parsers import expat
 
 from nora.domain.blocks import (
-    BlockKey,
+    BlockDeclaration,
     ContextBlock,
-    assemble,
+    assemble_declared,
     render_elements,
     render_group,
     render_row_window,
@@ -84,19 +83,26 @@ from nora.domain.cognition_ground import (
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
-from nora.domain.composed import legacy_composed
+from nora.domain.composed import compose_body
+from nora.domain.context_data import TranscriptLine
 from nora.domain.external_files import render_file_links
 from nora.domain.models import REACTION_LABEL_MAX, emoji_display
-from nora.domain.observations import SourceEvent, parse_handle
+from nora.domain.observations import SourceEvent
 from nora.domain.prompt import ago, clip, escape, legal, one_line
 from nora.domain.shared_state import SharedView
 from nora.domain.social_stream import describe_read
 from nora.domain.stimuli import Stimulus
-from nora.language.culture_render import render_self
-from nora.language.event_render import render_event_rows
-from nora.language.memo_render import memo_rows
-from nora.language.note_render import render_note_rows
-from nora.language.profile_render import render_profile
+from nora.language.context_render import (
+    render_clock,
+    render_members,
+    render_reads,
+    render_rooms,
+    render_transcript,
+    transcript_rows,
+)
+from nora.language.lesson_render import lesson_evidence_blocks, render_lessons
+from nora.language.profile_render import render_profile, render_profile_people
+from nora.language.register_render import render_register
 from nora.language.shared_render import render_shared_state
 
 #: What this prompt carries, declared as data. `render_agenda` builds its
@@ -109,35 +115,49 @@ from nora.language.shared_render import render_shared_state
 #: `key="turn"` throughout: this prompt is its own call pattern with no
 #: established cache boundary, so a key borrowed from `prefill._BLOCKS` would not
 #: describe the same thing here, and nothing routes on `key` yet either way.
-_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    # Her own Character · Nora for the unit first, directly
-    # after the doctrine (the system prompt). No block while the unit has no account.
-    ("self", 5, "turn"),
-    # THE SWITCH (design/unified-memory/profiles.md): her Profile account
-    # instead of prose `self` when `[memory.profile] read` is on; the grounder
-    # fills one or the other, never both, so the shared order cannot collide.
-    ("profile", 5, "turn"),
-    ("clock", 10, "turn"),
-    ("reads", 20, "turn"),
-    ("agenda", 30, "turn"),
-    ("note_index", 40, "turn"),
-    # The one `standing` block (design/notebook-memory-types/20-standing.md):
-    # positions, open judgements, pending acts, delivered results — read by
-    # code from the canonical stores, right after the note index.
-    ("standing", 45, "turn"),
-    ("events", 50, "turn"),
-    # What the unit settled and keeps (DEC-306), LAST of the Register and on
-    # its own budget, so no number of memos can push an agenda room's events
-    # out.
-    ("memos", 55, "turn"),
-    ("graph", 60, "turn"),
+_BLOCKS: tuple[BlockDeclaration, ...] = (
+    BlockDeclaration(
+        "profile", 5, "match an existing entity or create one; correct a contradiction"
+    ),
+    BlockDeclaration("clock", 10, "when, and how long ago"),
+    BlockDeclaration("reads", 20, "which rooms the read tools look through"),
+    BlockDeclaration("rooms", 21, "which rooms exist, and where a read or a reminder can go"),
+    BlockDeclaration("members", 22, "who a row is from, who a statement is about"),
+    BlockDeclaration(
+        "transcript",
+        25,
+        "what the rows mean in their conversation, and whether something said "
+        "in one room links to another",
+    ),
+    BlockDeclaration("agenda", 30, "what an item states"),
+    BlockDeclaration("notes", 40, "write a note, or revise the one that exists"),
+    BlockDeclaration("standing", 45, "what she owes, holds open, already did"),
+    BlockDeclaration("events", 50, "propose or revise an event"),
+    BlockDeclaration("memos", 55, "write a memo, or not"),
+    BlockDeclaration(
+        "graph", 60, "match an existing entity or create one; correct a contradiction"
+    ),
+    BlockDeclaration("lessons", 65, "how she should write, from past corrections"),
+    BlockDeclaration(
+        "held_lessons", 66, "reinforce or reword a held lesson, or retire one"
+    ),
+    BlockDeclaration(
+        "lesson_corrections", 67, "write a lesson from a correction, or not"
+    ),
+    BlockDeclaration(
+        "lesson_episodes", 68, "write a lesson from how people responded, or not"
+    ),
+    BlockDeclaration(
+        "documents",
+        70,
+        "detect documentation superseded by agenda evidence; "
+        "read its current revision and revise it",
+    ),
 )
 
 #: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
 #: already gives it.
-_ROW: dict[str, tuple[int, BlockKey]] = {
-    name: (order, key) for name, order, key in _BLOCKS
-}
+_ROW = {d.name: (d.order, d.key) for d in _BLOCKS}
 
 #: The prompt's separator between blocks. The blocks are several lines each, so
 #: a blank line is what reads as the boundary between them.
@@ -234,16 +254,6 @@ def _window(times: Sequence[int], now_ms: int, tz: tzinfo) -> str:
     return f"from {at} to {to}, the newest {ago(now_ms - newest)}"
 
 
-def returning(strike: int) -> str:
-    """A returning item says so: without it two items of one room (the fresh
-    messages and the ones an earlier session left open) read the same. The
-    `returning` attribute's value; empty when the item is not returning."""
-    if strike <= 0:
-        return ""
-    noun = "session" if strike == 1 else "sessions"
-    return f"left open by {strike} earlier {noun}"
-
-
 def _words(text: str, limit: int) -> str:
     """A message's words as one line cut to `limit`; none at all for a limit of
     nothing (the measure of what a row costs without them).
@@ -300,7 +310,7 @@ def _message_row(
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)),
                 ("source", ":".join(source_key) if source_key else None),
-                ("person", r.person_id),
+                ("person", None if reacted else r.person_id),
                 ("target", "yes" if target else None),
                 ("reaction", emoji_display(r.emoji or "?") if reacted else None),
                 ("reaction_removed", "yes" if reacted and r.removed else None),
@@ -403,7 +413,7 @@ def _fit(rows: Sequence[_Row], allowance: int) -> tuple[list[str], int]:
         if not kept and cost > allowance:
             text = _shrunk(row, allowance - 1)
             cost = len(text) + 1
-        if kept and spent + cost > allowance:
+        if spent + cost > allowance:
             break
         kept.append(text)
         spent += cost
@@ -646,87 +656,6 @@ def _item_rows(
     return out, unreadable
 
 
-@dataclass(frozen=True)
-class RenderedAgendaRow:
-    attributes: dict[str, str]
-    text: str
-    rendered: str
-
-
-@dataclass(frozen=True)
-class RenderedAgendaItem:
-    attributes: dict[str, str]
-    rendered: str
-    rows: tuple[RenderedAgendaRow, ...]
-
-
-def parse_rendered_agenda(agenda: str | Mapping[str, Any]) -> list[RenderedAgendaItem]:
-    """Read emitted item structure, retaining exact bytes and only user-role request content."""
-    if isinstance(agenda, Mapping):
-        items = []
-        for message in agenda.get("messages", []):
-            if message.get("role") != "user":
-                continue
-            content = message.get("content", "")
-            if not isinstance(content, str):
-                content = "\n".join(p.get("text", "") for p in content or [])
-            items.extend(parse_rendered_agenda(content))
-        return items
-    payload = ("<root>" + agenda + "</root>").encode("utf-8")
-    parser = expat.ParserCreate()
-    stack: list[dict[str, Any]] = []
-    items = []
-
-    def start(tag: str, attributes: dict[str, str]) -> None:
-        if stack:
-            stack[-1]["children"] += 1
-        stack.append({"tag": tag, "attributes": attributes, "start": parser.CurrentByteIndex,
-                      "text": [], "rows": [], "children": 0})
-
-    def text(value: str) -> None:
-        stack[-1]["text"].append(value)
-
-    def end(tag: str) -> None:
-        node = stack.pop()
-        stop = parser.CurrentByteIndex
-        self_closed = (not node["children"] and not node["text"]
-                       and payload[stop - 2:stop] == b"/>")
-        if not self_closed:
-            stop = payload.index(b">", stop) + 1
-        rendered = payload[node["start"]:stop].decode("utf-8")
-        if tag == "item":
-            items.append(RenderedAgendaItem(node["attributes"], rendered, tuple(node["rows"])))
-        elif stack and stack[-1]["tag"] == "item" and "n" in node["attributes"]:
-            stack[-1]["rows"].append(RenderedAgendaRow(
-                node["attributes"], "".join(node["text"]), rendered))
-
-    parser.StartElementHandler = start
-    parser.CharacterDataHandler = text
-    parser.EndElementHandler = end
-    parser.Parse(payload, True)
-    return items
-
-
-def rendered_new_sources(agenda: str) -> dict[str, Any]:
-    """Fresh citable rows from the emitted agenda, after source expansion and clipping."""
-    new_sources = {}
-    for item in parse_rendered_agenda(agenda):
-        for row in item.rows:
-            n = row.attributes.get("n")
-            if n is None or row.attributes.get("own") or row.attributes.get("target"):
-                continue
-            source = row.attributes.get("source")
-            # Context message rows carry source=; fresh messages do not.
-            # Other fresh record families carry their typed source key.
-            if source and source.split(":", 1)[0] != item.attributes.get("kind"):
-                continue
-            if source and source.startswith("message:"):
-                continue
-            key = source.split(":", 1) if source else ["message", n]
-            new_sources[n] = {"key": key, "text": row.text}
-    return new_sources
-
-
 def _attrs(pairs: Sequence[tuple[str, str | None]]) -> tuple[tuple[str, str], ...]:
     """A block's attributes, the empty ones dropped: an attribute that says
     nothing is no attribute, as in the shared element renderers."""
@@ -739,7 +668,6 @@ def _item_attrs(
     return [
         ("index", str(index)), ("kind", item.kind),
         ("room", room_label(item.room, labels)), ("summary", item.summary),
-        ("returning", returning(item.strike)),
     ]
 
 
@@ -798,6 +726,8 @@ def _item_block(
             if row.id not in candidates:
                 continue
             element = ElementTree.fromstring(rendered)  # noqa: S314 - our escaped row renderer's output
+            if element.get("reaction"):
+                continue
             shown.append({**candidates[row.id], "body": element.text or ""})
             shown_keys[str(row.id)] = keys[str(row.id)]
         memory_item.snapshot["messages"] = shown
@@ -838,187 +768,14 @@ def _needs(
 _NOTE_LINE_CHARS = 200
 
 
-def _register(
-    rooms: Sequence[Room], grounding: Grounding, *, now_ms: int, tz: tzinfo,
-    budget: RenderBudget,
-) -> list[ContextBlock]:
-    """The notes, the memos, and the events of each agenda room, already
-    recorded: a `note_index` block, a `memos` block (DEC-306) and ONE `events`
-    block of `<room_events>` groups. At most
-    `register_lines` rows of each list, and every row together within
-    `register_chars` as rendered: a row that does not fit, and every row after
-    it, is left out, and the block or group says how many (`not_listed`) rather
-    than cutting a row."""
-    spent = 0
-    exhausted = False
-
-    def listed(rows: list[str]) -> list[str]:
-        nonlocal spent, exhausted
-        kept: list[str] = []
-        for row in rows:
-            cost = len(row) + 1
-            if exhausted or spent + cost > budget.register_chars:
-                exhausted = True
-                break
-            kept.append(row)
-            spent += cost
-        return kept
-
-    blocks: list[ContextBlock] = []
-    if grounding.notes:
-        notes = [
-            replace(n, description=clip(n.description, _NOTE_LINE_CHARS))
-            for n in grounding.notes
-        ]
-        rows = listed([
-            render_note_rows([n], ids=True, extra=lambda n: (
-                ("review", n.review), ("may_duplicate", n.may_duplicate),
-                ("reminds", n.reminds),
-            ))
-            for n in notes[: budget.register_lines]
-        ])
-        left_out = len(notes) - len(rows)
-        blocks.append(restamp(ContextBlock(
-            name="note_index", body=legacy_composed("\n".join(rows)),
-            attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
-            when_empty="self_close",
-        ), _ROW))
-    # Standing: agenda rooms' folded source objects (design/platform-observations/observations.md) —
-    # the open poll, the pin set, the member count — typed rows under ONE
-    # block, on the Register's own budget row. A gap/unordered head says so
-    # (`ordering`); a partial snapshot says what it covers, never the whole.
-    annotated_ids = {r.message_id for r in grounding.records.values()
-                     if r.reactions is not None}
-    reaction_targets = {e.handle: e.target_message_id
-                        for e in grounding.observations.values()
-                        if e.kind == "reaction" and e.target_message_id in annotated_ids}
-    standing_groups: list[str] = []
-    for room in rooms:
-        objects = grounding.source_objects.get(room_key(room), ())
-        if not objects:
-            continue
-        rows = listed([
-            render_elements(
-                [o], tag="source_object",
-                attrs=lambda e, _i: (
-                    ("kind", e.kind), ("object", e.handle),
-                    ("ordering", e.ordering or None),
-                    ("coverage", e.coverage or None),
-                    ("rev", e.revision or None),
-                    ("state", (
-                        f"Recorded reaction state on agenda message {reaction_targets[e.handle]}"
-                        if e.kind == "reaction" and e.handle in reaction_targets
-                        else e.state or None)),
-                    ("time", e.time_quality if e.time_quality != "upstream"
-                            else None),
-                    ("observed", _when(e.at_ms, now_ms, tz)
-                            if e.at_ms > 0
-                            and e.time_quality != "unknown" else None),
-                    ("received", _when(e.received_ms, now_ms, tz)
-                            if e.received_ms
-                            and e.time_quality != "upstream" else None),
-                ),
-                body=lambda _e: "",
-            )
-            for o in objects[: budget.register_lines]
-        ])
-        # `not_listed` counts what the grounder's own bounded read already
-        # confirmed beyond the shown heads — a lower bound, never a
-        # complete-looking cut.
-        left = (len(objects) - len(rows)
-                + grounding.source_objects_more.get(room_key(room), 0))
-        standing_groups.append(render_group(
-            "room_objects",
-            [("room", room_label(room, grounding.room_labels)),
-             ("not_listed", str(left) if left else None)],
-            "\n".join(rows),
-        ))
-    # The retained lane (design/platform-observations/projections.md): an
-    # open matter's curated refs, each resolved NOW off the recency page —
-    # `matter` names the note, and an unresolved ref says so, never vanishes.
-    for room in rooms:
-        retained = grounding.retained_objects.get(room_key(room), ())
-        if not retained:
-            continue
-        rows = []
-        for r in retained[: budget.register_lines]:
-            e = r.head
-            if e is None:
-                e = SourceEvent(
-                    ref="", kind=parse_handle(r.ref.handle)[0] or "object",
-                    operation="state", at_ms=0, time_quality="unknown",
-                    actor=None, actor_status="not_applicable",
-                    handle=r.ref.handle, summary="")
-
-            def _retained_attrs(_e: Any, _i: int, _r: Any = r,
-                                ) -> tuple[tuple[str, Any], ...]:
-                return (
-                    ("kind", _e.kind or None), ("object", _e.handle),
-                    ("matter", _r.matter or None),
-                    ("unresolved", "yes" if _r.head is None else None),
-                    ("ordering", _e.ordering or None),
-                    ("coverage", _e.coverage or None),
-                    ("rev", _e.revision or None),
-                    ("state", _e.state or None),
-                    ("time", _e.time_quality if _e.time_quality != "upstream"
-                            else None),
-                    ("observed", _when(_e.at_ms, now_ms, tz)
-                            if _e.at_ms > 0
-                            and _e.time_quality != "unknown" else None),
-                    ("received", _when(_e.received_ms, now_ms, tz)
-                            if _e.received_ms
-                            and _e.time_quality != "upstream" else None),
-                )
-
-            rows.append(render_elements(
-                [e], tag="source_object",
-                attrs=_retained_attrs,
-                body=lambda _e: "",
-            ))
-        omitted = len(retained) - len(rows) + grounding.retained_objects_more.get(room_key(room), 0)
-        standing_groups.append(render_group(
-            "retained_objects",
-            [("room", room_label(room, grounding.room_labels)),
-             ("not_listed",
-              str(omitted) if omitted else None)],
-            "\n".join(rows),
-        ))
-    if standing_groups:
-        blocks.append(restamp(ContextBlock(
-            name="standing", body=legacy_composed("\n".join(standing_groups))), _ROW))
-    groups: list[str] = []
-    for room in rooms:
-        events = [e for e in grounding.events if e.room == room]
-        if not events:
-            continue
-        rows = listed([
-            render_event_rows([e], tz=tz) for e in events[: budget.register_lines]
-        ])
-        left_out = len(events) - len(rows)
-        groups.append(render_group(
-            "room_events",
-            [("room", room_label(room, grounding.room_labels)),
-             ("not_listed", str(left_out) if left_out else None)],
-            "\n".join(rows),
-        ))
-    if groups:
-        blocks.append(restamp(ContextBlock(name="events",
-            body=legacy_composed("\n".join(groups))), _ROW))
-    memo_lines, memos_left = memo_rows(
-        grounding.memos, tz=tz, lines=budget.memo_lines, chars=budget.memo_chars,
-    )
-    if memo_lines or memos_left:
-        blocks.append(restamp(ContextBlock(
-            name="memos", body=legacy_composed("\n".join(memo_lines)),
-            attrs=_attrs([("not_listed", str(memos_left) if memos_left else None)]),
-            when_empty="self_close",
-        ), _ROW))
-    return blocks
-
-
 def _item_blocks(
-    items: Sequence[AgendaItem], stimuli: Mapping[int, Stimulus], grounding: Grounding,
-    *, now_ms: int | None, tz: tzinfo, budget: RenderBudget,
+    items: Sequence[AgendaItem],
+    stimuli: Mapping[int, Stimulus],
+    grounding: Grounding,
+    *,
+    now_ms: int | None,
+    tz: tzinfo,
+    budget: RenderBudget,
     memory_items: Mapping[int, Any] | None = None,
 ) -> list[ContextBlock]:
     """The `agenda` block (one `<item>` per item), then the Register. Without a
@@ -1029,37 +786,168 @@ def _item_blocks(
             render_group("item", _item_attrs(i, item, grounding.room_labels), "")
             for i, item in enumerate(items)
         ]
-        return [restamp(ContextBlock(name="agenda",
-            body=legacy_composed("\n".join(elements))), _ROW)]
+        return [restamp(ContextBlock(name="agenda", body=compose_body("\n".join(elements))), _ROW)]
     needs = _needs(
-        items, stimuli, grounding, now_ms=now_ms, tz=tz, message_chars=budget.message_chars,
+        items, stimuli, grounding,
+        now_ms=now_ms, tz=tz, message_chars=budget.message_chars,
         memory_items=memory_items,
     )
-    allowance = dict(enumerate(_shares(needs, budget.record_chars, budget.min_item_chars)))
+    room_rows: dict[str, list[Any]] = {}
+    for row in grounding.transcript:
+        room_rows.setdefault(
+            f"{row.platform}:{row.conversation_id}" if row.platform else row.room, []
+        ).append(row)
+    now = datetime.fromtimestamp(now_ms / 1000, tz=tz)
+    room_needs = [
+        sum(
+            len(transcript_rows([row], display_name="Nora", now=now, source_ids=True)) + 1
+            for row in rows
+        )
+        for rows in room_rows.values()
+    ]
+    shares = _shares([*needs, *room_needs], budget.record_chars, budget.min_item_chars)
+    allowance = dict(enumerate(shares[: len(needs)]))
+    kept_transcript = []
+    dropped = 0
+    for (_room, rows), share in zip(room_rows.items(), shares[len(needs) :], strict=True):
+        readable = []
+        for line in rows:
+
+            def show(size: int | None, line: TranscriptLine = line) -> str:
+                return transcript_rows(
+                    [
+                        replace(
+                            line,
+                            row=replace(
+                                line.row,
+                                body=clip(
+                                    line.row.body or "",
+                                    size if size is not None else budget.message_chars,
+                                ),
+                            ),
+                        )
+                    ],
+                    display_name="Nora",
+                    now=now,
+                    source_ids=True,
+                )
+
+            readable.append(_Row(line.row.ts, line.row.id, show))
+        fitted, cut = _fit(readable, share)
+        kept = [
+            replace(
+                line,
+                row=replace(
+                    line.row,
+                    body=ElementTree.fromstring(text).text or "",  # noqa: S314 - our escaped renderer output
+                ),
+            )
+            for line, text in zip(rows[cut:], fitted, strict=True)
+        ]
+        dropped += len(rows) - len(kept)
+        kept_transcript.extend(kept)
+    kept_transcript.sort(key=lambda x: (x.row.ts, x.room, x.row.id))
+    transcript_allowance = sum(shares[len(needs) :])
+    while (
+        kept_transcript
+        and len(transcript_rows(kept_transcript, display_name="Nora", now=now, source_ids=True))
+        > transcript_allowance
+    ):
+        kept_transcript.pop(0)
+        dropped += 1
+    transcript_block = render_transcript(
+        kept_transcript, display_name="Nora", now=now, not_listed=dropped,
+        read_limited=grounding.transcript_more,
+        withheld=dict(grounding.context_withheld).get("transcript", 0),
+    )
     elements = [
         _item_block(
-            i, item, stimuli, grounding, now_ms=now_ms, tz=tz, allowance_of=allowance,
+            i,
+            item,
+            stimuli,
+            grounding,
+            now_ms=now_ms,
+            tz=tz,
+            allowance_of=allowance,
             message_chars=budget.message_chars,
             memory_item=(memory_items or {}).get(i),
         )
         for i, item in enumerate(items)
     ]
-    rooms: list[Room] = []
-    for item in items:
-        if item.room not in rooms:
-            rooms.append(item.room)
+    rooms = list(dict.fromkeys(item.room for item in items))
     return [
-        restamp(ContextBlock(name="agenda", body=legacy_composed("\n".join(elements))), _ROW),
-        *_register(rooms, grounding, now_ms=now_ms, tz=tz, budget=budget),
+        restamp(ContextBlock(name="agenda", body=compose_body("\n".join(elements))), _ROW),
+        *render_register(rooms, grounding, now_ms=now_ms, tz=tz, budget=budget, placement=_ROW),
+        restamp(transcript_block, _ROW),
     ]
+def _grounded_blocks(grounding: Grounding, now: datetime) -> list[ContextBlock]:
+    """What the grounding read for the prompt: profiles, members, rooms,
+    documents and lessons, each a self-describing block."""
+    blocks: list[ContextBlock] = []
+    views = grounding.profiles or ((grounding.self_profile,) if grounding.self_profile else ())
+
+    def names(pid: str) -> str:
+        return grounding.profile_names.get(pid, pid)
+
+    blocks.extend(
+        render_profile_people(
+            [v for v in views if v.entity == "person"], name_of=names, now=now
+        )
+    )
+    for view in views:
+        if view.entity != "person":
+            block = render_profile(view, name_of=names, now=now)
+            if block is not None:
+                blocks.append(block)
+            else:
+                blocks.append(
+                    ContextBlock(
+                        name="profile",
+                        body=compose_body(""),
+                        attrs=(("of", view.of), ("entity", view.entity)),
+                        when_empty="self_close",
+                    )
+                )
+    for entity, subject in grounding.profile_unavailable:
+        blocks.append(
+            ContextBlock(
+                name="profile",
+                body=compose_body(""),
+                attrs=(("of", subject), ("entity", entity), ("status", "unavailable")),
+                when_empty="self_close",
+            )
+        )
+    blocks.extend(render_members(view) for view in grounding.members)
+    blocks.append(
+        render_rooms(
+            grounding.rooms, now=now, withheld=dict(grounding.context_withheld).get("rooms", 0)
+        )
+    )
+    from nora.language.documents_render import render_documents
+
+    blocks.extend(
+        b for view in grounding.documents if (b := render_documents(view)) is not None
+    )
+    if grounding.lesson_evidence is not None:
+        # A session shown the evidence holds the lessons by `L` handle, so
+        # `held_lessons` IS its lessons list; the bodies-only `lessons`
+        # block stays for sessions handed none (historical, feature off).
+        blocks.extend(lesson_evidence_blocks(grounding.lesson_evidence, now=now))
+    else:
+        lesson_block = render_lessons(grounding.lessons)
+        if lesson_block is not None:
+            blocks.append(lesson_block)
+    return blocks
 
 
 def render_agenda(
-    items: Sequence[AgendaItem], *, stimuli: Mapping[int, Stimulus] | None = None,
-    grounding: Grounding | None = None, reads_note: str = "", now_ms: int | None = None,
-    last_session_ms: int | None = None, tz: tzinfo = UTC,
-    budget: RenderBudget | None = None, graph: str = "",
-    memory_items: Mapping[int, Any] | None = None,
+    items: Sequence[AgendaItem],
+    *,
+    stimuli: Mapping[int, Stimulus] | None = None,
+    grounding: Grounding | None = None, reads_note: str = "",
+    now_ms: int | None = None, last_session_ms: int | None = None,
+    tz: tzinfo = UTC, budget: RenderBudget | None = None,
+    graph: str | None = None, memory_items: Mapping[int, Any] | None = None,
     shared: SharedView | None = None,
 ) -> str:
     """The session's prompt. `stimuli` is the claimed stimuli by id (an item
@@ -1070,45 +958,43 @@ def render_agenda(
     what the eval probe hands the model and nothing else does."""
     blocks: list[ContextBlock] = []
     now = None if now_ms is None else datetime.fromtimestamp(now_ms / 1000, tz=tz)
-    # THE SWITCH (design/unified-memory/profiles.md): her Profile account, when
-    # the grounder read one, replaces prose `<self>` at the same row.
-    # `profile_names` was resolved by the grounder holding `Persons`; this renderer does not.
-    if grounding is not None and grounding.self_profile is not None and now is not None:
-        profile_block = restamp(
-            render_profile(
-                grounding.self_profile,
-                name_of=lambda pid: grounding.profile_names.get(pid, "someone"),
-                now=now,
-            ),
-            _ROW,
-        )
-        if profile_block is not None:
-            blocks.append(profile_block)
+    failed = (
+        set(grounding.unavailable)
+        if grounding is not None
+        else {
+            d.name
+            for d in _BLOCKS
+            if d.name not in {"agenda", "clock", "reads", "graph"}
+        }
+    )
+    if now is not None:
+        blocks.append(render_clock(now=now, last_session_ms=last_session_ms))
     else:
-        self_block = restamp(
-            render_self(
-                grounding.self_account if grounding else None,
-                now=now,
-            ),
-            _ROW,
+        failed.add("clock")
+    if grounding is not None and now is not None:
+        blocks.extend(_grounded_blocks(grounding, now))
+    blocks.append(
+        render_reads(
+            tuple(
+                (
+                    room_key(r),
+                    (grounding.room_labels if grounding else {}).get(room_key(r), "unnamed room"),
+                )
+                for r in dict.fromkeys(item.room for item in items)
+            )
         )
-        if self_block is not None:
-            blocks.append(self_block)
-    if now_ms is not None:
-        blocks.append(restamp(ContextBlock(
-            name="clock", body=legacy_composed(escape(clock_line(now_ms, last_session_ms, tz))),
-        ), _ROW))
-    if reads_note:
-        blocks.append(restamp(ContextBlock(name="reads",
-            body=legacy_composed(escape(reads_note))), _ROW))
+    )
     # Real database message ids are positive. Other record keys share one
     # negative namespace, allocated once here, never by individual loaders.
     source_ids: dict[tuple[str, ...], int] = {}
     for index, memory_item in (memory_items or {}).items():
         candidates = []
         keys = {}
-        rows = (memory_item.snapshot.get("record_rows", [])
-                if now_ms is not None and 0 <= index < len(items) else [])
+        rows = (
+            memory_item.snapshot.get("record_rows", [])
+            if now_ms is not None and 0 <= index < len(items)
+            else []
+        )
         for row in rows:
             key = tuple(row["source_key"])
             if key[0] == "message":
@@ -1120,28 +1006,37 @@ def render_agenda(
         memory_item.snapshot["messages"] = candidates
         memory_item.snapshot["source_keys"] = keys
     item_blocks = _item_blocks(
-        items, stimuli or {}, grounding or Grounding(), now_ms=now_ms, tz=tz,
-        budget=budget or RenderBudget(), memory_items=memory_items,
+        items, stimuli or {}, grounding or Grounding(),
+        now_ms=now_ms, tz=tz, budget=budget or RenderBudget(),
+        memory_items=memory_items,
     )
     blocks += item_blocks
     if shared is not None and now_ms is not None:
-        shared_block = restamp(
-            render_shared_state(shared, now_ms=now_ms, tz=tz), _ROW)
+        shared_block = restamp(render_shared_state(shared, now_ms=now_ms, tz=tz), _ROW)
         if shared_block is not None:
-            source_blocks = [b for b in blocks if b.name == "standing"]
-            shared_block = replace(shared_block, body=legacy_composed("\n".join(
-                [shared_block.body.text, *(b.body.text for b in source_blocks)],
-            )))
+            source_blocks = (
+                [b for b in blocks if b.name == "standing"]
+                if shared.status != "unavailable"
+                else []
+            )
+            shared_block = replace(
+                shared_block,
+                body=compose_body(
+                    "\n".join(
+                        [shared_block.body.text, *(b.body.text for b in source_blocks)],
+                    )
+                ),
+            )
             blocks = [b for b in blocks if b.name != "standing"]
             blocks.append(shared_block)
-    if graph:
-        blocks.append(restamp(ContextBlock(name="graph",
-            body=legacy_composed(escape(graph))), _ROW))
-    return assemble(blocks, sep=_SEP)
+    if graph is None:
+        failed.add("graph")
+    elif graph:
+        blocks.append(restamp(ContextBlock(name="graph", body=compose_body(escape(graph))), _ROW))
+    return assemble_declared(_BLOCKS, blocks, unavailable=failed, sep=_SEP)
 
 
 __all__ = [
-    "RenderBudget", "RenderedAgendaItem", "RenderedAgendaRow", "clock_line",
-    "parse_rendered_agenda", "render_agenda", "rendered_new_sources", "returning", "room_key",
+    "RenderBudget", "clock_line", "render_agenda", "room_key",
     "room_label", "speaker_of",
 ]

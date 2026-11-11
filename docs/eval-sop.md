@@ -6,6 +6,237 @@ interceptor. It is built as the same **comprehend → measure → serialize** sp
 the rest of the repo runs on (`AGENTS.md`), applied one layer up: comprehend a
 user *journey*, measure the *trajectory* she produces, serialize a *verdict*.
 
+## Before a paid run
+
+Apply this order to every entrypoint, including memory-graph replay, diagnostic
+and rescore commands. The [horizontal measurement contract](../design/evaluation/horizontal-measurement-contract.md)
+defines the axes, five-C checks and current delivery limits. Reuse the existing
+runner, corpus fields, private evidence and trace hierarchy.
+
+1. **Comprehend the objective and scenario.** Name the capability and whether
+   this is diagnosis, calibration, regression, capability measurement or a
+   comparison. Bind the scenario's entrypoint, initial state, clock, actor,
+   audience, stimulus and available tools/context. Distinguish historical
+   sources from explicitly authored stimuli. State required, permitted and
+   forbidden outcomes from product requirements or reviewed references.
+2. **Fix the grading contract before candidate results.** Pin the cases,
+   references, rubric, judge-input projection, models, parsing, thresholds and
+   aggregation independently of the subject arm. Trace every expected property
+   to its actual consumer. In the current reply path, appended case acceptance
+   binds only social suitability/contextual identity; folds and lessons use
+   their own consumers. A field's presence does not prove it is measured.
+   Name the product/domain owner, evaluation author, independent evaluation
+   reviewer and run orchestrator. The reviewer checks the rubric against reviewed
+   valid/invalid references and calibration evidence; another model's agreement
+   is not ground truth. Existing product rulings govern routine work. Bring only
+   an unresolved value choice or changed acceptable behavior back to the owner.
+   Define required semantic coverage separately from factual support and storage
+   eligibility. For shared images/stickers, preserve the conveyed information;
+   extra grounded visual detail is permitted, and its omission alone does not
+   fail coverage unless the scenario turns on that detail. Fix the reference
+   units before outputs; do not add obligations after seeing a candidate answer.
+3. **Measure the instrument before the subject.** Inspect an accepted reference,
+   a nearby invalid one and relevant ambiguous/insufficient-information controls.
+   Calibrate semantic judges against reviewed labels, preserve disagreement and
+   keep independent confirmation examples separate from examples used to tune
+   the grader. Select calibration size and tolerances for the claim; do not
+   treat agreeing vendors, one canary or valid JSON as quality calibration.
+   A declared calibration run freezes its reference labels and controls before
+   judge calls; calibration agreement is its output, not a precondition it must
+   already have measured. New judge calls need a separate explicit budget and
+   do not authorize a subject benchmark. Retained votes can be audited offline.
+4. **Inspect context and observable outcomes.** Read the formatted subject and
+   judge requests, including system instructions, source scope, identities,
+   clock, media, cut/unavailable states, offered schemas and tool results.
+   Requirements are not factual evidence. Check that available tools can reach
+   required state and that readback measures the claimed result. A fresh synthetic
+   export and backend API readback precede paid work where visibility was
+   repaired; an HTTP success or a private file alone is insufficient. Frontend
+   checks are required when the acceptance claim concerns frontend behavior.
+5. **Serialize a fixed run brief and bounded execution.** Use the existing
+   private evidence/receipt to bind the subject, grading policy, cohort/snapshot,
+   controls, draws, source/config versions, budget, retries/cache behavior and
+   stop condition. Declare intended differences between arms. Preserve every
+   attempted case, error and exclusion. A completed budgeted run does not leave
+   open-ended credit for reruns or rescoring.
+6. **Read back and adjudicate.** Apply Coherence, Consistency, Conformance,
+   Correctness and Completeness to scenario → criterion → evidence → verdict
+   → report. Separate execution, valid measurement, content quality, governance
+   and durable usefulness. Report a Nora defect, an instrument defect or missing
+   evidence honestly; the last two are not passes. Correct abstention may pass
+   an insufficient-information case, but does not prove recall on an answerable
+   one.
+
+If a rubric, expectation or judge evidence changes after observing a failure,
+preserve the original result and record the substantive change and its reason.
+Regrading unchanged answers is **posthoc calibration**, not fresh subject trials
+or independent behavioral acceptance. A corrected rubric can support a clearly
+labelled retrospective comparison when applied consistently to both arms; it
+cannot silently turn a failed behavioral gate into success. New paid grading
+still needs authorization. A candidate's prompt must not silently rewrite its
+answer key.
+
+These are pre-run obligations, not a claim every check is automated. A missing
+obligation stays unmet/unavailable for the selected claim; do not add a parallel
+harness or run models to discover a cause already visible in retained evidence.
+
+### Bind the selected measurement
+
+Paid standard evaluations and memory replay, rescore and diagnostic entries
+require `--grading-contract <private.json>` and
+`--grading-contract-sha256 <expected-sha256>`. Select the reference independently
+of the candidate; never regenerate its normative text from the current writer
+merely to make preflight pass. Inspection, listing and source export remain
+zero-dispatch operations. The standard zero-dispatch commands refuse unused
+contract flags; memory inspection validates an explicitly supplied contract.
+
+Memory replay, rescore and decision diagnostics accept `--stop-after-tokens N`.
+With that flag, they share one measured input-plus-output budget across all model
+calls in that invocation, also capped at 1000 requests and 600,000 output tokens.
+Without it, the non-inspection legacy path installs no measured budget.
+Inspection-only always installs a zero-request budget, with or without the cutoff.
+Neither path grants
+permission to spend. Once usage reaches the cutoff, subsequent calls refuse; the last
+admitted call may overrun it. Unknown usage blocks later spending. A stopped run
+is ERROR, with counters in `run_budget.json`, the report and trace. Inspection
+and replay sample flags remain refused on scoring-only modes. Selecting a cutoff
+does not authorize a run; each paid experiment still needs its own finite budget.
+
+The version-one JSON object has these fields:
+
+| Field | Meaning |
+|---|---|
+| `version`, `entrypoint`, `purpose` | Version `1`; `eval`, `replay`, `rescore` or `diagnostic`; the declared measurement claim. A rescore cannot be fresh confirmation. |
+| `judges`, `selection` | Exact requested aliases and selection parameters. Standard selection binds corpora, case filter and sample counts. Replay selection binds seed, strata settings, smoke mode and requested cohort size. Archive modes bind the original evidence-file fingerprint. |
+| `implementation` | SHA256 of each path in `evals.grading_contract.IMPLEMENTATION_FILES`: the selected grader, assembly, parser and aggregation source plus dependency lock. A changed implementation needs a newly declared measurement. |
+| `reference_doctrine` | Fixed normative doctrine for the reply judge, independent of the subject's doctrine. Empty for memory/archive entries. |
+| `instructions` | Full fixed `memory_support` and `memory_coverage` instructions for memory grading; empty for standard evals and decision diagnostics. |
+| `cases` | Exact case roster. Each reference contains `input_sha256`, `expected_output` and `units`. |
+| `sample_sha256` | The frozen `sample.json` file fingerprint for replay. |
+
+Standard case keys are `corpus:case-name`. Hash `case_scenario(case)`: the loaded
+SDK case, excluding its generated execution `session_id`. Bind the fixed
+`expected_output` through the existing grader-only channel; a nonempty obligation
+with no real consumer refuses before subject execution. Memory keys are the
+recorded wake IDs. Hash `memory_scenario(inspection)`: shown agenda and NEW source
+custody after the existing transport normalization, excluding work bookkeeping
+and the candidate's system instruction. Each required
+unit has an `id`, semantic `claim` and integer `sources` from shown NEW rows.
+Standard cases use empty `units`; memory cases use empty `expected_output`.
+
+Author the normative reference first. Materializing its implementation hashes
+and calculating its final file hash is mechanical; it is not product approval
+or independent reference validation. Retain that exact reviewed file and pass
+its previously selected hash to each intended arm. Do not replace it after a
+refusal without recording which scenario or measurement changed and why.
+
+The private capture records the exact contract text and fingerprint before
+model work. Run metadata/report receipts identify the binding; formatted SDK
+requests retain the actual dynamic evidence and output independently. Memory
+grading records support, eligibility and finite-unit coverage separately under
+`fixed-reference-v2`. Each judged source row carries only what its request
+showed: the rendered row, the item's room label and the `<reads>` carrier
+binding that room's reads resolve through (unavailable when the request shows
+none or a shared label makes it ambiguous). Every required unit needs a verdict; covered units must
+identify saved statements or successful shown reads. Unknown/missing verdicts
+or unavailable read evidence are ERROR, not PASS. Unlisted possible omissions
+remain unscored diagnostics. Preserve old reports under their original
+instrument; report comparison refuses differing contract identities.
+
+For fixed-reference memory scoring, the request also carries the parser's
+output contract: support and eligibility fields with nonempty reasons, and a
+coverage array containing exactly the supplied unit ids. Empty required units
+require `{"coverage":[],"diagnostic_misses":[]}`. Output-format text is part of
+the pinned implementation; a format change creates a new measurement identity.
+It does not change reference labels or excuse malformed output. Zero-paid
+preflight checks the actual formatted request and injects valid empty/populated
+responses, malformed shapes, truncation and transport failures through the real
+consumer. It verifies refusal, per-judge attribution, stop behavior and capture.
+Generated valid responses prove wiring only; they cannot prove that a live judge
+understands either the interface or the normative policy.
+
+Fixed-reference coverage inputs label every saved statement and shown read with a
+code-derived `evidence_index`. Proofs use those explicit zero-based indices;
+agenda item numbers and source-row ids belong to different namespaces. Invalid
+or out-of-range proofs remain ERROR, never remapped into another statement.
+
+A tool's pre-callback parameter rejection is distinct from a handler failure.
+The private SDK capture marks a proven rejection with
+`argument_validation="rejected_before_dispatch"`; replay counts these separately
+as `proposal_argument_errors` and evaluates subsequent valid admission receipts.
+An argument rejection with no subsequent service receipt remains ERROR, including
+when an earlier call succeeded; recovery requires a later valid call.
+The original failed call remains in the trace. An unmarked or legacy unreadable
+receipt, a returned opaque error, or an exception after callback entry remains
+ERROR: argument-schema mismatch or error prose alone cannot prove that nothing
+ran. Recovered calls do not excuse unsupported or incomplete final content.
+
+Judge output should emit each field once. The shared reply, memory and coverage
+parsers accept repeated fields only when their canonical JSON values agree,
+including nested value types. Equivalent repeats preserve the same value;
+conflicting repeats are ERROR/REVIEW, never a first/last-value vote selection.
+Raw output retains every occurrence for inspection.
+This parser contract applies to a newly bound measurement. Preserve reports
+accepted by an older parser; do not retrospectively clear or fail them.
+A valid prompt template and a successful canary do not guarantee a provider's
+format reliability. Fixed-reference memory calls use the existing text request
+protocol and validate the response against strict local JSON schemas. Local schema
+validation does not require a provider-native `response_format` capability and
+does not add a second model call or an SDK tool loop.
+Validation and scoring use the same fact parser: a leading complete JSON document
+or fence is read, with trailing explanation ignored; conflicting fields are rejected.
+Evidence is mandatory for `covered` rows. For `missed`/`unsure`, `covered_by`
+may be absent or null. `diagnostic_misses` is an optional array whose entries are
+retained unscored. Local schema checks follow these same consumer rules; an unused
+null placeholder or diagnostic annotation must not decide a verdict. Scored meanings,
+reason/proof validation and reference labels are unchanged.
+Check the actual route's structured-output support before claiming enforcement;
+plain JSON mode, a mock request or a requested field alone is not proof that a
+schema is enforced. Provider-native enforcement is separate from local validation;
+a route lacking it can still use the ordinary protocol with strict local checks.
+Never silently retry, discard local validation or repair provider text into a verdict. Keep model/route
+changes and new paid probes explicitly authorized, with the same fixed semantic
+references.
+
+Binding proves that the selected instrument was used. It does not establish
+that reference labels are complete, that a semantic judge is calibrated, that
+SigNoz has retained the complete queryable payload, or that a model run is authorized.
+Those remain the preceding SOP's separate evidence obligations.
+
+## Judge-only development calibration
+
+`python -m evals.judge_controls --job FILE --job-sha256 SHA --config FILE`
+validates a private frozen job without model dispatch. `--execute --output DIR`
+uses the existing memory support/eligibility/coverage and reply graders under
+one shared measured budget and `eval_host_lock()` (the same inner lock as the
+official suite); it runs no subject. The operator wrapper may hold the separate
+outer `/tmp/nora-eval.lock` without the command taking that lock again.
+Execution requires separate operator spending approval. The job fingerprint is
+an artifact binding, never permission or proof that its answer key is correct.
+
+The job pins source head and tracked diff, config, opaque ordered controls,
+a separate answer key, both lane-specific grading contracts, selected judge
+aliases and finite token/request/output/time limits. Optional
+`budget.per_call_output_tokens` selects the output allowance for both judge
+paths (default4096); `output_tokens` is its sum across planned requests. The
+measured input-plus-output cutoff remains independent. Inputs are projected through
+the actual consumers; control labels and expected verdicts never enter requests.
+Memory uses a `rescore` calibration contract, and reply controls use an `eval`
+diagnosis contract. Both contracts select the exact lane and control-file hash.
+Freeze their reference policy independently of candidate writer instructions.
+
+Every selected judge must match each clear control's expected vector. A bad
+answer correctly rejected is a successful discrimination; wrong agreement is a
+failure. Preserve every judge separately, without voting away disagreements.
+Missing/unsure/REVIEW/error is ERROR, never PASS. Stop on unavailable measurement,
+unknown usage, exhausted budget or evidence failure. Retain semantic mismatches
+and complete the already-authorized finite controls; do not retry or retune.
+The final `report.json`, together with its validated capture receipt, owns the
+job outcome. The trace's `run_finished` means capture completion and leaves its
+exit code unset; it cannot assert success before the final report is written.
+The report's PASS concerns only this finite generated development check, not
+subject behavior, heldout accuracy or population reliability.
+
 ## The rebuilt suite (2026-09-21) — where and how it runs
 
 > The previous harness (`evals.run`, fake stores, hand-authored journeys,
@@ -18,9 +249,11 @@ The suite runs **on the deploy host**, against the deployment's **clone**.
 Every corpus case names a real room at a real instant; the runner composes
 the deployment's own Nora (its `config.toml`, `policy.toml`, `identity.toml`)
 against a sandbox database of the case's own, seeds it with what that room
-held at that instant, and drives one entry point. Nothing is authored and
-nothing is configurable per case (`design/evaluation/subject.md`
- «Anchored input»–«Isolation»).
+held at that instant, and drives one entry point. Declared stimuli and
+counterfactuals may be authored; they must not be presented as recorded history.
+The subject uses the corpus's canonical assembly rather than a bespoke
+per-case dependency graph (`design/evaluation/subject.md`
+«Obtained through production»–«Counterfactuals»).
 
 ```bash
 # on the deploy host, in a checkout of the branch under test (NOT the deploy checkout)
@@ -28,10 +261,12 @@ make eval-source                 # refresh nora_eval (pg_dump); ONLY when no run
                                  # it drops every sandbox (nora-eval step 4), never between arms
 set -a; source ~/workspace/nora/.env; set +a         # the deployment's keys, so the tools are production's
 export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt   # resolves the scrubbed anchors (#776)
+GRADING=(--grading-contract "$GRADING_CONTRACT" --grading-contract-sha256 "$GRADING_CONTRACT_SHA256")
 uv run python -m evals --list    # corpora, entry points, classes
-uv run python -m evals --all     # every corpus; prints "N total, active, parked, unanchored" per corpus
-uv run python -m evals relevance_gate --sample 3
-uv run python -m evals injections identity_grounding --judge
+# Alternative selections: each needs its matching reviewed contract/hash, not one file for all three.
+uv run python -m evals --all "${GRADING[@]}"
+uv run python -m evals relevance_gate --sample 3 "${GRADING[@]}"
+uv run python -m evals injections identity_grounding --judge "${GRADING[@]}"
 ```
 
 - `--source-url` defaults to the clone on the deploy host (from its `.env`);
@@ -85,10 +320,20 @@ source revision/diff and configuration hashes, run selection, case/draw inputs,
 actual admitted/resident/deferred tool names, formatted OpenAI request bodies,
 existing OTel spans (including model/tool outputs and usage), enabled application
 logs, raw judge votes, typed case results and complete corpus reports. It uses
-the existing provider/SDK spans even when remote tracing/export is disabled.
+the existing provider/SDK spans. The CLI also requires the configured owner-local
+SigNoz sink; [evaluation visibility](observability.md#evaluation-visibility)
+defines the explicit content policy and operator acceptance.
 Request bodies and tool-surface events are persisted before model dispatch;
 raw model paths retain their existing SDK span contents rather than gaining a
 second model wrapper. Run/case IDs and trace/span IDs correlate the records.
+
+
+The memory-graph command shares this automatic operator export: replay,
+`--rescore` and `--decision-judge` all require the configured owner-local sink
+before execution. Stderr prints the trace ID; stdout retains the JSON report.
+Replay cases group one selected wake's writer and both judges with the frozen
+sample and snapshot provenance. No paid replay/rescore is authorized by the
+source tests or a previous synthetic trace.
 
 Read the printed run directory privately. `run_finished` carries the CLI exit
 code; it does not turn a failed case into PASS. A started case/run without a
@@ -126,6 +371,7 @@ uv run python -m scripts.confirm_cognition_anchors \
 uv run python -m scripts.write_cognition_anchors \
   --source-url "$EVAL_SOURCE_URL" --confirmed /tmp/cognition-confirmed.jsonl
 uv run python -m evals cognition_session --sample 3 \
+  --grading-contract "$GRADING_CONTRACT" --grading-contract-sha256 "$GRADING_CONTRACT_SHA256" \
   > /tmp/cognition-eval.log 2>&1
 echo "RC=$?" > /tmp/cognition-eval.rc
 ```

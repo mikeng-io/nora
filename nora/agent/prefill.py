@@ -23,7 +23,6 @@ from ..domain.blocks import (
     assemble,
     render_bullets,
     render_elements,
-    render_messages,
     restamp,
     speaker_name,
 )
@@ -44,6 +43,7 @@ from ..domain.profile import ProfileView
 from ..domain.prompt import age, escape
 from ..domain.quote_window import first_by_ts
 from ..domain.self_presence import Presence
+from ..language.catalogue_render import render_tool_catalogue
 from ..language.computer_render import render_computer
 from ..language.culture_render import (
     render_character,
@@ -149,7 +149,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # them. `room`: it changes only with policy.toml or identity.toml, so it
     # stays in the steady front of the per-turn message. Never the whole
     # identity file.
-    ("room_members", 4, "room"),
+    ("members", 4, "room"),
     # WHERE SHE IS, FIRST. Straight after the clock, so the turn opens on when
     # and where, then her past, then theirs. `turn`, not `room`: transport
     # health varies between two turns in the same room, which is why it is
@@ -210,7 +210,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # «where everything stands». It replaces the room paragraph, the
     # working set, the ledger index and the interim shared-state block.
     ("standing", 66, "unit"),
-    ("group_transcript", 70, "room"),
+    ("transcript", 70, "room"),
     # HOW THIS TURN REACHED HER, AND HOW HER REPLY WILL. Renders only when the
     # message she is answering was spoken in a voice channel
     # (`NormalizedMessage.voice`, set only by `nora/web/voice.py`); a typed
@@ -429,7 +429,7 @@ def _parent_of(
 def render_transcript(
     transcript: Sequence[TranscriptRow], *, display_name: str, now: datetime,
 ) -> str:
-    """The `<m>` elements `<group_transcript>` carries, without the block
+    """The `<m>` elements `<transcript>` carries, without the block
     around them: the room exactly as she is shown it.
 
     Public for ONE reader outside this module: the eval harness hands a judge
@@ -443,48 +443,11 @@ def render_transcript(
     `transcript` is expected ALREADY NAMED (`Persons.name_transcript`), which
     is the assembler's job in production and the caller's here.
     """
-    by_ts = _by_ts(transcript)
+    from nora.domain.context_data import TranscriptLine
+    from nora.language.context_render import transcript_rows
 
-    # ROW ID -> the index this render gave it, so a reply points at `n` rather
-    # than carrying a clipped copy of the parent's words.
-    #
-    # Keyed on `id`, not on `ts`, because `_parent_of` has already CHOSEN a row
-    # and this map only has to say where that row was shown. Keying on `ts`
-    # would ask the same ambiguous question a second time with the opposite
-    # tie-break, so a duplicated timestamp could return the index of a row
-    # `_parent_of` did not pick.
-    index_of = {row.id: i for i, row in enumerate(transcript, 1)}
-
-    def _parent_index(row: TranscriptRow) -> int | None:
-        parent = _parent_of(row, by_ts)
-        if parent is None:
-            return None
-        at, mine = index_of.get(parent.id), index_of.get(row.id)
-        # NEVER FORWARD. `quoted_ts` arrives in the sender's envelope, so it can
-        # name a message that is BELOW this one in the window (clock skew, a
-        # shared timestamp, or a hand-written value). A reply pointing down the
-        # page is not a reply, and the model has no way to tell it from one.
-        if at is None or mine is None or at >= mine:
-            return None
-        return at
-
-    return render_messages(
-        transcript,
-        speaker=lambda row: _label(row, display_name),
-        body=lambda row: row.body,
-        timestamp=lambda row: row.ts,
-        replying_to=_parent_index,
-        now=now,
-        edited=lambda row: row.edit.ts if row.edit else None,
-        was=lambda row: row.edit.was if row.edit else None,
-        turn=lambda row: row.turn_handle,
-        reactions=lambda row: row.reactions.label if row.reactions else None,
-        reactions_observed=lambda row: (
-            f"{row.reactions.coverage} {age(row.reactions.observed_at, now)}"
-            if row.reactions is not None and row.reactions.observed_at is not None
-            else None
-        ),
-    )
+    return transcript_rows(tuple(TranscriptLine(row, "") for row in transcript),
+                           display_name=display_name, now=now)
 
 
 def _transcript_block(
@@ -628,7 +591,7 @@ def _transcript_block(
     # so she can trust the boundary she is told. `context_window` stays a
     # parameter for the caller's own bookkeeping; this block does not read it.
     return _block(
-        "group_transcript",
+        "transcript",
         attrs=(("window", str(len(ctx.transcript))),
                ("source_more", str(ctx.source_events_more)))
         if ctx.source_events_more else (("window", str(len(ctx.transcript))),),
@@ -646,7 +609,7 @@ def _peer_card_block(ctx: TagContext) -> ContextBlock | None:
     judgement about CERTAINTY (an identity fact is not an inference about
     intent), not about this other axis.
 
-    It hedges itself for the same reason `<group_transcript>` does (everything
+    It hedges itself for the same reason `<transcript>` does (everything
     in it traces back to text people typed), in the type's own words rather
     than with `untrusted="true"`, whose definition lived in a doctrine file
     this prompt's audience is one of six to load.
@@ -714,19 +677,10 @@ def _room_members_block(ctx: TagContext) -> ContextBlock | None:
     Authored data (identity.toml via the room's own `persons` list), never
     the whole file and never a platform id (R-18). Absent when the room lists
     nobody identity maps, which is also a `persons = "*"` room."""
-    if not ctx.room_members:
-        return None
-    def one_line(text: str) -> str:
-        # A newline in a name or alias would render as a member line of its
-        # own; operator-authored, but the block's shape is one line each.
-        return " ".join(text.split())
+    from nora.domain.context_data import MembersView
+    from nora.language.context_render import render_members
 
-    lines = [
-        f"{one_line(ref.name)}: {', '.join(one_line(a) for a in ref.aliases)}"
-        if ref.aliases else one_line(ref.name)
-        for ref in ctx.room_members
-    ]
-    return _block("room_members", body=compose_body(escape("\n".join(lines))))
+    return restamp(render_members(MembersView(room="this room", people=ctx.room_members)), _ROW)
 
 
 def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
@@ -1225,7 +1179,7 @@ def build_prefill(
             # load. A parameter rather than a `TagContext` field: it is a fact
             # about the tools, which are built beside the prefill, not about
             # what the context assembler read.
-            _block("tool_catalogue", body=legacy_composed(catalogue)) if catalogue else None,
+            restamp(render_tool_catalogue(catalogue), _ROW) if catalogue else None,
             _room_members_block(ctx),
             None if switched else _restamp(render_self(ctx.self_account, now=clock)),
             _restamp(render_lessons(ctx.lessons)),

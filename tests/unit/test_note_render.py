@@ -38,10 +38,9 @@ def _note(
 
 
 def test_an_empty_tier_renders_no_block_at_all():
-    """Its sibling's rule (`render_facts`): empty is a REAL state, and the
-    renderer emits nothing rather than an empty block, so a deployment with no
-    notes adds no tokens to any tag."""
-    assert _text(render_notes(())) == ""
+    """A successful empty index is distinct from an unavailable read."""
+    block = render_notes(())
+    assert block.body.text == "" and block.render().endswith("/>")
 
 
 def test_the_index_carries_the_title_and_the_description():
