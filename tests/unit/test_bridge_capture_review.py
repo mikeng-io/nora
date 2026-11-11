@@ -327,10 +327,10 @@ class TestTransitionIdentity:
 
     async def test_a_frameless_state_change_is_retained_not_published(
             self, tmp_path):
-        """The reconnect-replay rule (design 02 §wire): a state change with
-        NO upstream revision cannot be told apart from a delayed replay of
-        an old transition — it is retained ambiguous, never published under
-        a minted identity."""
+        """The reconnect-replay rule — design/platform-bridges/02-wire-and-platforms.md —
+        a state change with NO upstream revision cannot be told apart from a
+        delayed replay of an old transition — it is retained ambiguous, never
+        published under a minted identity."""
         bridge, journal, _, _ = _bridge(tmp_path, session_id="sess-42")
         await _sequenced_touch(bridge, "reaction_add", 4242)
         # A remove arrives with no frame (lost, overflowed, or replayed

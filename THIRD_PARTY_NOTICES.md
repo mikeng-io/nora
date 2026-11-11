@@ -47,7 +47,7 @@ limitations under the License.
 
 **Taken: the prompt's reasoning and its four worked examples.** That is the
 load-bearing part and it is corpus-independent —
-`design/cognition-loop/data.md` §4.1: `NYC`/`New York
+`design/cognition-loop/data.md` «Citations, links and search»: `NYC`/`New York
 City` (an abbreviation), `Java` the language against `Java` the island (one
 name, two real-world things), `Marco's car`/`Marco's vehicle` (a synonym with
 the same possessor), and `Sam`/`Sam` (the same person referred to again). Three
@@ -57,11 +57,10 @@ have produced better ones.
 Taken with it: the instruction that entities are duplicates only when they
 refer to *the same real-world object or concept*, the two explicit
 never-mark-as-duplicate conditions, and — the part that matters most — **the
-"or you are unsure" branch**, which is `21-substrate-contract.md` §5's
-default-to-split already written into the upstream wording.
+"or you are unsure" branch**, already written into the upstream wording as a default-to-split.
 
 **NOT taken: `dedup_helpers.py`, the matcher.** Deliberately, and the reason is
-measured rather than argued (`25` §4.1): its fuzzy path is ASCII-only —
+measured rather than argued: its fuzzy path is ASCII-only —
 non-ASCII normalises to the empty string and `_jaccard_similarity(∅, ∅)`
 returns 1.0 — and its `_FUZZY_JACCARD_THRESHOLD` of 0.9 misses `Big
 Walk`/`Big Walks` at 0.833. Our candidate query is our own.
@@ -80,7 +79,7 @@ upstream's shape do not survive contact with this system:
 
 ### The reversal condition
 
-`16-open-items.md` §11: there is no graded corpus for this room, so **we cannot
+There is no graded corpus for this room, so **we cannot
 currently tell whether this prompt beats one we write.** Adopting it is a
 judgement about its worked examples, not a measurement. When the corpus exists,
 measure both; if ours wins, this notice stays only as long as any of the

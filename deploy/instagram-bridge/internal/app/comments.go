@@ -6,8 +6,8 @@ package app
 // # Why every guard is here, and in this order
 //
 // This Instagram account also carries Nora's group chats, so a checkpoint or
-// a ban from a public-comment bot takes her off Instagram entirely (19
-// §Account safety). Every rule is therefore enforced IN THE BRIDGE, in the
+// a ban from a public-comment bot takes her off Instagram entirely —
+// design/instagram-adoption/summons.md «One answer, at most once». Every rule is therefore enforced IN THE BRIDGE, in the
 // process that writes, and every one of them refuses BEFORE any call to
 // Instagram:
 //
@@ -88,7 +88,7 @@ type CommentPolicy struct {
 	MinInterval time.Duration
 }
 
-// DefaultCommentPolicy is writes off, a cap of 10 (design 19 rule 4's
+// DefaultCommentPolicy is writes off, a cap of 10 (design/instagram-adoption/summons.md rule 4's
 // starting number) and 90 seconds between comments.
 func DefaultCommentPolicy() CommentPolicy {
 	return CommentPolicy{WritesEnabled: false, DailyCap: 10, MinInterval: 90 * time.Second}

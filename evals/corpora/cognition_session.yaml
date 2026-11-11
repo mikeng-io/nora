@@ -1,4 +1,4 @@
-# Scenario suite for design/unified-memory/understanding.md §2. All data is generated.
+# Scenario suite for evals/COGNITION_SCENARIOS.md. All data is generated.
 # ToolRouteGrader reads tools, required_tools, not_tools, before and args checks.
 # expected_output explains the property; it is not a separate semantic scorer.
 # Anchor confirmation must specialise argument checks to shown evidence/ids.

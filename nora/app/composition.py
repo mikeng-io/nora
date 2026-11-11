@@ -2652,7 +2652,7 @@ async def build_dependencies(
     lessons_reader: ActiveLessons | None = (
         ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
     )
-    # THE SWITCH (design/unified-memory/profiles.md §5, 00 «Sequence» step 8): the
+    # THE SWITCH (design/unified-memory/profiles.md): the
     # Profile accounts' read half — one store, read-only by the Protocol the
     # readers are typed against (`ProfileHeads` has `account_heads` and nothing
     # else), handed to the tag assembler, the fire path, the Cognition
@@ -2802,8 +2802,8 @@ async def build_dependencies(
         # attached below, beside the desk's. Not given to the fire path.
         subagents=subagents_context,
         # The typed source events of the transcript window and the room's
-        # folded object heads for the standing slot (design 04): the ONE
-        # store the bridge writes.
+        # folded object heads for the standing slot — the ONE store the
+        # bridge writes (design/platform-observations/observations.md).
         observations=observation_store,
     )
 
@@ -4801,7 +4801,7 @@ async def build_dependencies(
                 **profile_room_keys, **profile_unit_keys, **profile_nora_keys,
             })
 
-            # PROFILE · PERSON, in shadow (design/unified-memory/profiles.md §4): one
+            # PROFILE · PERSON, in shadow (design/unified-memory/profiles.md): one
             # session per (unit, listed person), on the person's Character
             # wake plus a turn's `told` line; it writes `profile_line`, which
             # nothing renders until the switch. Inside the culture block: it

@@ -1,6 +1,6 @@
 // Package observability is the bridge's tracer provider, W3C propagation,
 // server-span middleware and trace-joined JSON logging
-// (design/instagram-adoption/bridge.md §Tracing and §Logging, 17 P1).
+// (design/instagram-adoption/bridge.md).
 //
 // # Where spans go
 //
@@ -135,7 +135,7 @@ func Route(pattern string, h http.HandlerFunc) http.HandlerFunc {
 // recorded. otelhttp puts the RAW path into `url.path` when it opens the
 // server span, and sets nothing path-shaped afterwards, so overwriting it here
 // with the pattern leaves the span carrying `/posts/{shortcode}` and never
-// the shortcode. (An igid in `url.path` is allowed, 16 §Tracing; a post's
+// the shortcode. (An igid in `url.path` is allowed, design/instagram-adoption/bridge.md «Observation»; a post's
 // shortcode is not, which is why this is not simply Route.)
 func PatternOnlyRoute(pattern string, h http.HandlerFunc) http.HandlerFunc {
 	path := pattern

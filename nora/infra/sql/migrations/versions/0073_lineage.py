@@ -1,6 +1,6 @@
 """lineage -- the columns every derived row carries, their backfill, and the
-Record's trigram index (design/cognition-loop/data.md §3, 15-map.md §4,
-70-migration.md §2 row 2 and §5; migration step 2, the lineage half).
+Record's trigram index (design/cognition-loop/data.md, design/cognition-loop/data.md,
+design/cognition-loop/data.md «Notebook vocabulary»; migration step 2, the lineage half).
 
 WHAT THIS ADDS, all additive:
 
@@ -39,7 +39,7 @@ statement, `0053_decision_log`); `nora.infra.sql.notes`, `.standing` and
 `.culture` apply the same rule to every new row.
 
 - `note_revision.lineage`: `["message", null, <room>]` for every room a cited
-  message (`[<messages.id>, ...]` in the body, design 42 §4) was said in; the
+  message (`[<messages.id>, ...]` in the body, `nora.domain.note_body`) was said in; the
   same for the room the note was raised in on its FIRST revision, keyed from
   the platform its Record names; and `["unresolved", null, <origin>]` when a
   cited id is no longer in `messages` (pruned), when a later revision cites
@@ -105,7 +105,7 @@ _TABLES: tuple[str, ...] = (
 _MODES = ("computed", "told", "deduced", "induced", "abduced", "said")
 _CONFIDENCES = ("low", "medium", "high")
 
-#: design 42 §4's citation, `nora.domain.note_body._CITATION` written out.
+#: `nora.domain.note_body`'s citation, `nora.domain.note_body._CITATION` written out.
 _CITATION = r"\[\s*([0-9]+(?:\s*,\s*[0-9]+)*)\s*\]"
 
 

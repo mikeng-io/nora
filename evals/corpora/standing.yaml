@@ -430,12 +430,12 @@ cases:
       returns_when: |
         Never at this anchor.
 
-  # --- OPEN PLANS DROPPED BY A FOLD (design/group-situation/10, #555) -------
+  # --- OPEN PLANS DROPPED BY A FOLD (design/group-situation/10-standing-drops-plans.md, #555) -------
   # Five real folds that dropped an open plan still ahead of them, with
   # nothing between the two writes settling it. Each was confirmed by hand
   # in that study. They were written to measure
   # design/standing-ledger/10-what-standing-holds.md, withdrawn 2026-09-26: a dated
-  # plan is the note tier's to hold (design/../notebook-memory-types/00-design.md), not
+  # plan is the note tier's to hold (design/notebook-memory-types/00-design.md), not
   # Standing's. The case for drop 5 (a dated meet-up the fold let go) was
   # removed with it; the four left pass on master and stay as carry guards.
   # Drops 1-4 ran on the fold before 7fdb24b4 (2026-09-24), and 1-2 on its

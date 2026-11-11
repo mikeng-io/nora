@@ -125,7 +125,7 @@ version reintroduces the bug it avoids:
 
 - `BlobStore` is `put`, `get` and `delete`. `delete` is the mechanism; the
   one policy that calls it is a story frame's bound
-  (design/cognition-loop/observation.md §5, `nora.app.social_expiry`),
+  (design/cognition-loop/observation.md, `nora.app.social_expiry`),
   which deletes only bytes no other row names
   (`nora.infra.sql.blob_refs.held_elsewhere`) and leaves a tombstone. Room
   media has no retention (DEC-43): nothing deletes it.
@@ -2062,7 +2062,7 @@ class PlaceArea:
     neighbourhood (旺角 / Mong Kok), `city` the locality or first-level area
     that holds it (九龍 / Kowloon). Either may be None. Never a street, an
     address or a coordinate: these are public names, and they become the
-    memory index's place hubs (design/unified-memory/graph.md §6a)."""
+    memory index's place hubs (design/unified-memory/graph.md)."""
 
     district: str | None = None
     city: str | None = None
@@ -2371,7 +2371,7 @@ class SocialSubjectIndex(Protocol):
     async def members(self) -> frozenset[str] | None:
         """Every person `is_tier_zero` answers True for, less anyone whose
         `identity.toml` block sets `social = false`: the social stream's
-        membership (design/cognition-loop/observation.md §2), or `None` when
+        membership (design/cognition-loop/observation.md), or `None` when
         the index could not be read."""
         ...
 

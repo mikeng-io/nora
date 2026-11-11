@@ -1,7 +1,7 @@
 package httptransport
 
 // The write routes, as resources of a thread
-// (design/instagram-adoption/bridge.md §Resources, 17 §P14):
+// (design/instagram-adoption/bridge.md):
 //
 //	POST   /threads/{thread_fbid}/messages                          text or media
 //	DELETE /threads/{thread_fbid}/messages/{message_id}             unsend
@@ -9,7 +9,7 @@ package httptransport
 //	PUT    /threads/{thread_fbid}/typing                            typing
 //
 // They replace `POST /send`, `POST /send-media`, `POST /unsend`,
-// `POST /react` and `POST /typing`, which P14 DELETED in the same change that
+// `POST /react` and `POST /typing`, which bridge.md DELETED in the same change that
 // moved Nora's Python adapter: an old path is now the mux's own 404.
 //
 // # Order: path ids, then the body, then the use case
@@ -29,7 +29,7 @@ package httptransport
 // MESSAGE TEXT goes into the upstream request and nowhere else: not a span
 // attribute, event, name or status, not a log line, not an error envelope.
 // The server span carries the route pattern, the method and the path, whose
-// ids (thread, message) 16 §Tracing allows. The text is in the BODY, which no
+// ids (thread, message) design/instagram-adoption/bridge.md «Observation» allows. The text is in the BODY, which no
 // span reads. On failure, the gateway replaces the upstream error's text with
 // a fixed one before it reaches a span or this layer (instameow's
 // sendTextError), because an upstream refusal can quote what it refused.
@@ -184,7 +184,7 @@ func uploadOf(w http.ResponseWriter, m *mediaBody) (domain.Upload, bool) {
 }
 
 // mentionsOf validates each mention at the edge: its fbid parses as a
-// messaging id and its span is non-negative. Before P14 a non-numeric fbid
+// messaging id and its span is non-negative. Before bridge.md a non-numeric fbid
 // reached the gateway and came back as an unclassified 500; it is the caller's
 // malformed request, so it is a 400 here.
 func mentionsOf(w http.ResponseWriter, in []mentionBody) ([]domain.Mention, bool) {
@@ -239,8 +239,8 @@ func (s *Server) handleUnsend(w http.ResponseWriter, r *http.Request) {
 //
 // `remove` stays a field of this body rather than becoming a DELETE of the
 // resource, because the mutation that retracts a reaction must name WHICH
-// emoji it retracts, and a DELETE has no body to carry it in (design 16
-// §Resources names only this PUT). The emoji is required on a removal too.
+// emoji it retracts, and a DELETE has no body to carry it in (design/instagram-adoption/bridge.md
+// design/instagram-adoption/bridge.md «Messaging contract» names only this PUT). The emoji is required on a removal too.
 type reactionRequest struct {
 	Emoji  string `json:"emoji"`
 	Remove bool   `json:"remove"`

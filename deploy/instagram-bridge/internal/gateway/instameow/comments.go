@@ -6,7 +6,7 @@ package instameow
 // # What the upstream calls really are
 //
 // All three are HYPOTHESES. None has been measured against Instagram: no live
-// request or response was captured, and design 19 requires the web client's
+// request or response was captured, and design/instagram-adoption/summons.md requires the web client's
 // own request to be captured from a real browser before the first live call.
 // The library has none of them in its endpoint table
 // (pkg/messagix/endpoints/instagram.go), so each is written out in full:
@@ -201,7 +201,7 @@ func postComment(
 	ctx context.Context, issuer RESTIssuer, code domain.Shortcode, media domain.MediaID,
 	replyTo domain.CommentID, text string,
 ) (domain.PostedComment, error) {
-	// KNOWN DIFFERENCE to settle from the browser capture design 19 requires
+	// KNOWN DIFFERENCE to settle from the browser capture design/instagram-adoption/summons.md requires
 	// before the first live write: the library's own web POST
 	// (RegisterPushNotifications, misc.go:41-48) also sends `jazoest` and
 	// `fb_dtsg` in its form, and this form does not. Whether the web

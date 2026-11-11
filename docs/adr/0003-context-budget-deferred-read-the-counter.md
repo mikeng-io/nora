@@ -6,7 +6,7 @@
   that chose not to speak), R-24 (no single call or tool result may spend the
   whole turn's budget), DEC-31 (the `↳` snippet, shipped),
   `design/context-assembly/composition.md` (the proposal),
-  `design/system/grounding.md` §4 (which depends on this outcome)
+  `design/system/grounding.md`  «Time and source authority» (which depends on this outcome)
 
 ## Context
 
@@ -25,7 +25,7 @@ because it ran out of input budget. Nobody has read it. Building a component to
 manage a pressure whose counter has never been looked at is building against a
 guess.
 
-The numbers design/18 does have are per-call costs, not turn outcomes
+The numbers design/18-media-custody.md does have are per-call costs, not turn outcomes
 (measured 2026-08-06, `opencode-zen/deepseek-v4-flash`, `usage.prompt_tokens`):
 
     base prompt (doctrine + schemas + 40-row window)   4,952   every call
@@ -37,14 +37,14 @@ The numbers design/18 does have are per-call costs, not turn outcomes
 
 None of those is evidence that a turn has ever hit the ceiling.
 
-**Finding 2 — design/18 rations linearly for a cost that is multiplicative.**
+**Finding 2 — design/18-media-custody.md rations linearly for a cost that is multiplicative.**
 Every tool result stays in the message list and is re-sent on **every
 subsequent model call** (`llm.limits.turns = 8`). So admitting X tokens on call
 2 of 6 does not cost X; it costs roughly 5X. A budget that decrements a
 remaining-token counter by the size of what it admits is modelling the wrong
 quantity — the true cost is `tokens × calls remaining`, which the design does
 not compute and could not compute without knowing how many calls are left, a
-thing not known at admission time. design/14 §4 states the same arithmetic
+thing not known at admission time. design/system/grounding.md states the same arithmetic
 independently and draws the same conclusion.
 
 **Finding 3 — there is no usable estimator to feed it.** Strands' proactive
@@ -70,14 +70,14 @@ has measured.
 `nora_llm_stop_reason_total{reason="limit_total_tokens"}` is the evidence
 gate. Until it shows real pressure in production traffic, intake is bounded by
 **constants in code** — a result count and a byte ceiling per tool, with
-truncation stated in the return value — which is what design/14 §4 commits
-grounding to, and why grounding does not wait on design/18.
+truncation stated in the return value — which is what design/system/grounding.md commits
+grounding to, and why grounding does not wait on design/18-media-custody.md.
 
 **Reading the counter is the operator's next step and has not happened.** This
 ADR does not record a number; it records that no number has been read and that
 the component is blocked on one.
 
-**The cheap half of design/18 shipped anyway.** DEC-31 / `624955d` landed the
+**The cheap half of design/18-media-custody.md shipped anyway.** DEC-31 / `624955d` landed the
 `↳` snippet: `_parent_of` already resolved the exact parent row and
 `_transcript_block` threw it away, rendering only the author's label, so two
 messages from one author made `↳ Grant` unable to say which was answered. It
@@ -93,7 +93,7 @@ that are separate from the budget:
 1. **Cost with no measured need.** ~80–120 tokens on *every* call regardless of
    whether the window is threaded at all, against +43 on a threaded window for
    the snippet that solves the same disambiguation problem.
-2. **`#\d+` in an egress predicate would mute her.** design/18 §3.1 closes both
+2. **`#\d+` in an egress predicate would mute her.** design/18-media-custody.md §3.1 closes both
    escape routes for a handle with a `#\d+` predicate over reply text and the
    memory feed. `nora/agent/egress.py` documents, in its own module docstring,
    that free-standing digit runs are **deliberately not matched** — "prices,
@@ -105,7 +105,7 @@ that are separate from the budget:
 
 ## Consequences
 
-**Better.** Grounding (`design/14`) is unblocked: it ships with hard constants
+**Better.** Grounding (`design/system/grounding.md`) is unblocked: it ships with hard constants
 rather than waiting on a component. The turn-budget work that *did* have
 evidence — R-23 and R-24, both measured 2026-08-06 — shipped and is enforced,
 so a turn that runs out is at least legible today even though it is not
@@ -115,11 +115,11 @@ Cantonese.
 
 **Worse, and accepted.**
 
-- **The hole design/18 opens with is real and is still open.**
+- **The hole design/18-media-custody.md opens with is real and is still open.**
   `read_buffer`'s clamp was cut from 200 to 60 for this exact reason, and at
   `budget: 2` a turn can still spend two of them. **The clamp bounds one call;
   nothing bounds the turn.** Deferring means shipping grounding on top of that,
-  with per-tool constants that are four independent guesses — which design/18
+  with per-tool constants that are four independent guesses — which design/18-media-custody.md
   correctly identifies as how the `read_buffer(200)` hole existed in the first
   place. This ADR accepts a known structural gap in exchange for not building
   against a guess.
@@ -131,7 +131,7 @@ Cantonese.
   looked.
 - **The `↳` snippet does not solve pointing, only reading.** She can now tell
   which message a reply answers; she still cannot *refer* to a specific message
-  when calling a tool. `read_thread` therefore does not exist, and design/18's
+  when calling a tool. `read_thread` therefore does not exist, and design/18-media-custody.md's
   argument that handles-without-`read_thread` are decoration cuts the other way
   too: `read_thread`-without-handles would have to take a timestamp the model
   would invent, which DEC-24 forbids. Both stay deferred together or neither
@@ -155,7 +155,7 @@ outright, not deferred, for the reason above. Nora runs `NullConversationManager
 because she is stateless per tag, and that stays.
 
 **"Sliding window" as the name.** Nothing slides. A finite per-turn resource is
-rationed. The term was used loosely in conversation before design/18 existed
+rationed. The term was used loosely in conversation before design/18-media-custody.md existed
 and is recorded here only so it is not picked back up.
 
 **Adding a `#\d+` egress predicate to unblock handles.** Rejected on

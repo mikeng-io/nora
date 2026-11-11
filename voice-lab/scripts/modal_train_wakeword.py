@@ -99,7 +99,7 @@ def _package(local_dir: Path, arc_root: str, tar_path: Path, limit: int = 0,
     phrase 「喂Nora啦喂Nora啦」 mislabelled negative; weight ratio with
     max_negative_weight:150 is ~71:1 against positives — this is why the
     V3 optimiser collapsed to speech-presence detection).
-    See design/voice-channel/receive.md §V4 retrain.
+    See design/voice-channel/receive.md, retrain.
     """
     n = 0
     with tarfile.open(tar_path, "w") as tf:
@@ -145,7 +145,7 @@ def _make_data_tarballs() -> list[Path]:
     # rir (subsample 300, now mono16k — BIRD fold01 is 8ch; speechbrain
     # reverberate breaks on multichannel RIR direct_index under CUDA)
     rir_tar = tmp / "rir.tar"
-    # 300 -> 1000 rooms (BIRD has 10,000; 3% coverage was thin — see design §V4)
+    # 300 -> 1000 rooms (BIRD has 10,000; 3% coverage was thin — see design/voice-channel/README.md)
     _package(DATA_SRC / "rir" / "mono16k", "rir", rir_tar, 1000)
     print(f"tar rir: {rir_tar.stat().st_size / 1e6:.0f} MB", flush=True)
     # bg: ONE _package call with the UNION of dirs — passing the same tar_path

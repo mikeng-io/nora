@@ -1,6 +1,6 @@
 package session
 
-// comments.json: the summons ledger (design/instagram-adoption/summons.md §Account
+// comments.json: the summons ledger (design/instagram-adoption/summons.md
 // safety, rule 4), the fifth file in the session directory.
 //
 //	comments.json  every summons card the bridge received and resolved to a
@@ -34,7 +34,7 @@ package session
 // is refused (fail closed).
 //
 // The file used to hold `served`, the comment mentions GET /mentions served,
-// which authorized writes until the 2026-09-26 re-measure (design 19). A file
+// which authorized writes until the 2026-09-26 re-measure (design/instagram-adoption/summons.md). A file
 // that still carries it loads: the key is ignored and dropped on the next
 // write, and no longer authorizes anything.
 //

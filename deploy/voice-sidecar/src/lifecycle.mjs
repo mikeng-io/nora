@@ -1,5 +1,5 @@
 // Connection lifecycle (design/voice-channel/audio.md
-// §3.1): ONE serialized connection lifecycle, single guild hard-bound to
+// design/voice-channel/audio.md «Connection lifecycle»): ONE serialized connection lifecycle, single guild hard-bound to
 // the configured GUILD_ID:
 //
 //   idle --join--> connecting --ready--> connected --exit--> destroying --> idle
@@ -21,7 +21,7 @@
 // a deliberate destroy provokes reads as stale and no voice-death event is
 // emitted for an explicit exit.
 //
-// Durable desired-state (§12.1): exit/death write {desired:idle}, a
+// Durable desired-state (design/voice-channel/audio.md «Connection lifecycle»): exit/death write {desired:idle}, a
 // successful join writes {desired:connected, channel_id}. The exit/death
 // write happens BEFORE the socket is torn down — a crash anywhere in
 // teardown then boots to idle instead of rejoining a channel the user just
@@ -29,7 +29,7 @@
 // an ERROR log and flips stateWriteOk, surfaced as state_write_ok:false in
 // /voice/status.
 //
-// Empty-channel auto-leave (§12.6): the last human leaving (or Nora joining
+// Empty-channel auto-leave (design/voice-channel/audio.md «Connection lifecycle»): the last human leaving (or Nora joining
 // an already-empty channel) arms a 1-minute grace timer instead of exiting
 // immediately; any human observed before it fires cancels it. On fire, the
 // controller itself emits channel-emptied and tears the connection down
@@ -43,7 +43,7 @@ import { randomUUID } from 'node:crypto';
 import { httpError } from './errors.mjs';
 import { realClock } from './outbox.mjs';
 
-// Boot decision (§12.1): join ONLY if the file says connected, OR the file
+// Boot decision (design/voice-channel/audio.md «Connection lifecycle»): join ONLY if the file says connected, OR the file
 // is absent AND env CHANNEL_ID is set (first boot). `idle` wins over env.
 // The persisted channel is honored only while it IS the configured one: if
 // the operator changed CHANNEL_ID, boot-joining the OLD channel would park
@@ -85,7 +85,7 @@ export function createLifecycle({
   onJoinFailed = () => {},
   log = () => {},
   deathRecoveryMs = 15_000,
-  emptyChannelGraceMs = 60_000, // §12.6: grace before an empty channel auto-leaves
+  emptyChannelGraceMs = 60_000, // design/voice-channel/audio.md «Connection lifecycle»: grace before an empty channel auto-leaves
 }) {
   let voice = 'idle'; // idle | connecting | connected | destroying | error
   let generation = null;
@@ -95,7 +95,7 @@ export function createLifecycle({
   let destroyPromise = null;
   let deathInitiated = false;
   let lastHumanCount = null;
-  let emptyChannelTimer = null; // clock.setTimeout handle for §12.6's grace period, or null when unarmed
+  let emptyChannelTimer = null; // clock.setTimeout handle for design/voice-channel/audio.md «Connection lifecycle»'s grace period, or null when unarmed
   let stateWriteOk = true;
 
   async function persist(state) {
@@ -182,7 +182,7 @@ export function createLifecycle({
   // desired state; a restart should come back to what was desired).
   async function teardown(kind) {
     // Every teardown path — explicit exit, death, or the empty-channel timer
-    // firing itself — makes any pending §12.6 grace timer moot: once the
+    // firing itself — makes any pending design/voice-channel/audio.md «Connection lifecycle» grace timer moot: once the
     // connection is going down there is nothing left for it to time out.
     // Clearing unconditionally (even on the early returns below) means an
     // already-idle or already-different-generation connection can never be
@@ -262,7 +262,7 @@ export function createLifecycle({
     return [...members.values()].filter((m) => !m.user?.bot).length;
   }
 
-  // §12.6: an empty channel does not exit immediately — it starts a 1-minute
+  // design/voice-channel/audio.md «Connection lifecycle»: an empty channel does not exit immediately — it starts a 1-minute
   // grace timer, cancelled the moment a human is next observed. clearing is
   // idempotent (clock.clearTimeout on an already-fired/absent handle is a
   // no-op) so every call site can clear defensively without checking first.
@@ -314,7 +314,7 @@ export function createLifecycle({
     // Nora joins whose departure is the FIRST voice-state update must still
     // read as a >0 -> 0 transition (2026-09-16 audit CN-3).
     lastHumanCount = humanCount(s, cid);
-    // §12.6: "alone from join" now carries the SAME policy as a later drop —
+    // design/voice-channel/audio.md «Connection lifecycle»: "alone from join" now carries the SAME policy as a later drop —
     // joining an already-empty channel arms the grace timer right here
     // instead of the old behavior of silently never firing for this case.
     if (lastHumanCount === 0) armEmptyChannelTimer(gen, cid);

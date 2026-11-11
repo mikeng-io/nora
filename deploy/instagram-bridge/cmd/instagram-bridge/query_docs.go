@@ -9,7 +9,7 @@ import (
 )
 
 // The two GraphQL doc_ids the story and timeline reads send
-// (design/cognition-loop/observation.md §1a; root docker-compose.yml):
+// (design/cognition-loop/observation.md; root docker-compose.yml):
 //
 //	INSTAGRAM_STORY_DOC_ID     PolarisStoriesV3ReelPageStandaloneQuery
 //	INSTAGRAM_TIMELINE_DOC_ID  PolarisProfilePostsTabContentQuery_connection

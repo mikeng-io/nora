@@ -1,5 +1,5 @@
 {
-  "about": "Labelled lessons for the doctrine check (design/self-growth/lessons.md §7 row L3). `conflict` cases each loosen one law rule that reaches a unit's turns (the file named); `consistent` cases add practice where the law is silent, or are stricter than it. Run live with scripts/doctrine_check_labelled.py.",
+  "about": "Labelled lessons for the doctrine check (design/self-growth/lessons.md row L3). `conflict` cases each loosen one law rule that reaches a unit's turns (the file named); `consistent` cases add practice where the law is silent, or are stricter than it. Run live with scripts/doctrine_check_labelled.py.",
   "cases": [
     {
       "id": "c01",

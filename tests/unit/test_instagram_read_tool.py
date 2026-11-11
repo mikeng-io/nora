@@ -388,7 +388,7 @@ async def test_a_person_known_elsewhere_but_not_in_this_room_is_nothing_found(wo
 )
 async def test_a_story_is_never_opened_in_a_turn_nobody_asked_for(world, turn):
     """Members' stories are read by the ingestion poller, for members only
-    (design/cognition-loop/observation.md §2;
+    (design/cognition-loop/observation.md ;
     `tests/integration/test_social_poller.py::test_the_poller_reads_stories_for_members_only`).
     The live `instagram_read` tool is not that poller: in a turn nobody asked
     for (a reminder or proactive fire turn, a Dreamer run with a home room) it

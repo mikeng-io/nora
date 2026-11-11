@@ -8,7 +8,7 @@ scores that as a hit is worse than no suite, because it reports a number.
 
 **The judge is NOT the subject, and does not come from the graph.** It builds
 its own client here. That is not a second Nora and it does not breach
-`01-boundaries` §5(1): the rule forbids the eval layer COMPOSING A SUBJECT, and
+`design/evaluation/subject.md`): the rule forbids the eval layer COMPOSING A SUBJECT, and
 a grader is the thing that reads her answer, not the thing that produces it. §3
 puts the model client in infrastructure for exactly this reason.
 

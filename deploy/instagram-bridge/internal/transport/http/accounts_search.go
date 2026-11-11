@@ -2,20 +2,20 @@ package httptransport
 
 // GET /accounts?query= and GET /accounts?username= — the account-search and
 // account-by-username resources
-// (design/instagram-adoption/bridge.md §Resources, 17 P9, P10, P11).
+// (design/instagram-adoption/bridge.md).
 //
-// # Why ?query= exists before P11 does
+// # Why ?query= exists before design/instagram-adoption/social.md does
 //
-// P9 is a measurement: does instameow's own user search find an arbitrary
+// the search probe (design/instagram-adoption/social.md) is a measurement: does instameow's own user search find an arbitrary
 // public Instagram account by its EXACT username, or only accounts already in
 // Nora's DM contacts? The operator chose to run that probe through THIS real
 // route rather than stand up a second client against the live session, which
-// could disturb the only session there is. This route is also P11's route, so
+// could disturb the only session there is. This route is also design/instagram-adoption/social.md's route, so
 // building it once now serves both.
 //
-// # ?username= is P10, gated on P9's own measurement
+// # ?username= is design/instagram-adoption/social.md, gated on the search probe (design/instagram-adoption/social.md)'s own measurement
 //
-// P9 measured (17 §P9) that `SearchUsers` finds accounts outside Nora's DM
+// the search probe (design/instagram-adoption/social.md) measured () that `SearchUsers` finds accounts outside Nora's DM
 // contacts, private ones included, and that ONE EXACT MATCH WAS NOT THE FIRST
 // RESULT. So `?username=` never takes `items[0]`: it calls the same search
 // and keeps only the hits whose username equals the input, case-insensitively
@@ -26,7 +26,7 @@ package httptransport
 //
 // # The response conventions
 //
-// This was the FIRST route on `16`'s conventions, before P14 moved every
+// This was the FIRST route on `16`'s conventions, before bridge.md moved every
 // other route onto them:
 //
 //   - success is `{"items": [...], "next_cursor": null}` — no `ok` field, the
@@ -49,16 +49,16 @@ package httptransport
 // Every check above runs BEFORE `s.app.SearchAccounts` / `s.app.LookupAccountByUsername`
 // is called, which is where the session gate lives (`app.Service.ready`,
 // checked first inside every Instagram-facing use case). That is deliberate
-// ordering, not an accident of where the code happens to sit: design 16
-// §Resources says "a malformed id is 400 before any use case runs", and a
-// malformed or missing `query`/`username` is exactly that. P14 moved every
+// ordering, not an accident of where the code happens to sit: design/instagram-adoption/bridge.md
+// design/instagram-adoption/bridge.md «Messaging contract» says "a malformed id is 400 before any use case runs", and a
+// malformed or missing `query`/`username` is exactly that. bridge.md moved every
 // other route onto the same order. See
 // TestAccountsSearchValidationRunsBeforeSessionGate.
 //
 // # The query text and the username
 //
 // Never a span attribute, span name, status description, event, log line, or
-// error envelope message — `16` §Tracing's never-list, applied to a name
+// error envelope message — `design/instagram-adoption/bridge.md` «Observation»'s never-list, applied to a name
 // typed about a person. See TestSearchQueryNeverEntersASpan and
 // TestSearchQueryNeverLeaksOnFailure (the query) and
 // TestUsernameNeverEntersASpan and TestUsernameLookupNeverLeaksOnFailure (the
@@ -71,7 +71,7 @@ package httptransport
 // error text embeds the raw input (`ids.go`'s `invalid("not an instagram
 // username: %q", s)`), so this file never forwards it either — see
 // invalidUsernameMessage. A RESULT COUNT is fine to record on success (fine
-// to log, per the task that specified this route): it is evidence P9's probe
+// to log, per the task that specified this route): it is evidence the search probe (design/instagram-adoption/social.md)'s probe
 // needs, and it says nothing about who was searched for.
 
 import (
@@ -97,7 +97,7 @@ const maxSearchQueryLength = 64
 // --- GET /accounts?query= ------------------------------------------------
 
 // accountSummary is one search hit: the library's own shape, forwarded with
-// no re-ranking and no filtering — P9's probe needs the raw answer.
+// no re-ranking and no filtering — the search probe (design/instagram-adoption/social.md)'s probe needs the raw answer.
 //
 // No `is_private`: the search this route calls does not carry that field
 // (domain.AccountSummary's doc comment says why). Adding a field the wire
@@ -185,7 +185,7 @@ func (s *Server) handleAccountsSearch(w http.ResponseWriter, r *http.Request) {
 	// A result COUNT is allowed where the query text is not (file header).
 	// It rides the request's own server span rather than a log line, which
 	// keeps this route on "per-request success is not logged"
-	// (internal/observability) while still giving P9's probe something to
+	// (internal/observability) while still giving the search probe (design/instagram-adoption/social.md)'s probe something to
 	// read in Jaeger.
 	trace.SpanFromContext(r.Context()).SetAttributes(
 		attribute.Int("instagram.search.result_count", len(results)))
@@ -201,7 +201,7 @@ func (s *Server) handleAccountsSearch(w http.ResponseWriter, r *http.Request) {
 // never `err.Error()`.
 const invalidUsernameMessage = "username must be 1-30 characters from [A-Za-z0-9._], with at most one leading @"
 
-// handleAccountsByUsername answers GET /accounts?username= (17 P10), reached
+// handleAccountsByUsername answers GET /accounts?username= (), reached
 // from handleAccountsSearch once `username` is the only param given.
 //
 // The username is parsed HERE, before the use case, so a malformed one is

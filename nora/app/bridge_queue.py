@@ -84,12 +84,12 @@ _STATE_EVENT: dict[str, bt.LifecycleEvent] = {
     "uncertain": "attempt_failed",
 }
 
-#: Independent claim lanes — design 03's "do not serialize all ingestion
-#: behind a slow model" made structural. The comprehend lane runs every kind
-#: that never holds a model turn; the speak lane runs the kinds that can.
-#: Within a lane the DB claim is the no-duplicate arbiter (`FOR UPDATE SKIP
-#: LOCKED`, generation bump), and per-conversation ordering still comes from
-#: the INGEST/SPEAK advisory locks — lanes add INDEPENDENCE, not new rules.
+#: Independent claim lanes (design/platform-bridges/03-ownership-and-recovery.md)
+#: — "do not serialize all ingestion behind a slow model" made structural.
+#: The comprehend lane runs every kind that never holds a model turn; the
+#: speak lane runs the kinds that can. Within a lane the DB claim is the
+#: no-duplicate arbiter (`FOR UPDATE SKIP LOCKED`, generation bump); ordering
+#: comes from the INGEST/SPEAK advisory locks — INDEPENDENCE, not new rules.
 _COMPREHEND_KINDS = frozenset({
     "ingest", "stimulus", "memory_feed", "participation", "receipt",
 })
@@ -1251,9 +1251,9 @@ class WorkRunner:
                 envelope.observation or {},
                 expect_scope=self._observation_scope(work))
         except (ValueError, KeyError, TypeError) as exc:
-            # A malformed wire contract is a RETAINED FAILURE (design 02),
-            # never a silent successful consumption: the event says what
-            # it could not record, durably, for an operator to read.
+            # A malformed wire contract is a RETAINED FAILURE, never a silent
+            # successful consumption (design/platform-bridges/02-wire-and-platforms.md):
+            # the event says what it could not record, durably, for an operator to read.
             await finish("failed_retained",
                          {"reason": "malformed_observation"},
                          reason=f"malformed observation: {exc}")

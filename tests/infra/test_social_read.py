@@ -1,6 +1,6 @@
 """`social_read` and `SqlSocialStreamStore.items_of`, against Postgres.
 
-The read (design/cognition-loop/observation.md §6, 15 §4's
+The read (design/cognition-loop/observation.md, design/cognition-loop/data.md 's
 `social_items`): one person's recorded stories, posts and reels in an
 interval, newest first. An item is shown only in a room that lists its author
 (the `social` lineage predicate); a person who opted out (`social = false`)

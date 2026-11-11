@@ -26,7 +26,7 @@ how she is present when nobody has: reading everything, holding what is
 unsettled, speaking when there is an occasion, and staying quiet the rest of
 the time. It is one observe–orient–decide–act loop, closed through a human.
 
-That sentence is in the tree already — design 39 §1, `proactive.py:1`,
+That sentence is in the tree already — design/cognition-loop/proactive.md, `proactive.py:1`,
 `fire.py:303`, GLOSSARY under *proactive*. What is not in the tree is the
 claim this node makes: **the loop is the system's, not the proactive
 adaptor's.** Design 39 wrote it from the adaptor's seat. Its two entry points
@@ -39,8 +39,8 @@ adversarial review of v1 found four false claims about the tree and one
 circular rule, and they are worth naming here because each is a way this
 framing can go wrong again:
 
-1. The relevance gate is blind to notes and memory **on purpose** — design 36
-   §6 (`sees: transcript + standing`) — and the participation *turn* behind
+1. The relevance gate is blind to notes and memory **on purpose** — design/ambient-loop/01-stages-and-seams.md §2.3
+   (`sees: transcript + standing`) — and the participation *turn* behind
    it already reads both. v1
    called that a seam. It is a two-layer Decide, and the layers are the design.
 2. Two of v1's "seams" were component bugs: #186 is a one-file transport swap
@@ -70,7 +70,7 @@ the conversation slot. They do not share a trigger, an obligation, or a scope.
 
 **And they share held state in both directions.** The tag path's debrief is
 the principal writer of Standing (the fold, `debrief.py`); until 2026-09-24 it
-also proposed notes, which it no longer does (design 26 §7);
+also proposed notes, which it no longer does (design/notebook-memory-types/20-standing.md);
 the loop's deciders read both. So the tag path is not a stage of the loop and
 not merely a consumer of it — it is the other backbone, and the loop's Orient
 stage is fed by it. Design 39's "tag is the passive half, entering at Act" was
@@ -93,7 +93,7 @@ closer than v1 allowed: tag *does* enter, at Orient, as a writer.
 |---|---|---|
 | **Observe** | every human row lands in the record, marked with its room, its time and who sent it, and is fed to memory | `nora/ingest/` |
 | **Orient** | rows become held state: what is unsettled (notes), where each room stands (Standing), who these people are (Honcho). Written by the note tier, the curator, and **the tag path's debrief** | `note_candidates.py`, `note_curator.py`, `debrief.py`, Honcho |
-| **Decide** | **two deciders, each two-layer.** *Participation:* the gate (cheap — transcript + Standing, blind to notes and memory by design 36 §6, a pure function that writes nothing) admits a closed window; the turn behind it (everything, including `<notes>` when the tier is enabled) decides whether she holds anything to add. *Proactive:* the decide turn (notes, Standing, roster, own log — no transcript, 39 D9) schedules a time; the act turn (the home room's transcript) speaks or declines | `relevance_gate.py` + `fire.py` participation; `proactive.py` + `fire.py` proactive |
+| **Decide** | **two deciders, each two-layer.** *Participation:* the gate (cheap — transcript + Standing, blind to notes and memory by design/ambient-loop/01-stages-and-seams.md §2.3, a pure function that writes nothing) admits a closed window; the turn behind it (everything, including `<notes>` when the tier is enabled) decides whether she holds anything to add. *Proactive:* the decide turn (notes, Standing, roster, own log — no transcript, design/cognition-loop/proactive.md) schedules a time; the act turn (the home room's transcript) speaks or declines | `relevance_gate.py` + `fire.py` participation; `proactive.py` + `fire.py` proactive |
 | **Act** | say it, in a room, under the room's policy, or decline | `FirePath.speak` |
 | **feedback** | her rows land; the debrief folds them into Standing; `record_wake`/`strikes` stamp a note she raised | the Act → Observe edge, with 39 §1's brakes |
 
@@ -143,18 +143,18 @@ and it needed to happen before it could be made honestly.
 - **It does not change the architecture.** No new process, no new occasion
   kind. It adds **one store** — the shared decision log (`03` DEC-179) — which
   v1 wrongly claimed already existed.
-- **It does not reverse design 36 §6.** The gate stays cheap, blind to notes
+- **It does not reverse design/ambient-loop/01-stages-and-seams.md §2.3.** The gate stays cheap, blind to notes
   and memory, and a pure function — it neither reads nor writes the decision
   log. The participation *turn* behind it does both. Version 2 gave the gate
   a `<decisions>` block; a pending proactive row carries a note title
   (`fire.py:317`), so that was 36's second question under another name.
-- **It narrows one brake and says so.** Design 39 §1's row «Nora's message
+- **It narrows one brake and says so.** design/cognition-loop/proactive.md's row «Nora's message
   → note | curator filter» (`note_curator.py:691`, whose comment calls a
   closure on her own row *self-attestation deciding a retirement*) is narrowed,
   not kept: her own sent row becomes admissible to a note's **closing
   citation slot only**, and is excluded from discharge grounding — the guard
   lives inside `_discharge` (`:1210`), because one evidence tuple feeds both
-  the citation check and the grounding, and 39 D7 forbids her citing herself
+  the citation check and the grounding, and design/cognition-loop/proactive.md forbids her citing herself
   as the state of the world. The `self_only` state stays for the case where her row is the only
   evidence. Whether that narrowing is even buildable inside the current commit
   path is being tested on branch A tonight; if it is not, it waits.

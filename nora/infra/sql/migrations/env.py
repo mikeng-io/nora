@@ -12,7 +12,7 @@ Two deliberate deviations from the generated template:
   check, forever. Excluding them is the only way `alembic check` is usable at
   all. The ordering it can no longer see is asserted by
   `tests/infra/test_schema_parity.py` via `pg_index.indoption` — parameterised
-  over all six, so each new one is covered with no new test (design/19 §8).
+  over all six, so each new one is covered with no new test (design/self-awareness/presence.md).
   **Both registrations or neither**: an index excluded here without its row in
   `EXPECTED_DESC_INDEXES` is an index nothing checks at all.
 - **No `render_as_batch`.** That was SQLite's table-rebuild workaround for

@@ -1,7 +1,7 @@
 package main
 
 // Every response body Nora reads, pinned as files BOTH sides read
-// (design/instagram-adoption/README.md P4, P14).
+// (design/instagram-adoption/README.md).
 //
 // Nora's Python side is tested against `tests/fixtures/instagram_bridge/*.json`:
 // the social client (`nora/infra/social/instagram_client.py`) for the account,
@@ -241,7 +241,7 @@ func synthSearchResults() []*slidetypes.SearchResult {
 
 // synthUsernameLookupResults is GET /accounts?username='s raw hits BEFORE the
 // exact-match filter (app.LookupAccountByUsername): a fuzzy hit ranks ahead
-// of the exact one, the P9 shape (17 §P9: "one exact match was not the first
+// of the exact one, the the search probe (design/instagram-adoption/social.md) shape (: "one exact match was not the first
 // result"). A route that ever took items[0] would answer the wrong account
 // against this fixture.
 func synthUsernameLookupResults() []*slidetypes.SearchResult {
@@ -269,7 +269,7 @@ func synthUsernameLookupAmbiguous() []*slidetypes.SearchResult {
 func synthPK(n int) string { return fmt.Sprintf("9%017d", n) }
 
 // synthStoryJSON is a `PolarisStoriesV3ReelPageStandaloneQuery` answer in the
-// S0 shape (design/cognition-loop/observation.md §1a): the reel's own
+// S0 shape (design/cognition-loop/observation.md): the reel's own
 // `expiring_at` null, each frame's its own.
 func synthStoryJSON() string {
 	return `{"data":{"xdt_api__v1__feed__reels_media":{"reels_media":[{
@@ -366,7 +366,7 @@ var (
 	synthTypingRequest   = map[string]any{"typing": true}
 )
 
-// writeContractCases are the thread routes (17 §P14): members, and the four
+// writeContractCases are the thread routes (): members, and the four
 // writes, each with the success shapes and the failure envelopes Nora's
 // adapter decides on.
 func writeContractCases() []contractCase {
@@ -545,7 +545,7 @@ func readContractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{DocErr: httpclient.ErrCheckpointRequired} },
 		},
 		{
-			// A rotated doc_id: halt this read, not the login (22 §4).
+			// A rotated doc_id: halt this read, not the login (design/cognition-loop/observation.md).
 			file: "story_stale_query_501.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
 			fake: func() *fakeIG { return &fakeIG{StoryBody: []byte(synthStaleQuery)} },
 		},
@@ -554,7 +554,7 @@ func readContractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{} },
 			opts: []bridgeOpt{withDocs(gateway.QueryDocs{Timeline: testTimelineDocID})},
 		},
-		// GET /accounts/{igid}/items (22 §1a, §7): one timeline page.
+		// GET /accounts/{igid}/items (design/cognition-loop/observation.md): one timeline page.
 		{
 			file: "items_ok.json", route: "GET /accounts/{igid}/items", path: "/accounts/" + synthIGID + "/items",
 			fake: func() *fakeIG {
@@ -584,7 +584,7 @@ func readContractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{ProfileErr: httpclient.ErrCheckpointRequired} },
 		},
 		{
-			// The first fixture on the NEW response conventions (16 §Resources):
+			// The first fixture on the NEW response conventions (design/instagram-adoption/bridge.md «Messaging contract»:):
 			// {"items":[...],"next_cursor":null}, no "ok" field.
 			file: "accounts_search_ok.json", route: "GET /accounts", path: "/accounts?query=example",
 			fake: func() *fakeIG {
@@ -603,9 +603,9 @@ func readContractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{} },
 		},
 		{
-			// The exact-match rule (app.LookupAccountByUsername, 17 P9/P10):
+			// The exact-match rule (app.LookupAccountByUsername, /design/instagram-adoption/social.md):
 			// a fuzzy hit ranks first, and this route must still answer the
-			// exact one rather than items[0] — the P9 case where "one exact
+			// exact one rather than items[0] — the the search probe (design/instagram-adoption/social.md) case where "one exact
 			// match was not the first result".
 			file: "accounts_by_username_found.json", route: "GET /accounts", path: "/accounts?username=" + synthUsername,
 			fake: func() *fakeIG {
@@ -636,7 +636,7 @@ func readContractCases() []contractCase {
 				return &fakeIG{SearchResultsSet: true, SearchResults: synthUsernameLookupAmbiguous()}
 			},
 		},
-		// GET /posts/{shortcode} (17 P12), on the new conventions. The
+		// GET /posts/{shortcode} (), on the new conventions. The
 		// upstream bytes behind these are UNMEASURED and synthetic
 		// (fakeig/posts.go): a carousel of three, mixed, in order.
 		{
@@ -668,7 +668,7 @@ func readContractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{} },
 		},
 		// The three failure envelopes Nora's `instagram_search` reads as
-		// `unavailable` (design/instagram-adoption/README.md P11): the session
+		// `unavailable` (design/instagram-adoption/README.md): the session
 		// needs a human (409), Instagram rejected the search (502), and no
 		// session to search with (503). Each is the envelope, never the old
 		// `{"ok": false}` body, so the Python client is tested against the
@@ -806,7 +806,7 @@ func jsonEqual(t *testing.T, a, b json.RawMessage) bool {
 	return reflect.DeepEqual(av, bv)
 }
 
-// No fixture body carries the `ok` field (P14): success is the resource and
+// No fixture body carries the `ok` field (bridge.md): success is the resource and
 // the status says it succeeded; failure is the envelope. A body that kept
 // `ok` would be a shape Nora's side no longer reads, still pinned as if it did.
 func TestNoContractFixtureCarriesOk(t *testing.T) {

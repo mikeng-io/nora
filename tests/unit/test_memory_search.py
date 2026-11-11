@@ -724,7 +724,7 @@ def test_the_opt_outs_are_never_defaulted() -> None:
     assert {f.name for f in dataclasses.fields(MemoryScope) if f.kw_only} == {"social_off"}
 
 
-# --- the adaptive cut (design/unified-memory/graph.md §6) ------------------------------------------
+# --- the adaptive cut (design/unified-memory/graph.md «Retrieval») -------------------------
 
 
 def _hit(i: int, score: float, text: str = "ramen", pin: int = 0) -> memory_search.Hit:

@@ -188,7 +188,7 @@ carries the budget and the ending:
 ## Adding a case
 
 Extend the corpus that covers the behaviour under `evals/corpora/`; anchor rules
-and parking are `design/evaluation/subject.md` §1.3 and §7.1, and
+and parking are `design/evaluation/subject.md`  «Obtained through production», and
 `tests/architecture/test_every_case_is_anchored_or_parked.py` rejects an
 unanchored case before a run.
 

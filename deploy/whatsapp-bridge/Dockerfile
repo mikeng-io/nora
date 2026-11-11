@@ -4,7 +4,7 @@ ARG NORA_VERSION=""
 ENV OTEL_SERVICE_VERSION=${NORA_VERSION}
 # curl is load-bearing, not decoration: node:24-trixie-slim ships neither curl nor
 # wget, and the compose healthcheck curls /health. Without it the container
-# boots but reports unhealthy forever (design 01; review B1).
+# boots but reports unhealthy forever (design/whatsapp-adoption/bridge.md; review B1).
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./

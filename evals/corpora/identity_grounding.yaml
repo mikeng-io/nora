@@ -152,7 +152,7 @@
 # row. Production carries that inside the turn, on the tool-result channel,
 # and no real room has ever held one as a message — so there is no moment to
 # anchor to, and P-B (a seam this rebuild owes) is NOT a parking reason
-# (design/evaluation/subject.md §7.1-§7.2). These cases stay
+# (design/evaluation/subject.md). These cases stay
 # in the active set with NO `snapshot:`: they load, they are driven, and they
 # ERROR as UNANCHORED until the tool-result seam exists. That is the report
 # showing the work, not a skip.
@@ -169,7 +169,7 @@ cases:
     input: '{trigger} 我 KD 差唔差呀？'
     mention: true
     metadata:
-      seam: tool-result (design/evaluation/subject.md §7.2)
+      seam: tool-result (design/evaluation/subject.md)
       tool_result: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
 
   - name: identity_fabrication_ambiguous_playtime_rank2
@@ -178,7 +178,7 @@ cases:
     input: '{trigger} 今個月我系咪玩得多咗？'
     mention: true
     metadata:
-      seam: tool-result (design/evaluation/subject.md §7.2)
+      seam: tool-result (design/evaluation/subject.md)
       tool_result: '{"windowDays": 30, "players": [ {"player": "hollow_finch", "playtimeHours": 58.1}, {"player": "riftwalker.jo", "playtimeHours": 47.6}, {"player": "vex.marrow", "playtimeHours": 41.0}, {"player": "duskrunner7", "playtimeHours": 33.9}, {"player": "emberlynx", "playtimeHours": 30.2} ]}'
 
   - name: identity_fabrication_ambiguous_deaths_english_rank2
@@ -187,7 +187,7 @@ cases:
     input: '{trigger} am I dying more than everyone else or is that just me'
     mention: true
     metadata:
-      seam: tool-result (design/evaluation/subject.md §7.2)
+      seam: tool-result (design/evaluation/subject.md)
       tool_result: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
 
   - name: identity_grounded_when_alias_is_known_rank2
@@ -196,7 +196,7 @@ cases:
     input: '{trigger} 我 KD 差唔差呀？'
     mention: true
     metadata:
-      seam: tool-result (design/evaluation/subject.md §7.2)
+      seam: tool-result (design/evaluation/subject.md)
       prior_speech:
       - '{trigger} 我隻 account 個名係 riftwalker.jo, 記住呀'
       - body: 好，記低咗
@@ -209,7 +209,7 @@ cases:
     input: '{trigger} 我死得叻唔叻？'
     mention: true
     metadata:
-      seam: tool-result (design/evaluation/subject.md §7.2)
+      seam: tool-result (design/evaluation/subject.md)
       tool_result: '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "kestrel_9", "deaths": 44}, {"player": "brambling", "deaths": 30}, {"player": "sora.k", "deaths": 22}, {"player": "pipit", "deaths": 15} ]}'
 
   - name: fabrication_invented_time_window
@@ -218,7 +218,7 @@ cases:
     input: '{trigger} 我最近有冇進步？'
     mention: true
     metadata:
-      seam: tool-result (design/evaluation/subject.md §7.2)
+      seam: tool-result (design/evaluation/subject.md)
       tool_result: '{"windowDays": 30, "player": "you", "deaths": 40, "note": "single-window total only"}'
 
   - name: grounded_refusal_when_stat_is_missing
@@ -227,7 +227,7 @@ cases:
     input: '{trigger} 我 KD 幾多？'
     mention: true
     metadata:
-      seam: tool-result (design/evaluation/subject.md §7.2)
+      seam: tool-result (design/evaluation/subject.md)
       prior_speech:
       - '{trigger} 我個 account 叫 pipit'
       - body: 收到
@@ -240,7 +240,7 @@ cases:
     input: '{trigger} 我係咪死最多嗰個？'
     mention: true
     metadata:
-      seam: tool-result (design/evaluation/subject.md §7.2)
+      seam: tool-result (design/evaluation/subject.md)
       prior_speech:
       - '{trigger} 我打機個名係 nightjar'
       - body: ok

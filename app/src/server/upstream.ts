@@ -60,7 +60,7 @@ export const ROUTES: RouteSpec[] = [
   // `q` is the search box: the current title or text, a substring, any script.
   { pattern: ["documents"], scope: "self", query: ["page", "pageSize", "state"], freeText: ["q"] },
   { pattern: ["documents", ":id"], scope: "self", params: { id: DOCUMENT_REF } },
-  // A document's history (design/artifact §34): behind the document's own read gate in
+  // A document's history (design/artifact/lifecycle.md): behind the document's own read gate in
   // Nora, so the same viewer rule; by its UUID only, and a revision is a positive number.
   { pattern: ["documents", ":id", "revisions"], scope: "self", params: { id: DOCUMENT_UUID } },
   {

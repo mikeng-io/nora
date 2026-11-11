@@ -54,7 +54,7 @@ func TestSearchAccountsMapsTheMeasuredWire(t *testing.T) {
 }
 
 // The order is the library's. Reordering or filtering here would make the
-// P9 probe measure this function instead of Instagram.
+// the search probe (design/instagram-adoption/social.md) probe measure this function instead of Instagram.
 func TestSearchAccountsPreservesLibraryOrder(t *testing.T) {
 	f := &fakeIG{}
 	got, err := searchAccounts(t.Context(), f, "someone")

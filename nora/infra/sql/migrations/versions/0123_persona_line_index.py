@@ -1,6 +1,6 @@
-"""memory_node: `persona_line`, one Persona account line (design/unified-memory/profiles.md §1).
+"""memory_node: `persona_line`, one Persona account line (design/unified-memory/profiles.md).
 
-The switch (00 «Sequence» step 8): a line's text is embedded and searched like
+The switch (): a line's text is embedded and searched like
 a note's; its citations, `about`, `supersedes` and `draws_on` are edges. No new
 relation: `cites`, `about`, `supersedes` and `draws_on` are in the closed set
 already. It is embedded, so `idx_memory_node_unembedded`'s predicate (the

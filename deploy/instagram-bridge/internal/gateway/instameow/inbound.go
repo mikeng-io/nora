@@ -32,7 +32,7 @@ import (
 )
 
 // Event kinds on the SSE stream. `message` is the contract's; the rest are
-// documented extensions — the contract's §"Inbound event shape" defines only
+// documented extensions — design/instagram-adoption/bridge.md «Messaging contract» defines only
 // the message object, and an adapter is expected to ignore kinds it does not
 // know (the same posture whatsapp-bridge's `type` discriminator takes).
 const (
@@ -417,7 +417,7 @@ func extractMedia(msg *slidetypes.Message) []*eventMedia {
 
 	case *slidetypes.MessageContentXMA:
 		// The THUMBNAIL of a shared post, not the post. It is a real, fetchable
-		// image and it is the middle of design/13's three depths: cheap enough
+		// image and it is the middle of design/instagram-adoption/social.md's three depths: cheap enough
 		// to take at ingest, and enough for Nora to say what a reel looks like
 		// without fetching the video. `kind` is image even for a shared VIDEO,
 		// because these bytes are a still — calling it a video would make her

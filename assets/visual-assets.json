@@ -563,7 +563,7 @@
         "design/self-reference/references.md (explicit path reference)",
         "design/self-reference/references.md (explicit path reference)",
         "design/self-reference/references.md (explicit path reference)",
-        "design/self-reference/_index.yaml (explicit path reference)",
+        "design/self-reference/README.md (explicit path reference)",
         "design/video-generation/README.md (explicit path reference)",
         "docs-site/src/pages/index.astro (direct import)",
         "docs-site/src/pages/index.astro (explicit path reference)",

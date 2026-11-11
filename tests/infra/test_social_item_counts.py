@@ -1,5 +1,5 @@
 """A post's or reel's counts in the Record (`social_item_count`,
-design/cognition-loop/observation.md §5): `record_counts` appends a row
+design/cognition-loop/observation.md): `record_counts` appends a row
 only where one read's counts differ from the item's latest, never writes an
 unknown as 0, writes nothing for a read that carried nothing, and keeps
 `likes` NULL while the author hides them; `current_counts` and `items_of`

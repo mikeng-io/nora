@@ -9,7 +9,7 @@ governance: pre-governance-input
 edges:
   - {dst: 00-overview.md, rel: realizes, provenance: asserted}
   - {dst: 20-presentation-and-avatars.md, rel: depends_on, provenance: asserted}
-  - {dst: ../discord-music/_index.yaml, rel: relates_to, provenance: asserted}
+  - {dst: ../voice-channel/music.md, rel: relates_to, provenance: asserted}
 ---
 
 # The shared venue

@@ -38,7 +38,7 @@ replacement has measured at least as well.
 
 ## Superseded and amended
 
-- [standing-ledger/10-what-standing-holds.md](../../standing-ledger/10-what-standing-holds.md): the working set
+- [standing-ledger/10-what-standing-holds.md](../standing-ledger/10-what-standing-holds.md): the working set
   becomes a decision's `Options` (step 4).
 - [12-schemas](../cognition-loop/data.md) §5: room Standing's sections
   and the unit sections are replaced by the three entry kinds; person Standing

@@ -14,7 +14,7 @@ description: >-
   Version 5 writes the room alone: people
   have their own sessions (`character-person`). Version 4 writes through the
   `character_revise` verb with citations instead of a JSON envelope
-  (design/self-growth/character.md §3); version 3 asks only about the people who wrote in the batch (DEC-280); version 2 added one account per listed person (DEC-278); version 1 was design/self-growth/character.md, DEC-182.
+  (design/self-growth/character.md); version 3 asks only about the people who wrote in the batch (DEC-280); version 2 added one account per listed person (DEC-278); version 1 was design/self-growth/character.md, DEC-182.
 change_policy: operator-only
 ---
 You are writing one short paragraph about **what a group is like** — a

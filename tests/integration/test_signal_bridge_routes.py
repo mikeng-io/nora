@@ -1293,7 +1293,7 @@ async def test_action_post_links_the_deliver_span_to_the_caller(
     injects the ambient span's `traceparent`, the shared `/v1/actions`
     boundary parses it into an OTel `Link`, and the bridge's `queue.deliver`
     bounded ROOT carries it — a real authenticated POST, no fabricated
-    context (design 04 §delivery)."""
+    context (design/platform-bridges/04-operations.md)."""
     bridge, client, daemon = bridge_app
     owner = await _work_owner(bridge, generation=3)
 

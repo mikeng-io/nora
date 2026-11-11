@@ -6,7 +6,7 @@ tags: [nora, standing, record, notes, memos, transcript]
 timestamp: '2026-10-25'
 edges:
   - {dst: 20-the-ledger, rel: motivates, provenance: asserted}
-  - {dst: ../../cognition-loop/threads.md, rel: extends, provenance: asserted}
+  - {dst: ../cognition-loop/threads.md, rel: extends, provenance: asserted}
 ---
 
 # 10 · What Standing holds
@@ -37,7 +37,7 @@ losing it is losing it.
 
 ## 3. Why this is not the accumulator live-threads ruled out
 
-[design/cognition-loop/threads.md](../../cognition-loop/threads.md) §2 found Standing cannot be
+[design/cognition-loop/threads.md](../cognition-loop/threads.md) found Standing cannot be
 the accumulator of what the room SAID, and that "a chain of positions is a
 history of what she *thought*". This bundle keeps that ruling and builds on its
 second half. A decision is what she thought, with its grounds; the room's words
@@ -46,7 +46,7 @@ accumulates her judgements, which nothing else in the tree holds.
 
 The same node's §3 found that a per-room paragraph hides which of five threads
 moved. Threads here carry their own last-moved time, which is that finding's
-fix on the Standing side; [design/cognition-loop/threads.md](../../cognition-loop/threads.md)
+fix on the Standing side; [design/cognition-loop/threads.md](../cognition-loop/threads.md)
 §2 is the same fix on the note side, and a thread that has a note links it
 instead of repeating its age.
 
@@ -66,7 +66,7 @@ between a note's `Owed` (what members owe each other) and Standing's `I owe`
   going on" becomes threads, "what she thinks" becomes decisions. Nothing is
   folded onto an earlier fold again.
 - **The free-standing working set** (`Found, not yet given`,
-  [standing-ledger/10-what-standing-holds.md](../../standing-ledger/10-what-standing-holds.md)). Its measured
+  [standing-ledger/10-what-standing-holds.md](../standing-ledger/10-what-standing-holds.md)). Its measured
   case (a search returned several restaurants, the reply sent two) is exactly
   a decision's `Options`, with the scores the working set had no room for.
 - **`recall_lookups`**, once [30](30-turn-records.md) §5's read replaces the job

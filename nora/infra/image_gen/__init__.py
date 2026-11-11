@@ -3,7 +3,7 @@
 
 DEC-137: the port is provider-agnostic; the composition root asks for a
 named provider and this module answers: `xai` (DEC-137) or `openai_codex`
-(DEC-304, design/video-generation/README.md §11). Any other `provider` value degrades to
+(DEC-304, design/video-generation/README.md). Any other `provider` value degrades to
 None (M6): the `generate_image` tool answers `unavailable` with
 a composition-side warning, exactly like an unset token — never a raise at
 boot and never a guessed provider.

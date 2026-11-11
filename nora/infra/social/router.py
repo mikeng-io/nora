@@ -311,7 +311,7 @@ class SocialRouter(SocialProvider):
                     "a Tier 0 reach check) and a backend for it is wired, but "
                     "no SocialSubjectIndex was given — the person index is the "
                     "only thing that may resolve a subject or decide reach "
-                    "(design/instagram-adoption/social.md, /18)"
+                    "(design/instagram-adoption/social.md)"
                 )
 
     def _provider_for(self, row: tuple[str, str]) -> SocialProvider | None:

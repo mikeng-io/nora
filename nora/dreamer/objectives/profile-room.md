@@ -4,7 +4,7 @@ kind: objective
 version: 6
 applies_to: [profile_room_adaptor]
 description: >-
-  One room's Profile (design/unified-memory/profiles.md §4). Reads the
+  One room's Profile (design/unified-memory/profiles.md). Reads the
   lines the account holds, the room's visible messages since the last
   session, and on the first session the room's prose Culture account; writes
   typed lines (facts, traits, guesses) with their reasoning mode and

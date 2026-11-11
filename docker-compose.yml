@@ -308,7 +308,7 @@ services:
       - NORA_BRIDGE_JOURNAL=/data/bridge/journal/instagram.jsonl
       - NORA_BRIDGE_PROJECTION_DIR=/bridge-projection
       - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora
-      # Tracing (design/instagram-adoption/bridge.md §Tracing): OTLP to the host's
+      # Tracing (design/instagram-adoption/bridge.md): OTLP to the host's
       # collector, the same endpoint Nora exports to. The collector routes the
       # spans to Jaeger (and to Langfuse when a trace carries a model call).
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://host.docker.internal:4318/v1/traces
@@ -320,7 +320,7 @@ services:
       - INSTAGRAM_COMMENT_DAILY_CAP=${INSTAGRAM_COMMENT_DAILY_CAP:-10}
       - INSTAGRAM_COMMENT_MIN_INTERVAL=${INSTAGRAM_COMMENT_MIN_INTERVAL:-90s}
       # The story and timeline reads' GraphQL doc_ids (design/cognition-loop/
-      # 22-social-stream.md §1a), from the host's .env: they rotate with
+      # design/cognition-loop/observation.md), from the host's .env: they rotate with
       # Instagram's web builds and are never in the repo. Unset is a 501.
       - INSTAGRAM_STORY_DOC_ID=${INSTAGRAM_STORY_DOC_ID:-}
       - INSTAGRAM_TIMELINE_DOC_ID=${INSTAGRAM_TIMELINE_DOC_ID:-}
@@ -752,7 +752,7 @@ services:
     restart: unless-stopped
     ports: ["127.0.0.1:3401:8080"]
 
-  # presence — the Life360 presence collector (design/19 §4). Same image as
+  # presence — the Life360 presence collector (DEC-55). Same image as
   # nora, a DIFFERENT command and a SEPARATE process: `python -m nora.presence`
   # polls each circle derived from identity.toml and records fixes into the
   # shared Postgres store. No build: stanza on purpose — it runs whatever
@@ -799,7 +799,7 @@ services:
       - TZ=Asia/Hong_Kong
     volumes:
       - ./config.toml:/app/config.toml:ro
-      # The circle/member mapping — the collector's entire roster (design/19 §3).
+      # The circle/member mapping — the collector's entire roster (DEC-54).
       - ./identity.toml:/app/identity.toml:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9101/health"]
@@ -831,7 +831,7 @@ services:
     volumes:
       - ./config.toml:/app/config.toml:ro
       - ./identity.toml:/app/identity.toml:ro
-      # The unit rollups (step 2, design/cognition-loop/observation.md §3) read
+      # The unit rollups (step 2, design/cognition-loop/observation.md) read
       # which rooms make up each unit and who its members are. Without it the
       # presence Rollup still runs and the unit rollups compute nothing.
       - ./policy.toml:/app/policy.toml:ro
@@ -974,7 +974,7 @@ services:
       start_period: 120s
       retries: 3
 
-  # db — Nora's own PostgreSQL record store (design/20 §3). Reached as `db:5432`
+  # db — Nora's own PostgreSQL record store (DEC-51). Reached as `db:5432`
   # on the private network; loopback publish (127.0.0.1:5435) lets host-side ops
   # (migrations, the one-time load, backups, the `nora groups` CLI) in without
   # exposing it off the box.
@@ -1126,7 +1126,7 @@ services:
       # above).
       - HOST=0.0.0.0
       # Audio-controller durable desired-state + event callback
-      # (design/voice-channel/audio.md, §3.3). Both match the defaults in
+      # (design/voice-channel/audio.md). Both match the defaults in
       # src/service.mjs; pinned here so the posture is explicit. The state
       # lives on the NAMED volume below, not a host bind mount (B-1: a bind
       # mount MASKS the image's chown of /var/lib/audio-controller — a fresh

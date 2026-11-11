@@ -758,8 +758,8 @@ class TagContext:
     # `notes`, filled by the tag and fire assemblers; `()` renders no block.
     memos: tuple[Memo, ...] = ()
     # The typed SOURCE events of the transcript window (design/platform-
-    # observations 04): poll/room/membership/pin/artifact transitions the
-    # bridge recorded, interleaved into the transcript by their own clock
+    # observations/observations.md): poll/room/membership/pin/artifact
+    # transitions the bridge recorded, interleaved into the transcript by their own clock
     # — typed rows, never a speaker's line and never a fabricated message.
     # `source_objects` is the room's folded object heads (the open poll,
     # the pin set), the Standing block's typed input; both empty while no
@@ -774,10 +774,10 @@ class TagContext:
     source_reads_failed: bool = False
     source_events_more: int = 0
     source_objects_more: int = 0
-    # `retained_sources` is the retained lane (design/platform-observations
-    # 03): `RetainedSource`s — this room's open notes' curated `object_refs`
-    # resolved against the store NOW, each with its CURRENT folded head or an
-    # explicit unresolved marker. An object an ongoing matter tracks stays in
+    # `retained_sources` is the retained lane (design/platform-
+    # observations/projections.md): `RetainedSource`s — the room's open notes'
+    # curated `object_refs` resolved NOW, each with its CURRENT folded head or
+    # an explicit unresolved marker. An object an ongoing matter tracks stays in
     # view after the recency page above would have evicted it; the state is
     # read fresh here, never copied onto the note.
     retained_sources: tuple[Any, ...] = ()
@@ -807,7 +807,7 @@ class TagContext:
     # `read_culture` keyed `nora_character_key(unit)` on the tag and fire turns.
     # `None` until the unit has one.
     self_account: CultureRevision | None = None
-    # THE SWITCH (design/unified-memory/profiles.md §5, `[memory.profile] read`): each entity
+    # THE SWITCH (design/unified-memory/profiles.md, `[memory.profile] read`): each entity
     # of this turn's Profile account — self, room, unit, then the persons — read
     # through `read_profile` and rendered as `<profile>` blocks INSTEAD of
     # `self_account`, `culture`, `unit_culture`, `character`, `peer_card`,
@@ -916,7 +916,7 @@ class TagContext:
     # while `[subagent]` is off, in a room with no job in the window, and in every harness
     # that wires no reader: the block then renders nothing.
     subagents: SubagentsView | None = None
-    # `<recalled>`, the pre-fetch (design/unified-memory/README.md step 3b, 25 §5):
+    # `<recalled>`, the pre-fetch (design/unified-memory/README.md):
     # the memory index searched from this message's own seeds before the
     # turn, as `nora.agent.memory_search.render_packet`'s items (the same
     # shape `memory_search` answers with), cut at `PREFETCH_TOKENS`. Tag turn

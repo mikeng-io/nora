@@ -4,7 +4,7 @@ kind: objective
 version: 1
 applies_to: [profile_verdict_adaptor]
 description: >-
-  The Profile verdict judge (design/unified-memory/profiles.md §3): the open
+  The Profile verdict judge (design/unified-memory/profiles.md): the open
   guesses of one unit whose prediction window has closed, judged by
   someone who did not write them. Code judges what a Rollup key can count;
   this session judges the rest, from the window's messages alone.

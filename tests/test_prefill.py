@@ -282,7 +282,7 @@ def _full_prefill_body() -> str:
 
 
 def test_the_standing_block_carries_position_findings_and_decisions():
-    """The ONE `standing` block (design/notebook-memory-types/20) reaches the
+    """The ONE `standing` block (design/notebook-memory-types/20-standing.md) reaches the
     model on BOTH the tag turn and the participation turn through this ONE
     function — `nora.app.fire`'s participation occasion calls the exact same
     `build_prefill` this test calls. The position, the not-yet-given

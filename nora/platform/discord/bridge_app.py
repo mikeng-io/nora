@@ -845,7 +845,7 @@ class DiscordBridge:
         session, s = frame
         return f"g:{session}:{s}"
 
-    # ---- upstream transition identity (design 00 §upstream identity) ---------
+    # ---- upstream transition identity (design/platform-bridges/00-contract.md) ---------
 
     def _reaction_ledger_key(self, msg: Any, raw: Any) -> str | None:
         """The durable per-(conversation,target,reactor,emoji,type) ledger
@@ -867,8 +867,8 @@ class DiscordBridge:
         """`(upstream, transition_record)` — the PROVEN upstream revision
         where one exists, the durable transition ledger's sequence where
         Discord sends none. `(None, ambiguous_record)` when neither can
-        establish identity: the event is retained as diagnostic evidence,
-        never deduplicated under a guessed key (design 00)."""
+        establish identity: retained as evidence, never deduplicated under
+        a guessed key (design/platform-bridges/00-contract.md)."""
         if msg.touch is not None:
             if msg.touch.kind == "delete":
                 # A delete names the message it removes — the target IS the
@@ -892,9 +892,9 @@ class DiscordBridge:
                         self._journal, ledger_key, state, wire)
                 return wire, None
             # No wire revision: a state change here is INDISTINGUISHABLE
-            # from a delayed replay of an old transition (design 02 §wire
-            # semantics) — only the recorded same-state redelivery may
-            # re-resolve, under the identity it originally committed.
+            # from a delayed replay of an old transition — only the recorded
+            # same-state redelivery may re-resolve, under the identity it
+            # originally committed (design/platform-bridges/02-wire-and-platforms.md).
             if ledger_key is not None and self._journal is not None:
                 identity, transition = resolve_clockless_transition(
                     self._journal, ledger_key, state)
@@ -943,7 +943,7 @@ class DiscordBridge:
         carried = list(carried)
         # The ONE short producer root for this capture — created at the
         # boundary, its context frozen onto the envelope BEFORE the
-        # journal append inside `capture` (design 04 §producer).
+        # journal append inside `capture` (design/platform-bridges/04-operations.md).
         with bt.producer_span(PLATFORM, kind=kind) as carrier:
             if self._custody_dir is not None:
                 # Custody is a bounded op LINKED to this capture — never a

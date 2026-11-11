@@ -62,7 +62,7 @@
 #   would be against production. These cases are anchored on records the
 #   restore holds (messages, readings, notes, outings); none of them measures
 #   recall that only Honcho holds, and none can until memory is replayed
-#   (design/evaluation/subject.md §3).
+#   (design/evaluation/subject.md).
 # - OUTINGS. A tag turn cannot read the Rollup at all: `rollup_read` is
 #   Dreamer-only (`nora/agent/surface.py`, DREAMER_LOOP_TOOLS). J4 is EXPECTED
 #   TO FAIL TODAY, and this corpus is the before arm for the change that gives

@@ -1,7 +1,7 @@
 ---
 type: analysis
 title: "Decisions, What They Supersede, What Is Landing Tonight, And The Issues Re-Read As Seams"
-description: "Five decisions from DEC-176 (#173 holds 163..175). DEC-178 is demoted from version 1's decision to an open question with the experiment attached. What in design 39, 35, GLOSSARY and ARCHITECTURE is superseded — and what is not, including the two-layer gate that version 1 wrongly tried to reverse. The migration as the six branches actually in flight on 2026-09-11, and the open issues re-pointed at the seam each sits on."
+description: "Five decisions from DEC-176 (#173 holds 163..175). DEC-178 is demoted from version 1's decision to an open question with the experiment attached. What in design/cognition-loop/proactive.md, design/ambient-loop/01-stages-and-seams.md, GLOSSARY and ARCHITECTURE is superseded — and what is not, including the two-layer gate that version 1 wrongly tried to reverse. The migration as the six branches actually in flight on 2026-09-11, and the open issues re-pointed at the seam each sits on."
 tags: [nora, ambient, ooda, decisions, migration]
 timestamp: '2026-09-11'
 edges:
@@ -30,7 +30,7 @@ memory layer, two deciders and the fire path — and **it is named as the
 system's**. The tag path is the other backbone and **feeds the loop**: its
 debrief writes Standing and proposes notes.
 
-*Revises* design 39 §1's framing (tag as the loop's passive half). *Evidence:*
+*Revises* design/cognition-loop/proactive.md's framing (tag as the loop's passive half). *Evidence:*
 #199 — five seams crossed in ninety minutes, none inside a component; `01 §1`.
 *Reopens if* a seam failure is closed with no cross-stage input. That test
 already sorted two of v1's claims out of the seam list (`01 §3`) and is the
@@ -39,8 +39,8 @@ reason the list is now honest.
 ### DEC-177 — Decide has two deciders, each two-layer, and they must see each other
 
 Participation (gate → turn) and proactive (decide → act) are one stage asked
-two questions on two triggers. **The gate's layer stays exactly as design 36
-§6 decided it:** cheap, transcript + Standing, blind to notes and memory, a
+two questions on two triggers. **The gate's layer stays exactly as design/ambient-loop/01-stages-and-seams.md
+§2.3 records it:** cheap, transcript + Standing, blind to notes and memory, a
 pure function that writes nothing. The **turn** behind it holds everything.
 What gains sight of the other decider's recent verdicts is the participation
 turn, the proactive turns, and the tag path — never the gate.
@@ -68,7 +68,7 @@ cases. Decided by that number, not by argument. Not landing tonight.
 | Observe → Orient | a batch names its room and carries the operator's description | a bug fix and a `policy.toml` field |
 | the medium | DEC-178 | a measurement |
 
-*Reopens if* an `is_nora` row ever grounds a discharge (39 D7), or if closure
+*Reopens if* an `is_nora` row ever grounds a discharge (design/cognition-loop/proactive.md), or if closure
 by her own row starts driving retirement on its own — that is the stamp
 becoming a strike, which `record_wake` already is.
 
@@ -90,10 +90,10 @@ that is unmeasured cannot be tuned at all.
 
 | where | says | becomes |
 |---|---|---|
-| design 39 §1 | "one loop, two entry points", tag at Act | framing revised by `00 §2`; D1–D13 stand; the brake table stands **except one row narrowed** — «Nora's message → note \| curator filter», per DEC-179 |
-| design 39 D9 | `load_transcript` dropped from the decide turn | **stands, with its reversal condition now fired by #199** — the smallest answer is the shared log, not the transcript |
-| design 36 §6 | the gate sees transcript + Standing and nothing else | **stands, untouched.** v1 tried to reverse it with notes; v2 tried again with a `<decisions>` block that carried note titles. Neither lands |
-| design 35 | participation as the fifth Event | stands as the mechanism; the *role* is the participation decider |
+| design/cognition-loop/proactive.md | "one loop, two entry points", tag at Act | framing revised by `00 §2`; D1–D13 stand; the brake table stands **except one row narrowed** — «Nora's message → note \| curator filter», per DEC-179 |
+| design/cognition-loop/proactive.md | `load_transcript` dropped from the decide turn | **stands, with its reversal condition now fired by #199** — the smallest answer is the shared log, not the transcript |
+| design/ambient-loop/01-stages-and-seams.md §2.3 | the gate sees transcript + Standing and nothing else | **stands, untouched.** v1 tried to reverse it with notes; v2 tried again with a `<decisions>` block that carried note titles. Neither lands |
+| design/ambient-loop/01-stages-and-seams.md | participation as the fifth Event | stands as the mechanism; the *role* is the participation decider |
 | GLOSSARY *ambient*, *proactive* | a message she records; the loop as the adaptor's | an `ambient loop` entry names the backbone; *proactive* points at it |
 | ARCHITECTURE "two paths, and a background tier" | | two backbones; the two deciders named among the seven occasions |
 
@@ -111,13 +111,13 @@ tree they left behind):
 | E2 | a per-pass memory budget in code | inside the proactive decider | #160 |
 | G1 | the #199 journey case | the positive control | — |
 | D | the decision log store + both renders | Decide ↔ Decide | — |
-| H | **the participation turn reads memory** — `<self_card>` + `<people_in_window>` behind the blind gate, and the proactive `<people>` index gains one conclusion per member so #206's 2-read ration buys depth (39 D9) | the medium — the half `01 §1`'s memory column had WRONG, not the half DEC-178 defers | #210 |
+| H | **the participation turn reads memory** — `<self_card>` + `<people_in_window>` behind the blind gate, and the proactive `<people>` index gains one conclusion per member so #206's 2-read ration buys depth (design/cognition-loop/proactive.md) | the medium — the half `01 §1`'s memory column had WRONG, not the half DEC-178 defers | #210 |
 
 H is not a seam crossing and is listed here anyway, because it is the row that
 says what `01 §1`'s correction cost: the cell read «✓ peer card» while the turn
 held nothing. It does not touch DEC-178, which is about the NOTE tier and stays
 open with its experiment attached; it does not touch the gate, which stays
-exactly as 36 §6 decided it.
+exactly as design/ambient-loop/01-stages-and-seams.md §2.3 decided it.
 
 **H landed MEASURED, NOT SHIPPED.** Both arms of `make eval-participation`
 (2026-09-11, 5 samples per case) returned 10/15, false-speaks none, and every

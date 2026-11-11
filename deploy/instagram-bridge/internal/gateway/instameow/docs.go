@@ -1,7 +1,7 @@
 package instameow
 
 // The GraphQL documents the library does NOT carry: the web app's story read
-// and its profile timeline (design/cognition-loop/observation.md §1a).
+// and its profile timeline (design/cognition-loop/observation.md).
 //
 // `graphql` (call.go) sends a document by its friendly name, and the library
 // looks the doc_id up in its own table (`graphql.GraphQLDocs`) and always
@@ -11,9 +11,9 @@ package instameow
 //     this repo either: a doc_id ROTATES when Instagram ships a new web build,
 //     so each is configuration (INSTAGRAM_STORY_DOC_ID,
 //     INSTAGRAM_TIMELINE_DOC_ID), captured from the logged-in web client the
-//     way §1a describes;
+//     way the web client's queries show;
 //   - the timeline document goes to `/graphql/query`, not `/api/graphql`.
-//     Captured that way from the web client (§1a); the library has no
+//     Captured that way from the web client; the library has no
 //     endpoint for it.
 //
 // So graphqlDoc builds the SAME request `MakeGraphQLRequest` builds
@@ -26,15 +26,15 @@ package instameow
 //
 //   - ONE attempt (`MakeRequestOnce`), not the library's retry loop, which
 //     re-sends a 5xx up to five more times. The story REST read this replaces
-//     answered 500 on every call (§1, 2026-10-16); retried, each poll would
-//     spend six calls of the login's budget (§4) on one answer;
+//     answered 500 on every call (measured 2026-10-16); retried, each poll would
+//     spend six calls of the login's budget on one answer;
 //   - the `referer` is the page the web client sends the document from (a
 //     profile for the timeline), not the library's `/direct/inbox/`.
 //
 // # A read sends the read, and nothing that marks it seen
 //
 // The web viewer marks a story seen with a SEPARATE mutation
-// (`PolarisStoriesV3SeenMutation`, §1). graphqlDoc refuses any document whose
+// (`PolarisStoriesV3SeenMutation`). graphqlDoc refuses any document whose
 // name says it is a mutation or a seen-mark, before anything is sent, so no
 // later edit to a friendly name can turn a read into a view receipt.
 
@@ -86,7 +86,7 @@ func (q QueryDocs) Problem() error {
 	return nil
 }
 
-// The two endpoints, as the web client posts to them (§1a).
+// The two endpoints, as the web client posts to them.
 const (
 	graphqlAPIEndpoint   = restOrigin + "/api/graphql"
 	graphqlQueryEndpoint = restOrigin + "/graphql/query"
@@ -156,7 +156,7 @@ func graphqlDoc(
 }
 
 // staleMarkers are what an error naming the DOCUMENT, rather than the data,
-// says. UNMEASURED: no rotated doc_id has been sent yet (§1a: "what a rotated
+// says. UNMEASURED: no rotated doc_id has been sent yet (what a rotated
 // id answers is not measured"). The words are the ones GraphQL servers use
 // for an unknown persisted query, plus the document's own name and id, so an
 // error that names this document is caught whatever its wording.
@@ -257,7 +257,7 @@ func docAnswer(span trace.Span, label string, d webDoc, raw []byte, errs []graph
 
 // staleQuery is ErrStaleQuery, with the span marked. NOT a session problem:
 // the caller never runs sessionRejected on it, and the poller halts only this
-// read (§4).
+// read.
 func staleQuery(span trace.Span, label string, d webDoc, e graphQLError) error {
 	span.SetAttributes(
 		attribute.Int("instagram.graphql.error_code", e.Code),

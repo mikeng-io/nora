@@ -1859,7 +1859,7 @@ def _database_url(cfg: Config) -> str:
             f"environment variable {cfg.store.database_url_env} is not set — it "
             "must hold the PostgreSQL URL of the record store. After cutover this "
             "command runs via `docker exec` into a nora-network container, where "
-            "the container already carries it (design/20 §3)."
+            "the container already carries it (DEC-51)."
         )
     return url
 

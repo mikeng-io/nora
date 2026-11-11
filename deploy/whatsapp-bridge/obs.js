@@ -2,7 +2,7 @@
  * Bridge observability: low-cardinality Prometheus metrics + a sanitized
  * JSON lifecycle line for the durable path.
  *
- * Hard rules (design 04 §observability): labels are closed enums only —
+ * Hard rules (design/platform-bridges/04-operations.md): labels are closed enums only —
  * never an event id, conversation id, JID, phone, action id, or any
  * sender-supplied content. The lifecycle log may carry opaque correlation
  * ids (`event_id`, `action_id`, stream ids — HMAC aliases, not platform

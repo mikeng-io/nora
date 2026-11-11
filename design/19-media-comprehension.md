@@ -105,7 +105,7 @@ media_fetch                  layer 1: serve the stored reading
 The asymmetry is the argument. `[image a3f2c1]` is a **promise that `a3f2c1` can
 be produced**, so the copy runs before the audit write — spawning it would write
 the promise first and keep it second, which is the exact A9 violation
-`design/18` exists to end, reintroduced in a smaller size (DEC-43 §5).
+`design/18-media-custody.md` exists to end, reintroduced in a smaller size (DEC-43 §5).
 
 **Comprehension has no such property.** An un-comprehended image is exactly the
 state every image was in before this existed, so a comprehension that lands

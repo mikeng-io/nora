@@ -97,7 +97,7 @@ Webhooks (topic `mentions`) would cut latency. They need a public HTTPS
 callback with `X-Hub-Signature-256` verification, and **nothing in this stack
 receives inbound internet traffic to Nora today.** `nora/web/api.py` is GET
 only, on :9100, internal. The one public listener, `drop`, deliberately
-carries no write route (design §5a of Nora Drop). A webhook route would be
+carries no write route (the retired Drop record). A webhook route would be
 Nora's first public inbound endpoint, a bigger decision than this feature
 needs. Polling at 30 s puts a summons about 15 s behind on average, which is
 within what a person tolerates for a researched public answer. **This holds

@@ -1,6 +1,6 @@
 """fact_asserter -- WHO claimed it, which `established_by` never said
 
-`design/cognition-loop/data.md` §7. `established_by` holds
+`design/cognition-loop/data.md` «One direction of flow» `established_by` holds
 the RUN that produced a fact -- the tick. Nothing anywhere recorded the human
 who asserted the claim, and for a tier whose job is belief that is the wrong
 direction: corroboration and disagreement are properties of WHO said it.

@@ -1,11 +1,11 @@
 // Package httptransport is the bridge's HTTP surface: routes, request
 // parsing, response DTOs and the status mapping
-// (design/instagram-adoption/bridge.md §Layers, 17 P8, P14). Handlers are thin: they
+// (design/instagram-adoption/bridge.md). Handlers are thin: they
 // parse the path ids and the body, call ONE use case, and write what it
 // returned. They import the use cases and the domain, never instameow and
 // never a wire struct.
 //
-// The routes are 16 §Resources' table: nouns (a thread, its messages, an
+// The routes are design/instagram-adoption/bridge.md «Messaging contract»:' table: nouns (a thread, its messages, an
 // account, a post), plus the two paths where the bridge talks about ITSELF
 // (`/health`, `/events`), which are operational and not resources.
 //
@@ -81,12 +81,12 @@ func (s *Server) Routes() http.Handler {
 	// proposed `GET /profile-social` (a path named after which BACKEND a field
 	// came from, which is not a resource). Renamed 2026-09-22. The writes were
 	// verbs, `POST /send`, `/send-media`, `/react`, `/typing` and `/unsend`;
-	// P14 moved them onto the thread and DELETED the verbs (17 §P14), in the
+	// bridge.md moved them onto the thread and DELETED the verbs (), in the
 	// same change that moved Nora's adapter. An old path is the mux's 404.
 	//
 	// Each route is traced by its PATTERN (the span name and `http.route`).
 	// The thread routes use Route: their path carries a thread id and a
-	// message id, both allowed in a span (16 §Tracing). A route whose path
+	// message id, both allowed in a span (design/instagram-adoption/bridge.md «Observation»). A route whose path
 	// segment names somebody's content uses PatternOnlyRoute instead.
 	mux.HandleFunc("GET /threads/{thread_fbid}/members", observability.Route("GET /threads/{thread_fbid}/members", s.handleRoster))
 	mux.HandleFunc("POST /threads/{thread_fbid}/messages", observability.Route("POST /threads/{thread_fbid}/messages", s.handleSendMessage))
@@ -101,16 +101,16 @@ func (s *Server) Routes() http.Handler {
 	// answered.
 	mux.HandleFunc("GET /accounts/{igid}", observability.Route("GET /accounts/{igid}", s.handleProfile))
 	// The only path to a story anywhere. The social stream's poller reads
-	// members' stories (design/cognition-loop/observation.md §3), and
-	// the read never marks one seen (§1). A sub-resource of the account,
+	// members' stories (design/cognition-loop/observation.md), and
+	// the read never marks one seen. A sub-resource of the account,
 	// because that is what it is.
 	mux.HandleFunc("GET /accounts/{igid}/story", observability.Route("GET /accounts/{igid}/story", s.handleStory))
 	// One page of the account's posts and reels, newest first, paged by
-	// `?after=` (§1a, §7). PatternOnlyRoute: the page is somebody's content,
+	// `?after=`. PatternOnlyRoute: the page is somebody's content,
 	// and the cursor is Instagram's opaque state, neither of which may become
 	// a span attribute value.
 	mux.HandleFunc("GET /accounts/{igid}/items", observability.PatternOnlyRoute("GET /accounts/{igid}/items", s.handleItems))
-	// One post, every item in it (17 P12). Traced by PATTERN ONLY: the
+	// One post, every item in it (). Traced by PATTERN ONLY: the
 	// shortcode names somebody's post and never becomes a span attribute
 	// value.
 	mux.HandleFunc("GET /posts/{shortcode}", observability.PatternOnlyRoute("GET /posts/{shortcode}", s.handlePost))
@@ -120,7 +120,7 @@ func (s *Server) Routes() http.Handler {
 	// routes already get from it.
 	mux.HandleFunc("GET /mentions", observability.PatternOnlyRoute("GET /mentions", s.handleMentions))
 	// A post's comments, and the bridge's ONE public write: a reply under a
-	// summons (comments.go; design 19). PatternOnlyRoute: the shortcode names
+	// summons (comments.go; design/instagram-adoption/summons.md). PatternOnlyRoute: the shortcode names
 	// somebody's post, and the reply_to query and the body carry comment ids
 	// and people's words, none of which may become a span attribute.
 	mux.HandleFunc("GET /posts/{shortcode}/comments", observability.PatternOnlyRoute("GET /posts/{shortcode}/comments", s.handleComments))

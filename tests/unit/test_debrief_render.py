@@ -329,7 +329,7 @@ def test_the_steps_block_description_names_the_working_set():
 
 def test_every_block_renders_whole_no_matter_its_size():
     """The fold reads the COMPLETE retained Record (design
-    notebook-memory-types/20: a decision at a block's end must reach the
+    notebook-memory-types/20-standing.md: a decision at a block's end must reach the
     updater) — narration, tool calls and thinking steps all render their
     full text, never a sliced fragment with a clip mark."""
     metrics = Metrics()

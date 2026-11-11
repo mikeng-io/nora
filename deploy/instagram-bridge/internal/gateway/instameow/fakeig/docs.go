@@ -2,7 +2,7 @@ package fakeig
 
 // The configured GraphQL documents' answers (the gateway's docs.go), as
 // LITERAL JSON bytes in the shapes captured from the web client in S0
-// (design/cognition-loop/observation.md §1a). Every value is synthetic:
+// (design/cognition-loop/observation.md). Every value is synthetic:
 // short placeholder ids, placeholder CDN paths, placeholder usernames.
 
 import (
@@ -72,7 +72,7 @@ const TimelineOwnerIGID = "246967358"
 // TimelineFirstPageJSON is a page with more after it: a reel, a carousel
 // post, and a post with no caption, newest first. Each node names its owner
 // twice, in the `<pk>_<owner>` id and in `user.pk`. Their counts are the
-// three measured shapes (22 §1): a null `media_repost_count`, a number, and
+// three measured shapes (design/cognition-loop/observation.md): a null `media_repost_count`, a number, and
 // no key at all on a post whose author hid its likes.
 const TimelineFirstPageJSON = `{"data":{"xdt_api__v1__feed__user_timeline_graphql_connection":{
   "edges": [

@@ -58,7 +58,7 @@ RUN mkdir -p /app/data && chown -R nora:nora /app
 
 # WHICH COMMIT this image was built from, and when, for every build and not
 # only a stamped release: the deploy revision each process start records
-# (`nora.app.revisions`, design/cognition-loop/README.md §5) reads
+# (`nora.app.revisions`, design/cognition-loop/README.md «Invariants») reads
 # them, so "what code was running at T" is answerable on an ordinary,
 # unversioned deploy too. `.git` is not in the build context
 # (`.dockerignore`), so the sha arrives as a build argument: the build

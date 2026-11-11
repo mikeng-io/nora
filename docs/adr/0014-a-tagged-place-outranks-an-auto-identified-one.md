@@ -1,13 +1,13 @@
 # 0014 — A tagged place outranks an auto-identified one
 
-- **Status:** accepted — built 2026-09-27 (design/27 §1.4)
+- **Status:** accepted — built 2026-09-27 (design/cognition-loop/observation.md)
 - **Date:** 2026-09-17
 - **Reverses, in part:** DEC-115 point (4) — "Life360's saved labels are a
   naming HINT and never the authority". Reversed for **identity and name**,
   upheld for **geometry**. DEC-115's fail-closed three-state labelling is
   unchanged; it now labels a place that already exists rather than deciding
   whether one exists.
-- **Index:** DEC-190. Argument: `design/cognition-loop/observation.md` §3.7.
+- **Index:** DEC-190. Argument: `design/cognition-loop/observation.md`
   Built 2026-09-27; the regressions below are in `tests/unit/test_place_identity.py`.
 
 ## Context
@@ -15,7 +15,7 @@
 `presence_derived_places` is written by one method, `upsert_place`, which keeps
 **one row per `(subject_id, kind)`** with `kind IN ('home','work','unlabeled')`
 and never stores `unlabeled` at all — a downgrade deletes the row. Read as a
-schema rather than a vocabulary, `design/27` §3.4's "a place is home, work, or
+schema rather than a vocabulary, `design/cognition-loop/observation.md`'s "a place is home, work, or
 unlabeled" is therefore a **cardinality ceiling: at most one home and one work
 per subject.**
 
@@ -49,7 +49,7 @@ subject demonstrably has three places; the third has nowhere to live.
 
 `presence_places` — Life360's saved places — is an unbounded, human-named
 registry with stable ids, already joined to the Alembic chain, already the table
-`design/23 §4` resolves names against for routing.
+`design/system/grounding.md` resolves names against for routing.
 `presence_derived_places.saved_place_id` was reserved for it when the table was
 created and has never been populated.
 
@@ -103,7 +103,7 @@ where someone is rather than print a coordinate.
 
 **What gets worse, and must be accepted deliberately:**
 
-- **Evidence per place gets thinner.** `design/27` §4.1 measures that
+- **Evidence per place gets thinner.** `design/cognition-loop/observation.md` measures that
   time-anchored occupancy already loses to a trivial baseline for subjects who
   are almost always in one place, because per-bin evidence is thin. More places
   per subject makes every bin thinner. This is a regression for exactly the

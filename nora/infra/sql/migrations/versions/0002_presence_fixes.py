@@ -1,6 +1,6 @@
-"""presence_fixes — the presence collector's record (design/19 §3, §8)
+"""presence_fixes — the presence collector's record (design/self-awareness/presence.md, §8)
 
-A second table in the SAME `nora` database as `messages` (design/20), PLAINTEXT
+A second table in the SAME `nora` database as `messages` (design/cognition-loop/data.md), PLAINTEXT
 (DEC-54). It joins everything else on `person_id`, which is why presence lives
 here rather than in a separate store.
 
@@ -40,7 +40,7 @@ def upgrade() -> None:
         sa.Column("circle_id", sa.Text, nullable=False),
         sa.Column("person_id", sa.Text, nullable=False),
         # BigInteger (INT8): Life360 fix timestamps are epoch ms (~1.78e12),
-        # which overflow INT4 exactly as Signal's do (design/20 §2).
+        # which overflow INT4 exactly as Signal's do (design/cognition-loop/data.md).
         sa.Column("ts", sa.BigInteger, nullable=False),
         sa.Column("lat", sa.Float, nullable=False),
         sa.Column("lng", sa.Float, nullable=False),

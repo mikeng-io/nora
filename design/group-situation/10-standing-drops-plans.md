@@ -7,7 +7,7 @@ timestamp: 2026-09-25
 status: measured
 edges:
   - {dst: 00-intent.md, rel: follows, provenance: asserted}
-  - {dst: ../../standing-ledger/40-verification.md, rel: measures, provenance: asserted}
+  - {dst: ../standing-ledger/40-verification.md, rel: measures, provenance: asserted}
   - {dst: ../cognition-loop/data.md, rel: measures, provenance: asserted}
 ---
 
@@ -26,7 +26,7 @@ minutes earlier had dropped it. This node asks how often that happens.
 The rule it measures is already written down. The fold objective
 (`nora/dreamer/objectives/standing-debrief.md`) says «what is still undecided»
 belongs, and «a plan still open keeps its date». The standing-compact eval's
-`carry` kind (`design/standing-ledger/40-verification.md`) tests «a thread the
+`carry` kind (`evals/corpora/standing.yaml`) tests «a thread the
 prior held, which this turn did not touch, is still held». This study checks
 that rule against production folds instead of the corpus.
 
@@ -115,7 +115,7 @@ committed instrument (§4).
   and drops 1 and 2 are among them. The paragraph below stands as a reading
   of the old fold, not of today's. On today's fold (the 79 pairs written
   after 7fdb24b4) the confirmed drops are one substantive (drop 5) and one
-  minor. See `design/standing-ledger/10-what-standing-holds.md` §6 for what that does
+  minor. See `design/standing-ledger/20-the-ledger.md` for what that does
   to the build.
 - **Most folds with no new rows still rewrite nearly everything.** 11 pairs had
   no new message rows between them. The rows had already been folded, so the

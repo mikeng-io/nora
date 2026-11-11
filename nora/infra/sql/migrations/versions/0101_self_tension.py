@@ -1,7 +1,7 @@
 """self_tension — where a lesson Nora would have learned pulls against the law.
 
-Design/self-growth/lessons.md §4-§5, step L3; design/cognition-loop/data.md
-§4. When the doctrine check (a separate instrument call) finds that a lesson would
+design/self-growth/lessons.md «Checked writes» (step L3). When the doctrine check
+(a separate instrument call) finds that a lesson would
 loosen or contradict a LAW rule (DEC-291), the lesson is refused and one row is
 written here: the rule quoted with its file and line, what the lesson would have
 said, the evidence it cited, and the instrument's reason. OPERATOR-ONLY: no read

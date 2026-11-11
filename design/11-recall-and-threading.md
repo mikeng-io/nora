@@ -189,7 +189,7 @@ millisecond is on the tag budget. Therefore:
 ## 1.5 Privacy
 
 **Alias resolution as a lookup target is safe only if the target set is bounded
-before any alias is consulted.** design/10 §1.3 says aliases are comprehension-only
+before any alias is consulted.** design/10-identity-and-policy-schema.md §1.3 says aliases are comprehension-only
 and never resolve a SENDER; here they would resolve a lookup TARGET, which is a
 different operation with a different exposure.
 

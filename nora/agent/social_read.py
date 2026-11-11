@@ -1,10 +1,10 @@
 """What `social_read` shows of one person's recorded social items
-(design/cognition-loop/observation.md §6): each item saying what it is
+(design/cognition-loop/observation.md): each item saying what it is
 and how old it is, its caption as the author's published words, what its media
 were read as, and its location only where the room may place the person.
 
-**Two lineage kinds, both the declared predicates** (design/cognition-loop/data.md
-§4, `nora.agent.lineage`). The item is `social` (P): room B may be shown it
+**Two lineage kinds, both the declared predicates** (design/cognition-loop/data.md,
+`nora.agent.lineage`). The item is `social` (P): room B may be shown it
 when B lists P, so the tool resolves the person among the people B lists and
 nobody else. A location tag places P somewhere at a time, so it is `presence`
 (P): B's `location` flag AND the live DisclosureGuard. A room that may see the

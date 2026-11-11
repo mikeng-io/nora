@@ -195,7 +195,8 @@ def test_the_practice_and_character_examples_in_30_section_1_are_not_law():
     assert "Banter takes a welcome opening" in everything
 
 
-#: Current boundaries, including the neutral identity revision. These anchors name the current source classification.
+#: Current boundaries, including the neutral identity revision. These anchors
+#: name the current source classification.
 CURRENT_CLASSIFICATION_BOUNDARIES = (
     ("core/constraints.md", "Your public name, AI nature, appearance", "law"),
     ("core/identity.md", "Your public source repository", "character"),

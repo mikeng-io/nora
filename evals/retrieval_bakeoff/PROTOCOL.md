@@ -21,7 +21,7 @@ fixed before it was written. Design source:
 | `labels.lock` | sha256 of `set.yaml`, `media.yaml`, `texts.yaml`, `labels.yaml` and `labels_text.yaml` |
 | `run.py` | the harness: loads the locked set, runs each arm fail-closed, scores it, writes one aggregates-only result |
 | `adapters.py` | one embedder per serving path (Ollama, llama-server, sentence-transformers), with each model's prefix and dtype rule |
-| `decide.py` | the decision rule over fused results (design/unified-memory/graph.md «Slices and margins») |
+| `decide.py` | the decision rule over fused results (design/unified-memory/graph.md) |
 | `results/` | one JSON per run: aggregates and provenance, no vector and no text |
 
 `tests/evals/test_bakeoff_set.py` enforces the shape: the three journey slices
@@ -194,7 +194,7 @@ The sections above were written for `text_image`. Where the text slices differ,
 this section governs them; where it is silent, the rules above hold with
 "message" for "image".
 
-**What they test** (design 20, «Slices»): `cantonese` is a message found by a
+**What they test** (design/unified-memory/graph.md «Retrieval»): `cantonese` is a message found by a
 later question about it, across written Cantonese, English, mixed script and
 romanised Cantonese, with slang and near-duplicates; `names` is a message found
 by an invented game title, an invented handle or a Hong Kong place name inside
@@ -217,7 +217,7 @@ could not tell them apart.
 **Time is part of the input.** A query may say "this week" or "last month",
 so each slice states the moment its queries are asked (`as_of`), and the
 labellers judge a time constraint by the message's `sent` against `as_of`.
-In stages 1–3 (lexical, dense, fused; design 20) every arm indexes the message
+In stages 1–3 (lexical, dense, fused; design/unified-memory/graph.md «Retrieval») every arm indexes the message
 text alone and is never shown `sent`. A query whose relevant message and one
 of its hard negatives say the same thing and differ only in when they were
 sent is therefore a tie for every arm: no arm can rank the right one first

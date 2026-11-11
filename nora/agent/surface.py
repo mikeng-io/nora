@@ -56,7 +56,7 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
 #: `character_read` shows the unit's accounts; it would join the tag path only
 #: after a `tool_selection` run (`nora-tool`). `social_read` reads the social
 #: stream's recorded items; the tag path keeps the live `instagram_*` reads
-#: instead (design/cognition-loop/observation.md §2). Neither of those two is a tag-path
+#: instead (design/cognition-loop/observation.md). Neither of those two is a tag-path
 #: tool, so a reply neither pays their prompt nor can route to them, and the
 #: Relevance Gate's capability digest does not offer them as something she can
 #: serve (`ToolRegistry.capability_digest`).

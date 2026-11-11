@@ -113,9 +113,9 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # Her own Character · Nora for the unit first, directly
     # after the doctrine (the system prompt). No block while the unit has no account.
     ("self", 5, "turn"),
-    # THE SWITCH (45 §5): her Profile account instead of the prose `self`
-    # when `[memory.profile] read` is on; the grounder fills one or the other,
-    # never both, so the shared order cannot collide.
+    # THE SWITCH (design/unified-memory/profiles.md): her Profile account
+    # instead of prose `self` when `[memory.profile] read` is on; the grounder
+    # fills one or the other, never both, so the shared order cannot collide.
     ("profile", 5, "turn"),
     ("clock", 10, "turn"),
     ("reads", 20, "turn"),
@@ -883,7 +883,7 @@ def _register(
             attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
             when_empty="self_close",
         ), _ROW))
-    # Standing: each agenda room's folded source-object state (design 05) —
+    # Standing: agenda rooms' folded source objects (design/platform-observations/observations.md) —
     # the open poll, the pin set, the member count — typed rows under ONE
     # block, on the Register's own budget row. A gap/unordered head says so
     # (`ordering`); a partial snapshot says what it covers, never the whole.
@@ -933,9 +933,9 @@ def _register(
              ("not_listed", str(left) if left else None)],
             "\n".join(rows),
         ))
-    # The retained lane (design 03): an open matter's curated refs, each
-    # resolved NOW off the recency page — `matter` names the note tracking
-    # it, and an unresolved ref says so rather than vanishing.
+    # The retained lane (design/platform-observations/projections.md): an
+    # open matter's curated refs, each resolved NOW off the recency page —
+    # `matter` names the note, and an unresolved ref says so, never vanishes.
     for room in rooms:
         retained = grounding.retained_objects.get(room_key(room), ())
         if not retained:
@@ -1070,9 +1070,9 @@ def render_agenda(
     what the eval probe hands the model and nothing else does."""
     blocks: list[ContextBlock] = []
     now = None if now_ms is None else datetime.fromtimestamp(now_ms / 1000, tz=tz)
-    # THE SWITCH (45 §5): her Profile account, when the grounder read one,
-    # replaces the prose `<self>` at the same row. `profile_names` was
-    # resolved by the grounder, which holds `Persons`; this renderer does not.
+    # THE SWITCH (design/unified-memory/profiles.md): her Profile account, when
+    # the grounder read one, replaces prose `<self>` at the same row.
+    # `profile_names` was resolved by the grounder holding `Persons`; this renderer does not.
     if grounding is not None and grounding.self_profile is not None and now is not None:
         profile_block = restamp(
             render_profile(

@@ -1,5 +1,5 @@
 """`ProfileCollectiveAdaptor`: a room's, the unit's and Nora's Profile
-sessions in shadow (design/unified-memory/profiles.md §4) — the person session's
+sessions in shadow (design/unified-memory/profiles.md) — the person session's
 checked writer over each collective's own evidence.
 
 Through the real `SqlProfileStore`, because what a collective session can

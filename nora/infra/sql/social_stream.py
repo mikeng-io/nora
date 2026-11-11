@@ -1,7 +1,7 @@
 """The social stream's Record: `social_item`, `social_poll`, `social_item_state`
 (`0107_social_stream`), `social_perception` (`0108_social_perception`) and the
 `blob_tombstone` a story frame's deleted bytes leave (`0109_blob_tombstone`),
-design/cognition-loop/observation.md §5.
+design/cognition-loop/observation.md
 
 Shaped like `nora.infra.sql.otp`: the engine comes through `__init__` and each
 verb is one transaction. Every table is APPEND-ONLY, so there is no UPDATE and
@@ -42,7 +42,7 @@ whose person has `social = false` (`opted_out`, given at construction) and an
 item with a `gone` or `hidden` state row. The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
 
-**The memory index follows every write** (design/cognition-loop/observation.md §9):
+**The memory index follows every write** (design/cognition-loop/observation.md):
 `insert_item`, `record_state` and `record_perception` each project the item
 (`nora.infra.sql.memory_index.project`, kind `social`) inside their own
 transaction, so a new item is searchable, a gone or hidden one stops being,

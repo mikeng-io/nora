@@ -29,7 +29,7 @@ channel, `40-shared-venue.md`) and grew. The venue stays as the first building.
 ## 2. The rule everything else follows
 
 **The world is a View, not a store.** In the data model (DEC-249,
-`design/cognition-loop/data.md` §1 and §6) a View is a per-reader
+`design/cognition-loop/data.md` «Layers by authority» and  «Citations, links and search») a View is a per-reader
 slice assembled at read time through one path, under withdrawal, and never
 stored as data. The world is one more portal View:
 
@@ -77,7 +77,7 @@ the same page can be wrapped as an Activity later (`50-open-questions.md` §1).
 | part | can start | waits on |
 |---|---|---|
 | base, avatars (the person's look), the venue | now | nothing in memory |
-| the projection | after the Register, Character and Standing kinds converge on the entry | the entry migration (`design/cognition-loop/data.md` §9) |
+| the projection | after the Register, Character and Standing kinds converge on the entry | the entry migration (`design/cognition-loop/data.md` ) |
 | Nora's reading on avatars | with the projection | Character · person on the entry (`20-presentation-and-avatars.md` §3) |
 | `world_place` | after the projection is read back | Cognition's write verbs |
 | asset generation | any time; it is independent | a Modal account and the license read (`30-asset-pipeline.md` §5) |

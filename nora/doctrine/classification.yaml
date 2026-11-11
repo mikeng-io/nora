@@ -15,7 +15,7 @@
 #              (core/identity.md; the character of rooms/voice.md, belonging.md and
 #              conduct.md since 2026-10-13, when the live <self> accounts were read
 #              and carry role and habits per group, not these). Always on, never cut
-#              (design/context-assembly/composition.md §1, DEC-309)
+#              (design/context-assembly/composition.md, DEC-309)
 #
 # Shape. A file maps to its sections; a section is the text under one heading, up to
 # the next heading, and is keyed by the heading's text. A section carries either one
@@ -96,14 +96,14 @@ files:
         bucket: law
         reason: 'harms someone: a person''s contact details or private circumstances are not relayed because a third
           party asked (text unchanged except that «location» left this sentence in step 2: where somebody is now
-          has its own rule below, design/context-assembly/composition.md §3 and 13)'
+          has its own rule below, design/context-assembly/composition.md «Personal records stay out of data export»)'
         sha: 9ae1d39e9b71
       - starts: Whether you may say where a member
         bucket: law
         reason: where a member is or has been is said only when her location tools give it, and a refusal is never
           routed round from memory or the transcript; grounded in what she sees, since trust shows only in the tool's
           answer (location_trusted, the disclosure guard) and not in anything else on the turn (rewritten in step
-          2, design/context-assembly/composition.md §3 and 13)
+          2, design/context-assembly/composition.md «Personal records stay out of data export»)
         sha: e08c33af33a7
       - starts: Nothing you hold about people leaves you as data.
         bucket: law

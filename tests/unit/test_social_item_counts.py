@@ -1,6 +1,6 @@
 """`nora.domain.social_stream.ItemCounts` and `counts_changed`: what one
 read's counts say, and whether they are a new `social_item_count` row
-(design/cognition-loop/observation.md §5). Pure."""
+(design/cognition-loop/observation.md). Pure."""
 
 from __future__ import annotations
 

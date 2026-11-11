@@ -283,7 +283,7 @@ export function MapBlock(props: {
   places: Array<{ name: string; lat?: number; lng?: number }>;
   route?: Array<{ lat: number; lng: number }>;
 }) {
-  // The service writes each place's coordinate from its name (design/artifact §40), so a stored
+  // The service writes each place's coordinate from its name (design/artifact/catalog.md), so a stored
   // document has both. A place without them (a revision stored before that) is listed, not drawn.
   const located = props.places.filter(
     (p): p is { name: string; lat: number; lng: number } => typeof p.lat === "number" && typeof p.lng === "number",

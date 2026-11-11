@@ -231,7 +231,7 @@ class TranscriptInjection:
         # `None` renders no block.
         self._memos_store = memos
         # The unit's shared cognitive state reader (design/notebook-memory-types/
-        # 20-shared-cognitive-state.md): one callable bound at the composition
+        # 20-standing.md): one callable bound at the composition
         # root over the canonical stores, `None` in every harness that wires
         # none — which renders no `<standing>` block.
         self._shared_reader = shared

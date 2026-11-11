@@ -807,7 +807,7 @@ async def test_a_minted_id_is_shaped_the_way_the_egress_screen_reads(
     assert scan_identifiers(note.head_revision_id) is not None
 
 
-# --- design 41 §7.5-7.6: an append requires an open note; a merged note forwards
+# --- design/cognition-loop/data.md: an append requires an open note; a merged note forwards
 
 
 async def _merge_away(
@@ -906,7 +906,7 @@ async def test_a_merged_title_forwards_and_an_ambiguous_one_does_not(
 
 
 
-# --- merge_into and the head-checked retire (design 41 §7.6, guards 2 and 3) --
+# --- merge_into and the head-checked retire (design/cognition-loop/data.md, guards 2 and 3) --
 
 
 async def _fold(

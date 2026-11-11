@@ -427,7 +427,7 @@ function synthesizeEdit(msg, target, decoded) {
   };
 }
 
-// -- Bounded event buffer with drop-and-count (contract §dropped) ----------
+// -- Bounded event buffer with drop-and-count (design/platform-bridges/02-wire-and-platforms.md «Inbound v1») ----------
 
 /**
  * While no SSE client is connected, message events sit here (cap 500).
@@ -530,7 +530,7 @@ export function createReconnectScheduler(startFn, {
   return { scheduleReconnect, reset, cancel, get attempts() { return attempts; } };
 }
 
-// -- Inbound message extraction (contract §message event) -------------------
+// -- Inbound message extraction (design/platform-bridges/02-wire-and-platforms.md «Inbound v1») -------------------
 
 /**
  * Unwrap the "future-proof" shells — ephemeral, view-once, document-with-
@@ -702,7 +702,7 @@ export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, rec
   // A REACTION or a REVOKE (delete for everyone) is not a message: it names
   // the message it touches and says nothing itself. Emitted as its own event
   // type so Nora records it BESIDE that message, never as a transcript line
-  // (design/cognition-loop/observation.md §1). Both used to fall through to
+  // (design/cognition-loop/observation.md). Both used to fall through to
   // the empty-turn drop below and were lost.
   const who = {
     id: msg.key.id || null,

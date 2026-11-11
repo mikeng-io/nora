@@ -76,7 +76,7 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
                "sources waiting on its projection queue: what it found is real, "
                "and what it did not find may still exist. Not `nothing_found` "
                "(an unfinished index is never «you never said that») and not "
-               "`ok` (25-memory-graph.md §4, design/unified-memory/graph.md S5).",
+               "`ok` (design/unified-memory/graph.md «Retrieval»).",
     "bad_arguments": "the call named an argument the tool does not take; "
                      "nothing ran; calling again with the listed arguments "
                      "will work. Not `unavailable` (R-99, design/"
@@ -157,7 +157,8 @@ class ToolSpec:
     every pass, so it cannot stop by choosing not to (DEC-21). That hook used
     to decide "she has replied" by asking the DELIVERER whether it had
     delivered, which is terminality expressed as one specific tool's side
-    effect: a second terminal verb (`design/media-read-lane/interaction.md` §1's
+    effect: a second terminal verb
+    (`design/media-read-lane/interaction.md` «One turn, several distinct acts»'s
     `send_gif`, or a distinct feed step on the tag path) could not be added
     without editing the guard. It is now declared here, read through
     `ToolRegistry.terminal_tools()`, so the next terminal verb is a table edit.
@@ -166,7 +167,7 @@ class ToolSpec:
 
     `time_shiftable` says whether this tool can be asked about a moment other
     than now, and it is here for the reason `budget` and `terminal` are
-    (design/14 §5.1). It is a THREE-valued field on purpose:
+    (design/system/grounding.md). It is a THREE-valued field on purpose:
 
       * `None` — the tool has no time dimension at all. `1485/7` is the same
         number whenever it is asked, and `lookup_person` is not about a moment.
@@ -178,7 +179,7 @@ class ToolSpec:
         seconds» for a 19:30 departure is a confident wrong answer of exactly
         the shape R-5 is about.
       * `True` — the tool accepts a target time. Nothing sets this yet;
-        `route(origin, destination, mode, arrive_by)` (design/14 §3) is the
+        `route(origin, destination, mode, arrive_by)` (design/system/grounding.md) is the
         first, and `arrive_by` is the point of it.
 
     The `False` set is the per-tool declaration that its answer describes this

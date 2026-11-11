@@ -475,7 +475,7 @@ func TestSendWithoutAMessageIDDoesNotAnswer200(t *testing.T) {
 	}
 }
 
-// The verb paths are DELETED (17 §P14). Each answers the mux's own 404 and no
+// The verb paths are DELETED (). Each answers the mux's own 404 and no
 // request reaches Instagram through one.
 func TestTheOldVerbPathsAnswer404(t *testing.T) {
 	f := &fakeIG{}

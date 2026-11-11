@@ -49,7 +49,7 @@ includes her, not a fix for a blindness the fold never had.
 - Timestamps are platform-shaped: Discord snowflakes and Signal epoch ms do
   not share a scale, and two messages in one conversation can share a ts.
 - The design doc already records why timestamp proxies fail
-  (`26-standing.md` §4: `created_at > prior.updated_at` and `>=` were both
+  (`design/standing-ledger/20-the-ledger.md`: `created_at > prior.updated_at` and `>=` were both
   wrong, in opposite directions). Row id is monotonic and unambiguous.
 
 ## The watermark column
@@ -67,9 +67,9 @@ last_folded_row_id bigint  -- the audit row id the last fold read up to
   two can never leave a position that claims to have read further than it
   did, or a watermark that advanced past a position that was never written.
 - The same atomicity the `consumed_verdict_tag` watermark had
-  (`26-standing.md` §4: the row carried the verdict it acted on, advanced
+  (`design/standing-ledger/20-the-ledger.md`: the row carried the verdict it acted on, advanced
   only when the rebuild was WRITTEN). That watermark's trigger was deleted
-  2026-09-24 — design/standing-ledger/00-intent.md.
+  2026-09-24.
 
 ## The cap
 
@@ -86,7 +86,7 @@ last_folded_row_id bigint  -- the audit row id the last fold read up to
 ## Re-derivation and the watermark
 
 (The `ungrounded` / `ceiling` re-derivation trigger described below was
-deleted 2026-09-24 — design/standing-ledger/00-intent.md. Kept as the reasoning behind
+deleted 2026-09-24. Kept as the reasoning behind
 the watermark's atomicity, not as a live path.)
 
 Re-derivation re-read the SAME stretch — it had to NOT advance the

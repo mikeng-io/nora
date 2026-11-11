@@ -222,7 +222,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "folded is not an error and moves nothing. The <self> read "
         "(design/self-growth/character.md) is stage=\"tag_self\", "
         "stage=\"fire_self\" and stage=\"cognition_self\", on the same terms. "
-        "The <recalled> pre-fetch (design/unified-memory/README.md step 3b) is "
+        "The <recalled> pre-fetch (design/unified-memory/README.md) is "
         "stage=\"tag_prefetch\": a memory search that failed, timed out or "
         "could not be rendered, so the turn went on without the block.",
         ("stage", "platform"),
@@ -231,7 +231,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_silent_failures_total",
         "Failures kept silent from the group, by reason and by which path was "
         "speaking (audience=\"tag\" | \"heartbeat\" | \"participation\" | "
-        "\"proactive\" — a kind=proactive row's act turn, design 39 D12 — | "
+        "\"proactive\" — a kind=proactive row's act turn, design/cognition-loop/proactive.md — | "
         "\"summons\" — a public Instagram summons, whose reply is held and "
         "published by its own flush, never a room adapter — | "
         "\"participation-shadow\" — the §10.6 mirror — | "
@@ -445,7 +445,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "`not_found` — a NAME resolved to nobody in this room (lookup_person, "
         "where_is, saved_places), and it deliberately cannot be told apart from "
         "«that person was never written down», because a behaviour difference "
-        "would disclose membership (design/12 §3); "
+        "would disclose membership (design/12-prompt-tool-skill-boundaries.md §3); "
         "`nothing_found` — a SEARCH over what was said matched nothing "
         "(search_memory). A different question from `not_found`, hence a "
         "different label; it was recorded as `ok` until 2026-08-11, which made "
@@ -603,7 +603,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_presence_fixes_total",
         "Distinct location fixes written to presence_fixes, by circle and the "
         "wire_state the fix carried (live / stale). A change-recorder count: a "
-        "still member does not increment it (design/19 §1).",
+        "still member does not increment it (design/self-awareness/presence.md).",
         ("circle", "wire_state"),
     ),
     # Every circle READ, by how it resolved. `unavailable` (transport / non-200)
@@ -661,7 +661,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # never a silent omission.
     _CounterSpec(
         "nora_presence_disclosure_refusals_total",
-        "whereis disclosures refused (R-21 fail-closed seam, design/19 §5). "
+        "whereis disclosures refused (R-21 fail-closed seam, design/self-awareness/presence.md). "
         "`reason` names WHICH of the three conditions fired so a refusal is "
         "diagnosable: `degraded` (roster unverifiable — answers `unavailable` "
         "rather than `refused`, R-27, but still counted here), `unnamed` (an "
@@ -710,7 +710,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "plus \"unattributed\"), and by audience. recovered vs send_reply is "
         "DEC-93's tell: a rising recovered share means the route is not "
         "honouring tool_choice=required. `audience` was added before the "
-        "participation occasion shipped (design/cognition-loop/proactive.md §6): the "
+        "participation occasion shipped (design/cognition-loop/proactive.md): the "
         "series named only tag turns when it was created, and a participation "
         "outcome landing here unlabelled would be indistinguishable from one.",
         ("outcome", "audience"),
@@ -833,7 +833,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_search_alias_total",
         "Search queries containing a known person's name or alias, counted (not "
-        "blocked) so the design/14 §2.2 count-vs-block call can be revisited "
+        "blocked) so the design/system/grounding.md count-vs-block call can be revisited "
         "against real queries.",
     ),
     # Reminders, the two halves. CREATED is the `remind` tool's own answer:
@@ -882,7 +882,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "failed_error (the fire turn raised, or a crash left the row FIRING); "
         "and the fire-time screens' outcomes. A kind=proactive row adds silent "
         "(DONE, the act turn declined) and cancelled_note_retired / "
-        "cancelled_note_moved (design 39 D11/D12).",
+        "cancelled_note_moved (design/cognition-loop/proactive.md).",
         ("outcome",),
     ),
     # DEFERRALS: a tick that finds the conversation slot held leaves its rows
@@ -1529,7 +1529,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_participation_silence_total",
         "Participation determinations that concluded 'say nothing' (the "
-        "healthy default — design/cognition-loop/proactive.md §6), by platform. "
+        "healthy default — design/cognition-loop/proactive.md), by platform. "
         "Budget-cut turns are NOT here; those are silent failures.",
         ("platform",),
     ),
@@ -1547,8 +1547,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_proactive_silence_total",
         "Proactive act turns that read the room again and declined their "
-        "own earlier intention (the healthy default — design/dreamer-agent-"
-        "loop/39 D12), by platform. Budget-cut turns are NOT here.",
+        "own earlier intention (the healthy default — design/cognition-loop/proactive.md), "
+        "by platform. Budget-cut turns are NOT here.",
         ("platform",),
     ),
     _CounterSpec(
@@ -1663,7 +1663,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     # The Lessons session: one per unit, by what it did; `decayed` is code
     # retiring a lesson at its horizon.
-    # The Profile sessions, in shadow (design/unified-memory/profiles.md §4).
+    # The Profile sessions, in shadow (design/unified-memory/profiles.md).
     _CounterSpec(
         "nora_profile_session_total",
         "Profile sessions by outcome (" + " / ".join(sorted(PROFILE_OUTCOMES)) + "). "
@@ -2071,7 +2071,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "trigger for chunking long nodes.",
         ("kind",),
     ),
-    # The social stream's poller (design/cognition-loop/observation.md §4).
+    # The social stream's poller (design/cognition-loop/observation.md).
     # Every vocabulary is DERIVED from `nora.domain.social_stream`. No person,
     # account or item is a label.
     _CounterSpec(
@@ -2179,7 +2179,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Identity/policy reloads by outcome: " + ", ".join(RELOAD_OUTCOMES),
         ("file", "outcome"),
     ),
-    # Durable platform-bridge queue (design/platform-bridges/04 §aggregates).
+    # Durable platform-bridge queue (design/platform-bridges/04-operations.md).
     # Every label vocabulary is the closed Literal set the call
     # sites in `nora/platform/bridge/telemetry.py` and `inspection.py`
     # enforce at runtime — the names are not restated here because
@@ -2402,7 +2402,7 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Age of a unit's oldest pending stimulus that could wake it (a reply "
         "to Nora inside reply_quiet_seconds does not count), set by the wake "
         "evaluator each tick; 0 when nothing is pending "
-        "(design/cognition-loop/observation.md §4). ABSENT until the "
+        "(design/cognition-loop/observation.md). ABSENT until the "
         "evaluator's first tick for the unit.",
         ("unit",),
     ),
@@ -2421,7 +2421,7 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "never 0.",
         ("target",),
     ),
-    # Durable bridge queue depth (design/platform-bridges/04 §aggregates).
+    # Durable bridge queue depth (design/platform-bridges/04-operations.md).
     # All of these are ABSENT while the inspection that publishes them cannot
     # run — a declared-but-never-set labelled gauge has no sample, which is
     # exactly what "a failed read must not report zero" requires.
@@ -2605,7 +2605,7 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "is recorded at the ceiling, so read the top bucket against "
         "nora_relevance_gate_errors_total{kind=\"timeout\"}.",
     ),
-    # Bridge queue durations (design/platform-bridges/04): queue wait is
+    # Bridge queue durations (design/platform-bridges/04-operations.md): queue wait is
     # measured enqueue→attempt-start from persisted timestamps — never a span
     # held open — and stage duration is one attempt or operation's bounded
     # runtime, labelled by the telemetry QueueStage/WorkOutcome vocabularies.

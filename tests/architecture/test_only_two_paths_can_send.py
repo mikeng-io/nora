@@ -71,7 +71,7 @@ CALLERS = {
     # wire (`nora.app.otp`).
     "nora/app/otp.py",
     # The circle revision's controlled-state seed amends R-1b again
-    # (design/self-growth/doctrine.md, the circle amendment):
+    # (the circle amendment):
     # a `checked_complete` job overlay states a report was DELIVERED, so the
     # seed puts it there through `deliver.build` — every guard and the
     # audit-first write still stand between the generated text and the wire,

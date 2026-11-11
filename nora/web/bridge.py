@@ -1,4 +1,4 @@
-"""The platform-bridge runtime's readout routes (design/platform-bridges/04).
+"""The platform-bridge runtime's readout routes (design/platform-bridges/04-operations.md).
 
 Mounted on the health app by `nora/__main__.py` when any platform runs
 `mode = "bridge"`, behind the SAME shared bearer every other internal

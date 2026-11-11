@@ -103,7 +103,7 @@ def dm_scope_id(person_id: str, anchor_unit: str) -> str | None:
 
 def computer_dm_scope(dm_scope_id: str) -> str:
     """Opaque canonical-DM workspace key
-    (`design/private-dm/workspaces.md` «Computer, browser and export»):
+    (`design/private-dm/workspaces.md`  «Ownership and isolation»):
     `sha256("dm:" + dm_scope_id)[:32]`, the scope id rendered in canonical
     lowercase hyphenated form. The `(person, anchor unit)` binding that
     produces `dm_scope_id` is DM admission's — it is resolved by the caller,

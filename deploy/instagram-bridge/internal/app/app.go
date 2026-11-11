@@ -1,5 +1,5 @@
 // Package app is the bridge's use cases and the ports they need
-// (design/instagram-adoption/bridge.md §Layers, 17 P8).
+// (design/instagram-adoption/bridge.md).
 //
 // It imports the domain and nothing else of this module: no net/http, no
 // instameow, no transport. A use case takes the caller's input as the caller
@@ -132,10 +132,10 @@ func (s *Service) ready() (domain.Session, error) {
 // thread resolves both thread ids for a room key the HTTP edge has ALREADY
 // parsed.
 //
-// The parse moved out of here in P14 (design/instagram-adoption/README.md §P14):
+// The parse moved out of here in bridge.md (design/instagram-adoption/README.md):
 // every route now parses its path ids before any use case runs, so a
-// malformed id is 400 whatever the session's state (16 §Resources: "a
-// malformed id is 400 before any use case runs"). Before P14 the parse sat
+// malformed id is 400 whatever the session's state (design/instagram-adoption/bridge.md «Messaging contract»: "a
+// malformed id is 400 before any use case runs"). Before bridge.md the parse sat
 // after the session gate and a checkpointed session answered 409 ahead of a
 // malformed id's 400. A malformed key still never becomes a route lookup
 // against Instagram: it cannot reach this function as a value at all.
@@ -247,7 +247,7 @@ type AccountRead struct {
 // SAME parsed igid. The social half fails on its own: GetProfile has already
 // answered, so a social failure degrades the read rather than losing it.
 //
-// It takes the PARSED igid (P14): the HTTP edge parses it, so a malformed one
+// It takes the PARSED igid (bridge.md): the HTTP edge parses it, so a malformed one
 // is 400 before the session gate.
 func (s *Service) ReadAccount(ctx context.Context, id domain.IGID) (AccountRead, error) {
 	if _, err := s.ready(); err != nil {
@@ -263,8 +263,8 @@ func (s *Service) ReadAccount(ctx context.Context, id domain.IGID) (AccountRead,
 // ReadStory reads one account's current story — ONE igid, because a batch
 // would open stories nobody asked about. The social stream's poller reads
 // members' stories, each only when its probe moved
-// (design/cognition-loop/observation.md §3); the read never marks a
-// story seen (§1).
+// (design/cognition-loop/observation.md); the read never marks a
+// story seen.
 //
 // Like ReadAccount, it takes the igid already parsed at the edge.
 func (s *Service) ReadStory(ctx context.Context, id domain.IGID) (domain.Story, error) {
@@ -275,8 +275,8 @@ func (s *Service) ReadStory(ctx context.Context, id domain.IGID) (domain.Story, 
 }
 
 // ReadItems reads one page of an account's posts and reels (`GET
-// /accounts/{igid}/items`, design/cognition-loop/observation.md §1a,
-// §7). The timeline document takes a USERNAME: the caller's, parsed at the
+// /accounts/{igid}/items`, design/cognition-loop/observation.md,
+// the read contract). The timeline document takes a USERNAME: the caller's, parsed at the
 // edge, when it gave one (a back-fill paging on, one upstream call a page);
 // otherwise the gateway resolves it through the same profile read `GET
 // /accounts/{igid}` makes. Either way the page's owners are checked against
@@ -305,12 +305,12 @@ func (s *Service) SearchAccounts(ctx context.Context, query string) ([]domain.Ac
 }
 
 // LookupAccountByUsername resolves a username to at most one account
-// (design/instagram-adoption/bridge.md §Resources, 17 P9, P10).
+// (design/instagram-adoption/bridge.md).
 //
 // It calls the SAME search port `SearchAccounts` uses (SearchUsers, over the
 // DM contact picker's search), then filters the raw hits to an exact,
-// case-insensitive username match. `items[0]` is never taken: P9 measured a
-// real case where the exact match was not the first result (17 §P9), so
+// case-insensitive username match. `items[0]` is never taken: the search probe (design/instagram-adoption/social.md) measured a
+// real case where the exact match was not the first result (), so
 // ranking cannot stand in for identity here. The filter runs HERE, in the
 // use case, not in the transport layer, so the rule is provable independent
 // of the HTTP shape around it.
@@ -329,7 +329,7 @@ func (s *Service) SearchAccounts(ctx context.Context, query string) ([]domain.Ac
 // categorically: `asciiEqualFold`, which runs afterward, only ever sees two
 // strings already known to contain nothing but `[A-Za-z0-9._]`.
 //
-// Zero matches is a normal empty answer, not ErrNotFound: P9 also measured
+// Zero matches is a normal empty answer, not ErrNotFound: the search probe (design/instagram-adoption/social.md) also measured
 // zero items for a username that does not exist, and the search returning
 // nothing for a real one it simply missed would look identical, so there is
 // no way to tell "no such account" from "the search didn't surface it" —
@@ -396,7 +396,7 @@ func asciiEqualFold(a, b string) bool {
 	return true
 }
 
-// ReadPost reads one post by its shortcode (17 P12).
+// ReadPost reads one post by its shortcode ().
 //
 // It takes the PARSED shortcode: the HTTP layer parses it at the edge, so a
 // malformed one is 400 before this runs, whatever the session's state, as
@@ -414,7 +414,7 @@ func (s *Service) ReadPost(ctx context.Context, code domain.Shortcode) (domain.P
 // Instagram-facing use case.
 //
 // It is a READ and nothing more. It used to record what it served as the
-// authority for a comment reply; the 2026-09-26 re-measure (design 19)
+// authority for a comment reply; the 2026-09-26 re-measure (design/instagram-adoption/summons.md)
 // found the feed never carried a comment-mention, and guard 3 now binds on
 // the summons card the DM intake records (comments.go's RecordSummons).
 func (s *Service) ReadMentions(ctx context.Context) ([]domain.CommentMention, map[int]int, error) {

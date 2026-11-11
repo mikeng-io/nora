@@ -173,7 +173,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "system time stripped: what the step-2 determinism gate compares "
         "between an incremental build and a rebuild "
         "(tests/integration/test_rollup_builds.py). Its consumer at runtime is "
-        "`rollup_read` (design/cognition-loop/session.md §2), not built "
+        "`rollup_read` (design/cognition-loop/session.md), not built "
         "in step 2a.",
     ),
     ("computer_events.py", "orphaned_starts"): _Pin(
@@ -201,18 +201,18 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ),
     ("gatherings.py", "revisions_for"): _Pin(
         "read_back_affordance",
-        "An event's full revision chain (10-tiers.md §3/§8; migration "
+        "An event's full revision chain (design/cognition-loop/data.md; migration "
         "0074_event_revision). No prompt block or tool reads the chain today "
         "— `event_propose`/`event_revise`/`event_set_status` only ever read "
         "the head through `head_revision_id` for `base_revision_id`'s "
         "compare-and-swap. Its consumer is a `History` section on an event "
-        "(12-schemas.md §3's `Changes`, 'every revision: field, from, to, "
+        "(design/cognition-loop/data.md's `Changes`, 'every revision: field, from, to, "
         "mode, why, when'), not built at step 2b.",
     ),
     ("social_stream.py", "item_state"): _Pin(
         "deferred_consumer",
         "An item's current state, the join every read of social items makes "
-        "(design/cognition-loop/observation.md §5). The poller writes "
+        "(design/cognition-loop/observation.md). The poller writes "
         "states; nothing reads social items yet.",
     ),
     ("standing.py", "write_if_unchanged"): _Pin(
@@ -234,7 +234,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("observations.py", "unresolved_targets"): _Pin(
         "deferred_consumer",
         "The retained-but-unresolved target listing, named for the exposure "
-        "lanes in design/platform-observations/observations.md(«read "
+        "lanes in design/platform-observations/observations.md («read "
         "ObservationStore.current/heads/history and unresolved_targets»). No "
         "lane reads it this stage: the context and grounding reads take "
         "recent/heads/by_ids/head_for_handle only.",

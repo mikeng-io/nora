@@ -409,7 +409,7 @@ class Bridge:
                 ) if msg is not None else observations[0].object_kind
         # The ONE short producer root for this capture — its context is
         # frozen onto the envelope BEFORE the journal append inside
-        # `_sink.capture` (design 04 §producer).
+        # `_sink.capture` (design/platform-bridges/04-operations.md).
         with bt.producer_span(PLATFORM, kind=kind) as carrier:
             if msg is not None and msg.media:
                 with bt.operation_span(

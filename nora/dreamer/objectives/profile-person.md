@@ -4,7 +4,7 @@ kind: objective
 version: 11
 applies_to: [profile_person_adaptor]
 description: >-
-  One person's Profile in one unit (design/unified-memory/profiles.md §4).
+  One person's Profile in one unit (design/unified-memory/profiles.md).
   Reads the lines the account holds, the person's messages since the last
   session, the episodes where they answered the agent, their ties to the others,
   and on the first session their prose Character account; writes typed lines

@@ -1,15 +1,16 @@
 """The corpus port — `evals/corpora/*.yaml` as `strands_evals.Case` objects.
 
-A corpus is a set of cases and nothing else (`01-boundaries.md` §2). Every
+A corpus is a set of cases and nothing else
+(`design/evaluation/subject.md` «Obtained through production»). Every
 case names a REAL room at a REAL instant (`snapshot:`), and everything she
 knows when it starts is what that room held then — read from the deployment's
 clone and written into the case's own sandbox by `evals.backbone._drive`.
 There is no other way to state what she knows: no `knows:`, no `config:`, no
 `policy:`, no `room:`, no `now:`. Each of those was a case compensating by
-hand for a subject that was not the deployment's (`11-the-sandbox-rebuild.md`
+hand for a subject that was not the deployment's (`design/evaluation/subject.md`
 §1.2), and under one path they have nothing left to say.
 
-THREE STATES, and the middle one is the point (`11-the-sandbox-rebuild.md`
+THREE STATES, and the middle one is the point (`design/evaluation/subject.md`
 §7.1):
 
 - **active** — anchored; runs.
@@ -102,7 +103,7 @@ class Census:
     #:
     #: **This count is what makes the state safe to have.** A counterfactual
     #: is a manipulation, not a reconstruction; an aggregate that averaged the
-    #: two would let `11-the-sandbox-rebuild.md`'s rule erode by ARITHMETIC
+    #: two would let `design/evaluation/subject.md`'s rule erode by ARITHMETIC
     #: rather than by anybody deciding to relax it. Example: the culture arm's
     #: `-chronicle` case, where a chronicle and an account are the same facts
     #: in two representations and no room ever held both at once.
@@ -134,7 +135,7 @@ def _rows(name: str) -> list[dict[str, Any]]:
             raise ValueError(
                 f"{name}: corpus-level {stale} is not a thing a corpus states; "
                 "the subject is the deployment's, and a corpus cannot "
-                "configure it (11-the-sandbox-rebuild.md §1.2)"
+                "configure it (design/evaluation/subject.md)"
             )
         return list(doc.get("cases") or [])
     rows = list(doc)

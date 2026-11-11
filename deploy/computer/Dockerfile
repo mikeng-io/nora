@@ -1,4 +1,4 @@
-# Nora's computer (design/sandbox-runtime §5, ADR 0019): the image the sbx
+# Nora's computer (design/sandbox-runtime/runtime.md, ADR 0019): the image the sbx
 # microVM boots. Built on the host, loaded into sbx with `nora-computer build`,
 # never run by the host's own Docker. It is a working machine, not a service
 # image: the toolchain is what a coding agent expects to find, and computerd
@@ -40,7 +40,7 @@ RUN python3 -m venv /opt/computerd/venv \
     && /opt/computerd/venv/bin/pip install --no-cache-dir --require-hashes \
         -r /opt/computerd/requirements.txt
 
-# nora-render (design/sandbox-runtime §5, S3a): Smith's image renderers as
+# nora-render (design/sandbox-runtime/runtime.md): Smith's image renderers as
 # one CLI, `nora-render chart|mermaid IN OUT` (render/nora_render.py),
 # standard-library Python on the image's python3. Each makes a picture, never
 # a page: documents are the document path's (ADR 0020). librsvg's
@@ -62,10 +62,10 @@ COPY render/nora_render.py render/nora-render render/mmdc /opt/nora-render/
 RUN ln -s /opt/nora-render/nora-render /usr/local/bin/nora-render \
     && ln -s /opt/nora-render/mmdc /usr/local/bin/mmdc
 
-# The browser (design/browser-runtime, ADR 0022, B1): Google Chrome stable,
+# The browser (design/browser-runtime/browser.md, ADR 0022): Google Chrome stable,
 # headed on Xvfb, one per room, started by computerd over
 # --remote-debugging-pipe. Pinned by version and sha256; bump both together,
-# deliberately, since a stale Chrome is itself a bot signal (design 00 §3).
+# deliberately, since a stale Chrome is itself a bot signal (design/browser-runtime/security.md).
 ARG CHROME_VERSION=157.0.8103.38-1
 ARG CHROME_SHA256=a62b277dc03da2cff50cc04589deb66f6875be339c066d46adb49b49eedb629d
 RUN curl -fsSLo /tmp/chrome.deb \

@@ -44,6 +44,6 @@ edges:
   - {src: 40-verification, dst: 30-turn-records, rel: measures, provenance: asserted}
   - {src: 50-migration, dst: 40-verification, rel: depends_on, provenance: asserted}
   - {src: 20-the-ledger, dst: ../cognition-loop/data.md, rel: amends, provenance: asserted}
-  - {src: 20-the-ledger, dst: ../../standing-ledger/10-what-standing-holds.md, rel: supersedes, provenance: asserted}
-  - {src: 10-what-standing-holds, dst: ../design/cognition-loop/threads.md, rel: extends, provenance: asserted}
-  - {src: 30-turn-records, dst: ../../standing-ledger/00-intent.md, rel: extends, provenance: asserted}
+  - {src: 20-the-ledger, dst: ../standing-ledger/10-what-standing-holds.md, rel: supersedes, provenance: asserted}
+  - {src: 10-what-standing-holds, dst: ../cognition-loop/threads.md, rel: extends, provenance: asserted}
+  - {src: 30-turn-records, dst: ../standing-ledger/00-intent.md, rel: extends, provenance: asserted}

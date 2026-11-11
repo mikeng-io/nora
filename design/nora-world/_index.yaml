@@ -42,7 +42,7 @@ edges:
   - {src: 50-open-questions, dst: 00-overview, rel: motivated_by, provenance: asserted}
   - {src: 10-world-as-a-view, dst: ../cognition-loop/data.md, rel: depends_on, provenance: asserted}
   - {src: 30-asset-pipeline, dst: ../video-generation/README.md, rel: relates_to, provenance: asserted}
-  - {src: 40-shared-venue, dst: ../discord-music/_index.yaml, rel: relates_to, provenance: asserted}
+  - {src: 40-shared-venue, dst: ../voice-channel/music.md, rel: relates_to, provenance: asserted}
 scope:
   v1:
     - "A portal route (app/, Next.js) with react-three-fiber: an isometric, toon-shaded diorama world, Discord sign-in through the existing Auth.js setup"

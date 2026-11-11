@@ -22,7 +22,7 @@ open_questions:
 edges:
   - {src: 01-source-map, dst: 00-contract, rel: grounds, provenance: inspected-source}
   - {src: 02-wire-and-platforms, dst: ../discord-integration/01-listener-and-resilience.md, rel: amends, provenance: proposed}
-  - {src: 02-wire-and-platforms, dst: ../../voice-channel/music.md, rel: amends, provenance: proposed}
+  - {src: 02-wire-and-platforms, dst: ../voice-channel/music.md, rel: amends, provenance: proposed}
   - {src: 02-wire-and-platforms, dst: ../whatsapp-adoption/bridge.md, rel: amends, provenance: proposed}
   - {src: 02-wire-and-platforms, dst: ../instagram-adoption/bridge.md, rel: amends, provenance: proposed}
   - {src: 03-ownership-and-recovery, dst: ../standing-ledger/30-turn-records.md, rel: extends, provenance: proposed}

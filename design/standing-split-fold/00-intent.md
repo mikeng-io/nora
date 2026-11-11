@@ -10,7 +10,7 @@ edges:
   - {dst: 30-verification, rel: sequences, provenance: asserted}
 ---
 
-> **SUPERSEDED IN PART 2026-09-24 by [design/standing-ledger/00-intent.md](../../standing-ledger/00-intent.md).** The falsifier below fired: `turn_verdict` read 381 true / 25 false after the split, and 17 of the 25 came from a turn whose tool results the judge saw cut to 600 characters. Call B is deleted; the position call (A) and the ratchet/tiebreak rules stand.
+> **SUPERSEDED IN PART 2026-09-24 by [design/standing-ledger/00-intent.md](../standing-ledger/00-intent.md).** The falsifier below fired: `turn_verdict` read 381 true / 25 false after the split, and 17 of the 25 came from a turn whose tool results the judge saw cut to 600 characters. Call B is deleted; the position call (A) and the ratchet/tiebreak rules stand.
 
 # Intent
 
@@ -40,7 +40,7 @@ root cause of both live symptoms:
   container (verified 2026-08-29 13:49 UTC).
 - Live DB — standing row written 13:49:08 UTC (5 min after container start)
   is a third-person event list; `turn_verdict` 21/21 grounded=true.
-- `design/cognition-loop/data.md` §1 — "It is a SECOND model
+- `design/cognition-loop/data.md` «Layers by authority» — "It is a SECOND model
   reading a FINISHED exchange. Not the model that replied, reflecting — a
   different call, seeing the whole turn including its own outcome. The
   argument is **impartiality, not cost**."

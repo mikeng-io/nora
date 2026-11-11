@@ -1,7 +1,7 @@
 # Native platform-observation fixtures — WhatsApp (Baileys)
 
 GENERATED payloads documenting what the pinned upstream transport actually
-hands this bridge, per `design/platform-observations/README.md` (00 §3: "capture mapping
+hands this bridge, per `design/platform-observations/observations.md` (the capture mapping
 and fixture proving what the adapter emits"). No production rows, no captured
 deltas, no credentials: every JID, stanza id, timestamp and secret below is
 synthetic placeholder-shaped data (`55501` fiction range, repeated/zero digits,

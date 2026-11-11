@@ -2,26 +2,26 @@
 
 - **Status:** superseded by [0029](0029-a-prompt-block-names-its-subject-and-author-by-id.md)
 - **Date:** 2026-10-21
-- **Note (2026-11-08):** the per-message extraction worker implementing design node 18's one-call-per-batch extraction was removed; step 1 of the Cognition loop per [design/unified-memory/graph.md §2](../../design/unified-memory/graph.md) holds the reading role.
+- **Note (2026-11-08):** the per-message extraction worker implementing design node 18's one-call-per-batch extraction was removed; step 1 of the Cognition loop per [design/unified-memory/graph.md ](../../design/unified-memory/graph.md) holds the reading role.
 - **Reverses, in part:** [design/unified-memory/profiles.md](../../design/unified-memory/profiles.md)'s "Persona" naming.
 - **Index:** a DEC number is taken at merge.
 
 ## Context
 
-[05 · Data model](../../design/cognition-loop/data.md) §1 calls
+[05 · Data model](../../design/cognition-loop/data.md)  «Layers by authority» calls
 Notebook rows "Nora's judgement"; §2 defines Layer › Tier › Kind › Entry.
 The operator settled the Character tier's names on 2026-10-21. The collisions
 are vocabulary problems within that hierarchy, not a new topology.
 
 | level | name | replaces or avoids | source |
 |---|---|---|---|
-| tier | **Character** (kept) | "Account tier" collides with platform account and does not fit a room or unit | 05 §2; [GLOSSARY](../../GLOSSARY.md), «Person, and the things that are not a person» |
-| kinds | **person, room, unit, Nora** (kept) | design 45's "Persona" for the person kind | 05 §2; design 45 |
-| one row | **entry** | "account" collides with platform account; "Persona" duplicates the row's name | 05 §2; GLOSSARY, «Character» |
-| part: who they are | **profile** | `identity` would be a fourth meaning of "identity" | design 45 §1; GLOSSARY, «Identity — three different things» |
-| part: what they are like | **traits** | `character` repeats the tier's name | design 45 §1; 05 §2 |
-| part: why | **hypotheses** | `hypothesis`, kept in the plural | design 45 §1 |
-| modes | **told / deduced / induced / abduced** (kept) | no change | design 45 §3 |
+| tier | **Character** (kept) | "Account tier" collides with platform account and does not fit a room or unit | design/cognition-loop/data.md; [GLOSSARY](../../GLOSSARY.md), «Person, and the things that are not a person» |
+| kinds | **person, room, unit, Nora** (kept) | design/unified-memory/profiles.md's "Persona" for the person kind | design/cognition-loop/data.md; design/unified-memory/profiles.md |
+| one row | **entry** | "account" collides with platform account; "Persona" duplicates the row's name | design/cognition-loop/data.md; GLOSSARY, «Character» |
+| part: who they are | **profile** | `identity` would be a fourth meaning of "identity" | design/unified-memory/profiles.md; GLOSSARY, «Identity — three different things» |
+| part: what they are like | **traits** | `character` repeats the tier's name | design/unified-memory/profiles.md; design/cognition-loop/data.md |
+| part: why | **hypotheses** | `hypothesis`, kept in the plural | design/unified-memory/profiles.md |
+| modes | **told / deduced / induced / abduced** (kept) | no change | design/unified-memory/profiles.md |
 
 [GLOSSARY, «Doctrine»](../../GLOSSARY.md) records DEC-29 (2026-08-06):
 "persona" names a put-on role, not a person. Design 45 reintroduced that term.
@@ -46,7 +46,7 @@ Building that target is outside this ADR's implementation.
 
 **The rename is deferred, not done.** Docs use the names above; existing code
 names stay until **one later migration PR**, before
-[design/unified-memory/README.md, «Sequence», step 8](../../design/unified-memory/README.md).
+[design/unified-memory/profiles.md](../../design/unified-memory/profiles.md).
 The deferred scope includes `persona_line`, `persona_key`, `persona_dispute`,
 migrations 0117–0125, `nora/{domain,language,infra/sql,subject}/persona*.py`,
 `persona-*.md` objectives, `<persona_lines>` prompt blocks and `[persona]`

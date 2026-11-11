@@ -20,7 +20,7 @@ the deployment's own Nora (its `config.toml`, `policy.toml`, `identity.toml`)
 against a sandbox database of the case's own, seeds it with what that room
 held at that instant, and drives one entry point. Nothing is authored and
 nothing is configurable per case (`design/evaluation/subject.md`
-§1.2–§1.3).
+ «Anchored input»–«Isolation»).
 
 ```bash
 # on the deploy host, in a checkout of the branch under test (NOT the deploy checkout)
@@ -263,7 +263,7 @@ A failure you fixed but did not add a case for is a failure you will ship
 again.
 
 
-## The participation suite — the flip gate (design/cognition-loop/proactive.md §9)
+## The participation suite — the flip gate (design/cognition-loop/proactive.md)
 
 `make eval-participation` runs the 15-case participation corpus, including
 relevance-Yes cases, their knowledge-cut twins, and the pure-No cases (S6-S10) — the S1 and S4 pairs were

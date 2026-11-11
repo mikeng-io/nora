@@ -452,7 +452,7 @@ test('/voice/status position reporting is coherent with the resume policy', () =
   assert.equal(snap.player.current.title, 'A'); // still names the suspended track
 });
 
-test('speech-suspend then revive seeks the same track to the cut position (§5 B7), not 0', async () => {
+test('speech-suspend then revive seeks the same track to the cut position (design/voice-channel/audio.md «Speech and music arbitration» B7), not 0', async () => {
   const { arbiter, player, procs, playToPlaying } = makeArbiter();
   const a = playToPlaying('https://cdn.test/a');
   assert.deepEqual(a.proc.args.slice(0, 8), ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-i', 'https://cdn.test/a']); // a fresh play has no seek

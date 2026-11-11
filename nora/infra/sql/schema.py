@@ -840,7 +840,7 @@ ROLLUP_OUTING = sa.Table(
 #: Daybook: one person's local (Hong Kong) day in one unit. Counts of
 #: what the Record and the rollups below it hold, never an event attended (no
 #: upward input). `items_posted` is NULL where the person's social accounts were not
-#: observed that day (design/cognition-loop/observation.md §3), 0 where observed and none.
+#: observed that day (design/cognition-loop/observation.md), 0 where observed and none.
 ROLLUP_DAYBOOK = sa.Table(
     "rollup_daybook",
     METADATA,
@@ -5086,7 +5086,7 @@ IDX_SOCIAL_PERCEPTION_ITEM = sa.Index(
 IDX_SOCIAL_PERCEPTION_AT = sa.Index("idx_social_perception_at", SOCIAL_PERCEPTION.c.at)
 
 # What deleting a blob's bytes leaves behind (0109, design/cognition-loop/
-# 70-migration.md §9): the content address, the kind of thing the bytes were
+# design/cognition-loop/data.md): the content address, the kind of thing the bytes were
 # and when they went, APPEND-ONLY, one row per deletion. The same bytes can be
 # stored again later (a member posts them anew), so a tombstone says the bytes
 # were gone for the rows recorded before `deleted_at`, never for a row
@@ -5127,7 +5127,7 @@ IDX_BLOB_TOMBSTONE_SHA = sa.Index(
 # `documents` gives. The rules a CHECK can carry are here; the rest
 # (premises, instances per day, the listed-room rule, caps, precedence) are
 # `nora.domain.profile.plan_write`'s, run inside the write's transaction.
-# Nothing renders these rows before the switch (00 «Sequence» step 8), so
+# Nothing renders these rows before the switch (), so
 # they are the shadow by construction.
 PROFILE = sa.Table(
     "profile",

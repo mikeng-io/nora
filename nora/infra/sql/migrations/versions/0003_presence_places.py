@@ -1,10 +1,10 @@
-"""presence_places — a circle's named landmarks (design/23 §3)
+"""presence_places — a circle's named landmarks (design/system/grounding.md)
 
 Third table in the one `nora` database. Static household names for positions
 («Home»), fetched from Life360's places endpoint by the collector and replaced
 wholesale — a separate table from `presence_fixes` because a fix is where a
 person WAS (R-31-guarded) and a place is somewhere the household chose to name
-(design/23 §2 is the argument).
+(design/system/grounding.md is the argument).
 
 Hand-written like its siblings, though this one has no DESC index to protect —
 the natural key `(circle_id, place_id)` is the primary key and every read is

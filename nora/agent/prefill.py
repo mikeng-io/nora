@@ -158,7 +158,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("peer_card", 20, "person"),
     ("peer_history", 30, "person"),
     ("people_in_window", 35, "room"),
-    # THE PRE-FETCH (design/unified-memory/README.md step 3b): what her memory holds
+    # THE PRE-FETCH (design/unified-memory/README.md): what her memory holds
     # that this message touches, searched by code from its own seeds. Beside
     # the memory of the people talking it will replace on the graph surface,
     # and before the unit's open questions. `turn`: it is searched from one
@@ -203,7 +203,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # move every turn. Tag turn only, and only under `[subagent] enabled` with
     # a job in the window.
     ("subagents", 59, "turn"),
-    # THE ONE STANDING BLOCK (design/notebook-memory-types/20): her
+    # THE ONE STANDING BLOCK (design/notebook-memory-types/20-standing.md): her
     # position, open judgements, pending acts and what she already did —
     # projected per destination from the canonical stores, unit-wide like
     # `notes`, and last of the state blocks so the transcript follows
@@ -532,7 +532,7 @@ def _transcript_block(
     """
     rows = render_transcript(ctx.transcript, display_name=display_name, now=now)
     # The typed source events of the same window (design/platform-
-    # observations 04): `<source_event>` elements INTERLEAVED into the
+    # observations/observations.md): `<source_event>` elements INTERLEAVED into the
     # transcript at their own time — a vote between two messages reads
     # between them, not as an appendix after the last word. They are not
     # messages and take no `#n` handle (a reply cannot name one). Each
@@ -959,8 +959,8 @@ def _standing_block(
 ) -> ContextBlock | None:
     """The shared account and freshly read source objects in ONE Standing block."""
     block = render_shared_state(ctx.shared, now_ms=int((now or local_now()).timestamp() * 1000))
-    # The room's folded source-object heads (design/platform-observations
-    # 04), typed rows under the SAME Standing presentation: the open poll,
+    # The room's folded source-object heads (design/platform-
+    # observations/observations.md), typed rows under the SAME Standing presentation: the open poll,
     # the pin set, the member count — each with its ordering and coverage
     # flags so a gapped or partial state never reads as settled truth.
     if ctx.source_objects:

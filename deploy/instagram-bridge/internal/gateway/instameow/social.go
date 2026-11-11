@@ -199,16 +199,16 @@ func issuerFor(cli Client) (GraphQLIssuer, error) {
 // The read used to be the library's `FetchReel`, REST
 // `/api/v1/feed/reels_media/`. Instagram answers that with HTTP 500 on every
 // call (4/4, 2026-10-16, library v0.2609.0, the latest;
-// design/cognition-loop/observation.md §1). The web app reads a story
+// design/cognition-loop/observation.md). The web app reads a story
 // through a GraphQL document instead, `PolarisStoriesV3ReelPageStandaloneQuery`
-// (§1a), and so does this read now, through graphqlDoc with the doc_id from
+// , and so does this read now, through graphqlDoc with the doc_id from
 // INSTAGRAM_STORY_DOC_ID. The response is the same reel the REST read
 // returned, under `data.xdt_api__v1__feed__reels_media.reels_media[]`.
 //
 // # A story read is a deliberate act, and that changes the rules
 //
 // The social stream's poller reads members' stories
-// (design/cognition-loop/observation.md §3): a probe on /profile's
+// (design/cognition-loop/observation.md): a probe on /profile's
 // `latest_reel_media` decides, and the read runs only when that value moved.
 // Two consequences are built into the route rather than left to the caller:
 //
@@ -216,10 +216,10 @@ func issuerFor(cli Client) (GraphQLIssuer, error) {
 //     `reel_ids_arr` accepts several. A batched read would open several
 //     people's stories to answer a question about one;
 //  2. the read sends the read and nothing else. The web viewer marks a story
-//     seen with a SEPARATE mutation (`PolarisStoriesV3SeenMutation`, §1); this
+//     seen with a SEPARATE mutation (`PolarisStoriesV3SeenMutation`); this
 //     bridge never sends it (docs.go refuses any mutation or seen-mark), and
 //     with it unsent the reel's `seen` stayed 0 in S0. Whether the author's
-//     viewer list shows the read anyway is still unmeasured (§9).
+//     viewer list shows the read anyway is still unmeasured.
 //
 // # Private plus followed is a NORMAL success, not an exception
 //
@@ -237,7 +237,7 @@ func issuerFor(cli Client) (GraphQLIssuer, error) {
 // "they haven't posted anything", which is a claim about a person made from a
 // permission error.
 
-// storyDoc is the story document (§1a), posted to `/api/graphql`.
+// storyDoc is the story document the story document, posted to `/api/graphql`.
 func storyDoc(docID string) webDoc {
 	return webDoc{
 		friendlyName: "PolarisStoriesV3ReelPageStandaloneQuery",
@@ -250,7 +250,7 @@ func storyDoc(docID string) webDoc {
 	}
 }
 
-// storyVars is the document's variables, as the web client sent them (§1a).
+// storyVars is the document's variables, as the web client sent them.
 type storyVars struct {
 	ReelIDs []string `json:"reel_ids_arr"`
 	// A relay provider flag the web client sends with the document; its value
@@ -454,7 +454,7 @@ func parseStory(ctx context.Context, raw []byte, canonical string) (domain.Story
 	}
 	// The reel's own expiry when it sent one; otherwise the latest frame's.
 	// S0 measured the reel's as null and each frame's as its taken_at +
-	// 86400 (§1), so the set ends when its newest frame does.
+	// 86400 , so the set ends when its newest frame does.
 	if reel.ExpiringAt != nil && *reel.ExpiringAt != 0 {
 		out.ExpiringAt = *reel.ExpiringAt
 	} else {

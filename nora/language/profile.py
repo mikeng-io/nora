@@ -1,7 +1,7 @@
 """The Profile adaptor, in shadow: one Dreamer session per (unit, person),
-writing typed lines through `profile_write` (design/unified-memory/profiles.md §4).
+writing typed lines through `profile_write` (design/unified-memory/profiles.md).
 
-**Shadow** (45 §6, 00 «Sequence» step 6): it writes `profile_line` and
+**Shadow** (45 §6, ): it writes `profile_line` and
 nothing reads it. The Character head, `peer_card` and `peer_history` keep
 rendering, Honcho's feed keeps running, and no prompt changes until the
 switch (step 8). `[memory.profile] write` turns the sessions on.

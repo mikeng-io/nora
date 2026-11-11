@@ -89,7 +89,7 @@ def test_nora_never_opens_a_discord_voice_connection() -> None:
     offenders = _offenders(_CHANNEL_CONNECT)
     assert not offenders, (
         "nora must never call channel.connect() — the audio-controller is the "
-        "sole voice-connection owner (design/voice-channel/audio.md, B1):\n"
+        "sole voice-connection owner (design/voice-channel/audio.md):\n"
         + "\n".join(offenders)
     )
 
@@ -98,7 +98,7 @@ def test_nora_never_holds_a_voice_client() -> None:
     offenders = _offenders(_VOICE_CLIENT)
     assert not offenders, (
         "VoiceClient has no place in nora's tree — the audio-controller is the "
-        "sole voice-connection owner (design/voice-channel/audio.md, B1):\n"
+        "sole voice-connection owner (design/voice-channel/audio.md):\n"
         + "\n".join(offenders)
     )
 
@@ -109,6 +109,6 @@ def test_nora_never_calls_change_voice_state() -> None:
     offenders = _offenders(_CHANGE_VOICE_STATE)
     assert not offenders, (
         "change_voice_state has no place in nora's tree — the audio-controller "
-        "is the sole voice-connection owner (design/voice-channel/audio.md, B1):\n"
+        "is the sole voice-connection owner (design/voice-channel/audio.md):\n"
         + "\n".join(offenders)
     )

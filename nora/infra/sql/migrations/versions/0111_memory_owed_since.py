@@ -1,6 +1,6 @@
 """memory_node.owed_since: when a node's vector became owed.
 
-design/unified-memory/graph.md §4.5. `memory_search` treats
+design/unified-memory/graph.md. `memory_search` treats
 a node waiting for its vector for under three worker ticks as fresh (read by
 its words) and an older wait as a backlog (`partial`). `projected_at` cannot
 measure that wait: every re-projection resets it, also when the input the

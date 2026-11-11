@@ -1,7 +1,7 @@
 package instameow
 
 // One post by its shortcode: `GET /posts/{shortcode}` (design/instagram-adoption/README.md
-// P12, 13 §Depth 3).
+// design/instagram-adoption/social.md «Shared posts and stories in a room»).
 //
 // # What the library call really is
 //
@@ -37,7 +37,7 @@ package instameow
 //     FetchMedia discards the body of a non-2xx, so the STATUS is all this
 //     code can read. A 404 is taken as Instagram saying "no such post" and
 //     answers ErrNotFound. Anything else — including the 400 that a story id
-//     got on this endpoint (17 P12) — is ErrUpstreamRejected: this code cannot
+//     got on this endpoint () — is ErrUpstreamRejected: this code cannot
 //     tell "no such post" from "not allowed to see it" from "wrong id" by a
 //     400, so it does not claim to;
 //  3. whether a carousel arrives with `carousel_media` filled in;
@@ -56,7 +56,7 @@ package instameow
 // The response is also validated INSIDE the wrapped function, so a REST
 // failure carried in an HTTP 200 (`"status": "fail"`, no items, a carousel
 // without its children, somebody else's post) ends the span ERROR, the same
-// guarantee 16 §Tracing requires of a GraphQL `errors` array.
+// guarantee design/instagram-adoption/bridge.md «Observation» requires of a GraphQL `errors` array.
 
 import (
 	"context"

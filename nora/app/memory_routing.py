@@ -66,7 +66,7 @@ def workspaces_of_person(policy: Policy, person_id: str) -> tuple[str, ...]:
 def profile_scopes_of_person(policy: Policy, person_id: str) -> tuple[tuple[str, str], ...]:
     """The (unit, workspace) pairs whose rooms list `person_id` by name:
     where their Profile accounts live (`character_key(unit, person_id)`,
-    design/unified-memory/profiles.md §1), and which portal workspace entry each
+    design/unified-memory/profiles.md), and which portal workspace entry each
     account belongs under.
 
     `workspaces_of_person`'s membership rule one level down — a `persons =

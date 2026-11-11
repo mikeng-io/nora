@@ -2,8 +2,7 @@ package main
 
 // GET /accounts/{igid}/items, and what the two configured GraphQL reads (the
 // story and the timeline) share: a doc_id from config, the `stale_query`
-// code, and never a seen-mark (design/cognition-loop/observation.md §1,
-// §1a, §4).
+// code, and never a seen-mark (design/cognition-loop/observation.md).
 
 import (
 	"encoding/json"
@@ -275,7 +274,7 @@ func TestAnUnconfiguredDocumentIs501NamingItsVariable(t *testing.T) {
 }
 
 // A GraphQL error naming the document is a rotated doc_id: 501 `stale_query`,
-// and the SESSION is untouched (the login is fine; §4 halts only the read).
+// and the SESSION is untouched (the login is fine; the read halts alone).
 // An error that does not name it stays a 502 upstream rejection.
 func TestAStaleDocumentIsStaleQueryAndLeavesTheSessionAlone(t *testing.T) {
 	stale := []byte(`{"errors":[{"message":"PersistedQueryNotFound","code":1675002,"summary":"Query not found"}]}`)
@@ -325,7 +324,7 @@ func TestACheckpointOnADocumentIs409AndStopsTheSession(t *testing.T) {
 }
 
 // The web viewer marks a story seen with a SEPARATE mutation
-// (`PolarisStoriesV3SeenMutation`, §1). No request these reads send may carry
+// (`PolarisStoriesV3SeenMutation`). No request these reads send may carry
 // a friendly name, an endpoint or a referer that says "seen", on any outcome:
 // found, empty, paged, stale or failed. Every request the fake received is
 // checked, not the ones the bridge meant to send.
@@ -588,7 +587,7 @@ func countsOf(t *testing.T, body itemsBody, i int) string {
 
 // Each item carries its likes, comments and reposts and whether its author
 // hid the likes, as the node has them: a null `media_repost_count` and an
-// absent one are both unknown, never 0 (22 §5).
+// absent one are both unknown, never 0 (design/cognition-loop/observation.md).
 func TestItemsCarryEachItemsCounts(t *testing.T) {
 	f := &fakeIG{TimelineBody: []byte(fakeig.TimelineFirstPageJSON)}
 	body := decodeItems(t, getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, ""))
@@ -636,7 +635,7 @@ func TestItemsACountOfTheWrongShapeIsUnknownNotARefusedPage(t *testing.T) {
 }
 
 // Who liked an item, Nora's own like and the Facebook cross-post counts are
-// never decoded, so none of them leaves the bridge (22 §5, «counts only»).
+// never decoded, so none of them leaves the bridge (design/cognition-loop/observation.md).
 func TestItemsNeverCarryWhoLikedNorasLikeOrFacebookCounts(t *testing.T) {
 	const at = `"like_count": 31, "comment_count": 4,`
 	extra := at + ` "top_likers": ["synthliker_one"], "facepile_top_likers": [{"username": "synthliker_two"}],` +

@@ -3,7 +3,7 @@ test (AGENTS.md, «a contract suite scopes its database to the MODULE»).
 
 Two implementations: `nora.infra.sql.observations.SqlObservationStore` over
 real Postgres, and `nora.testing.observations.FakeObservationStore`. The
-properties under test are the ones design/platform-observations/observations.mdrules on:
+properties under test are the ones design/platform-observations/observations.md rules on:
 replay dedupe by source digest, one committed row+head write, folded
 current/as-of state from ONE fold, retained-and-relinkable unresolved
 targets, partial-vs-complete snapshot semantics, and honest ordering.

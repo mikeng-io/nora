@@ -3,9 +3,9 @@ package instameow
 // `GET /accounts/{igid}/items`: one page of an account's posts and reels,
 // newest first, over the web app's profile timeline document
 // (`PolarisProfilePostsTabContentQuery_connection`,
-// design/cognition-loop/observation.md §1a, §7).
+// design/cognition-loop/observation.md,  «Record everything admitted»).
 //
-// Before S0 no mechanism for this list was known anywhere (P13's
+// Before S0 no mechanism for this list was known anywhere (design/instagram-adoption/social.md's
 // investigation; the social stream's back-fill waited on it). The document is
 // the one the web client sends when a profile's posts tab scrolls: 12 items a
 // page, paged by an opaque `after` cursor, posted to `/graphql/query` (not
@@ -45,12 +45,12 @@ import (
 	"instagram-bridge/internal/domain"
 )
 
-// timelinePageSize is the web client's own page size (§1a). Not tuned: a
+// timelinePageSize is the web client's own page size . Not tuned: a
 // read that asks for a different count is a request the web client never
 // sends.
 const timelinePageSize = 12
 
-// timelineDoc is the timeline document (§1a), posted to `/graphql/query`.
+// timelineDoc is the timeline document the timeline document, posted to `/graphql/query`.
 func timelineDoc(docID string) webDoc {
 	return webDoc{
 		friendlyName: "PolarisProfilePostsTabContentQuery_connection",
@@ -67,7 +67,7 @@ func timelineDoc(docID string) webDoc {
 }
 
 // timelineVars is the document's variables in the captured order and with
-// the captured values (§1a). `after` and `before` are sent as null, not
+// the captured values. `after` and `before` are sent as null, not
 // omitted, as the web client sends them.
 type timelineVars struct {
 	After  *string           `json:"after"`
@@ -131,7 +131,7 @@ type timelineNode struct {
 	// leniently (placeOf): a malformed tag never fails the page, and is
 	// carried as an UNKNOWN place, never as "no tag".
 	Location json.RawMessage `json:"location"`
-	// The audience's counts (22 §5), each read leniently (countOf, flagOf):
+	// The audience's counts (design/cognition-loop/observation.md), each read leniently (countOf, flagOf):
 	// a value of the wrong type, a negative count or an absent key is
 	// unknown, never 0, and never fails the page. Who liked (`top_likers`,
 	// `facepile_top_likers`), Nora's own like (`has_liked`) and the Facebook
@@ -338,7 +338,7 @@ func parseTimeline(ctx context.Context, raw []byte, igid domain.IGID) (domain.Ti
 			Reposts:     countOf(n.MediaRepostCount),
 			LikesHidden: flagOf(n.CountsDisabled),
 		}
-		// A reel is `product_type: clips` (§1a); a video posted to the feed
+		// A reel is `product_type: clips`; a video posted to the feed
 		// is still a post.
 		if n.ProductType == "clips" {
 			item.Kind = "reel"

@@ -11,14 +11,14 @@
 //     slot {stream_url, title, duration_seconds, playback_id, generation,
 //     resumable, pauseRequested} remembered as suspended; when the speech
 //     queue drains a RESUMABLE track is revived FROM THE CUT POSITION
-//     (§5 B7, phase 2): the position is the slot's start offset plus the
+//     (design/voice-channel/audio.md «Speech and music arbitration» B7, phase 2): the position is the slot's start offset plus the
 //     resource's playbackDuration at the cut, and the revived ffmpeg seeks
 //     there (`-ss` before `-i`); position_policy is approximate_seek — the
 //     player's consumed-frames count, not a sample-exact cursor. Measured
 //     2026-09-17 before this: every TTS reply restarted the song from 0.
 //     A NON-resumable (live) source gets NO resume: speech preempts and the
 //     stream ENDS — emitted as track-finished so nora treats it as a
-//     natural end (§5 "Live/non-seekable streams (radio) get NO resume").
+//     natural end (design/voice-channel/audio.md «Speech and music arbitration»).
 //   - a late ffmpeg start whose slot/generation is no longer current is
 //     ignored and the process killed (speech can never be cut by music).
 //   - /music/stop during speech invalidates the suspended slot and does NOT
@@ -29,7 +29,7 @@
 //     stream is intentionally paused (a paused pipe produces no bytes, so
 //     the watchdog must not read that as a stall).
 //
-// ffmpeg ownership (§7 B13): at most one LIVE music process. Replacement
+// ffmpeg ownership (design/voice-channel/audio.md «Speech and music arbitration» B13): at most one LIVE music process. Replacement
 // kills with a SIGTERM -> (grace) -> SIGKILL escalation, reaped via 'close';
 // a new spawn WAITS for every killed process's close before it starts, so
 // the TERM grace never overlaps two live ffmpegs. A 30s no-bytes watch on
@@ -139,7 +139,7 @@ export function createArbiter({
   // remembers: nothing ever defaulted music to 25%. The pre-controller player
   // started at 1.0 and this arbiter started at 100. The 0.25 in memory is
   // `[speech.tts] duck_gain` — how far music was SCALED DOWN while Nora spoke
-  // — and design 07 replaced ducking with a hard cut, so that key is now read
+  // — and design/voice-channel/audio.md replaced ducking with a hard cut, so that key is now read
   // by nothing. Same number, different mechanism; this is a new decision.
   let volumePercent = DEFAULT_VOLUME_PERCENT;
   let streaming = false;
@@ -559,7 +559,7 @@ export function createArbiter({
     }
     if (!s.resumable) {
       // Live/non-seekable source: NO resume — the stream ends here and nora
-      // treats it as a natural end (§5 position policy).
+      // treats it as a natural end (design/voice-channel/audio.md «Speech and music arbitration»).
       state = 'stopped';
       streaming = false;
       emitMusicEvent('track-finished', s, { duration_ms: positionMs(s) });
@@ -572,7 +572,7 @@ export function createArbiter({
       });
       return;
     }
-    // §5 B7: same playback_id, ffmpeg seeks to the cut position.
+    // design/voice-channel/audio.md «Speech and music arbitration» B7: same playback_id, ffmpeg seeks to the cut position.
     const revived = newSlot({ ...s, startOffsetMs: s.cutAtMs ?? 0 });
     slot = revived;
     startFfmpeg(revived, 'resuming');

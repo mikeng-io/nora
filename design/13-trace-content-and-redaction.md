@@ -40,7 +40,7 @@ they carry:
 | `tag_id`, `conversation_id`, `doctrine_sha256` | span attributes | n/a — provenance only, no content (`nora.obs.tracing.trace_attributes`, and a test pins it) |
 
 R-18 (`nora.agent.egress`) guards what reaches the GROUP. Nothing guards what
-reaches the trace, and design/12 §3 already states the general form of this
+reaches the trace, and design/12-prompt-tool-skill-boundaries.md §3 already states the general form of this
 mistake: *scope is enforced at assembly, never at egress*. By the time a span
 exists the disclosure is already authorised.
 

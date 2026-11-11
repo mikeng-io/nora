@@ -34,7 +34,7 @@
 package main
 
 // The composition root: flags, logging, tracing, and wiring. Every behaviour
-// lives in internal/ (design/instagram-adoption/bridge.md §Layers).
+// lives in internal/ (design/instagram-adoption/bridge.md).
 
 import (
 	"context"

@@ -29,8 +29,8 @@ objective reads is the debrief's outcome header, because that is the defect.
 | objective | reads today | adds | why |
 |---|---|---|---|
 | `standing-debrief.md` | the exchange, prior, `<what_happened>` | the header **scoped to the turn**; a `Nora:` row after the tag marked as a delivered reply | #199 — a turn outcome became a room position (`01 §2.2`) |
-| `standing-verdict.md` (deleted 2026-09-24 with the verdict and this check, `design/standing-ledger/00-intent.md`) | the exchange, reasoning, outcome | a deterministic check beside the model: *no reply was sent* + a `Nora:` row after the tag → `unsupported` | the verdict has never once returned false (#189); here it should have |
-| `participation.md` (gate) | transcript with ages, Standing | **nothing.** The gate stays a pure function of two blocks | design 36 §6. v2 put a `<decisions>` block here; a pending proactive row carries a note title, so that was the forbidden question |
+| `standing-verdict.md` (deleted 2026-09-24 with the verdict and this check) | the exchange, reasoning, outcome | a deterministic check beside the model: *no reply was sent* + a `Nora:` row after the tag → `unsupported` | the verdict has never once returned false (#189); here it should have |
+| `participation.md` (gate) | transcript with ages, Standing | **nothing.** The gate stays a pure function of two blocks | v2 put a `<decisions>` block here; a pending proactive row carries a note title, so that was the forbidden question |
 | the participation **turn** (`fire.py`) | everything, incl. `<notes>` when `[notes] enabled` | proactive rows pending or fired for this **unit**, last 24h — writer, verdict, room, age, note id; no title | a row says she has scheduled herself to speak and when: the loop's own commitment, not a fact about the world. No title, so on a deployment with notes off it carries no note-derived content |
 | `proactive.md` (decide) | notes, Standing, roster, own log, self card | participation's and the tag path's verdicts for the unit, last 24h, with note ids; later, a bounded recent window for any room a note references | `01 §2.1`, `§2.3` — #199's decider had nothing that could contradict a false note |
 | `note-candidates.md` | batch, notebook | the room's label and operator description | `01 §2.4` |
@@ -54,7 +54,7 @@ Design 33 §3's test is intrinsic and decidable at write time, and it stays:
 > entry has not finished its job.
 
 What v1 was reaching for does **not** survive as a retirement signal either.
-Version 2 proposed counting decliner verdicts against a note; 39 D6's build
+Version 2 proposed counting decliner verdicts against a note; design/cognition-loop/proactive.md's build
 audit already derives why that is wrong — «a `decline` charges no strike…
 the curator already wakes every due note daily, so waking on every look would
 strike a quiet dateless note past the ceiling in two days». A count of

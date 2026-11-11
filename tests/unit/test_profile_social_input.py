@@ -1,4 +1,4 @@
-"""The person Profile session's social input (design/unified-memory/profiles.md §4):
+"""The person Profile session's social input (design/unified-memory/profiles.md):
 the oldest `SOCIAL_ITEMS_MAX` items past the key's own social cursor, handed
 once (the cursor moves on `settle`, never on a failed run), rendered as
 `<social_items>` with a post's or reel's latest counts, and citable as

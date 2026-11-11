@@ -361,7 +361,7 @@ That is R-76; `docs/maintainers/conventions-rationale.md` has the argument and t
 Metric names are append-only. The six retired `nora_message_reading_*` counters
 stay declared at zero so saved queries remain valid; the later `nora_extraction_*`
 family left with the per-message extraction worker it measured
-(design/unified-memory/graph.md §2). Reading statements now persist through Cognition
+(design/unified-memory/graph.md). Reading statements now persist through Cognition
 step one; its own trace and budget instruments measure that path.
 
 **Three states on every instrument, never two** — `ok` / `nothing_found` /
@@ -583,7 +583,7 @@ other exit it always did (dream-screened replies, place lookups) — but no
 current call site uses it to pre-screen content bound for a trace: the two
 raw call sites below never send real content in the first place (see "What a
 raw call owes", above), so there is nothing left for it to screen there
-either. For anything Agent-backed, `design/13`'s lever is the only mechanism,
+either. For anything Agent-backed, `design/13-trace-content-and-redaction.md`'s lever is the only mechanism,
 and it is not yet turned on.
 
 ---
@@ -982,13 +982,13 @@ Recorded here so they are findings rather than surprises.
   moving onto strands.telemetry (2026-09-19).** Before this, the hand-rolled
   wrapper around those calls ran `nora.agent.security.trace_safe` on the
   prompt/completion before putting either on a span — a whole-text identifier/
-  coordinate screen, independent of `design/13`'s native-lever question. Now
+  coordinate screen, independent of `design/13-trace-content-and-redaction.md`'s native-lever question. Now
   that the call runs through a real Strands `Agent`, its content reaches the
   collector however Strands' own event recording writes it, with no seam left
   to substitute pre-screened text — so this content is exactly as unredacted
   as the tag turn's own Agent-backed content already was (consistent with the
   existing precedent, not a new exposure class, but a real guarantee this
-  specific call site used to have and no longer does). `design/13`'s native
+  specific call site used to have and no longer does). `design/13-trace-content-and-redaction.md`'s native
   lever is the only mechanism left that could restore it, for every
   Agent-backed call at once, and it is off by default.
 - **The relevance gate's prompt (every room's transcript, including rooms
@@ -1001,13 +1001,13 @@ Recorded here so they are findings rather than surprises.
   never went through before. Before this change, the gate's span carried
   only its own safe verdict JSON; the comment in `nora/ingest/
   relevance_gate.py` that said the prompt was never put on the wire was true
-  until this date. `design/evaluation/measurement.md` §4.2 had
+  until this date. `design/evaluation/measurement.md`  «Sampling and stability» had
   already named this exact fork — "either unscreened model text goes on the
   collector wire, or a second gate-specific mapper is written… 40 of 150
   [eval] cases wait on it" — one day before the session that resolved it.
   The operator was asked directly and chose to accept it, specifically to
   unblock that eval-suite gap; this was not verified by re-running the eval
   mapper against a live case and should be confirmed by whoever picks that
-  up next. `design/13`'s native redaction lever governs this content too
+  up next. `design/13-trace-content-and-redaction.md`'s native redaction lever governs this content too
   (`Tracer._redact` runs on both the Agent path and this raw-span path), so
   turning it on would cover both at once.

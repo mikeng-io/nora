@@ -568,9 +568,9 @@ async def test_the_participation_trigger_is_wired_to_the_real_fire_path(cfg):
     assert (await _participation_trigger_of(
         override_config(cfg, {"participation.enabled": True})
     )) is None, (
-        "[participation] enabled alone builds NOTHING (design 36): the trigger "
+        "[participation] enabled alone builds NOTHING: the trigger "
         "is the gate's, and a turn with no gate in front of it is the cost "
-        "design 36 exists to stop paying"
+        "design/ambient-loop/01-stages-and-seams.md exists to stop paying"
     )
 
     # `shadow_channel` is set because the shipped default is `shadow = true`
@@ -2147,7 +2147,7 @@ async def test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick(c
 
 @pytest.mark.parametrize("graph", [False, True])
 async def test_the_prefetch_holds_the_tools_search_only_on_the_graph_surface(cfg, graph):
-    """`<recalled>` (design/unified-memory/README.md step 3b): the tag path's
+    """`<recalled>` (design/unified-memory/README.md): the tag path's
     assembler holds the SAME `MemorySearch` the registry's `memory_search`
     does under `[memory.index] read`, and none off it, so the Honcho
     surface runs no pre-fetch."""

@@ -1,7 +1,7 @@
 """social_item_state: a `place` state carrying an item's new tagged place;
 social_poll: the `relist` stage.
 
-design/cognition-loop/observation.md §5. `social_item` is APPEND-ONLY, so
+design/cognition-loop/observation.md. `social_item` is APPEND-ONLY, so
 a tag the author adds, edits or removes after the item was recorded is a new
 `social_item_state` row, state `place`, its `place` the new place (NULL: the
 tag was removed). It hides nothing; only `gone` and `hidden` do. A `relist`

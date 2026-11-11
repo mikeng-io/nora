@@ -82,7 +82,8 @@ def _derived(standing: Standing) -> dict[str, Any]:
     # The room's own defaults UNION the lineage the write actually carried:
     # `standing.lineage` is where consumed Record requirements (and the
     # prior's inherited gates) live — stamping only `own_room_lineage` would
-    # launder them away (design 20 §4, sources derived by code and carried
+    # launder them away (design/notebook-memory-types/20-standing.md §4, sources derived by code and
+    # carried
     # to the write).
     own = own_room_lineage(
         room_key(standing.platform, standing.conversation_id), SECTIONS,

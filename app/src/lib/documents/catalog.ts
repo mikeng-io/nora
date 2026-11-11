@@ -1,5 +1,5 @@
 // The document catalog: the ONE definition of what a document may contain
-// (design/artifact/README.md §4, §9). Three consumers read it: the React
+// (design/artifact/catalog.md «One source of meaning»). Three consumers read it: the React
 // registry that renders (registry.tsx), the JSON Schema Nora's Python checker
 // validates against (nora/documents/document.schema.json), and the prompt
 // fragment the document-creation skill embeds. They cannot disagree because
@@ -165,7 +165,7 @@ export const components = {
         .array(
           z.strictObject({
             name: text(80),
-            // Written by Nora's service from the name (design/artifact §40), never by the model.
+            // Written by Nora's service from the name (design/artifact/catalog.md), never by the model.
             lat: z.number().min(-90).max(90).optional(),
             lng: z.number().min(-180).max(180).optional(),
           }),

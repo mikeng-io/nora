@@ -1,7 +1,7 @@
 """memory_node: `social_location`, the place a social item is tagged with.
 
-design/cognition-loop/observation.md §9 and
-design/unified-memory/graph.md §7a: a social item's `location` is a
+design/cognition-loop/observation.md and
+design/unified-memory/graph.md: a social item's `location` is a
 node of its own, keyed like its item and `attached_to` it, so a read can gate
 it by presence (`nora.domain.memory_index.PRESENCE_KINDS`) while the item
 stays readable by its caption. It is embedded, so `idx_memory_node_unembedded`'s

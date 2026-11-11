@@ -59,7 +59,7 @@ sentry = [
     "sentry-sdk==2.44.0",
 ]
 
-# Makes `nora groups` and `nora persons pending` — the commands design/10 §6,
+# Makes `nora groups` and `nora persons pending` — the commands design/10-identity-and-policy-schema.md §6,
 # policy.example.toml and `nora.policy`'s own error messages all name — real
 # commands rather than shorthand for `python -m nora …`. Same entry point, so
 # the container's `python -m nora` CMD is unaffected.
@@ -268,7 +268,7 @@ type = "layers"
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
 #
 # nora.ingest sits ABOVE nora.engagement, not beside it: the standing event fold
-# (design/standing-watermark/10) is triggered from the ingest path — every message,
+# (design/standing-watermark/10-event-trigger.md) is triggered from the ingest path — every message,
 # tagged or not, spawns the watermark check — while the fold machinery it reuses
 # (ConversationSlots, the debrief objective/prompt/parse) is engagement's. That is
 # engagement's own framing ("ingest decides WHETHER to engage; engagement decides
@@ -276,7 +276,7 @@ type = "layers"
 # The reverse import does not exist and stays forbidden.
 layers = [
     # `nora.subject` obtains the composed graph for a caller that is NOT
-    # production (design/evaluation/subject.md §6, operator 2026-09-17).
+    # production (design/evaluation/subject.md, operator 2026-09-17).
     # It sits ABOVE `nora.app` so it may reach the composition root while the
     # reverse is refused — the property that stops the application learning it
     # is being measured. Before this layer existed there was no slot for that

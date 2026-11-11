@@ -5,10 +5,10 @@ description: "When a configured trigger text appears in a group message, Nora co
 tags: [nora, design, tagging, strands, injection, reasoning, stateless]
 timestamp: '2026-08-03'
 edges:
-  - {dst: ../00-overview.md, rel: decided_by, provenance: asserted}
-  - {dst: ../01-ambient-ingest.md, rel: triggered_by, provenance: asserted}
-  - {dst: ../03-strands-reuse.md, rel: uses, provenance: asserted}
-  - {dst: ../04-config-identity.md, rel: uses, provenance: asserted}
+  - {dst: 00-overview.md, rel: decided_by, provenance: asserted}
+  - {dst: 01-ambient-ingest.md, rel: triggered_by, provenance: asserted}
+  - {dst: 03-strands-reuse.md, rel: uses, provenance: asserted}
+  - {dst: 04-config-identity.md, rel: uses, provenance: asserted}
 ---
 
 # Nora — Tagging Path

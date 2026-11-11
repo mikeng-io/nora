@@ -4,7 +4,7 @@ kind: objective
 version: 5
 applies_to: [character_nora_adaptor]
 description: >-
-  the agent's own Character in one unit (design/self-growth/character.md §4,
+  the agent's own Character in one unit (design/self-growth/character.md,
   C3b): what she is like here, as its people have met her. Reads the account
   written last time and the response episodes (each of her messages paired
   with how people responded), and writes one short descriptive account through

@@ -1,7 +1,7 @@
 """cognition_self_wake / cognition_remind_mirror -- step 3a-ii's pace verbs
-(`wake_at`/`wake_move`/`wake_cancel`, design/cognition-loop/observation.md §3)
+(`wake_at`/`wake_move`/`wake_cancel`, design/cognition-loop/observation.md)
 and the mirrored, held `remind`/`remind_move`/`remind_cancel` family
-(30-cognition.md §2: "every reminder cognition writes is mirrored to a
+(design/cognition-loop/session.md "every reminder cognition writes is mirrored to a
 review channel and held"), plus the FK restore step 3a-i's review left open.
 
 TWO NEW TABLES, both append-only (`nora.infra.sql.history.APPEND_ONLY`):

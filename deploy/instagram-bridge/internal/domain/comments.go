@@ -1,12 +1,12 @@
 package domain
 
 // The comment surface of a post, and the summons ledger that guards the ONE
-// write this bridge makes in public (design/instagram-adoption/summons.md §Account
+// write this bridge makes in public (design/instagram-adoption/summons.md
 // safety, phases 2 and 4).
 //
 // The ledger is the bridge's own memory of two things: which summonses it
 // RECEIVED (a comment mentioning this account reaches it as a DM-thread card;
-// the gateway resolves the card to its post and records it here, design 19
+// the gateway resolves the card to its post and records it here, design/instagram-adoption/summons.md
 // "Intake, re-measured 2026-09-26"), and which replies it has claimed or
 // published (so a summons is answered at most once, and the rolling cap and
 // spacing can be counted). The rules live in the app layer; this file holds
@@ -15,7 +15,7 @@ package domain
 //
 // None of these values may enter a span, a log line or an error text: a
 // comment id, a media id, an author's igid or username, and above all a
-// comment's text (16 §Tracing's never-list, 19 §Account safety).
+// comment's text (design/instagram-adoption/bridge.md «Observation»'s never-list, design/instagram-adoption/summons.md «One answer, at most once»).
 
 import (
 	"errors"
@@ -153,7 +153,7 @@ func (e *ActionBlocked) Error() string   { return "instagram blocked the write: 
 func (e *ActionBlocked) Unwrap() []error { return []error{e.Err, ErrNotPosted} }
 
 // MaxCommentRunes is the longest reply the bridge sends. 2200 is Instagram's
-// caption limit; the comment limit is UNMEASURED (design 19's table), so this
+// caption limit; the comment limit is UNMEASURED (design/instagram-adoption/summons.md's table), so this
 // is the conservative bound the design's caller agreed to.
 const MaxCommentRunes = 2200
 

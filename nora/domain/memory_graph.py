@@ -162,7 +162,7 @@ RELATION_RULES: Mapping[str, RelationRule] = {
     "same_as": _rule(ENTITY_KINDS, ENTITY_KINDS),
 }
 # A subject someone keeps returning to is `interested_in` a topic; `likes` is a
-# preference for one specific thing (notebook-memory-types/10 §3).
+# preference for one specific thing (notebook-memory-types/10-relations.md §3).
 for _rel in ("likes", "dislikes"):
     RELATION_RULES = {**RELATION_RULES, _rel: _rule(("person",), ("work", "place", "event"))}
 RELATION_RULES = {**RELATION_RULES, "interested_in": _rule(("person",), ("topic",))}

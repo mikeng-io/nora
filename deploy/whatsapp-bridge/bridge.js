@@ -112,7 +112,7 @@ const PAIR_PHONE = String(getArg('phone', '')).replace(/\D/g, '');
 // until the root secret projection is renamed with lead coordination.
 const BRIDGE_TOKEN = process.env.NORA_BRIDGE_API_TOKEN || process.env.NORA_BRIDGE_TOKEN || '';
 
-// -- Durable-mode env (frozen nora-bridge-wire v1 §env) ----------------------
+// -- Durable-mode env (design/platform-bridges/02-wire-and-platforms.md) ----------------------
 const JOURNAL_PATH = process.env.NORA_BRIDGE_JOURNAL || '';
 const DURABLE = Boolean(JOURNAL_PATH) && !PAIR_MODE;
 const REDIS_URL = process.env.NORA_REDIS_URL || '';
@@ -263,7 +263,7 @@ const obsCtx = {
   decryptPollVote,
 };
 
-// -- SSE fan-out + buffering (contract §dropped) ------------------------------
+// -- SSE fan-out + buffering (design/platform-bridges/02-wire-and-platforms.md «Inbound v1») ------------------------------
 
 function sseWrite(res, event) {
   res.write(`data: ${JSON.stringify(event)}\n\n`);

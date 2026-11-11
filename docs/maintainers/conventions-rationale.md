@@ -246,7 +246,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   modules that are not occasions are the named MECHANISM, RUNNER and EXEMPT
   entries in the test, each with a written reason, reviewed in the PR that adds
   it and re-checked by the test. A new occasion follows
-  `design/context-assembly/registry.md` «How a new occasion joins»
+  `design/context-assembly/registry.md`
   (DEC-273, ADR 0021).
 
 - **Never read a gate's success through a pipe.** `make gate | tail` returns
@@ -435,7 +435,7 @@ tier.** Both are gone: the code is deleted, the decision-index rows are marked
 (never renumbered), and every design node and spec that describes them carries a
 `DEPRECATED` banner. **Their database tables are NOT dropped** — the code goes,
 the schema stays, and dropping them is a separate explicit decision. The evidence
-that decided it is `design/cognition-loop/data.md` §0; the issue
+that decided it is `design/cognition-loop/data.md` ; the issue
 is #115. Nothing under `design/cognition-loop/` numbered 20, 21, 23, 24, 25,
 28, 31 or 32 describes code that exists.
 
@@ -513,7 +513,7 @@ and was not reached for until the third rewrite.
 collector, how to instrument a model call, how to read it back — is
 `docs/observability.md`. This section is why the rules are what they are.)*
 
-`design/cognition-loop/execution.md` is the catalogue: eight
+The catalogue: eight
 layers where an instrument could not observe the thing it existed to observe,
 plus the silent-match family one level down — the instruments we use to FIND
 those layers returning a positive-looking answer without ever engaging.

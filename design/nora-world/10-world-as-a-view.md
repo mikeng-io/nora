@@ -18,8 +18,7 @@ edges:
 
 The unit is the read boundary (DEC-231), and a boundary is drawn by scope,
 never by a filter inside it: lineage stays built and `[lineage] mode` stays
-`off` (operator, 2026-10-03, `design/cognition-loop/data.md` «Lineage
-decides who may see a row»). So the world follows the unit, not the room:
+`off` (operator, 2026-10-03, `design/cognition-loop/data.md` ). So the world follows the unit, not the room:
 
 - **Each unit has its own world.** Its rooms are districts of that world, and
   every member of the unit sees the whole of it, the same way Cognition reads
@@ -64,17 +63,17 @@ element needs per-person understanding, it goes through Character.
   from the View, so its object disappears on the next assembly. A forget
   request reaches the world with no world-specific code.
 - **As of a past date.** The Notebook and the Record are append-only in
-  system time (`10-tiers.md` §8), and the projection is a pure function of
+  system time (`design/cognition-loop/data.md` «One direction of flow»), and the projection is a pure function of
   them (§5), so the world can be assembled as of T with no extra store.
 
 ## 4. The world's own rows, placed in the data model
 
 | row | layer | writer | holds |
 |---|---|---|---|
-| a `world_place` call | Record (her acts), like her generated images (`05-data-model.md` §1a) | Cognition, through the verb | entry id, the spec, the asset chosen, district and cell; append-only |
+| a `world_place` call | Record (her acts), like her generated images (`design/cognition-loop/data.md` «Layers by authority») | Cognition, through the verb | entry id, the spec, the asset chosen, district and cell; append-only |
 | an asset | Record (her acts: an artifact) | the asset pipeline, for her act | the GLB in object storage, its spec, thumbnail, check result (`30-asset-pipeline.md`) |
 | a person's avatar choice, and each item they hide | Record (that person's acts) | the person, through the portal | their VRM, and hides by item; append-only |
-| the scene a viewer gets | View | the one View builder (`05-data-model.md` §6) | assembled at read time; never stored |
+| the scene a viewer gets | View | the one View builder (`design/cognition-loop/data.md` «Citations, links and search») | assembled at read time; never stored |
 
 **Projected placements are not stored.** The projection (§5) is a pure
 function of the unit's supported entries as of T (each one's id, kind and

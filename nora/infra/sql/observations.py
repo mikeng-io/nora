@@ -9,7 +9,8 @@ head, a full replay and the fake agree by construction.
 
 `append` writes the row and the folded head in one `engine.begin()`
 transaction — the "Record append + cheap current head update committed
-together" of design 02 — and `tx_hook` lets a caller join that transaction
+together" of design/platform-bridges/02-wire-and-platforms.md — and
+`tx_hook` lets a caller join that transaction
 the way `RecordStore.append`'s does. Concurrent appends to one object
 serialize on the head row's `FOR UPDATE` read; the FIRST writer claims the
 row with an `ON CONFLICT DO NOTHING` insert and a loser re-reads under the
@@ -670,7 +671,9 @@ async def _resolve_target_row(
     """The ONE target→row rule, callable inside an open transaction: the row
     the target PROVABLY names, or None. Zero matches is an unresolved target;
     several is an ambiguous one — an arbitrary same-timestamp pick would bind
-    evidence to a row it may not name (design 02: ambiguity stays unresolved).
+    evidence to a row it may not name —
+    design/platform-bridges/02-wire-and-platforms.md: ambiguity stays
+    unresolved.
     The author's identity is preserved separately from the actor's (commit
     `38b4a157f`): an author-qualified target resolves only a row that author
     sent, and only when that author sent exactly one."""

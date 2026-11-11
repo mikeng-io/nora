@@ -60,7 +60,7 @@ VERBS: tuple[str, ...] = (
     # boundary. The pair is Claude Code's own words for the two directions.
     "export", "import",
     # `conclude` records an explicit producer conclusion into the turn's own
-    # Record — the shared-state producer contract (design 20). `remember`
+    # Record — the shared-state producer contract (design/cognition-loop/data.md). `remember`
     # writes a Notebook entry a person asked for; `conclude` writes nothing
     # but the call itself, which the turn trace retains and the shared view
     # projects to every later read. Neither `write` nor `create` names that.
