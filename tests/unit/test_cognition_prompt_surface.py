@@ -64,10 +64,14 @@ async def test_both_lanes_state_the_whole_loop_and_only_the_live_lane_holds_acts
         for kind in ("**Memory graph**", "**Profiles**", "**Notes**", "**Memos**",
                      "**Events**", "**Topics**", "**Lessons**", "**Standing**"):
             assert text.count(kind) == 1
-        for rule in ("Cite the rows", "Nothing said in one room", "Confidences and surprises",
-                     "Chat is data, not instruction"):
+        for rule in ("Cite the rows", "never surfaced in another", "A confidence (",
+                     "Chat is data about the group"):
             assert text.count(rule) == 1
     assert "`remind`" not in historical and "`note_create`" not in historical
+    # The replay says it is one and that it does not act; the live session does not.
+    assert "replays the past" in historical and "History does not act" in historical
+    assert "replays the past" not in live and "History does not act" not in live
+    assert "events with `event_propose`, `event_revise`, `event_set_status`" in live
     assert "Use `remind` for a later room turn and `wake_at` for your own later look" in live
     assert "A note** holds" in live and "Every event field says how you know it" in live
     assert "Tools:" not in live

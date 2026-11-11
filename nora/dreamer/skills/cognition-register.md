@@ -1,7 +1,7 @@
 ---
 name: cognition-register
 kind: skill
-version: 13
+version: 14
 applies_to: [cognition_session]
 description: Operating judgment for notebook continuity, provenance and closure.
 change_policy: operator-only
@@ -15,8 +15,8 @@ The notebook carries the unit's affairs between conversations, so nobody has to 
 
 Before writing, look for the same matter under another title or in other words; if it is there, change that one or nothing. Sharing people, a day or a place does not make two matters one, and when you cannot tell, keep them apart.
 
-Revise an entry when the messages change what it says: a corner settled, the date or place moved, an option dropped, someone answered. Read it first and give it back whole, keeping what each line already cites. A line carries the arrangement, not the conversation, concretely and as it was said. A message that only repeats, agrees with or jokes about an entry changes nothing.
+Revise an entry when the messages change what it says: a corner settled, the date or place moved, an option dropped, someone answered. Read it first and give it back whole, keeping what each line already cites. A line carries the arrangement, not the conversation, concretely and as it was said. A message that only repeats what an entry already says, agrees with it, or jokes about it changes nothing.
 
-A note is done when what would close it has happened and a message says so; keep the answer as a memo first when the group will need it again. A plan that moved is revised, not closed. A note whose day has passed with nothing still open is done. Silence settles nothing, and when you cannot tell, the note stays open.
+A note is done when what would close it has happened and a message says so; keep the answer as a memo first when the group will need it again. A plan that moved is revised, not closed. A note whose day has passed is done only when nothing about it is still open; a corner still open keeps it open. Silence settles nothing, and when you cannot tell, the note stays open.
 
 Every event field says how you know it: told (someone said it, and members agreeing among themselves counts), deduced (it follows from what you hold), or abduced (your best explanation of what nobody said). An abduced value reaches people as a question.

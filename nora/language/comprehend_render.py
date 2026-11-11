@@ -155,14 +155,27 @@ _ORIENT_GUIDANCE = (
      "Use {tools} for profiles: read the account before revising it, and change a "
      "line only when new evidence bears on it; a single instance is a guess, not a trait."),
     (frozenset({"standing_revise"}),
-     "Use {tools} to hold your position: i_owe is what you took on; hold_open is "
-     "what you are keeping open and what would resolve it."),
+     "Use {tools} only to correct your Standing when it is wrong or missing something: "
+     "i_owe is what you took on; hold_open is what you are keeping open and what would "
+     "resolve it."),
 )
 _ACT_GUIDANCE = (
     (frozenset({"document_revise"}),
      "Use {tools} to carry a settled change into a shared document, preserving "
      "unrelated content."),
 )
+_NOTEBOOK_VERBS = (
+    ("notes", ("note_create", "note_revise", "note_set_status", "note_merge")),
+    ("memos", ("memo_create", "memo_revise", "memo_set_status")),
+    ("events", ("event_propose", "event_revise", "event_set_status")),
+)
+_HISTORICAL_ORIENT = (
+    "This session replays the past in source-time order: the clock line is the time of "
+    "what you are shown, and nothing after it is known. Keep what you learn with the "
+    "tools offered here.")
+_HISTORICAL_ACT = (
+    "History does not act: this replay offers no reminder, wake or present-day notebook "
+    "entry, so decide nothing for today and end when your understanding is kept.")
 _REMINDER_WORTH = (
     "A reminder earns its place when a moment is near, something is still open, and a "
     "word at the right hour helps the people involved: where to meet before dinner, a "
@@ -203,15 +216,23 @@ def _remind_and_wake_guidance(tool_names: frozenset[str]) -> str | None:
     return f"Use {wake} for your own later look; move or cancel it as its reason changes."
 
 
-def render_session_system(doctrine: str, skills: str, *, tool_names: frozenset[str]) -> str:
+def _notebook_verbs(tool_names: frozenset[str]) -> str:
+    kinds = [f"{kind} with {_tool_list(frozenset(verbs) & tool_names)}"
+             for kind, verbs in _NOTEBOOK_VERBS if frozenset(verbs) & tool_names]
+    return "Write " + "; ".join(kinds) + "."
+
+
+def render_session_system(doctrine: str, skills: str, *, tool_names: frozenset[str],
+                          historical: bool = False) -> str:
     """Assemble each stage from the session's actual offered tools."""
-    sections = _guidance(_ORIENT_GUIDANCE, tool_names)
+    sections = [_HISTORICAL_ORIENT] if historical else []
+    sections += _guidance(_ORIENT_GUIDANCE, tool_names)
     if tool_names & _NOTEBOOK_TOOLS:
-        sections.append(skills)
+        sections += [skills, _notebook_verbs(tool_names)]
     orient = assemble([restamp(ContextBlock(
         name="cognition_orient", body=compose_body(
             "\n\n".join(sections))), _ROW)])
-    actions = []
+    actions = [_HISTORICAL_ACT] if historical else []
     pace = _remind_and_wake_guidance(tool_names)
     if pace is not None:
         actions.append(pace)

@@ -1337,7 +1337,7 @@ class CognitionSessionRunner:
         from nora.language.comprehend_render import render_session_system
 
         system_prompt = render_session_system(
-            doctrine_text, skill_text, tool_names=surface.admitted)
+            doctrine_text, skill_text, tool_names=surface.admitted, historical=historical)
         shared_view = None
         if self._shared is not None:
             try:
