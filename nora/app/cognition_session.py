@@ -229,6 +229,10 @@ _STALE_NOTE: dict[str, object] = {
 }
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
+#: `lesson_view` sentinel on `_session_input`: `on_wake` hands the view it
+#: already read; a probe reaches `_session_input` without one and reads there.
+_UNREAD: Any = object()
+
 
 class NotReadOnlyToolError(ValueError):
     """`read_tools_for` handed the session a tool that is not on the
@@ -1042,22 +1046,19 @@ class CognitionSessionRunner:
             retain_carries = [
                 NewCarry(
                     unit=unit, stimulus_id=sid, strike=0,
-                    state="carried", session_id=None, waits=True,
-                )
+                    state="carried", session_id=None, waits=True)
                 for sid in sorted(retained)
             ]
             situation = build_situation(
                 unit=unit, pending=pending, home_room=home_room, now_ms=now_ms,
-                last_session_ms=last_looked_ms, max_items=self._max_items,
-            )
+                last_session_ms=last_looked_ms, max_items=self._max_items)
             if situation.agenda.is_empty:
                 self._inc("nora_cognition_session_skipped_total", reason="empty_agenda")
                 await self._finish(
                     wake_id, unit, None, "closed",
                     "empty agenda" if not skipped else
                     f"empty agenda: {len(skipped)} rollup stimulus(es) unreadable",
-                    carries=retain_carries,
-                )
+                    carries=retain_carries)
                 return None
 
             attempted = {sid for item in situation.agenda.items for sid in item.stimulus_ids}
@@ -1076,6 +1077,11 @@ class CognitionSessionRunner:
             # cannot judge from.
             grounding = await self._grounder(
                 unit, situation.agenda.items, pending, now_ms)
+            # BEFORE THE SESSION ROW: it persists `grounding.as_dict()`, so a
+            # live session's lesson evidence must already be on it, and the
+            # same view is reused for the prompt — never a second read.
+            grounding, lesson_view = await lesson_read(self._lessons, unit=unit,
+                grounding=grounding, historical=historical, inc=self._inc)
             if inspect_only:
                 # BEFORE ANYTHING IS RECORDED: an inspection returns what a
                 # session would be run on and persists nothing — no session
@@ -1091,8 +1097,7 @@ class CognitionSessionRunner:
                     unit=unit, view=view, situation=situation, session_id=0,
                     wake_id=0, now_ms=now_ms, doctrine_text=doctrine_text,
                     skill_text=skill_text, grounding=grounding,
-                    historical=historical, doctrine_sha256=doctrine_sha256,
-                )
+                    historical=historical, doctrine_sha256=doctrine_sha256, lesson_view=lesson_view)
                 return {
                     "system": system, "agenda": agenda,
                     **({"new_sources": rendered_new_sources(agenda)}
@@ -1119,27 +1124,22 @@ class CognitionSessionRunner:
                     # The lane the session ran in — the historical
                     # (backfill) lane's sessions are counted apart from the
                     # live one's for progress reporting.
-                    "lane": "historical" if historical else "live",
-                },
+                    "lane": "historical" if historical else "live"},
                 doctrine_sha256=doctrine_sha256, skill_versions=skill_versions,
                 config_revision_id=None, model_id=self._model_id,
-                model_route=self._model_route, wake_id=wake_id,
-            )
+                model_route=self._model_route, wake_id=wake_id)
             if eval_capture_enabled():
                 record_eval_event("nora.session.instructions", {"body": json.dumps({
-                    "doctrine_sha256": doctrine_sha256, "skill_versions": skill_versions,
-                })})
+                    "doctrine_sha256": doctrine_sha256, "skill_versions": skill_versions})})
             session_id = await self._store.record_session(
-                session=session, recorded_at_ms=now_ms,
-            )
+                session=session, recorded_at_ms=now_ms)
             self._inc("nora_cognition_session_total", mode="live")
             return await self._run_session(
                 unit=unit, view=view, situation=situation, session_id=session_id,
                 wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
                 doctrine_sha256=doctrine_sha256,
                 skill_text=skill_text, grounding=grounding, retained=sorted(retained),
-                spend=spend, replay=replay, historical=historical,
-            )
+                spend=spend, replay=replay, historical=historical, lesson_view=lesson_view)
         except asyncio.CancelledError:
             # Only a process shutdown cancels a session (`shutdown`,
             # `WakeEvaluator.cancel_in_flight`; the wall clock raises
@@ -1147,8 +1147,7 @@ class CognitionSessionRunner:
             # one, and `cancelled` neither backs the unit off nor strikes.
             await self._shielded_finish(
                 wake_id, unit, session_id, "cancelled",
-                restart_detail("the process was stopping and cancelled the session"),
-            )
+                restart_detail("the process was stopping and cancelled the session"))
             raise
         except SessionExpiredError:
             raise
@@ -1165,8 +1164,7 @@ class CognitionSessionRunner:
             log.exception("cognition session failed (unit=%s wake=%s)", unit, wake_id)
             await self._finish(
                 wake_id, unit, session_id, "failed", f"{type(exc).__name__}: {exc}"[:500],
-                cause=classify_failure(exc),
-            )
+                cause=classify_failure(exc))
             raise
 
     async def replay(self, *, view: UnitView, now_ms: int, historical: bool = False) -> Any:
@@ -1260,8 +1258,7 @@ class CognitionSessionRunner:
                 doctrine_sha256=doctrine_sha256, skill_versions=skill_versions,
                 model_id=self._model_id, model_route=self._model_route, wake_id=None,
             ),
-            recorded_at_ms=now_ms,
-        )
+            recorded_at_ms=now_ms)
         # One hand-written item is the whole input — so the assembly is the
         # wake's own `_session_input`, not a parallel partial copy of it: the
         # SAME instruction (objective and tool-gated guidance), the SAME
@@ -1372,7 +1369,7 @@ class CognitionSessionRunner:
         skill_text: str,
         grounding: Grounding,
         historical: bool = False,
-        doctrine_sha256: str | None = None,
+        doctrine_sha256: str | None = None, lesson_view: Any = _UNREAD,
     ) -> tuple[_RunState, Any, str, str]:
         """Everything a session assembles before the model call: the run
         state, the tools, the system prompt and the agenda text. A live
@@ -1396,9 +1393,11 @@ class CognitionSessionRunner:
         )
         if self._memory is not None:
             await self._memory.prepare(state, {s.id: s for s in view.pending}, grounding)
-        grounding = await lesson_read(
-            self._lessons, unit=unit, state=state, grounding=grounding,
-            historical=historical, inc=self._inc)
+        if lesson_view is _UNREAD:
+            grounding, lesson_view = await lesson_read(self._lessons,
+                unit=unit, grounding=grounding, historical=historical,
+                inc=self._inc)
+        state.lesson_view = lesson_view
         tools = await self._build_tools(
             unit=unit, state=state, now_ms=now_ms, labels=grounding.room_labels,
             doctrine_sha256=doctrine_sha256,
@@ -1453,7 +1452,8 @@ class CognitionSessionRunner:
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
         wake_id: int, now_ms: int, doctrine_text: str, skill_text: str,
         grounding: Grounding, spend: TokenSpend, retained: Sequence[int] = (),
-        replay: bool = False, historical: bool = False, doctrine_sha256: str | None = None,
+        replay: bool = False, historical: bool = False,
+        doctrine_sha256: str | None = None, lesson_view: Any = _UNREAD,
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
         kinds = sorted({item.kind for item in items})
@@ -1461,8 +1461,7 @@ class CognitionSessionRunner:
             unit=unit, view=view, situation=situation, session_id=session_id,
             wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
             skill_text=skill_text, grounding=grounding, historical=historical,
-            doctrine_sha256=doctrine_sha256,
-        )
+            doctrine_sha256=doctrine_sha256, lesson_view=lesson_view)
         from dataclasses import asdict
 
         if eval_capture_enabled():

@@ -18,7 +18,7 @@ from tests.unit.test_cognition_session_runner import (
 )
 
 
-def _lesson_seam():
+def _lesson_seam(quiet_s: int | None = None):
     """The real `CognitionLessons` over the in-memory fakes — checked writes only."""
     from nora.agent.dream_screen import offence
     from nora.domain.lessons import LESSON_MIN_EPISODES  # noqa: F401 - shape note
@@ -41,7 +41,8 @@ def _lesson_seam():
     keys = {"unit-1": LessonsKey(unit="unit-1", rooms=(
         CharacterRoom(key="home-room", platform="signal", label="Home"),))}
     evidence = LessonEvidence(
-        store=evidence_store, book=book, keys=keys, clock_ms=clock)
+        store=evidence_store, book=book, keys=keys, clock_ms=clock,
+        correction_quiet_seconds=quiet_s)
     cursor = _Cursor(evidence_store, clock)
     lessons = CognitionLessons(
         evidence=evidence, book=book, keys=keys, cursor=cursor,
@@ -159,3 +160,31 @@ async def test_a_failed_session_does_not_consume_the_lesson_batch():
     with pytest.raises(RuntimeError):
         await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
     assert cursor.at == 0
+
+
+async def test_the_recorded_session_row_carries_the_lesson_evidence_it_was_shown():
+    """A live session's grounding — the provenance the row persists — carries
+    the evidence the session was shown: the episode send ids, the correction
+    row ids and the cursor `take` would write."""
+    lessons, _store, evidence_store, _cursor = _lesson_seam(quiet_s=60)
+    _seed_episodes(evidence_store, 100, 110, 120)
+    sent = NOW - 300_000
+    evidence_store.add_message(id=500, platform="signal", room="home-room",
+                               person_id=None, body="five options", ts=sent,
+                               is_nora=True)
+    evidence_store.add_message(id=501, platform="signal", room="home-room",
+                               person_id="ada", body="stop giving five options",
+                               ts=NOW - 200_000, quoted_ts=sent)
+    expected = await lessons.shown(unit="unit-1")
+    runner, store, _ = _runner(
+        agent_runner=FakeCognitionAgentRunner(script=[]), lessons=lessons)
+    view = UnitView(unit="unit-1", pending=_pending("unit-1"),
+                    last_activity_ms=None, last_wake=None)
+    await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
+    _, session, _ = store.sessions[-1]
+    grounding = session.situation["grounding"]
+    assert grounding["lesson_episodes"] == [
+        e.send_id for e in expected.episodes] == [100, 110, 120]
+    assert grounding["lesson_corrections"] == [
+        m.row.id for m in expected.corrections] == [501]
+    assert grounding["lessons_cursor"] == expected.cursor

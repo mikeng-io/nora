@@ -18,25 +18,26 @@ log = logging.getLogger("nora.app.cognition_session")
 
 
 async def read(
-    lessons: Any, *, unit: str, state: Any, grounding: Any, historical: bool,
+    lessons: Any, *, unit: str, grounding: Any, historical: bool,
     inc: Any,
-) -> Any:
-    """`shown` into the grounding: the closed `response` episodes and
-    corrections past the unit's `lessons` cursor, with the held lessons by
-    `L` handle and the `citable` its writes are held to. Live only — a
-    historical session never reads or writes present-day practice — and a
-    failed read is told as `unavailable`, never as an empty batch."""
+) -> tuple[Any, Any]:
+    """`shown` into the grounding, and the view handed back with it: the closed
+    `response` episodes and corrections past the unit's `lessons` cursor, with
+    the held lessons by `L` handle and the `citable` its writes are held to.
+    Live only — a historical session never reads or writes present-day
+    practice — and a failed read is told as `unavailable`, never as an empty
+    batch. The caller keeps the view on the run state: verbs cite only what it
+    carried and `take` consumes only a session that closed."""
     if lessons is None or historical:
-        return grounding
+        return grounding, None
     try:
         view = await lessons.shown(unit=unit)
     except Exception:
         log.exception("cognition lesson evidence read failed (unit=%s)", unit)
         inc("nora_errors_total", stage="cognition_lessons")
         return replace(grounding, unavailable=(
-            grounding.unavailable | frozenset(LESSON_BLOCKS)))
-    state.lesson_view = view
-    return replace(grounding, lesson_evidence=view)
+            grounding.unavailable | frozenset(LESSON_BLOCKS))), None
+    return replace(grounding, lesson_evidence=view), view
 
 
 def verbs(
