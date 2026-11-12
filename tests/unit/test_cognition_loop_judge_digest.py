@@ -137,3 +137,17 @@ async def test_a_judge_failure_names_its_error_type_and_message():
     assert answer.verdict == "error"
     assert "RuntimeError" in answer.reason
     assert "the generated upstream refused the call" in answer.reason
+
+
+def test_a_repeated_lineage_is_sent_once_and_named_by_key():
+    from scripts.cognition_loop.judges import _shared_lineage
+
+    shared = "Lineage(audiences=('generated-room',))"
+    out = _shared_lineage({
+        "a": {"body": "x", "lineage": shared},
+        "b": {"body": "y", "lineage": shared},
+        "c": {"body": "z"},
+    })
+    assert out["lineages"] == {"lineage-1": shared}
+    assert [e.get("lineage") for e in out["state_after"].values()] == [
+        "lineage-1", "lineage-1", None]

@@ -50,7 +50,8 @@ You are given, as JSON:
 (before and after) and retired entries keyed by entry id; `unchanged` is \
 a count only
 - `state_after`: the unit's state of the expectation's kind after the \
-wake, same entry ids
+wake, same entry ids; an entry's `lineage` names a key in `lineages`, \
+which holds each distinct lineage (who may see the entry) once
 - `tool_calls`: the session's tool calls in order, each with arguments, \
 result status and refusal
 - `final_output`: the session's last assistant output
@@ -124,6 +125,19 @@ def _final_output(trajectory: dict[str, Any]) -> str | None:
     return None
 
 
+def _shared_lineage(entries: dict[str, Any]) -> dict[str, Any]:
+    """Each distinct lineage once; entries name it by key."""
+    keys: dict[str, str] = {}
+    out = {}
+    for entry_id, entry in entries.items():
+        lineage = entry.get("lineage") if isinstance(entry, dict) else None
+        if isinstance(lineage, str):
+            key = keys.setdefault(lineage, f"lineage-{len(keys) + 1}")
+            entry = {**entry, "lineage": key}
+        out[entry_id] = entry
+    return {"state_after": out, "lineages": {k: v for v, k in keys.items()}}
+
+
 def judge_payload(
     expectation: Any, diff: Any, state_after: Any, trajectory: dict[str, Any],
 ) -> dict[str, Any]:
@@ -135,7 +149,7 @@ def judge_payload(
             "text": expectation.text,
         },
         "diff": _full_diff(diff),
-        "state_after": dict(state_after.entries(expectation.kind)),
+        **_shared_lineage(dict(state_after.entries(expectation.kind))),
         "tool_calls": _tool_calls(trajectory),
         "final_output": _final_output(trajectory),
         "stop_reason": trajectory.get("stop_reason"),
