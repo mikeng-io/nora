@@ -104,19 +104,16 @@ def _profile_keys(subject: Any, unit: str) -> list[str]:
     ]
 
 
-#: Overrides the run reserves: arm overrides cannot set these at all —
-#: a clash refuses before composition. The measured surface stays
-#: configurable (`llm.*`, doctrine, tools); the delivery surface does not.
-#: The reads Cognition's loop depends on, on for every case unless an arm
-#: sets them back: a closed read cascades into refused writes (no graph
-#: search before `memory_propose`, no profile before a note or lesson
-#: names a person), so the default measures the loop with every read open.
+#: Reads the loop depends on, open unless an arm closes them (design: the loop is open).
 OPEN_LOOP: dict[str, Any] = {
     "memory.index.read": True,
     "memory.profile.read": True,
 }
 
 
+#: Overrides the run reserves: arm overrides cannot set these at all —
+#: a clash refuses before composition. The measured surface stays
+#: configurable (`llm.*`, doctrine, tools); the delivery surface does not.
 def reserved_overrides(workspace: str) -> dict[str, Any]:
     """Every override the run owns outright."""
     return {
@@ -193,9 +190,7 @@ async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
 
 
 def _with_frozen_rosters(policies: Any, rosters: dict[str, Any]) -> Any:
-    """The composed rosters with Discord's answered from the run-start
-    freeze: the sandbox composes no Discord connection, so production
-    would build no Discord roster reader at all."""
+    # The sandbox composes no Discord connection, so no roster reader exists.
     def wrapped(*args: Any, **kwargs: Any) -> Any:
         wiring = policies(*args, **kwargs)
         wiring.rosters["discord"] = FrozenRoster("discord", rosters)
@@ -478,8 +473,7 @@ async def _run_wake(
                     events, wake_id=wake.wake_id, session_id=session_id,
                     tokens=tokens or None,
                 )
-                trajectory["availability"] = availability(
-                    getattr(subject, "cfg", None), trajectory)
+                trajectory["availability"] = availability(getattr(subject, "cfg", None), trajectory)
                 if inspection is not None:
                     # The inspection assembled the wake's context through the
                     # same `_session_input` a session runs; only the model

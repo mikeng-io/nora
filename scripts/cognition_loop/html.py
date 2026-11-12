@@ -388,7 +388,6 @@ def _with_outcome(call: dict[str, Any]) -> dict[str, Any]:
 
 
 def _detail(call: dict[str, Any]) -> str:
-    """The tool's own reason, short: what the reader needs in the table."""
     if call.get("status") in (None, "ok"):
         return ""
     return str(call.get("reason") or call.get("error_type") or "")[:80]
@@ -455,8 +454,6 @@ def _toc(report: dict[str, Any], orphans: list[Path]) -> str:
 
 
 def _availability(output: Path) -> str:
-    """The first frozen wake's availability, at the top: a closed read
-    is seen before any verdict."""
     for path in sorted(output.glob("wake-*.json")):
         frozen = json.loads(path.read_text(encoding="utf-8"))
         avail = (frozen.get("trajectory") or {}).get("availability")
