@@ -1042,7 +1042,7 @@ class CognitionSessionRunner:
 
     async def _inspect(
         self, unit: str, view: UnitView, situation: Situation, now_ms: int,
-        doctrine_text: str, doctrine_sha256: str, skill_text: str,
+        doctrine_text: str, doctrine_sha256: str | None, skill_text: str,
         skill_versions: dict[str, object], grounding: Any,
         lesson_view: Any, historical: bool) -> dict[str, Any]:
         # BEFORE ANYTHING IS RECORDED: returns what a session would run on
