@@ -1,5 +1,26 @@
 # Changelog
 
+## [7.18.6](https://github.com/mikeng-io/nora/compare/v7.18.5...v7.18.6) (2026-11-12)
+
+
+### Features
+
+* **eval:** the Cognition loop runs with every read open and reports availability first ([fe06ecf](https://github.com/mikeng-io/nora/commit/fe06ecf90a727c01ae3e4d3002294f659c1a15f3))
+* **eval:** the production model drafts a case's positive checks on the host ([3a1658a](https://github.com/mikeng-io/nora/commit/3a1658ac8a6e0142844e92afc8b41a6458568d4a))
+
+
+### Bug Fixes
+
+* **eval:** a judge cites the entries it checked whenever the kind holds any ([49d4f94](https://github.com/mikeng-io/nora/commit/49d4f944075b7d459504de35cfad0675f28228c2))
+* **eval:** a judge is checked for a served model and independence, not alias equality ([0c75164](https://github.com/mikeng-io/nora/commit/0c75164076e832a6d79ce293fdb62e1d82d5bdb4))
+* **eval:** a judge's JSON object is read out of a fence or sentence, fields still checked ([744f0f0](https://github.com/mikeng-io/nora/commit/744f0f05d463096d29c1a28fca55d1d779144561))
+* **eval:** availability reads a subject without a config as not set ([bd4fc7e](https://github.com/mikeng-io/nora/commit/bd4fc7e4492da797986b9586c0f518b2eb90734f))
+* **eval:** judges may cite without a kind prefix, absence needs no citation, and a run can be re-judged ([3e7bf76](https://github.com/mikeng-io/nora/commit/3e7bf76a21ba189e96d7b032c25e85eecf07f85f))
+* **eval:** name the tool outcome without a decision number in a docstring ([292a79e](https://github.com/mikeng-io/nora/commit/292a79e7c725614ea6e650505ef380e27e4020e4))
+* **eval:** rejudge keeps run errors, listed Discord rooms get rosters, availability spans every wake ([aab8f79](https://github.com/mikeng-io/nora/commit/aab8f79079a040f42e1fcbdc0a648517390bda68))
+* **eval:** the Cognition loop judges a bounded digest and reads real tool outcomes ([11b89ad](https://github.com/mikeng-io/nora/commit/11b89ade453569b2d25bfe3c29aa8a46c75ade14))
+* **eval:** the frozen Discord roster reaches the session with Discord composed off ([48c1633](https://github.com/mikeng-io/nora/commit/48c1633cfc61d271ff82f93c0bbdd5f1a631189f))
+
 ## [7.18.5](https://github.com/mikeng-io/nora/compare/v7.18.4...v7.18.5) (2026-11-12)
 
 
