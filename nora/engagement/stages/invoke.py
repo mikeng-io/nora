@@ -165,16 +165,15 @@ async def run(
     trace: TagTrace
     captured = TurnCapture()
     try:
-        # The SAME number the `wait_for` enforces, published to every tool
-        # the turn runs, so a tool that spends wall clock on its own model
-        # call (the vision describer) can see how much of it is left.
+        # The SAME number `wait_for` enforces, published to every tool the turn
+        # runs (the vision describer reads how much of it is left).
         with turn_deadline(timeout_seconds), capture_turn() as captured:
             stop_reason, final_text, trace = await asyncio.wait_for(
                 runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                     tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
-                    tool_hooks=tool_hooks,
-                    tag_message=tag_message, limits=limits, ctx=ctx,
+                    tool_hooks=tool_hooks, tag_message=tag_message, limits=limits,
+                    ctx=ctx,
                     trace_attributes=build_trace_attributes(ctx, doctrine),
                     follow_up=follow_up, force_send_reply=force_send_reply,
                 ),

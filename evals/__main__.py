@@ -96,8 +96,7 @@ CORPUS_CLASS: dict[str, str] = {
     # (ADR 0015) what she SAYS after a tool returns (judged).
     "tool_reporting": "S3",
     # S2, tool routing: which tool EXECUTED.
-    "tool_selection": "S2",
-    "reply_delivery": "S2",
+    "reply_delivery": "S2", "tool_selection": "S2",
     "no_trigger": "S7",
     "near_miss": "S7",
     "trigger": "S7",

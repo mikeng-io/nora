@@ -460,7 +460,7 @@ async def test_a_send_cancelled_on_the_wire_stays_unresolved():
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert handle.deliverer.send_unresolved is True
+    assert handle.deliverer.send_unresolved == 1
     assert handle.deliverer.delivered is False
     assert _nothing_answered(handle) is False
 
@@ -477,5 +477,5 @@ async def test_a_resolved_send_is_not_unresolved():
         metrics=Metrics(), audience="tag", composer=None,
     )
     assert await handle.deliverer.deliver("hello") is False
-    assert handle.deliverer.send_unresolved is False
+    assert handle.deliverer.send_unresolved == 0
     assert _nothing_answered(handle) is True

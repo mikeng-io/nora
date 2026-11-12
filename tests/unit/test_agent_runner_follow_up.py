@@ -21,7 +21,7 @@ from strands.models.model import Model
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
 from nora.agent.ports import ToolSpec, adapt
-from nora.app.agent_runner import LiveAgentRunner
+from nora.app.agent_runner import LiveAgentRunner, repair_unsent_reply
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.obs.metrics import Metrics
@@ -267,12 +267,12 @@ async def test_send_reply_repair_is_capped_at_the_remaining_turns():
     blanket two — a repair that spent an extra model call would exceed the
     turn's own budget."""
     agent = _Agent(_ScriptedModel([("tool", "send_reply")]))
-    await factory.repair_unsent_reply(
+    await repair_unsent_reply(
         agent, limits={"turns": 1, "output_tokens": 5}, timeout_seconds=5)
     assert agent.limits == {"turns": 1, "output_tokens": 5}
 
     agent = _Agent(_ScriptedModel([("tool", "send_reply")]))
-    await factory.repair_unsent_reply(agent, limits={"turns": 5}, timeout_seconds=5)
+    await repair_unsent_reply(agent, limits={"turns": 5}, timeout_seconds=5)
     assert agent.limits["turns"] == 2
 
 
@@ -289,7 +289,7 @@ async def test_send_reply_repair_refuses_a_pin_for_a_different_tool():
 
     model.update_config = refuse  # type: ignore[method-assign]
     agent = _Agent(model)
-    assert await factory.repair_unsent_reply(agent, limits={}, timeout_seconds=5) is None
+    assert await repair_unsent_reply(agent, limits={}, timeout_seconds=5) is None
     assert agent.calls == 0
 
 
@@ -316,7 +316,7 @@ async def test_send_reply_repair_restores_params_when_the_pin_cannot_be_verified
 
     model.get_config = flaky_get  # type: ignore[method-assign]
     agent = _Agent(model)
-    assert await factory.repair_unsent_reply(agent, limits={}, timeout_seconds=5) is None
+    assert await repair_unsent_reply(agent, limits={}, timeout_seconds=5) is None
     assert agent.calls == 0
     assert writes[-1]["params"] == {}
 

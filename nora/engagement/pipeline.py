@@ -179,13 +179,10 @@ def _nothing_answered(handle: Any) -> bool:
     gate on this rather than on «nothing delivered»: a heads-up sent with
     `more=true` IS delivered, so gating on delivery alone would drop an answer
     she then wrote as prose, or a turn cut off mid-work, while the turn read as
-    `replied`.
-
-    `send_unresolved` vetoes all three: a send killed mid-wire may already be
-    in the room while `delivered` still reads False, and speaking again here
-    could say the same thing twice. Silence over a duplicate."""
-    return bool(handle.guard.answer_still_owed) and not getattr(
-        handle.deliverer, "send_unresolved", False)
+    `replied`. `send_unresolved` vetoes all three: a send killed mid-wire
+    may already be in the room, and speaking again could repeat it."""
+    return (bool(handle.guard.answer_still_owed)
+            and not getattr(handle.deliverer, "send_unresolved", False))
 
 class EngagementPipeline:
     def __init__(
@@ -889,11 +886,9 @@ class EngagementPipeline:
                     tool_hooks=surface.hooks,
                     tag_message=tag_message, limits=surface.limits(self._limits), ctx=ctx,
                     timeout_seconds=self._timeout_seconds, metrics=self._metrics,
-                    # This pipeline IS the tag path; the NAME stays at the
-                    # call site rather than becoming a default so an omitted
-                    # one cannot compile (the A8 filter is `audience="tag"`).
-                    # It is `nora.domain.audience.TAG` rather than a literal, because
-                    # `reasoning_strip_log.path` reads the same vocabulary.
+                    # This pipeline IS the tag path; the NAME stays explicit at
+                    # the call site, and as `nora.domain.audience.TAG` rather
+                    # than a literal, because `reasoning_strip_log.path` reads it.
                     audience=audience_names.TAG,
                     force_send_reply=request.occasion == "tag",
                 )

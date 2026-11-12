@@ -209,11 +209,7 @@ class Deliverer:
         self._send_calls = 0
         self._delivered_count = 0
         self._reaction_delivered = False
-        # Sends admitted to the wire whose outcome was never recorded: the
-        # counter is decremented only on the resolved path, so a task killed
-        # mid-send leaves it non-zero forever — "maybe delivered" (the
-        # platform may already have the message), not "not sent".
-        self._send_unresolved = 0
+        self.send_unresolved = 0  # wire-admitted sends with no recorded outcome
         # Every message actually SENT this turn (Honcho v2): the feedback stage
         # feeds each under the Nora aiPeer. Populated only on a successful send,
         # so a refused/failed message is never fed.
@@ -284,16 +280,6 @@ class Deliverer:
     @property
     def attempted(self) -> bool:
         return self._attempts > 0
-
-    @property
-    def send_unresolved(self) -> bool:
-        """A send went to the wire and its outcome was never recorded.
-
-        True only when the send task was cancelled between `adapter.send` and
-        the outcome bookkeeping: the platform may have the message while
-        `delivered` still reads False, so a second send could say the same
-        thing twice."""
-        return self._send_unresolved > 0
 
     @property
     def called(self) -> bool:
@@ -616,11 +602,9 @@ class Deliverer:
         # adapter without bind_owner is not a bridge adapter at all.
         adapter = self._adapter
         bind_owner = getattr(adapter, "bind_owner", None)
-        if (bind_owner is not None
-                and getattr(adapter, "action_owner", None) is None):
-            adapter = bind_owner(
-                ActionOwner(kind="live_invocation", id=str(row_id)))
-        self._send_unresolved += 1
+        if bind_owner is not None and getattr(adapter, "action_owner", None) is None:
+            adapter = bind_owner(ActionOwner(kind="live_invocation", id=str(row_id)))
+        self.send_unresolved += 1
         try:
             result = await adapter.send(
                 target=self._target, text=outbound.text,
@@ -705,14 +689,9 @@ class Deliverer:
         # and invite a blind second send; calling it failed misreports an
         # outcome nobody disproved). The durable truth is the action row's,
         # and the outcome name keeps the in-process view equally honest.
-        self._last_outcome = (
-            "sent" if result.ok
-            else "send_uncertain" if getattr(result, "uncertain", False)
-            else "send_failed")
-        # Resolved: the send's outcome is recorded. A task killed above this
-        # line leaves `_send_unresolved` elevated — `send_unresolved` is the
-        # "maybe delivered" read the recovery nets check before speaking again.
-        self._send_unresolved -= 1
+        self._last_outcome = ("sent" if result.ok else "send_uncertain"
+                              if getattr(result, "uncertain", False) else "send_failed")
+        self.send_unresolved -= 1
         return result.ok
 
 
@@ -1196,11 +1175,8 @@ class ReplyGuard(HookProvider):
             # different call. A lookup that finds something lifts the refusal for
             # the rest of the turn; a model that re-fires `send_reply` against an
             # unchanged state is refused again.
-            if (
-                self._lookups is not None
-                and self._lookups_made > 0
-                and self._lookups_found == 0
-            ):
+            if (self._lookups is not None and self._lookups_made > 0
+                    and self._lookups_found == 0):
                 return self._veto(
                     "R-97",
                     f"You looked {self._lookups_made} time(s) this turn and "
@@ -1274,9 +1250,7 @@ class ReplyGuard(HookProvider):
 
     @property
     def answer_still_owed(self) -> bool:
-        """No reply landed, or only a heads-up whose answer is still owed."""
-        delivered = bool(self._deliverer and self._deliverer.delivered)
-        return not delivered or self.reply_still_owed
+        return not (self._deliverer and self._deliverer.delivered) or self.reply_still_owed
 
     @property
     def reply_still_owed(self) -> bool:

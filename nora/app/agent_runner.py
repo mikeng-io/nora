@@ -30,6 +30,7 @@ must not import, and the Dreamer needs the identical extraction while
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 import time
@@ -37,7 +38,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from nora.agent import factory
+from nora.agent import factory, tool_choice
 from nora.agent.guards import ReplyGuard
 from nora.agent.tag_trace_extract import extract_tag_trace
 from nora.agent.turn_recording import TurnRecording
@@ -70,11 +71,8 @@ DEFAULT_DRAFT_LIMITS: dict[str, int] = {
     "turns": 1, "output_tokens": 4_000, "total_tokens": 1_100_000,
 }
 
-# What the reply repair must leave between its own timeout and the turn's
-# `wait_for`: the trace extraction and the unwind still have to run, and the
-# recovered prose is delivered only if `runner.invoke` returns inside it. A
-# repair allowed the whole remainder is a repair that can cancel the prose it
-# was meant to send.
+# The unwinding slack a repair must leave inside the turn's `wait_for`: a
+# repair allowed the whole remainder cancels the prose it was meant to send.
 REPAIR_UNWIND_SECONDS = 5.0
 
 # The caps that mean "cut off mid-work", as opposed to a turn that finished or
@@ -84,6 +82,66 @@ REPAIR_UNWIND_SECONDS = 5.0
 _BUDGET_STOP_REASONS = frozenset({
     "limit_turns", "limit_total_tokens", "limit_output_tokens",
 })
+
+
+def _stop_reason_of(result: Any) -> str | None:
+    # `isinstance`, not a cast: `factory` results are typed `Any` to keep
+    # `strands` out of this module, and a non-string is not a stop reason.
+    reason = getattr(result, "stop_reason", None)
+    return reason if isinstance(reason, str) else None
+
+
+_REPLY_REPAIR_INSTRUCTION = (
+    "You wrote your answer as prose instead of sending it. Call send_reply now "
+    "with that same answer, preserving its wording and meaning. Do not do more work."
+)
+
+#: The one `tool_choice` a repair may run under — nothing else counts, not
+#: even a pin already installed for a different tool.
+_SEND_REPLY_CHOICE = {"type": "function", "function": {"name": "send_reply"}}
+
+
+async def repair_unsent_reply(
+    agent: Any, *, limits: dict, timeout_seconds: float,
+) -> Any | None:
+    """Send an already-written answer through send_reply, within the remaining budget.
+
+    Fail-closed, like `factory.draft_from_exhausted_loop`: a failed, timed-out
+    or raising repair returns None and the caller keeps the original prose for
+    the recovery path. It has its OWN timeout because a repair that runs to the
+    turn's `wait_for` is cancelled out from under the prose it was meant to
+    deliver.
+    """
+    model = getattr(agent, "model", None)
+    if model is None:
+        return None
+    try:
+        previous = dict(model.get_config().get("params") or {})
+    except Exception:  # noqa: BLE001 — a config the model will not take is not worth losing the prose over
+        return None
+    try:
+        tool_choice.force(model, "send_reply")
+        # A pin may already be installed for a DIFFERENT tool (`force`'s own
+        # return only says whether it changed anything): run under exactly the
+        # named `send_reply` choice or not at all.
+        if (model.get_config().get("params") or {}).get("tool_choice") != _SEND_REPLY_CHOICE:
+            return None
+        return await asyncio.wait_for(
+            agent.invoke_async(
+                _REPLY_REPAIR_INSTRUCTION, invocation_state={},
+                limits={**limits, "turns": min(2, limits.get("turns", 2))},
+            ),
+            timeout=timeout_seconds,
+        )
+    except Exception as exc:  # noqa: BLE001 — incl. TimeoutError; fail-closed, see docstring
+        # Never re-raise into a turn that has authored prose to deliver.
+        log.warning("reply repair: repair call failed (%s)", type(exc).__name__)
+        return None
+    finally:
+        try:
+            model.update_config(params=previous)
+        except Exception:  # noqa: BLE001 — the agent is discarded with this turn anyway
+            log.warning("reply repair: could not restore tool_choice")
 
 
 class LiveAgentRunner:
@@ -204,12 +262,7 @@ class LiveAgentRunner:
         baseline = len(agent.messages)
         try:
             result = await factory.invoke(agent, tag_message, invocation_state={}, limits=limits)
-            # `isinstance`, not a cast: `factory.invoke` is typed `Any` to keep
-            # `strands` out of this module, and an unchecked `Any` returned from a
-            # `str | None` signature is precisely what mypy's `warn_return_any`
-            # exists to stop. A shape that is not a string is not a stop reason.
-            stop_reason = getattr(result, "stop_reason", None)
-            stop_reason = stop_reason if isinstance(stop_reason, str) else None
+            stop_reason = _stop_reason_of(result)
             text = factory.final_text(result)
             followed_up = False
             # `end_turn` ONLY: the one stop that means she finished on her own. A
@@ -223,24 +276,12 @@ class LiveAgentRunner:
                     result = await factory.invoke(
                         agent, message, invocation_state={}, limits=remaining or {},
                     )
-                    stop_reason = getattr(result, "stop_reason", None)
-                    stop_reason = stop_reason if isinstance(stop_reason, str) else None
+                    stop_reason = _stop_reason_of(result)
                     text = factory.final_text(result)
-            if (
-                force_send_reply and not followed_up and stop_reason == "end_turn"
-                and text.strip() and not guard.cancelled_model_call
-                and guard.answer_still_owed
-            ):
-                remaining = factory.remaining_limits(agent, limits)
-                left = seconds_left()
-                budget = self._draft_timeout_seconds if left is None else min(
-                    self._draft_timeout_seconds, left - REPAIR_UNWIND_SECONDS)
-                if remaining is not None and budget > 0:
-                    result = await factory.repair_unsent_reply(
-                        agent, limits=remaining, timeout_seconds=budget)
-                    if result is not None:
-                        stop_reason = getattr(result, "stop_reason", None)
-                        stop_reason = stop_reason if isinstance(stop_reason, str) else None
+            repaired = await self._repair_owed_reply(
+                agent, guard, limits, force_send_reply, followed_up, stop_reason, text)
+            if repaired is not None:
+                result, stop_reason = repaired, _stop_reason_of(repaired)
             # THE BUDGET-EXHAUSTION DRAFT. The loop hit one of R-8's caps mid-work
             # and left no prose behind, so the only thing the pipeline could
             # deliver is a canned apology. One more completion over this agent's
@@ -297,3 +338,26 @@ class LiveAgentRunner:
             text,
             trace,
         )
+
+    async def _repair_owed_reply(
+        self, agent: Any, guard: ReplyGuard, limits: dict,
+        force_send_reply: bool, followed_up: bool, stop_reason: str | None,
+        text: str,
+    ) -> Any | None:
+        # DEC-93's repair: a tag turn that ended on authored prose without a
+        # send gets one bounded call forcing the named send_reply choice; any
+        # refusal leaves the prose for the recovery path.
+        if not (
+            force_send_reply and not followed_up and stop_reason == "end_turn"
+            and text.strip() and not guard.cancelled_model_call
+            and guard.answer_still_owed
+        ):
+            return None
+        remaining = factory.remaining_limits(agent, limits)
+        left = seconds_left()
+        budget = self._draft_timeout_seconds if left is None else min(
+            self._draft_timeout_seconds, left - REPAIR_UNWIND_SECONDS)
+        if remaining is None or budget <= 0:
+            return None
+        return await repair_unsent_reply(
+            agent, limits=remaining, timeout_seconds=budget)
