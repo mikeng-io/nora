@@ -168,10 +168,10 @@ def test_only_the_cli_and_the_lessons_session_build_a_book():
         str(p.relative_to(root.parent)) for p in root.rglob("*.py")
         if "from nora.language.lesson_book import" in p.read_text(encoding="utf-8")
     }
-    assert users == {"nora/app/lessons_cli.py", "nora/app/composition.py"}
-    composition = (root / "app" / "composition.py").read_text(encoding="utf-8")
+    assert users == {"nora/app/lessons_cli.py", "nora/app/composition_dream.py"}
+    composition = (root / "app" / "composition_dream.py").read_text(encoding="utf-8")
     assert composition.count("LessonBook(") == 1
-    assert composition.index("if cfg.lessons.enabled:") < composition.index("LessonBook(")
+    assert composition.index("if not cfg.lessons.enabled:") < composition.index("LessonBook(")
 
 
 def test_a_lesson_too_short_to_say_anything_is_refused_before_it_can_pass_echo():

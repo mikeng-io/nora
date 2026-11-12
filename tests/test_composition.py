@@ -11,16 +11,17 @@ from pathlib import Path
 
 import pytest
 
+import nora.documents
 from nora.agent import tool_choice
 from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
+from nora.app import composition_cognition
 from nora.app.composition import (
     Dependencies,
-    StartupError,
-    _require_a_sendable_public_url,
     build_dependencies,
 )
 from nora.app.fire import FirePath
 from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
+from nora.app.startup import StartupError
 from nora.config import load
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
@@ -1790,11 +1791,10 @@ async def test_cognition_on_that_built_no_runner_refuses_to_boot(
     cfg, tmp_path, monkeypatch,
 ):
     """The boot check: a loop that wakes and runs no session must not boot."""
-    from nora.app import composition
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    monkeypatch.setattr(composition, "build_cognition_runner", lambda **kw: None)
-    with pytest.raises(composition.StartupError, match="no session runner"):
+    monkeypatch.setattr(composition_cognition, "build_cognition_runner", lambda **kw: None)
+    with pytest.raises(StartupError, match="no session runner"):
         await build_dependencies(override_config(cfg, _SESSION_ON))
 
 
@@ -1866,13 +1866,12 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
 async def test_shadow_sessions_with_no_unit_that_can_run_them_refuse_to_boot(cfg, tmp_path):
     """Units without a home room stay in the evaluator, but a shadow week in which NO unit
     can start a session would record would-wakes and look healthy."""
-    from nora.app import composition
 
     (tmp_path / "policy.toml").write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
         'unit = "friends"\nlabel = "Friends"\n',
     )
-    with pytest.raises(composition.StartupError, match="no unit can run a session"):
+    with pytest.raises(StartupError, match="no unit can run a session"):
         await build_dependencies(override_config(cfg, _SESSION_ON))
 
 
@@ -1955,12 +1954,12 @@ def test_a_public_url_egress_would_block_refuses_to_start(origin) -> None:
     # The validator accepts these origins; egress blocks the whole link, so every reply that
     # carried it would vanish. The boot check uses egress's own scan.
     with pytest.raises(StartupError, match="egress would block the link"):
-        _require_a_sendable_public_url(origin)
+        nora.documents.wire._require_a_sendable_public_url(origin)
 
 
 @pytest.mark.parametrize("origin", ["", "https://nora.67.zone", "http://localhost:3000"])
 def test_a_sendable_public_url_or_none_starts(origin) -> None:
-    _require_a_sendable_public_url(origin)
+    nora.documents.wire._require_a_sendable_public_url(origin)
 
 
 async def test_no_wired_adaptor_holds_an_act_verb(cfg, tmp_path):
@@ -2034,20 +2033,20 @@ async def test_an_eval_subject_with_the_subagent_on_builds_the_tools_and_a_recor
     enabled`): the four tools are offered, the desk and the poller hold a recorder under kind
     `subagent`, and no worker is built, so nothing can start. The patch is gone afterwards."""
     from nora.agent.catalog.groups import SUBAGENT_TOOLS
-    from nora.app import composition
+    from nora.app import composition_agent
     from nora.subject.recording_subagent import (
         RecordingSubagentBackend,
         recording_subagent_worker,
     )
 
-    real = composition.build_subagent_backend
+    real = composition_agent.build_subagent_backend
     on = override_config(cfg, {
         "dreamer.enabled": True, "compute.enabled": True, "subagent.enabled": True,
         "heartbeat.enabled": False,
     })
     with recording_subagent_worker():
         deps = await build_dependencies(on)
-    assert composition.build_subagent_backend is real
+    assert composition_agent.build_subagent_backend is real
     try:
         recorder = deps.subagent_backend
         assert isinstance(recorder, RecordingSubagentBackend)

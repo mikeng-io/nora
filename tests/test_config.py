@@ -1293,7 +1293,7 @@ def test_the_gate_refuses_to_start_with_no_turn_behind_it(toml_path):
 def test_an_unknown_reasoning_effort_refuses_to_start():
     """Narrowed at composition, so a typo cannot reach the provider and come
     back a 400 on the first window that closes."""
-    from nora.app.composition import _reasoning_effort
+    from nora.app.composition_helpers import _reasoning_effort
     assert _reasoning_effort("none", source="x") == "none"
     with pytest.raises(Exception, match="reasoning effort"):
         _reasoning_effort("nope", source="[relevance_gate] reasoning_effort")

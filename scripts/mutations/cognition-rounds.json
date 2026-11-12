@@ -99,8 +99,8 @@
   },
   {
     "name": "the composition root hands the session the class defaults, not the block",
-    "file": "nora/app/composition.py",
-    "old": "budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),",
+    "file": "nora/app/composition_cognition.py",
+    "old": "            budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),",
     "new": "budget=cognition_budget(DreamBudgetConfig()),",
     "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator"
   },

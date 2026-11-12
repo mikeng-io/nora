@@ -125,3 +125,7 @@ docs-site/.astro/
 
 # pytest-testmon dependency record (generated; fetched per-run)
 /.testmondata*
+
+# tool-spec dump artifacts (scripts/dump_*_tool_specs.py)
+specs.json
+cognition_specs.json

@@ -57,7 +57,7 @@
   },
   {
     "name": "#160 the configured ration is the one that binds",
-    "file": "nora/app/composition.py",
+    "file": "nora/app/composition_helpers.py",
     "old": "        max_memory_calls=b.max_memory_calls,\n        # Copied, not aliased:",
     "new": "        # Copied, not aliased:",
     "target": "tests/unit/test_dream_memory_budget.py -k configured_memory_ceiling_reaches_the_runtime"

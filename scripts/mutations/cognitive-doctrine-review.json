@@ -36,15 +36,15 @@
   },
   {
     "name": "composition forwards the Markdown name to the live registry",
-    "file": "nora/app/composition.py",
-    "old": "    tool_registry = ToolRegistry(\n        display_name=cfg.doctrine.display_name,",
-    "new": "    tool_registry = ToolRegistry(",
+    "file": "nora/app/composition_agent.py",
+    "old": "    return ToolRegistry(\n        display_name=cfg.doctrine.display_name,",
+    "new": "    return ToolRegistry(",
     "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
   },
   {
     "name": "composition forwards the Markdown name to cognition validation",
-    "file": "nora/app/composition.py",
-    "old": "                    nora_names=frozenset({cfg.doctrine.display_name}),\n",
+    "file": "nora/app/composition_cognition.py",
+    "old": "            nora_names=frozenset({cfg.doctrine.display_name}),",
     "new": "",
     "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
   },
@@ -57,9 +57,9 @@
   },
   {
     "name": "identity initialization participates in the startup failure contract",
-    "file": "nora/app/composition.py",
-    "old": "    try:\n        doctrine_store = DoctrineStore(\n            cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,\n            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,\n            trigger=cfg.engagement.trigger.text,\n            language_hint=cfg.doctrine.language_hint,\n            tool_names=ToolRegistry(content_checks=content_checks).tool_names(),\n            metrics=metrics,\n        )\n        doctrine = doctrine_store.get(applies_to=\"tag\")\n",
-    "new": "    doctrine_store = DoctrineStore(\n        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,\n        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,\n        trigger=cfg.engagement.trigger.text,\n        language_hint=cfg.doctrine.language_hint,\n        tool_names=ToolRegistry(content_checks=content_checks).tool_names(),\n        metrics=metrics,\n    )\n    try:\n        doctrine = doctrine_store.get(applies_to=\"tag\")\n",
+    "file": "nora/app/composition_stores.py",
+    "old": "    try:\n        doctrine_store = DoctrineStore(\n            cfg.doctrine.dir,\n            strict=cfg.doctrine.strict,\n            reload=cfg.doctrine.reload,\n            canary=cfg.doctrine.canary,\n            display_name=cfg.doctrine.display_name,\n            trigger=cfg.engagement.trigger.text,\n            language_hint=cfg.doctrine.language_hint,\n            tool_names=ToolRegistry(content_checks=content_checks).tool_names(),\n            metrics=metrics,\n        )\n        doctrine = doctrine_store.get(applies_to=\"tag\")",
+    "new": "    doctrine_store = DoctrineStore(\n        cfg.doctrine.dir,\n        strict=cfg.doctrine.strict,\n        reload=cfg.doctrine.reload,\n        canary=cfg.doctrine.canary,\n        display_name=cfg.doctrine.display_name,\n        trigger=cfg.engagement.trigger.text,\n        language_hint=cfg.doctrine.language_hint,\n        tool_names=ToolRegistry(content_checks=content_checks).tool_names(),\n        metrics=metrics,\n    )\n    try:\n        doctrine = doctrine_store.get(applies_to=\"tag\")",
     "target": "tests/test_main.py::test_a_broken_doctrine_refuses_to_start[identity]"
   }
 ]

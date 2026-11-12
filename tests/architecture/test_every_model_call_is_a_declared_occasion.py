@@ -106,9 +106,9 @@ MECHANISM = {
         "it forwards a prompt a caller built, and its one caller today is the "
         "debrief client composition.py constructs"
     ),
-    "nora/app/composition.py": (
-        "constructs the raw gate client and the debrief's ask_text client; the "
-        "text each sends is built by relevance_gate and the debrief renderer"
+    "nora/app/raw_clients.py": (
+        "the raw gate client and the debrief's ask_text client; the text "
+        "each sends is built by relevance_gate and the debrief renderer"
     ),
     "nora/infra/vision/client.py": (
         "the raw vision transport; the question it sends is authored in "
@@ -461,7 +461,7 @@ def test_discovery_sees_the_known_call_sites_and_occasions(modules):
     must find what is known to be there before its silence means anything."""
     callers = {rel for rel, tree in modules.items() if calls_a_model(tree)}
     for known in (
-        "nora/agent/factory.py", "nora/app/composition.py",
+        "nora/agent/factory.py", "nora/app/raw_clients.py",
         "nora/ingest/relevance_gate.py", "nora/app/cognition_agent_runner.py",
         "nora/agent/reaction.py", "nora/engagement/stages/debrief.py",
         # The scanned door outside `nora/`: found first, classified second.

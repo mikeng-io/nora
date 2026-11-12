@@ -47,7 +47,15 @@ import ast
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-COMPOSITION = REPO_ROOT / "nora" / "app" / "composition.py"
+#: The whole composition root: every `nora/app/composition*.py` step module
+#: and every area's `wire.py`. The parity each asserts is against the OFFLINE
+#: mirror, so a construction moved to another step module stays in scope.
+PRODUCTION = tuple(
+    sorted(
+        [*(REPO_ROOT / "nora" / "app").glob("composition*.py"),
+         *(REPO_ROOT / "nora").glob("*/wire.py")]
+    )
+)
 #: The offline mirror of production's composition; the PARITY checked is
 #: between the two.
 OFFLINE = REPO_ROOT / "tests" / "offline_pipeline.py"
@@ -63,21 +71,57 @@ def _calls(path: Path, func_name: str) -> list[ast.Call]:
     ]
 
 
-def _kwarg_names(call: ast.Call) -> frozenset[str]:
-    return frozenset(kw.arg for kw in call.keywords if kw.arg is not None)
+def _returned_dict_keys(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
+    """Constant keys of `fn`'s `return {...}` — a `**fn(...)` spread's kwargs."""
+    out: set[str] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict):
+            out |= {
+                k.value for k in node.value.keys if isinstance(k, ast.Constant)
+            }
+    return frozenset(out)
+
+
+def _kwarg_names(call: ast.Call, path: Path) -> frozenset[str]:
+    names = {kw.arg for kw in call.keywords if kw.arg is not None}
+    if not any(kw.arg is None for kw in call.keywords):
+        return frozenset(names)
+    tree = ast.parse(path.read_text(), filename=str(path))
+    module_fns = {
+        n.name: n for n in tree.body
+        if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    for kw in call.keywords:
+        if kw.arg is not None:
+            continue
+        target = kw.value
+        if isinstance(target, ast.Dict):
+            names |= {k.value for k in target.keys if isinstance(k, ast.Constant)}
+            continue
+        # `**helper(...)` — the same call one function removed: the parity
+        # checked is the keyword SET, which lives in the helper's return dict.
+        if isinstance(target, ast.Call) and isinstance(target.func, ast.Name):
+            fn = module_fns.get(target.func.id)
+            if fn is not None:
+                names |= _returned_dict_keys(fn)
+    return frozenset(names)
 
 
 def test_composition_and_offline_each_call_build_assembler_exactly_once():
-    for path in (COMPOSITION, OFFLINE):
-        calls = _calls(path, "build_assembler")
-        assert len(calls) == 1, (
-            f"{path.name} must construct its TranscriptInjection through "
-            f"exactly one build_assembler(...) call; found {len(calls)}"
-        )
+    calls = [c for p in PRODUCTION for c in _calls(p, "build_assembler")]
+    assert len(calls) == 1, (
+        "production must construct its TranscriptInjection through exactly "
+        f"one build_assembler(...) call; found {len(calls)}"
+    )
+    calls = _calls(OFFLINE, "build_assembler")
+    assert len(calls) == 1, (
+        f"{OFFLINE.name} must construct its TranscriptInjection through "
+        f"exactly one build_assembler(...) call; found {len(calls)}"
+    )
 
 
 def test_neither_site_constructs_transcriptinjection_directly():
-    for path in (COMPOSITION, OFFLINE):
+    for path in (*PRODUCTION, OFFLINE):
         calls = _calls(path, "TranscriptInjection")
         assert not calls, (
             f"{path.name} calls TranscriptInjection(...) directly — route it "
@@ -87,8 +131,11 @@ def test_neither_site_constructs_transcriptinjection_directly():
 
 
 def test_build_assembler_call_sites_pass_the_same_collaborators():
-    composition_kwargs = _kwarg_names(_calls(COMPOSITION, "build_assembler")[0])
-    offline_kwargs = _kwarg_names(_calls(OFFLINE, "build_assembler")[0])
+    site = next(
+        (p, c) for p in PRODUCTION for c in _calls(p, "build_assembler")
+    )
+    composition_kwargs = _kwarg_names(site[1], site[0])
+    offline_kwargs = _kwarg_names(_calls(OFFLINE, "build_assembler")[0], OFFLINE)
     assert composition_kwargs, "expected build_assembler to be called with keyword arguments"
     assert offline_kwargs == composition_kwargs, (
         f"production passes {sorted(composition_kwargs)} to build_assembler; "
@@ -99,19 +146,26 @@ def test_build_assembler_call_sites_pass_the_same_collaborators():
 
 
 def test_composition_and_offline_each_construct_firepath_exactly_once():
-    for path in (COMPOSITION, OFFLINE):
-        calls = _calls(path, "FirePath")
-        assert len(calls) == 1, (
-            f"{path.name} must construct its FirePath exactly once; found "
-            f"{len(calls)} — the participation occasion's prompt is assembled "
-            f"by FirePath.build_context, so the two sites drifting is the "
-            f"Phase 1 «no <notes>/<facts> on the fire path» bug re-shipping"
-        )
+    calls = [c for p in PRODUCTION for c in _calls(p, "FirePath")]
+    assert len(calls) == 1, (
+        "production must construct its FirePath exactly once; found "
+        f"{len(calls)} — the participation occasion's prompt is assembled "
+        f"by FirePath.build_context, so the two sites drifting is the "
+        f"Phase 1 «no <notes>/<facts> on the fire path» bug re-shipping"
+    )
+    calls = _calls(OFFLINE, "FirePath")
+    assert len(calls) == 1, (
+        f"{OFFLINE.name} must construct its FirePath exactly once; found "
+        f"{len(calls)}"
+    )
 
 
 def test_firepath_call_sites_pass_the_same_collaborators():
-    composition_kwargs = _kwarg_names(_calls(COMPOSITION, "FirePath")[0])
-    offline_kwargs = _kwarg_names(_calls(OFFLINE, "FirePath")[0])
+    site = next(
+        (p, c) for p in PRODUCTION for c in _calls(p, "FirePath")
+    )
+    composition_kwargs = _kwarg_names(site[1], site[0])
+    offline_kwargs = _kwarg_names(_calls(OFFLINE, "FirePath")[0], OFFLINE)
     assert composition_kwargs, "expected FirePath to be called with keyword arguments"
     assert offline_kwargs == composition_kwargs, (
         f"production passes {sorted(composition_kwargs)} to FirePath; "

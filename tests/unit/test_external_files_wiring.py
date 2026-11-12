@@ -9,7 +9,7 @@ import logging
 
 import pytest
 
-from nora.app.composition import external_files_source, google_credentials
+from nora.app.composition_readers import external_files_source, google_credentials
 from nora.config import Config, ExternalFilesConfig
 from nora.infra.external_files.google_drive import GoogleDriveSource
 from nora.infra.google.auth import GoogleCredentials

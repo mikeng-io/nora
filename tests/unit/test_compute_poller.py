@@ -642,7 +642,7 @@ async def test_a_finished_job_is_still_delivered_while_the_grant_stands(fake_slo
 async def test_a_lost_job_is_not_spoken_after_restart_once_its_grant_is_gone():
     """Restart recovery: `recover` closes the orphaned row, and the boot-time telling
     must not speak into a room the requester no longer has access to."""
-    from nora.app.composition import _tell_about_lost_jobs
+    from nora.app.composition_fire import _tell_about_lost_jobs
 
     job = _pending_job()
     spoken: list = []
@@ -660,7 +660,7 @@ async def test_a_lost_job_is_not_spoken_after_restart_once_its_grant_is_gone():
 
 async def test_a_lost_job_is_still_told_while_the_grant_stands():
     """The positive control for the restart test: the same call, still granted."""
-    from nora.app.composition import _tell_about_lost_jobs
+    from nora.app.composition_fire import _tell_about_lost_jobs
 
     job = _pending_job()
     spoken: list = []

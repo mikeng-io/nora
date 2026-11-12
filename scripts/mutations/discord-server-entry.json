@@ -120,28 +120,28 @@
   },
   {
     "name": "character person keys enumerate rooms()",
-    "file": "nora/app/composition.py",
+    "file": "nora/app/composition_helpers.py",
     "old": "    for conv in allowlist.rooms():\n        if not conv.primary_id or not conv.unit:",
     "new": "    for conv in allowlist.conversations:\n        if not conv.primary_id or not conv.unit:",
     "target": "tests/unit/test_discord_guild_entry.py::test_character_person_keys_see_discovered_rooms"
   },
   {
     "name": "profile room keys enumerate rooms()",
-    "file": "nora/app/composition.py",
-    "old": "        for conv in allowlist.rooms() if conv.primary_id and conv.unit\n    }",
-    "new": "        for conv in allowlist.conversations if conv.primary_id and conv.unit\n    }",
+    "file": "nora/app/composition_helpers.py",
+    "old": "        for conv in allowlist.rooms()\n        if conv.primary_id and conv.unit",
+    "new": "        for conv in allowlist.conversations\n        if conv.primary_id and conv.unit",
     "target": "tests/unit/test_discord_guild_entry.py::test_profile_room_keys_cover_a_discovered_channel"
   },
   {
     "name": "social unit rooms enumerate rooms()",
-    "file": "nora/app/composition.py",
-    "old": "        unit: tuple((c.platform, rid)\n                    for c in allowlist.rooms()",
-    "new": "        unit: tuple((c.platform, rid)\n                    for c in allowlist.conversations",
+    "file": "nora/app/composition_readers.py",
+    "old": "            (c.platform, rid) for c in allowlist.rooms() if c.unit == unit for rid in sorted(c.ids)",
+    "new": "            (c.platform, rid) for c in allowlist.conversations if c.unit == unit for rid in sorted(c.ids)",
     "target": "tests/unit/test_discord_guild_entry.py::test_social_unit_rooms_include_discovered_channels"
   },
   {
     "name": "scope rooms enumerate rooms()",
-    "file": "nora/app/composition.py",
+    "file": "nora/app/composition_readers.py",
     "old": "    for conv in allowlist.rooms():\n        home = HomeRoom(",
     "new": "    for conv in allowlist.conversations:\n        home = HomeRoom(",
     "target": "tests/unit/test_discord_guild_entry.py::test_scope_home_rooms_map_a_discovered_channel"

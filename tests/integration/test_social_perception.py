@@ -10,6 +10,7 @@ across a restart» are all state carried from one tick to the next.
 Database scoped to the MODULE and truncated between tests (AGENTS.md).
 """
 
+
 from __future__ import annotations
 
 import functools
@@ -467,7 +468,7 @@ async def test_a_unit_whose_stimulus_is_missing_still_gets_it(world) -> None:
 
 async def test_each_units_stimulus_names_the_room_there_that_lists_the_author(world) -> None:
     """The session reads a social read through the room its stimulus names
-    (`composition.social_person_rooms`): a room of that unit listing the
+    (`social_person_rooms`): a room of that unit listing the
     author. A unit with no room named for them binds its home room."""
     await world.seed("p1")
     await world.perception(rooms={("ada", "friends"): ("signal", "side-room")}).tick()

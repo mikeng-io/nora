@@ -64,15 +64,15 @@
   },
   {
     "name": "R3-2: standing_revise reads the overlay outside the lock",
-    "file": "nora/app/cognition_session.py",
-    "old": "            async with self._lock(unit):\n                head = await self._prior_standing(platform, conversation_id)",
+    "file": "nora/memory/adapters/tools/session.py",
+    "old": "        async with self._lock(unit):\n            head = await self._prior_standing(platform, conversation_id)",
     "new": "            if True:\n                head = await self._prior_standing(platform, conversation_id)",
     "target": "tests/unit/test_cognition_session_failures.py -k two_standing_revisions"
   },
   {
     "name": "R3-4: note_revise's description omits unavailable",
-    "file": "nora/app/cognition_session.py",
-    "old": "            revision is kept.\n\n            Returns `status`: ok, refused or unavailable, with a `reason` and\n            `detail` when it is not ok.",
+    "file": "nora/memory/adapters/tools/session.py",
+    "old": "        revision is kept.\n\n        Returns `status`: ok, refused or unavailable, with a `reason` and\n        `detail` when it is not ok.",
     "new": "            revision is kept.\n\n            Returns `status`: ok or refused, with a `reason` when refused.",
     "target": "tests/unit/test_cognition_session_tool_specs.py -k says_it_can_come_back_unavailable"
   },

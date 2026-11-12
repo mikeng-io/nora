@@ -360,12 +360,8 @@ import dataclasses  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 
 import nora.ingest.stages.scope as scope_stage  # noqa: E402
-from nora.app.composition import (  # noqa: E402
-    _profile_room_keys,
-    character_person_keys,
-    scope_home_rooms,
-    social_unit_rooms,
-)
+from nora.app.composition_helpers import _profile_room_keys, character_person_keys  # noqa: E402
+from nora.app.composition_readers import scope_home_rooms, social_unit_rooms  # noqa: E402
 from nora.app.documents_service import room_label, rooms_named  # noqa: E402
 from nora.config_reload import LivePolicy  # noqa: E402
 from nora.domain.models import EditTarget  # noqa: E402

@@ -15,8 +15,8 @@
   },
   {
     "name": "8765_44864 boot telling: a job whose grant is gone is still spoken into its room after a restart",
-    "file": "nora/app/composition.py",
-    "old": "        if not policy.is_allowed(\n            platform=job.platform, conversation_id=job.conversation_id,\n            person_id=job.requester_person_id,\n        ):",
+    "file": "nora/app/composition_fire.py",
+    "old": "        if not policy.is_allowed(\n            platform=job.platform,\n            conversation_id=job.conversation_id,\n            person_id=job.requester_person_id,\n        ):",
     "new": "        if False:",
     "target": "tests/unit/test_compute_poller.py::test_a_lost_job_is_not_spoken_after_restart_once_its_grant_is_gone"
   },
