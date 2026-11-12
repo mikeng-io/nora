@@ -60,6 +60,7 @@ from nora.agent.lineage import (
     excluded,
     memo_permits,
     profile_lines_for,
+    topic_permits,
     visible_sections,
 )
 from nora.agent.room import Room as AgentRoom
@@ -627,6 +628,7 @@ def build_grounder(
     self_profile: Callable[[str], Awaitable[tuple[ProfileLine, ...]] | None] | None = None,
     metrics: Any = None,
     memo_index: Callable[[str], Awaitable[Sequence[Memo]]] | None = None,
+    topic_index: Callable[[str], Awaitable[Sequence[Any]]] | None = None,
     pending_reminds: Callable[[], Awaitable[Sequence[Reminder]]] | None = None,
     observations: Any | None = None,
     context: Any | None = None,
@@ -649,13 +651,11 @@ def build_grounder(
 
     async def ground(
         unit: str, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
-        now_ms: int | None = None,
+        now_ms: int | None = None, historical: bool = False,
     ) -> Grounding:
-        # `now_ms` is the SESSION's instant — a live wake's clock or a historical
-        # session's evidence time. Every read that can be bounded by it is, so a
-        # session assembled for T shows what stood at T (edits, deletes,
-        # reactions, hides, her sends), not what stands now. None means "now" —
-        # the live callers' unchanged behavior.
+        # `now_ms` is the SESSION's instant — live clock or a historical
+        # session's evidence time; bounded reads show what stood at T, never
+        # what stands now. None means "now".
         session_ms = now_ms if now_ms is not None else int(clock() * 1000)
         allowed = set(unit_rooms(unit))
         claimed = {sid for item in items for sid in item.stimulus_ids}
@@ -681,12 +681,8 @@ def build_grounder(
             wanted.append((s, ref))
             wanted_rooms.add((s.platform, s.conversation_id))
         # The utterance a typed source event was co-delivered as AND the recorded
-        # message it affected: the merged source obligation links the first
-        # through `delivered_message_id`, and a reaction's target or a pinned
-        # row through `target_message_id` — independent ids, so a co-delivered
-        # caption and the older message it touched are two reads, not one. Both
-        # read as `messages:<id>` records through the same `by_refs` seam and the
-        # same room check — evidence paths of the one event, off one stimulus.
+        # message it affected (`delivered_message_id`, `target_message_id`):
+        # independent ids, so two reads through the one `by_refs` seam.
         sibling_wanted: list[tuple[Stimulus, tuple[str, int]]] = []
         for s in pending:
             if (s.id not in claimed or s.kind != "observation"
@@ -740,10 +736,9 @@ def build_grounder(
             records_out[item.ref] = item
 
         agenda_rooms = list(dict.fromkeys(i.room for i in items))
-        targets = [
-            lineage.render_room(platform=r.platform, conversation_id=r.conversation_id)
-            for r in agenda_rooms
-        ]
+        targets = [lineage.render_room(platform=r.platform,
+                                       conversation_id=r.conversation_id)
+                   for r in agenda_rooms]
         # `on` removes, `shadow` only REPORTS what it would have removed (a log
         # line with the counts) and `off` applies nothing — the tag path's own
         # reading (`nora.agent.prefill._enforced`) computes the same answer.
@@ -799,10 +794,18 @@ def build_grounder(
                         f"{oref.platform}:{oref.conversation_id}", [],
                     ).append((oref, n.title))
         notes = tuple(notes_out)
-        # Turn citations carry their recorded requirements into the index too.
-        # A failed read raises like the note index's.
+        # Turn citations carry requirements into the index; a failed read raises.
         memos = tuple(m for m in await memo_index(unit)
                       if all(memo_permits(m.head, t) for t in targets)) if memo_index else ()
+        # Held topics, gated like memos on each citation's lineage for every
+        # agenda target; `unavailable` on a failed read, unread when historical.
+        topics: tuple[Any, ...] | None = None
+        if topic_index is not None and not historical:
+            try:
+                topics = tuple(e for e in await topic_index(unit)
+                               if all(topic_permits(e, t) for t in targets))
+            except Exception:
+                log.exception("cognition grounding: topic accounts read failed")
         events: list[EventLine] = []
         for room in agenda_rooms:
             if (room.platform, room.conversation_id) not in allowed:
@@ -844,17 +847,11 @@ def build_grounder(
                 "cognition grounding lineage shadow (unit=%s): would withhold %d note(s) "
                 "and %d event(s); shown", unit, withheld["notes"], withheld["events"],
             )
-        # Her own account of herself in this unit. Unlike
-        # the reads above it is background, never the ground for a claim, so a
-        # failed read costs the `self` block and not the session.
-        # Bounded and counted like the tag and fire reads (`read_culture`,
-        # `stage="cognition_self"`).
-        #
-        # THE SWITCH (45 §5): with the profile reader wired (`[memory.profile]
-        # render`), her Profile account is read instead — the prose read is
-        # not made — and renders as `<profile of="nora">`. A failed profile
-        # read is counted (`stage="cognition_self_profile"`, R-27) and drops
-        # the block, never a fall back to the prose account.
+        # Her own account: background, never the ground for a claim, so a
+        # failed read costs the `self` block and not the session. With the
+        # profile reader wired (45 §5) her Profile account is read instead
+        # and renders `<profile of="nora">`; a failed read is counted, never
+        # a fall back to the prose account.
         account: CultureRevision | None = None
         profile_view: ProfileView | None = None
         profile_names: dict[str, str] = {}
@@ -881,7 +878,8 @@ def build_grounder(
                 agenda_rooms, allowed, observations, persons,
                 retained=retained_refs))
         result = Grounding(
-              records=records_out, notes=notes, memos=memos, events=tuple(events),
+              records=records_out, notes=notes, memos=memos, topics=topics or (),
+              historical=historical, events=tuple(events),
               rollups=rollups, socials=_social_lines(pending, claimed, persons),
               observations=observations_out, source_objects=source_objects,
               source_objects_more=source_objects_more,
@@ -896,6 +894,8 @@ def build_grounder(
                 tuple((hit.hit.platform, hit.hit.conversation_id, row, stimulus.id)
                       for (stimulus, _, hit), row in zip(pairs, named, strict=True)),
                 now_ms=session_ms)
+        if topic_index is not None and not historical and topics is None:
+            result = replace(result, unavailable=result.unavailable | {"topics"})
         return result
 
     return ground

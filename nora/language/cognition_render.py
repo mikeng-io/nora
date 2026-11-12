@@ -134,9 +134,9 @@ _BLOCKS: tuple[BlockDeclaration, ...] = (
     BlockDeclaration("standing", 45, "what she owes, holds open, already did"),
     BlockDeclaration("events", 50, "propose or revise an event"),
     BlockDeclaration("memos", 55, "write a memo, or not"),
-    BlockDeclaration(
-        "graph", 60, "match an existing entity or create one; correct a contradiction"
-    ),
+    BlockDeclaration("topics", 57, "write a topic account, or revise the one that exists"),
+    BlockDeclaration("graph", 60,
+                     "match an existing entity or create one; correct a contradiction"),
     BlockDeclaration("lessons", 65, "how she should write, from past corrections"),
     BlockDeclaration(
         "held_lessons", 66, "reinforce or reword a held lesson, or retire one"
@@ -554,8 +554,7 @@ def _observation_row(
             if event.at_ms > 0 and event.time_quality != "unknown" else "")
 
     def show(limit: int | None) -> str:
-        who = event.actor or (
-            "anonymous" if event.actor_status == "anonymous" else None)
+        who = event.actor or ("anonymous" if event.actor_status == "anonymous" else None)
         return render_elements(
             [event], tag="observation",
             attrs=lambda e, _i: (
@@ -958,15 +957,9 @@ def render_agenda(
     what the eval probe hands the model and nothing else does."""
     blocks: list[ContextBlock] = []
     now = None if now_ms is None else datetime.fromtimestamp(now_ms / 1000, tz=tz)
-    failed = (
-        set(grounding.unavailable)
-        if grounding is not None
-        else {
-            d.name
-            for d in _BLOCKS
-            if d.name not in {"agenda", "clock", "reads", "graph"}
-        }
-    )
+    failed = (set(grounding.unavailable) if grounding is not None else
+              {d.name for d in _BLOCKS
+               if d.name not in {"agenda", "clock", "reads", "graph"}})
     if now is not None:
         blocks.append(render_clock(now=now, last_session_ms=last_session_ms))
     else:
@@ -990,11 +983,8 @@ def render_agenda(
     for index, memory_item in (memory_items or {}).items():
         candidates = []
         keys = {}
-        rows = (
-            memory_item.snapshot.get("record_rows", [])
-            if now_ms is not None and 0 <= index < len(items)
-            else []
-        )
+        rows = (memory_item.snapshot.get("record_rows", [])
+                if now_ms is not None and 0 <= index < len(items) else [])
         for row in rows:
             key = tuple(row["source_key"])
             if key[0] == "message":
@@ -1033,7 +1023,11 @@ def render_agenda(
         failed.add("graph")
     elif graph:
         blocks.append(restamp(ContextBlock(name="graph", body=compose_body(escape(graph))), _ROW))
-    return assemble_declared(_BLOCKS, blocks, unavailable=failed, sep=_SEP)
+    # A historical lane holds no topic surface: declaration and block alike.
+    return assemble_declared(
+        [d for d in _BLOCKS
+         if not (grounding or Grounding()).historical or d.name != "topics"],
+        blocks, unavailable=failed, sep=_SEP)
 
 
 __all__ = [

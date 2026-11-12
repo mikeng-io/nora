@@ -649,7 +649,7 @@ async def build_dependencies(
     language_store = _stores_language_store.language_store
     _memory_notes = _memory_wire.notes(cfg=cfg, engine=engine)
     memo_store = _memory_notes.memo_store
-    note_store = _memory_notes.note_store
+    note_store, entry_store = _memory_notes.note_store, _memory_notes.entry_store
     _voice_speech = _voice_wire.speech(
         _discord_bridge=_discord_bridge,
         allowlist=allowlist,
@@ -1282,7 +1282,7 @@ async def build_dependencies(
         dream_schedules=dream_schedules,
         dreamer_instructions=dreamer_instructions,
         dreamer_runtime=dreamer_runtime,
-        engine=engine,
+        engine=engine, entry_store=entry_store,
         event_store=event_store,
         events=events,
         ledger_store=ledger_store,

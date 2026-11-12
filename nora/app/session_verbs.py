@@ -153,3 +153,7 @@ class SessionDeps:
     act_receipt: Callable[..., Any]
     associations: Callable[..., Any]
     object_refs: Callable[..., Any]
+    #: The session's resolved instruction hash: the `instruction_hash` a
+    #: provenance-bearing write records (the entry store's, e.g. a topic
+    #: account). None when the session carries no doctrine.
+    doctrine_sha256: str | None = None

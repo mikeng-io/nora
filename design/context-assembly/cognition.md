@@ -16,6 +16,7 @@ it:
 | which rooms exist, and where a read or a reminder can go | every room of the unit: id, label, platform, purpose, recent activity | `rooms` |
 | write a note, or revise the one that exists | the open notes, with their pending reminders by id and due time | `notes` |
 | write a memo, or not | the settled memos | `memos` |
+| write a topic account, or revise the one that exists | the unit's held topic accounts; retired accounts are not shown | `topics` |
 | propose or revise an event | the rooms' events | `events` |
 | what she owes, holds open, already did | her Standing, including pending self-wakes | `standing` |
 | how she should write, from past corrections | her lessons for the unit | `lessons` |

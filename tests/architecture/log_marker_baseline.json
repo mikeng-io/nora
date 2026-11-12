@@ -76,7 +76,7 @@
  "nora/app/bridge_queue.py": 1,
  "nora/app/cli.py": 10,
  "nora/app/cognition_agent_runner.py": 7,
- "nora/app/cognition_grounding.py": 10,
+ "nora/app/cognition_grounding.py": 9,
  "nora/app/cognition_session.py": 15,
  "nora/app/cognition_wiring.py": 10,
  "nora/app/composition.py": 9,

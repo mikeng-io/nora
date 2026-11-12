@@ -207,9 +207,10 @@ Amendment, 2026-10-29: the shared entry store, append-only revision chain and
 is internal, about exactly one topic entity, cites Record/Rollup keys and has no
 links. Existing stores stay on their own machinery. Topic activity reads current
 `interested_in` evidence directly, grouped by person with asserted times and
-source keys. Step 2 can record topic-account would-writes in its existing shadow
-receipts; it does not write the entry store. No live topic writer, lineage rendering, search, or migration of other kinds
-is built.
+source keys. The unit's Cognition session is the live writer: it creates the
+account, revises it against the head it read, and moves it active ↔ dormant →
+retired, citing only rows the session was shown. Search and migration of
+other kinds are not built.
 
 Each kind's rules get their named tests when that kind is built on
 the entry, as [05](../cognition-loop/data.md) §3 already requires.

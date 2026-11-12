@@ -5629,13 +5629,17 @@ NOTEBOOK_ENTRY = sa.Table(
     sa.Column("id", sa.Text, primary_key=True),
     sa.Column("kind", sa.Text, nullable=False),
     sa.Column("unit", sa.Text, nullable=False),
-    sa.Column(
-        "recorded_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
-    ),
+    # Store-written casefolded subject and live flag; the index is the atomic rule.
+    sa.Column("subject", sa.Text, nullable=False, server_default=""),
+    sa.Column("retired", sa.Boolean, nullable=False, server_default=sa.false()),
+    sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
     sa.CheckConstraint("kind = 'topic'", name="ck_entry_kind"),
     sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_entry_unit"),
 )
 sa.Index("idx_notebook_entry_unit", NOTEBOOK_ENTRY.c.unit)
+sa.Index("uq_entry_live_subject", NOTEBOOK_ENTRY.c.unit, NOTEBOOK_ENTRY.c.subject,
+         unique=True, postgresql_where=sa.text("NOT retired"))
 NOTEBOOK_ENTRY_REVISION = sa.Table(
     "notebook_entry_revision",
     METADATA,
@@ -5644,18 +5648,14 @@ NOTEBOOK_ENTRY_REVISION = sa.Table(
     sa.Column("base_revision_id", sa.Text, sa.ForeignKey("notebook_entry_revision.id")),
     sa.Column("seq", sa.Integer, nullable=False),
     sa.Column("content", pg.JSONB, nullable=False),
-    sa.Column(
-        "recorded_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
-    ),
+    sa.Column("lineage", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
     sa.CheckConstraint("seq >= 1", name="ck_entry_revision_seq"),
     sa.CheckConstraint("(seq = 1) = (base_revision_id IS NULL)", name="ck_entry_revision_base"),
 )
-sa.Index(
-    "uq_entry_revision_seq",
-    NOTEBOOK_ENTRY_REVISION.c.entry_id,
-    NOTEBOOK_ENTRY_REVISION.c.seq,
-    unique=True,
-)
+sa.Index("uq_entry_revision_seq", NOTEBOOK_ENTRY_REVISION.c.entry_id,
+         NOTEBOOK_ENTRY_REVISION.c.seq, unique=True)
 
 # ---- platform bridges (design/platform-bridges) --------------------------
 # Durable inbound handoff: event mapping, work obligations and outbound

@@ -12,6 +12,7 @@ from nora.app.startup import StartupError
 from nora.domain.live import LiveMapping
 from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
 from nora.infra.honcho import HonchoClient
+from nora.infra.sql import SqlEntryStore
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.memory_read import SqlMemoryIndex
@@ -65,6 +66,7 @@ def ledger(engine, metrics) -> LedgerWiring:
 class NotesWiring:
     memo_store: Any
     note_store: Any
+    entry_store: Any
 
 
 def notes(cfg, engine) -> NotesWiring:
@@ -76,7 +78,11 @@ def notes(cfg, engine) -> NotesWiring:
     # session writes a memo (`[cognition] enabled`), and with none kept every read renders
     # nothing. ONE instance for the tag and fire `<memos>`, `memo_read` and the session's…
     memo_store = SqlMemoStore(engine)
-    return NotesWiring(memo_store=memo_store, note_store=note_store)
+    # The shared Notebook entry store — the topic account is its only kind so far.
+    # No flag, same reason as the memo store: only a session writes an entry.
+    entry_store = SqlEntryStore(engine)
+    return NotesWiring(
+        memo_store=memo_store, note_store=note_store, entry_store=entry_store)
 
 
 @dataclass(frozen=True)

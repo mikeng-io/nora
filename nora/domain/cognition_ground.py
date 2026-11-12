@@ -36,6 +36,7 @@ from nora.domain.cognition_session import Room
 from nora.domain.context_data import MembersView, RoomLine, TranscriptLine
 from nora.domain.culture import CultureRevision
 from nora.domain.documents_context import DocumentsView
+from nora.domain.entries import Entry
 from nora.domain.lessons import LessonEvidenceView
 from nora.domain.memo import Memo
 from nora.domain.models import RowReactions
@@ -292,6 +293,13 @@ class Grounding:
     #: The unit's kept memos (DEC-306), unit-wide like `notes`: the `memos`
     #: index, titles and ids, never what they keep.
     memos: tuple[Memo, ...] = ()
+    #: The unit's held topic accounts (the entry store's non-retired heads),
+    #: unit-wide like `memos`: id, subject, state, head revision and the
+    #: account itself — the whole of what a revision needs.
+    topics: tuple[Entry, ...] = ()
+    #: A historical session's evidence has no as-of view of held accounts:
+    #: the store reads heads only, so the lane neither reads nor renders them.
+    historical: bool = False
     events: tuple[EventLine, ...] = ()
     #: A Rollup stimulus's readable fields, by the stimulus `ref`. A rollup
     #: stimulus with no entry here cannot be shown, and is not an agenda item.
@@ -374,6 +382,9 @@ class Grounding:
             ],
             "notes": [n.id for n in self.notes],
             "memos": [m.id for m in self.memos],
+            # By id and head revision, never the words: the account is hers
+            # to rewrite, and the revision is the token a change is based on.
+            "topics": [{"id": t.id, "revision": t.head.id} for t in self.topics],
             # By revision id, never the words: the account is hers to rewrite.
             "self_revision_id": None if self.self_account is None else self.self_account.id,
             # The Profile switch's self account, by line id, never the words.

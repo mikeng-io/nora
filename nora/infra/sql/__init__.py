@@ -16,6 +16,7 @@ from nora.infra.sql.engine import (
     create_readonly_sql_engine,
     create_sql_engine,
 )
+from nora.infra.sql.entries import SqlEntryStore
 from nora.infra.sql.migrations_runner import (
     SourceRevisionMismatchError,
     current_revision,
@@ -34,6 +35,7 @@ __all__ = [
     "MESSAGES",
     "METADATA",
     "SourceRevisionMismatchError",
+    "SqlEntryStore",
     "SqlRecordStore",
     "create_readonly_sql_engine",
     "create_sql_engine",

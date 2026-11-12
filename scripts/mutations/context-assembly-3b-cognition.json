@@ -72,7 +72,7 @@
   {
     "name": "3b (d): the prompt is joined by hand, so the table's order is a comment again",
     "file": "nora/language/cognition_render.py",
-    "old": "return assemble_declared(_BLOCKS, blocks, unavailable=failed, sep=_SEP)",
+    "old": "    return assemble_declared(\n        [d for d in _BLOCKS\n         if not (grounding or Grounding()).historical or d.name != \"topics\"],\n        blocks, unavailable=failed, sep=_SEP)",
     "new": "return _SEP.join(b.render() for b in blocks)",
     "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
   },

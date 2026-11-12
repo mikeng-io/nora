@@ -113,6 +113,34 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
         },
         {"memo_id", "base_revision_id", "cited_ids"},
     ),
+    "topic_create": (
+        {
+            "subject": ("string", None),
+            "body": ("string", None),
+            "confidence": ("string", None),
+            "citations": ("array", {"type": "array", "items": {"type": "string"}}),
+        },
+        {"subject", "body", "confidence", "citations"},
+    ),
+    "topic_revise": (
+        {
+            "entry_id": ("string", None),
+            "base_revision_id": ("string", None),
+            "body": ("string", None),
+            "confidence": ("string", None),
+            "citations": ("array", {"type": "array", "items": {"type": "string"}}),
+        },
+        {"entry_id", "base_revision_id", "body", "confidence"},
+    ),
+    "topic_set_status": (
+        {
+            "entry_id": ("string", None),
+            "base_revision_id": ("string", None),
+            "status": ("string", None),
+            "citations": ("array", {"type": "array", "items": {"type": "string"}}),
+        },
+        {"entry_id", "base_revision_id", "status"},
+    ),
     "event_propose": (
         {
             "title": ("string", None),

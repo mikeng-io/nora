@@ -21,8 +21,7 @@ _ROW = {name: (order, key) for name, order, key in _BLOCKS}
 
 RESHAPE = """Read this entity's committed subgraph. Propose traits and unconfirmed guesses
 for a person, culture baselines for a room or unit, or lessons for yourself from the closed
-response episode. For a topic, propose its internal topic account (part="topic"),
-about only this topic, with no links. Use the supplied per-person activity evidence
+response episode. Use the supplied per-person activity evidence
 counts and first/last asserted times; absence of activity is not proof of no interest.
 Cite Record/Rollup evidence only. Facts are rendered by code, never proposed.
 Call profile_stage once
@@ -158,6 +157,13 @@ _ORIENT_GUIDANCE = (
      "Use {tools} only to correct your Standing when it is wrong or missing something: "
      "i_owe is what you took on; hold_open is what you are keeping open and what would "
      "resolve it."),
+    (frozenset({"topic_create", "topic_revise", "topic_set_status"}),
+     "Use {tools} for the subject accounts you hold. A subject earns an "
+     "account when it keeps coming back across people or days, never from one "
+     "mention; revise the account you hold rather than starting a second. "
+     "Mark it dormant when it stops coming back, reactivate it when it "
+     "returns, and retire it only when it no longer describes this unit. "
+     "Cite what the account rests on."),
     (frozenset({"lesson_write", "lesson_retire"}),
      "Use {tools} for lessons. One reply, reaction or silence is a weak signal: write "
      "a lesson only for a pattern across several episodes, or for a real correction "
@@ -176,6 +182,7 @@ _ACT_GUIDANCE = (
 _NOTEBOOK_VERBS = (
     ("notes", ("note_create", "note_revise", "note_set_status", "note_merge")),
     ("memos", ("memo_create", "memo_revise", "memo_set_status")),
+    ("topics", ("topic_create", "topic_revise", "topic_set_status")),
     ("events", ("event_propose", "event_revise", "event_set_status")),
 )
 _HISTORICAL_ORIENT = (
@@ -196,6 +203,7 @@ _WAKE_TOOLS = frozenset({"wake_at", "wake_move", "wake_cancel"})
 _NOTEBOOK_TOOLS = frozenset({
     "note_create", "note_revise", "note_set_status", "note_merge",
     "memo_create", "memo_revise", "memo_set_status",
+    "topic_create", "topic_revise", "topic_set_status",
     "event_propose", "event_revise", "event_set_status",
 })
 

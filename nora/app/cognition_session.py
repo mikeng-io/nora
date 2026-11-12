@@ -166,7 +166,8 @@ COGNITION_PATH_PREFIX = "cognition:"
 SESSION_VERB_NAMES: frozenset[str] = frozenset({
     "note_create", "note_revise", "note_set_status", "note_merge",
     "memo_create", "memo_revise", "memo_set_status", "event_propose", "event_revise",
-    "event_set_status", "standing_revise",
+    "event_set_status", "standing_revise", "topic_create",
+    "topic_revise", "topic_set_status",
     "wake_at", "wake_move", "wake_cancel", "remind", "remind_move", "remind_cancel",
     "memory_propose", "profile_read", "profile_revise",
     "lesson_write", "lesson_retire",
@@ -331,10 +332,10 @@ ReadToolsFor = Callable[..., list[Any]]
 #: stimulus and the Register index lines. RAISES when it cannot read: a session
 #: that could not be grounded must not run on the bare counts.
 #: The fourth argument is the session's own instant (`now_ms`): a live
-#: wake's clock or a historical session's evidence time, for reads that can
-#: be bounded as-of. `None` means "now".
+#: wake's clock or a historical session's evidence time; `None` means "now".
+#: The fifth (`historical`) withholds reads with no as-of view — held topics.
 Grounder = Callable[
-    [str, Sequence[AgendaItem], Sequence[Stimulus], int | None],
+    [str, Sequence[AgendaItem], Sequence[Stimulus], int | None, bool],
     Awaitable[Grounding],
 ]
 #: A historical session passes its evidence instant as `clock`, binding every
@@ -672,7 +673,8 @@ class CognitionSessionRunner:
         notes: Any = None, events: Any = None,
         standing: Any = None, reminders: Any = None,
         ai_peer: str = "nora", memos: Any = None, ledger: Any = None,
-        shared: Any = None, standing_fold: Any = None,
+        # The shared entry store the topic-account verbs write.
+        entries: Any = None, shared: Any = None, standing_fold: Any = None,
         content_checks: bool = True,
         tag_trace_store: Any = None, memory: Any = None,
         rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
@@ -701,13 +703,12 @@ class CognitionSessionRunner:
         self._session_timeout_seconds = session_timeout_seconds
         self._store = store
         self._notes = notes
-        self._memos = memos
+        self._memos, self._entries = memos, entries
         self._events = events
         self._standing = standing
         self._reminders = reminders
         self._ledger = ledger
-        self._shared = shared
-        self._standing_fold = standing_fold
+        self._shared, self._standing_fold = shared, standing_fold
         self._rooms_of_unit = rooms_of_unit
         self._ai_peer = ai_peer
         self._stimuli = stimulus_store
@@ -925,7 +926,7 @@ class CognitionSessionRunner:
             # stimuli stay pending: a session never runs on bare counts it
             # cannot judge from.
             grounding = await self._grounder(
-                unit, situation.agenda.items, pending, now_ms)
+                unit, situation.agenda.items, pending, now_ms, historical)
             # BEFORE THE SESSION ROW: it persists `grounding.as_dict()`, so a
             # live session's lesson evidence must already be on it, and the
             # same view is reused for the prompt — never a second read.
@@ -1821,9 +1822,9 @@ class CognitionSessionRunner:
             runner=self, unit=unit, state=state,
             established_by=established_by, shown_for=shown_for, wrote=wrote,
             act_receipt=_act_receipt, associations=_associations,
-            object_refs=_object_refs,
+            object_refs=_object_refs, doctrine_sha256=doctrine_sha256,
         )
-        notes_v, memos_v, standing_v, memory_v = importlib.import_module(
+        notes_v, memos_v, topics_v, standing_v, memory_v = importlib.import_module(
             "nora.memory").wire.session_verbs(deps)
         events_v, wakes_v, reminds_v = importlib.import_module(
             "nora.agenda").wire.session_verbs(deps)
@@ -1892,15 +1893,14 @@ class CognitionSessionRunner:
 
 
         verbs = tuple(receipted_act(v) for v in (
-            *notes_v, *memos_v, *events_v, *standing_v, *wakes_v, *reminds_v,
+            *notes_v, *memos_v, *topics_v, *events_v, *standing_v, *wakes_v, *reminds_v,
         ))
         if self._memory is not None:
             verbs = (*memory_v, *verbs)
         if state.historical:
-            # Profile verbs are withheld, not shadowed, in a historical
-            # session: `profile_read`/`profile_revise` see only CURRENT
-            # account heads (the store has no as-of view), so a session at
-            # T would read — or revise — the future. History offers memory writes.
+            # Profile and topic verbs are withheld, not shadowed: the stores
+            # see only CURRENT heads (no as-of view), so a session at T would
+            # read — or revise — the future. History offers memory writes.
             verbs = memory_v[:1]
         verbs = (*verbs, *lesson_verbs(
             self._lessons, unit=unit, state=state, established_by=established_by,

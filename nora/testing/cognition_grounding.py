@@ -6,6 +6,7 @@ nothing, the state every session test that is not ABOUT grounding runs in;
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 from nora.domain.cognition_ground import Grounding
 from nora.domain.cognition_session import AgendaItem
@@ -15,9 +16,9 @@ from nora.domain.stimuli import Stimulus
 class EmptyGrounder:
     async def __call__(
         self, unit: str, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
-        now_ms: int | None = None,
+        now_ms: int | None = None, historical: bool = False,
     ) -> Grounding:
-        return Grounding()
+        return Grounding(historical=historical)
 
 
 class StaticGrounder:
@@ -28,9 +29,9 @@ class StaticGrounder:
 
     async def __call__(
         self, unit: str, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
-        now_ms: int | None = None,
+        now_ms: int | None = None, historical: bool = False,
     ) -> Grounding:
         self.calls.append((unit, tuple(items), tuple(pending), now_ms))
         if self.fail:
             raise RuntimeError("the Record could not be read")
-        return self.grounding
+        return replace(self.grounding, historical=historical)

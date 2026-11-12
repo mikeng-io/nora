@@ -16,6 +16,7 @@ from nora.domain.prompt import ago
 from nora.language.event_render import render_event_rows
 from nora.language.memo_render import render_memos
 from nora.language.note_render import render_notes
+from nora.language.topic_render import render_topics
 
 
 class RegisterBudget(Protocol):
@@ -114,6 +115,15 @@ def render_register(
             placement,
         )
     )
+    # A historical session has no as-of view of held accounts: the entry store
+    # reads heads only, so the block is withheld in that lane, not rendered.
+    if not grounding.historical:
+        blocks.append(
+            restamp(
+                render_topics(grounding.topics, now_ms=now_ms, lines=budget.register_lines),
+                placement,
+            )
+        )
     return blocks
 
 
