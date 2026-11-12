@@ -29,6 +29,7 @@ from nora.subject.eval_evidence import (
 )
 from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
 from scripts import memory_graph_spike as spike
+from scripts.memory_graph_facts import smoke_fact_support
 
 
 def read_bound(ref: dict[str, str]) -> Any:
@@ -190,7 +191,7 @@ async def execute(job: dict, controls: list, oracle: dict, contracts: dict,
                             start = len(read_events(evidence.path))
                             if lane == "memory":
                                 inspection, exchanges = memory_input(data)
-                                await spike.smoke_fact_support(judges, inspection, exchanges,
+                                await smoke_fact_support(judges, inspection, exchanges,
                                     contract=contract, reference_key=key)
                                 rows = read_events(evidence.path)[start:]
                                 comparisons = [dict(alias=a, **compare_memory(rows, a, oracle[key]))

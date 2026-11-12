@@ -28,8 +28,9 @@ and remain re-derivable from their evidence.
   the subject saw, with private content kept private.
 
 The subjects are [the subject and sandbox](subject.md), [measurement and
-verdicts](measurement.md), [scenario coverage](coverage.md), and [the
-horizontal measurement contract](horizontal-measurement-contract.md).
+verdicts](measurement.md), [scenario coverage](coverage.md), [the
+horizontal measurement contract](horizontal-measurement-contract.md), and
+[the Cognition loop eval](cognition-loop.md).
 
 ## Invariants
 

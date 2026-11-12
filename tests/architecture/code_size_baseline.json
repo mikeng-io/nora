@@ -1777,10 +1777,7 @@
   "comment_blocks": 1
  },
  "nora/platform/discord/send.py": {
-  "comment_blocks": 8,
-  "functions": {
-   "DiscordSender.send": 176
-  }
+  "comment_blocks": 8
  },
  "nora/platform/instagram/adapter.py": {
   "comment_blocks": 1
@@ -2063,10 +2060,7 @@
   "internal_docstrings": 4
  },
  "scripts/memory_graph_spike.py": {
-  "comment_blocks": 1,
-  "file_lines": 1598,
   "functions": {
-   "_run": 232,
    "age_comparison": 158
   }
  },
@@ -3322,10 +3316,6 @@
  "tests/unit/test_memory_backfill.py": {
   "internal_docstrings": 1
  },
- "tests/unit/test_memory_graph_spike.py": {
-  "file_lines": 812,
-  "internal_docstrings": 1
- },
  "tests/unit/test_memory_search.py": {
   "file_lines": 1038,
   "internal_docstrings": 2
@@ -3461,11 +3451,6 @@
   "comment_blocks": 11,
   "file_lines": 1321,
   "internal_docstrings": 2
- },
- "tests/unit/test_replay_diagnosis.py": {
-  "functions": {
-   "test_decision_resolves_fingerprinted_writer_events": 156
-  }
  },
  "tests/unit/test_rollup_determinism.py": {
   "comment_blocks": 1,

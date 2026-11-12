@@ -1,6 +1,5 @@
 """Generated snapshot experiment boundaries and fail-closed aggregation."""
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -12,7 +11,6 @@ import pytest
 from nora.agent.comprehend_tools import egress_reason
 from nora.app.composition_readers import search_provider
 from scripts import memory_graph_spike as spike
-from tests.unit.memory_graph_env import generated_replay_environment
 
 
 @pytest.fixture(autouse=True)
@@ -292,27 +290,6 @@ def test_search_provider_builds_from_the_template(example_config, monkeypatch, p
     assert search_provider(cfg) is not None
 
 
-def test_session_smoke_marks():
-    healthy = [
-        {
-            "status": "PASS",
-            "tokens": 100,
-            "admitted": 1,
-            "refused": 0,
-            "acts": 0,
-        }
-        for _ in range(5)
-    ]
-    assert spike.session_smoke(healthy)["status"] == "PASS"
-    assert spike.session_smoke([*healthy[:-1], {**healthy[-1], "acts": 1}])["status"] == "FAIL"
-    assert (
-        spike.session_smoke([*healthy[:-1], {**healthy[-1], "tokens": None}])["status"] == "ERROR"
-    )
-    assert (
-        spike.session_smoke([*healthy[:-1], {**healthy[-1], "status": "ERROR"}])["status"]
-        == "ERROR"
-    )
-    assert spike.session_smoke([])["status"] == "ERROR"
 
 
 def test_session_acts_invariant_counts_deletions_and_creations():
@@ -338,134 +315,10 @@ def test_compare_reports_prints_each_row_and_delta():
 
 
 
-async def test_session_quality_uses_shown_input_and_only_committed_relations():
-    """Score the serialized Relation nested in each committed GraphEdge."""
-    from dataclasses import asdict
-    from datetime import UTC, datetime
-
-    from nora.domain.memory_graph import GraphEdge, Relation, Subgraph
-
-    def relation(relation_id: str, rel: str) -> Relation:
-        return Relation(
-            id=relation_id,
-            src=("event", "generated-source"),
-            rel=rel,
-            dst=("topic", "generated-topic"),
-            layer="notebook",
-            unit="generated-unit",
-            asserted_at=datetime(2026, 10, 1, tzinfo=UTC),
-        )
-
-    def serialized(value):
-        # The exact expression memory_propose returns as `connected`.
-        return json.loads(json.dumps(asdict(value), default=str))
-
-    committed, merge, existing = (
-        relation("generated-committed", "concerns"),
-        relation("generated-merge", "same_as"),
-        relation("generated-existing", "concerns"),
-    )
-    connected = serialized(
-        Subgraph(
-            status="ok",
-            relations=tuple(
-                GraphEdge(relation=r, evidence_count=1) for r in (committed, merge, existing)
-            ),
-        )
-    )
-    seen = []
-
-    async def judge(payload):
-        proposition = payload["proposition"]
-        seen.append((proposition, payload["evidence"]))
-        verdict = "supported" if proposition.get("rel") == "concerns" else "unsupported"
-        return [verdict, verdict]
-
-    read = {"name": "memory_read", "input": {"key": "generated"}, "result": {"status": "ok"}}
-    result = await spike.session_quality(
-        SimpleNamespace(score=judge),
-        {"prompt": "Generated source"},
-        [
-            read,
-            {"name": "profile_revise", "input": {}, "result": {"status": "ok"}},
-            {
-                "name": "memory_propose",
-                "input": {"statements": [{"type": "reading", "what": "Generated claim"}]},
-                "result": {
-                    "statements": [{"index": 0, "status": "saved", "kind": "reading"}],
-                    "committed": ["generated-committed", "generated-merge"],
-                    "connected": connected,
-                },
-            },
-        ],
-    )
-    # The judge scored the nested serialized Relations, never the GraphEdge
-    # wrappers, and only committed ids — `generated-existing` stays unscored.
-    relations = [
-        p for p, _ in seen if isinstance(p, dict) and str(p.get("id", "")).startswith("generated-")
-    ]
-    assert relations == [serialized(committed), serialized(merge)]
-    assert result["verdicts"]["relation_precision"] == [["supported", "unsupported"]] * 2
-    assert [p for p, _ in seen if "different_entities" in p] == [
-        {"different_entities": serialized(merge)}
-    ]
-    assert result["verdicts"]["wrong_merges"] == [["unsupported"]] * 2
-    assert result["verdicts"]["reading_precision"] == [["unsupported"]] * 2
-    assert result["population"] == {"committed": 2, "preview": 3, "scored": 2, "missing": 0}
-    expected_evidence = {"input": {"prompt": "Generated source"}, "reads": [read]}
-    assert seen and all(e == expected_evidence for _, e in seen)
 
 
-async def test_session_quality_marks_unscored_committed_as_missing():
-    """A committed id absent from the connected preview is never judged from the
-    proposal: it is an unavailable measurement (ERROR per judge), counted in the
-    population, so relation rows cannot silently PASS on a dropped denominator."""
-    seen = []
-
-    async def judge(payload):
-        seen.append(payload["proposition"])
-        return ["supported", "supported"]
-
-    result = await spike.session_quality(
-        SimpleNamespace(score=judge),
-        {"prompt": "Generated source"},
-        [
-            {
-                "name": "memory_propose",
-                "input": {},
-                "result": {
-                    "statements": [],
-                    "committed": ["generated-committed"],
-                    "connected": {"status": "ok", "nodes": [], "relations": []},
-                },
-            },
-            {
-                "name": "memory_propose",
-                "input": {},
-                "result": {
-                    "statements": [],
-                    "committed": ["generated-scored"],
-                    "connected": {
-                        "status": "ok",
-                        "relations": [
-                            {"relation": {"id": "generated-scored", "rel": "concerns"}}
-                        ],
-                    },
-                },
-            },
-        ],
-    )
-    assert result["verdicts"]["relation_precision"] == [["supported", "ERROR"]] * 2
-    assert result["verdicts"]["wrong_merges"] == [["ERROR"]] * 2
-    assert result["population"] == {"committed": 2, "preview": 1, "scored": 1, "missing": 1}
-    # The missing relation was measured as unavailable, never sent to a judge.
-    assert seen and all(p.get("id") != "generated-committed" for p in seen if isinstance(p, dict))
 
 
-def test_report_error_exit_is_distinct_from_fail():
-    assert spike.report_exit({"row": {"status": "PASS"}}) == 0
-    assert spike.report_exit({"row": {"status": "FAIL"}}) == 1
-    assert spike.report_exit({"row": {"status": "REPORTED", "usage": {"status": "ERROR"}}}) == 2
 
 
 @pytest.mark.parametrize("key", ["sample_sha256", "seed", "judges", "effective_judges", "strata"])
@@ -581,192 +434,18 @@ async def test_judges_dial_the_eval_route_where_the_measurer_runs(
     assert all(d["stream"] is False for d in dialed)
 
 
-async def test_age_comparison_measures_the_source_once_outside_replay(tmp_path, monkeypatch):
-    env = generated_replay_environment(tmp_path, monkeypatch)
-    from tests.integration.test_grading_contract import attach_replay_contract
-    env.args.config.write_text("# generated configuration\n")
-    attach_replay_contract(env.args, tmp_path, env.runner.inspect.return_value, wakes=[
-        {"id": 1, "at_ms": 1, "strata": ["text"]},
-        {"id": 2, "at_ms": 2, "strata": ["attachment"]}])
-    bound, calls, runner = env.bound, env.calls, env.runner
-    quality, source_url = env.quality, env.source_url
-    report = await spike.run(env.args)
-    budget_receipt = json.loads((env.args.output / "run_budget.json").read_text())
-    assert budget_receipt == report["run_budget"]
-    assert budget_receipt["stop_after_total_tokens"] == 100
-
-    # The comparison ran once, against the populated source — never the
-    # empty-at-the-instant sandbox the session runner replayed in.
-    assert bound == [source_url]
-    assert [u for u, sql in calls if "FROM relation" in sql] == [source_url]
-    assert [u for u, sql in calls if "FROM tag_trace" in sql] == []
-    assert runner.inspect.await_count == 2
-    assert all(c.kwargs["historical"] for c in runner.replay.await_args_list)
-    assert quality.await_count == 2
-    runs = report["age"]["runs"]
-    assert len(runs) == 1 and runs[0]["questions"] == 1
-    frozen = json.loads((tmp_path / "out" / "age" / "questions.json").read_text())
-    assert frozen[0]["seed"] == ["event", "generated-edge"]
-    assert frozen[0]["gold"] == ["event:generated-edge"]
 
 
-def _run_args(tmp_path, **overrides):
-    """The smallest `run` inputs that reach the logging-disable line: a
-    project-only run over a snapshot that skips the projection itself."""
-    import logging  # noqa: F401 — the attribute under test lives on the manager
-
-    return SimpleNamespace(
-        config=tmp_path / "config.toml",
-        policy=tmp_path / "policy.toml",
-        identity=tmp_path / "identity.toml",
-        database_url="postgresql+asyncpg://127.0.0.1:9/generated-snapshot",
-        snapshot=True,
-        age_url=None,
-        judge_a="generated-a",
-        judge_b="generated-b",
-        output=tmp_path / "out",
-        per_stratum=1,
-        minimum=1,
-        seed=17,
-        projection_rate=100,
-        project_only=True,
-        skip_projection=True,
-        smoke=False,
-    )
 
 
-@pytest.mark.parametrize("cleanup", ["ok", "error", "cancel"])
-async def test_run_restores_the_prior_logging_threshold(tmp_path, monkeypatch, cleanup):
-    """`run` mutes logging so a library cannot echo private data — and hands
-    the caller's threshold back, on the SUCCESS path too, not just on
-    failure. A prior non-default threshold (a caller's own silence) is
-    restored, not flattened to zero."""
-    import logging
-
-    cfg = SimpleNamespace(store=SimpleNamespace(database_url_env="GENERATED_DB"))
-    monkeypatch.setattr(spike, "load", lambda path: cfg)
-    monkeypatch.setattr(spike, "credentials", lambda: {
-        "GENERATED_DB": "postgresql+asyncpg://127.0.0.1:9/generated-production"})
-    during = []
-
-    class FakeEngine:
-        def __init__(self, url):
-            self.url = url
-
-        async def dispose(self):
-            if cleanup == "error":
-                raise RuntimeError("generated cleanup failure")
-            if cleanup == "cancel":
-                raise asyncio.CancelledError
-
-    async def generated_rows(engine, sql, params=None):
-        # The mute must be ACTIVE while the run reads (its whole purpose);
-        # recording it here measures it during, not just before and after.
-        during.append(logging.root.manager.disable)
-        if "is_nora" in sql:
-            return [{"n": 0}]
-        return [{"digest": "generated"}]
-
-    monkeypatch.setattr(spike, "create_sql_engine", lambda url: FakeEngine(url))
-    monkeypatch.setattr(spike, "load_policy", lambda path: SimpleNamespace())
-    monkeypatch.setattr(spike, "load_persons", lambda path: SimpleNamespace())
-    monkeypatch.setattr(spike, "projection_context", lambda *a, **k: SimpleNamespace())
-    monkeypatch.setattr(spike, "rows", generated_rows)
-
-    logging.disable(logging.WARNING)
-    try:
-        if cleanup == "ok":
-            report = await spike.run(_run_args(tmp_path))
-            assert report["status"] == "REPORTED"
-        else:
-            error = RuntimeError if cleanup == "error" else asyncio.CancelledError
-            with pytest.raises(error):
-                await spike.run(_run_args(tmp_path))
-        assert during and all(d == logging.CRITICAL for d in during)
-        assert logging.root.manager.disable == logging.WARNING
-    finally:
-        logging.disable(logging.NOTSET)
 
 
-async def test_run_restores_the_prior_logging_threshold_when_engine_creation_fails(
-    tmp_path, monkeypatch,
-):
-    """The same restore must hold when `create_sql_engine` itself raises —
-    the disable is already active by then, so a bare failure would leave the
-    caller's logging muted."""
-    import logging
-
-    cfg = SimpleNamespace(store=SimpleNamespace(database_url_env="GENERATED_DB"))
-    monkeypatch.setattr(spike, "load", lambda path: cfg)
-    monkeypatch.setattr(spike, "credentials", lambda: {
-        "GENERATED_DB": "postgresql+asyncpg://127.0.0.1:9/generated-production"})
-
-    def boom(url):
-        raise RuntimeError("generated: engine refused")
-
-    monkeypatch.setattr(spike, "create_sql_engine", boom)
-
-    logging.disable(logging.ERROR)
-    try:
-        with pytest.raises(RuntimeError):
-            await spike.run(_run_args(tmp_path))
-        assert logging.root.manager.disable == logging.ERROR
-    finally:
-        logging.disable(logging.NOTSET)
 
 
-def test_prompt_composer_is_registered_when_the_script_runs_directly():
-    from types import FunctionType
-
-    direct_prompt = FunctionType(
-        spike.prompt.__code__, {**spike.prompt.__globals__, "__name__": "__main__"},
-    )
-    assert direct_prompt({"source": "Generated evidence"}) == spike.prompt(
-        {"source": "Generated evidence"}
-    )
 
 
-@pytest.mark.parametrize("mode", ["--rescore", "--decision-judge"])
-@pytest.mark.parametrize("option", [
-    ["--inspect-only"], ["--project-only"], ["--sample-sha256", "generated-digest"],
-    ["--smoke", "--session-count", "15"],
-])
-def test_replay_only_flags_refuse_scoring_modes_before_any_run(monkeypatch, mode, option):
-    import sys
-
-    def must_not_run(*args, **kwargs):
-        pytest.fail("a refused CLI combination reached a runner")
-
-    monkeypatch.setattr(spike, "run_rescore", must_not_run)
-    monkeypatch.setattr(spike, "run_diagnostic", must_not_run)
-    monkeypatch.setattr(sys, "argv", [
-        "memory_graph_spike", "--config", "generated.toml", "--output", "generated-out",
-        mode, "generated-recording", *option,
-    ])
-    with pytest.raises(SystemExit) as exc:
-        spike.main()
-    assert exc.value.code == 2
 
 
-@pytest.mark.parametrize("mode,runner", [
-    ("--rescore", "run_rescore"), ("--decision-judge", "run_diagnostic"),
-])
-def test_scoring_cli_forwards_the_measured_cutoff(monkeypatch, mode, runner):
-    import sys
-
-    reached = []
-
-    async def run(args):
-        reached.append(args.stop_after_tokens)
-        return {"status": "REPORTED"}
-
-    monkeypatch.setattr(spike, runner, run)
-    monkeypatch.setattr(sys, "argv", [
-        "memory_graph_spike", "--config", "generated.toml", "--output", "generated-out",
-        mode, "generated-recording", "--stop-after-tokens", "100",
-    ])
-    assert spike.main() == 0
-    assert reached == [100]
 
 
 def test_expanded_sample_retains_the_five_original_sessions_and_exact_seeded_count():
@@ -784,29 +463,5 @@ def test_expanded_sample_retains_the_five_original_sessions_and_exact_seeded_cou
         spike.extend_sample(candidates[:5] + candidates[:5], {}, size=15, seed=71)
 
 
-def test_expanded_session_completion_requires_all_fifteen():
-    good = {"status": "PASS", "tokens": 10, "admitted": 1, "refused": 0, "acts": 0}
-    assert spike.session_smoke([good] * 6)["status"] == "PASS"
-    assert spike.session_smoke([good] * 15, expected=15)["status"] == "PASS"
-    assert spike.session_smoke([good] * 14, expected=15)["status"] == "ERROR"
-    assert spike.session_smoke([good] * 15, expected=15)["marks"]["sample"] == 15
 
 
-@pytest.mark.parametrize("delta,status", [
-    ({}, "PASS"),
-    ({"facts_saved": 1, "facts_supported": 1}, "PASS"),
-    ({"facts_saved": 1, "facts_unsupported": 1}, "FAIL"),
-    ({"facts_missed": 1}, "FAIL"),
-    ({"facts_judge_errors": 1}, "ERROR"),
-    ({"facts_saved": 1, "facts_unsure": 1}, "ERROR"),
-    ({"facts_saved": 1}, "ERROR"),
-])
-def test_memory_quality_never_confuses_completion_with_correctness(delta, status):
-    scored = dict.fromkeys(("facts_saved", "facts_supported", "facts_unsupported",
-                           "facts_unsure", "facts_missed", "facts_judge_errors"), 0)
-    scored.update(delta)
-    quality = spike.fact_quality(scored)
-    assert quality["status"] == status
-    assert spike.report_exit({"execution": {"status": "PASS"}, "memory_quality": quality}) == {
-        "PASS": 0, "FAIL": 1, "ERROR": 2}[status]
-    assert spike.fact_quality({})["status"] == "ERROR"

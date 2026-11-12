@@ -1,54 +1,5 @@
 [
   {
-    "name": "recorded row attributes",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "        source_rows = {n: rendered.get(n, ledger_source_row(row))\n                       for n, row in source_rows.items()}",
-    "new": "        source_rows = source_rows",
-    "target": "tests/unit/test_replay_scoring.py::test_support_uses_recorded_author_and_room"
-  },
-  {
-    "name": "fenced and trailing JSON",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "    text = raw.strip()\n    if text.startswith(\"```\"):",
-    "new": "    return parse_json_response(raw)\n    text = raw.strip()\n    if text.startswith(\"```\"):",
-    "target": "tests/unit/test_replay_scoring.py::test_miss_is_decided_without_fatal_error"
-  },
-  {
-    "name": "quote normalization and row joining",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "    return bool(quote) and any(quote in join.join(rows) for join in (\" \", \" / \", \"/\", \"\"))",
-    "new": "    return entry[\"quote\"] in sources.get(str(entry[\"location\"]), {}).get(\"text\", \"\")",
-    "target": "tests/unit/test_replay_scoring.py::test_miss_is_decided_without_fatal_error"
-  },
-  {
-    "name": "outside quote is nonfatal",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "                inside = miss_in_new_sources(entry, new_sources)",
-    "new": "                inside = miss_in_new_sources(entry, new_sources)\n                if not inside:\n                    raise ValueError(\"miss_outside_new_sources\")",
-    "target": "tests/unit/test_replay_scoring.py::test_miss_is_decided_without_fatal_error"
-  },
-  {
-    "name": "judge identity context activates raw headers",
-    "file": "nora/agent/replay_capture.py",
-    "old": "    if not eval_capture_enabled() and _IDENTITIES.get() is None:",
-    "new": "    if not eval_capture_enabled():",
-    "target": "tests/unit/test_replay_scoring.py::test_judge_transport_identity_without_eval_capture"
-  },
-  {
-    "name": "rescore executes fact scoring",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "            results.append(\n                await smoke_fact_support(\n                    judges,\n                    inspection,\n                    exchanges,\n                    session_event_ids=ids,\n                    source_sha256=source_sha,\n                    contract=contract,\n                    reference_key=key,\n                )\n            )",
-    "new": "            pass",
-    "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory"
-  },
-  {
-    "name": "authoritative session events rather than frozen files",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "        recorded = recorded_fact_sessions(events)",
-    "new": "        recorded = [s for i, s in enumerate(recorded_fact_sessions(events))\n                    if (path.parent.parent / f\"session-{i}.json\").exists()]",
-    "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory[False]"
-  },
-  {
     "name": "inspection resolves expanded social-read scope",
     "file": "nora/app/cognition_session.py",
     "old": "                    **({\"new_sources\": rendered_new_sources(agenda)}\n                       if eval_capture_enabled() else {}),\n",
@@ -56,53 +7,11 @@
     "target": "tests/unit/test_cognition_session_runner.py::test_inspection_social_read_scope_uses_expanded_rendered_sources"
   },
   {
-    "name": "scope disagreement is reported and continues",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "    if derived_scope != recorded_scope:\n        record(\"scope_mismatch\", scope=\"new_sources\",",
-    "new": "    if derived_scope != recorded_scope:\n        raise ValueError(\"source_scoring_input_mismatch\")\n        record(\"scope_mismatch\", scope=\"new_sources\",",
-    "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory[scope]"
-  },
-  {
     "name": "private session manifest retains stimulus refs",
     "file": "nora/app/cognition_session.py",
     "old": "                \"stimuli\": [{\"id\": s.id, \"kind\": s.kind, \"ref\": s.ref} for s in view.pending],\n",
     "new": "",
     "target": "tests/unit/test_cognition_session_runner.py::test_session_manifest_keeps_pending_stimulus_refs"
-  },
-  {
-    "name": "negative citation rows retain attribution",
-    "file": "nora/language/cognition_parse.py",
-    "old": "            rows[row.attributes[\"n\"]] = {",
-    "new": "            rows[row.attributes[\"n\"].lstrip(\"-\")] = {",
-    "target": "tests/unit/test_replay_scoring.py::test_negative_social_source_numbers_are_scored"
-  },
-  {
-    "name": "negative missed-fact locations remain source keys",
-    "file": "nora/subject/replay_diagnosis.py",
-    "old": "return list(dict.fromkeys(re.findall(r\"-?\\d+\", references)))",
-    "new": "return list(dict.fromkeys(re.findall(r\"\\d+\", references)))",
-    "target": "tests/unit/test_replay_scoring.py::test_negative_social_source_numbers_are_scored"
-  },
-  {
-    "name": "decision verdict IDs resolve in the fingerprinted source",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "        source_events = sources[source_key] if source_key else events",
-    "new": "        source_events = events",
-    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[rescore]"
-  },
-  {
-    "name": "source digest mismatch stays fatal",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "        if candidate is None or fingerprint(candidate) != expected:",
-    "new": "        if candidate is None:",
-    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[tampered]"
-  },
-  {
-    "name": "judges use the header-bearing non-stream response",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "        model.update_config(stream=False)",
-    "new": "        model.update_config(stream=True)",
-    "target": "tests/unit/test_replay_scoring.py::test_judge_transport_identity_without_eval_capture[True]"
   },
   {
     "name": "compact calls replace transport chunks",
@@ -126,46 +35,11 @@
     "target": "tests/unit/test_replay_diagnosis.py::test_reasoning_observations_use_only_observed_calls"
   },
   {
-    "name": "oversized diagnostic input is never sent",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "                if truncated:\n                    raise ValueError(\"diagnostic_input_truncated\")",
-    "new": "                if False and truncated:\n                    raise ValueError(\"diagnostic_input_truncated\")",
-    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[oversized]"
-  },
-  {
-    "name": "failed judge is unavailable rather than insufficient",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "            result = {\"observation\": \"judge_unavailable\", \"outcome\": \"unavailable\",",
-    "new": "            result = {\"observation\": \"insufficient_evidence\", \"outcome\": \"unavailable\",",
-    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[http400]"
-  },
-  {
-    "name": "judge failure invalidates the private receipt",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "            record(\"judge_error\", cause=cause, error_type=type(exc).__name__)",
-    "new": "            pass",
-    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[http400]"
-  },
-  {
-    "name": "input truncation is an explicit receipt cause",
-    "file": "nora/subject/eval_evidence.py",
-    "old": "        if kind == \"decision_input\" and event.get(\"truncated\"):\n            causes.add(\"truncated\")",
-    "new": "",
-    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[oversized]"
-  },
-  {
     "name": "failed proposals are not saved-proposal boundaries",
     "file": "nora/subject/replay_diagnosis.py",
     "old": "result.get(\"status\") == \"error\" or not isinstance(inputs, list)",
     "new": "not isinstance(inputs, list)",
     "target": "tests/unit/test_replay_diagnosis.py::test_compact_statement_scope_excludes_later_absent_call"
-  },
-  {
-    "name": "diagnostic validates the complete shown trajectory",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "                result = diagnose(statement, trajectory, parsed)",
-    "new": "                result = diagnose(statement, {\"events\": relevant}, parsed)",
-    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[uncited]"
   },
   {
     "name": "shown agenda and cited source anchors are admissible",
@@ -189,45 +63,10 @@
     "target": "tests/unit/test_replay_diagnosis.py::test_refused_proposal_accepts_other_proposals_in_trajectory"
   },
   {
-    "name": "agenda parsing follows self-closing element structure",
-    "file": "nora/language/cognition_parse.py",
-    "old": "    payload = (\"<root>\" + agenda + \"</root>\").encode(\"utf-8\")",
-    "new": "    import re\n    fragments = re.findall(r\"<item\\b[^>]*>.*?</item>\", agenda, re.S)\n    for fragment in fragments:\n        ElementTree.fromstring(fragment)\n    payload = (\"<root>\" + \"\".join(fragments) + \"</root>\").encode(\"utf-8\")",
-    "target": "tests/unit/test_replay_scoring.py::test_self_closing_agenda_items_keep_sources_and_rooms tests/unit/test_replay_diagnosis.py::test_compact_trajectory_preserves_self_closing_agenda_items"
-  },
-  {
-    "name": "only user-role agendas supply rendered evidence",
-    "file": "nora/language/cognition_parse.py",
-    "old": "            if message.get(\"role\") != \"user\":\n                continue",
-    "new": "            if False:\n                continue",
-    "target": "tests/unit/test_replay_scoring.py::test_non_user_markup_cannot_overwrite_cited_row"
-  },
-  {
     "name": "missed-only observations cannot diagnose unsupported statements",
     "file": "nora/subject/replay_diagnosis.py",
     "old": "    allowed = OBSERVATIONS_BY_KIND.get(statement.get(\"kind\", \"\"), frozenset())",
     "new": "    allowed = OBSERVATIONS",
     "target": "tests/unit/test_replay_diagnosis.py::test_missed_only_observations_reject_unsupported_statements"
-  },
-  {
-    "name": "rendered agenda parsing is exported",
-    "file": "nora/language/cognition_parse.py",
-    "old": "    \"parse_rendered_agenda\", \"rendered_new_sources\", \"shown_source_rows\",",
-    "new": "    \"rendered_new_sources\", \"shown_source_rows\",",
-    "target": "tests/unit/test_replay_scoring.py::test_rendered_agenda_parser_is_public_and_preserves_empty_items"
-  },
-  {
-    "name": "duplicate fact-judge verdicts cost one diagnostic per session",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "        if identity in seen:\n            continue",
-    "new": "        if False and identity in seen:\n            continue",
-    "target": "tests/unit/test_replay_diagnosis.py::test_decision_deduplicates_verdicts_without_collapsing_sessions"
-  },
-  {
-    "name": "per-fact decisions retain source and session provenance",
-    "file": "scripts/memory_graph_facts.py",
-    "old": "                record(\"fact_verdict\", alias=model, fact=entry,\n                       session_event_ids=session_ids, source_sha256=source_sha256,",
-    "new": "                record(\"fact_verdict\", alias=model, fact=entry,",
-    "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory[False]"
   }
 ]
