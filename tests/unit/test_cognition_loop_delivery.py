@@ -321,13 +321,14 @@ async def test_a_refusal_still_closes_the_subject(monkeypatch, tmp_path):
                            policy=tmp_path / "p", identity=tmp_path / "i")
     (tmp_path / "p").write_text("")
     (tmp_path / "i").write_text("")
-    with pytest.raises(EvidenceError):
-        await run_mod._run_wake(
-            args, case=SimpleNamespace(unit="u"), index=0, wake_id=1,
-            at_ms=1, url="postgresql+asyncpg://x", reason="user_message",
-            judges=None, evidence=None, output=tmp_path,
-            room=SimpleNamespace(platform="signal", primary_id="r"),
-            workspace="nora-eval-run-case-x")
+    report = await run_mod._run_wake(
+        args, case=SimpleNamespace(unit="u"), index=0, wake_id=1,
+        at_ms=1, url="postgresql+asyncpg://x", reason="user_message",
+        judges=None, evidence=None, output=tmp_path,
+        room=SimpleNamespace(platform="signal", primary_id="r"),
+        workspace="nora-eval-run-case-x")
+    assert report["status"] == "ERROR" and report["step"] == "compose"
+    assert "real platform transports" in report["error"]
     assert closed == ["background cancelled"]
 
 
@@ -378,7 +379,7 @@ def _run_stubs(monkeypatch, workspaces: list[str], wake_error=None):
     monkeypatch.setattr(run_mod, "create_async_engine",
                         lambda url: SimpleNamespace(dispose=dispose))
 
-    async def fake_run_wake(*a):
+    async def fake_run_wake(*a, **k):
         workspaces.append(a[-1])
         if wake_error is not None:
             raise wake_error

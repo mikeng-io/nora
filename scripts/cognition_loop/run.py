@@ -33,7 +33,7 @@ from scripts.cognition_loop.advance import advance_record, bump_sequences
 from scripts.cognition_loop.egress import assert_no_egress
 from scripts.cognition_loop.judges import judge_expectation
 from scripts.cognition_loop.trajectory import session_events, wake_trajectory
-from scripts.cognition_loop.verdicts import ERROR, Rollup
+from scripts.cognition_loop.verdicts import ERROR, ExpectationVerdict, Rollup
 from scripts.cognition_loop.wakes import eval_verdict, record_eval_wake
 from scripts.memory_graph_spike import freeze, index_replay_sandbox
 
@@ -114,12 +114,32 @@ async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
     if clash:
         raise ValueError(
             f"arm overrides cannot set the run's reserved keys: {clash}")
-    return await obtain(SubjectSpec(
+    spec = SubjectSpec(
         database_url=url, workdir=Path(spec_args.workdir),
         room=(room.platform, room.primary_id), now=_dt(at_ms),
         identity=identity_text, policy=policy_text,
         overrides={**arm, **reserved},
-    ))
+    )
+    directory = getattr(spec_args, "channel_directory", None)
+    if directory is None:
+        return await obtain(spec)
+    # The frozen directory stands in for the live reader everywhere a
+    # composed subject or the spec's own room check asks for guild
+    # channels — the same overlay shape `external_boundaries` uses.
+    import sys
+    from unittest.mock import patch
+
+    from nora.app import composition_platforms
+    from nora.policy import load_policy
+    # `nora.subject.obtain` the name is the function; the module it lives in
+    # is where `load_policy` is looked up.
+    obtain_module = sys.modules["nora.subject.obtain"]
+    with (patch.object(composition_platforms, "ClientChannelDirectory",
+                       lambda *_a, **_k: directory),
+          patch.object(obtain_module, "load_policy",
+                       lambda path, **_k: load_policy(
+                           path, channels=directory))):
+        return await obtain(spec)
 
 
 def validate_recorded_wakes(
@@ -162,6 +182,21 @@ async def run_case(
         roll.error(problem)
         return _report(case, roll, wakes_report)
     instants = {i: at_ms for i, (_, _, at_ms) in enumerate(records)}
+    # A guild the unit expands through but the frozen directory cannot
+    # answer for is the directory read's ERROR — never a silent deny
+    # rendered as "no policy room".
+    directory = getattr(args, "channel_directory", None)
+    unread = sorted({
+        c.guild for c in getattr(policy, "conversations", ())
+        if c.unit == case.unit and c.guild
+        and (directory is None
+             or directory.guild_channels(guild_id=c.guild) is None)
+    })
+    if unread:
+        roll.error(
+            "the room directory could not be read for guild(s) "
+            f"{unread}, which the case's unit {case.unit!r} expands")
+        return _report(case, roll, wakes_report)
     room = next((c for c in policy.rooms() if c.unit == case.unit), None)
     if room is None:
         roll.error(f"case unit {case.unit!r} names no policy room")
@@ -170,52 +205,19 @@ async def run_case(
     # The whole case lives inside ONE Honcho draw — created with its
     # draw marker before any subject composes, deleted when the case
     # exits, whichever way that is.
+    draw_ctx = draw_workspace(
+        case.name, run_id=getattr(args, "run_id", "run"))
     try:
-        async with draw_workspace(
-            case.name, run_id=getattr(args, "run_id", "run"),
-        ) as draw:
-            workspace = draw.id
-            first = datetime.fromtimestamp(instants[0] / 1000, UTC)
-            with TemporaryDirectory(prefix="nora-cognition-loop-") as workdir:
-                args.workdir = workdir
-                async with sandbox_as_of(args.database_url, first) as (url, _seed):
-                    source_engine = create_async_engine(args.database_url)
-                    sandbox = create_async_engine(url)
-                    try:
-                        await bump_sequences(source_engine, sandbox)
-                        for i, wake_id in enumerate(case.wakes):
-                            at_ms = instants[i]
-                            if i:
-                                advance = await advance_record(
-                                    source_engine, sandbox,
-                                    after_ms=instants[i - 1], at_ms=at_ms,
-                                )
-                                if not advance.wrote_only_record():
-                                    roll.error(
-                                        f"advance before wake {i} wrote a derived "
-                                        f"store: {advance.written}"
-                                    )
-                                    break
-                            try:
-                                with evidence.case(
-                                    f"wake:{case.unit}:{wake_id}",
-                                    input={"recorded_wake_id": wake_id},
-                                    metadata={"wake_id": wake_id, "unit": case.unit,
-                                              "at_ms": at_ms},
-                                ):
-                                    wakes_report.append(await _run_wake(
-                                        args, case, i, wake_id, at_ms, url,
-                                        recorded_reasons[i], judges, evidence,
-                                        output, room, workspace,
-                                    ))
-                            except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
-                                roll.error(f"wake {i} (recorded {wake_id}): {exc!r}")
-                                break
-                    finally:
-                        await sandbox.dispose()
-                        await source_engine.dispose()
+        draw = await draw_ctx.__aenter__()
     except Exception as exc:  # noqa: BLE001 — the draw's own failure is a case ERROR
         roll.error(f"the case's Honcho draw could not be made: {exc!r}")
+        return _report(case, roll, wakes_report)
+    try:
+        await _wakes(
+            args, case, instants, recorded_reasons, judges, evidence,
+            output, room, draw.id, roll, wakes_report)
+    finally:
+        await draw_ctx.__aexit__(None, None, None)
     for wake in wakes_report:
         for verdict in wake.get("expectations", []):
             roll.add(verdict["verdict_obj"])
@@ -226,97 +228,239 @@ async def run_case(
     return _report(case, roll, wakes_report)
 
 
+async def _wakes(
+    args: Any, case: Any, instants: dict[int, int],
+    recorded_reasons: dict[int, str], judges: Any | None, evidence: Any,
+    output: Path, room: Any, workspace: str, roll: Rollup,
+    wakes_report: list[dict[str, Any]],
+) -> None:
+    """The recorded sequence in the sandbox, each step naming itself."""
+    first = datetime.fromtimestamp(instants[0] / 1000, UTC)
+    with TemporaryDirectory(prefix="nora-cognition-loop-") as workdir:
+        args.workdir = workdir
+        sandbox_ctx = sandbox_as_of(args.database_url, first)
+        try:
+            url, _seed = await sandbox_ctx.__aenter__()
+        except Exception as exc:  # noqa: BLE001 — a restore failure is a case ERROR
+            roll.error(
+                f"the sandbox restore at wake 0 could not be made: {exc!r}")
+            return
+        try:
+            source_engine = create_async_engine(args.database_url)
+            sandbox = create_async_engine(url)
+            try:
+                try:
+                    await bump_sequences(source_engine, sandbox)
+                except Exception as exc:  # noqa: BLE001 — ERROR, not a crash
+                    roll.error(
+                        "the Record sequences could not be bumped "
+                        f"past the source: {exc!r}")
+                    return
+                for i, wake_id in enumerate(case.wakes):
+                    at_ms = instants[i]
+                    advance = None
+                    if i:
+                        try:
+                            advance = await advance_record(
+                                source_engine, sandbox,
+                                after_ms=instants[i - 1], at_ms=at_ms,
+                            )
+                        except Exception as exc:  # noqa: BLE001 — ERROR
+                            roll.error(
+                                f"advance before wake {i} "
+                                f"(recorded {wake_id}) failed: {exc!r}")
+                            break
+                        if not advance.wrote_only_record():
+                            roll.error(
+                                f"advance before wake {i} wrote a "
+                                f"derived store: {advance.written}")
+                            break
+                    try:
+                        with evidence.case(
+                            f"wake:{case.unit}:{wake_id}",
+                            input={"recorded_wake_id": wake_id},
+                            metadata={"wake_id": wake_id, "unit": case.unit,
+                                      "at_ms": at_ms},
+                        ):
+                            report_row = await _run_wake(
+                                args, case, i, wake_id, at_ms, url,
+                                recorded_reasons[i], judges,
+                                evidence, output, room, workspace,
+                                advance=advance,
+                            )
+                        wakes_report.append(report_row)
+                    except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
+                        roll.error(
+                            f"wake {i} (recorded {wake_id}): {exc!r}")
+                        break
+                    if report_row.get("status") == ERROR:
+                        roll.error(
+                            f"wake {i} (recorded {wake_id}) failed "
+                            f"at {report_row.get('step', 'wake')}: "
+                            f"{report_row.get('error')}")
+                        break
+            finally:
+                await sandbox.dispose()
+                await source_engine.dispose()
+        finally:
+            await sandbox_ctx.__aexit__(None, None, None)
+
+
 async def _run_wake(
     args: Any, case: Any, index: int, wake_id: int, at_ms: int, url: str,
     reason: str, judges: Any | None, evidence: Any, output: Path,
-    room: Any, workspace: str,
+    room: Any, workspace: str, advance: Any = None,
 ) -> dict[str, Any]:
     """One wake: compose, assert inert, record, run live, diff, judge."""
-    subject = await _compose(
-        args, url, at_ms, room, args.policy.read_text(),
-        args.identity.read_text(), workspace=workspace,
-    )
+    subject = None
     try:
-        egress = assert_no_egress(subject)
-        await index_replay_sandbox(subject, source_url=args.database_url)
-        runner = subject.deps.cognition_runner
-        evaluator = subject.deps.wake_evaluator
-        if runner is None or evaluator is None:
-            raise ValueError("the subject composes no cognition runner/evaluator")
-        engine = create_async_engine(url)
         try:
-            rooms = _rooms(subject, case.unit)
-            stimuli = SqlStimulusStore(engine)
-            view = await stimuli.view(
-                unit=case.unit, mode="live", now_ms=at_ms,
-                limit=evaluator._policy.batch_max,
-                stale_before_ms=at_ms - int(
-                    evaluator._policy.session_timeout_seconds * 1000),
+            subject = await _compose(
+                args, url, at_ms, room, args.policy.read_text(),
+                args.identity.read_text(), workspace=workspace,
             )
-            decided = decide(view, evaluator._policy, at_ms)
-            recorded_reason = cast(WakeReason, reason)
-            verdict, forced = eval_verdict(view, decided, reason=recorded_reason)
-            wake = await record_eval_wake(
-                evaluator, view, verdict,
-                verdict.reason or recorded_reason, at_ms,
-                forced=forced,
-            )
-            before = await state_mod.snapshot(
-                engine, unit=case.unit, rooms=rooms,
-                profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
-                metrics=subject.deps.metrics,
-            )
-            tokens_before = subject.deps.metrics.get(
-                "nora_cognition_unit_tokens_total")
-            session_id = None
-            if judges is not None:
-                outcome = await runner.on_wake(
-                    unit=case.unit, view=view, now_ms=at_ms,
+            egress = assert_no_egress(subject)
+            await index_replay_sandbox(subject, source_url=args.database_url)
+            runner = subject.deps.cognition_runner
+            evaluator = subject.deps.wake_evaluator
+            if runner is None or evaluator is None:
+                raise ValueError(
+                    "the subject composes no cognition runner/evaluator")
+        except Exception as exc:  # noqa: BLE001 — a failed step is ERROR, not a crash
+            return _wake_error(
+                output, index, wake_id, at_ms, reason, advance,
+                step="compose", exc=exc)
+        try:
+            engine = create_async_engine(url)
+            try:
+                rooms = _rooms(subject, case.unit)
+                stimuli = SqlStimulusStore(engine)
+                view = await stimuli.view(
+                    unit=case.unit, mode="live", now_ms=at_ms,
+                    limit=evaluator._policy.batch_max,
+                    stale_before_ms=at_ms - int(
+                        evaluator._policy.session_timeout_seconds * 1000),
+                )
+                decided = decide(view, evaluator._policy, at_ms)
+                recorded_reason = cast(WakeReason, reason)
+                verdict, forced = eval_verdict(
+                    view, decided, reason=recorded_reason)
+                wake = await record_eval_wake(
+                    evaluator, view, verdict,
+                    verdict.reason or recorded_reason, at_ms,
+                    forced=forced,
+                )
+                before = await state_mod.snapshot(
+                    engine, unit=case.unit, rooms=rooms,
+                    profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
+                    metrics=subject.deps.metrics,
+                )
+                tokens_before = subject.deps.metrics.get(
+                    "nora_cognition_unit_tokens_total")
+                session_id = None
+                inspection = None
+                if judges is not None:
+                    outcome = await runner.on_wake(
+                        unit=case.unit, view=view, now_ms=at_ms,
+                        wake_id=wake.wake_id,
+                    )
+                    if outcome is not None:
+                        session_id = outcome.session_id
+                else:
+                    inspection = await runner.inspect(view=view, now_ms=at_ms)
+                tokens = (subject.deps.metrics.get(
+                    "nora_cognition_unit_tokens_total") - tokens_before)
+                after = await state_mod.snapshot(
+                    engine, unit=case.unit, rooms=rooms,
+                    profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
+                    metrics=subject.deps.metrics,
+                )
+                diff = state_mod.diff(before, after)
+                events = session_events(
+                    read_events(evidence.path), session_id=session_id,
                     wake_id=wake.wake_id,
                 )
-                if outcome is not None:
-                    session_id = outcome.session_id
-            else:
-                await runner.inspect(view=view, now_ms=at_ms)
-            tokens = (subject.deps.metrics.get("nora_cognition_unit_tokens_total")
-                      - tokens_before)
-            after = await state_mod.snapshot(
-                engine, unit=case.unit, rooms=rooms,
-                profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
-                metrics=subject.deps.metrics,
-            )
-            diff = state_mod.diff(before, after)
-            events = session_events(
-                read_events(evidence.path), session_id=session_id,
-                wake_id=wake.wake_id,
-            )
-            trajectory = wake_trajectory(
-                events, wake_id=wake.wake_id, session_id=session_id,
-                tokens=tokens or None,
-            )
-            expectations = []
-            if judges is not None:
-                for expectation in case.expectations:
-                    if expectation.wake != index:
-                        continue
-                    verdict_obj = await judge_expectation(
-                        judges, (args.judge_a, args.judge_b), expectation,
-                        diff, after, trajectory,
-                    )
-                    expectations.append({
-                        "expectation": expectation.text,
-                        "verdict": verdict_obj.verdict,
-                        "verdict_obj": verdict_obj,
-                        "answers": [asdict(a) for a in verdict_obj.answers],
-                    })
-            return _freeze_wake(
-                output, index, wake_id, wake, at_ms, reason, session_id,
-                egress, judges is not None, diff, trajectory, expectations, after,
-            )
-        finally:
-            await engine.dispose()
+                trajectory = wake_trajectory(
+                    events, wake_id=wake.wake_id, session_id=session_id,
+                    tokens=tokens or None,
+                )
+                if inspection is not None:
+                    # The inspection assembled the wake's context through the
+                    # same `_session_input` a session runs; only the model
+                    # call is skipped, so the blocks are real, never None.
+                    trajectory["blocks"] = {
+                        "system": inspection.get("system"),
+                        "agenda": inspection.get("agenda"),
+                        "items": inspection.get("items"),
+                        "stimuli": inspection.get("stimuli"),
+                        "instructions": inspection.get("instructions"),
+                    }
+                expectations = await _judge(
+                    args, case, index, judges, diff, after, trajectory)
+                return _freeze_wake(
+                    output, index, wake_id, wake, at_ms, reason, session_id,
+                    egress, judges is not None, diff, trajectory, expectations,
+                    after, advance,
+                )
+            finally:
+                await engine.dispose()
+        except Exception as exc:  # noqa: BLE001 — a failed step is ERROR, not a crash
+            return _wake_error(
+                output, index, wake_id, at_ms, reason, advance,
+                step="wake", exc=exc)
     finally:
-        await _close_subject(subject)
+        if subject is not None:
+            await _close_subject(subject)
+
+
+async def _judge(
+    args: Any, case: Any, index: int, judges: Any | None, diff: Any,
+    after: Any, trajectory: dict[str, Any],
+) -> list[dict[str, Any]]:
+    expectations = []
+    if judges is None:
+        return expectations
+    for expectation in case.expectations:
+        if expectation.wake != index:
+            continue
+        try:
+            verdict_obj = await judge_expectation(
+                judges, (args.judge_a, args.judge_b),
+                expectation, diff, after, trajectory,
+            )
+        except Exception as exc:  # noqa: BLE001 — a judge failure is ERROR, not a crash
+            verdict_obj = ExpectationVerdict(
+                verdict=ERROR, answers=(), detail=f"judge: {exc!r}")
+        expectations.append({
+            "expectation": {
+                "polarity": expectation.polarity,
+                "kind": expectation.kind,
+                "text": expectation.text,
+            },
+            "verdict": verdict_obj.verdict,
+            "verdict_obj": verdict_obj,
+            "answers": [asdict(a) for a in verdict_obj.answers],
+        })
+    return expectations
+
+
+def _wake_error(
+    output: Path, index: int, wake_id: int, at_ms: int, reason: str,
+    advance: Any, *, step: str, exc: Exception,
+) -> dict[str, Any]:
+    """An ERROR wake entry: the step is named, never folded into another's."""
+    freeze(output / f"wake-{index}-{wake_id}.json", {
+        "error": {"step": step, "message": f"{exc!r}"},
+        "advance": advance.written if advance is not None else None,
+    })
+    return {
+        "recorded_wake_id": wake_id, "wake_id": None,
+        "at_ms": at_ms, "reason": reason, "forced": None,
+        "status": ERROR, "step": step, "error": f"{exc!r}",
+        "session_id": None, "egress": None, "model_calls": None,
+        "diff_counts": None, "trajectory": None, "expectations": [],
+        "advance": advance.written if advance is not None else None,
+    }
 
 
 async def _close_subject(subject: Any) -> None:
@@ -344,11 +488,12 @@ def _freeze_wake(
     output: Path, index: int, wake_id: int, wake: Any, at_ms: int,
     reason: str, session_id: str | None, egress: dict[str, Any],
     model_calls: bool, diff: Any, trajectory: dict[str, Any],
-    expectations: list[dict[str, Any]], state_after: Any,
+    expectations: list[dict[str, Any]], state_after: Any, advance: Any,
 ) -> dict[str, Any]:
     """The wake's private evidence file and its report row."""
     freeze(output / f"wake-{index}-{wake_id}.json", {
         "trajectory": trajectory,
+        "advance": advance.written if advance is not None else None,
         "diff": {
             k: {s: [asdict(e) for e in entries]
                 for s, entries in (
@@ -374,6 +519,7 @@ def _freeze_wake(
         },
         "trajectory": trajectory,
         "expectations": expectations,
+        "advance": advance.written if advance is not None else None,
         "_state_before": state_after,
     }
 
