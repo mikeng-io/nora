@@ -1,5 +1,5 @@
 # bridge-projection — the standalone admission-projection publisher
-# (design/platform-bridges/02-wire-and-platforms.md). Writes /bridge-projection/{platform}.json
+# (design/platform-bridges §02). Writes /bridge-projection/{platform}.json
 # from the canonical config/policy/identity files, atomically, on the existing
 # 3s reload cadence — and keeps publishing while the app process is down:
 # it reads files, never a live app.

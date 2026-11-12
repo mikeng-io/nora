@@ -199,7 +199,7 @@ def test_a_full_restore_subject_builds_no_geocoder_even_with_the_keys_set(
     points both credentials at a name nothing sets. The control: the same
     environment composes a billed client for a snapshot subject, so the test
     can see one."""
-    from nora.app.composition import reverse_geocoder
+    from nora.app.composition_readers import reverse_geocoder
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     default = _built(tmp_path / "default", None)
@@ -218,7 +218,7 @@ def test_a_full_restore_subject_builds_no_geocoder_even_with_the_keys_set(
 def test_both_composed_geocoders_screen_the_areas_they_keep(tmp_path, monkeypatch, enabled) -> None:
     """Both backends get the real area screen, bound to the reversible flag.
     Clean areas survive in both modes; credentials are always withheld."""
-    from nora.app.composition import reverse_geocoder
+    from nora.app.composition_readers import reverse_geocoder
     from nora.app.gatherings import screened_area
     from nora.domain.ports import PlaceArea
 

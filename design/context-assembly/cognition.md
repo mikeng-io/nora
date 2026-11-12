@@ -6,21 +6,25 @@ Cognition's context is selected for the judgements its session makes, not by
 copying the reply turn's blocks. Each decision has the input needed to ground
 it:
 
-- authorship and subject resolution read the agenda rooms' members and aliases;
-- entity resolution and contradiction read related person, room, unit and Nora
-  profiles plus the graph around the agenda;
-- interpretation reads the agenda rows with identity, room and assertion time;
-- conversation context reads an interleaved unit transcript whose rows retain
-  their room;
-- Register writes read the corresponding open notes, settled memos and events;
-- reminder and self-wake changes read pending intentions with their subjects
-  and due state;
-- lessons, Standing and the clock ground practice, position and freshness;
-- a lesson write reads the unit's held lessons by handle, the corrections
-  aimed at her since the lessons cursor and the closed response episodes past
-  it;
-- the room catalogue and deferred tool catalogue name available destinations
-  and reads without injecting unrelated inventories.
+| Decision | What grounds it | Block |
+|---|---|---|
+| who a row is from, who a statement is about | the agenda rooms' members, by id and every name they are called | `members` |
+| match an existing entity or create one; correct a contradiction | what is already known about the related people, rooms, unit and Nora | `profile` (one per related subject) |
+| | the graph around the agenda's entities | `graph` |
+| what an item states | the item's rows, by id, author id and send time | `agenda` |
+| what the rows mean in their conversation, and whether something said in one room links to another | the unit's conversation around the items, every row tagged with its room | `transcript` |
+| which rooms exist, and where a read or a reminder can go | every room of the unit: id, label, platform, purpose, recent activity | `rooms` |
+| write a note, or revise the one that exists | the open notes, with their pending reminders by id and due time | `notes` |
+| write a memo, or not | the settled memos | `memos` |
+| propose or revise an event | the rooms' events | `events` |
+| what she owes, holds open, already did | her Standing, including pending self-wakes | `standing` |
+| how she should write, from past corrections | her lessons for the unit | `lessons` |
+| reinforce or reword a held lesson, or retire one | the unit's held lessons, by handle | `held_lessons` |
+| write a lesson from a correction, or not | the corrections aimed at her since the lessons cursor | `lesson_corrections` |
+| write a lesson from how people responded, or not | the closed response episodes past the cursor | `lesson_episodes` |
+| when, and how long ago | now, and her last session | `clock` |
+| which rooms the read tools look through | the read scope | `reads` |
+| detect documentation superseded by agenda evidence; read its current revision and revise it | the agenda-room shared document index | `documents` |
 
 A block exists only when a decision reads it. Documents are the exception in
 kind, not in rule: the session decides whether agenda evidence supersedes
@@ -35,6 +39,11 @@ counts never enter the index or an error. Other large stores are pulled
 through deferred tools unless a session decision specifically needs their
 index. Related profiles replace older peer, culture and character blocks
 rather than rendering several accounts of the same subject.
+
+**Read but not injected**: blocks that serve one reply turn (presence,
+computer, subagents, the spoken or replied-to turn) have no Cognition decision
+that reads them, and the older peer, culture and character accounts are
+replaced by `profile`. Either is added only when a decision reads it.
 
 ## Related selection
 

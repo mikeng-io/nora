@@ -1851,7 +1851,7 @@ class SidecarEntry(SpeechEntryConfigBase):
                 f"sidecars entry guild {value!r} must be a bare Discord guild "
                 "id, not \"<guild_id>/<channel_id>\" — an entry maps a GUILD "
                 "to the audio-controller that owns its voice connection "
-                "(design/voice-channel/audio.md). Where a guild's SPEECH is "
+                "(design/voice-channel/audio). Where a guild's SPEECH is "
                 "recorded is policy.toml's `voice = true`, not here."
             )
         return value
@@ -2055,7 +2055,7 @@ class SpeechTtsConfig(BaseModel):
                 raise ValueError(
                     f"[speech.tts] sidecars lists guild {entry.guild!r} twice — "
                     "one guild has exactly one audio-controller "
-                    "(design/voice-channel/audio.md)"
+                    "(design/voice-channel/audio)"
                 )
             seen.add(entry.guild)
         return self

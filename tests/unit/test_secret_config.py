@@ -64,7 +64,7 @@ def test_named_endpoints_default_and_raw_route(example_config_path, monkeypatch)
     )
     assert cfg.endpoint("tag")[2] == cfg.llm.model
     from nora.agent.factory import create_client
-    from nora.app.composition import _RelevanceGateModelClient
+    from nora.app.raw_clients import _RelevanceGateModelClient
 
     url, key, model = cfg.endpoint("standing")
     client = create_client(base_url=url, api_key=key)
@@ -96,7 +96,7 @@ def test_invalid_routes_refused(example_config_path, change):
 def test_named_media_missing_key_degrades_without_losing_other_clients(
     example_config_path, monkeypatch, caplog,
 ):
-    from nora.app.composition import _direct_describer_clients
+    from nora.app.composition_media import _direct_describer_clients
 
     data = routed(example_config_path)
     data["media"]["describe"] = {

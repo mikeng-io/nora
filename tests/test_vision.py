@@ -505,7 +505,7 @@ def test_composition_hands_the_client_the_derivations_inputs_not_a_budget():
     only way to see that wiring; a test that built its own client would be true
     by construction."""
     source = (Path(__file__).resolve().parents[1]
-              / "nora" / "app" / "composition.py").read_text()
+              / "nora" / "media" / "wire.py").read_text()
     call = source[source.index("vision_client = VisionClient("):]
     call = call[:call.index("\n    )")]
     # CODE only. The comment above the arguments names the budget that is not
@@ -740,7 +740,7 @@ async def test_the_client_built_by_composition_sends_the_session_header(mimo, mo
 
     The client is repointed at the fake with `with_options(base_url=…)`, which
     keeps the transport (and so the hook) composition gave it."""
-    from nora.app.composition import _direct_describer_clients
+    from nora.app.composition_media import _direct_describer_clients
     from nora.config import Config, MediaConfig
 
     monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-key")
@@ -850,7 +850,7 @@ async def test_a_direct_lane_with_no_key_sends_nothing_anywhere(mimo, monkeypatc
     UNSET, then a read through that lane — `unavailable`, and ZERO requests
     reach the gateway client (an OmniRoute fallback would drop the video and
     answer about the text it did receive)."""
-    from nora.app.composition import _direct_describer_clients
+    from nora.app.composition_media import _direct_describer_clients
     from nora.config import Config, MediaConfig
 
     monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)

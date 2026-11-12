@@ -1,5 +1,90 @@
 # Changelog
 
+## [7.18.0](https://github.com/mikeng-io/nora/compare/v7.17.7...v7.18.0) (2026-11-12)
+
+
+### Features
+
+* **cognition:** assemble shared governed context across loops ([b76f587](https://github.com/mikeng-io/nora/commit/b76f587821a0fdbbb37b2181a675b3727ba26cbf))
+* **cognition:** resident read surface and candidate-aware admission ([f20c6ff](https://github.com/mikeng-io/nora/commit/f20c6ffe56d33774513cb66d38f92453d7774c62))
+* **evals:** bind judge-only calibration to frozen controls and budgets ([033009f](https://github.com/mikeng-io/nora/commit/033009ff3bbaa1af78da9b781b7b0336ca586faa))
+* **replay:** extend the frozen smoke cohort to an exact session count ([054d784](https://github.com/mikeng-io/nora/commit/054d7840ad99623cb6e5bf00c9051dec09c5cc81))
+
+
+### Bug Fixes
+
+* **app:** declare lazily-bound wiring names so mypy resolves the thunks ([6e39edd](https://github.com/mikeng-io/nora/commit/6e39edd79974ed9b28478e0321dfdd6c3f9195b1))
+* **app:** restore dropped dream adaptor and annotate extracted wiring ([a702b2b](https://github.com/mikeng-io/nora/commit/a702b2b4f071a3f4c3908db8a09107c402d6be6a))
+* **app:** the Google warning names the missing variables again ([c7eb127](https://github.com/mikeng-io/nora/commit/c7eb1275fc91ead8fc3cf122e454cf6c2dd26fdd))
+* **ci:** a line moved unchanged is not a new CodeQL finding ([0138d83](https://github.com/mikeng-io/nora/commit/0138d8390755611a41af0388db879abb4c230bd7))
+* **ci:** gate every CodeQL finding on an added line again ([e8670ed](https://github.com/mikeng-io/nora/commit/e8670edde3884ebef95cb241115022144e02b440))
+* **cognition:** align empty-item and absence guidance ([310f7cc](https://github.com/mikeng-io/nora/commit/310f7cc7d1a2f0bae875910e27cdd6731679a06f))
+* **cognition:** apply shared-material scope before empty-content decisions ([9dfdba8](https://github.com/mikeng-io/nora/commit/9dfdba822cddf34b32300603b1b7ada31589e00a))
+* **cognition:** bind distinct to returned refusals and custody to cards ([848b27d](https://github.com/mikeng-io/nora/commit/848b27d16786337b3a7149e8d063ca4410c88293))
+* **cognition:** close the prompt's contradictions and give the replay its own lane ([4e99162](https://github.com/mikeng-io/nora/commit/4e99162ca54e32eb08dba707da6ffbdbbe2ca7a8))
+* **cognition:** consume canonical mentions and source identifiers ([03b46ae](https://github.com/mikeng-io/nora/commit/03b46ae8063f567b263e7a8a7669149dc7f75a24))
+* **cognition:** drop the tool catalogue block from the Cognition prompt ([81033c9](https://github.com/mikeng-io/nora/commit/81033c98d2efb23f84343163c18e6d2c5874af01))
+* **cognition:** keep what a wake changed whether or not anything is done ([1638a72](https://github.com/mikeng-io/nora/commit/1638a72cfc3ab2aac1b4eb81e8e1743784b2e665))
+* **cognition:** keep writer guidance on conveyed information consistent ([e3f6e08](https://github.com/mikeng-io/nora/commit/e3f6e08261cff8e70b7fda08305d2735b797c137))
+* **cognition:** preserve legacy completion and append stage guidance ([2f6d1a8](https://github.com/mikeng-io/nora/commit/2f6d1a856ec74feb20f7c22a4dda7d245d43ab38))
+* **cognition:** preserve message authors and explicit replay sources ([05d1512](https://github.com/mikeng-io/nora/commit/05d1512ef60dc1c6262916230c629b8a365b9a11))
+* **cognition:** read lesson evidence before the session row is written ([6e4ece3](https://github.com/mikeng-io/nora/commit/6e4ece3820834730f08608cd0b519f45bab6a808))
+* **cognition:** register candidate custody only after the propose call succeeds ([53c3a08](https://github.com/mikeng-io/nora/commit/53c3a081d48794ed9e77406514847c26a9b92dc0))
+* **cognition:** register the grounded composer and drop raw sender ids from grounding ([90dc9c2](https://github.com/mikeng-io/nora/commit/90dc9c2244079b052cdacd84ab87b371bac412d6))
+* **cognition:** separate reported information from notebook decisions ([be8eac3](https://github.com/mikeng-io/nora/commit/be8eac3b6b3617e0b58e5c43a7a75adc15ef123b))
+* **cognition:** share writer criteria with fact judges ([48f3c55](https://github.com/mikeng-io/nora/commit/48f3c5566c785324c80352c07e47cd5e6bae0fbf))
+* **context:** complete shared context callers and contract readers ([ab264fe](https://github.com/mikeng-io/nora/commit/ab264fe1b2e1e2c5f3ac0243497126780be13c6d))
+* **context:** explain typed evidence sources in the agenda ([d5d1795](https://github.com/mikeng-io/nora/commit/d5d179590d50f4c7a6b5854560c7bd56c805dd5e))
+* **context:** preserve room custody and complete document evidence ([1c5594a](https://github.com/mikeng-io/nora/commit/1c5594ad5a0eabdc7dce1a937b5a2121ee53016b))
+* **context:** retain canonical profile subject ids across occasions ([06cbe79](https://github.com/mikeng-io/nora/commit/06cbe79f2c6f716f58212275b3a5a278d6882951))
+* **evals:** accept only the renderer's reads bindings and project recorded rows by key and text ([dff3cf8](https://github.com/mikeng-io/nora/commit/dff3cf8b203ba6dcffaf6340e45f785452bc1165))
+* **evals:** align optional output fields with scoring semantics ([b2e6532](https://github.com/mikeng-io/nora/commit/b2e6532731941458778d581155bbeabe148e076e))
+* **evals:** bind capture code and require active acceptance judges ([0932768](https://github.com/mikeng-io/nora/commit/0932768fc126a7b499d10df50d28a1b161a74779))
+* **evals:** bind judging policy independently of the candidate ([7b7312a](https://github.com/mikeng-io/nora/commit/7b7312a9f4a9fbc42e1df092840bdc33aabd9ec0))
+* **evals:** bind media attribution ruling and exact proof shape ([80a44ca](https://github.com/mikeng-io/nora/commit/80a44caf466ecd6b05ef4752c448e85d5bae5a46))
+* **evals:** capture direct reply judge requests and model spans ([bcc1a06](https://github.com/mikeng-io/nora/commit/bcc1a06105f29f48c592a8fbfded99649c01be86))
+* **evals:** clarify capture provenance and configuration refusals ([c79f1e3](https://github.com/mikeng-io/nora/commit/c79f1e3b49aee510e57d75c80d6eb50b7454bedf))
+* **evals:** declare fixed memory judge output formats ([838cfde](https://github.com/mikeng-io/nora/commit/838cfde5b6dfabfd99eed2122a337d189ee486e5))
+* **evals:** export authorized evaluation content to owner SigNoz ([6f95958](https://github.com/mikeng-io/nora/commit/6f959583be3e8050e30849bcc0b280491a126298))
+* **evals:** export memory graph entrypoints and group wake cases ([143a9d1](https://github.com/mikeng-io/nora/commit/143a9d1db682021f382d1baf631d729569a8f0a7))
+* **evals:** honor the frozen per-call judge output allowance ([bff1f17](https://github.com/mikeng-io/nora/commit/bff1f177cb6ab4b7c94b62aac84c069339d56095))
+* **evals:** label snapshot locator provenance precisely ([4dc7395](https://github.com/mikeng-io/nora/commit/4dc7395c3ad3270e94a8de65860fc4ff25d3f20b))
+* **evals:** pass fixed contracts through operator entrypoints ([50f900f](https://github.com/mikeng-io/nora/commit/50f900fd9cea81713647a59e666c939adb813c01))
+* **evals:** pin bounded SDK retries and clarify inspection limits ([a7f0d51](https://github.com/mikeng-io/nora/commit/a7f0d513d6812e4dfd16cf92c83482627c95b70e))
+* **evals:** preserve compatible judge requests with local schema checks ([78e25e4](https://github.com/mikeng-io/nora/commit/78e25e4f7289e5f18b6a4e38f0d98c3e6ba3840a))
+* **evals:** preserve complete capture and truthful terminal reports ([0bd7d49](https://github.com/mikeng-io/nora/commit/0bd7d49a83abbf41500d7e639159ea9583a1b01f))
+* **evals:** preserve equivalent repeated JSON values without selecting conflicts ([1ffa0cf](https://github.com/mikeng-io/nora/commit/1ffa0cf5f7edca340e4e7965591289085616a17f))
+* **evals:** preserve replay outcomes and terminal budget evidence ([0999a8f](https://github.com/mikeng-io/nora/commit/0999a8ff200f626e1a609a5d5e7b6246b38bd12c))
+* **evals:** print the operator trace reference ([7f8841c](https://github.com/mikeng-io/nora/commit/7f8841cae86e732e4720ceda90cd1b1b7a5b5999))
+* **evals:** project the shown carrier binding into judged source rows ([98e2fca](https://github.com/mikeng-io/nora/commit/98e2fca59be7ebae8b6d7bc25601c094032e99ca))
+* **evals:** reject ambiguous judge output and request strict formats ([a66aa21](https://github.com/mikeng-io/nora/commit/a66aa2155e14922e0e93f06be64696cd6100e6d3))
+* **evals:** reject silent SDK string truncation ([3cd98ec](https://github.com/mikeng-io/nora/commit/3cd98ec7ca2ed1baf80c929a71e3239e469e18ab))
+* **evals:** resolve export through the subject boundary ([eba7908](https://github.com/mikeng-io/nora/commit/eba79080e8a3e3173ba1a4464fc3ebb1553e1728))
+* **evals:** retain truncated judge evidence and pin capture sources ([3918ca5](https://github.com/mikeng-io/nora/commit/3918ca50a4303818db9a8317fe756c20169e2577))
+* **evals:** reuse the existing calibration configuration loader ([c3fa20c](https://github.com/mikeng-io/nora/commit/c3fa20c342e7d6b9a0cd01861175afe575121495))
+* **evals:** reuse the subject projection when binding replay evidence ([a7dc48c](https://github.com/mikeng-io/nora/commit/a7dc48c4156b1b363c5a4d6b5c26b96035c3e7c8))
+* **evals:** share measured cutoff with judge-only scoring ([23c2c9e](https://github.com/mikeng-io/nora/commit/23c2c9e6b9defc9799f753b5eec621fd3e9e04dd))
+* **evals:** share the suite lock and preserve truthful calibration outcomes ([e5a728a](https://github.com/mikeng-io/nora/commit/e5a728a907cdd54033d2e22c434d63cb56100da3))
+* **evals:** validate the same fact document that scoring consumes ([772af05](https://github.com/mikeng-io/nora/commit/772af05af27accfb5f12ad178a4066067baf6db4))
+* **memory:** align citation custody and replay recovery with model input ([5bc5a63](https://github.com/mikeng-io/nora/commit/5bc5a6359785c0071277269f82266d4a6412157e))
+* **memory:** require recovered tool calls and align attribute citations ([9208cc0](https://github.com/mikeng-io/nora/commit/9208cc07d2df246fadd687e29feaf0384c9f69a2))
+* **replay:** refuse inspection flags on paid scoring modes ([907ae6d](https://github.com/mikeng-io/nora/commit/907ae6d94d1bbc4996f79eff84c3bcffb0267d6b))
+* **replay:** report memory quality separately from execution completion ([e9ac9e2](https://github.com/mikeng-io/nora/commit/e9ac9e28eb37ffbc4126fc54318b62b872464c7b))
+* **replay:** resolve plural locators without counting context rows ([2482f28](https://github.com/mikeng-io/nora/commit/2482f288528495d2e0078866b52de67b3d04c24d))
+* **replay:** retain input parity and offline failure provenance ([eb76e47](https://github.com/mikeng-io/nora/commit/eb76e474b95e7db83b8518d4973700b22c14572f))
+* **replay:** stop subsequent calls at the measured token cutoff ([19f5185](https://github.com/mikeng-io/nora/commit/19f518569fc466cda16e1c2e597d856efc0c85c5))
+* **scripts:** point stale references at the moved client and store ([b8426af](https://github.com/mikeng-io/nora/commit/b8426afdab30173fb930dda0241b56f4ac47836d))
+* **stt:** load SenseVoice from the model cache, not the hub ([668cd8a](https://github.com/mikeng-io/nora/commit/668cd8ab6e160a6847007984fb0210f48436af63))
+* **tests:** re-point moved-wiring seams after the area split ([c486090](https://github.com/mikeng-io/nora/commit/c4860901d976e5d7b99872b3d9212c187fc0dd5f))
+* **tools:** name the shared transcript in reply schemas ([4d4baac](https://github.com/mikeng-io/nora/commit/4d4baac52e59f727d85a38df82d80e5a7dcef990))
+
+
+### Changes
+
+* **cognition:** carry the unfinished prompt revision 2 from the stopped Astra run ([8a35ad1](https://github.com/mikeng-io/nora/commit/8a35ad17e4e7e60f656cdc43d67284f94104eae9))
+* **cognition:** complete the OODA prompt and session outcome refactor ([b121697](https://github.com/mikeng-io/nora/commit/b121697f6cc132958a636e2cce8bb58aeae28a15))
+* **cognition:** shorten the proactive OODA prompt and gate tool guidance ([289fb61](https://github.com/mikeng-io/nora/commit/289fb61385099b1a3d8f62fd04cbdb0bfd75fa63))
+
 ## [7.17.7](https://github.com/mikeng-io/nora/compare/v7.17.6...v7.17.7) (2026-11-11)
 
 

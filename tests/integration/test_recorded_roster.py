@@ -81,7 +81,7 @@ async def test_a_failed_read_is_unavailable_and_never_raises() -> None:
 
 
 def test_the_patch_is_for_one_subject_and_is_put_back() -> None:
-    from nora.app import composition
+    from nora.app import composition_platforms as composition
     from nora.platform.instagram import roster as instagram_roster
     from nora.platform.signal.roster import SignalRoster
 

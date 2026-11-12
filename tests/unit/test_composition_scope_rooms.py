@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from nora.app.composition import StartupError, scope_home_rooms
+from nora.app.composition_readers import scope_home_rooms
+from nora.app.startup import StartupError
 
 
 def _conv(unit: str, platform: str, primary: str, *ids: str, location: bool = False):

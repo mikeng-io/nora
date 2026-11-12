@@ -3,7 +3,7 @@
 # host actually runs, so that's what we validate the container against).
 FROM python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
 
-# ffmpeg is the Discord Music design's playback transcoder (design/voice-channel/music.md
+# ffmpeg is the Discord Music design's playback transcoder (design/discord-music/
 # 01-playback-and-source.md) -- discord.py's FFmpegPCMAudio shells out to whatever
 # `ffmpeg` it finds on PATH, it doesn't bundle one. Same package deploy/stt/Dockerfile
 # already installs it for, for the same underlying reason (a universal decoder for
@@ -58,7 +58,7 @@ RUN mkdir -p /app/data && chown -R nora:nora /app
 
 # WHICH COMMIT this image was built from, and when, for every build and not
 # only a stamped release: the deploy revision each process start records
-# (`nora.app.revisions`, design/cognition-loop/README.md «Invariants») reads
+# (`nora.app.revisions`, design/cognition-loop/70-migration.md §5) reads
 # them, so "what code was running at T" is answerable on an ordinary,
 # unversioned deploy too. `.git` is not in the build context
 # (`.dockerignore`), so the sha arrives as a build argument: the build

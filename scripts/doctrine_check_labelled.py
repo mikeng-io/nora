@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 
 from openai import AsyncOpenAI  # noqa: E402
 
-from nora.app.composition import _RelevanceGateModelClient  # noqa: E402
+from nora.app.raw_clients import _RelevanceGateModelClient  # noqa: E402
 from nora.doctrine.loader import DoctrineStore  # noqa: E402
 from nora.language.doctrine_check import DoctrineCheck  # noqa: E402
 from nora.obs.metrics import Metrics  # noqa: E402

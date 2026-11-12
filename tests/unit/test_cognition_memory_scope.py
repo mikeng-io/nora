@@ -16,7 +16,7 @@ from aiohttp import web
 from nora.agent.dreamer import RegistryToolSource
 from nora.agent.registry import ToolRegistry
 from nora.app.cognition_wiring import COGNITION_READ_CATALOGUE, read_tools_for
-from nora.app.composition import scope_home_rooms
+from nora.app.composition_readers import scope_home_rooms
 from nora.app.memory_routing import build_workspace_router
 from nora.domain.cognition_session import Room
 from nora.domain.models import PersonRef
