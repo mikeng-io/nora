@@ -468,7 +468,8 @@ async def _run_wake(
                     events, wake_id=wake.wake_id, session_id=session_id,
                     tokens=tokens or None,
                 )
-                trajectory["availability"] = availability(subject.cfg, trajectory)
+                trajectory["availability"] = availability(
+                    getattr(subject, "cfg", None), trajectory)
                 if inspection is not None:
                     # The inspection assembled the wake's context through the
                     # same `_session_input` a session runs; only the model
