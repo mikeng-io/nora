@@ -83,19 +83,37 @@ a disposable replay does, because what the next wake sees depends on them.
 Carry and watermark bookkeeping run too.
 
 **State diff.** Before and after every wake, the eval reads each owned store
-through the production read paths, not through SQL of its own:
+through the production read paths, not through SQL of its own, and every
+read covers each status a session write can land in — a note created and
+retired inside one wake is still read, never filtered out by a live-only
+view:
 
 - memory graph statements and corrections;
-- profile lines;
+- profile lines on every account the session can write — the unit's
+  people, Nora, its culture, and each room's own account;
 - notes, memos and events, with their status and field provenance;
 - topic anchors and accounts;
 - lessons;
 - Standing;
-- pending reminders and wakes.
+- reminders and self-wakes at every state, folded to each wake
+  reference's latest transition.
 
-The diff is typed and keyed by entry id: created, revised (before and after),
-retired or closed, and unchanged. It is the unit of judgement, together with
-the session's full trajectory.
+The diff is typed and keyed by entry id: created, revised (before and
+after), retired or closed, and unchanged. A write that retires or cancels
+reads as a revision carrying the closing state, never a vanished entry.
+It is the unit of judgement, together with the session's full
+trajectory.
+
+**Every successful write lands in the diff.** After each wake's diff is
+computed, the eval walks the trajectory's tool calls: a call whose result
+states `ok` (the tool envelope succeeded and the answer wrote) must be
+accounted for by the diff — each entry id the answer names lands in its
+kind's entries, and an answer that names no id requires a changed entry
+of its kind. A successful write the diff cannot place means the state
+read missed a store, and the wake is `ERROR` at the `diff` step naming
+the call — never judged on a partial picture. A `refused`, `unresolved`,
+`conflict` or `unavailable` answer wrote nothing and asks nothing of the
+diff.
 
 **Trajectory.** Every wake records:
 
@@ -124,8 +142,14 @@ wake's status follows the same derived rule as any other.
 **The report.** `report.json` is the machine-readable record; `report.html`
 renders the same evidence — status and budget, the evidence receipt, then
 each case's wakes in order: what arrived, what Nora read, what she did,
-what changed, and the judgements — as one self-contained file written at
-the end of every run and re-renderable from the frozen output alone.
+what changed, and the judgements — as one self-contained file and
+re-renderable from the frozen output alone. Both are written in every
+outcome: a run that fails — a model call the evidence capture raises on,
+a crashed case — still freezes both, run status `ERROR` with the
+evidence cause named at the top. The HTML renders every `wake-*.json`
+the output directory holds: a frozen wake the report does not list shows
+its trajectory under its own heading, never an empty page. An expectation
+judged `ERROR` shows the judge's error type and message.
 
 **Case.** A case names a unit, an ordered list of recorded wake ids from the
 source, and expectations over the sequence. An expectation is about the
@@ -145,12 +169,21 @@ quote production content live in the private case directory on the deploy
 host, never in the repository.
 
 **Judges.** `nora-judge` and `nora-judge-2`, the OmniRoute aliases, verified
-by the served model header. Each judge reads one expectation against that
-wake's diff, the sandbox state the expectation names, and the trajectory, and
-answers `met`, `not_met` or `cannot_tell` with its reason and the entry ids it
-rests on. Two judges that disagree make the expectation `REVIEW`. A judge's
-reason must cite entries that exist in the diff or state, or the verdict is
-`ERROR`.
+by the served model header. Each judge reads one expectation against a
+bounded, deterministic digest of the wake — never the trajectory itself,
+whose model requests repeat the whole session context and overflow any
+context window. The digest carries the expectation; the wake's typed diff
+for every kind (created, revised and retired entries in full, unchanged
+as counts only); the sandbox state of the kind the expectation names;
+every tool call in order with its arguments, result status and refusal;
+the session's last assistant output; and its stop reason and tokens. It
+is assembled through the same declared occasion as every model call. A
+digest over the judge's input budget makes the expectation `ERROR` with
+reason `judge input over budget` naming the size — never a silent
+truncation. The judge answers `met`, `not_met` or `cannot_tell` with its
+reason and the entry ids it rests on. Two judges that disagree make the
+expectation `REVIEW`. A judge's reason must cite entries that exist in
+the diff or state, or the verdict is `ERROR`.
 
 ## Verdicts
 
@@ -178,9 +211,14 @@ state the expectations can require or forbid.
   case's sandbox, which is dropped after the case. The privacy rules on
   production rows apply in full: nothing restored, diffed or judged is copied
   into the repository.
-- **Cost is bounded before the run.** A run states its token budget from the
-  cases' wake count and refuses to start past it, and every run begins with a
-  smoke run on one case. The spend of each arm is reported with its results.
+- **Cost is bounded before the run.** A run states its token budget —
+  wakes × the per-wake figure plus the judge allowance, two judge calls
+  per expectation — and prints it before any model call, refusing to
+  start past the armed cap. The default per-wake figure is the measured
+  live figure. `--stop-after-tokens` is refused at startup: a session's
+  model calls are parallel, and a measured cutoff only works against
+  sequential calls — the flag would start the run only to fail it
+  mid-wake. The spend of each arm is reported with its results.
 - **Arms are compared only on identical cases**, run fully recorded under
   this design. Scores from the graph-only replay are not comparable.
 

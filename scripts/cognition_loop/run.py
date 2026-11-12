@@ -169,8 +169,13 @@ async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
     # `nora.subject.obtain` the name is the function; the module it lives in
     # is where `load_policy` is looked up.
     obtain_module = sys.modules["nora.subject.obtain"]
+    from nora.platform.discord import roster as discord_roster
+    from scripts.cognition_loop.rosters import FrozenRoster
+    rosters = getattr(spec_args, "frozen_rosters", None) or {}
     with (patch.object(composition_platforms, "ClientChannelDirectory",
                        lambda *_a, **_k: directory),
+          patch.object(discord_roster, "DiscordRoster",
+                       lambda *_a, **_k: FrozenRoster("discord", rosters)),
           patch.object(obtain_module, "load_policy",
                        lambda path, **_k: load_policy(
                            path, channels=directory))):

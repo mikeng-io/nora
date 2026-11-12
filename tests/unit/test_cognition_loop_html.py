@@ -238,3 +238,27 @@ def test_the_summary_line_counts_the_session(tmp_path):
     html = render(out).read_text(encoding="utf-8")
     assert ("Session ran: 3 agenda items from 2 stimuli; "
             "1 created, 0 revised, 0 retired; 0 tool calls") in html
+
+
+def test_a_frozen_wake_absent_from_report_json_still_renders(tmp_path):
+    """A run that died mid-wake froze `wake-0-7.json` but never listed it:
+    the HTML still renders its trajectory under its own heading."""
+    out = _run_dir(tmp_path, status="ERROR", cases=[], wakes={
+        "wake-0-7.json": {
+            "trajectory": {
+                "blocks": {"system": "ORPHANED-SYSTEM"},
+                "tool_calls": [{"tool": "note_create", "arguments": {"x": 1},
+                                "result": {"status": "success"},
+                                "refusal": None, "error_type": None}],
+            },
+            "diff": {"note": {"created": [
+                {"entry_id": "orphan-note", "after": {"title": "t"}}],
+                "revised": [], "retired": [], "unchanged": []}},
+        },
+    })
+    html = render(out).read_text(encoding="utf-8")
+    assert "frozen wakes absent from report.json" in html
+    assert "ORPHANED-SYSTEM" in html
+    assert "orphan-note" in html
+    assert "note_create" in html
+    assert "wake 0" in html

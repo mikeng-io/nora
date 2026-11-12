@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from scripts.cognition_loop.trajectory import tool_outcome
+
 HKT = ZoneInfo("Asia/Hong_Kong")
 
 _CSS = """
@@ -38,6 +40,8 @@ details { margin: .3em 0; }
 .status-no_session { color: #7a6a2f; font-weight: bold; }
 .summary { color: #333; }
 .not-recorded { color: #777; font-style: italic; }
+.tool-ok { color: #1a7a1a; } .tool-refused, .tool-unavailable { color: #a01010; }
+.tool-nothing_found { color: #a06000; }
 .wake { border-top: 2px solid #999; margin-top: 1.5em; padding-top: .5em; }
 .case { border-top: 4px solid #333; margin-top: 2em; padding-top: .5em; }
 """
@@ -219,25 +223,22 @@ def _did(wake: dict[str, Any]) -> str:
             f"<details><summary>model call {i + 1} — {esc(_bytes(call))}"
             f"</summary><pre>{_json(call)}</pre></details>")
     out.append("<h5>tool calls</h5>")
-    tools = trajectory.get("tool_calls") or []
-    exchanges = trajectory.get("exchanges") or []
-    if not tools and not exchanges:
+    tools = [_with_outcome(c) for c in trajectory.get("tool_calls") or []]
+    if not tools:
         out.append('<p class="not-recorded">not recorded</p>')
-    for exchange in exchanges:
-        refused = ("yes — " + str(exchange["argument_validation"])
-                   if exchange.get("argument_validation") else "no")
+    else:
+        rows = "".join(
+            f"<tr><td>{i + 1}</td><td>{esc(c.get('tool'))}</td>"
+            f"<td class=\"tool-{esc(c.get('status') or 'unknown')}\">"
+            f"{esc(c.get('status') or 'not recorded')}</td>"
+            f"<td>{esc(_detail(c))}</td></tr>"
+            for i, c in enumerate(tools))
+        out.append("<table><tr><th>#</th><th>tool</th><th>outcome</th>"
+                   f"<th>reason</th></tr>{rows}</table>")
+    for i, call in enumerate(tools):
         out.append(
-            f"<details><summary>{esc(exchange.get('name'))} — "
-            f"refused: {esc(refused)}</summary>"
-            f"<h5>arguments</h5><pre>{_json(exchange.get('input'))}</pre>"
-            f"<h5>result</h5><pre>{_json(exchange.get('result'))}</pre>"
-            f"<h5>source rows</h5><pre>{_json(exchange.get('source_rows'))}"
-            f"</pre></details>")
-    for call in tools:
-        refused = "yes" if call.get("refusal") else "no"
-        out.append(
-            f"<details><summary>{esc(call.get('tool'))} — "
-            f"refused: {esc(refused)}</summary>"
+            f"<details><summary>{i + 1}. {esc(call.get('tool'))} — "
+            f"{esc(call.get('status') or 'not recorded')}</summary>"
             f"<h5>arguments</h5><pre>{_json(call.get('arguments'))}</pre>"
             f"<h5>result</h5><pre>{_json(call.get('result'))}</pre>"
             f"<h5>error type</h5><p>{esc(call.get('error_type'))}</p></details>")
@@ -375,8 +376,31 @@ def _summary(wake: dict[str, Any], frozen: dict[str, Any]) -> str:
         f"revised, "
         f"{sum(len((d or {}).get('retired') or []) for d in diff.values())} "
         f"retired; "
-        f"{len(trajectory.get('tool_calls') or [])} tool calls"
+        f"{_tool_tally([_with_outcome(c) for c in trajectory.get('tool_calls') or []])}"
         f"{esc(suffix)}</p>")
+
+
+def _with_outcome(call: dict[str, Any]) -> dict[str, Any]:
+    if call.get("status"):
+        return call
+    outcome = tool_outcome(call.get("result"))
+    return {**call, "status": outcome.get("status"), "reason": outcome.get("reason")}
+
+
+def _detail(call: dict[str, Any]) -> str:
+    """The tool's own reason, short: what the reader needs in the table."""
+    if call.get("status") in (None, "ok"):
+        return ""
+    return str(call.get("reason") or call.get("error_type") or "")[:80]
+
+
+def _tool_tally(tools: list[dict[str, Any]]) -> str:
+    counts: dict[str, int] = {}
+    for call in tools:
+        key = call.get("status") or "not recorded"
+        counts[key] = counts.get(key, 0) + 1
+    tally = ", ".join(f"{n} {k}" for k, n in sorted(counts.items()))
+    return f"{len(tools)} tool calls" + (f" ({tally})" if tally else "")
 
 
 def _wake(case_index: int, index: int, wake: dict[str, Any],
@@ -409,7 +433,7 @@ def _wake(case_index: int, index: int, wake: dict[str, Any],
     return "".join(parts)
 
 
-def _toc(report: dict[str, Any]) -> str:
+def _toc(report: dict[str, Any], orphans: list[Path]) -> str:
     items = []
     for ci, case in enumerate(report.get("cases") or []):
         inner = "".join(
@@ -421,11 +445,22 @@ def _toc(report: dict[str, Any]) -> str:
             f'<li><a href="#case-{ci}">{esc(case.get("case"))}</a> — '
             f'<span class="status-{esc(case.get("status"))}">'
             f'{esc(case.get("status"))}</span><ul>{inner}</ul></li>')
+    if orphans:
+        inner = "".join(
+            f'<li><a href="#unlisted-{i}">{esc(p.name)}</a></li>'
+            for i, p in enumerate(orphans))
+        items.append(
+            f'<li>frozen wakes absent from report.json<ul>{inner}</ul></li>')
     return f"<nav><h2>contents</h2><ul>{''.join(items)}</ul></nav>"
 
 
 def render(output: Path) -> Path:
-    """`report.html` beside `report.json`, 0600; re-derivable any time."""
+    """`report.html` beside `report.json`, 0600; re-derivable any time.
+
+    Every `wake-*.json` the run froze renders — a wake the report does
+    not list (a run that died mid-wake after freezing) still shows its
+    trajectory under "frozen wakes absent from report.json", never an
+    empty page."""
     report_path = output / "report.json"
     report: dict[str, Any] = (
         json.loads(report_path.read_text(encoding="utf-8"))
@@ -435,12 +470,19 @@ def render(output: Path) -> Path:
     budget_path = output / "run_budget.json"
     budget = (json.loads(budget_path.read_text(encoding="utf-8"))
               if budget_path.is_file() else None)
+    expected = {
+        f"wake-{wi}-{wake.get('recorded_wake_id')}.json"
+        for case in report.get("cases") or []
+        for wi, wake in enumerate(case.get("wakes") or [])
+    }
+    orphans = sorted(
+        p for p in output.glob("wake-*.json") if p.name not in expected)
     parts = [
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
         "<title>cognition loop report</title>"
         f"<style>{_CSS}</style></head><body>",
         _run(report, budget),
-        _toc(report),
+        _toc(report, orphans),
     ]
     for ci, case in enumerate(report.get("cases") or []):
         parts.append(
@@ -456,6 +498,25 @@ def render(output: Path) -> Path:
             frozen = (json.loads(frozen_path.read_text(encoding="utf-8"))
                       if frozen_path.is_file() else {})
             parts.append(_wake(ci, wi, wake, frozen))
+        parts.append("</section>")
+    if orphans:
+        parts.append('<section class="case">'
+                     "<h2>frozen wakes absent from report.json</h2>")
+        for i, path in enumerate(orphans):
+            try:
+                frozen = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                frozen = {}
+            # `wake-<index>-<recorded id>.json`; an unparseable name still
+            # renders, index -1.
+            stem = path.name[:-len(".json")].split("-", 2)
+            index = int(stem[1]) if len(stem) > 1 and stem[1].isdigit() else -1
+            recorded = stem[2] if len(stem) > 2 else ""
+            recorded_id = int(recorded) if recorded.isdigit() else recorded or None
+            parts.append(
+                f'<div id="unlisted-{i}">'
+                + _wake(-1, index, {"recorded_wake_id": recorded_id}, frozen)
+                + "</div>")
         parts.append("</section>")
     parts.append("</body></html>")
     target = output / "report.html"

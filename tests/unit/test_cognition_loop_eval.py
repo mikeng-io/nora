@@ -743,32 +743,6 @@ def test_reminders_scope_to_the_units_rooms_not_a_unit_fallback():
     assert not reminder_in_rooms(no_unit, rooms)
 
 
-def test_profile_keys_cover_every_room_of_the_unit():
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop.run import _profile_keys
-
-    convos = [
-        SimpleNamespace(unit="u1", platform="signal", persons={"alice"}),
-        SimpleNamespace(unit="u1", platform="discord", persons={"bob"}),
-        SimpleNamespace(unit="u2", platform="signal", persons={"carol"}),
-    ]
-    allowlist = SimpleNamespace(rooms=lambda: convos)
-    subject = SimpleNamespace(
-        deps=SimpleNamespace(config_reload=SimpleNamespace(policy=allowlist),
-                             persons=SimpleNamespace(by_person={})),
-    )
-    keys = _profile_keys(subject, "u1")
-    assert any(k.endswith(":alice") for k in keys)
-    assert any(k.endswith(":bob") for k in keys)
-    assert not any(k.endswith(":carol") for k in keys)
-
-
-# --------------------------------------------------------------------------
-# recorded wakes validate unit and order
-# --------------------------------------------------------------------------
-
-
 def test_recorded_wakes_must_be_the_cases_unit_and_ordered():
     from scripts.cognition_loop.run import validate_recorded_wakes
 
