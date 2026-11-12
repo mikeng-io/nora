@@ -102,7 +102,7 @@ _SEND_REPLY_CHOICE = {"type": "function", "function": {"name": "send_reply"}}
 
 
 async def repair_unsent_reply(
-    agent: Any, *, limits: dict, timeout_seconds: float,
+    agent: Any, *, limits: dict[str, Any], timeout_seconds: float,
 ) -> Any | None:
     """Send an already-written answer through send_reply, within the remaining budget.
 
@@ -340,7 +340,7 @@ class LiveAgentRunner:
         )
 
     async def _repair_owed_reply(
-        self, agent: Any, guard: ReplyGuard, limits: dict,
+        self, agent: Any, guard: ReplyGuard, limits: dict[str, Any],
         force_send_reply: bool, followed_up: bool, stop_reason: str | None,
         text: str,
     ) -> Any | None:
