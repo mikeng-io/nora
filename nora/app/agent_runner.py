@@ -344,9 +344,9 @@ class LiveAgentRunner:
         force_send_reply: bool, followed_up: bool, stop_reason: str | None,
         text: str,
     ) -> Any | None:
-        # DEC-93's repair: a tag turn that ended on authored prose without a
-        # send gets one bounded call forcing the named send_reply choice; any
-        # refusal leaves the prose for the recovery path.
+        # A tag turn that ended on authored prose without a send gets one
+        # bounded call forcing the named send_reply choice; any refusal
+        # leaves the prose for the recovery path.
         if not (
             force_send_reply and not followed_up and stop_reason == "end_turn"
             and text.strip() and not guard.cancelled_model_call
