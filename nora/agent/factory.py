@@ -43,10 +43,10 @@ from strands.types.exceptions import MaxTokensReachedException
 from strands.vended_plugins.skills import AgentSkills
 
 from ..domain.errors import PartialReplyError
+from . import tool_choice
 from .guards import ReplyGuard, ToolCallLog
 from .reasoning_carry import ReasoningCarryingOpenAIModel
 from .replay_capture import hooks as replay_hooks
-from . import tool_choice
 from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
@@ -834,7 +834,7 @@ async def repair_unsent_reply(
         current = (model.get_config().get("params") or {}).get("tool_choice")
         if not forced and not isinstance(current, dict):
             return None
-    except Exception:
+    except Exception:  # noqa: BLE001 — a config the model will not take is not worth losing the prose over
         return None
     try:
         return await asyncio.wait_for(
@@ -851,7 +851,7 @@ async def repair_unsent_reply(
     finally:
         try:
             model.update_config(params=previous)
-        except Exception:
+        except Exception:  # noqa: BLE001 — the agent is discarded with this turn anyway
             log.warning("reply repair: could not restore tool_choice")
 
 
