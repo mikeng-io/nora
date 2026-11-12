@@ -11,7 +11,7 @@ it. Failures at any step are `ERROR`, never `PASS`.
 from __future__ import annotations
 
 import contextlib
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -21,14 +21,15 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
-from nora.domain.stimuli import WakeReason, decide
+from nora.domain.stimuli import Stimulus, UnitView, WakeReason, decide
 from nora.infra.sql.cognition_replay import recorded_wake
 from nora.infra.sql.schema import (
     COGNITION_SESSION,
     COGNITION_WAKE,
     COGNITION_WAKE_OUTCOME,
+    STIMULUS,
 )
-from nora.infra.sql.stimuli import SqlStimulusStore
+from nora.infra.sql.stimuli import SqlStimulusStore, _stimulus
 from nora.subject import SubjectSpec, obtain, sandbox_as_of
 from nora.subject.eval_evidence import read_events
 from nora.subject.memory_workspace import draw_workspace
@@ -217,6 +218,8 @@ async def run_case(
         recorded_reasons[i] = await _wake_reason(source, wake_id)
         recorded[i] = {
             "stimulus_ids": sorted(s.id for s in view.pending),
+            "self_ids": sorted(
+                s.id for s in view.pending if s.kind == "self"),
             "had_session": await _recorded_session(source, wake_id),
         }
     problem = validate_recorded_wakes(records, case.unit)
@@ -399,9 +402,20 @@ async def _run_wake(
                     stale_before_ms=at_ms - int(
                         evaluator._policy.session_timeout_seconds * 1000),
                 )
+                if recorded_meta is not None:
+                    view, missing = await _batch_view(
+                        engine, view, recorded_meta)
+                    if missing:
+                        return _wake_error(
+                            output, index, wake_id, at_ms, reason, advance,
+                            step="advance", batch=_batch(recorded_meta, None),
+                            message="the recorded batch is absent from the "
+                                    f"sandbox: stimulus ids {missing}")
                 #: The stimulus ids the sandbox session was offered —
                 #: shown beside the recorded wake's batch in the report.
                 offered = sorted(s.id for s in view.pending)
+                offered_self = sorted(
+                    s.id for s in view.pending if s.kind == "self")
                 decided = decide(view, evaluator._policy, at_ms)
                 recorded_reason = cast(WakeReason, reason)
                 verdict, forced = eval_verdict(
@@ -455,7 +469,7 @@ async def _run_wake(
                     output, index, wake_id, wake, at_ms, reason, session_id,
                     egress, judges is not None, diff, trajectory, expectations,
                     after, advance,
-                    batch=_batch(recorded_meta, offered),
+                    batch=_batch(recorded_meta, offered, offered_self),
                     no_session=no_session,
                     step_error=step_error,
                 )
@@ -469,6 +483,36 @@ async def _run_wake(
     finally:
         if subject is not None:
             await _close_subject(subject)
+
+
+async def _stimuli_by_id(
+    engine: Any, unit: str, ids: list[int],
+) -> dict[int, Stimulus]:
+    """The sandbox's own copies of the recorded batch's stimuli."""
+    if not ids:
+        return {}
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sa.select(STIMULUS).where(
+            STIMULUS.c.unit == unit, STIMULUS.c.id.in_(ids),
+        ))).all()
+    return {int(r.id): _stimulus(r) for r in rows}
+
+
+async def _batch_view(
+    engine: Any, view: UnitView, meta: dict[str, Any],
+) -> tuple[UnitView, list[int]]:
+    """The recorded batch plus due self stimuli; missing recorded ids second."""
+    self_ids = set(meta.get("self_ids") or ())
+    batch_ids = [i for i in meta["stimulus_ids"] if i not in self_ids]
+    existing = await _stimuli_by_id(engine, view.unit, batch_ids)
+    missing = sorted(set(batch_ids) - set(existing))
+    if missing:
+        return view, missing
+    pending = {s.id: s for s in view.pending}
+    offered = [pending.get(i, existing[i]) for i in batch_ids]
+    offered.extend(s for s in view.pending if s.kind == "self")
+    offered.sort(key=lambda s: s.id)
+    return replace(view, pending=tuple(offered)), []
 
 
 async def _settle(
@@ -539,11 +583,15 @@ async def _judge(
 
 def _batch(
     meta: dict[str, Any] | None, offered: list[int] | None,
+    offered_self: list[int] | None = None,
 ) -> dict[str, Any]:
     """Recorded-versus-offered batch evidence; `None` means unread, never empty."""
     return {
         "recorded": meta["stimulus_ids"] if meta is not None else None,
         "offered": offered,
+        "recorded_self": (
+            meta.get("self_ids") if meta is not None else None),
+        "offered_self": offered_self,
         "production_session": (
             meta["had_session"] if meta is not None else None),
     }

@@ -151,7 +151,7 @@ def _wake_seam(monkeypatch, tmp_path, subject):
     """Everything `_run_wake` touches after compose, stubbed."""
     from types import SimpleNamespace
 
-    from nora.domain.stimuli import UnitView
+    from nora.domain.stimuli import Stimulus, UnitView
     from scripts.cognition_loop import run as run_mod
 
     async def _composed(*a, **k):
@@ -167,6 +167,13 @@ def _wake_seam(monkeypatch, tmp_path, subject):
         return UnitView(unit="u", pending=(),
                         last_activity_ms=None, last_wake=None)
 
+    async def _by_id(engine, unit, ids):
+        return {
+            i: Stimulus(id=i, unit=unit, kind="message", item="message",
+                        ref=f"messages:{i}", at_ms=NOW, recorded_at_ms=NOW)
+            for i in ids
+        }
+
     async def _state(*a, **k):
         return None
 
@@ -179,6 +186,7 @@ def _wake_seam(monkeypatch, tmp_path, subject):
     monkeypatch.setattr(
         run_mod, "SqlStimulusStore",
         lambda engine: SimpleNamespace(view=_view))
+    monkeypatch.setattr(run_mod, "_stimuli_by_id", _by_id)
     monkeypatch.setattr(run_mod, "decide", lambda *a, **k: None)
     monkeypatch.setattr(
         run_mod, "eval_verdict",
@@ -279,8 +287,8 @@ def _async_result_fn():
 # --------------------------------------------------------------------------
 
 
-def _recorded_meta(stimulus_ids=(), had_session=False):
-    return {"stimulus_ids": list(stimulus_ids),
+def _recorded_meta(stimulus_ids=(), had_session=False, self_ids=()):
+    return {"stimulus_ids": list(stimulus_ids), "self_ids": list(self_ids),
             "had_session": had_session}
 
 
@@ -302,13 +310,36 @@ async def test_an_inspect_wake_with_no_session_is_error_when_production_ran(
         recorded_meta=_recorded_meta((3, 5, 7), had_session=True))
     assert wake["status"] == "ERROR" and wake["step"] == "wake"
     assert wake["no_session"] == "empty agenda"
-    assert wake["batch"] == {"recorded": [3, 5, 7], "offered": [],
+    assert wake["batch"] == {"recorded": [3, 5, 7], "offered": [3, 5, 7],
+                            "recorded_self": [], "offered_self": [],
                             "production_session": True}
     assert "production" in wake["error"]
     frozen = json.loads((tmp_path / "wake-1-22.json").read_text())
     assert frozen["no_session"] == "empty agenda"
     assert frozen["error"]["step"] == "wake"
     assert frozen["batch"]["recorded"] == [3, 5, 7]
+
+
+async def test_a_batch_stimulus_absent_from_the_sandbox_is_an_advance_error(
+    monkeypatch, tmp_path,
+):
+    """A recorded batch stimulus the Record advance never delivered is
+    ERROR at the advance step, named by id — never silently dropped."""
+    from types import SimpleNamespace
+
+    run_mod = _wake_seam(monkeypatch, tmp_path, _runner_subject())
+    monkeypatch.setattr(run_mod, "_stimuli_by_id", _async_result({}))
+    args, evidence = _wake_args(tmp_path)
+    wake = await run_mod._run_wake(
+        args, SimpleNamespace(unit="u", expectations=()), 2, 31, NOW,
+        "postgresql+asyncpg://x", "time", None, evidence, tmp_path,
+        SimpleNamespace(platform="signal", primary_id="r"),
+        "nora-eval-run-x",
+        recorded_meta=_recorded_meta((3, 5, 7), had_session=True))
+    assert wake["status"] == "ERROR" and wake["step"] == "advance"
+    assert "[3, 5, 7]" in wake["error"]
+    assert wake["batch"]["recorded"] == [3, 5, 7]
+    assert wake["batch"]["offered"] is None
 
 
 async def test_a_no_session_wake_is_named_not_silently_passed(

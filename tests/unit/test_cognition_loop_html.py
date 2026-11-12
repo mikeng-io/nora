@@ -178,6 +178,35 @@ def test_matching_batches_say_so(tmp_path):
     assert "matches production" in html
 
 
+def test_self_stimuli_are_compared_beside_the_non_self_batch(tmp_path):
+    """The batch verdict is over the non-self ids; a self-wake the
+    candidate stood in for production's is its own line."""
+    batch = {"recorded": [3, 5, 7], "offered": [3, 5, 42],
+             "recorded_self": [7], "offered_self": [42],
+             "production_session": True}
+    out = _run_dir(tmp_path, cases=[{
+        "case": "c", "unit": "u", "status": "PASS", "errors": [],
+        "wakes": [_wake_report(batch=batch)],
+    }], wakes={"wake-0-7.json": {"batch": batch}})
+    html = render(out).read_text(encoding="utf-8")
+    assert "matches production" in html
+    assert "self stimuli" in html
+    assert "[42]" in html and "[7]" in html
+
+
+def test_a_self_wake_the_candidate_never_scheduled_is_named(tmp_path):
+    batch = {"recorded": [9], "offered": [],
+             "recorded_self": [9], "offered_self": [],
+             "production_session": True}
+    out = _run_dir(tmp_path, cases=[{
+        "case": "c", "unit": "u", "status": "PASS", "errors": [],
+        "wakes": [_wake_report(batch=batch)],
+    }], wakes={"wake-0-7.json": {"batch": batch}})
+    html = render(out).read_text(encoding="utf-8")
+    assert "matches production" in html
+    assert "self-wake was not scheduled by the candidate" in html
+
+
 def test_an_empty_store_reads_none_never_not_recorded(tmp_path):
     out = _run_dir(tmp_path, cases=[{
         "case": "c", "unit": "u", "status": "PASS", "errors": [],

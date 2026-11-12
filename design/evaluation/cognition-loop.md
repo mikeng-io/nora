@@ -49,11 +49,17 @@ wakes) comes only from the sandbox's own earlier wakes, never from the
 source. So wake *n* orients against what the *candidate* kept, as production
 would. This divergence is declared: anything a conscious turn derived in
 production between wakes, other than the Record rows themselves, is absent.
-Batching can diverge the same way: the sandbox's earlier wakes may have
-consumed stimuli production's had not, so what a wake is offered need not be
-what the recorded wake covered. Every wake records the recorded wake's
-stimulus ids beside the ids the sandbox session was offered, and the report
-states whether the two batches match.
+Each wake is offered exactly the batch the recorded wake covered: its
+non-self stimuli as the sandbox holds them, and a recorded stimulus that
+never arrived is an `advance` ERROR naming its ids, never silently dropped.
+Stimuli pending in the sandbox but outside the recorded batch stay pending
+for the wake that took them in production — or remain, if none did inside
+the case window. Production's `self` stimuli are never copied: the
+candidate's own self-wakes take their place, so a self stimulus its earlier
+wakes left due joins the batch it is due at. Every wake records the recorded
+wake's stimulus ids beside the ids the sandbox session was offered; the
+report states whether the non-self batches match and names the self-stimulus
+difference beside them.
 
 **The room directory is frozen at run start.** Rooms a unit expands from a
 guild-level `[[conversations]]` entry resolve through the deployment's own

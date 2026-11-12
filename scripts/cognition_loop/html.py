@@ -145,6 +145,16 @@ def _ids(ids: Any) -> str:
     return "[" + ", ".join(str(i) for i in ids) + "]"
 
 
+def _self_difference(recorded: list[int], offered: list[int]) -> str:
+    """The self-wake difference: the candidate's own schedule vs production's."""
+    if recorded and not offered:
+        return "production's self-wake was not scheduled by the candidate"
+    if offered and not recorded:
+        return f"the candidate scheduled its own self-wake {_ids(offered)}"
+    return (f"the candidate's self-wake {_ids(offered)} stands in for "
+            f"production's {_ids(recorded)}")
+
+
 def _arrived(wake: dict[str, Any]) -> str:
     advance = wake.get("advance")
     if advance is None:
@@ -169,11 +179,18 @@ def _arrived(wake: dict[str, Any]) -> str:
         ]
         recorded = batch.get("recorded")
         offered = batch.get("offered")
+        recorded_self = batch.get("recorded_self") or []
+        offered_self = batch.get("offered_self") or []
         if recorded is not None and offered is not None:
             batching.append(("batching", (
                 "matches production"
-                if sorted(recorded) == sorted(offered)
+                if sorted(i for i in recorded if i not in set(recorded_self))
+                == sorted(i for i in offered if i not in set(offered_self))
                 else "differs from production")))
+            if sorted(recorded_self) != sorted(offered_self):
+                batching.append((
+                    "self stimuli",
+                    _self_difference(recorded_self, offered_self)))
     return ("<h4>a. What arrived</h4>" + _kv([
         ("recorded reason", wake.get("reason")),
         ("recorded at", _when(wake.get("at_ms"))),

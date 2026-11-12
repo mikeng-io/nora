@@ -2,10 +2,13 @@
 
 import sqlalchemy as sa
 
+from nora.domain.stimuli import NewStimulus
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import METADATA, ROW_HISTORY
+from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.subject import sandbox_as_of
 from scripts.cognition_loop.advance import advance_record, bump_sequences
+from scripts.cognition_loop.run import _batch_view
 from tests.integration.test_snapshot_holds_what_was_held import APPEND, ROWS
 
 
@@ -148,6 +151,59 @@ async def test_advance_supersedes_a_version_the_session_wrote(clean_pg_url, pg_t
             assert body == "the world's edit"
     finally:
         await source.dispose()
+
+
+async def test_each_sandbox_wake_is_offered_its_recorded_batch(clean_pg_url):
+    """The recorded sequence's batches bind the offer, never whatever is
+    pending: three recorded wakes where the middle one is production's self
+    wake — the sandbox's middle wake is offered no message stimulus, the
+    messages stay pending for the wake that took them in production, the
+    candidate's own due self stimulus takes the never-copied production
+    one's place, and a batch stimulus the sandbox never received names
+    itself rather than being dropped."""
+    engine = create_sql_engine(clean_pg_url)
+    store = SqlStimulusStore(engine)
+    t0, t1, t2 = 1_800_000_000_000, 1_800_000_120_000, 1_800_000_240_000
+    try:
+        messages = []
+        for i in range(3):
+            sid = await store.append(
+                stimulus=NewStimulus(
+                    unit="u", kind="message", item="message",
+                    ref=f"messages:{i}", at_ms=t0 - 60_000),
+                recorded_at_ms=t0 - 60_000)
+            assert sid is not None
+            messages.append(sid)
+        self_id = await store.append(
+            stimulus=NewStimulus(
+                unit="u", kind="self", item="wake:w1", ref="wake:w1",
+                at_ms=t1, due_ms=t1),
+            recorded_at_ms=t1)
+        assert self_id is not None
+
+        async def offered(now_ms, meta):
+            view = await store.view(
+                unit="u", mode="live", now_ms=now_ms, limit=10)
+            restricted, missing = await _batch_view(engine, view, meta)
+            return missing, sorted(s.id for s in restricted.pending)
+
+        # Wake 0 took nothing; wake 1 is production's self wake (its own
+        # self stimulus, never copied, is excluded from the batch check);
+        # wake 2 took the three messages.
+        assert await offered(
+            t0, {"stimulus_ids": [], "self_ids": []}) == ([], [])
+        assert await offered(
+            t1, {"stimulus_ids": [999_001],
+                 "self_ids": [999_001]}) == ([], [self_id])
+        missing, ids = await offered(
+            t2, {"stimulus_ids": messages, "self_ids": []})
+        assert missing == []
+        assert ids == [*messages, self_id]
+        missing, _ = await offered(
+            t2, {"stimulus_ids": [messages[0], 424_242], "self_ids": []})
+        assert missing == [424_242]
+    finally:
+        await engine.dispose()
 
 
 async def test_advance_counts_exactly_the_rows_it_landed(
