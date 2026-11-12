@@ -39,7 +39,7 @@ def result_values(result: Any) -> list[Any]:
 
 
 def tool_outcome(result: Any) -> dict[str, Any]:
-    """The tool's own R-27 outcome inside the Strands envelope: the
+    """The tool's own three-state outcome inside the Strands envelope: the
     envelope says `success` for a refused or unavailable write too."""
     for value in result_values(result):
         if isinstance(value, dict) and "status" in value:
