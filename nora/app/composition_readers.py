@@ -123,6 +123,10 @@ def fetch_provider(cfg: Config)-> SearchProvider | None:
     )
 
 
+#: `[google]` fields that each hold a variable NAME; their values stay in the env.
+_GOOGLE_ENV_FIELDS = ("client_id_env", "client_secret_env", "refresh_token_env")
+
+
 def google_credentials(cfg: Config, *, metrics: Any)-> GoogleCredentials | None:
 
     """Nora's ONE Google identity (`[google]`), or
@@ -134,14 +138,13 @@ def google_credentials(cfg: Config, *, metrics: Any)-> GoogleCredentials | None:
     secrets."""
     if not cfg.external_files.enabled:
         return None
-    names = (cfg.google.client_id_env, cfg.google.client_secret_env, cfg.google.refresh_token_env)
+    names = tuple(getattr(cfg.google, field) for field in _GOOGLE_ENV_FIELDS)
     values = [cfg.credentials.get(name, "").strip() for name in names]
     missing = [name for name, value in zip(names, values, strict=True) if not value]
     if missing:
         log.warning(
-            "[google] %d of its credential variables unset; every Google service "
-            "answers unavailable (run scripts/google_auth.py, put the values in .env)",
-            len(missing),
+            "[google] %s unset; every Google service answers unavailable (run "
+            "scripts/google_auth.py, put the values in .env)", ", ".join(missing),
         )
         return None
     client_id, client_secret, refresh_token = values
