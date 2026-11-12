@@ -1,5 +1,30 @@
 # Changelog
 
+## [7.18.3](https://github.com/mikeng-io/nora/compare/v7.18.2...v7.18.3) (2026-11-12)
+
+
+### Features
+
+* **evaluation:** the Cognition loop eval ([2373335](https://github.com/mikeng-io/nora/commit/2373335da7d0d41d7b15995cb6ac1770b8b29a68))
+
+
+### Bug Fixes
+
+* **evaluation:** bind the config under test and ground the verdicts ([409f1d6](https://github.com/mikeng-io/nora/commit/409f1d6285bccdc193d94b5556cfedbf6635db67))
+* **evaluation:** close the delivery surface around the sandbox ([6d0dd30](https://github.com/mikeng-io/nora/commit/6d0dd30a739e21a3e3e3f86b55ab7b123c35af90))
+* **evaluation:** compose a subject that cannot deliver ([3c67efa](https://github.com/mikeng-io/nora/commit/3c67efa91d2a54b18dc981c50de536b4ccfecc1f))
+* **evaluation:** copy only the Record's history and bind trajectories to their wake ([d608c37](https://github.com/mikeng-io/nora/commit/d608c370427625ca444c5518fe6fc9ecb5cb351d))
+* **evaluation:** follow the wiring split and close the discovery gap ([ca75add](https://github.com/mikeng-io/nora/commit/ca75add83336dbc70ee72126cdc50909f828c56a))
+* **evaluation:** repoint fact-support judges at their surviving module ([9e77e32](https://github.com/mikeng-io/nora/commit/9e77e326fabc2e08fdeb14da93575ce9c9dc159f))
+* **evaluation:** restore spike.load for the surviving judge-controls entry ([a63d330](https://github.com/mikeng-io/nora/commit/a63d330a3837f76cb8e962f208a8daea2bad5a26))
+* **signal:** strip line breaks from the reactor's logged ids ([17f4bf8](https://github.com/mikeng-io/nora/commit/17f4bf8aec4114e2d06ecbfcd245c8096b172e5d))
+
+
+### Changes
+
+* **evaluation:** retire the frozen-evidence scorer entries ([97cc9e4](https://github.com/mikeng-io/nora/commit/97cc9e4df86375a5f0bdb94afed732b17ef1a51d))
+* **evaluation:** retire the graph-only replay scorer ([2b844ae](https://github.com/mikeng-io/nora/commit/2b844ae3dd8bbf65057c3b95a1744fd1e8e5e1c3))
+
 ## [7.18.2](https://github.com/mikeng-io/nora/compare/v7.18.1...v7.18.2) (2026-11-12)
 
 
