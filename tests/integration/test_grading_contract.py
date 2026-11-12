@@ -14,6 +14,7 @@ from strands_evals import Case
 from evals import grading_contract as binding
 from evals.rebuilt.grading import Judge, criteria_for
 from nora.subject.eval_evidence import EvidenceError
+from scripts import memory_graph_facts
 from scripts import memory_graph_spike as spike
 
 
@@ -339,13 +340,13 @@ async def test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unsco
         memory_graph_facts, "_MISSED_FACT_INSTRUCTION", "CHANGED_CANDIDATE_COVERAGE")
     judges = spike.Judges(SimpleNamespace(llm=SimpleNamespace(timeout_seconds=5)),
                           ["generated-a", "generated-b"], Path("generated.toml"))
-    result = await spike.smoke_fact_support(judges, inspection, [exchange],
+    result = await memory_graph_facts.smoke_fact_support(judges, inspection, [exchange],
                                            contract=contract, reference_key="wake")
     assert len(requests) == 4
     assert result["facts_supported"] == result["coverage_units"] == 1
     assert result["facts_missed"] == result["facts_judge_errors"] == 0
     assert result["grading_contract_sha256"] == contract.sha256
-    assert spike.fact_quality(result) == {"status": "PASS"}
+    assert memory_graph_facts.fact_quality(result) == {"status": "PASS"}
 
 
 @pytest.mark.parametrize("row,error,missed", [
@@ -367,7 +368,7 @@ async def test_fixed_coverage_is_total_and_requires_shown_evidence(tmp_path, row
         assert instruction == "FROZEN_COVERAGE" + spike._FIXED_COVERAGE_OUTPUT
         assert payload["required_units"][0]["id"] == "offer"
         return json.dumps({"coverage": [row], "diagnostic_misses": []})
-    result = await spike.smoke_fact_support(
+    result = await memory_graph_facts.smoke_fact_support(
         SimpleNamespace(models=["generated-a", "generated-b"], call=call), inspection,
         [{"name": "memory_read", "input": {}, "result": {"status": "unavailable"}},
          {"name": "memory_read", "input": {},
@@ -375,7 +376,7 @@ async def test_fixed_coverage_is_total_and_requires_shown_evidence(tmp_path, row
         contract=contract, reference_key="wake")
     assert result["facts_judge_errors"] == (2 if error else 0)
     assert result["facts_missed"] == missed  # the same miss reported twice is one unit
-    assert spike.fact_quality(result)["status"] == (
+    assert memory_graph_facts.fact_quality(result)["status"] == (
         "ERROR" if error or row["verdict"] == "unsure" else "FAIL" if missed else "PASS")
 
 
@@ -437,7 +438,7 @@ async def test_optional_claims_still_need_grounding_and_eligibility_is_separate(
         assert instruction == "FROZEN_COVERAGE" + spike._FIXED_COVERAGE_OUTPUT
         assert payload["required_units"] == []
         return '{"coverage":[],"diagnostic_misses":[]}'
-    result = await spike.smoke_fact_support(
+    result = await memory_graph_facts.smoke_fact_support(
         SimpleNamespace(models=["generated-a", "generated-b"], call=call), inspection,
         [{"name": "memory_propose", "input": {"statements": [statement]},
           "source_rows": inspection["new_sources"],
@@ -446,7 +447,7 @@ async def test_optional_claims_still_need_grounding_and_eligibility_is_separate(
     assert result["facts_supported"] == int(support == "supported")
     assert result["facts_unsupported"] == int(support == "unsupported")
     assert result["facts_missed"] == 0
-    assert spike.fact_quality(result)["status"] == quality
+    assert memory_graph_facts.fact_quality(result)["status"] == quality
 
 
 def test_standard_cli_requires_contract_before_body(tmp_path, monkeypatch, capsys):
@@ -536,12 +537,13 @@ async def test_fixed_coverage_wire_labels_sparse_saved_and_read_indices(
         **kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond))))
     judges = spike.Judges(SimpleNamespace(llm=SimpleNamespace(timeout_seconds=5)),
                           ["generated-a", "generated-b"], Path("generated.toml"))
-    result = await spike.smoke_fact_support(
+    result = await memory_graph_facts.smoke_fact_support(
         judges, inspection, exchanges, contract=contract, reference_key="wake")
     assert coverage_seen == ["generated-a", "generated-b"]
     assert result["facts_saved"] == result["facts_supported"] == 4
     assert result["facts_judge_errors"] == (2 if outside_proof else 0)
-    assert spike.fact_quality(result) == {"status": "ERROR" if outside_proof else "PASS"}
+    assert memory_graph_facts.fact_quality(result) == {
+        "status": "ERROR" if outside_proof else "PASS"}
     assert exchanges == original_exchanges
 
 
