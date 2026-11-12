@@ -372,7 +372,7 @@ async def _wakes(
                         roll.error(
                             f"wake {i} (recorded {wake_id}): {exc!r}")
                         break
-                    if report_row.get("status") == ERROR:
+                    if stops_chain(report_row):
                         roll.error(
                             f"wake {i} (recorded {wake_id}) failed "
                             f"at {report_row.get('step', 'wake')}: "
@@ -617,6 +617,11 @@ def _batch(
         "production_session": (
             meta["had_session"] if meta is not None else None),
     }
+
+
+def stops_chain(row: dict[str, Any]) -> bool:
+    """Only a failed step stops the later wakes; a judge ERROR still rolls up."""
+    return bool(row.get("step"))
 
 
 def _wake_status(
