@@ -505,7 +505,7 @@ def test_composition_hands_the_client_the_derivations_inputs_not_a_budget():
     only way to see that wiring; a test that built its own client would be true
     by construction."""
     source = (Path(__file__).resolve().parents[1]
-              / "nora" / "app" / "composition.py").read_text()
+              / "nora" / "media" / "wire.py").read_text()
     call = source[source.index("vision_client = VisionClient("):]
     call = call[:call.index("\n    )")]
     # CODE only. The comment above the arguments names the budget that is not

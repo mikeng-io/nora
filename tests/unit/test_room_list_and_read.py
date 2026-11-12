@@ -721,12 +721,31 @@ def test_production_hands_the_room_tools_the_presence_reader():
     import ast
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[2] / "nora" / "app" / "composition.py"
+    root = Path(__file__).resolve().parents[2] / "nora" / "app" / "composition_agent.py"
     tree = ast.parse(root.read_text())
-    wired = [
-        kw for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "ToolRegistry"
-        for kw in node.keywords
-        if kw.arg == "rooms" and getattr(kw.value, "id", None) == "presence_reader"
-    ]
-    assert len(wired) == 1
+    module_fns = {
+        n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    wired = 0
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "ToolRegistry"):
+            continue
+        for kw in node.keywords:
+            if kw.arg == "rooms" and getattr(kw.value, "id", None) == "presence_reader":
+                wired += 1
+            if kw.arg is None and isinstance(kw.value, ast.Call):
+                # `**helper(...)` — the registry's room tools get `rooms` from
+                # the helper's returned dict.
+                fn = module_fns.get(getattr(kw.value.func, "id", ""))
+                if fn is None:
+                    continue
+                for ret in ast.walk(fn):
+                    if not (isinstance(ret, ast.Return) and isinstance(ret.value, ast.Dict)):
+                        continue
+                    for key, value in zip(ret.value.keys, ret.value.values):
+                        if (
+                            isinstance(key, ast.Constant) and key.value == "rooms"
+                            and getattr(value, "id", None) == "presence_reader"
+                        ):
+                            wired += 1
+    assert wired == 1
