@@ -99,21 +99,17 @@ view:
   reference's latest transition.
 
 The diff is typed and keyed by entry id: created, revised (before and
-after), retired or closed, and unchanged. A write that retires or cancels
-reads as a revision carrying the closing state, never a vanished entry.
-It is the unit of judgement, together with the session's full
-trajectory.
+after), retired or closed, and unchanged. It is the unit of judgement,
+together with the session's full trajectory. The Standing ledger's
+commitments, threads and decisions are read under `standing`; topics
+are the notebook's topic entries and the graph's anchors.
 
-**Every successful write lands in the diff.** After each wake's diff is
-computed, the eval walks the trajectory's tool calls: a call whose result
-states `ok` (the tool envelope succeeded and the answer wrote) must be
-accounted for by the diff — each entry id the answer names lands in its
-kind's entries, and an answer that names no id requires a changed entry
-of its kind. A successful write the diff cannot place means the state
-read missed a store, and the wake is `ERROR` at the `diff` step naming
-the call — never judged on a partial picture. A `refused`, `unresolved`,
-`conflict` or `unavailable` answer wrote nothing and asks nothing of the
-diff.
+**Tool outcomes are the tool's own.** The tool framework wraps every
+result as `success`, including a refused or unavailable write. The
+trajectory records each call's R-27 outcome from inside that envelope
+(`ok`, `nothing_found`, `refused`, `unavailable`) with its reason, and
+the report tabulates them, so a refused write is never read as a landed
+one.
 
 **Trajectory.** Every wake records:
 
@@ -168,8 +164,9 @@ against the diff and trajectory. Recorded wake ids and the expectations that
 quote production content live in the private case directory on the deploy
 host, never in the repository.
 
-**Judges.** `nora-judge` and `nora-judge-2`, the OmniRoute aliases, verified
-by the served model header. Each judge reads one expectation against a
+**Judges.** `nora-judge` and `nora-judge-2`, the OmniRoute aliases. Every
+judge call must report the model the alias routed to, and two judges
+served by the same model are not independent: the expectation is `ERROR`. Each judge reads one expectation against a
 bounded, deterministic digest of the wake — never the trajectory itself,
 whose model requests repeat the whole session context and overflow any
 context window. The digest carries the expectation; the wake's typed diff
@@ -181,9 +178,25 @@ is assembled through the same declared occasion as every model call. A
 digest over the judge's input budget makes the expectation `ERROR` with
 reason `judge input over budget` naming the size — never a silent
 truncation. The judge answers `met`, `not_met` or `cannot_tell` with its
-reason and the entry ids it rests on. Two judges that disagree make the
-expectation `REVIEW`. A judge's reason must cite entries that exist in
-the diff or state, or the verdict is `ERROR`.
+reason and the entry ids it rests on, as `kind:id` or the bare id. Two
+judges that disagree make the expectation `REVIEW`. A cited entry must
+exist in the diff or state, or the verdict is `ERROR`. When the kind
+holds any entry, a decidable answer cites at least one — for a
+`must_not`, the closest candidates it checked; an answer cites nothing
+only about a kind that holds nothing.
+
+**Re-judging.** `python -m scripts.cognition_loop.rejudge` runs only the
+judges again over a finished run's frozen wakes, against the case's
+current expectations, rebuilding each wake's after-state from its frozen
+diff, and re-renders the report. A judge-side change is checked for a
+few judge calls, not a session's spend.
+
+**Drafting expectations.** `python -m scripts.cognition_loop.draft`
+asks the deployment's own Cognition model — which already reads every
+message — what a good member would have kept or changed after what Nora
+was shown at each wake of a finished run, and appends the well-formed
+`must`/`must_not` expectations to the private case file. Only their
+counts are printed; their text stays on the host.
 
 ## Verdicts
 
@@ -193,14 +206,27 @@ Per expectation, per wake, per case and per run, fail-closed:
 - **FAIL**: an expectation was not met.
 - **REVIEW**: the judges disagreed, or one could not tell.
 - **ERROR**: the case did not run as specified: a restore or advance failed, a
-  wake raised or hit a limit, a judge failed or cited nothing real, or the
-  served model did not match.
+  wake raised or hit a limit, a judge failed or cited nothing real, a judge
+  call reported no served model, or both judges were served by one model.
 
 A wake's status is derived the same way: a failed step (named on the wake)
 or an expectation `ERROR` makes it `ERROR`, otherwise the roll-up over its
 expectations — a wake with none is `PASS`. An ERROR is never a PASS, and a
 wake that wrote nothing is judged like any other: "nothing changed" is a
 state the expectations can require or forbid.
+
+## The loop is open
+
+Cognition's writes depend on its reads: with no graph search Nora
+cannot connect before proposing, and with no profile read she cannot
+name who a line is about. A closed read cascades into refused writes
+that look like her mistakes. So every case runs with the memory index
+and profile reads on (`memory.index.read`, `memory.profile.read`) unless
+an arm sets them back, and the room rosters are frozen at run start with
+the channel directory and answer the sandbox's roster reads. Every
+report opens with an availability section: each switch a Cognition
+read depends on, the tools the session was offered, and every call that
+answered `unavailable`. A run is read against what was open.
 
 ## Boundaries
 
