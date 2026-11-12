@@ -44,6 +44,7 @@ from nora.agent.turn_recording import TurnRecording
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import TagContext
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_deadline import seconds_left
 from nora.domain.turn_record import retain_exchange
 from nora.obs.metrics import Metrics
 
@@ -68,6 +69,13 @@ DEFAULT_DRAFT_TIMEOUT_SECONDS = 45.0
 DEFAULT_DRAFT_LIMITS: dict[str, int] = {
     "turns": 1, "output_tokens": 4_000, "total_tokens": 1_100_000,
 }
+
+# What the reply repair must leave between its own timeout and the turn's
+# `wait_for`: the trace extraction and the unwind still have to run, and the
+# recovered prose is delivered only if `runner.invoke` returns inside it. A
+# repair allowed the whole remainder is a repair that can cancel the prose it
+# was meant to send.
+REPAIR_UNWIND_SECONDS = 5.0
 
 # The caps that mean "cut off mid-work", as opposed to a turn that finished or
 # one that died. Duplicated from `nora.engagement.stages.deliver` rather than
@@ -224,8 +232,12 @@ class LiveAgentRunner:
                 and guard.answer_still_owed
             ):
                 remaining = factory.remaining_limits(agent, limits)
-                if remaining is not None:
-                    result = await factory.repair_unsent_reply(agent, limits=remaining)
+                left = seconds_left()
+                budget = self._draft_timeout_seconds if left is None else min(
+                    self._draft_timeout_seconds, left - REPAIR_UNWIND_SECONDS)
+                if remaining is not None and budget > 0:
+                    result = await factory.repair_unsent_reply(
+                        agent, limits=remaining, timeout_seconds=budget)
                     if result is not None:
                         stop_reason = getattr(result, "stop_reason", None)
                         stop_reason = stop_reason if isinstance(stop_reason, str) else None

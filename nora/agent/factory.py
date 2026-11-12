@@ -814,8 +814,17 @@ _REPLY_REPAIR_INSTRUCTION = (
 )
 
 
-async def repair_unsent_reply(agent: Agent, *, limits: dict) -> Any | None:
-    """Send an already-written answer through send_reply, within the remaining budget."""
+async def repair_unsent_reply(
+    agent: Agent, *, limits: dict, timeout_seconds: float,
+) -> Any | None:
+    """Send an already-written answer through send_reply, within the remaining budget.
+
+    Fail-closed, like `draft_from_exhausted_loop`: a failed, timed-out or
+    raising repair returns None and the caller keeps the original prose for the
+    recovery path. It has its OWN timeout because a repair that runs to the
+    turn's `wait_for` is cancelled out from under the prose it was meant to
+    deliver.
+    """
     model = getattr(agent, "model", None)
     if model is None:
         return None
@@ -828,10 +837,17 @@ async def repair_unsent_reply(agent: Agent, *, limits: dict) -> Any | None:
     except Exception:
         return None
     try:
-        return await agent.invoke_async(
-            _REPLY_REPAIR_INSTRUCTION, invocation_state={},
-            limits={**limits, "turns": 2},
+        return await asyncio.wait_for(
+            agent.invoke_async(
+                _REPLY_REPAIR_INSTRUCTION, invocation_state={},
+                limits={**limits, "turns": 2},
+            ),
+            timeout=timeout_seconds,
         )
+    except Exception as exc:  # noqa: BLE001 — incl. TimeoutError; fail-closed, see docstring
+        # Never re-raise into a turn that has authored prose to deliver.
+        log.warning("reply repair: repair call failed (%s)", type(exc).__name__)
+        return None
     finally:
         try:
             model.update_config(params=previous)

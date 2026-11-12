@@ -71,6 +71,8 @@ class _ScriptedModel(Model):
         self.seen.append([dict(m) for m in messages])
         self.config_history.append(dict(self.params))
         kind, value = self._script.pop(0) if self._script else ("text", "done")
+        if kind == "raise":
+            raise RuntimeError(value)
         yield {"messageStart": {"role": "assistant"}}
         if kind == "tool":
             yield {"contentBlockStart": {"start": {"toolUse": {
@@ -212,6 +214,25 @@ async def test_send_reply_repair_is_off_by_default():
     await _invoke(model, follow_up=None)
     assert model.sent == []
     assert len(model.seen) == 1
+
+
+async def test_a_raising_send_reply_repair_preserves_the_original_prose():
+    model = _ScriptedModel([("text", "original answer"), ("raise", "boom")])
+    stop_reason, text = await _invoke(model, follow_up=None, force_send_reply=True)
+    assert model.sent == []
+    assert len(model.seen) == 2
+    assert (stop_reason, text) == ("end_turn", "original answer")
+
+
+async def test_send_reply_repair_needs_wall_clock_left():
+    from nora.domain.turn_deadline import turn_deadline
+
+    model = _ScriptedModel([("text", "It is a heron.")])
+    with turn_deadline(0.001):
+        stop_reason, text = await _invoke(model, follow_up=None, force_send_reply=True)
+    assert model.sent == []
+    assert len(model.seen) == 1
+    assert (stop_reason, text) == ("end_turn", "It is a heron.")
 
 
 async def test_the_guards_budgets_carry_into_the_follow_up():
