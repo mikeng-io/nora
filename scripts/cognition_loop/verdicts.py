@@ -49,15 +49,21 @@ def validate_citations(
     """A cited entry must exist in the wake's diff or state. Returns the
     bogus id, or None."""
     known = set(known_ids)
+    # A judge may cite an entry with or without its `kind:` prefix.
+    known |= {k.split(":", 1)[1] for k in known if ":" in k}
     for entry_id in answer.entry_ids:
         if entry_id not in known:
             return entry_id
     return None
 
 
-def expectation_verdict(answers: tuple[JudgeAnswer, ...]) -> ExpectationVerdict:
+def expectation_verdict(
+    answers: tuple[JudgeAnswer, ...], *, nothing_to_cite: bool = False,
+) -> ExpectationVerdict:
     """Two judges, fail-closed: an `error` answer or disagreement on a
-    decidable answer is REVIEW; `met` by both is the only way through."""
+    decidable answer is REVIEW; `met` by both is the only way through.
+    `nothing_to_cite`: the expectation's kind holds no entry before or
+    after the wake, so an answer about that absence rests on its reason."""
     if not answers:
         return ExpectationVerdict(verdict=ERROR, answers=(), detail="no judge answered")
     if any(a.verdict == "error" for a in answers):
@@ -65,7 +71,7 @@ def expectation_verdict(answers: tuple[JudgeAnswer, ...]) -> ExpectationVerdict:
                                   detail="a judge could not answer")
     if any(
         a.verdict in ("met", "not_met")
-        and (not a.reason.strip() or not a.entry_ids)
+        and (not a.reason.strip() or (not a.entry_ids and not nothing_to_cite))
         for a in answers
     ):
         return ExpectationVerdict(

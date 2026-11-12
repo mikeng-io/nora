@@ -217,4 +217,7 @@ async def judge_expectation(
         checked = [replace(a, verdict="error",
                            reason=f"both judges were served by {a.served}; "
                                   "they are not independent") for a in checked]
-    return expectation_verdict(tuple(checked))
+    nothing_to_cite = not any(
+        e.startswith(f"{expectation.kind}:") for e in diff.entry_ids()
+    ) and not state_after.entries(expectation.kind)
+    return expectation_verdict(tuple(checked), nothing_to_cite=nothing_to_cite)

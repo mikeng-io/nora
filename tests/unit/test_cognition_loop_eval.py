@@ -768,3 +768,20 @@ def test_recorded_wakes_must_be_the_cases_unit_and_ordered():
         [(1, "u1", 200), (2, "u1", 200)], "u1")
     assert "does not follow" in validate_recorded_wakes(
         [(1, "u1", 300), (2, "u1", 200)], "u1")
+
+
+def test_an_absence_answer_needs_no_citation_only_when_the_kind_is_empty():
+    answers = (
+        JudgeAnswer("met", reason="no reminder exists", entry_ids=()),
+        JudgeAnswer("met", reason="none set", entry_ids=()),
+    )
+    assert expectation_verdict(answers, nothing_to_cite=True).verdict == PASS
+    assert expectation_verdict(answers).verdict == ERROR
+
+
+def test_a_citation_without_its_kind_prefix_is_known():
+    from scripts.cognition_loop.verdicts import validate_citations
+
+    answer = JudgeAnswer("met", reason="r", entry_ids=("u#character:p:1",))
+    assert validate_citations(answer, {"profile:u#character:p:1"}) is None
+    assert validate_citations(answer, {"profile:u#character:p:2"}) == "u#character:p:1"
