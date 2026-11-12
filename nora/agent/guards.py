@@ -209,6 +209,7 @@ class Deliverer:
         self._send_calls = 0
         self._delivered_count = 0
         self._reaction_delivered = False
+        self.send_unresolved = 0  # wire-admitted sends with no recorded outcome
         # Every message actually SENT this turn (Honcho v2): the feedback stage
         # feeds each under the Nora aiPeer. Populated only on a successful send,
         # so a refused/failed message is never fed.
@@ -601,10 +602,9 @@ class Deliverer:
         # adapter without bind_owner is not a bridge adapter at all.
         adapter = self._adapter
         bind_owner = getattr(adapter, "bind_owner", None)
-        if (bind_owner is not None
-                and getattr(adapter, "action_owner", None) is None):
-            adapter = bind_owner(
-                ActionOwner(kind="live_invocation", id=str(row_id)))
+        if bind_owner is not None and getattr(adapter, "action_owner", None) is None:
+            adapter = bind_owner(ActionOwner(kind="live_invocation", id=str(row_id)))
+        self.send_unresolved += 1
         try:
             result = await adapter.send(
                 target=self._target, text=outbound.text,
@@ -689,10 +689,9 @@ class Deliverer:
         # and invite a blind second send; calling it failed misreports an
         # outcome nobody disproved). The durable truth is the action row's,
         # and the outcome name keeps the in-process view equally honest.
-        self._last_outcome = (
-            "sent" if result.ok
-            else "send_uncertain" if getattr(result, "uncertain", False)
-            else "send_failed")
+        self._last_outcome = ("sent" if result.ok else "send_uncertain"
+                              if getattr(result, "uncertain", False) else "send_failed")
+        self.send_unresolved -= 1
         return result.ok
 
 
@@ -1176,11 +1175,8 @@ class ReplyGuard(HookProvider):
             # different call. A lookup that finds something lifts the refusal for
             # the rest of the turn; a model that re-fires `send_reply` against an
             # unchanged state is refused again.
-            if (
-                self._lookups is not None
-                and self._lookups_made > 0
-                and self._lookups_found == 0
-            ):
+            if (self._lookups is not None and self._lookups_made > 0
+                    and self._lookups_found == 0):
                 return self._veto(
                     "R-97",
                     f"You looked {self._lookups_made} time(s) this turn and "
@@ -1251,6 +1247,10 @@ class ReplyGuard(HookProvider):
         return bool(self._terminal) and all(
             self.counts.get(name, 0) >= self._budgets.get(name, 0) for name in self._terminal
         )
+
+    @property
+    def answer_still_owed(self) -> bool:
+        return not (self._deliverer and self._deliverer.delivered) or self.reply_still_owed
 
     @property
     def reply_still_owed(self) -> bool:

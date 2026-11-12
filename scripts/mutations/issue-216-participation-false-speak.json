@@ -7,9 +7,9 @@
     "target": "tests/unit/test_participation_false_speak.py -k the_five_silence_twins_stay_silent"
   },
   {
-    "name": "#216 the refusal branch itself — a turn that came back empty is refused",
+    "name": "#216 the refusal branch itself \u2014 a turn that came back empty is refused",
     "file": "nora/agent/guards.py",
-    "old": "            if (\n                self._lookups is not None\n                and self._lookups_made > 0\n                and self._lookups_found == 0\n            ):",
+    "old": "            if (self._lookups is not None and self._lookups_made > 0\n                    and self._lookups_found == 0):",
     "new": "            if False:",
     "target": "tests/unit/test_participation_false_speak.py -k the_five_silence_twins_stay_silent"
   },
@@ -21,7 +21,7 @@
     "target": "tests/unit/test_participation_false_speak.py -k lookup_that_found_something_still_speaks"
   },
   {
-    "name": "#216 the counters sit BELOW both early returns — a cancelled or raised call went looking nowhere",
+    "name": "#216 the counters sit BELOW both early returns \u2014 a cancelled or raised call went looking nowhere",
     "file": "nora/agent/guards.py",
     "old": "            self.release(name, ref=str(tool_use.get(\"toolUseId\") or \"\"))",
     "new": "            self.release(name, ref=str(tool_use.get(\"toolUseId\") or \"\"))\n            if self._lookups is not None and name in self._lookups:\n                self._lookups_made += 1",

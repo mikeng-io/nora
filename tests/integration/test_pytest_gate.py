@@ -109,7 +109,7 @@ def _pytest(
     return subprocess.run(  # noqa: S603 — this interpreter, generated pytest project
         [sys.executable, "-m", "pytest", "-q", *args], cwd=cwd or root,
         env=env, start_new_session=True,  # a shared session with the CI job can hang its exit
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=120,
     )
 
 

@@ -382,7 +382,7 @@ def test_the_registry_names_the_recall_corpus_and_experiment_for_threads_it(monk
 
     assert frozenset({
         "conversational_recall", "cognition_session", "standing_unit",
-        "tool_selection", "tool_selection_cognition",
+        "tool_selection", "tool_selection_cognition", "reply_delivery",
     }) == scenarios.FULL_RESTORE_CORPORA
     assert set(scenarios.CORPUS_ENTRY) >= scenarios.FULL_RESTORE_CORPORA
     assert "conversational_recall" in scenarios.JUDGED_CORPORA
