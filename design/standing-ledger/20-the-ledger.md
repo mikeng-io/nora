@@ -6,8 +6,8 @@ tags: [nora, standing, ledger, decisions, commitments, threads, schema, render]
 timestamp: '2026-10-25'
 edges:
   - {dst: 30-turn-records, rel: depends_on, provenance: asserted}
-  - {dst: ../cognition-loop/12-schemas.md, rel: amends, provenance: asserted}
-  - {dst: ../standing-compact/30-working-set.md, rel: supersedes, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: amends, provenance: asserted}
+  - {dst: ../standing-ledger/10-what-standing-holds.md, rel: supersedes, provenance: asserted}
 ---
 
 # 20 · The ledger
@@ -15,7 +15,7 @@ edges:
 Standing becomes a set of **entries**, each with a stable id, typed columns
 for what code computes on, a Markdown body for what a model must understand,
 and an append-only revision chain. It follows
-[12-schemas](../cognition-loop/12-schemas.md) §2 whole: fixed English
+[12-schemas](../cognition-loop/data.md) §2 whole: fixed English
 headings, content in the room's language, every claim cites, refused and never
 repaired, code-written sections never a model argument.
 
@@ -65,7 +65,7 @@ lineage. **Body:** `Owed` (what, in one line, citing the message where she
 said it), `Done as` (on close, citing the message or turn that discharged it).
 
 What members owe each other stays in the note's `Owed`
-([12-schemas](../cognition-loop/12-schemas.md) §3).
+([12-schemas](../cognition-loop/data.md) §3).
 
 ## 4. Thread
 
@@ -122,7 +122,7 @@ th3 · 6d · co-op games for the weekend · discord-general
   `standing_read` returns everything. The budget is a render choice, so it can
   be tuned without losing anything.
 - **Closed decisions** render only while young (a horizon sized from the first
-  month, as [12-schemas](../cognition-loop/12-schemas.md) §8 does for its
+  month, as [12-schemas](../cognition-loop/data.md) §8 does for its
   sections) and stay readable through `standing_read`.
 - **Lineage per entry.** An entry renders only where its own lineage passes for
   the room, the rule `nora/agent/standing_read.py` already applies per section,
@@ -136,7 +136,7 @@ th3 · 6d · co-op games for the weekend · discord-general
 
 ## 6. Scopes
 
-> 2026-10-28 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md#6a-what-this-meets-in-the-other-bundles-2026-10-28) §6a): decisions, commitments and threads are nodes of the memory graph; their `about`, `fulfils` and `concerns` links are built by code from `owed_to`, the cited `Done as` line, `note_ids`, `decision_ids` and the spans, in the notebook layer with the cited rows as evidence, so the tag-path op tool never calls the graph itself.
+> 2026-10-28 ([unified-memory/graph.md](../unified-memory/graph.md) §6a): decisions, commitments and threads are nodes of the memory graph; their `about`, `fulfils` and `concerns` links are built by code from `owed_to`, the cited `Done as` line, `note_ids`, `decision_ids` and the spans, in the notebook layer with the cited rows as evidence, so the tag-path op tool never calls the graph itself.
 
 | scope | keyed on | holds | rendered in |
 |---|---|---|---|
@@ -146,7 +146,7 @@ th3 · 6d · co-op games for the weekend · discord-general
 The unit scope is what cross-room shared state IS: one Halloween decision,
 visible from the Signal dinner room and the Discord channel alike, instead of
 two room paragraphs that each know half. It replaces the unit sections
-[12-schemas](../cognition-loop/12-schemas.md) §5 sketched (`What I am
+[12-schemas](../cognition-loop/data.md) §5 sketched (`What I am
 following`, `What I am watching for`, `I owe`), which map onto threads,
 decisions and commitments.
 

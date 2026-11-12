@@ -87,8 +87,8 @@ def build_shared(
         # attached below, beside the desk's. Not given to the fire path.
         subagents=subagents_context,
         # The typed source events of the transcript window and the room's
-        # folded object heads for the standing slot (design 04): the ONE
-        # store the bridge writes.
+        # folded object heads for the standing slot: the ONE store the bridge
+        # writes (design/platform-observations/observations.md).
         observations=observation_store,
     )
 

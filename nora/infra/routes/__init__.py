@@ -1,4 +1,7 @@
-"""Google routing + place resolution — the third grounding capability (design/14 §3, §5.2)."""
+"""Google routing + place resolution — the third grounding capability.
+
+See design/system/grounding.md.
+"""
 
 from .client import RouteClient
 

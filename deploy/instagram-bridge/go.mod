@@ -75,7 +75,7 @@ require (
 // and the build dies with eleven `undefined: quic.ConnectionTracingID`
 // errors out of quic-go, which name neither Instagram nor req and give no
 // hint that a missing replace is the cause (verified 2026-09-21,
-// design/instagram-adoption/01-bridge-container.md). Deleting the line here
+// design/instagram-adoption/bridge.md). Deleting the line here
 // now fails earlier still — go.sum was generated WITH the replace, so the
 // build stops on a missing go.sum entry for the upstream req before it ever
 // reaches quic-go. Either way it does not build.

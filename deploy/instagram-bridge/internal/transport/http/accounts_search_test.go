@@ -174,14 +174,14 @@ func repeat(s string, n int) string {
 	return string(out[:n])
 }
 
-// --- GET /accounts?username= (17 P10) --------------------------------------
+// --- GET /accounts?username= () --------------------------------------
 //
 // The exact-match rule itself lives in app.LookupAccountByUsername and is
 // proven there (internal/app/app_test.go); these tests prove the ROUTE:
 // which status and shape reach the caller, and that validation and the
 // session gate order the same way ?query='s already do.
 
-// The P9 case: the exact match is not the first hit, and this route must
+// The the search probe (design/instagram-adoption/social.md) case: the exact match is not the first hit, and this route must
 // still return it rather than items[0].
 func TestAccountsByUsernameExactMatchNotAtRankZero(t *testing.T) {
 	h := searchHandler(authenticated, searchOnlyPorts{hits: []domain.AccountSummary{
@@ -385,7 +385,7 @@ func TestAccountsByUsernameValidationRunsBeforeSessionGate(t *testing.T) {
 
 // Every domain kind maps to its OWN status under the one table every route
 // shares (errors.go), including 502 for ErrUpstreamRejected and 501 for
-// ErrUnsupported, which the legacy table P14 deleted did not have.
+// ErrUnsupported, which the legacy table bridge.md deleted did not have.
 func TestAccountsSearchStatusPerDomainKind(t *testing.T) {
 	cause := errors.New("what the gateway said")
 	for _, tc := range []struct {
@@ -438,7 +438,7 @@ func TestAccountsSearchSessionGate(t *testing.T) {
 	}
 }
 
-// Request-shape validation runs BEFORE the session gate: design 16 says "a
+// Request-shape validation runs BEFORE the session gate: design/instagram-adoption/bridge.md says "a
 // malformed id is 400 before any use case runs", and a blank query is that.
 // A checkpointed session must not change the answer — proof that the 400
 // check is not reachable only when the session happens to be healthy.

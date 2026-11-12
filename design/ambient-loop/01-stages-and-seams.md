@@ -17,7 +17,7 @@ version: 5
 ## 1. The table, corrected
 
 Read from the code at `0a5933b4`. **Injected** means rendered into the
-prompt; **callable** means the model may ask for it (39 D9: inject the index,
+prompt; **callable** means the model may ask for it (design/cognition-loop/proactive.md: inject the index,
 call for depth). Version 1 of this node merged the two and got three cells
 wrong; the corrections are marked.
 
@@ -26,9 +26,9 @@ wrong; the corrections are marked.
 | **Orient · note-candidates** | batch, injected | ✗ | index, injected | ✗ | ✗ | **✗ — unit name** (bug, #161) |
 | **Orient · note-curation** | **✓ per-note window, injected** (v1 said ✗) | ✗ | ✓ | ✗ | ✗ | — |
 | **Orient · Standing fold** (tag path) | the exchange, injected | prior | ✗ | ✗ | ✗ | **✗** (v1 said ✓; `render_debrief_turn` names no room) |
-| **Decide · gate** | ✓ with ages | ✓ with age | ✗ *by design 36 §6* | ✗ *by design 36 §6* | ✗ — and stays so | **✗** (v1 said ✓; the prompt names no room, label or platform) |
+| **Decide · gate** | ✓ with ages | ✓ with age | ✗ *by design/ambient-loop/01-stages-and-seams.md §2.3* | ✗ *by design/ambient-loop/01-stages-and-seams.md §2.3* | ✗ — and stays so | **✗** (v1 said ✓; the prompt names no room, label or platform) |
 | **Decide · participation turn** | ✓ | ✓ | **✓ `<notes>`** when `[notes] enabled` (on the deployment; not the shipped default) | **was ✗ — NOTHING** (v1-v4 said «✓ peer card»; the card is keyed on a tagger the occasion does not have, `fire.py:562` `person_id=None` → `fire.py:926` `if ref is not None` → `peer_card=()`, and `<self_card>`/`<peer_history>` were assembled only by the tag path's `engagement/context.py:208`). **Now ✓ `<self_card>` + `<people_in_window>`** — 2026-09-11, #210, `fire.py:958`/`:974`, rendered `prefill.py:479` | ✗ | ✓ |
-| **Decide · proactive decide** | ✗ (39 D9) | ✓ per room, aged | ✓ | roster injected, **now with 1 conclusion per member** (2026-09-11, #210, `proactive.py:600` `_people_block` / `:677` `_roster_index`); Honcho still **callable** for depth, which is what the #206 ration is now free to buy (v1 called the `<people>` block Honcho — it was the roster alone) | own log only | home room |
+| **Decide · proactive decide** | ✗ (design/cognition-loop/proactive.md) | ✓ per room, aged | ✓ | roster injected, **now with 1 conclusion per member** (2026-09-11, #210, `proactive.py:600` `_people_block` / `:677` `_roster_index`); Honcho still **callable** for depth, which is what the #206 ration is now free to buy (v1 called the `<people>` block Honcho — it was the roster alone) | own log only | home room |
 | **Decide · proactive act** | home room's, injected | ✓ | ✓ | ✓ | ✗ | home room |
 
 Where each cell comes from: `relevance_gate.py:19-28` (the gate's deliberate
@@ -111,9 +111,9 @@ the fold generalised it to *I have sent nothing today* with her sent row two
 lines above the tag in the same window. The verdict, which existed to catch
 unsupported claims, said `grounded: true`. The same fold proposed a note whose
 closing condition her own row had already met. (The verdict was deleted
-2026-09-24 — design/standing-compact/.)
+2026-09-24.)
 
-Design 39 §1's brake — *nothing Nora says can create, revise or close a note* —
+design/cognition-loop/proactive.md's brake — *nothing Nora says can create, revise or close a note* —
 holds for her **words**. It does not hold for her **turn outcomes**, which the
 debrief writes as held state. And it cuts the other way: her own row cannot
 close a note whose closing condition it satisfies, because
@@ -129,7 +129,7 @@ the route*, and she had).
 **closing citation slot only**. It is excluded from discharge grounding:
 `_discharge` resolves `cited_row` once and grounds every commitment and
 person claim on it (`:1199-1220`), so an `is_nora` closing citation would
-make her the grounding sender for a Gathering event — 39 D7 broken in code.
+make her the grounding sender for a Gathering event — design/cognition-loop/proactive.md broken in code.
 There is exactly one place the split can live, because one evidence tuple
 serves both slots: `:691` → `message_ids` (`:700`) → `evidence_rows_by_note`
 (`:793`, `:805`), read by the citation check at `:921`/`:934` **and** resolved
@@ -141,14 +141,14 @@ read. So her row is admitted to `message_ids`, and the guard is inside
 The contract is *closure may cite her; discharge may not ground on her*, and
 it is only a contract if removing that guard reddens a named test. What already exists on this edge and must not be
 duplicated: `record_wake` / `strikes` / `revisit_at` (`schema.py:1805-1809`,
-39 D6) stamp *raised by her, unanswered*. v1's `last_moved_at` would have
+design/cognition-loop/proactive.md) stamp *raised by her, unanswered*. v1's `last_moved_at` would have
 been a second copy of that.
 
 **Contract.** The outcome header is scoped to the turn; a `Nora:` row after
 the tag is legible to the fold as a delivered reply regardless of outcome; a
 dead turn does not propose notes; her own row may be a note's closing
 citation and nothing else. (The verdict, which could see the contradiction
-from the transcript alone, was deleted 2026-09-24 — design/standing-compact/.)
+from the transcript alone, was deleted 2026-09-24.)
 Fixes A1–A3 on #199 are landing tonight; A4 lands only if the
 citation/discharge split above can be proved by mutation inside the current
 commit path, and waits otherwise.
@@ -162,7 +162,7 @@ commit path, and waits otherwise.
 > the participation turn behind the gate… A gate that started guessing the
 > second question would be the 35 design again in a cheaper coat.
 
-That is design 36 §6, and the turn behind the gate renders `<notes>` and —
+That is this file's §2.3, and the turn behind the gate renders `<notes>` and —
 since #210, 2026-09-11 — `<self_card>` and `<people_in_window>`. It renders no
 peer card and never did: this sentence used to say it did, on the same wrong
 cell §1 carried, and the card is keyed on a tagger a participation occasion
@@ -176,7 +176,7 @@ has them. Nothing here changes that. The one crossing input the gate does have
 — Standing — is set in **1 of 40** gate cases; that is the measurement to take
 before anything else is added to the gate.
 
-**The proactive decider.** 39 D9 dropped `load_transcript` from its tool set
+**The proactive decider.** design/cognition-loop/proactive.md dropped `load_transcript` from its tool set
 on the argument that Standing already carries the room and the verbatim
 window is where self-echo would be loudest. #199 is D9's own reversal
 condition firing: faced with a note saying *未覆* and Standing saying *model

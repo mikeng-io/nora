@@ -173,7 +173,7 @@ func TestMentionsSkippedCountIsTheSumNotTheDistinctTypeCount(t *testing.T) {
 	}
 }
 
-// No `ok` field, matching every other route since P14.
+// No `ok` field, matching every other route since bridge.md.
 func TestMentionsBodyHasNoOk(t *testing.T) {
 	p := &mentionsOnlyPorts{}
 	rec := get(mentionsHandler(authenticated, p), "/mentions")

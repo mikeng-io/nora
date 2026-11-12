@@ -1,4 +1,4 @@
-// One picture of one document, from Nora to the browser (ADR 0020, design §8).
+// One picture of one document, from Nora to the browser (ADR 0020, design/artifact/lifecycle.md).
 //
 // The catch-all proxy (src/app/api/v1/[...path]/route.ts) answers JSON only, so the
 // bytes have their own route, and this is its logic, kept apart so it is tested

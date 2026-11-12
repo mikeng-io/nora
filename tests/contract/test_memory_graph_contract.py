@@ -780,7 +780,7 @@ async def test_topic_activity_direct_evidence_counts_times_and_failure(graph: Me
     ).status == "nothing_found"
 
 
-# design/unified-memory/31 §2: guarantees independent of the future session.
+# design/unified-memory/understanding.md: guarantees independent of the future session.
 @pytest.mark.parametrize("fault", ["missing", "unshown", "unquoted"])
 async def test_cognition_06_evidence_is_present_shown_and_quoted(graph: MemoryGraph, fault: str):
     evidence = () if fault == "missing" else (EV,)

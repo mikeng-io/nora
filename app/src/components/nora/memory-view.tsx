@@ -164,9 +164,9 @@ export function MemoryView({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/** One Profile account of the viewer (45, the switch): every chain head with
+/** One Profile account of the viewer (design/unified-memory/profiles.md): every chain head with
  * its state, the evidence behind each line, and the open disputes — the
- * correction surface (cognition-loop/50 §4). */
+ * correction surface (design/unified-memory/profiles.md «Disputes and removal»). */
 function ProfileAccountPanel({ account }: { account: ProfileAccount }) {
   const t = useTranslations("memory");
   const locale = useLocale();

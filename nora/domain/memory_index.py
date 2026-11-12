@@ -72,7 +72,7 @@ __all__ = [
 #: everything about an attachment is read off its message (its room, its type
 #: in `messages.media_json`, its drop with the message) and a social item has
 #: no message and no room. `profile_line` is one Profile account line
-#: (design/unified-memory/45 §1), keyed by its row id.
+#: (design/unified-memory/profiles.md), keyed by its row id.
 NodeKind = Literal[
     "message", "media", "note", "memo", "event", "lesson", "character",
     "outing", "stay", "trip", "person", "room", "unit", "nora", "place",
@@ -113,7 +113,7 @@ EMBEDDED_KINDS: tuple[str, ...] = (
 #: from its bytes (`embeds_bytes`), and a reading of those bytes is its text.
 ATTACHMENT_KINDS: tuple[str, ...] = ("media", "social_media")
 
-#: The social stream's kinds (design/cognition-loop/22). A person's
+#: The social stream's kinds (design/cognition-loop/observation.md). A person's
 #: `social = false` (`identity.toml`) keeps every one of theirs out of every
 #: read (`MemoryScope.social_off`), including those recorded before the switch.
 SOCIAL_KINDS: tuple[str, ...] = ("social", "social_media", "social_location")
@@ -439,7 +439,7 @@ def place_named(name: str, query: str) -> bool:
     )
 
 
-#: How a social item's kind is said (instagram-adoption/06: «a story must be
+#: How a social item's kind is said (instagram-adoption/social.md: «a story must be
 #: SAID to be a story»).
 _SOCIAL_KIND_WORDS: Mapping[str, str] = {
     "story_frame": "story", "post": "post", "reel": "reel", "thread_post": "post",

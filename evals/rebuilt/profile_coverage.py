@@ -1,4 +1,4 @@
-"""Frozen, account-scoped coverage measurement (design 45 §6).
+"""Frozen, account-scoped coverage measurement (design/unified-memory/profiles.md).
 
 Only the existing eval task drives this entry. Input/export/validation never calls
 models; expected reference labels are read only by the calibration comparator.

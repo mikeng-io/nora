@@ -286,7 +286,7 @@ def build_offline_pipeline(
         fire_path = FirePath(
             tag_trace_store=None,
             persons=persons, records=audit, memory=memory,
-            # The shared-state reader (design/notebook-memory-types/20):
+            # The shared-state reader (design/notebook-memory-types/20-standing.md):
             # `None` in the harness, the assembler's reason above — which
             # also means an eval's proactive occasion never withholds on an
             # `unavailable` view it never had.

@@ -1,5 +1,0 @@
-uv run python scripts/mutate.py scripts/mutations/eval-note-date-split.json
-RED  (good)  date_split fails a note on the other day carrying the plan's rows
-RED  (good)  date_split accepts a revision of the right day's note, not only a create
-
-ALL MUTATIONS CAUGHT

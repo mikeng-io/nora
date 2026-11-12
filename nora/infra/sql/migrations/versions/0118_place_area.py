@@ -1,7 +1,7 @@
 """The areas a place lies in: a district and a city, from the geocoder's
 structured address components.
 
-design/unified-memory/00-intent.md «Sequence» step 3a, 25-memory-graph.md §6a.
+design/unified-memory/graph.md «Named places»
 Three stores gain the two columns, each beside the place it describes:
 
 - `events` and `event_revision`: `venue_district`, `venue_city`, resolved with

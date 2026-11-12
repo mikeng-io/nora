@@ -130,7 +130,7 @@ func request(t *testing.T, b *testBridge, method, path string, body any) *httpte
 	return rec
 }
 
-// The write routes (17 §P14), addressed the way Nora's adapter addresses
+// The write routes (), addressed the way Nora's adapter addresses
 // them: the SHORT thread id and the message id as path segments, the message
 // id escaped because it carries `$` and may carry `/` or `+`.
 func messagesPath(room string) string { return "/threads/" + url.PathEscape(room) + "/messages" }

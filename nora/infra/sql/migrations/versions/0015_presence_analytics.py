@@ -2,7 +2,7 @@
 DERIVED layer (docs/superpowers/specs/2026-08-18-presence-analytics-
 substrate-design.md §2, DEC-115). Two hand-written indexes because their
 DESC/composite shape is autogenerate-blind, the same reason
-`idx_presence_member_ts` is hand-written (design/19 §8).
+`idx_presence_member_ts` is hand-written (design/19-media-comprehension.md §8).
 """
 
 from __future__ import annotations

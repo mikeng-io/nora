@@ -3288,7 +3288,7 @@ async def test_a_proactive_act_runs_when_only_optional_display_coverage_fails(
     record_store, memory_store,
 ):
     """Optional display coverage — positions/findings and ledger readbacks —
-    degrades the prompt without withholding the act itself (design 20 §5:
+    degrades the prompt without withholding the act itself (design/cognition-loop/proactive.md:
     "a display-only cap must not permanently prevent all proactive
     activity")."""
     from dataclasses import replace

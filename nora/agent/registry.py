@@ -310,7 +310,7 @@ class ToolRegistry:
         # and answers `computer_capture`. Both `None` keep the shared-VM shape.
         computer_admission: Any = None,
         browser_manager: Any = None,
-        # The canonical-DM scope resolver (`design/private-dm/05`): a DM
+        # The canonical-DM scope resolver (`design/private-dm/workspaces.md`): a DM
         # room's `(person, anchor unit)` scope id — process-lifetime because
         # it is the policy, not the turn. `None` leaves DM computer calls
         # `unavailable` (fail-closed, never a group VM for a DM).
@@ -374,7 +374,7 @@ class ToolRegistry:
         # Process-lifetime like `record`.
         memory_search: MemorySearch | None = None,
         # The Profile write the graph surface's `remember` makes (a `told`
-        # line, design/unified-memory/45). Wired with `memory_search`.
+        # line, design/unified-memory/profiles.md). Wired with `memory_search`.
         profile: ProfileWriter | None = None,
         # THE SWITCH (45 §5): `character_read`'s Profile source while
         # `[memory.profile] read` is on beside `[memory.profile] write`. Wired, it

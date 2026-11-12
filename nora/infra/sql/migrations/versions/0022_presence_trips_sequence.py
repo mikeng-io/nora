@@ -1,5 +1,5 @@
 """presence_trips.sequence — the persisted per-trip road-name sequence that
-makes corridor clustering accumulate across cycles (Tier 5, design/27 §4,
+makes corridor clustering accumulate across cycles (Tier 5, design/cognition-loop/observation.md,
 issue #6; final whole-branch review Critical #1).
 
 Without it `_record_corridors` could only ever cluster ONE tick's in-memory

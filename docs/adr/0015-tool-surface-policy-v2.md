@@ -54,7 +54,7 @@
   stand.
 - **Extends:** [0004](0004-tool-naming-is-measured.md) with a rule for NEW
   names. 0004's "a rename is measured" is unchanged.
-- **Un-parks:** `design/tool-catalogue/03-result-handling.md` (parked
+- **Un-parks:** `design/tool-catalogue/reporting.md` (parked
   2026-09-22). The operator reopened it on 2026-09-23 ("research first, then
   design", then "go write the ADR") after the descriptions were measured.
 - **Index:** DEC-200.
@@ -82,7 +82,7 @@ was what had a test: the opening states when to call, and a MUST means turn
 correctness. What had no test was not met on day one and was not met after.
 AGENTS.md never pointed at 0007.
 
-`design/tool-catalogue/03-result-handling.md` measured (on 54 tools, 2026-09-21)
+`design/tool-catalogue/reporting.md` measured (on 54 tools, 2026-09-21)
 that 8,602 tokens, then 54% of description text, told the model how to
 interpret or report a result. Against today's 17,485 that share is about 49%.
 
@@ -162,7 +162,7 @@ docstring.) Counts in this ADR are over that extracted text.
   bundle planned `my_rooms`, `read_room` and `room_activity`. On 2026-09-24
   its owner made them two tools, `room_list` (a room exists, and its activity:
   one scope, no message text) and `room_read` (its content, where other
-  people's words start), in `design/self-awareness/03-room-tools.md`. Both fit
+  people's words start), in `design/self-awareness/rooms.md`. Both fit
   the rule without a new verb.
 - **Existing names stay.** A rename is measured one at a time (0004), and only
   when `tool_selection` shows the name causing a misroute.

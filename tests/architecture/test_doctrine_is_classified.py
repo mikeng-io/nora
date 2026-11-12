@@ -35,7 +35,7 @@ from nora.obs.metrics import Metrics
 
 REPO = Path(__file__).resolve().parents[2]
 DOCTRINE_DIR = REPO / "nora" / "doctrine"
-AUDIT = REPO / "design" / "self-growth" / "31-doctrine-audit.md"
+CLASSIFICATION = REPO / "nora" / "doctrine" / "classification.yaml"
 
 
 def _store(directory: Path) -> DoctrineStore:
@@ -195,8 +195,8 @@ def test_the_practice_and_character_examples_in_30_section_1_are_not_law():
     assert "Banter takes a welcome opening" in everything
 
 
-#: Current boundaries, including the neutral identity revision. Historical sort
-#: rulings remain in the design audit; these anchors name today's source.
+#: Current boundaries, including the neutral identity revision. These anchors
+#: name the current source classification.
 CURRENT_CLASSIFICATION_BOUNDARIES = (
     ("core/constraints.md", "Your public name, AI nature, appearance", "law"),
     ("core/identity.md", "Your public source repository", "character"),
@@ -305,16 +305,18 @@ def test_the_assembled_doctrine_is_the_same_with_the_table_absent_or_garbage(tmp
             assert got.versions() == want.versions(), audience
 
 
-# --- the operator's table ------------------------------------------------------------
+# --- the classification table -------------------------------------------------------
 
 
-def test_the_audit_document_lists_every_classified_section():
-    audit = AUDIT.read_text(encoding="utf-8")
+def test_the_classification_table_lists_every_classified_section():
+    import yaml
+
+    files = yaml.safe_load(CLASSIFICATION.read_text(encoding="utf-8"))["files"]
     missing = sorted({
         f"{r.file} § {r.section}" for r in _rules()
-        if f"`{r.file}`" not in audit or f"| {r.section} |" not in audit
+        if r.file not in files or r.section not in files[r.file]
     })
-    assert missing == [], f"31-doctrine-audit.md does not list: {missing}"
+    assert missing == [], f"classification.yaml does not list: {missing}"
 
 
 def test_silence_md_is_dissolved():

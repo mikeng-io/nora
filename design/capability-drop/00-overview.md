@@ -13,7 +13,7 @@ edges: []
 
 Nora's system prompt carries a *generated* capability section
 (`ToolRegistry.capability()` → `kind: capability` doctrine block). It exists
-because of DEC-29 (design/12): two hand-written tool catalogues had rotted
+because of DEC-29 (design/12-prompt-tool-skill-boundaries.md): two hand-written tool catalogues had rotted
 (`conduct.md` listed 3 of 7 tools; `_context_header` was stale by four), so the
 fix was to render the catalogue from the registry instead of deleting the
 catalogue.

@@ -7,7 +7,7 @@ package httptransport
 //                                                          write: a reply
 //                                                          under a summons
 //
-// (design/instagram-adoption/19 phases 2 and 4.) Every guard on the write
+// (design/instagram-adoption/summons.md phases 2 and 4.) Every guard on the write
 // lives in the use case (app/comments.go) and refuses before any upstream
 // call; this file parses, calls one use case, and writes what it returned.
 //

@@ -2230,7 +2230,7 @@
    }
   },
   {
-   "label": "a Tabs (removed: nothing used it and it needed three schema branches, design §42)",
+   "label": "a Tabs (removed: nothing used it and it needed three schema branches, design/artifact/catalog.md)",
    "doc": {
     "version": 1,
     "root": {

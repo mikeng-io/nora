@@ -1,4 +1,4 @@
-// Event outbox (design/voice-channel/07-audio-owner-controller.md §3.3):
+// Event outbox (design/voice-channel/audio.md):
 // every controller -> nora event is POSTed to NORA_EVENT_URL. A failed
 // delivery (non-2xx or transport error) parks the event in a bounded queue
 // (<=256; on overflow the OLDEST is dropped and counted) and the queue is

@@ -4,7 +4,7 @@
  * Everything in this module is free of Baileys sockets, HTTP, and wall-clock
  * side effects beyond injected ones, so `bridge.test.mjs` can exercise the
  * parsing/resolution/buffering rules without pairing. Shapes are pinned by
- * design/whatsapp-adoption/03-transport-contract.md — drift there is a
+ * design/whatsapp-adoption/bridge.md — drift there is a
  * contract failure, not a judgment call.
  *
  * Adapted from Hermes' scripts/whatsapp-bridge/ (MIT). Not copied: the
@@ -112,7 +112,7 @@ export function resolveIdentity(jid, lidToPhone = {}, phoneToLid = {}) {
 /**
  * phone -> lid, the inverse of buildLidMap's lid -> phone. Both directions
  * ride every message event: the Python adapter's MentionPolicy contract is a
- * membership test against BOTH forms (design/whatsapp-adoption/03), so a
+ * membership test against BOTH forms (design/whatsapp-adoption/bridge.md), so a
  * sender or mention known only as a phone JID must still carry its lid when
  * the session map knows one.
  */
@@ -427,7 +427,7 @@ function synthesizeEdit(msg, target, decoded) {
   };
 }
 
-// -- Bounded event buffer with drop-and-count (contract §dropped) ----------
+// -- Bounded event buffer with drop-and-count (design/platform-bridges/02-wire-and-platforms.md «Inbound v1») ----------
 
 /**
  * While no SSE client is connected, message events sit here (cap 500).
@@ -530,7 +530,7 @@ export function createReconnectScheduler(startFn, {
   return { scheduleReconnect, reset, cancel, get attempts() { return attempts; } };
 }
 
-// -- Inbound message extraction (contract §message event) -------------------
+// -- Inbound message extraction (design/platform-bridges/02-wire-and-platforms.md «Inbound v1») -------------------
 
 /**
  * Unwrap the "future-proof" shells — ephemeral, view-once, document-with-
@@ -702,7 +702,7 @@ export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, rec
   // A REACTION or a REVOKE (delete for everyone) is not a message: it names
   // the message it touches and says nothing itself. Emitted as its own event
   // type so Nora records it BESIDE that message, never as a transcript line
-  // (design/cognition-loop/20-observe.md §1). Both used to fall through to
+  // (design/cognition-loop/observation.md). Both used to fall through to
   // the empty-turn drop below and were lost.
   const who = {
     id: msg.key.id || null,

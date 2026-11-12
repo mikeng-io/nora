@@ -88,7 +88,8 @@ def stanza(account: PendingAccount, *, person_id: str) -> list[str]:
             lines.append(f'{kind} = "{value}"')
     lines += [
         f"# {value} — no id-kind classifier for platform {account.platform!r}; "
-        f"pick one of {sorted(id_kinds(account.platform))} by hand (design/10 §3.1)"
+        f"pick one of {sorted(id_kinds(account.platform))} by hand "
+f"(design/10-identity-and-policy-schema.md §3.1)"
         for value in unclassified
     ]
     return lines

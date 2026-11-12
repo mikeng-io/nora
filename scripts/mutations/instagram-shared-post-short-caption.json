@@ -98,7 +98,7 @@
   "target": "tests/unit/test_instagram_read_links.py -k spelling_the_same_link"
  },
  {
-  "name": "the web_fetch Instagram page guard is removed (design 30 PR1: the shared registry's page claim): the page goes to the provider",
+  "name": "the web_fetch Instagram page guard is removed (design/social-per-network/links.md PR1: the shared registry's page claim): the page goes to the provider",
   "file": "nora/agent/link_owners.py",
   "old": "    if kind == \"page\":\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
   "new": "    if False:\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",

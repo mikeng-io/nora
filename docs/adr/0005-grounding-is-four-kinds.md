@@ -6,7 +6,7 @@
 - **Index:** DEC-30 (`scan_egress` split into `scan_identifiers` /
   `scan_reply`), R-22 (a tool that could not answer says so in its return
   value), R-18 (egress guards replies), R-21 (scope enforced at assembly),
-  `design/proposed/14-grounding.md` (the document this records the reframing
+  `design/system/grounding.md` (the document this records the reframing
   of). Grounding's own rules are **R-27/R-28**, unassigned.
 
 ## Context
@@ -15,7 +15,7 @@ Grounding is the first capability that reaches outside the room — everything
 else Nora knows comes from the transcript, `identity.toml`, Honcho and the
 clock.
 
-**The first draft of `design/14` was wrong in a way worth recording.** It
+**The first draft of `design/system/grounding.md` was wrong in a way worth recording.** It
 treated grounding as one capability, `search(query)`, and spent its length
 choosing a search provider. Two operator questions broke that framing:
 
@@ -44,7 +44,7 @@ returns pages *about* the route; it does not return the bus.
 from stop D020" from a *schedule*; `rt.data.gov.hk` says "that bus is 112
 seconds away" *live*. Neither alone answers 「幾點出門」. Combining them is
 instructions, not capability — which is what a **skill** is, and the first
-domain that has ever qualified (`design/12` §1 said none did).
+domain that has ever qualified (`design/12-prompt-tool-skill-boundaries.md` §1 said none did).
 
 **Corrections to the first draft, recorded because each was believed:**
 
@@ -58,7 +58,7 @@ domain that has ever qualified (`design/12` §1 said none did).
   the **input**, governed by `total_tokens = 64000`. The two are separate
   fields for separate reasons and the argument was numerically meaningless.
 - **R-19/R-20 were already taken.** R-20 is the forged-quote rule, registered
-  and enforced; R-19 is reserved by `design/11`. Grounding's are R-27/R-28.
+  and enforced; R-19 is reserved by `design/11-recall-and-threading.md`. Grounding's are R-27/R-28.
 - **The scrape verb was never declared.** §3 required Firecrawl while the tool
   list held only `search(query)` — a second verb living in prose with no
   schema, no budget entry, no URL authority. R-7 default-denies any tool absent
@@ -218,7 +218,7 @@ relying on it is the decorative-gate failure this repo keeps finding. Wrapping
 plus no-path-to-activation is structural and testable by reverting it.
 
 **Wrapping typed API responses `untrusted="true"` for uniformity.** It would
-miscategorise a government ETA endpoint as adversarial input, and `design/17`'s
+miscategorise a government ETA endpoint as adversarial input, and `design/17-prompt-substrate.md`'s
 argument is that miscategorised things fail silently.
 
 **Relaxing the outbound rules because SearXNG is self-hosted.** The premise was

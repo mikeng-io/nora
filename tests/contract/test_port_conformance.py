@@ -249,7 +249,7 @@ def test_the_media_object_store_conforms_to_the_port():
 
 
 def test_the_observation_stores_conform_to_the_port():
-    """`ObservationStore` (design/platform-observations 02) at the name level
+    """`ObservationStore` (design/platform-observations/observations.md) at the name level
     — the floor every other port gets. Behaviour is
     `tests/contract/test_observation_store_contract.py` over both;
     `create_sql_engine` is lazy so this needs no live database."""

@@ -1,4 +1,4 @@
-"""The archived local-model probe (`design/context-plan/evidence/local_models.py`)
+"""The archived local-model probe (`scripts/context_decision_probe.py`)
 writes its results somewhere only its own account can write. Its results used
 to go to a fixed, predictable `/tmp` path, where another local account could
 plant a link and have the probe overwrite its target. The results directory is
@@ -16,9 +16,7 @@ import stat
 import tempfile
 from pathlib import Path
 
-PROBE = (
-    Path(__file__).resolve().parents[2] / "design" / "context-plan" / "evidence" / "local_models.py"
-)
+PROBE = Path(__file__).resolve().parents[2] / "scripts" / "context_decision_probe.py"
 
 
 def _tree() -> ast.Module:

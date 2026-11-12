@@ -280,7 +280,7 @@ func (b *Bridge) rawDocs() (DocIssuer, error) {
 }
 
 // SearchAccounts searches Instagram accounts by free text, in the library's
-// own order (16 §Resources, 17 P9, P11).
+// own order (design/instagram-adoption/bridge.md «Messaging contract»:, ).
 func (b *Bridge) SearchAccounts(ctx context.Context, query string) ([]domain.AccountSummary, error) {
 	cli, err := b.client()
 	if err != nil {
@@ -290,7 +290,7 @@ func (b *Bridge) SearchAccounts(ctx context.Context, query string) ([]domain.Acc
 }
 
 // Post reads one post by its shortcode, every carousel item in order
-// (17 P12). See posts.go.
+// (). See posts.go.
 func (b *Bridge) Post(ctx context.Context, code domain.Shortcode) (domain.Post, error) {
 	cli, err := b.client()
 	if err != nil {
@@ -321,8 +321,8 @@ func (b *Bridge) Mentions(ctx context.Context) ([]domain.CommentMention, map[int
 }
 
 // Comments reads one page of a post's comments, or one comment's replies
-// (design 19 phase 2; comments.go). A checkpoint goes through
-// sessionRejected, exactly as on Mentions (design 19 §Account safety, rule
+// (design/instagram-adoption/summons.md phase 2; comments.go). A checkpoint goes through
+// sessionRejected, exactly as on Mentions (design/instagram-adoption/summons.md «One answer, at most once», rule
 // 4: "by every route this design adds").
 func (b *Bridge) Comments(
 	ctx context.Context, code domain.Shortcode, media domain.MediaID, parent *domain.CommentID,
@@ -337,7 +337,7 @@ func (b *Bridge) Comments(
 }
 
 // PostComment writes one reply under a summons comment: the bridge's only
-// public write (design 19 phase 4; comments.go). Every guard runs BEFORE this,
+// public write (design/instagram-adoption/summons.md phase 4; comments.go). Every guard runs BEFORE this,
 // in the app layer; this is the call itself. It runs on a context detached
 // from the request's cancellation, bounded by commentWriteTimeout, so a caller
 // hanging up cannot turn a clean answer into an ambiguous one.

@@ -336,7 +336,7 @@ func TestAFailedThreadLookupIsMarkedOnEveryThreadRoute(t *testing.T) {
 
 // Request validation belongs to the handler and runs BEFORE any use case, so
 // a malformed request is 400 whatever the session's state: checkpointed here,
-// on purpose. Before P14 the session gate answered 409 first on these routes.
+// on purpose. Before bridge.md the session gate answered 409 first on these routes.
 func TestMalformedRequestsAre400BeforeTheSessionGate(t *testing.T) {
 	longRoom := "340282366841710301281152937372201004392"
 	for _, rc := range []routeCall{
@@ -502,7 +502,7 @@ func TestReadBodiesCarryNoOk(t *testing.T) {
 	}
 }
 
-// The verb paths are DELETED (17 §P14), not aliased: each is the mux's own
+// The verb paths are DELETED (), not aliased: each is the mux's own
 // 404, which no handler wrote, so no use case can run behind one.
 func TestTheOldVerbPathsAreGone(t *testing.T) {
 	p := &okPorts{sent: domain.Sent{ID: "mid.$sent"}, confirmed: true}

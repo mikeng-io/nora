@@ -35,14 +35,14 @@
     "target": "tests/unit/test_instagram_parser.py::test_a_share_with_no_valid_link_keeps_its_cover tests/unit/test_instagram_parser.py::test_a_cover_with_no_link_stays_trailing_and_takes_its_handle tests/unit/test_instagram_shared_on_demand.py::test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter"
   },
   {
-    "name": "the Instagram page claim is dropped (design 30 PR1): media_fetch downloads the page",
+    "name": "the Instagram page claim is dropped (design/social-per-network/links.md PR1): media_fetch downloads the page",
     "file": "nora/agent/link_owners.py",
     "old": "    if kind == \"page\":\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
     "new": "    if False:\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
     "target": "tests/test_media_fetch.py -k instagram_page_link"
   },
   {
-    "name": "the page-link refusal no longer depends on media being configured (structural since design 30 PR1: the post-pass runs before media_fetch's closure and cannot see blob_store/vision_source at all, so the only way left to break this test is to drop the claim itself)",
+    "name": "the page-link refusal no longer depends on media being configured (structural since design/social-per-network/links.md PR1: the post-pass runs before media_fetch's closure and cannot see blob_store/vision_source at all, so the only way left to break this test is to drop the claim itself)",
     "file": "nora/agent/link_owners.py",
     "old": "    if kind == \"page\":\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
     "new": "    if False:\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
@@ -91,7 +91,7 @@
     "target": "tests/test_media_fetch.py -k stale_cover_beside"
   },
   {
-    "name": "the page-link note stops naming instagram_read (design 30's coordinator revision: the note is composed, not fetcher-held, so this now mutates redirect()'s own template rather than a literal)",
+    "name": "the page-link note stops naming instagram_read (design/social-per-network/links.md's coordinator revision: the note is composed, not fetcher-held, so this now mutates redirect()'s own template rather than a literal)",
     "file": "nora/agent/link_owners.py",
     "old": "            f\"Open it with {owner.tool} using this {owner.param}{link_input.then}.\"\n",
     "new": "            f\"Open it with the right tool using this {owner.param}{link_input.then}.\"\n",

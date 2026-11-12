@@ -262,9 +262,9 @@ func TestTheSocialCallIsKeyedOnTheIGID(t *testing.T) {
 	}
 }
 
-// --- the upstream span (P1) ---------------------------------------------------
+// --- the upstream span (design/instagram-adoption/bridge.md) ---------------------------------------------------
 
-// The regression P1 exists for: a GraphQL failure that answers HTTP 200. A
+// The regression design/instagram-adoption/bridge.md exists for: a GraphQL failure that answers HTTP 200. A
 // span that looked only at the status would be green here.
 func TestGraphQLErrorsInsideA200MarkTheSpanFailed(t *testing.T) {
 	rec := recordSpans(t)

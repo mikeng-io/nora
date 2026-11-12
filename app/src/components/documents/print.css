@@ -1,5 +1,5 @@
 /*
- * Print and "save as PDF" for a document (design/artifact §34): the browser's own print
+ * Print and "save as PDF" for a document (design/artifact/lifecycle.md): the browser's own print
  * is the PDF path, and this sheet is what makes the page fit for it. It applies only on a
  * page that holds a `[data-print-document]` (the document page and an old revision), and
  * only in print, so no screen ever sees it.

@@ -11,14 +11,14 @@
 
 ## Context
 
-Design 42 (`design/dreamer-agent-loop/42-note-format.md`) gives a note body a
+Design 42 (`design/notebook-memory-types/00-design.md`) gives a note body a
 schema: fixed sections (Decided, Open, Owed, Proposed, Ruled out), a line
 grammar, and a citation on every line to the messages the writer was shown.
 Appending to a schema body breaks it: the head stops being one note in the
 sections and becomes a stack of fragments that no section check can read.
 Measured before the change, open notes' bodies had a median of about 200
 characters against an 8000 ceiling, and every update failure in the eval
-revised a similarly titled note the model had never read (design 42 §1).
+revised a similarly titled note the model had never read (the retired note-format record).
 
 #228 chose append because a restatement can erase: a wrong `updates` that
 replaces a body destroys what the note said. That risk does not go away. It
@@ -26,7 +26,7 @@ has to be guarded some other way.
 
 ## Decision
 
-An update restates the whole body in the schema (design 42 S4a). Three
+An update restates the whole body in the schema (the retired note-format record). Three
 guards replace what append guaranteed:
 
 1. **History is kept.** Every earlier head stays a revision row; nothing
@@ -71,4 +71,4 @@ batch shows. Its uncitable lines are not carried; they stay in the history
   stops being one note in the sections, and every reader would have to
   merge fragments.
 - **Restate, but let code repair a malformed body.** Code would then be
-  authoring the note (design 42 G1): refused, not repaired.
+  authoring the note (the retired note-format record): refused, not repaired.

@@ -4,7 +4,7 @@
     "generated": true,
     "native_event": "delta __typename=SlideUQPPParticipantLeftGroupThread",
     "capture_today": "captured -> embedded admin message + kind=observation membership remove; subject_ref=left_participant_fbid, actor=actor_fbid; state 'left' only when actor==subject — removal never asserts intent",
-    "semantic": "The ONE delta that types actor and subject separately: actor_fbid acted, left_participant_fbid is who left, viewer_fbid scopes whose copy this is. actor==subject reads 'left voluntarily'; actor!=subject reads 'removed' — but even then, reason is unobservable (design/02: removal never establishes voluntary departure or intent)."
+    "semantic": "The ONE delta that types actor and subject separately: actor_fbid acted, left_participant_fbid is who left, viewer_fbid scopes whose copy this is. actor==subject reads 'left voluntarily'; actor!=subject reads 'removed' — but even then, reason is unobservable (design/02-tagging-path.md: removal never establishes voluntary departure or intent)."
   },
   "payload": {
     "__typename": "SlideUQPPParticipantLeftGroupThread",

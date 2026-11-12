@@ -1,5 +1,5 @@
 """turn_verdict -- the debrief's per-TURN judgement, written once and never
-rewritten (design/dreamer-agent-loop/26-standing.md sec. 3).
+rewritten (design/cognition-loop/data.md sec. 3).
 
 The opposite cardinality to `standing` (migration 0034), and the split is
 structural. It was found by a bug: the first draft put these fields on the

@@ -1,6 +1,6 @@
 """assess_report -- the Assess adaptor's one store (design/cognition-loop/
-30-cognition.md §6, 15-map.md §6, 55-self.md §1, 70-migration.md §2 row 3;
-migration step 3).
+design/cognition-loop/session.md, design/cognition-loop/data.md
+«Citations, links and search», design/self-growth/lessons.md, migration step 3).
 
 WHAT THIS ADDS, additive only:
 
@@ -16,7 +16,8 @@ its own moment separate from when this row entered the store, `standing`'s
 `as_of`-vs-`recorded_at` split precedent. `results` is a JSONB array of
 `nora.domain.assess.DqCheckResult` (`check`, `status`, `failing`, `sample`,
 `detail`) written out by `nora.infra.sql.assess.SqlAssessReportStore.record`
-— never parsed by a model, never read by a turn (15-map.md §6: "Assess …
+— never parsed by a model, never read by a turn (design/cognition-loop/data.md
+«Citations, links and search»: "Assess …
 reports and metrics only"; `tests/architecture/test_assess_reports_are_operator_only.py`
 is this branch's own gate, which pins that no `read_only_tools()` entry and no
 prefill block names `assess_report` or imports `nora.infra.sql.assess`).

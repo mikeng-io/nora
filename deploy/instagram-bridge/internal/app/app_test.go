@@ -158,7 +158,7 @@ const synthRoom = "100000000000042"
 
 // The session gate is the FIRST thing every Instagram-facing use case does:
 // a checkpointed session is "a human must act", and nothing reaches a port.
-// Since P14 the use cases take PARSED ids (the HTTP edge parses them, so a
+// Since bridge.md the use cases take PARSED ids (the HTTP edge parses them, so a
 // malformed id is 400 before this gate runs), so every case here hands in a
 // well-formed id and the gate alone is what refuses.
 func TestTheSessionGateComesFirstInEveryUseCase(t *testing.T) {
@@ -314,7 +314,7 @@ func mustUsername(t *testing.T, s string) domain.Username {
 }
 
 // LookupAccountByUsername calls the SAME port SearchAccounts does (the
-// design's single search mechanism, 17 P9), addressed with the username's
+// design's single search mechanism, ), addressed with the username's
 // own text.
 func TestLookupAccountByUsernameCallsSearchAccounts(t *testing.T) {
 	p := &fakePorts{searchHits: []domain.AccountSummary{{IGID: "1", Username: "target_user"}}}
@@ -327,8 +327,8 @@ func TestLookupAccountByUsernameCallsSearchAccounts(t *testing.T) {
 	}
 }
 
-// The P9 case: the exact match is not the first hit, and items[0] is never
-// taken (17 §P9: "one exact match was not the first result").
+// The the search probe (design/instagram-adoption/social.md) case: the exact match is not the first hit, and items[0] is never
+// taken (: "one exact match was not the first result").
 func TestLookupAccountByUsernameNeverTakesItemZero(t *testing.T) {
 	p := &fakePorts{searchHits: []domain.AccountSummary{
 		{IGID: "1", Username: "decoy_one"},

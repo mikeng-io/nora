@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { signIn, watchErrors } from "./helpers";
 
-// The three views of one stored document (design/artifact §34): present (one Section per
+// The three views of one stored document (design/artifact/lifecycle.md): present (one Section per
 // slide), print (the document and nothing else), and history (an old revision read-only).
 // Against the mock API: Lisbon in December is at revision 3, with one Section and a picture
 // after it, so it presents as a cover and one slide. Nothing here restores a revision: the

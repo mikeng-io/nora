@@ -196,7 +196,7 @@ everything the decision needs:
 * `FilesystemBlobStore.delete(key)` exists (on the concrete class, not the port
   — the same split as `SqlRecordStore.prune_all`).
   *Amended:* `delete` is now on the port, for one policy only, a story frame's
-  bytes ([cognition-loop/22](cognition-loop/22-social-stream.md) §5, off by
+  bytes ([cognition-loop/observation.md](cognition-loop/observation.md) §5, off by
   default), which deletes only bytes no row names (`nora.infra.sql.blob_refs`).
   The port's `delete` keeps bytes put within a window by the store's own
   clock, and a `put` of bytes already held now refreshes that clock (the

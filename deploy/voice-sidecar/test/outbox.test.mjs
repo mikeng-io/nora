@@ -1,4 +1,4 @@
-// Outbox tests (§3.3): bounded at 256 with oldest-drop counting, backoff
+// Outbox tests (design/voice-channel/audio.md «Connection lifecycle»): bounded at 256 with oldest-drop counting, backoff
 // retry that delivers after the receiver comes back, unique event_ids,
 // strictly increasing event_seq.
 

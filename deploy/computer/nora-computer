@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nora-computer: the lifecycle unit of Nora's computer (design/sandbox-runtime §2).
+# nora-computer: the lifecycle unit of Nora's computer (design/sandbox-runtime/runtime.md).
 # The ONLY thing that runs `sbx`; Nora never holds the sbx or Docker socket.
 # Runs on the deploy host as the user that ran `sbx login`.
 #
@@ -46,7 +46,7 @@ UNUSED_WORKSPACE=${NORA_COMPUTER_UNUSED_WORKSPACE:-$STATE_DIR/unused-workspace-$
 # endpoint computerd answers on. Deleting a record is `scope revoke`; it
 # never destroys the sandbox.
 SCOPE_REGISTRY=${NORA_COMPUTER_SCOPE_REGISTRY:-$STATE_DIR/scope-endpoints}
-# The lifecycle audit (design/sandbox-runtime sec 12). A host-side spool is the
+# The lifecycle audit (design/sandbox-runtime/sessions.md «Complete evidence»). A host-side spool is the
 # first record of every operator-side event, and Postgres' computer_events is the
 # record of truth it is replayed into; COMPOSE_DIR is where `docker compose exec
 # db` finds the stack. See lifecycle_event.py.
@@ -64,8 +64,8 @@ COMPOSE_DIR=${NORA_COMPOSE_DIR:-$(dirname "$ENV_FILE")}
 # services out of reach: computerd's published port and OmniRoute on docker0
 # (172.16.0.0/12), Ollama on the host's loopback, the LAN and the tailnet.
 #
-# KNOWN, ACCEPTED LIMIT (measured, design/browser-runtime/04-s1-runbook.md
-# step 4): sbx applies a CIDR deny to IP LITERALS only. A public NAME that
+# KNOWN, ACCEPTED LIMIT (measured, design/browser-runtime/security.md
+# «Network and browser isolation»): sbx applies a CIDR deny to IP LITERALS only. A public NAME that
 # resolves to a private address (127-0-0-1.sslip.io) still passes, because the
 # proxy decides on the name and then connects to whatever it resolves to. The
 # operator accepted that rather than add a guard; `egress check` probes IP
@@ -359,9 +359,9 @@ cmd_egress() {
 # A recreate (and `destroy`) deletes /workspace, and the audit saw three
 # recreates in 24 hours. The VM's disk is the only copy of every room's files,
 # so this is a nightly tar of it onto the host (README, "Backup and restore").
-# It is rollback, not off-host backup: same machine (design sec 7). NOT in it:
+# It is rollback, not off-host backup: same machine (design/sandbox-runtime/files.md «Backup and restore»). NOT in it:
 # each room's browser/ directory (a Chromium profile is a credential store: its
-# cookies are never backed up, design sec 7) and computerd's .tmux sockets.
+# cookies are never backed up, design/sandbox-runtime/files.md «Backup and restore») and computerd's .tmux sockets.
 
 # A private directory INSIDE the VM, root-only (mktemp -d is 0700), for one
 # archive: every room's files in one gzip tar must never sit in /tmp itself,
@@ -766,7 +766,7 @@ cmd_status() {
 }
 
 # Reading what the network refused is an audited read: the policy log shows what
-# the VM tried to reach, which is the network half of the audit (design sec 8).
+# the VM tried to reach, which is the network half of the audit (design/sandbox-runtime/runtime.md).
 cmd_policy_log() {
     local rc
     record_event policy_log_read ok args="$*" || exit 5

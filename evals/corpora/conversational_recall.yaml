@@ -1,4 +1,4 @@
-# Is what she REMEMBERS supported? design/unified-memory/00-intent.md "Sequence"
+# Is what she REMEMBERS supported? design/unified-memory/README.md "Sequence"
 # step 0 (step 0a: the instrument): the conversational-recall journeys run on the
 # tools she already has, measured before any index is built
 # (design/conversational-recall/20-orchestration.md "Smallest viable choice",
@@ -62,7 +62,7 @@
 #   would be against production. These cases are anchored on records the
 #   restore holds (messages, readings, notes, outings); none of them measures
 #   recall that only Honcho holds, and none can until memory is replayed
-#   (design/evaluation/11-the-sandbox-rebuild.md §3).
+#   (design/evaluation/subject.md).
 # - OUTINGS. A tag turn cannot read the Rollup at all: `rollup_read` is
 #   Dreamer-only (`nora/agent/surface.py`, DREAMER_LOOP_TOOLS). J4 is EXPECTED
 #   TO FAIL TODAY, and this corpus is the before arm for the change that gives

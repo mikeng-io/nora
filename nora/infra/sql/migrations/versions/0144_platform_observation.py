@@ -1,6 +1,6 @@
 """Typed platform observations: the history table and the fold's head.
 
-design/platform-observations 02. `platform_observation` holds one row per
+design/platform-observations/observations.md. `platform_observation` holds one row per
 admitted source transition/snapshot about an OBJECT (poll, room, member
 set, pin set, artifact, reaction target, message metadata); provenance is
 by VALUE (event_id + source_digest — `bridge_event` is the live queue
@@ -149,7 +149,7 @@ def upgrade() -> None:
         "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self', "
         "'observation')")
 
-    # The retained lane's curated pointers (design/platform-observations 03):
+    # The retained lane's curated pointers (design/platform-observations/projections.md):
     # a note keeps the platform objects its matter still concerns — scope +
     # handle, resolved fresh at every assembly. Head state like the anchors;
     # the revisions keep the note's history.

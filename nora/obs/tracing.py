@@ -305,7 +305,8 @@ def root_span(name: str, *, links: Sequence[Link] = (),
     The queue/generation seam is why this exists: a `queue.attempt` or the
     `engagement` generation root must NOT inherit whichever span happens to be
     current in the consumer's task (a claim span parenting a model trace is
-    exactly the nesting design 04 forbids). `parent=None` means an EMPTY
+    exactly the nesting design/platform-bridges/04-operations.md
+    forbids). `parent=None` means an EMPTY
     context — a true root — not ambient; a caller that wants ambient context
     uses `span`. `links` are the W3C `Link`s stamped at start, the only
     relationship a fresh root can hold to a context that is not its parent.

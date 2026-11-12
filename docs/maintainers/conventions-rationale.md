@@ -246,7 +246,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   modules that are not occasions are the named MECHANISM, RUNNER and EXEMPT
   entries in the test, each with a written reason, reviewed in the PR that adds
   it and re-checked by the test. A new occasion follows
-  `design/context-assembly/04-every-occasion.md` «How a new occasion joins»
+  `design/context-assembly/registry.md`
   (DEC-273, ADR 0021).
 
 - **Never read a gate's success through a pipe.** `make gate | tail` returns
@@ -389,7 +389,7 @@ compose and disagreed with this file). Identity and policy are bind-mounted read
 validation every three seconds**. Invalid edits retain the last good version;
 workspace-binding edits refuse the whole reload until recreation. The
 `nora_config_reloads_total` outcomes and `/health` staleness expose pending or
-refused changes (see `design/policy-reload/00-design.md`). `identity.toml` takes one
+refused changes (see `design/policy-reload/README.md`). `identity.toml` takes one
 `[[persons.<id>.<platform>]]` block **per account**, all resolving to one
 `person_id` (their Honcho peer, A2/DEC-14). `policy.toml` is deny-by-default and
 Nora **refuses to start** if it is missing or allows nothing (R-5). Memory's
@@ -435,8 +435,8 @@ tier.** Both are gone: the code is deleted, the decision-index rows are marked
 (never renumbered), and every design node and spec that describes them carries a
 `DEPRECATED` banner. **Their database tables are NOT dropped** — the code goes,
 the schema stays, and dropping them is a separate explicit decision. The evidence
-that decided it is `design/dreamer-agent-loop/20-knowledge-tier.md` §0; the issue
-is #115. Nothing under `design/dreamer-agent-loop/` numbered 20, 21, 23, 24, 25,
+that decided it is `design/cognition-loop/data.md` ; the issue
+is #115. Nothing under `design/cognition-loop/` numbered 20, 21, 23, 24, 25,
 28, 31 or 32 describes code that exists.
 
 **Deprecated 2026-09-08 — the note tier's entity-resolution chain and the
@@ -513,11 +513,11 @@ and was not reached for until the third rewrite.
 collector, how to instrument a model call, how to read it back — is
 `docs/observability.md`. This section is why the rules are what they are.)*
 
-`design/dreamer-agent-loop/02-instrument-blindness.md` is the catalogue: eight
+The catalogue: eight
 layers where an instrument could not observe the thing it existed to observe,
 plus the silent-match family one level down — the instruments we use to FIND
 those layers returning a positive-looking answer without ever engaging.
-`design/dreamer-agent-loop/09-measurement.md` is where the bundle gives that
+`design/cognition-loop/execution.md` is where the bundle gives that
 discipline a home for its own change. Neither is repeated here. This section
 carries the eight rules and the measurement behind each.
 
@@ -697,7 +697,7 @@ lived only in the plan, and nothing in this repo had ever looked at one. The
 fix is `== sa.false()` (`nora/infra/sql/turn_verdicts.py:100`) and the check is
 `tests/contract/test_turn_verdict_store_contract.py::test_the_trigger_read_
 actually_uses_its_partial_index`. (Both were deleted on 2026-09-24 with the
-grounding verdict, `design/standing-compact/`; the lesson stands.)
+grounding verdict, `design/standing-ledger/00-intent.md`; the lesson stands.)
 
 **And the first version of that test compiled its OWN statement** with the
 correct spelling and EXPLAINed that — so reverting the store's predicate to the
@@ -814,7 +814,7 @@ return None` from `_should_rebuild` and the stage raises `AttributeError` on
 assertions still hold. R-72 named that test among the ones enforcing it, and it
 measured nothing. It was found by a reviewer mutating a clause the author had
 not. (R-72 is retired and the test gone with `_should_rebuild` itself, deleted
-2026-09-24 with the grounding verdict, `design/standing-compact/`; the lesson
+2026-09-24 with the grounding verdict, `design/standing-ledger/00-intent.md`; the lesson
 stands.)
 
 At least five tests in that one file had the shape. The fix in each is two

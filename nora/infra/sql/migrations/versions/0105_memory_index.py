@@ -1,5 +1,5 @@
 """memory_node, memory_edge, memory_projection_queue, memory_index_state -- the
-one memory index (design/unified-memory/60-build-step-3.md §1, 25-memory-graph.md).
+one memory index (design/unified-memory/graph.md, design/unified-memory/graph.md).
 
 The index is a PROJECTION: every row is read from a store that already owns
 the truth, so all four tables are `NOT_RESTORED` (`nora.infra.sql.history`)

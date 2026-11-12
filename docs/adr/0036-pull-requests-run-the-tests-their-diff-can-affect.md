@@ -5,7 +5,7 @@
 - **Reverses, in part:** the test-selection rationale that every path no rule names runs the
   whole suite («a slow correct answer beats a fast wrong one», `scripts/affected_tests.py`
   before this change), for the paths below that now have a measured answer.
-- **Design:** [test selection](../../design/test-selection/00-design.md).
+- **Design:** [test selection](../../design/test-selection/README.md).
 - **Tracking:** [PR #644](https://github.com/mikeng-io/nora/pull/644).
 - **Index:** DEC-327.
 

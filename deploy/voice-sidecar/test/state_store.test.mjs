@@ -1,4 +1,4 @@
-// Desired-state store + boot decision tests (§12.1): exit persists idle;
+// Desired-state store + boot decision tests (design/voice-channel/audio.md «Connection lifecycle»): exit persists idle;
 // boot joins ONLY when the file says connected, or the file is absent AND
 // env CHANNEL_ID is set. `idle` wins over CHANNEL_ID. A corrupt or
 // unreadable file is SURFACED (fail-closed), never silently first-booted.

@@ -9,7 +9,7 @@ governance: pre-governance-input
 edges:
   - {dst: 00-overview.md, rel: realizes, provenance: asserted}
   - {dst: 20-presentation-and-avatars.md, rel: depends_on, provenance: asserted}
-  - {dst: ../discord-music/_index.yaml, rel: relates_to, provenance: asserted}
+  - {dst: ../voice-channel/music.md, rel: relates_to, provenance: asserted}
 ---
 
 # The shared venue
@@ -26,7 +26,7 @@ or they hear everything twice.
 ## 2. The backing track is a file, not a stream
 
 1. A person pastes a YouTube link. The server downloads it with yt-dlp, as
-   the music path already does (`design/discord-music/`, in the
+   the music path already does (`design/voice-channel/music.md`, in the
    `voice-sidecar` container).
 2. Demucs separates the vocals out, giving a real instrumental.
 3. Time-synced lyrics come from LRCLIB when available.

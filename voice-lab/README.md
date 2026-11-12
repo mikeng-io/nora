@@ -33,7 +33,7 @@ paths keep working. Nothing under the data root is ever committed (43 GB; see
     tts-cmp/              MiniMax vs edge-tts comparison (+ small mp3 samples)
     spikes/sidecar/       the original Node receive spike (production version: deploy/voice-sidecar)
 
-The narrative record is `design/voice-channel/03-wake-word-training.md`.
+The narrative record is `design/voice-channel/receive.md`.
 
 ## Rules that cost us before
 - Never build the FP-validation tensor whole (3 GB + copies): run heavy jobs under

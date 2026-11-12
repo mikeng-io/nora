@@ -21,7 +21,8 @@ there. On this deployment the same line addressed `ridgeline` -- a workspace tha
 DOES exist and belongs to something else. Fixed in the same change; this
 migration is the half of it that the database holds.
 
-design/24 §S.1 already records the first time this happened, with the word
+design/conversational-recall/20-orchestration.md already records the first
+time this happened, with the word
 "group", and names the cost: "a session's worth of confusion". `unit` is that
 section's own word for the thing ("a group of PEOPLE -- a social unit").
 

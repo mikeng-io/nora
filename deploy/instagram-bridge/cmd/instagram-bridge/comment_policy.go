@@ -8,7 +8,7 @@ import (
 	"instagram-bridge/internal/app"
 )
 
-// The comment write's three switches (design/instagram-adoption/19 §Account
+// The comment write's three switches (design/instagram-adoption/summons.md
 // safety, rule 4; root docker-compose.yml):
 //
 //	INSTAGRAM_COMMENT_WRITES        exactly `on` enables the write. Anything

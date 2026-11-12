@@ -1,4 +1,4 @@
-// The present view (design/artifact §15, §34): a document shown one top-level Section per
+// The present view (design/artifact/lifecycle.md): a document shown one top-level Section per
 // slide. A view of the SAME stored spec, never a second format: each slide is the document
 // with its Page kept and only some of the Page's children, so it is drawn by the same
 // registry and checked by the same parseDocument.

@@ -1,6 +1,6 @@
 """The shared logical clock: one-minute ticks on the Unix epoch.
 
-`design/cognition-loop/18-execution-and-time.md`: a **tick** is an integer —
+`design/cognition-loop/execution.md`: a **tick** is an integer —
 the index of the one-minute interval an instant falls in, `floor(ms /
 60_000)`. A deadline's **due tick** is the FIRST tick that is entirely at or
 after the target instant, `ceil(ms / 60_000)`, so pending work is eligible
