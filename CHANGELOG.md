@@ -1,5 +1,20 @@
 # Changelog
 
+## [7.18.4](https://github.com/mikeng-io/nora/compare/v7.18.3...v7.18.4) (2026-11-12)
+
+
+### Features
+
+* **cognition:** the session writes the unit's topic accounts live ([a8de03c](https://github.com/mikeng-io/nora/commit/a8de03c6a9aee3d3be0a1b7ef96de8cb93580677))
+
+
+### Bug Fixes
+
+* **cognition:** entries cite real lineage and restore at a point in time ([1dee792](https://github.com/mikeng-io/nora/commit/1dee79279f8431a771c9e87a52958fa32c37fdf9))
+* **cognition:** restore field order and cover entry lineage in snapshot gates ([2dd2011](https://github.com/mikeng-io/nora/commit/2dd2011d88dd3173c41372881251d5482263c380))
+* **cognition:** topic accounts gate on lineage and retire with the store ([20d097f](https://github.com/mikeng-io/nora/commit/20d097ff9a328895a269cdf5387d6ea07ecc6e71))
+* **eval:** the Cognition loop state diff reads Nora's topic entries ([94b57f3](https://github.com/mikeng-io/nora/commit/94b57f392948b0b0fec227c4205f6b3a9b828741))
+
 ## [7.18.3](https://github.com/mikeng-io/nora/compare/v7.18.2...v7.18.3) (2026-11-12)
 
 
