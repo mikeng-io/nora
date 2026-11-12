@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from nora.agent.comprehend_tools import egress_reason
-from nora.app.composition import search_provider
+from nora.app.composition_readers import search_provider
 from scripts import memory_graph_spike as spike
 
 

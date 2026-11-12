@@ -8,9 +8,9 @@
   },
   {
     "name": "read false preserves the Honcho recall surface",
-    "file": "nora/app/composition.py",
-    "old": "        if cfg.memory.index.read else None\n",
-    "new": "        if True else None\n",
+    "file": "nora/memory/wire.py",
+    "old": "        if cfg.memory.index.read\n        else None",
+    "new": "        if True\n        else None",
     "target": "tests/test_composition.py::test_the_prefetch_holds_the_tools_search_only_on_the_graph_surface"
   },
   {

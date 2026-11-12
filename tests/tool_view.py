@@ -27,8 +27,12 @@ def _tool_source_paths() -> list[Path]:
             continue
         paths += sorted(adapters.glob("tools.py"))
         # `adapters/tools/__init__.py` is included: each multi-module area's
-        # `build()` and `_spec` calls live there.
-        paths += sorted((adapters / "tools").rglob("*.py"))
+        # `build()` and `_spec` calls live there. Session-verb modules
+        # (`SessionDeps`) were never in this scan's scope at base.
+        paths += [
+            p for p in sorted((adapters / "tools").rglob("*.py"))
+            if "SessionDeps" not in p.read_text()
+        ]
     return paths
 
 

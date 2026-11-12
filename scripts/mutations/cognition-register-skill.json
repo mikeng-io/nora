@@ -22,8 +22,8 @@
   },
   {
     "name": "(8a) composition lets the wiring's errors through raw",
-    "file": "nora/app/composition.py",
-    "old": "            except (InstructionError, SkillNotInstalledError) as exc:",
+    "file": "nora/app/composition_cognition.py",
+    "old": "    except (InstructionError, SkillNotInstalledError) as exc:",
     "new": "            except InstructionError as exc:",
     "target": "tests/test_composition.py -k test_a_session_whose_objective_or_skill_is_missing_is_a_startup_error"
   },

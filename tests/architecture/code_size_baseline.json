@@ -418,16 +418,15 @@
   "internal_docstrings": 3
  },
  "nora/app/cognition_session.py": {
-  "comment_blocks": 29,
-  "file_lines": 3526,
+  "comment_blocks": 28,
+  "file_lines": 2052,
   "functions": {
    "CognitionSessionRunner.__init__": 124,
-   "CognitionSessionRunner._build_tools": 1672,
-   "CognitionSessionRunner._build_tools.remind": 222,
+   "CognitionSessionRunner._build_tools": 351,
    "CognitionSessionRunner._run_session": 160,
    "CognitionSessionRunner.on_wake": 190
   },
-  "internal_docstrings": 28
+  "internal_docstrings": 18
  },
  "nora/app/cognition_wiring.py": {
   "comment_blocks": 10,
@@ -436,12 +435,12 @@
   }
  },
  "nora/app/composition.py": {
-  "comment_blocks": 222,
-  "file_lines": 5985,
+  "comment_blocks": 24,
+  "file_lines": 1496,
   "functions": {
-   "build_dependencies": 3911
+   "build_dependencies": 1006
   },
-  "internal_docstrings": 30
+  "internal_docstrings": 1
  },
  "nora/app/comprehend.py": {
   "functions": {
@@ -2758,7 +2757,7 @@
  },
  "tests/test_composition.py": {
   "comment_blocks": 9,
-  "file_lines": 2215,
+  "file_lines": 2214,
   "internal_docstrings": 2
  },
  "tests/test_config.py": {

@@ -119,7 +119,7 @@ async def ingest_self(
 
 
 async def _main(argv: list[str]) -> int:
-    from nora.app.composition import _build_blob_store
+    from nora.app.composition_media import _build_blob_store
     from nora.config import load
     from nora.infra.blobs.cipher import BlobCipher
     from nora.infra.sql.engine import create_sql_engine

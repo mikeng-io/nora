@@ -1,6 +1,7 @@
 """`nora.domain.cognition_session` — the Cognition adaptor's session and
 agenda, built by code."""
 
+
 from __future__ import annotations
 
 from nora.domain.cognition_session import (
@@ -66,7 +67,7 @@ def test_play_rollup_time_and_self_bind_the_home_room_not_a_stimulus_room():
 
 def test_a_social_read_binds_the_room_it_names_and_home_when_it_names_none():
     """A social stimulus names a room of the unit that lists its author
-    (`composition.social_person_rooms`): its item reads through that room, the
+    (`social_person_rooms`): its item reads through that room, the
     only kind of room that may be shown the author's items."""
     named = build_agenda(
         [_stimulus(1, kind="social", conversation_id="room-b", platform="signal")],

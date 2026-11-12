@@ -223,7 +223,7 @@ def test_no_model_surface_reads_a_tension_row():
         str(p.relative_to(root.parent)) for p in root.rglob("*.py")
         if "from nora.infra.sql.tension import" in p.read_text(encoding="utf-8")
     }
-    assert users == {"nora/app/composition.py", "nora/app/cli.py"}
+    assert users == {"nora/app/composition_dream.py", "nora/app/cli.py"}
 
 
 def test_the_objective_answers_in_the_shape_the_parser_reads():

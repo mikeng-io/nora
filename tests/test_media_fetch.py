@@ -2244,9 +2244,9 @@ def test_the_video_reading_cache_is_wired_from_composition_to_the_tool():
     source, because a test that built its own registry would be true by
     construction."""
     root = Path(__file__).resolve().parents[1]
-    composition = (root / "nora" / "app" / "composition.py").read_text()
+    composition = (root / "nora" / "app" / "composition_agent.py").read_text()
     registry = (root / "nora" / "agent" / "registry.py").read_text()
-    assert "video_readings=SqlVideoReadingStore(engine)" in composition
+    assert '"video_readings": SqlVideoReadingStore(engine)' in composition
     assert "video_readings=self._video_readings" in registry
 
 

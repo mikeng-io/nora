@@ -99,15 +99,15 @@
   },
   {
     "name": "the unselected lane is kept alive too",
-    "file": "nora/app/composition.py",
-    "old": "        (codex_lane, codex_cfg.keepalive, codex_cfg.refresh_interval_hours),\n",
+    "file": "nora/app/composition_media.py",
+    "old": "        (codex_lane, codex_cfg.keepalive, codex_cfg.refresh_interval_hours),",
     "new": "",
     "target": "tests/unit/test_oauth_keepalive.py::test_every_lane_with_a_token_is_kept_whichever_provider_is_selected"
   },
   {
     "name": "the adapter and the keeper hold the SAME lane object (one refresh lock)",
-    "file": "nora/app/composition.py",
-    "old": "            oauth=xai_lane,\n",
+    "file": "nora/app/composition_media.py",
+    "old": "                oauth=xai_lane,",
     "new": "            refresh_token=xai_token, state_file=state_dir / \"xai-oauth.json\",\n",
     "target": "tests/unit/test_oauth_keepalive.py::test_every_lane_with_a_token_is_kept_whichever_provider_is_selected"
   },

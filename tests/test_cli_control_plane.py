@@ -159,7 +159,7 @@ async def test_profile_media_retry_only_queues_known_completed_account(env, caps
 
     import sqlalchemy as sa
 
-    from nora.app.composition import character_person_keys
+    from nora.app.composition_helpers import character_person_keys
     from nora.infra.sql.character import SqlCharacterEvidence
     from nora.infra.sql.profile_inputs import SqlProfileInputs
     from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
@@ -892,7 +892,7 @@ async def test_profile_window_and_report_are_read_only_until_explicit_apply(
 ):
     import sqlalchemy as sa
 
-    from nora.app.composition import character_person_keys
+    from nora.app.composition_helpers import character_person_keys
     from nora.infra.sql.schema import PROFILE_LINE
     cfg = cli._config(build_parser().parse_args(["memory", "profile-history",
                                                "--config", str(env["path"])]))

@@ -25,7 +25,7 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.app.composition import _story_frames_embedded
+from nora.app.composition_readers import _story_frames_embedded
 from nora.app.social_expiry import EmbeddedFrames, StoryMediaExpiry
 from nora.domain.social_stream import SocialItem
 from nora.infra.sql.engine import create_sql_engine
