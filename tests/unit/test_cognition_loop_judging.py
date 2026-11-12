@@ -35,3 +35,18 @@ def test_a_fenced_answer_parses_and_an_empty_one_names_its_size():
         parse_answer("")
     with pytest.raises(EvidenceError, match="met\\|not_met"):
         parse_answer('{"verdict": "maybe"}')
+
+
+def test_a_citation_by_the_uuid_that_ends_one_known_id_is_grounded():
+    from scripts.cognition_loop.verdicts import JudgeAnswer
+
+    u = "11111111-2222-4333-8444-555555555555"
+    known = [f"profile:unit-a#person-b:{u}", "note:7"]
+    def cites(i):
+        return JudgeAnswer(verdict="met", entry_ids=(i,))
+    assert validate_citations(cites(u), known) is None
+    assert validate_citations(cites(f"unit-a#wrong:{u}"), known) is None
+    other = "00000000-0000-4000-8000-000000000000"
+    assert validate_citations(cites(other), known) == other
+    twice = [*known, f"memo:{u}"]
+    assert validate_citations(cites(f"x:{u}"), twice) == f"x:{u}"
