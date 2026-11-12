@@ -199,6 +199,7 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
         (table, "lineage"): _LINEAGE
         for table in (
             "culture_revision", "event_revision", "events", "note", "note_revision",
+            "notebook_entry_revision",
             "presence_corridors", "presence_derived_places", "presence_occupancy",
             "presence_place_rhythm", "presence_stays", "presence_trips",
             "rollup_colocation", "rollup_daybook", "rollup_outing", "rollup_response",

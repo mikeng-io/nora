@@ -152,9 +152,8 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "established_in": "signal:g1", "created_at": MS0 + i,
         "head_revision_id": _uuid("head", i),
     },
-    "culture": lambda i: {
-        "key": f"room{i}", "head_revision_id": _uuid("cr", 100 + i), "updated_at": MS0,
-    },
+    "culture": lambda i: {"key": f"room{i}",
+        "head_revision_id": _uuid("cr", 100 + i), "updated_at": MS0},
     "standing": lambda i: {
         "platform": "signal", "conversation_id": f"g{i}", "body": f"position {i}",
         "updated_at": MS0,
@@ -295,6 +294,10 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "created_at": T0, "updated_at": T0, "last_activity_at": T0,
         "actor": "tag", "created_by_tag": f"t{i}",
     },
+    # The topic account's head, retired in place over append-only revisions.
+    "notebook_entry": lambda i: {"id": f"generated-entry-{i}", "kind": "topic",
+        "unit": "u", "subject": f"generated-subject-{i}", "retired": False,
+        "recorded_at": T0},
     # 0117_persona: an account's head, its revision bumped by each write.
     "profile": lambda i: {
         "key": f"u#character:p{i}", "entity_kind": "human", "unit": "u",
@@ -395,6 +398,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "rollup_tie": ("replies_ba", lambda i: 1 + i),
     "rollup_response": ("outcome", lambda i: "responded"),
     "events": ("status", lambda i: "confirmed"),
+    "notebook_entry": ("retired", lambda i: True),
     # 0144: the table's real in-place write — a retained observation's
     # target re-linking (`resolve_targets`/`relink_arriving_targets`).
     "platform_observation": ("target_message_id", lambda i: 1000),
@@ -406,12 +410,9 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
-    "notebook_entry": lambda i: {
-        "id": f"generated-entry-{i}", "kind": "topic", "unit": "u",
-    },
     "notebook_entry_revision": lambda i: {
-        "id": f"generated-entry-revision-{i}", "entry_id": f"generated-entry-{i}",
-        "base_revision_id": None, "seq": 1,
+        "id": f"generated-entry-revision-{i}", "entry_id": "generated-entry-0", "seq": i,
+        "base_revision_id": f"generated-entry-revision-{i - 1}" if i > 1 else None,
         "content": {
             "about": [["topic", f"generated-topic-{i}"]], "body": f"Generated account {i}",
             "citations": [["message", "1000"]], "confidence": "medium", "state": "active",
@@ -419,9 +420,8 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
             "instruction_hash": "a" * 64, "links": [],
         },
     },
-    "graph_refusal": lambda n: {
-        "id": 86000+n, "kind": "relation", "part_id": f"generated-{n}", "reason": "vocabulary",
-    },
+    "graph_refusal": lambda n: {"id": 86000+n, "kind": "relation",
+        "part_id": f"generated-{n}", "reason": "vocabulary"},
     "comprehend_web_page": lambda n: {
         "id": f"generated-page-{n}", "unit": "u", "session_id": n,
         "url": f"https://example.invalid/page-{n}", "fetched_at": T0,
