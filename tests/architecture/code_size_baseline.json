@@ -436,9 +436,9 @@
  },
  "nora/app/composition.py": {
   "comment_blocks": 24,
-  "file_lines": 1497,
+  "file_lines": 1496,
   "functions": {
-   "build_dependencies": 1008
+   "build_dependencies": 1006
   },
   "internal_docstrings": 1
  },

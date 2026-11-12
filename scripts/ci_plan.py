@@ -426,8 +426,6 @@ def changed_paths(event: dict, repo: Path) -> list[str]:
 
 
 def _added_lines(diff: str, removed: set[str]) -> dict[int, str]:
-    """The added lines of one file's `--unified=0` diff by new line number;
-    each removed line's stripped text is collected into `removed`."""
     out: dict[int, str] = {}
     number = 0
     for line in diff.splitlines():
