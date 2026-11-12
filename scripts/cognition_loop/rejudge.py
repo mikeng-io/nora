@@ -42,6 +42,21 @@ def frozen_diff(frozen: dict[str, Any]) -> tuple[StateDiff, UnitState]:
     return StateDiff(kinds), UnitState(kinds=after)
 
 
+def case_status(row: dict[str, Any], statuses: list[str]) -> str:
+    """Judging again never clears a step that failed: case errors roll up."""
+    if not statuses:
+        return ERROR
+    return rollup(*statuses, *([ERROR] if row.get("errors") else []))
+
+
+def run_status_after(report: dict[str, Any]) -> str:
+    """The run's status with its own errors and evidence receipt kept."""
+    evidence_ok = (report.get("evidence") or {}).get("status") == "PASS"
+    return rollup(
+        *(c.get("status") or ERROR for c in report.get("cases") or [{}]),
+        *([] if evidence_ok and not report.get("errors") else [ERROR]))
+
+
 async def rejudge(output: Path, case_path: Path, config: Path,
                   judge_a: str, judge_b: str) -> dict[str, Any]:
     case = load_case(case_path)
@@ -77,14 +92,17 @@ async def rejudge(output: Path, case_path: Path, config: Path,
         frozen["expectations"] = judged
         path.write_text(json.dumps(frozen, ensure_ascii=False, default=str),
                         encoding="utf-8")
-        status = rollup(ERROR if frozen.get("error") else "PASS",
-                        *(j["verdict"] for j in judged))
+        wakes = row.get("wakes") or []
+        recorded = wakes[index] if index < len(wakes) else {}
+        failed = frozen.get("error") or recorded.get("step") or (
+            recorded.get("status") == ERROR and not recorded.get("expectations"))
+        status = rollup(ERROR if failed else "PASS", *(j["verdict"] for j in judged))
         if index < len(row.get("wakes") or []):
             row["wakes"][index]["status"] = status
             row["wakes"][index]["expectations"] = judged
         statuses.append(status)
-    row["status"] = rollup(*statuses) if statuses else ERROR
-    report["status"] = rollup(*(c.get("status") or ERROR for c in report["cases"]))
+    row["status"] = case_status(row, statuses)
+    report["status"] = run_status_after(report)
     report["rejudged"] = {"judges": [judge_a, judge_b], "case": str(case_path)}
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False,
                                       default=str) + "\n", encoding="utf-8")

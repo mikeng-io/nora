@@ -16,3 +16,15 @@ def test_the_after_state_is_created_revised_and_unchanged_never_retired():
     assert set(after.entries("note")) == {"n1", "n2", "n4"}
     assert after.entries("note")["n2"] == {"t": "y"}
     assert "note:n3" in diff.entry_ids()
+
+
+def test_rejudging_keeps_a_case_error_and_a_failed_evidence_receipt():
+    from scripts.cognition_loop.rejudge import case_status, run_status_after
+
+    assert case_status({"errors": ["advance failed"]}, ["PASS"]) == "ERROR"
+    assert case_status({}, ["PASS"]) == "PASS"
+    assert case_status({}, []) == "ERROR"
+    passed = {"cases": [{"status": "PASS"}], "evidence": {"status": "PASS"}}
+    assert run_status_after(passed) == "PASS"
+    assert run_status_after({**passed, "evidence": {"status": "ERROR"}}) == "ERROR"
+    assert run_status_after({**passed, "errors": [{"step": "room_directory"}]}) == "ERROR"

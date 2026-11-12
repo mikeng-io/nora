@@ -21,3 +21,37 @@ def test_the_composed_rosters_gain_the_frozen_discord_reader():
 
     wiring = _with_frozen_rosters(policies, {"g/1": [["u-a"]]})()
     assert wiring.rosters["discord"].platform == "discord"
+
+
+async def test_a_room_listed_without_a_guild_entry_gets_its_roster_frozen(
+    monkeypatch, tmp_path,
+):
+    import json
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop import __main__ as cli
+
+    class _Client:
+        def __init__(self, endpoint):
+            pass
+
+        async def read(self, op, params):
+            assert op == "roster"
+            return {"available": True, "value": {"members": [["u-a"]]}}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(cli, "BridgeControlClient", _Client)
+    cfg = SimpleNamespace(
+        platforms=SimpleNamespace(discord=SimpleNamespace(base_url="http://bridge")),
+        bridges=SimpleNamespace(token_env="T"),  # noqa: S106 — env var name
+        credentials={})
+    args = SimpleNamespace(room_directory=None, channel_reads_url=None)
+    policy = SimpleNamespace(conversations=[
+        SimpleNamespace(platform="discord", guild=None, ids=frozenset({"g/9"}))])
+    (tmp_path / "out").mkdir()
+    await cli._room_directory(args, cfg, policy, tmp_path / "out")
+    frozen = json.loads((tmp_path / "out" / "room-directory.json").read_text())
+    assert frozen["rosters"] == {"g/9": [["u-a"]]}
+    assert args.frozen_rosters == {"g/9": [["u-a"]]}

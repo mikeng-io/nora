@@ -454,14 +454,21 @@ def _toc(report: dict[str, Any], orphans: list[Path]) -> str:
 
 
 def _availability(output: Path) -> str:
+    avails = []
     for path in sorted(output.glob("wake-*.json")):
-        frozen = json.loads(path.read_text(encoding="utf-8"))
-        avail = (frozen.get("trajectory") or {}).get("availability")
+        avail = (json.loads(path.read_text(encoding="utf-8"))
+                 .get("trajectory") or {}).get("availability")
         if avail:
-            break
-    else:
+            avails.append((path.stem, avail))
+    if not avails:
         return ('<section><h2>availability</h2>'
                 '<p class="not-recorded">not recorded</p></section>')
+    avail = {
+        "switches": avails[0][1].get("switches") or {},
+        "offered": next((a.get("offered") for _, a in avails if a.get("offered")), None),
+        "unavailable": [{**c, "tool": f"{stem}: {c.get('tool')}"}
+                        for stem, a in avails for c in a.get("unavailable") or []],
+    }
     rows = "".join(
         f"<tr><td>{esc(k)}</td><td class=\"tool-{'ok' if v else 'unavailable'}\">"
         f"{esc('on' if v else ('off' if v is False else 'not set'))}</td></tr>"

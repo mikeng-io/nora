@@ -106,10 +106,16 @@ async def _room_directory(
         freeze(output / "room-directory.json", frozen)
         args.frozen_rosters = frozen_rosters(frozen)
         return _static_directory(frozen)
-    guilds = sorted({
-        c.guild for c in getattr(policy, "conversations", ()) or () if c.guild
+    conversations = getattr(policy, "conversations", ()) or ()
+    guilds = sorted({c.guild for c in conversations if c.guild})
+    # A Discord room the policy names one by one has no guild entry; it
+    # still needs its roster frozen.
+    explicit = sorted({
+        cid for c in conversations
+        if getattr(c, "platform", None) == "discord" and not c.guild
+        for cid in c.ids
     })
-    if not guilds:
+    if not guilds and not explicit:
         return None
     base_url = (getattr(args, "channel_reads_url", None)
                 or cfg.platforms.discord.base_url)
@@ -133,14 +139,13 @@ async def _room_directory(
         # ponytail: Discord rooms only; Signal rosters read live in the
         # sandbox's direct mode and answer unavailable until frozen too.
         rosters: dict[str, Any] = {}
-        for guild_id, gmap in channels.items():
-            for channel_id in gmap:
-                cid = f"{guild_id}/{channel_id}"
-                body = await client.read("roster", {"conversation_id": cid})
-                if (body or {}).get("available"):
-                    rosters[cid] = [
-                        sorted(str(i) for i in ids)
-                        for ids in ((body.get("value") or {}).get("members") or [])]
+        rooms = {f"{g}/{c}" for g, gmap in channels.items() for c in gmap}
+        for cid in sorted(rooms | set(explicit)):
+            body = await client.read("roster", {"conversation_id": cid})
+            if (body or {}).get("available"):
+                rosters[cid] = [
+                    sorted(str(i) for i in ids)
+                    for ids in ((body.get("value") or {}).get("members") or [])]
     finally:
         await client.close()
     freeze(output / "room-directory.json", {
