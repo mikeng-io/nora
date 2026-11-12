@@ -31,10 +31,10 @@ same two references, `assets/nora-canonical-self.png` and
 `assets/nora-character-reference-sheet.png`, the shared brief below, and its
 own prompt. None is a `role: self` asset: none is ingested, and
 `assets/nora-canonical-self.png` stays her one canonical image
-(`design/self-reference/02-canonical-assets.md`).
+(`design/self-reference/references.md`).
 
 Each was checked by eye against the eight anchors of
-`design/self-reference/05-visual-identity-spec.md` before it was kept. The
+`design/self-reference/identity.md` before it was kept. The
 first `wave` came back about four heads tall (anchor 1 says 2.5 to 3) and was
 rejected; the kept one was re-prompted with proportions first.
 

@@ -62,7 +62,7 @@ def _circles_from_identity(persons: Persons) -> list[CircleSpec]:
         raise PresenceStartupError(
             f"Life360 member id(s) {unplaced} have a [[persons.<id>.life360]] block "
             "with no circle_id in identity.toml — they cannot be placed in a circle "
-            "to collect; add circle_id or remove the block (design/19 §3)"
+            "to collect; add circle_id or remove the block (design/self-awareness/presence.md)"
         )
     if not by_circle:
         raise PresenceStartupError(

@@ -83,7 +83,7 @@ export function envelopeVersion({ kind, observation = null }) {
   return observation !== null || !V1_KINDS.has(kind) ? 2 : 1;
 }
 
-/** Build the complete stream field payload (design 02-wire §envelope). */
+/** Build the complete stream field payload (design/platform-bridges/02-wire-and-platforms.md «Inbound v1»). */
 export function buildEnvelope({
   platform = 'whatsapp',
   accountKey,

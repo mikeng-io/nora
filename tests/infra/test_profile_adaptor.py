@@ -1,5 +1,5 @@
 """`ProfilePersonAdaptor`: one person's Profile session in shadow
-(design/unified-memory/45 §4, 00 «Sequence» step 6).
+(design/unified-memory/profiles.md).
 
 Through the real `SqlProfileStore`, because what the session can get wrong
 without anything saying so is a write: one that lands before the session

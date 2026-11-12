@@ -181,7 +181,7 @@ def _make_poll_list(deps):
             _record(metrics, "poll_list", "unavailable", reason="unwired")
             return {"status": "unavailable", "note": _obs_off}
         # The pinned bridge does not carry this platform's polls at all —
-        # «cannot tell», never «none» (design 01's coverage cells).
+        # «cannot tell», never «none» (design/platform-bridges/00-contract.md's coverage cells).
         if "poll" in UNSUPPORTED_KINDS.get(room.platform, frozenset()):
             _record(metrics, "poll_list", "unavailable", reason="unsupported")
             return {

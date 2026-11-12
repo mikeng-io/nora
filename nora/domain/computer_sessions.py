@@ -274,7 +274,7 @@ class ComputerSessionStore(Protocol):
         moved to `now`; or, when there is none and `open_new`, a new one
         opened with `objective`. True when it was opened by this call. None
         when there is none and `open_new` is false: a background actor only
-        continues a session a live turn opened (design §15.4). Atomic: two
+        continues a session a live turn opened (design/sandbox-runtime/sessions.md). Atomic: two
         concurrent calls in one unit get ONE session between them. Migrated
         room tasks remain separate; reuse the most recently active open task."""
         ...

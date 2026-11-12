@@ -1,4 +1,4 @@
-"""pg_baseline — the single Postgres-native baseline (design/20 §2)
+"""pg_baseline — the single Postgres-native baseline (design/cognition-loop/data.md)
 
 This replaces the squashed SQLite chain (0001_baseline … 0004_media_json). That
 chain cannot replay on Postgres: its `0001_baseline` emitted

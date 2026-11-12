@@ -1,7 +1,5 @@
 """withdrawal -- the citation edge table, `unsupported_at` on the derived
-heads that exist, `hidden_at` on messages (design/cognition-loop/10-tiers.md
-§2 rule 7, §8, §9; 70-migration.md §2 row 2c, §5, §9; migration step 2c).
-
+heads that exist, `hidden_at` on messages (design/cognition-loop/data.md;
 WHAT THIS ADDS, all additive:
 
 1. `citation` (new): the edge table 70 §5 lists under step 2 ("the citation
@@ -115,7 +113,7 @@ down_revision = "0074_event_revision"
 branch_labels = None
 depends_on = None
 
-#: design 42 §4's citation, `nora.domain.note_body._CITATION` written out
+#: `nora.domain.note_body`'s citation, `nora.domain.note_body._CITATION` written out
 #: (`0053_decision_log`'s rule; `0073_lineage` wrote the same constant out).
 _CITATION = r"\[\s*([0-9]+(?:\s*,\s*[0-9]+)*)\s*\]"
 

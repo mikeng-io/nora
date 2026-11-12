@@ -10,7 +10,7 @@ package instameow
 // emitted separately by emitDelta, exactly as before (one real service
 // message, deduplicated by its own mid).
 //
-// Identity rules (design/platform-observations/02):
+// Identity rules (design/platform-observations/observations.md):
 //   - uq_seq_id is the source's own per-delta monotonic revision: it rides
 //     the observation as source_position inside revision_scope "uq_seq_id",
 //     and it anchors the transition's upstream identity. A delta without

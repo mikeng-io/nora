@@ -1,10 +1,10 @@
 """standing.hold_open / standing.i_owe, and their standing_revision siblings
--- room Standing's sectioned schema, live (design/cognition-loop/70-migration.md
-step 3 row 3b: "`standing_revise` and the room Standing schema, live: the
-debrief and the ingest fold both write through it from here, so the head has
+-- room Standing's sectioned schema, live
+(design/cognition-loop/README.md «Invariants»: "`standing_revise` and the room Standing
+schema, live: the debrief and the ingest fold both write through it from here, so the head has
 one shape").
 
-WHAT THIS ADDS. `design/cognition-loop/12-schemas.md` §5 gives room Standing
+WHAT THIS ADDS. `design/cognition-loop/data.md` «Citations, links and search» gives room Standing
 four sections: `Where it stands` (required, `standing.body`, unchanged by
 this migration), `I hold open`, `I owe`, and `Found, not yet given`
 (`standing.working_set`, unchanged). The two new sections are `hold_open`
@@ -53,7 +53,8 @@ DOWNGRADE drops both columns from both tables. Any `hold_open`/`i_owe`
 content written between an upgrade and a downgrade is lost -- there is no
 data to preserve going down because no caller populates either column yet
 (the same "additive, nothing lost going up" statement does not hold in
-reverse for a column already in use, and 70-migration.md §7 is explicit that
+reverse for a column already in use, and design/cognition-loop/data.md
+«One direction of flow» is explicit that
 rollback is "the previous behaviour", not lossless in both directions for
 every future column).
 

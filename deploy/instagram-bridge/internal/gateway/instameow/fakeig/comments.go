@@ -197,7 +197,7 @@ func (f *REST) answer(url, method string, h http.Header, p []byte, ct types.Cont
 	return resp, []byte(a.Body), nil
 }
 
-// The summons intake's fixtures (design 19, "Intake, re-measured
+// The summons intake's fixtures (design/instagram-adoption/summons.md, "Intake, re-measured
 // 2026-09-26"). A summons is a DM-thread card from the commenter
 // (SummonsCard); the post's comments page then carries that commenter's
 // comment mentioning the account (SummonsCommentsJSON), next to CommentTopID

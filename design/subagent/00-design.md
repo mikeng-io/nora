@@ -7,10 +7,10 @@ timestamp: '2026-10-04'
 status: proposed
 governance: operator-directed
 edges:
-  - {dst: ../sandbox-runtime/00-design.md, rel: depends_on, provenance: asserted}
-  - {dst: ../artifact/00-design.md, rel: depends_on, provenance: asserted}
-  - {dst: ../cognition-loop/30-cognition.md, rel: depends_on, provenance: asserted}
-  - {dst: ../video-generation/00-design.md, rel: relates_to, provenance: asserted}
+  - {dst: ../sandbox-runtime/README.md, rel: depends_on, provenance: asserted}
+  - {dst: ../artifact/README.md, rel: depends_on, provenance: asserted}
+  - {dst: ../cognition-loop/session.md, rel: depends_on, provenance: asserted}
+  - {dst: ../video-generation/README.md, rel: relates_to, provenance: asserted}
 ---
 
 # Sub-agent
@@ -65,7 +65,7 @@ The outbox was built 2026-08-13 for `make_artifact` (DEC-99): launch the
 work, wait about 15 s, and on a slower job write a row so the result arrives
 later through `FirePath.speak`, delivered at most once by a compare-and-set
 claim. Smith was its only worker; the mechanism was always generic. Video
-generation (`design/video-generation/00-design.md`) is a second worker
+generation (`design/video-generation/README.md`) is a second worker
 waiting for the same outbox, which is why the table stays generic (§6).
 
 ## 3. The tool family
@@ -143,7 +143,7 @@ found the Dreamer and cognition paths stop write tools on purpose:
 - `document_publish` refuses any call whose actor is not `tag` or whose room
   has no tagger: `unavailable`, `no_requester` (`nora/agent/tools.py`).
 - `computer_export` to a link or the chat is refused for any actor but `tag`:
-  the containment line of `design/sandbox-runtime/00-design.md` §15.4,
+  the containment line of `design/sandbox-runtime/sessions.md`,
   decision 6 ("an effect outside the VM waits for a person who asked in THIS
   turn").
 - `create_dream_agent` takes no `skills_dir` by design (`nora/agent/factory.py`),
@@ -418,13 +418,13 @@ to the whole report.
   scope (operator, 2026-10-04): that is a waiting state, a clock that pauses,
   and routing an answer back, a different order of work.
 - **Surviving a restart.** Persist the worker's conversation and resume.
-- **The video worker** (design 33) on the same outbox, once `kind` exists.
+- **The video worker** (design/video-generation/README.md) on the same outbox, once `kind` exists.
 
 ## 10. Open questions
 
 - **The two rulings in §4**: launch counts as "asked" for documents; the
   worker's own lease key and folder.
-- **The browser worker.** `design/sandbox-runtime/00-design.md` §14 plans
+- **The browser worker.** `design/browser-runtime/browser.md` plans
   `computer_browse` as a Strands sub-agent and reserves `path="subagent"` for
   it. Proposed: it is a kind of this worker (synchronous, inside a tag turn,
   browser tools only) sharing the runner, guard and actor, so the two do not

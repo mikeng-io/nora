@@ -64,5 +64,5 @@ it cites ([30](30-turn-records.md)), how it is measured
 - **The preference model and ranking** behind recommendations. Its output is a
   decision in the shape of [20](20-the-ledger.md) §2, which is the only thing
   this bundle fixes about it.
-- **Person Standing** ([12-schemas](../cognition-loop/12-schemas.md) §5) keeps
+- **Person Standing** ([12-schemas](../cognition-loop/data.md) §5) keeps
   its sections; the private-dm bundle owns when it is written.

@@ -37,7 +37,7 @@ DECISION_INDEX = ROOT / "design" / "09-decision-index.md"
 # Whole-cell match: the pipe must close the cell immediately after the ID, so
 # `R-6b` (a real, distinct row) can never be misread as `R-6`. This is the
 # executable form of AGENTS.md's own `grep -oE '^\| R-[0-9]+ \|'` — generalized
-# to the four namespaces (D*, A*, R-*, DEC-*) design/09 actually carries.
+# to the four namespaces (D*, A*, R-*, DEC-*) design/09-decision-index.md actually carries.
 _ROW_ID = re.compile(r"^\|\s*([A-Za-z]+-?\d+[a-z]?)\s*\|")
 
 

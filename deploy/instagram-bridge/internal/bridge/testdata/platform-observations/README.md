@@ -1,7 +1,7 @@
 # Native platform-observation fixtures — Instagram (mautrix-meta/instameow)
 
 GENERATED payloads documenting what the pinned private transport actually
-hands this bridge, per `design/platform-observations/` (00 §3). No production
+hands this bridge, per `design/platform-observations/observations.md`. No production
 rows: every fbid/igid/message id is synthetic placeholder-shaped data, and the
 `SlideUQPPPollCreated` typename below is deliberately hypothetical — it exists
 only to exercise the library's unmapped-typename fallback, not to claim any

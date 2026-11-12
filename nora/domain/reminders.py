@@ -136,7 +136,7 @@ def open_proactive_subject(row: Reminder) -> tuple[str, str, str] | None:
 
     ONE OPEN PROACTIVE ROW PER (SUBJECT, ACTION, DESTINATION) — the resolved
     shared-object reference, never a citation set or a prose match (DEC
-    pending; `design/notebook-memory-types/20-shared-cognitive-state.md`).
+    pending; `design/notebook-memory-types/20-standing.md`).
     Same shape `open_proactive_note` established: both stores hold it at
     insert (`uq_reminders_proactive_open_subject`,
     `DuplicateProactiveSubjectError`). A row carrying no resolved subject has

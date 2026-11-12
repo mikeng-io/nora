@@ -4,7 +4,7 @@
 to that person alone (`nora.agent.room.tell_apart`): their full name or an
 alias when one is theirs alone. In a Cognition session, a person with no such
 name is offered by their person id, which the tool then accepts; on a tag
-turn no tool hands the model a person id (instagram-adoption/18), so the
+turn no tool hands the model a person id (instagram-adoption/social.md), so the
 answer is a bare `ambiguous` and she asks. Two identical names in `could_be`
 give the model nothing to ask with.
 

@@ -1113,9 +1113,9 @@ async def test_clockless_transitions_get_distinct_durable_identities(bridge):
     assert envs[3].event_id == envs[0].event_id
 
     # A frame-less parsed event whose observation DISAGREES with the
-    # recorded state is the reconnect-replay ambiguity (design 02 §wire):
-    # nothing can prove it isn't a delayed old transition, so it is
-    # retained as journal evidence — never published under a minted seq.
+    # recorded state is the reconnect-replay ambiguity, nothing provably
+    # not a delayed old transition (design/platform-bridges/02-wire-and-platforms.md)
+    # — retained as journal evidence, never published under a minted seq.
     b._frames.clear()
     await b._capture_touch("reaction_remove", reaction())
     envs = [Envelope.from_fields(r["envelope"])

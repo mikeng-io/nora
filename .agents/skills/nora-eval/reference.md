@@ -12,7 +12,7 @@ clearly), and a divergent template migrates a private per-run copy rather
 than the shared one, swept at startup if a killed run (or SIGTERM) left one
 behind — fixed 2026-09-25 after an ahead branch upgraded `nora_eval_blank`
 and broke every other session's seeding
-(`design/evaluation/11-the-sandbox-rebuild.md` §1.10).
+(`design/evaluation/subject.md`  «Anchored input»).
 
 ## Reading the log
 

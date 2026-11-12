@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ApiError, apiGet, apiPath } from "./client";
 
-// A document's revision history (design/artifact §34). Each schema mirrors its builder in
+// A document's revision history (design/artifact/lifecycle.md). Each schema mirrors its builder in
 // nora/web/document_history.py. As in ./documents.ts, an old revision's `document` stays
 // `unknown`: the renderer validates it before drawing a line.
 

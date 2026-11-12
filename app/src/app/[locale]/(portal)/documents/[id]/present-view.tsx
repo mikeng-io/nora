@@ -24,7 +24,7 @@ import { useDocument } from "@/lib/queries";
 import { cn } from "@/lib/cn";
 import { DocumentPageView } from "./document-view";
 
-// `/documents/<id>?view=present` (design/artifact §15, §34): the stored document, one
+// `/documents/<id>?view=present` (design/artifact/lifecycle.md): the stored document, one
 // top-level Section per slide, over the whole window. The same spec and the same renderer
 // as the page; only the split is new (src/lib/documents/present.ts).
 //

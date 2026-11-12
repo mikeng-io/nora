@@ -54,7 +54,7 @@ To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="heartbeat"}` alongside
    `nora_reminders_fired_total{outcome}` and `nora_heartbeat_last_tick_age_seconds`.
 
-   The participation occasion (design/dreamer-agent-loop/35, once enabled) is the
+   The participation occasion (design/ambient-loop/01-stages-and-seams.md, once enabled) is the
    third audience on this series, and it changes what "silent" MEANS: a
    participation turn that says nothing is the HEALTHY outcome, so it never lands
    here — it counts on `nora_participation_silence_total`, and a spoke turn on
@@ -65,7 +65,7 @@ To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="participation"} / (nora_participation_silence_total + nora_participation_spoke_total)`,
    NOT a share of the tag budget.
 
-   The proactive occasion (design/dreamer-agent-loop/39, DEC-162; since
+   The proactive occasion (design/cognition-loop/README.md, DEC-162; since
    2026-10-03, DEC-277, its reminder rows are written by the Cognition
    session's `remind`, and the fire path's act turn below is unchanged) is the fourth audience and has
    participation's exact shape: a `kind="proactive"` row's act turn that
@@ -407,7 +407,7 @@ docker image inspect voice-sidecar:latest --format '{{.Id}}'    # must match
 
 There is no per-guild container: one sidecar serves every server Nora holds
 voice on, and one wake gate serves every sidecar connection
-(design/voice-channel/07 §12.5).
+(design/voice-channel/audio.md).
 
 **THE THREE VOICE IMAGES MOVE TOGETHER.** `nora`, `voice-sidecar` and
 `voice-wake` speak two seams that have both changed inside one release:
@@ -501,7 +501,7 @@ Do not run checkout `docker compose restart` against the installed application.
 
 ## 4b. WhatsApp (whatsapp-bridge)
 
-The bridge (`deploy/whatsapp-bridge/`, design/whatsapp-adoption/) is the
+The bridge (`deploy/whatsapp-bridge/`, design/whatsapp-adoption/README.md) is the
 transport twin of signal-cli: same private network, same no-published-ports
 posture, session on `./state/whatsapp` (chmod 700, never commit). It is only
 relevant when `[platforms.whatsapp] enabled = true`.
@@ -531,7 +531,7 @@ deny-by-default until the DM study lands.
 | WhatsApp protocol update | bridge reconnect loop / messages stop | bump the Baileys pin in deploy/whatsapp-bridge/package.json, rebuild, re-pair if the session was invalidated |
 | Phone offline >~14 days (operational lore, not an SLA) | device unlinked | re-pair with the command above |
 | Session dir lost/corrupt | `paired: false` in the bridge's /health | re-pair (no data loss) |
-| Account restricted (ban) | login throttled/rejected | stop using the number; evaluate cause (design/whatsapp-adoption/02 §risk posture) |
+| Account restricted (ban) | login throttled/rejected | stop using the number; evaluate cause (design/whatsapp-adoption/identity.md, posture) |
 | Network blip | transient disconnect | self-heals; the bridge reconnects with backoff |
 
 The container healthcheck only proves the HTTP layer serves (curl exists in
@@ -782,7 +782,7 @@ no schema change.
 
 ## 6b. "Is the ambient path actually working?" — `nora measure participation`
 
-Four measures the rooms produce for free (`design/culture-tier/02-measurement`).
+Four measures the rooms produce for free .
 No model, no behaviour change, read-only.
 
 ```bash
@@ -833,7 +833,7 @@ confusable. If it refuses, widen `--range` or lower `--days`.
 **The counter is the weak half and the script says so.** Prometheus labels
 lazily and the process restarts a few times a day, so a refusal never scraped
 before a restart leaves no trace, and times are accurate only to the scrape
-interval. `02-measurement §3` names the fix — a durable per-verdict row, which
+interval. `design/ambient-loop/02-doctrine-and-measurement.md` §3 names the fix — a durable per-verdict row, which
 DEC-179 excluded from `decision_log` on purpose. Until that exists, `overrides`
 is approximate and is a lower bound.
 
@@ -1231,7 +1231,7 @@ missing or allow-nothing policy edits keep the last good version and log WARNING
 last applied content. Changes to policy unit/workspace declarations or identity
 Honcho workspace bindings refuse the whole reload and require recreation.
 Always validate a candidate copy, then copy it in place to preserve the mounted
-inode. See [the capture audit and limitations](../design/policy-reload/00-design.md).
+inode. See [the publication contract and restart-only boundary](../design/policy-reload/README.md).
 
 **Storage and credentials.** Compose mounts `./data` at `/app/data` and the
 whole `./state` directory at `/app/state` in Nora. Signal session material is
@@ -1589,7 +1589,7 @@ is the minimal rollback if the problem is a caller of the old port.
 ## Typed Profile historical recovery
 
 Keep `[memory.profile] read = false` until the operator accepts the
-[bounded cutover evidence](../design/unified-memory/31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31)
+[bounded cutover evidence](../design/unified-memory/understanding.md)
 and authorizes the concrete switch. The earlier fixed coverage/reply gates are
 historical, superseded by that acceptance owner. The typed migration is nullable and retains every legacy row; a
 successful old shadow session is not historical coverage. The person adaptor

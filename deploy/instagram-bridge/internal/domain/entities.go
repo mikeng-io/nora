@@ -2,7 +2,7 @@ package domain
 
 // The entities a read or a send returns. They are what crosses from the
 // gateway to the HTTP layer; Instagram's wire structs never do
-// (design/instagram-adoption/16 §Layers). No JSON tags here: the response
+// (design/instagram-adoption/bridge.md). No JSON tags here: the response
 // shapes are the HTTP layer's decision, made once, in its DTOs.
 //
 // Ids that came BACK from Instagram are carried as the strings Instagram sent,
@@ -69,7 +69,7 @@ type Account struct {
 }
 
 // AccountSummary is one hit from `GET /accounts?query=` — the account-search
-// resource (16 §Resources, 17 P9, P11). It is the OmniPicker's own shape
+// resource (design/instagram-adoption/bridge.md «Messaging contract»:, ). It is the OmniPicker's own shape
 // (`slidetypes.SearchResult`, behind `SearchUsers` /
 // `IGDOmniPickerSearchResultsListQuery`), not the fuller GetProfile read that
 // backs Account above.
@@ -175,7 +175,7 @@ type TimelineItem struct {
 	Kind      string
 	MediaType int
 	// Caption is the author's free text, "" when there is none. It must not
-	// enter a span, a log line or an error (16 §Tracing's never-list).
+	// enter a span, a log line or an error (design/instagram-adoption/bridge.md «Observation»'s never-list).
 	Caption       string
 	CarouselCount int
 	// Collab is a collaboration post another account owns and this one
@@ -200,7 +200,7 @@ type TimelineItem struct {
 }
 
 // ItemCounts is a post's or reel's counts as the timeline node carries them
-// (design/cognition-loop/22-social-stream.md §5 `social_item_count`). Each
+// (design/cognition-loop/observation.md. `social_item_count`). Each
 // field is nil when the node did not carry it readably: unknown, never 0.
 // LikesHidden is the author's `like_and_view_counts_disabled`.
 type ItemCounts struct {
@@ -249,7 +249,7 @@ type Sent struct {
 }
 
 // Post is one feed post or reel, read by its shortcode (`GET
-// /posts/{shortcode}`, 17 P12): who posted it, what they wrote, when, and
+// /posts/{shortcode}`, ): who posted it, what they wrote, when, and
 // EVERY item in it, in the author's order. A carousel is the reason this read
 // exists: a shared post carries only its cover thumbnail, so without this a
 // ten-image carousel reads as one image.
@@ -263,7 +263,7 @@ type Post struct {
 	Shortcode string
 	Author    string
 	// Caption is the author's free text. It must not enter a span, a log
-	// line or an error (16 §Tracing's never-list).
+	// line or an error (design/instagram-adoption/bridge.md «Observation»'s never-list).
 	Caption string
 	// TakenAt is Unix seconds, as Instagram sends it.
 	TakenAt int64
@@ -310,7 +310,7 @@ type CommentMention struct {
 	// real comment text is phase 2's job, once a comment-read mechanism
 	// exists; this route only knows a comment happened and roughly what
 	// Instagram said about it. It must not enter a span, a log line or an
-	// error (16 §Tracing's never-list) — it reaches the 200 body and nowhere
+	// error (design/instagram-adoption/bridge.md «Observation»'s never-list) — it reaches the 200 body and nowhere
 	// else, the same rule Post.Caption already carries.
 	NotificationText string
 }

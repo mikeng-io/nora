@@ -35,7 +35,7 @@ reads them through `persons.platform_ids("pulse", ...)` — a person with no
 
 ```python
 intents = discord.Intents.default()
-intents.message_content = True  # privileged; see design/discord-integration/01
+intents.message_content = True  # privileged; see design/discord-integration/01-listener-and-resilience.md
 intents.guilds = True
 intents.members = True          # privileged; the roster read needs it
 ```

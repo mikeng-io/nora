@@ -10,7 +10,7 @@ import { PRESENT_FROM_PAGE, planSlides } from "@/lib/documents/present";
 import { markLinksForPrint, printInLight } from "@/lib/documents/print";
 import "./print.css";
 
-// The three ways to take a document somewhere else (design/artifact §34): present it one
+// The three ways to take a document somewhere else (design/artifact/lifecycle.md): present it one
 // Section per slide, print it (the browser's print is the PDF path), and read its history.
 // Drawn in the page's chrome, marked `data-print-hide`, so none of it is ever on paper.
 

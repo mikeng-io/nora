@@ -16,7 +16,7 @@ the Instagram summons, a vision summarizer. `nora.domain.blocks` gives them one 
 typed `ContextBlock`s, a declared `_BLOCKS` table, `assemble` to walk it, and shared renderers
 that escape (R-13). The operator's rule, 2026-10-01: every agent assembles through context
 assembly, "no exception, or it goes back to the original chaos, everything built differently"
-([design/context-assembly/04-every-occasion.md](../../design/context-assembly/04-every-occasion.md) §1).
+([design/context-assembly/registry.md](../../design/context-assembly/registry.md)  «Declaration as the review boundary»).
 
 Read from the tree and from the Cognition trace of 2026-10-01 09:08 (same document, §2 and §3):
 
@@ -52,7 +52,7 @@ Read from the tree and from the Cognition trace of 2026-10-01 09:08 (same docume
    (the module exists and still calls a model; a RUNNER's builders exist and are declared; an `imports`
    runner imports one). This is a classification, not a list of tolerated violations; it is also the one gap
    a reviewer can still be argued across, and the design node says so.
-5. **A new occasion follows `design/context-assembly/04-every-occasion.md` «How a new occasion joins»**:
+5. **A new occasion follows `design/context-assembly/registry.md` «How a new occasion joins»**:
    what it declares, which test enforces each part, and what no test checks.
 
 ## Consequences

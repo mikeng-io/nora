@@ -241,7 +241,7 @@ Three constraints on this:
 
 ## 6. What is mechanically enforced, and what is only asserted
 
-`design/12` §2 gives an authority ordering. The capability audit verified how
+`design/12-prompt-tool-skill-boundaries.md` §2 gives an authority ordering. The capability audit verified how
 much of it is real, and the answer should be stated here rather than implied:
 
 **Mechanical** — R-13 escaping and the `untrusted="true"` wrapper (message
@@ -306,14 +306,14 @@ agent may edit autonomously from one that is the operator's alone —
 `voice.md` is exactly such a file and its protection today is that I keep
 saying so in conversation. It becomes a frontmatter field.
 
-**The complete authority chain**, which `design/12` §2 only half-states:
+**The complete authority chain**, which `design/12-prompt-tool-skill-boundaries.md` §2 only half-states:
 
     KERNEL → SECURITY → METHOD → SOUL → IDENTITY → PERSONALITY
     → skills & governed artifacts → project files → user messages
     → external/tool content
 
 Note that it runs past doctrine, through message content, and down to **tool
-output** — the slot `design/14` §2.1 needed for retrieved web content and could
+output** — the slot `design/system/grounding.md` «Four source kinds» needed for retrieved web content and could
 not cite. Nora's chain is shorter but must terminate the same way:
 
     constraint → identity/voice → conduct → capability → situation
@@ -348,5 +348,5 @@ takes its tokens from the conversation she is supposed to be reading.
    capability audit — real schemas, real assembled persona, `tool_choice
    ="required"`, n≥6. Tool selection was already saturated at 6/6, so the axis
    to watch is proportional cost (a greeting answered directly), not selection.
-7. `design/12` §1's placement rule is updated to name five kinds rather than
+7. `design/12-prompt-tool-skill-boundaries.md` §1's placement rule is updated to name five kinds rather than
    three, and DEC-28's entry points here.

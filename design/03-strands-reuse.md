@@ -5,8 +5,8 @@ description: "Which Strands built-in primitives replace which hand-rolled wheels
 tags: [nora, design, strands, reuse, sdk, tools, hooks, mcp]
 timestamp: '2026-08-03'
 edges:
-  - {dst: ../00-overview.md, rel: decided_by, provenance: asserted}
-  - {dst: ../02-tagging-path.md, rel: used_by, provenance: asserted}
+  - {dst: 00-overview.md, rel: decided_by, provenance: asserted}
+  - {dst: 02-tagging-path.md, rel: used_by, provenance: asserted}
 ---
 
 # Nora — Strands Agents SDK Reuse Map

@@ -1,4 +1,4 @@
-"""The audio-controller seam (design/voice-channel/07-audio-owner-controller.md).
+"""The audio-controller seam (design/voice-channel/audio.md).
 
 The audio-controller is the SOLE holder of the Discord voice connection;
 nora drives it over HTTP and never opens a voice socket itself. This package

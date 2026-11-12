@@ -5,7 +5,7 @@ Nora's turn cannot afford a model round trip per click (sandbox-runtime §14),
 so `computer_browse` hands the whole objective here. This runner opens the
 room's browser through computerd (`nora.infra.computer.browser`), gives a
 Strands agent the page tools below and nothing else, and turns what the agent
-ends with into a `BrowseOutcome`. B2 is tiers 4 and 5 of design 00 §5 only:
+ends with into a `BrowseOutcome`. B2 is tiers 4 and 5 of design/browser-runtime/scope.md only:
 DeepSeek Flash reads snapshots (and a marked screenshot when it asks), and a
 CAPTCHA, a sign-in or a payment is handed to a person (`needs_human`). The
 cached scripts, site adapters and the small decision model are later steps.

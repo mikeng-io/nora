@@ -1,4 +1,4 @@
-# Nora's computer (design/sandbox-runtime §2): the sbx microVM and computerd.
+# Nora's computer (design/sandbox-runtime/runtime.md): the sbx microVM and computerd.
 # A USER unit for the account that ran `sbx login`. Long-running on purpose:
 # `nora-computer serve` runs computerd in the foreground of an `sbx exec`, so
 # if computerd exits the unit exits and systemd restarts it. The sandbox is

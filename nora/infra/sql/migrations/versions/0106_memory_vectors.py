@@ -1,5 +1,5 @@
 """memory_node gains its vector; the dead `embedding` table goes
-(design/unified-memory/65-build-step-3-vectors.md §1, V1).
+(design/unified-memory/graph.md, V1).
 
 **Store 2048, index 256** (65 §0, measured in #24): `embedding halfvec(2048)`
 on the node itself, so a search's scope filter runs inside the scan with no

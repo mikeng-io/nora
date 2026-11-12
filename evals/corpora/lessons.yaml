@@ -1,4 +1,4 @@
-# What a held lesson does to her reply (design/self-growth/40 §8, L5; DEC-300).
+# What a held lesson does to her reply (design/self-growth/lessons.md, L5; DEC-300).
 #
 # The `<lessons>` block renders a unit's active lessons after `<self>` under
 # `[lessons] render`. This corpus is its before/after: the SAME build and the
@@ -18,7 +18,7 @@
 # in a location-off room of a unit that has a location room, where R-31
 # (`Policy.shows_self_in`) hides `<self>` and `<lessons>` while the room stays
 # that way. Both arms there get the same prompt; they measure the room, not the
-# block. Only the two rip-request cases can show it (design 40 §8.1).
+# block. Only the two rip-request cases can show it (design/cognition-loop/proactive.md).
 #
 # Graded by `lesson_applied` (`evals.rebuilt.rubric.LESSON_APPLIED`): the
 # judge is handed the lesson and the ONE behaviour this reply is graded on

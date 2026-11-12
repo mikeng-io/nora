@@ -6,15 +6,15 @@ tags: [nora, notebook, memory-types, profile, topic, relations, links, citations
 timestamp: '2026-10-29'
 edges:
   - {dst: 00-design, rel: details, provenance: asserted}
-  - {dst: ../cognition-loop/05-data-model.md, rel: amends, provenance: asserted}
-  - {dst: ../personalisation/00-intent.md, rel: informs, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: amends, provenance: asserted}
+  - {dst: ../personalisation/README.md, rel: informs, provenance: asserted}
 ---
 
 # 10 · Relations
 
 ## 1. Three mechanisms, never interchangeable
 
-[05](../cognition-loop/05-data-model.md) §5 already defines them; this node
+[05](../cognition-loop/data.md) §5 already defines them; this node
 applies them to the kinds of [00](00-design.md).
 
 | connection | from → to | means | evidence? |
@@ -54,7 +54,7 @@ The profile may say *how* someone engages ("follows the qualifying sessions,
 tunes out the merchandise talk"), citing what shows it, and never states the
 interest alone. Two copies of "likes racing" would drift.
 
-Amended 2026-10-29 ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md)
+Amended 2026-10-29 ([unified-memory/graph.md](../unified-memory/graph.md)
 §6b): the edge is `interested_in`, and its weight is its own evidence counted
 by code, not a Rollup row, because which messages are about a topic is a
 judgement. `likes` narrows to one specific thing.
@@ -65,7 +65,7 @@ statement is an extraction in the Record, still not a profile line.
 
 ## 4. Which way links point
 
-[05](../cognition-loop/05-data-model.md) §5 rules that a link points from the
+[05](../cognition-loop/data.md) §5 rules that a link points from the
 more derived entry to what it rests on. For the new kinds:
 
 | from | may link to |

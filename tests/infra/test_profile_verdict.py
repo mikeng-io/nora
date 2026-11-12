@@ -1,5 +1,5 @@
 """`ProfileVerdictAdaptor`: the judge a guess's writer never is
-(design/unified-memory/45 §3).
+(design/unified-memory/profiles.md).
 
 Through the real `SqlProfileStore` and, for the code path, the real
 `SqlRollupRead` over a seeded build, because what the judge can get wrong

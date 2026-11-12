@@ -147,4 +147,5 @@ check, evidence capture and grading contract stay. What changes:
 - the completion hooks run;
 - the judgement moves from graph statements to the whole state diff.
 
-The spike's graph-only scorer is retired with this, not kept beside it.
+The graph-only replay scorer is retired: this is the eval, not a second path
+beside it.

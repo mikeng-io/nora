@@ -212,7 +212,7 @@
 # `real_evidence_may_overturn` is UNANCHORED, not parked: its evidence is a
 # tool result, which production carries inside the turn and which no real
 # room has ever held as a message (the tool-result seam,
-# design/evaluation/11-the-sandbox-rebuild.md §7.2). It loads, it is driven,
+# design/evaluation/subject.md). It loads, it is driven,
 # and it ERRORS until that seam exists. Its content is kept under
 # `metadata.tool_result` and `metadata.prior_speech` so nothing is lost.
 #
@@ -269,7 +269,7 @@ cases:
     metadata:
       criteria:
       - being_contradicted
-      seam: tool-result (design/evaluation/11-the-sandbox-rebuild.md §7.2)
+      seam: tool-result (design/evaluation/subject.md)
       prior_speech:
       - what time does the hall shut on sundays
       - body: 6pm — I read it off the venue's own hours page just now

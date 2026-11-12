@@ -6,7 +6,7 @@ A person's Character session keeps a second cursor on this table (the row
 microseconds since the epoch, about 1.8e15, past INTEGER's 2,147,483,647.
 `social_item` has no serial id to key it on (its id is a uuid), and the
 microsecond is what keeps a read from splitting items recorded together
-(design/cognition-loop/22 §6). Every value an INTEGER held is unchanged.
+(design/cognition-loop/observation.md). Every value an INTEGER held is unchanged.
 
 Follows `0114_social_place_state`. `uv run alembic heads` must print exactly ONE
 line.

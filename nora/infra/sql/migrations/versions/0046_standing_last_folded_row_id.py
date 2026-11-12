@@ -1,5 +1,5 @@
 """standing.last_folded_row_id -- the row-id watermark the fold reads since
-(design/standing-watermark/20).
+(design/standing-watermark/20-watermark-read.md).
 
 **Why a column and not a timestamp or a comparison.** The standing fold used
 to read the LAST 40 rows of the conversation -- the reply path's window --

@@ -61,7 +61,7 @@ highlights, an upper lid line and one tiny mouth, so shapes can be
 on-model and still blink, look at the pointer, close into the crescents of
 her `quiet` render, flatten into the unimpressed lids of `lost`, or turn up
 into the ^ ^ of the character sheet's "Happy". The current anchors of
-`design/self-reference/09-mini08-balanced.md` are all in the render and
+`design/self-reference/identity.md` are all in the render and
 none of them is redrawn.
 
 ## The files

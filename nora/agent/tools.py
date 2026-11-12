@@ -347,7 +347,7 @@ def build_tool_specs(
     # `computer_capture`/`computer_cancel` `unavailable`.
     computer_admission: Any = None,
     browser_manager: Any = None,
-    # The canonical-DM scope resolver (`design/private-dm/05-cross-platform.md`):
+    # The canonical-DM scope resolver (`design/private-dm/admission.md`):
     # `(platform, conversation_id)` → the DM scope id (the `(person, anchor
     # unit)` binding), hashed here to the workspace key. `None` — DM admission
     # is not wired — leaves DM-turn computer calls `unavailable`; never a
@@ -436,13 +436,13 @@ def build_tool_specs(
     # shipped default, offline, eval) is the Honcho path.
     memory_retrieval: MemorySearch | None = None,
     all_memory_surfaces: bool = False,
-    # The Profile write (design/unified-memory/45): the graph surface's
+    # The Profile write (design/unified-memory/profiles.md): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
     profile: ProfileWriter | None = None,
-    # THE SWITCH (45 §5): wired only while `[memory.profile] read` is on beside
-    # `[memory.profile] write`, and `character_read` then answers from the Profile
-    # accounts instead of the culture store — the same accounts the prompt's
-    # `<profile>` blocks render, so the tool and the prompt cannot disagree.
+    # THE SWITCH (design/unified-memory/profiles.md): wired while
+    # `[memory.profile] read` is on beside `[memory.profile] write`;
+    # `character_read` then answers from the Profile accounts instead of the
+    # culture store — the same accounts `<profile>` renders; they cannot disagree.
     profile_read: ProfileHeads | None = None,
     content_checks: bool = True,
 ) -> tuple[ToolSpec, ...]:

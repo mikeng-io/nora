@@ -1,6 +1,6 @@
 """due_tick: the one eligibility authority for timed instructions.
 
-`design/cognition-loop/18-execution-and-time.md`: a deadline's eligibility is
+`design/cognition-loop/execution.md`: a deadline's eligibility is
 an integer minute tick on the Unix epoch — `due_tick = ceil(target_ms /
 60_000)` — and pending work is eligible when `due_tick <= current_tick`,
 never before. The migration's contract is «choose ONE writable eligibility
