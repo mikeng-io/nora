@@ -50,6 +50,16 @@ source. So wake *n* orients against what the *candidate* kept, as production
 would. This divergence is declared: anything a conscious turn derived in
 production between wakes, other than the Record rows themselves, is absent.
 
+**The room directory is frozen at run start.** Rooms a unit expands from a
+guild-level `[[conversations]]` entry resolve through the deployment's own
+channel read, taken once before the first case and frozen into the run's
+output as `room-directory.json`; every subject composes with a static
+directory built from that copy, and `--room-directory` replays a frozen
+one. The map is as of the run, not as of each wake — a channel renamed
+between recorded wakes still resolves under its run-start name. A guild
+the unit needs but the read cannot answer for makes the case `ERROR` at
+the directory step, never a silent deny.
+
 **The clock** is each wake's recorded time. Reads see the sandbox as of that
 time. Nothing later in the source is visible.
 
@@ -82,6 +92,18 @@ the session's full trajectory.
 
 Every verdict cites the trajectory and diff it was judged on, so a result can
 be explained, and re-derived, without re-running.
+
+**Inspection.** `--inspect-only` walks the same path and stops before the
+model call: the system prompt and every context block are still assembled
+through the same `_session_input` a session runs and recorded, so a dry
+run shows exactly what Nora would have read. Nothing is persisted — no
+session row, no outcome, no stimulus consumption.
+
+**The report.** `report.json` is the machine-readable record; `report.html`
+renders the same evidence — status and budget, the evidence receipt, then
+each case's wakes in order: what arrived, what Nora read, what she did,
+what changed, and the judgements — as one self-contained file written at
+the end of every run and re-renderable from the frozen output alone.
 
 **Case.** A case names a unit, an ordered list of recorded wake ids from the
 source, and expectations over the sequence. An expectation is about the
