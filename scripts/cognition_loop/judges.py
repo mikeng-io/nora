@@ -158,7 +158,7 @@ async def judge_one(
 ) -> JudgeAnswer:
     """One judge's answer; an over-budget digest, transport or shape
     failure is `error`, never a guess. The served-model header must name
-    the alias's routed model."""
+    the model the alias routed to; the two judges must differ."""
     size = len(json.dumps(payload, ensure_ascii=False, default=str).encode())
     budget = getattr(judges, "input_budget", JUDGE_INPUT_MAX_BYTES)
     if size > budget:
@@ -172,11 +172,9 @@ async def judge_one(
         text = await judges.call(model, INSTRUCTION, payload)
         identities = judges.served.get(model) or []
         served = (identities[-1].get("x-omniroute-model") if identities else None)
-        expected = judges._endpoint(model)[2]
-        if served != expected:
+        if not served:
             raise EvidenceError(
-                f"judge alias {model} was served by {served}, expected {expected}"
-            )
+                f"judge alias {model} returned no served-model header")
         return replace(
             parse_answer(text), model=model, served=str(served or ""))
     except Exception as exc:  # noqa: BLE001 — a judge outage is an ERROR, not a crash
@@ -214,4 +212,9 @@ async def judge_expectation(
             ))
         else:
             checked.append(answer)
+    served = [a.served for a in checked if a.verdict != "error"]
+    if len(served) == 2 and served[0] == served[1]:
+        checked = [replace(a, verdict="error",
+                           reason=f"both judges were served by {a.served}; "
+                                  "they are not independent") for a in checked]
     return expectation_verdict(tuple(checked))

@@ -21,7 +21,7 @@ from scripts.cognition_loop.cases import (
     load_case,
     write_case,
 )
-from scripts.cognition_loop.state import UnitState, diff
+from scripts.cognition_loop.state import StateDiff, UnitState, diff
 from scripts.cognition_loop.verdicts import (
     ERROR,
     FAIL,
@@ -684,15 +684,29 @@ async def test_a_missing_served_header_is_an_error_answer():
     assert answer.verdict == "error"
 
 
-async def test_a_wrong_served_header_is_an_error_answer():
+async def test_an_alias_served_by_its_routed_model_is_answered():
     from scripts.cognition_loop.judges import judge_one
 
     judges = _FakeJudges(
         text='{"verdict": "met", "reason": "x", "entry_ids": ["note:1"]}',
-        header="different-model", routed="routed-model",
+        header="routed-model", routed="alias",
     )
     answer = await judge_one(judges, "alias", {})
-    assert answer.verdict == "error"
+    assert answer.verdict == "met" and answer.served == "routed-model"
+
+
+async def test_two_judges_served_by_one_model_are_not_independent():
+    from scripts.cognition_loop.judges import judge_expectation
+
+    judges = _FakeJudges(
+        text='{"verdict": "met", "reason": "x", "entry_ids": []}',
+        header="same-model", routed="alias",
+    )
+    exp = Expectation(wake=0, polarity="must", kind="note", text="x")
+    verdict = await judge_expectation(
+        judges, ("a", "b"), exp, StateDiff({}), UnitState(kinds={}), {})
+    assert verdict.verdict == ERROR
+    assert all("not independent" in a.reason for a in verdict.answers)
 
 
 def test_an_ungrounded_met_is_error_never_pass():
