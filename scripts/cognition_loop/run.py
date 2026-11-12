@@ -38,6 +38,7 @@ from scripts.cognition_loop.advance import advance_record, bump_sequences
 from scripts.cognition_loop.availability import availability
 from scripts.cognition_loop.egress import assert_no_egress
 from scripts.cognition_loop.judges import judge_expectation
+from scripts.cognition_loop.rosters import FrozenRoster
 from scripts.cognition_loop.trajectory import session_events, wake_trajectory
 from scripts.cognition_loop.verdicts import (
     ERROR,
@@ -175,22 +176,31 @@ async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
     import sys
     from unittest.mock import patch
 
-    from nora.app import composition_platforms
+    from nora.app import composition, composition_platforms
     from nora.policy import load_policy
     # `nora.subject.obtain` the name is the function; the module it lives in
     # is where `load_policy` is looked up.
     obtain_module = sys.modules["nora.subject.obtain"]
-    from nora.platform.discord import roster as discord_roster
-    from scripts.cognition_loop.rosters import FrozenRoster
     rosters = getattr(spec_args, "frozen_rosters", None) or {}
     with (patch.object(composition_platforms, "ClientChannelDirectory",
                        lambda *_a, **_k: directory),
-          patch.object(discord_roster, "DiscordRoster",
-                       lambda *_a, **_k: FrozenRoster("discord", rosters)),
+          patch.object(composition, "policies",
+                       _with_frozen_rosters(composition.policies, rosters)),
           patch.object(obtain_module, "load_policy",
                        lambda path, **_k: load_policy(
                            path, channels=directory))):
         return await obtain(spec)
+
+
+def _with_frozen_rosters(policies: Any, rosters: dict[str, Any]) -> Any:
+    """The composed rosters with Discord's answered from the run-start
+    freeze: the sandbox composes no Discord connection, so production
+    would build no Discord roster reader at all."""
+    def wrapped(*args: Any, **kwargs: Any) -> Any:
+        wiring = policies(*args, **kwargs)
+        wiring.rosters["discord"] = FrozenRoster("discord", rosters)
+        return wiring
+    return wrapped
 
 
 def validate_recorded_wakes(
