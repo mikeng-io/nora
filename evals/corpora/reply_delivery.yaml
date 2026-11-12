@@ -1,0 +1,90 @@
+# Delivery contract: a tag that owes an answer must execute send_reply.
+#
+# ToolRouteGrader reads executed tools, so prose delivered by the recovery path
+# FAILS these cases even though the room received a message. Direct questions,
+# continuations after research, clarification and background work all share the
+# same terminal contract. Run with --sample 3 at least.
+
+cases:
+  - name: direct_short_answer
+    entry: tag
+    expect: reply
+    mention: true
+    input: 用一句廣東話答我：點解天空係藍色？
+    metadata: {tools: [send_reply]}
+    snapshot: &room_a
+      platform: signal
+      conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      before_ms: 1789909891000
+
+  - name: direct_detailed_explanation
+    entry: tag
+    expect: reply
+    mention: true
+    input: 用三個重點解釋點解冇記憶嘅 agent 會重複犯同一個錯，每點都要有例子。
+    metadata: {tools: [send_reply]}
+    snapshot: *room_a
+
+  - name: direct_comparison
+    entry: tag
+    expect: reply
+    mention: true
+    input: 比較 entity memory 同 failure-to-rule learning，講清楚兩者分別同各自適合解決乜問題。
+    metadata: {tools: [send_reply]}
+    snapshot: *room_a
+
+  - name: clarification_is_also_a_reply
+    entry: tag
+    expect: reply
+    mention: true
+    input: 你睇完嗰條 link 未？跟住話我知重點。
+    metadata: {tools: [send_reply]}
+    snapshot: *room_a
+
+  - name: read_and_summarize_public_page
+    entry: tag
+    expect: reply
+    mention: true
+    input: 讀呢篇文再總結三個重點：https://www.anthropic.com/research/components-of-agent-memory
+    metadata: {tools: [send_reply]}
+    snapshot: *room_a
+
+  - name: read_specific_sections_public_page
+    entry: tag
+    expect: reply
+    mention: true
+    input: 繼續讀呢篇文嘅 evaluation 同後續部分，唔好只讀開頭：https://www.anthropic.com/research/components-of-agent-memory
+    metadata: {tools: [send_reply]}
+    snapshot: *room_a
+
+  - name: research_current_public_information
+    entry: tag
+    expect: reply
+    mention: true
+    input: 查清楚 Anthropic 最新一篇關於 agent memory 嘅文章，話我知佢同一般 entity memory 有乜唔同。
+    metadata: {tools: [send_reply]}
+    snapshot: *room_a
+
+  - name: unavailable_evidence_still_uses_the_tool
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles 而家喺邊？如果你查唔到就照實講。
+    metadata: {tools: [send_reply]}
+    snapshot: *room_a
+
+  - name: long_answer_remains_a_tool_delivery
+    entry: tag
+    expect: reply
+    mention: true
+    input: 我而家設計緊一個 memory graph。詳細啲講下應該點樣記錄失敗、形成 rule、驗證 rule，同埋點樣避免愈記愈亂。
+    metadata: {tools: [send_reply]}
+    snapshot: *room_a
+
+  - name: background_work_acknowledgement_is_a_tool_delivery
+    entry: tag
+    expect: reply
+    mention: true
+    input: 幫我詳細研究 agent memory 嘅不同設計，整理成一份有結論嘅文件；要時間嘅話你可以開 background job。
+    metadata: {tools: [send_reply]}
+    snapshot: *room_a

@@ -46,6 +46,7 @@ from ..domain.errors import PartialReplyError
 from .guards import ReplyGuard, ToolCallLog
 from .reasoning_carry import ReasoningCarryingOpenAIModel
 from .replay_capture import hooks as replay_hooks
+from . import tool_choice
 from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
@@ -805,6 +806,37 @@ async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limi
                 ]
                 partial = "\n".join(p for p in parts if p.strip()).strip()
         raise PartialReplyError(partial) from None
+
+
+_REPLY_REPAIR_INSTRUCTION = (
+    "You wrote your answer as prose instead of sending it. Call send_reply now "
+    "with that same answer, preserving its wording and meaning. Do not do more work."
+)
+
+
+async def repair_unsent_reply(agent: Agent, *, limits: dict) -> Any | None:
+    """Send an already-written answer through send_reply, within the remaining budget."""
+    model = getattr(agent, "model", None)
+    if model is None:
+        return None
+    try:
+        previous = dict(model.get_config().get("params") or {})
+        forced = tool_choice.force(model, "send_reply")
+        current = (model.get_config().get("params") or {}).get("tool_choice")
+        if not forced and not isinstance(current, dict):
+            return None
+    except Exception:
+        return None
+    try:
+        return await agent.invoke_async(
+            _REPLY_REPAIR_INSTRUCTION, invocation_state={},
+            limits={**limits, "turns": 2},
+        )
+    finally:
+        try:
+            model.update_config(params=previous)
+        except Exception:
+            log.warning("reply repair: could not restore tool_choice")
 
 
 # What the model is asked for when its loop ran out mid-work. Deliberately not

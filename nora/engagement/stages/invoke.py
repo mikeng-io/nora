@@ -88,6 +88,7 @@ class AgentRunner(Protocol):
         ctx: TagContext,
         trace_attributes: dict[str, Any],
         follow_up: Callable[[str], str | None] | None = None,
+        force_send_reply: bool = False,
     ) -> tuple[str | None, str, TagTrace]: ...
 
 
@@ -119,6 +120,7 @@ async def run(
     metrics: Any,
     audience: str,
     follow_up: Callable[[str], str | None] | None = None,
+    force_send_reply: bool = False,
 ) -> tuple[bool, float, str | None, str, TagTrace]:
     """Return `(ok, elapsed, stop_reason, final_text, trace)`. `ok` is False on a timeout or any
     other exception, in which case the model was never allowed to reply — the
@@ -174,7 +176,7 @@ async def run(
                     tool_hooks=tool_hooks,
                     tag_message=tag_message, limits=limits, ctx=ctx,
                     trace_attributes=build_trace_attributes(ctx, doctrine),
-                    follow_up=follow_up,
+                    follow_up=follow_up, force_send_reply=force_send_reply,
                 ),
                 timeout=timeout_seconds,
             )

@@ -133,6 +133,7 @@ class LiveAgentRunner:
         ctx: TagContext,
         trace_attributes: dict[str, Any],
         follow_up: Callable[[str], str | None] | None = None,
+        force_send_reply: bool = False,
     ) -> tuple[str | None, str, TagTrace]:
         """Run the turn and return Strands' `stop_reason` (R-23) plus a
         `TagTrace` of what happened.
@@ -217,6 +218,17 @@ class LiveAgentRunner:
                     stop_reason = getattr(result, "stop_reason", None)
                     stop_reason = stop_reason if isinstance(stop_reason, str) else None
                     text = factory.final_text(result)
+            if (
+                force_send_reply and not followed_up and stop_reason == "end_turn"
+                and text.strip() and not guard.cancelled_model_call
+                and guard.answer_still_owed
+            ):
+                remaining = factory.remaining_limits(agent, limits)
+                if remaining is not None:
+                    result = await factory.repair_unsent_reply(agent, limits=remaining)
+                    if result is not None:
+                        stop_reason = getattr(result, "stop_reason", None)
+                        stop_reason = stop_reason if isinstance(stop_reason, str) else None
             # THE BUDGET-EXHAUSTION DRAFT. The loop hit one of R-8's caps mid-work
             # and left no prose behind, so the only thing the pipeline could
             # deliver is a canned apology. One more completion over this agent's

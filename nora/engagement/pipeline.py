@@ -180,8 +180,7 @@ def _nothing_answered(handle: Any) -> bool:
     `more=true` IS delivered, so gating on delivery alone would drop an answer
     she then wrote as prose, or a turn cut off mid-work, while the turn read as
     `replied`."""
-    return (not handle.deliverer.delivered
-            or bool(getattr(handle.guard, "reply_still_owed", False)))
+    return bool(handle.guard.answer_still_owed)
 
 class EngagementPipeline:
     def __init__(
@@ -891,6 +890,7 @@ class EngagementPipeline:
                     # It is `nora.domain.audience.TAG` rather than a literal, because
                     # `reasoning_strip_log.path` reads the same vocabulary.
                     audience=audience_names.TAG,
+                    force_send_reply=request.occasion == "tag",
                 )
                 # Inside the `with`, so it lands on the invoke span rather than
                 # on the turn: `ok` and `stop_reason` are what this stage

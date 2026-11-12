@@ -1253,6 +1253,12 @@ class ReplyGuard(HookProvider):
         )
 
     @property
+    def answer_still_owed(self) -> bool:
+        """No reply landed, or only a heads-up whose answer is still owed."""
+        delivered = bool(self._deliverer and self._deliverer.delivered)
+        return not delivered or self.reply_still_owed
+
+    @property
     def reply_still_owed(self) -> bool:
         """Her last landed `send_reply` was a heads-up (`heads_up=true`): the
         answer she announced has not reached the room.

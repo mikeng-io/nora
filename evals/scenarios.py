@@ -393,6 +393,7 @@ CORPUS_ENTRY: dict[str, str] = {
     "relevance_gate": "gate",
     "proactive_act": "proactive_act",
     "tool_selection": "tag",
+    "reply_delivery": "tag",
     # S2 over the Cognition catalogue. `entry: dreamer` with
     # `category: cognition` is driven by `evals.rebuilt.entry._cognition_probe`
     # through `CognitionSessionRunner.probe`, on the runner the subject's
@@ -441,14 +442,14 @@ CORPUS_ENTRY: dict[str, str] = {
 #: before composition; the read-only source is never migrated.
 FULL_RESTORE_CORPORA: frozenset[str] = frozenset({
     "conversational_recall", "cognition_session", "standing_unit",
-    "tool_selection", "tool_selection_cognition",
+    "tool_selection", "tool_selection_cognition", "reply_delivery",
 })
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied. One grader only:
 #: `sample_read` groups every evaluator's labels under one case, so adding
 #: `MeetsGrader` here would let a reply verdict blur a routing one.
 ROUTED_CORPORA = frozenset({
-    "tool_selection", "tool_selection_cognition", "cognition_session",
+    "tool_selection", "tool_selection_cognition", "cognition_session", "reply_delivery",
 })
 
 #: S3 (grounding)/S9 (injection) — "did she reply" is structural; "was the

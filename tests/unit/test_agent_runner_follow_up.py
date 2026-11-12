@@ -54,24 +54,29 @@ class _ScriptedModel(Model):
         self._script = list(script)
         self._tokens = tokens_per_call
         self.seen: list[list[dict[str, Any]]] = []
+        self.sent: list[str] = []
+        self.params: dict[str, Any] = {}
+        self.config_history: list[dict[str, Any]] = []
 
     def update_config(self, **model_config: Any) -> None:
-        return None
+        self.params.update(model_config)
 
     def get_config(self) -> Any:
-        return {}
+        return dict(self.params)
 
     async def structured_output(self, output_model: Any, prompt: Any = None, **kwargs: Any) -> Any:
         raise NotImplementedError
 
     async def stream(self, messages: Any, *args: Any, **kwargs: Any) -> AsyncIterable[Any]:
         self.seen.append([dict(m) for m in messages])
+        self.config_history.append(dict(self.params))
         kind, value = self._script.pop(0) if self._script else ("text", "done")
         yield {"messageStart": {"role": "assistant"}}
         if kind == "tool":
             yield {"contentBlockStart": {"start": {"toolUse": {
                 "name": value, "toolUseId": f"t{len(self.seen)}"}}}}
-            yield {"contentBlockDelta": {"delta": {"toolUse": {"input": "{}"}}}}
+            tool_input = '{"text": "sent answer"}' if value == "send_reply" else "{}"
+            yield {"contentBlockDelta": {"delta": {"toolUse": {"input": tool_input}}}}
         else:
             yield {"contentBlockStart": {"start": {}}}
             yield {"contentBlockDelta": {"delta": {"text": value}}}
@@ -103,28 +108,37 @@ def _ctx() -> TagContext:
 
 async def _invoke(
     model: _ScriptedModel, *, follow_up: Any, limits: dict | None = None,
-    clock: _Clock | None = None,
+    clock: _Clock | None = None, force_send_reply: bool = False,
 ) -> tuple[str | None, str]:
     stop_reason, text, _trace = await _invoke_traced(
         model, follow_up=follow_up, limits=limits, clock=clock,
+        force_send_reply=force_send_reply,
     )
     return stop_reason, text
 
 
 async def _invoke_traced(
     model: _ScriptedModel, *, follow_up: Any, limits: dict | None = None,
-    clock: _Clock | None = None,
+    clock: _Clock | None = None, force_send_reply: bool = False,
 ) -> tuple[str | None, str, Any]:
     clock = clock or _Clock()
+
+    async def send(text: str) -> str:
+        model.sent.append("send_reply")
+        return "sent"
+
     runner = LiveAgentRunner(models=FixedModelSource(model), retry=RETRY)
     return await runner.invoke(
         doctrine=_doctrine(),
-        tools=[adapt(ToolSpec(name="now", description="", schema={}, call=clock.now, budget=1))],
+        tools=[
+            adapt(ToolSpec(name="now", description="", schema={}, call=clock.now, budget=1)),
+            adapt(ToolSpec(name="send_reply", description="", schema={}, call=send, budget=1)),
+        ],
         pre_fill=[],
         guard=ReplyGuard(conversation_id="summons:1", budgets={"now": 1, "send_reply": 1},
                          terminal=frozenset({"send_reply"}), metrics=Metrics()),
         tag_message="<summons/>", limits=dict(limits or LIMITS), ctx=_ctx(),
-        trace_attributes={}, follow_up=follow_up,
+        trace_attributes={}, follow_up=follow_up, force_send_reply=force_send_reply,
     )
 
 
@@ -156,6 +170,48 @@ async def test_no_message_back_means_no_continuation():
     stop_reason, text = await _invoke(model, follow_up=lambda _text: None)
     assert len(model.seen) == 1
     assert (stop_reason, text) == ("end_turn", "It is a heron.")
+
+
+async def test_unsent_prose_gets_one_named_send_reply_repair():
+    model = _ScriptedModel([("text", "It is a heron."), ("tool", "send_reply")])
+    stop_reason, text = await _invoke(model, follow_up=None, force_send_reply=True)
+    assert model.sent == ["send_reply"]
+    assert len(model.seen) == 2
+    assert model.config_history[1]["params"]["tool_choice"] == {
+        "type": "function", "function": {"name": "send_reply"},
+    }, model.config_history
+    assert "It is a heron." in _texts(model.seen[1][-2])
+    assert "Call send_reply now" in _texts(model.seen[1][-1])[0]
+    assert (stop_reason, text) == ("end_turn", "It is a heron.")
+
+
+async def test_a_failed_send_reply_repair_preserves_the_original_prose():
+    model = _ScriptedModel([("text", "original answer"), ("text", "different answer")])
+    stop_reason, text = await _invoke(model, follow_up=None, force_send_reply=True)
+    assert model.sent == []
+    assert len(model.seen) == 2
+    assert (stop_reason, text) == ("end_turn", "original answer")
+
+
+async def test_send_reply_repair_uses_only_the_remaining_budget():
+    model = _ScriptedModel([("text", "It is a heron.")], tokens_per_call=64_000)
+    stop_reason, text = await _invoke(model, follow_up=None, force_send_reply=True)
+    assert len(model.seen) == 1
+    assert (stop_reason, text) == ("end_turn", "It is a heron.")
+
+
+async def test_send_reply_repair_does_not_run_after_a_normal_send():
+    model = _ScriptedModel([("tool", "send_reply")])
+    await _invoke(model, follow_up=None, force_send_reply=True)
+    assert model.sent == ["send_reply"]
+    assert len(model.seen) == 1
+
+
+async def test_send_reply_repair_is_off_by_default():
+    model = _ScriptedModel([("text", "It is a heron.")])
+    await _invoke(model, follow_up=None)
+    assert model.sent == []
+    assert len(model.seen) == 1
 
 
 async def test_the_guards_budgets_carry_into_the_follow_up():
