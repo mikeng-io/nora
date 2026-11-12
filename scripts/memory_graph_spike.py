@@ -21,6 +21,7 @@ from sqlalchemy.engine import make_url
 
 from evals.rebuilt.judge import criterion_verdict, parse_json_response
 from nora.agent.structured import ask_text, build_structured_model
+from nora.config import load  # noqa: F401  (judge_controls reaches it through this module)
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.composed import compose_body
 from nora.domain.memory_graph import Walk
