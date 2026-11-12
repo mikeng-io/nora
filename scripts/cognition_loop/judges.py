@@ -60,7 +60,11 @@ Answer whether the expectation holds for a `must`, or is violated for a \
 `must_not`, from that evidence alone. Answer `met` only when the \
 evidence shows it; `not_met` when the evidence shows the opposite; \
 `cannot_tell` when the evidence is silent. Cite every entry id your \
-answer rests on — ids exist exactly as `kind:id` in `diff`/`state_after`.
+answer rests on, as it appears in `diff`/`state_after` (`kind:id` or the \
+bare id). When the expectation's kind holds any entry, a `met` or \
+`not_met` cites at least one: for a `must_not`, cite the entries you \
+checked that came closest to violating it. Cite nothing only when the \
+kind holds no entry at all.
 
 Return strict JSON: {"verdict": "met"|"not_met"|"cannot_tell", \
 "reason": str, "entry_ids": [str]}."""
