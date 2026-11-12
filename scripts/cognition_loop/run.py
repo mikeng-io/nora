@@ -23,7 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.stimuli import WakeReason, decide
 from nora.infra.sql.cognition_replay import recorded_wake
-from nora.infra.sql.schema import COGNITION_WAKE
+from nora.infra.sql.schema import (
+    COGNITION_SESSION,
+    COGNITION_WAKE,
+    COGNITION_WAKE_OUTCOME,
+)
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.subject import SubjectSpec, obtain, sandbox_as_of
 from nora.subject.eval_evidence import read_events
@@ -33,7 +37,12 @@ from scripts.cognition_loop.advance import advance_record, bump_sequences
 from scripts.cognition_loop.egress import assert_no_egress
 from scripts.cognition_loop.judges import judge_expectation
 from scripts.cognition_loop.trajectory import session_events, wake_trajectory
-from scripts.cognition_loop.verdicts import ERROR, ExpectationVerdict, Rollup
+from scripts.cognition_loop.verdicts import (
+    ERROR,
+    ExpectationVerdict,
+    Rollup,
+    rollup,
+)
 from scripts.cognition_loop.wakes import eval_verdict, record_eval_wake
 from scripts.memory_graph_spike import freeze, index_replay_sandbox
 
@@ -50,6 +59,31 @@ async def _wake_reason(source: AsyncEngine, wake_id: int) -> str:
     if row is None:
         raise ValueError(f"case wake {wake_id} is not in the source")
     return str(row)
+
+
+async def _recorded_session(source: AsyncEngine, wake_id: int) -> bool:
+    """Whether the recorded production wake ran a `cognition_session` row."""
+    async with source.connect() as conn:
+        return bool((await conn.execute(sa.select(
+            sa.func.count()).select_from(COGNITION_SESSION).where(
+            COGNITION_SESSION.c.wake_id == wake_id)
+        )).scalar_one())
+
+
+async def _wake_outcome(
+    engine: AsyncEngine, wake_id: int,
+) -> dict[str, Any] | None:
+    """The sandbox's settlement row for this wake, or None if unsettled."""
+    async with engine.connect() as conn:
+        row = (await conn.execute(sa.select(
+            COGNITION_WAKE_OUTCOME.c.session_id,
+            COGNITION_WAKE_OUTCOME.c.outcome,
+            COGNITION_WAKE_OUTCOME.c.detail,
+            COGNITION_WAKE_OUTCOME.c.cause,
+        ).where(
+            COGNITION_WAKE_OUTCOME.c.wake_id == wake_id)
+        )).mappings().one_or_none()
+    return dict(row) if row is not None else None
 
 
 def _profile_keys(subject: Any, unit: str) -> list[str]:
@@ -173,10 +207,18 @@ async def run_case(
     wakes_report: list[dict[str, Any]] = []
     records: list[tuple[int, str, int]] = []
     recorded_reasons: dict[int, str] = {}
+    #: Per wake index: the production batch the recorded wake covered
+    #: and whether the recorded wake ran a session — the comparison the
+    #: sandbox's own batch is shown against.
+    recorded: dict[int, dict[str, Any]] = {}
     for i, wake_id in enumerate(case.wakes):
         at_ms, view = await recorded_wake(source, wake_id)
         records.append((wake_id, view.unit, at_ms))
         recorded_reasons[i] = await _wake_reason(source, wake_id)
+        recorded[i] = {
+            "stimulus_ids": sorted(s.id for s in view.pending),
+            "had_session": await _recorded_session(source, wake_id),
+        }
     problem = validate_recorded_wakes(records, case.unit)
     if problem is not None:
         roll.error(problem)
@@ -214,8 +256,8 @@ async def run_case(
         return _report(case, roll, wakes_report)
     try:
         await _wakes(
-            args, case, instants, recorded_reasons, judges, evidence,
-            output, room, draw.id, roll, wakes_report)
+            args, case, instants, recorded_reasons, recorded, judges,
+            evidence, output, room, draw.id, roll, wakes_report)
     finally:
         await draw_ctx.__aexit__(None, None, None)
     for wake in wakes_report:
@@ -230,8 +272,9 @@ async def run_case(
 
 async def _wakes(
     args: Any, case: Any, instants: dict[int, int],
-    recorded_reasons: dict[int, str], judges: Any | None, evidence: Any,
-    output: Path, room: Any, workspace: str, roll: Rollup,
+    recorded_reasons: dict[int, str],
+    recorded: dict[int, dict[str, Any]], judges: Any | None,
+    evidence: Any, output: Path, room: Any, workspace: str, roll: Rollup,
     wakes_report: list[dict[str, Any]],
 ) -> None:
     """The recorded sequence in the sandbox, each step naming itself."""
@@ -266,14 +309,25 @@ async def _wakes(
                                 after_ms=instants[i - 1], at_ms=at_ms,
                             )
                         except Exception as exc:  # noqa: BLE001 — ERROR
+                            wakes_report.append(_wake_error(
+                                output, i, wake_id, at_ms,
+                                recorded_reasons[i], None,
+                                step="advance", message=f"{exc!r}",
+                                batch=_batch(recorded[i], None)))
                             roll.error(
                                 f"advance before wake {i} "
                                 f"(recorded {wake_id}) failed: {exc!r}")
                             break
                         if not advance.wrote_only_record():
-                            roll.error(
+                            why = (
                                 f"advance before wake {i} wrote a "
                                 f"derived store: {advance.written}")
+                            wakes_report.append(_wake_error(
+                                output, i, wake_id, at_ms,
+                                recorded_reasons[i], advance,
+                                step="advance", message=why,
+                                batch=_batch(recorded[i], None)))
+                            roll.error(why)
                             break
                     try:
                         with evidence.case(
@@ -287,6 +341,7 @@ async def _wakes(
                                 recorded_reasons[i], judges,
                                 evidence, output, room, workspace,
                                 advance=advance,
+                                recorded_meta=recorded[i],
                             )
                         wakes_report.append(report_row)
                     except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
@@ -310,6 +365,7 @@ async def _run_wake(
     args: Any, case: Any, index: int, wake_id: int, at_ms: int, url: str,
     reason: str, judges: Any | None, evidence: Any, output: Path,
     room: Any, workspace: str, advance: Any = None,
+    recorded_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """One wake: compose, assert inert, record, run live, diff, judge."""
     subject = None
@@ -329,7 +385,9 @@ async def _run_wake(
         except Exception as exc:  # noqa: BLE001 — a failed step is ERROR, not a crash
             return _wake_error(
                 output, index, wake_id, at_ms, reason, advance,
-                step="compose", exc=exc)
+                step="compose", message=f"{exc!r}",
+                batch=_batch(recorded_meta, None))
+        offered: list[int] | None = None
         try:
             engine = create_async_engine(url)
             try:
@@ -341,6 +399,9 @@ async def _run_wake(
                     stale_before_ms=at_ms - int(
                         evaluator._policy.session_timeout_seconds * 1000),
                 )
+                #: The stimulus ids the sandbox session was offered —
+                #: shown beside the recorded wake's batch in the report.
+                offered = sorted(s.id for s in view.pending)
                 decided = decide(view, evaluator._policy, at_ms)
                 recorded_reason = cast(WakeReason, reason)
                 verdict, forced = eval_verdict(
@@ -357,17 +418,10 @@ async def _run_wake(
                 )
                 tokens_before = subject.deps.metrics.get(
                     "nora_cognition_unit_tokens_total")
-                session_id = None
-                inspection = None
-                if judges is not None:
-                    outcome = await runner.on_wake(
-                        unit=case.unit, view=view, now_ms=at_ms,
-                        wake_id=wake.wake_id,
-                    )
-                    if outcome is not None:
-                        session_id = outcome.session_id
-                else:
-                    inspection = await runner.inspect(view=view, now_ms=at_ms)
+                session_id, inspection, no_session, step_error = await _settle(
+                    runner, judges, engine, wake.wake_id,
+                    unit=case.unit, view=view, at_ms=at_ms,
+                    recorded_meta=recorded_meta)
                 tokens = (subject.deps.metrics.get(
                     "nora_cognition_unit_tokens_total") - tokens_before)
                 after = await state_mod.snapshot(
@@ -401,16 +455,55 @@ async def _run_wake(
                     output, index, wake_id, wake, at_ms, reason, session_id,
                     egress, judges is not None, diff, trajectory, expectations,
                     after, advance,
+                    batch=_batch(recorded_meta, offered),
+                    no_session=no_session,
+                    step_error=step_error,
                 )
             finally:
                 await engine.dispose()
         except Exception as exc:  # noqa: BLE001 — a failed step is ERROR, not a crash
             return _wake_error(
                 output, index, wake_id, at_ms, reason, advance,
-                step="wake", exc=exc)
+                step="wake", message=f"{exc!r}",
+                batch=_batch(recorded_meta, offered))
     finally:
         if subject is not None:
             await _close_subject(subject)
+
+
+async def _settle(
+    runner: Any, judges: Any | None, engine: Any, wake_id: int, *,
+    unit: str, view: Any, at_ms: int,
+    recorded_meta: dict[str, Any] | None,
+) -> tuple[Any, dict[str, Any] | None, str | None, tuple[str, str] | None]:
+    """Run the wake's session or inspect it, then read its settlement."""
+    if judges is None:
+        inspection = await runner.inspect(view=view, now_ms=at_ms)
+        if inspection is None:
+            # No session: honest `no_session` — and under inspect-only a
+            # sandbox-miss where production ran one is a wake-step ERROR.
+            step_error = (
+                ("wake", "the sandbox ran no session: empty agenda "
+                 "(production ran one)")
+                if recorded_meta and recorded_meta["had_session"] else None)
+            return None, None, "empty agenda", step_error
+        return None, inspection, None, None
+    # The executor's `wake_hook` — the hook the evaluator hands an
+    # admitted wake — runs the session on the Dreamer lane.
+    await runner.wake_hook(unit=unit, view=view, now_ms=at_ms, wake_id=wake_id)
+    outcome = await _wake_outcome(engine, wake_id)
+    if outcome is None:
+        return (None, None, None,
+                ("wake", "the wake recorded no outcome: the Dreamer lane "
+                 "never ran it"))
+    session_id = outcome["session_id"]
+    if outcome["outcome"] != "closed":
+        return (session_id, None, None,
+                ("wake", f"the session ended {outcome['outcome']}: "
+                 f"{outcome['detail'] or 'no detail'}"))
+    no_session = (
+        outcome["detail"] or "empty agenda") if session_id is None else None
+    return session_id, None, no_session, None
 
 
 async def _judge(
@@ -444,20 +537,45 @@ async def _judge(
     return expectations
 
 
+def _batch(
+    meta: dict[str, Any] | None, offered: list[int] | None,
+) -> dict[str, Any]:
+    """Recorded-versus-offered batch evidence; `None` means unread, never empty."""
+    return {
+        "recorded": meta["stimulus_ids"] if meta is not None else None,
+        "offered": offered,
+        "production_session": (
+            meta["had_session"] if meta is not None else None),
+    }
+
+
+def _wake_status(
+    step_error: tuple[str, str] | None,
+    expectations: list[dict[str, Any]],
+) -> str:
+    """Derived wake status: a failed step is ERROR, else the rollup."""
+    if step_error is not None:
+        return ERROR
+    return rollup(*(e["verdict"] for e in expectations))
+
+
 def _wake_error(
     output: Path, index: int, wake_id: int, at_ms: int, reason: str,
-    advance: Any, *, step: str, exc: Exception,
+    advance: Any, *, step: str, message: str,
+    batch: dict[str, Any] | None = None, no_session: str | None = None,
 ) -> dict[str, Any]:
     """An ERROR wake entry: the step is named, never folded into another's."""
     freeze(output / f"wake-{index}-{wake_id}.json", {
-        "error": {"step": step, "message": f"{exc!r}"},
+        "error": {"step": step, "message": message},
         "advance": advance.written if advance is not None else None,
+        "batch": batch, "no_session": no_session,
     })
     return {
         "recorded_wake_id": wake_id, "wake_id": None,
         "at_ms": at_ms, "reason": reason, "forced": None,
-        "status": ERROR, "step": step, "error": f"{exc!r}",
+        "status": ERROR, "step": step, "error": message,
         "session_id": None, "egress": None, "model_calls": None,
+        "no_session": no_session, "batch": batch,
         "diff_counts": None, "trajectory": None, "expectations": [],
         "advance": advance.written if advance is not None else None,
     }
@@ -486,12 +604,20 @@ async def _close_subject(subject: Any) -> None:
 
 def _freeze_wake(
     output: Path, index: int, wake_id: int, wake: Any, at_ms: int,
-    reason: str, session_id: str | None, egress: dict[str, Any],
+    reason: str, session_id: Any, egress: dict[str, Any],
     model_calls: bool, diff: Any, trajectory: dict[str, Any],
-    expectations: list[dict[str, Any]], state_after: Any, advance: Any,
+    expectations: list[dict[str, Any]], state_after: Any, advance: Any, *,
+    batch: dict[str, Any] | None = None,
+    no_session: str | None = None,
+    step_error: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
     """The wake's private evidence file and its report row."""
     freeze(output / f"wake-{index}-{wake_id}.json", {
+        "error": (
+            {"step": step_error[0], "message": step_error[1]}
+            if step_error is not None else None),
+        "no_session": no_session,
+        "batch": batch,
         "trajectory": trajectory,
         "advance": advance.written if advance is not None else None,
         "diff": {
@@ -509,7 +635,10 @@ def _freeze_wake(
     return {
         "recorded_wake_id": wake_id, "wake_id": wake.wake_id,
         "at_ms": at_ms, "reason": reason, "forced": wake.forced,
-        "status": "PASS",
+        "status": _wake_status(step_error, expectations),
+        "step": step_error[0] if step_error is not None else None,
+        "error": step_error[1] if step_error is not None else None,
+        "no_session": no_session, "batch": batch,
         "session_id": session_id, "egress": egress,
         "model_calls": model_calls,
         "diff_counts": {

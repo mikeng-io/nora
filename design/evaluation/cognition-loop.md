@@ -49,6 +49,11 @@ wakes) comes only from the sandbox's own earlier wakes, never from the
 source. So wake *n* orients against what the *candidate* kept, as production
 would. This divergence is declared: anything a conscious turn derived in
 production between wakes, other than the Record rows themselves, is absent.
+Batching can diverge the same way: the sandbox's earlier wakes may have
+consumed stimuli production's had not, so what a wake is offered need not be
+what the recorded wake covered. Every wake records the recorded wake's
+stimulus ids beside the ids the sandbox session was offered, and the report
+states whether the two batches match.
 
 **The room directory is frozen at run start.** Rooms a unit expands from a
 guild-level `[[conversations]]` entry resolve through the deployment's own
@@ -58,7 +63,10 @@ directory built from that copy, and `--room-directory` replays a frozen
 one. The map is as of the run, not as of each wake — a channel renamed
 between recorded wakes still resolves under its run-start name. A guild
 the unit needs but the read cannot answer for makes the case `ERROR` at
-the directory step, never a silent deny.
+the directory step, never a silent deny. A directory read that itself
+fails — a live read that errors or a corrupt `--room-directory` file —
+still freezes `report.json` and `report.html`, `ERROR` naming the
+`room_directory` step.
 
 **The clock** is each wake's recorded time. Reads see the sandbox as of that
 time. Nothing later in the source is visible.
@@ -99,6 +107,14 @@ through the same `_session_input` a session runs and recorded, so a dry
 run shows exactly what Nora would have read. Nothing is persisted — no
 session row, no outcome, no stimulus consumption.
 
+**No session is an outcome, never a silent pass.** A wake whose agenda is
+empty runs no session, live or inspected: the wake records `no_session`
+with the reason (the outcome row's own detail in a live run) next to
+whether the recorded wake ran one. Under `--inspect-only`, a wake where
+production ran a session but the sandbox ran none is `ERROR` at the wake
+step — a dry run cannot claim it inspected that wake. In a live run the
+wake's status follows the same derived rule as any other.
+
 **The report.** `report.json` is the machine-readable record; `report.html`
 renders the same evidence — status and budget, the evidence receipt, then
 each case's wakes in order: what arrived, what Nora read, what she did,
@@ -132,7 +148,7 @@ reason must cite entries that exist in the diff or state, or the verdict is
 
 ## Verdicts
 
-Per expectation, per case and per run, fail-closed:
+Per expectation, per wake, per case and per run, fail-closed:
 
 - **PASS**: every expectation in the case was met by both judges.
 - **FAIL**: an expectation was not met.
@@ -141,8 +157,11 @@ Per expectation, per case and per run, fail-closed:
   wake raised or hit a limit, a judge failed or cited nothing real, or the
   served model did not match.
 
-An ERROR is never a PASS, and a wake that wrote nothing is judged like any
-other: "nothing changed" is a state the expectations can require or forbid.
+A wake's status is derived the same way: a failed step (named on the wake)
+or an expectation `ERROR` makes it `ERROR`, otherwise the roll-up over its
+expectations — a wake with none is `PASS`. An ERROR is never a PASS, and a
+wake that wrote nothing is judged like any other: "nothing changed" is a
+state the expectations can require or forbid.
 
 ## Boundaries
 

@@ -204,6 +204,9 @@ async def _copy_history(
         ROW_HISTORY.c.id == sa.bindparam("b_old"),
     ).values(id=sa.bindparam("b_new"))
     next_id = sa.text("SELECT nextval('row_history_id_seq')")
+    #: ponytail: up to five round trips per history row (held, retarget,
+    #: renumber, close, insert). A wake window is minutes of traffic —
+    #: batch the per-row statements if a window ever holds ~10k versions.
     for row in rows:
         row = dict(row)
         # A version superseded past the window's edge was still open AT the
@@ -233,6 +236,21 @@ async def _copy_history(
     return len(rows), frozenset(r["table_name"] for r in rows)
 
 
+async def _copy_chunked(
+    dst: AsyncConnection, table: str, rows: list[Any], stmt: Any,
+) -> int:
+    """Exact landed rows: asyncpg `executemany` answers -1, so size-delta."""
+    before = (await dst.execute(sa.text(
+        f'SELECT COUNT(*) FROM "{table}"'  # noqa: S608 — constants
+    ))).scalar_one()
+    for chunk in (rows[i:i + 1000] for i in range(0, len(rows), 1000)):
+        await dst.execute(stmt, [dict(r) for r in chunk])
+    after = (await dst.execute(sa.text(
+        f'SELECT COUNT(*) FROM "{table}"'  # noqa: S608 — constants
+    ))).scalar_one()
+    return after - before
+
+
 async def _copy_appended(
     src: AsyncConnection, dst: AsyncConnection, table: str, at: datetime,
 ) -> int:
@@ -245,11 +263,7 @@ async def _copy_appended(
     stmt = pg_insert(METADATA.tables[table]).on_conflict_do_nothing(
         index_elements=["id"]
     )
-    inserted = 0
-    for chunk in (rows[i:i + 1000] for i in range(0, len(rows), 1000)):
-        result = await dst.execute(stmt, [dict(r) for r in chunk])
-        inserted += int(result.rowcount or 0)
-    return inserted
+    return await _copy_chunked(dst, table, rows, stmt)
 
 
 async def _copy_stimuli(
@@ -264,8 +278,4 @@ async def _copy_stimuli(
     stmt = pg_insert(METADATA.tables["stimulus"]).on_conflict_do_nothing(
         index_elements=["id"]
     )
-    inserted = 0
-    for chunk in (rows[i:i + 1000] for i in range(0, len(rows), 1000)):
-        result = await dst.execute(stmt, [dict(r) for r in chunk])
-        inserted += int(result.rowcount or 0)
-    return inserted
+    return await _copy_chunked(dst, "stimulus", rows, stmt)

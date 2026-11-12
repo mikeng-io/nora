@@ -66,18 +66,14 @@ class FakeCognitionAgentRunner:
 
 
 def _pending(unit: str, n: int = 1) -> tuple[Stimulus, ...]:
-    return tuple(
-        Stimulus(
-            id=i, unit=unit, kind="message", item="message", ref=f"messages:{i}",
-            at_ms=NOW, recorded_at_ms=NOW, platform="signal", conversation_id="home-room",
-        )
-        for i in range(1, n + 1)
-    )
+    return tuple(Stimulus(
+        id=i, unit=unit, kind="message", item="message", ref=f"messages:{i}",
+        at_ms=NOW, recorded_at_ms=NOW, platform="signal", conversation_id="home-room")
+        for i in range(1, n + 1))
 
 
 def _seeded(*wakes: tuple[str, int]) -> InMemoryStimulusStore:
-    """A stimulus store holding the wake these tests hand the hook (an outcome
-    names a wake that exists); by default wake 1 of `unit-1`."""
+    """Wake(s) these tests hand the hook; by default wake 1 of `unit-1`."""
     stimuli = InMemoryStimulusStore()
     for unit, wake_id in wakes or (("unit-1", 1),):
         stimuli.seed_wake(unit, wake_id)
@@ -102,7 +98,7 @@ def _runner(
         skill_text_for=lambda: "", grounder=grounder or EmptyGrounder(),
         doctrine_text="DOCTRINE",
         doctrine_sha256="sha", open_note_titles=_async_const(()),
-        open_events=_async_const2(()), prior_standing=_async_const2(None),
+        open_events=_async_const(()), prior_standing=_async_const(None),
         budget=BUDGET, cooldown_seconds=300.0, max_items=12,
         mint_ref=_counting_ref(), clock=lambda: NOW / 1000, lessons=lessons,
     )
@@ -110,12 +106,6 @@ def _runner(
 
 
 def _async_const(value):
-    async def f(*args, **kwargs):
-        return value
-    return f
-
-
-def _async_const2(value):
     async def f(*args, **kwargs):
         return value
     return f
@@ -145,6 +135,14 @@ async def test_an_empty_agenda_makes_no_model_call():
     assert fake.calls == 0
     assert store.sessions == []
     assert (stimuli.outcomes[1].outcome, stimuli.outcomes[1].detail) == ("closed", "empty agenda")
+
+
+async def test_an_empty_agenda_inspection_writes_no_row():
+    runner, store, fake = _runner()
+    runner._finish = lambda *a, **k: store.sessions.append("finish reached")
+    view = UnitView(unit="unit-1", pending=(), last_activity_ms=None, last_wake=None)
+    assert await runner.inspect(view=view, now_ms=NOW) is None
+    assert store.sessions == [] and fake.calls == 0
 
 
 async def test_a_unit_with_no_home_room_makes_no_model_call_and_is_recorded_failed():
@@ -1019,7 +1017,8 @@ async def test_inspection_renders_real_wake_clock_room_and_open_items_without_mo
     inspection = await runner.inspect(view=UnitView(
         unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None),
         now_ms=NOW)
-    assert set(inspection) == {"system", "agenda", "work"}
+    assert set(inspection) == {
+        "system", "agenda", "work", "items", "stimuli", "instructions"}
     assert inspection["work"] == []
     assert "DOCTRINE" in inspection["system"]
     for value in ("Generated room", "I arrived", "Hand over generated gifts", "Generated dinner"):
@@ -1037,12 +1036,10 @@ async def test_an_inspection_records_no_session_outcome_or_carry():
     view = UnitView(unit="unit-1", pending=_pending("unit-1"),
                     last_activity_ms=None, last_wake=None)
     inspection = await runner.inspect(view=view, now_ms=NOW)
-    assert inspection is not None and set(inspection) == {"system", "agenda", "work"}
+    assert inspection is not None and set(inspection) == {
+        "system", "agenda", "work", "items", "stimuli", "instructions"}
     assert inspection["work"] == []
-    assert store.sessions == []
-    assert stimuli.outcomes == {}
-    assert stimuli.carries == []
-    assert agent.calls == 0
+    assert not (store.sessions or stimuli.outcomes or stimuli.carries or agent.calls)
 
 
 async def test_inspection_of_an_empty_agenda_is_none_and_calls_no_model():

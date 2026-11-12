@@ -133,3 +133,79 @@ def test_missing_data_says_not_recorded(tmp_path):
     }])
     html = render(out).read_text(encoding="utf-8")
     assert "not recorded" in html
+
+
+def test_the_report_owns_a_light_colour_scheme(tmp_path):
+    out = _run_dir(tmp_path, cases=[])
+    html = render(out).read_text(encoding="utf-8")
+    assert "color-scheme: light" in html
+    assert "background: #ffffff" in html
+
+
+def test_a_wake_without_a_session_says_so_and_compares_batches(tmp_path):
+    batch = {"recorded": [3, 5, 7], "offered": [],
+             "production_session": True}
+    out = _run_dir(tmp_path, status="ERROR", cases=[{
+        "case": "c", "unit": "u", "status": "ERROR", "errors": [],
+        "wakes": [_wake_report(
+            status="ERROR", step="wake",
+            error="the sandbox ran no session: empty agenda "
+                  "(production ran one)",
+            no_session="empty agenda", batch=batch)],
+    }], wakes={"wake-0-7.json": {
+        "error": {"step": "wake",
+                  "message": "the sandbox ran no session: empty agenda "
+                             "(production ran one)"},
+        "no_session": "empty agenda",
+        "batch": batch,
+    }})
+    html = render(out).read_text(encoding="utf-8")
+    assert "No session" in html and "empty agenda" in html
+    assert "production ran one on 3 stimuli" in html
+    assert "recorded batch (production)" in html and "[3, 5, 7]" in html
+    assert "offered batch (sandbox)" in html
+    assert "differs from production" in html
+
+
+def test_matching_batches_say_so(tmp_path):
+    out = _run_dir(tmp_path, cases=[{
+        "case": "c", "unit": "u", "status": "PASS", "errors": [],
+        "wakes": [_wake_report(batch={
+            "recorded": [3, 5], "offered": [5, 3],
+            "production_session": True})],
+    }], wakes={"wake-0-7.json": {}})
+    html = render(out).read_text(encoding="utf-8")
+    assert "matches production" in html
+
+
+def test_an_empty_store_reads_none_never_not_recorded(tmp_path):
+    out = _run_dir(tmp_path, cases=[{
+        "case": "c", "unit": "u", "status": "PASS", "errors": [],
+        "wakes": [_wake_report()],
+    }], wakes={"wake-0-7.json": {
+        "diff": {"note": {"created": [], "revised": [], "retired": [],
+                          "unchanged": []}},
+    }})
+    html = render(out).read_text(encoding="utf-8")
+    assert "<p>none</p>" in html
+    assert "unchanged: 0" not in html
+
+
+def test_the_summary_line_counts_the_session(tmp_path):
+    out = _run_dir(tmp_path, cases=[{
+        "case": "c", "unit": "u", "status": "PASS", "errors": [],
+        "wakes": [_wake_report(
+            model_calls=True,
+            batch={"recorded": [1, 2], "offered": [1, 2],
+                   "production_session": True},
+            trajectory={
+                "blocks": {"items": [{"i": 1}, {"i": 2}, {"i": 3}],
+                           "stimuli": [{}] * 19},
+                "tool_calls": []})],
+    }], wakes={"wake-0-7.json": {
+        "diff": {"note": {"created": [{"entry_id": "n1", "after": {}}],
+                          "revised": [], "retired": [], "unchanged": []}},
+    }})
+    html = render(out).read_text(encoding="utf-8")
+    assert ("Session ran: 3 agenda items from 2 stimuli; "
+            "1 created, 0 revised, 0 retired; 0 tool calls") in html

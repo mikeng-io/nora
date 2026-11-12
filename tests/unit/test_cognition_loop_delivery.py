@@ -337,7 +337,8 @@ async def test_a_refusal_still_closes_the_subject(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------
 
 
-def _run_stubs(monkeypatch, workspaces: list[str], wake_error=None):
+def _run_stubs(monkeypatch, workspaces: list[str], wake_error=None,
+               advance_error=None):
     from scripts.cognition_loop import run as run_mod
 
     created, deleted = [], []
@@ -352,10 +353,14 @@ def _run_stubs(monkeypatch, workspaces: list[str], wake_error=None):
             deleted.append(draw.id)
 
     async def fake_recorded_wake(source, wake_id):
-        return 1_700_000_000_000 + wake_id, SimpleNamespace(unit="u")
+        return (1_700_000_000_000 + wake_id,
+                SimpleNamespace(unit="u", pending=()))
 
     async def fake_reason(source, wake_id):
         return "user_message"
+
+    async def fake_session(source, wake_id):
+        return False
 
     @contextlib.asynccontextmanager
     async def fake_sandbox(url, first):
@@ -365,6 +370,8 @@ def _run_stubs(monkeypatch, workspaces: list[str], wake_error=None):
         return None
 
     async def fake_advance(*a, **k):
+        if advance_error is not None:
+            raise advance_error
         return SimpleNamespace(wrote_only_record=lambda: True, written={})
 
     async def dispose():
@@ -373,6 +380,7 @@ def _run_stubs(monkeypatch, workspaces: list[str], wake_error=None):
     monkeypatch.setattr(run_mod, "draw_workspace", fake_draw)
     monkeypatch.setattr(run_mod, "recorded_wake", fake_recorded_wake)
     monkeypatch.setattr(run_mod, "_wake_reason", fake_reason)
+    monkeypatch.setattr(run_mod, "_recorded_session", fake_session)
     monkeypatch.setattr(run_mod, "sandbox_as_of", fake_sandbox)
     monkeypatch.setattr(run_mod, "bump_sequences", noop)
     monkeypatch.setattr(run_mod, "advance_record", fake_advance)
@@ -426,3 +434,26 @@ async def test_the_draw_is_deleted_when_a_wake_fails(monkeypatch, tmp_path):
         policy=policy, evidence=evidence, output=tmp_path)
     assert deleted == ["r1-draw"]
     assert report["status"] == "ERROR"
+
+
+async def test_an_advance_failure_freezes_the_wakes_error(
+    monkeypatch, tmp_path,
+):
+    """A failed advance is that wake's ERROR entry — named step, frozen —
+    so the report and its HTML have a wake section to show."""
+    import json
+
+    from scripts.cognition_loop import run as run_mod
+
+    _run_stubs(monkeypatch, [], advance_error=RuntimeError("pg gone"))
+    args, case, policy, evidence = _case_args(tmp_path)
+    report = await run_mod.run_case(
+        args, case, source=None, judges=None,
+        policy=policy, evidence=evidence, output=tmp_path)
+    assert report["status"] == "ERROR"
+    assert len(report["wakes"]) == 2
+    wake = report["wakes"][1]
+    assert wake["status"] == "ERROR" and wake["step"] == "advance"
+    frozen = json.loads((tmp_path / "wake-1-2.json").read_text())
+    assert frozen["error"]["step"] == "advance"
+    assert "pg gone" in frozen["error"]["message"]

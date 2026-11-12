@@ -21,8 +21,10 @@ from zoneinfo import ZoneInfo
 HKT = ZoneInfo("Asia/Hong_Kong")
 
 _CSS = """
+html { color-scheme: light; }
+html, body { background: #ffffff; color: #1a1a1a; }
 body { font-family: system-ui, sans-serif; margin: 2em auto; max-width: 72em;
-       color: #1a1a1a; line-height: 1.45; }
+       line-height: 1.45; }
 h1, h2, h3, h4 { margin: 1.2em 0 .3em; }
 table { border-collapse: collapse; margin: .4em 0; }
 td, th { border: 1px solid #ccc; padding: .25em .6em; text-align: left;
@@ -33,6 +35,8 @@ details { margin: .3em 0; }
 .status-PASS { color: #1a7a1a; } .status-FAIL { color: #a01010; }
 .status-ERROR { color: #a01010; font-weight: bold; }
 .status-REVIEW { color: #a06000; }
+.status-no_session { color: #7a6a2f; font-weight: bold; }
+.summary { color: #333; }
 .not-recorded { color: #777; font-style: italic; }
 .wake { border-top: 2px solid #999; margin-top: 1.5em; padding-top: .5em; }
 .case { border-top: 4px solid #333; margin-top: 2em; padding-top: .5em; }
@@ -122,7 +126,23 @@ def _run(report: dict[str, Any], budget: dict[str, Any] | None) -> str:
             ("events file", ev.get("ref")),
         ]),
     ]
+    errors = report.get("errors") or []
+    if errors:
+        parts.append("<h3>Run errors</h3>" + "".join(
+            "<p><b>"
+            f"{esc(e.get('step') if isinstance(e, dict) else 'run')}:"
+            f"</b> "
+            f"{esc(e.get('message') if isinstance(e, dict) else e)}</p>"
+            for e in errors))
     return "".join(parts)
+
+
+def _ids(ids: Any) -> str:
+    if ids is None:
+        return "not recorded"
+    if not ids:
+        return "none"
+    return "[" + ", ".join(str(i) for i in ids) + "]"
 
 
 def _arrived(wake: dict[str, Any]) -> str:
@@ -136,10 +156,29 @@ def _arrived(wake: dict[str, Any]) -> str:
         arrived = ("<table><tr><th>table</th><th>rows</th></tr>" + "".join(
             f"<tr><td>{esc(t)}</td><td>{esc(n)}</td></tr>"
             for t, n in sorted(advance.items())) + "</table>")
+    batch = wake.get("batch") or {}
+    batching: list[tuple[str, Any]] = []
+    if batch:
+        batching = [
+            ("recorded batch (production)", _ids(batch.get("recorded"))),
+            ("offered batch (sandbox)", _ids(batch.get("offered"))),
+            ("production session", (
+                "ran one" if batch.get("production_session") is True else
+                "ran none" if batch.get("production_session") is False else
+                "not recorded")),
+        ]
+        recorded = batch.get("recorded")
+        offered = batch.get("offered")
+        if recorded is not None and offered is not None:
+            batching.append(("batching", (
+                "matches production"
+                if sorted(recorded) == sorted(offered)
+                else "differs from production")))
     return ("<h4>a. What arrived</h4>" + _kv([
         ("recorded reason", wake.get("reason")),
         ("recorded at", _when(wake.get("at_ms"))),
         ("forced", wake.get("forced")),
+        *batching,
     ]) + arrived)
 
 
@@ -236,10 +275,12 @@ def _changed(diff: dict[str, Any] | None) -> str:
                 out.append(
                     f"<details><summary>{esc(e.get('entry_id'))}</summary>"
                     f"<pre>{_json(e.get('before'))}</pre></details>")
-        out.append(f'<p class="not-recorded">unchanged: '
-                   f"{esc(len(unchanged))}</p>")
         if not (created or revised or retired or unchanged):
-            out.append('<p class="not-recorded">not recorded</p>')
+            # An empty store was captured and held nothing: "none".
+            out.append("<p>none</p>")
+        else:
+            out.append(f'<p class="not-recorded">unchanged: '
+                       f"{esc(len(unchanged))}</p>")
     return "".join(out)
 
 
@@ -275,22 +316,71 @@ def _judgement(expectations: list[dict[str, Any]] | None) -> str:
     return "".join(out)
 
 
+def _summary(wake: dict[str, Any], frozen: dict[str, Any]) -> str:
+    """The plain line above the wake's sections: what it did, and the production comparison."""
+    no_session = wake.get("no_session") or frozen.get("no_session")
+    batch = wake.get("batch") or frozen.get("batch") or {}
+    error = frozen.get("error") or (
+        {"step": wake.get("step"), "message": wake.get("error")}
+        if wake.get("error") else {})
+    suffix = ""
+    recorded = batch.get("recorded")
+    if batch.get("production_session") is True:
+        suffix = (f" (production ran one on {len(recorded)} stimuli)"
+                  if recorded else " (production ran one)")
+    elif batch.get("production_session") is False:
+        suffix = " (production ran none)"
+    if no_session:
+        return (f'<p class="summary">'
+                f'<span class="status-no_session">No session</span>: '
+                f"{esc(no_session)}{esc(suffix)}</p>")
+    if error:
+        return (f'<p class="summary">Failed at '
+                f"{esc(error.get('step') or 'wake')} — "
+                f"{esc(error.get('message'))}</p>")
+    trajectory = wake.get("trajectory") or frozen.get("trajectory") or {}
+    blocks = trajectory.get("blocks") or {}
+    diff = frozen.get("diff") or {}
+    items = blocks.get("items")
+    offered = batch.get("offered")
+    seen = blocks.get("stimuli")
+    stimuli = (len(offered) if isinstance(offered, list)
+               else len(seen) if isinstance(seen, list)
+               else "unknown")
+    verb = "Session ran" if wake.get("model_calls") else "Session assembled"
+    return (
+        f'<p class="summary">{esc(verb)}: '
+        f"{len(items) if isinstance(items, list) else 'unknown'} "
+        f"agenda items from {stimuli} stimuli; "
+        f"{sum(len((d or {}).get('created') or []) for d in diff.values())} "
+        f"created, "
+        f"{sum(len((d or {}).get('revised') or []) for d in diff.values())} "
+        f"revised, "
+        f"{sum(len((d or {}).get('retired') or []) for d in diff.values())} "
+        f"retired; "
+        f"{len(trajectory.get('tool_calls') or [])} tool calls"
+        f"{esc(suffix)}</p>")
+
+
 def _wake(case_index: int, index: int, wake: dict[str, Any],
           frozen: dict[str, Any]) -> str:
     anchor = f"case-{case_index}-wake-{index}"
-    status = wake.get("status") or "PASS"
+    status = wake.get("status") or "ERROR"
     error = frozen.get("error") or {}
     parts = [
         f'<section class="wake" id="{anchor}">'
         f"<h3>wake {index} (recorded {esc(wake.get('recorded_wake_id'))}) — "
         f'<span class="status-{esc(status)}">{esc(status)}</span></h3>',
+        _summary(wake, frozen),
     ]
     if error or wake.get("error"):
         parts.append(_kv([
             ("failed step", error.get("step") or wake.get("step")),
             ("error", error.get("message") or wake.get("error")),
         ]))
-    parts.append(_arrived({**wake, "advance": wake.get("advance")}))
+    parts.append(_arrived({**wake, "advance": wake.get("advance"),
+                           "batch": wake.get("batch")
+                                    or frozen.get("batch")}))
     parts.append(_read({**wake, "trajectory":
                             wake.get("trajectory") or frozen.get("trajectory")}))
     parts.append(_did({**wake, "trajectory":
@@ -307,8 +397,8 @@ def _toc(report: dict[str, Any]) -> str:
     for ci, case in enumerate(report.get("cases") or []):
         inner = "".join(
             f'<li><a href="#case-{ci}-wake-{wi}">wake {wi}</a> — '
-            f'<span class="status-{esc(w.get("status") or "PASS")}">'
-            f'{esc(w.get("status") or "PASS")}</span></li>'
+            f'<span class="status-{esc(w.get("status") or "ERROR")}">'
+            f'{esc(w.get("status") or "ERROR")}</span></li>'
             for wi, w in enumerate(case.get("wakes") or []))
         items.append(
             f'<li><a href="#case-{ci}">{esc(case.get("case"))}</a> — '

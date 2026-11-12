@@ -135,16 +135,19 @@ async def _room_directory(
     return StaticChannelDirectory(channels=channels, threads=threads)
 
 
-def run_status(cases: list[dict[str, Any]], evidence: dict[str, Any]) -> str:
+def run_status(
+    cases: list[dict[str, Any]], evidence: dict[str, Any],
+    errors: list[dict[str, Any]] | None = None,
+) -> str:
     """The run's verdict: the cases' own PASS/FAIL/REVIEW/ERROR rolled up
-    fail-closed, plus ERROR for unreadable or invalid evidence — never a
-    collapsed "done"."""
+    fail-closed, plus ERROR for a failed step or unreadable evidence —
+    never a collapsed "done"."""
     statuses = [
         c.get("status") if c.get("status") in {PASS, "FAIL", "REVIEW", ERROR}
         else ERROR
         for c in cases
     ]
-    if evidence.get("status") != PASS:
+    if evidence.get("status") != PASS or errors:
         statuses.append(ERROR)
     return rollup(*statuses) if statuses else ERROR
 
@@ -212,6 +215,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             "config_sha256": fingerprint(args.config),
             "subject_config_sha256": fingerprint(generated),
         }
+        report["errors"] = []
         try:
             with evidence.capture(trace.get_tracer_provider(), export=export):
                 source = create_sql_engine(args.database_url)
@@ -219,18 +223,37 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                     # The deployment's channel directory, read once at run
                     # start and frozen: every compose expands guild entries
                     # through the static copy, not a live read.
-                    args.channel_directory = await _room_directory(
-                        args, cfg, load_policy(args.policy), output)
-                    policy = load_policy(
-                        args.policy, channels=args.channel_directory)
-                    with measured_run_budget(args, evidence, output, report):
-                        report["cases"] = [
-                            await run_case(
-                                args, case, source, judges, policy,
-                                evidence, output,
-                            )
-                            for case in cases
-                        ]
+                    try:
+                        args.channel_directory = await _room_directory(
+                            args, cfg, load_policy(args.policy), output)
+                    except Exception as exc:  # noqa: BLE001 — the step names itself
+                        report["errors"].append({
+                            "step": "room_directory",
+                            "message": f"{exc!r}",
+                        })
+                        report["cases"] = []
+                    else:
+                        policy = load_policy(
+                            args.policy, channels=args.channel_directory)
+                        with measured_run_budget(
+                            args, evidence, output, report,
+                        ):
+                            report["cases"] = []
+                            for case in cases:
+                                try:
+                                    report["cases"].append(await run_case(
+                                        args, case, source, judges, policy,
+                                        evidence, output,
+                                    ))
+                                except Exception as exc:  # noqa: BLE001 — ERROR, never a crash
+                                    report["cases"].append({
+                                        "status": ERROR, "case": case.name,
+                                        "unit": case.unit,
+                                        "errors": [
+                                            f"the case run failed: {exc!r}"],
+                                        "wakes": [],
+                                    })
+                                    break
                 finally:
                     await source.dispose()
         finally:
@@ -240,7 +263,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 receipt = {"status": "ERROR", "causes": ["unreadable_record"]}
             report["evidence"] = {**receipt, "ref": evidence.path.name}
             report["status"] = run_status(
-                report.get("cases", []), report["evidence"])
+                report.get("cases", []), report["evidence"],
+                report["errors"])
     (output / "report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n"
     )

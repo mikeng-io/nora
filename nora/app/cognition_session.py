@@ -904,6 +904,8 @@ class CognitionSessionRunner:
                 last_session_ms=last_looked_ms, max_items=self._max_items)
             if situation.agenda.is_empty:
                 self._inc("nora_cognition_session_skipped_total", reason="empty_agenda")
+                if inspect_only:
+                    return None  # an inspection persists nothing
                 await self._finish(
                     wake_id, unit, None, "closed",
                     "empty agenda" if not skipped else
@@ -1165,9 +1167,7 @@ class CognitionSessionRunner:
         """`_finish`, shielded: a SECOND cancel (a `shutdown` and the
         evaluator's `cancel_in_flight` both cancelling this task) interrupts
         the wait, never the write."""
-        write = asyncio.ensure_future(
-            self._finish(wake_id, unit, session_id, outcome, detail),
-        )
+        write = asyncio.ensure_future(self._finish(wake_id, unit, session_id, outcome, detail))
         self._finishing.add(write)
         write.add_done_callback(self._finishing.discard)
         await asyncio.shield(write)
