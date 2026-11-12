@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.18.2](https://github.com/mikeng-io/nora/compare/v7.18.1...v7.18.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* **discord:** read the roster only for a snowflake guild id ([a3b5f61](https://github.com/mikeng-io/nora/commit/a3b5f61197e9893d1d0c436bf7bba40c27fa16d0))
+
 ## [7.18.1](https://github.com/mikeng-io/nora/compare/v7.18.0...v7.18.1) (2026-11-12)
 
 
