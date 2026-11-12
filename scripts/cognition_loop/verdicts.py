@@ -26,6 +26,8 @@ class JudgeAnswer:
     verdict: str  # one of JUDGE_VERDICTS, or "error" for a judge failure
     reason: str = ""
     entry_ids: tuple[str, ...] = ()
+    model: str = ""
+    served: str = ""
 
     def __post_init__(self) -> None:
         if self.verdict not in (*JUDGE_VERDICTS, "error"):
