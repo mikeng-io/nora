@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.18.1](https://github.com/mikeng-io/nora/compare/v7.18.0...v7.18.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **evals:** restore the red CI checks after the design restate ([4b98e07](https://github.com/mikeng-io/nora/commit/4b98e07a70cd94430258bcef72cb8597ec2334d4))
+
 ## [7.18.0](https://github.com/mikeng-io/nora/compare/v7.17.7...v7.18.0) (2026-11-12)
 
 
