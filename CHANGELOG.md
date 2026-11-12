@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.18.7](https://github.com/mikeng-io/nora/compare/v7.18.6...v7.18.7) (2026-11-12)
+
+
+### Bug Fixes
+
+* **agent:** keep authored prose when the send_reply repair cannot run ([4ecc24c](https://github.com/mikeng-io/nora/commit/4ecc24c05ed95f87d3d72d5f803a236816aed174))
+* **agent:** keep the send_reply repair inside the declared runner ([6053ad1](https://github.com/mikeng-io/nora/commit/6053ad1853cd82dd8989be387523390b7f860319))
+* **agent:** repair unsent replies with forced tool choice ([2802c2f](https://github.com/mikeng-io/nora/commit/2802c2fabe0ff05633f15e1ab5fb46cf94a49266))
+* **agent:** repair unsent tag replies with a bounded named send_reply force (#710) ([d03368d](https://github.com/mikeng-io/nora/commit/d03368d506decde5be699b3f1be43650d7578845))
+* **agent:** suppress prose recovery under an unresolved wire send ([a25fa57](https://github.com/mikeng-io/nora/commit/a25fa57cbe9e7bc372f728e970865df8db4bed11))
+* **agent:** type the repair limits dicts for the app-layer mypy pass ([78fc12c](https://github.com/mikeng-io/nora/commit/78fc12ca07752aec828794e0e06b02fb6c5d653e))
+
 ## [7.18.6](https://github.com/mikeng-io/nora/compare/v7.18.5...v7.18.6) (2026-11-12)
 
 
