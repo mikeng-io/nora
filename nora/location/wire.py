@@ -57,8 +57,8 @@ def route(cfg) -> RouteWiring:
             route_client = RouteClient(api_key=route_key)
         else:
             log.warning(
-                "route enabled but %s is unset — routing stays unavailable",
-                cfg.route.api_key_env,
+                "route enabled but the variable [route] api_key_env names is unset — "
+                "routing stays unavailable",
             )
     return RouteWiring(route_client=route_client)
 

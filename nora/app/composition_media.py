@@ -109,9 +109,9 @@ def _direct_describer_clients(cfg: Config) -> dict[str, AsyncOpenAI]:
         api_key = cfg.credentials.get(key_env, "")
         if not api_key:
             log.warning(
-                "media describer provider %r selected but %s is unset — "
-                "its modalities answer unavailable",
-                provider, key_env,
+                "media describer provider %r selected but the variable its api_key_env "
+                "names is unset — its modalities answer unavailable",
+                provider,
             )
             continue
         clients[provider] = create_client(
@@ -338,9 +338,9 @@ async def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
     secret_key = cfg.credentials.get(rustfs.secret_key_env, "")
     if not access_key or not secret_key:
         log.warning(
-            "media.rustfs is on but %s/%s did not both resolve in the "
-            "environment — falling back to the filesystem blob store.",
-            rustfs.access_key_env, rustfs.secret_key_env,
+            "media.rustfs is on but the variables its access_key_env and "
+            "secret_key_env name did not both resolve in the environment — falling "
+            "back to the filesystem blob store.",
         )
         return fallback
     s3 = boto3.client(

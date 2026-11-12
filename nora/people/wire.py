@@ -127,8 +127,8 @@ def steam(cfg) -> SteamWiring:
             )
         else:
             log.warning(
-                "online enabled but %s is unset — online_now's Steam arms stay unavailable",
-                cfg.online.api_key_env,
+                "online enabled but the variable [online] api_key_env names is unset — "
+                "online_now's Steam arms stay unavailable",
             )
     return SteamWiring(steam_client=steam_client)
 

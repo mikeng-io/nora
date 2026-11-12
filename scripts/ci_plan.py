@@ -425,21 +425,6 @@ def changed_paths(event: dict, repo: Path) -> list[str]:
     return [p.decode("utf-8") for p in data.split(b"\0") if p]
 
 
-def _added_lines(diff: str, removed: set[str]) -> dict[int, str]:
-    out: dict[int, str] = {}
-    number = 0
-    for line in diff.splitlines():
-        hunk = re.match(r"@@ .* \+(\d+)(?:,\d+)? @@", line)
-        if hunk:
-            number = int(hunk.group(1))
-        elif line.startswith("+") and not line.startswith("+++"):
-            out[number] = line[1:]
-            number += 1
-        elif line.startswith("-") and not line.startswith("---") and line[1:].strip():
-            removed.add(line[1:].strip())
-    return out
-
-
 def codeql_findings(event: dict, repo: Path, directory: Path) -> int:
     """Count high/critical or error findings on added PR lines, never raw code.
 
@@ -464,8 +449,6 @@ def codeql_findings(event: dict, repo: Path, directory: Path) -> int:
             ["git", "diff", "--name-only", "--no-renames", "-z", "HEAD^1", "HEAD"],  # noqa: S607
             cwd=repo,
         )
-        added: dict[str, dict[int, str]] = {}
-        removed: set[str] = set()
         for raw_path in paths.split(b"\0"):
             if not raw_path:
                 continue
@@ -474,12 +457,10 @@ def codeql_findings(event: dict, repo: Path, directory: Path) -> int:
                 ["git", "diff", "--no-ext-diff", "--unified=0", "HEAD^1", "HEAD", "--", path],  # noqa: S607
                 cwd=repo, text=True,
             )
-            added[path] = _added_lines(diff, removed)
-        # A line the same diff removes elsewhere is moved code, not new code.
-        for path, lines_by_number in added.items():
-            changed[path] = {
-                n for n, text in lines_by_number.items() if text.strip() not in removed
-            }
+            lines: set[int] = set()
+            for start, length in re.findall(r"^@@ .* \+(\d+)(?:,(\d+))? @@", diff, re.MULTILINE):
+                lines.update(range(int(start), int(start) + (int(length) if length else 1)))
+            changed[path] = lines
     blocked = 0
     for file in files:
         runs = json.loads(file.read_text())["runs"]

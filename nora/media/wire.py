@@ -291,7 +291,7 @@ def video(cfg, clock, compute_backends, compute_jobs, metrics) -> VideoWiring:
             )
         else:
             log.warning(
-                "[video_gen] enabled but %s is unset; video_create is withheld",
-                video_cfg.api_key_env,
+                "[video_gen] enabled but the variable its api_key_env names is unset; "
+                "video_create is withheld",
             )
     return VideoWiring(video_desk=video_desk)

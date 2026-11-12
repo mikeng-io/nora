@@ -57,9 +57,9 @@ def search_provider(cfg: Config)-> SearchProvider | None:
             )
         else:
             log.warning(
-                "search enabled on provider %s but %s is unset — web_search stays unavailable",
+                "search enabled on provider %s but the variable [search] api_key_env "
+                "names is unset — web_search stays unavailable",
                 cfg.search.provider,
-                cfg.search.api_key_env,
             )
     return search_client
 
@@ -139,8 +139,9 @@ def google_credentials(cfg: Config, *, metrics: Any)-> GoogleCredentials | None:
     missing = [name for name, value in zip(names, values, strict=True) if not value]
     if missing:
         log.warning(
-            "[google] %s unset; every Google service answers unavailable (run "
-            "scripts/google_auth.py, put the values in .env)", ", ".join(missing),
+            "[google] %d of its credential variables unset; every Google service "
+            "answers unavailable (run scripts/google_auth.py, put the values in .env)",
+            len(missing),
         )
         return None
     client_id, client_secret, refresh_token = values
