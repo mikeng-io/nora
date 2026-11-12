@@ -1,5 +1,22 @@
 # Changelog
 
+## [7.18.5](https://github.com/mikeng-io/nora/compare/v7.18.4...v7.18.5) (2026-11-12)
+
+
+### Features
+
+* **eval:** report.html renders the whole run from the frozen output ([68ed6ae](https://github.com/mikeng-io/nora/commit/68ed6ae004d464adf3ef5eaf9d3f3ab29448b602))
+
+
+### Bug Fixes
+
+* **cognition:** the inspection takes the doctrine digest as optional ([ea45124](https://github.com/mikeng-io/nora/commit/ea451246e03971186efac204466d485a1406de5e))
+* **eval:** advancing the Record supersedes open sandbox versions ([6950405](https://github.com/mikeng-io/nora/commit/6950405efdec3fb8acb0c95ac43fc679f8f821e4))
+* **eval:** derive wake status, count copies exactly, own the report's light scheme ([31e03e3](https://github.com/mikeng-io/nora/commit/31e03e3ac2f6018f4d32915b9068ebc84906d50d))
+* **eval:** each sandbox wake is offered its recorded batch, not all pending ([d3dd687](https://github.com/mikeng-io/nora/commit/d3dd6878a9a64a6c86a0127f4e7d44e6ae8c6084))
+* **eval:** steps name themselves, rooms freeze, inspect captures context ([1b2c61f](https://github.com/mikeng-io/nora/commit/1b2c61fe973c06542a90687f2f677735c5bf8382))
+* **eval:** the Cognition loop skips Record tables with no id sequence ([ce74c0d](https://github.com/mikeng-io/nora/commit/ce74c0d7af1087b9c37b886600132e11a967a0f9))
+
 ## [7.18.4](https://github.com/mikeng-io/nora/compare/v7.18.3...v7.18.4) (2026-11-12)
 
 
