@@ -77,9 +77,10 @@ class DiscordRoster:
         not addressable here — see the module docstring.
         """
         guild_id, _, _channel_id = conversation_id.partition("/")
-        if not guild_id or not _channel_id:
+        if not (guild_id.isascii() and guild_id.isdigit()) or not _channel_id:
             # Not the documented shape. Unavailable, not empty: a malformed id
             # is a wiring fault, and answering "nobody is here" would hide it.
+            # Only a snowflake reaches the request path.
             log.warning(
                 "conversation_id %r is not '<guild_id>/<channel_id>'; roster unavailable",
                 conversation_id,
@@ -91,7 +92,7 @@ class DiscordRoster:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
                 session.get(
-                    f"{self._base_url}/guilds/{guild_id}/members",
+                    f"{self._base_url}/guilds/{int(guild_id)}/members",
                     headers=headers,
                     params={"limit": str(MAX_MEMBERS_PER_PAGE)},
                 ) as resp,
