@@ -742,7 +742,7 @@ def test_production_hands_the_room_tools_the_presence_reader():
                 for ret in ast.walk(fn):
                     if not (isinstance(ret, ast.Return) and isinstance(ret.value, ast.Dict)):
                         continue
-                    for key, value in zip(ret.value.keys, ret.value.values):
+                    for key, value in zip(ret.value.keys, ret.value.values, strict=True):
                         if (
                             isinstance(key, ast.Constant) and key.value == "rooms"
                             and getattr(value, "id", None) == "presence_reader"
