@@ -1,12 +1,12 @@
 # nora-voice-sidecar
 
 Audio-controller for Nora's Discord voice channel, per
-`design/voice-channel/07-audio-owner-controller.md` (phase 1). It is the
+`design/voice-channel/audio.md` (phase 1). It is the
 SOLE owner of the Discord voice connection: every audio stream in and out
 of the channel goes through it, and nora drives it over an HTTP control
 plane (nora decides everything — queue, resolve; the controller only
 plays). The receive side of the original stage-2 design
-(`design/voice-channel/05-sidecar-receive.md`) is unchanged: per-user Opus
+(`design/voice-channel/receive.md`) is unchanged: per-user Opus
 streams are DAVE-decrypted (see `DAVE-NOTES.md`), decoded to PCM, and
 forwarded `{user_id, pcm}` over the local TCP seam for the wake gate (see
 `TRANSPORT.md`).

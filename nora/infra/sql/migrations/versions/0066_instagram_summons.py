@@ -1,5 +1,5 @@
 """instagram_summons -- the public summons ledger
-(design/instagram-adoption/19, `nora.app.summons`).
+(design/instagram-adoption/summons.md, `nora.app.summons`).
 
 One row per comment-mention the summons poller handled, UNIQUE on the comment
 id: the row is claimed (`INSERT ... ON CONFLICT (comment_id) DO NOTHING`)

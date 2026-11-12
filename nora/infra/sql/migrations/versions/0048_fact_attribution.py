@@ -1,6 +1,6 @@
 """fact_candidate.asserted_* and fact.asserted_* -- who said it, and when
-(design/dreamer-agent-loop/32-fact-dreamer-schedule.md §3.4, §5 closed
-decision 2).
+(design/cognition-loop/data.md «Layers by authority», the derived
+layers fact tables).
 
 **Why on BOTH tables.** The candidate row carries the claim's attribution —
 the `person_id` (or `sender_id`, when the sender mapped to nobody) and the

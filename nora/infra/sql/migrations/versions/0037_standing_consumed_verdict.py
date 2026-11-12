@@ -1,5 +1,5 @@
 """standing.consumed_verdict_tag -- S2's acted-on watermark
-(design/dreamer-agent-loop/26-standing.md sec. 2).
+(design/cognition-loop/data.md sec. 2).
 
 **Why a column and not a comparison.** The re-derivation trigger asks "has an
 ungrounded verdict arrived that this position has not been re-derived from".

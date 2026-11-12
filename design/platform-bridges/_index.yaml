@@ -22,9 +22,9 @@ open_questions:
 edges:
   - {src: 01-source-map, dst: 00-contract, rel: grounds, provenance: inspected-source}
   - {src: 02-wire-and-platforms, dst: ../discord-integration/01-listener-and-resilience.md, rel: amends, provenance: proposed}
-  - {src: 02-wire-and-platforms, dst: ../discord-music/02-control-surface.md, rel: amends, provenance: proposed}
-  - {src: 02-wire-and-platforms, dst: ../whatsapp-adoption/03-transport-contract.md, rel: amends, provenance: proposed}
-  - {src: 02-wire-and-platforms, dst: ../instagram-adoption/03-transport-contract.md, rel: amends, provenance: proposed}
+  - {src: 02-wire-and-platforms, dst: ../voice-channel/music.md, rel: amends, provenance: proposed}
+  - {src: 02-wire-and-platforms, dst: ../whatsapp-adoption/bridge.md, rel: amends, provenance: proposed}
+  - {src: 02-wire-and-platforms, dst: ../instagram-adoption/bridge.md, rel: amends, provenance: proposed}
   - {src: 03-ownership-and-recovery, dst: ../standing-ledger/30-turn-records.md, rel: extends, provenance: proposed}
   - {src: 04-operations, dst: ../../docs/observability.md, rel: amends, provenance: operator-requested-proposal}
   - {src: 05-build-and-acceptance, dst: 03-ownership-and-recovery, rel: verifies, provenance: proposed}

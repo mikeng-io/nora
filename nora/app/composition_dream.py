@@ -222,7 +222,7 @@ def _character_person_adaptor(
                 store=SqlCharacterEvidence(engine),
                 keys=person_keys,
                 # Their social items are evidence too (design/
-                # cognition-loop/22 §6), read whether or not the poller
+                # cognition-loop/observation.md), read whether or not the poller
                 # runs, opted-out persons left out by the store.
                 social=readable_social_store(engine, persons),
                 former_ids=persons.former_ids_for,

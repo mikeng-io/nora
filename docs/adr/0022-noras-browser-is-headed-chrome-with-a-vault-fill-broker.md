@@ -3,7 +3,7 @@
 - **Status:** accepted (2026-10-07, operator); Decision 2 superseded in part for the target HTTP egress architecture by [0035](0035-shared-smokescreen-http-egress.md), implementation pending.
 - **Date:** 2026-10-07
 - **Extends:** [0019](0019-noras-computer-runs-in-an-sbx-microvm.md) and
-  `design/sandbox-runtime/00-design.md` §14 (S4, the browser), which this
+  `design/browser-runtime/browser.md` (the browser, which this
   makes concrete.
 - **Supersedes, in part:** sandbox-runtime decision 3 (2026-10-01, "no
   browser logins are allowed for now"), for Nora's own accounts only, held
@@ -30,7 +30,7 @@ driver faster and cheaper than browser-use, a vault for many credentials
 (OpenBao), vision from DeepSeek v4.1 Flash, a small decision model for
 steps, and a view-only stream to the portal.
 
-The research (`design/browser-runtime/02-research.md`, 2026-10-06,
+The research (`design/browser-runtime/browser.md`, 2026-10-06,
 re-verified against primary pages 2026-10-07, each claim marked) and a
 read of norty (`00-design.md` §0, 2026-10-07) found:
 

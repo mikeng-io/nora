@@ -457,8 +457,8 @@ class EngagementPipeline:
         `{attempt, event_id, attempt_id, queue_wait_ms}` — carried as plain
         call metadata rather than on `EngagementRequest` (the domain type
         stays queue-agnostic). The generation root opens as a SEPARATE
-        empty-parent trace linked to that attempt (design 04: "linked to the
-        relevant consumer attempt … not a child of a queue trace").
+        empty-parent trace linked to that attempt
+        (design/platform-bridges/04-operations.md: not a child of a queue trace).
 
         Returns the turn's disposition for the work claim ("rejected",
         "queue_full", or the turn outcome), never None.

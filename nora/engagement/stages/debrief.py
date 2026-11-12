@@ -1092,8 +1092,8 @@ async def run(
                         prior.i_owe if prior is not None else None),
                     # Exclusions are code-derived, never model-asserted:
                     # the prior's gate, plus every exclusion the retained
-                    # Record itself carries (design 20 §4, updater source
-                    # requirements derived by code), plus any the output
+                    # Record itself carries (design/notebook-memory-types/20-standing.md:
+                    # updater source requirements derived by code), plus any the output
                     # names — unioned, never narrowed.
                     # Exclusions are code-derived, never model-asserted:
                     # the prior's gate, plus every exclusion the retained

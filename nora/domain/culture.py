@@ -315,7 +315,7 @@ REVISE_REFUSALS = frozenset({
 _EPISODE = re.compile(r"response:(\d+)")
 
 #: `social:<network>:<item id>`: how a person session cites one of that
-#: person's social items (design/cognition-loop/22 §6). Its own id space: the
+#: person's social items (design/cognition-loop/observation.md). Its own id space: the
 #: item's natural key `(network, item_id)`, the one `social_item` is unique
 #: on, never a Record id, so it cannot be confused with a message.
 _SOCIAL = re.compile(r"social:([a-z]+):(\S+)")

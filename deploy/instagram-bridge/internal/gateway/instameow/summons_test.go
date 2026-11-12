@@ -1,7 +1,7 @@
 package instameow
 
 // The summons intake (summons.go) against the measured card shape
-// (design 19, "Intake, re-measured 2026-09-26"): the live delta carries the
+// (design/instagram-adoption/summons.md, "Intake, re-measured 2026-09-26"): the live delta carries the
 // comment's text and the commenter, and NO target_url; the thread refetch
 // carries target_url. Every id and name below is synthetic.
 

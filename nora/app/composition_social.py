@@ -121,7 +121,7 @@ def poller(
     persons: Any, social_subjects: Any, stimulus_store: Any,
 ) -> PollerWiring:
 
-    # The social stream's poller (design/cognition-loop/22-social-stream.md): built here,
+    # The social stream's poller (design/cognition-loop/observation.md): built here,
     # started by `nora/__main__.py`, because the eval subject composes this graph too and
     # must not read members' accounts through the deployment's login. `[social.poll]…
     social_poller: SocialPoller | None = None

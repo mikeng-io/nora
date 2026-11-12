@@ -5,7 +5,7 @@ description: "What SandboxRuntime lacks for a worker, the one verb it gains (spa
 tags: [nora, sandbox, sbx, computerd, port, spawn, websocket, providers]
 timestamp: '2026-10-25'
 edges:
-  - {dst: ../sandbox-runtime/00-design.md, rel: amends, provenance: asserted}
+  - {dst: ../sandbox-runtime/README.md, rel: amends, provenance: asserted}
 ---
 
 # 30 · The sandbox port
@@ -62,7 +62,7 @@ that passes it. Only the sbx adapter ships in this bundle.
 ## 4. Scoped VM routing (2026-11-02; NOT BUILT)
 
 [Issue #520](https://github.com/mikeng-io/nora/issues/520) includes the
-[current scoped browser contract](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02).
+[current scoped browser contract](../browser-runtime/README.md).
 One policy unit or canonical person+anchor-unit DM scope resolves one microVM;
 Pi first and ACP later run inside the same VM used by that scope's native
 computer tools. Resolve scope once from the admitted job and carry it through
@@ -83,7 +83,7 @@ prerequisites are complete. No worker or host operation follows from this doc.
 
 ### Scope-wide execution queue amendment (2026-11-04)
 
-The [computer queue contract](../browser-runtime/00-design.md#per-scope-computer-queue-operator-scope-addition-2026-11-04)
+The [computer queue contract](../browser-runtime/README.md)
 serializes first-version execution segments per VM, across native tools and
 worker jobs. Separate task tabs remain, but concurrent same-VM execution is
 not required. Reuse Redis Streams infrastructure and existing durable job

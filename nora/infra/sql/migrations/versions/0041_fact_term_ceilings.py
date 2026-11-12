@@ -1,6 +1,6 @@
 """fact / fact_candidate term ceilings -- the join key was unbounded
 
-`design/dreamer-agent-loop/25-knowledge-pipeline.md` §9.1 gathers the tier's
+`design/cognition-loop/data.md`  gathers the tier's
 caps and finds two columns with none at all: `subject_id` and `object_literal`.
 
 **It is the note-body defect, and it bites harder here.** The subject is a JOIN

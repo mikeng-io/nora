@@ -1,5 +1,5 @@
 """summons_message_key -- claim a public summons on its CARD, not its comment
-(design/instagram-adoption/19, the 2026-09-26 intake).
+(design/instagram-adoption/summons.md, the 2026-09-26 intake).
 
 A summons now arrives as the bridge's SSE `summons` event, a DM card that
 names the post but NOT the comment (measured). The ledger row is therefore

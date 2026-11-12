@@ -1,6 +1,6 @@
 """The platform-observation mixed journey, end to end over the fake Record.
 
-design/platform-observations 04's proof, bound by construction: the SAME
+design/platform-observations/exposure.md's proof, bound by construction: the SAME
 `fold_observation` the SQL head update runs, the grounder the session runs,
 and `render_agenda` the model reads — one generated journey (poll create,
 share, room/pin/member changes, a vote and a close that arrive with NO new

@@ -61,7 +61,7 @@ def event_id(source_key: str, *, key: bytes, key_version: int) -> str:
 
 @dataclass(frozen=True)
 class Envelope:
-    """The complete stream field payload (design 02-wire §envelope)."""
+    """The complete stream field payload (design/platform-bridges/02-wire-and-platforms.md)."""
 
     platform: str
     account_key: str

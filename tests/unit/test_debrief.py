@@ -1538,7 +1538,7 @@ class _NoSynthesis:
 
 async def test_an_ordinary_fold_preserves_the_prior_sections_and_exclusions():
     """A fold that revises only the paragraph must not cancel `hold_open`,
-    `i_owe`, or the room's exclusions (design/notebook-memory-types/20 §5:
+    `i_owe`, or the room's exclusions (design/notebook-memory-types/20-standing.md §5:
     "a missing output section does not cancel an obligation"). The stored
     exclusions are the prior's UNION the Record's own requirements — derived
     by code, never asserted by the model."""

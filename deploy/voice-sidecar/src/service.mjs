@@ -1,5 +1,5 @@
 // Production entry for the audio-controller (the voice sidecar, phase 1 of
-// design/voice-channel/07-audio-owner-controller.md).
+// design/voice-channel/audio.md).
 //
 //   node src/service.mjs
 //
@@ -217,7 +217,7 @@ print(json.dumps(guilds))
 async function main() {
   const configuredGuilds = loadConfiguredGuilds();
   // ONE CORE PER GUILD, in one process (multi-guild, 2026-09-17). Each is the
-  // same single-connection state machine §12.5 describes — a generation
+  // same single-connection state machine design/voice-channel/audio.md «Connection lifecycle» describes — a generation
   // counter, an outbox, a desired-state file — instantiated per guild rather
   // than keyed by one. Nothing is shared between them but the bot token and
   // the socket out front.
@@ -317,7 +317,7 @@ async function main() {
     log('listening_http', { host: HOST, port: PORT });
   });
 
-  // Boot (§12.1): restore whatever the STATE DIRECTORY says was connected.
+  // Boot (design/voice-channel/audio.md «Connection lifecycle»): restore whatever the STATE DIRECTORY says was connected.
   // Restore only guilds still present in the shared configuration.
   //
   // A guild whose file says `idle` is NOT restored and NOT created: a restart

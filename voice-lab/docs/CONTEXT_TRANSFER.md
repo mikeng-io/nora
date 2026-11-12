@@ -3,7 +3,7 @@
 **Transfer to:** MacBook Claude Code session
 **From:** Norty (norty host) — full investigation + partial fix, handoff for continued work
 **Repos:**
-- `nora` (design docs): branch `feat/wake-v4-postmortem` → https://github.com/mikeng-io/nora/tree/feat/wake-v4-postmortem (design doc: `design/voice-channel/03-wake-word-training.md` — has full post-mortem)
+- `nora` (design docs): branch `feat/wake-v4-postmortem` → https://github.com/mikeng-io/nora/tree/feat/wake-v4-postmortem (design doc: `design/voice-channel/receive.md` — has full post-mortem)
 - `voice-lab` (lab): **NEW private repo** `opsuser-dev/voice-lab` → clone + 6 commits:
   - `voice-lab/scripts/modal_train_wakeword.py` — publish gate implemented
   - `wake-council-experiments/exp1-8 + lib_score.py` — Opus eval suite

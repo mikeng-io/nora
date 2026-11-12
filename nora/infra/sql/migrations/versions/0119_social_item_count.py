@@ -1,7 +1,7 @@
 """social_item_count: a post's or reel's likes, comments and reposts as its
 author's grid shows them; social_poll: the `recount` stage.
 
-design/cognition-loop/22-social-stream.md §5. APPEND-ONLY: a read appends a
+design/cognition-loop/observation.md. APPEND-ONLY: a read appends a
 row for an item only where its counts differ from the item's latest row, so
 the latest row is the current counts and the rows before it are how they
 moved. Each count is NULL when the read did not carry it (unknown, never 0);

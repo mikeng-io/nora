@@ -1,4 +1,4 @@
-"""Shared graph contract for design/unified-memory/27; no runtime wiring.
+"""Shared graph contract for design/unified-memory/graph.md; no runtime wiring.
 
 Entity ids are store-owned strings; event_entry is a Register row, event an
 entity. Evidence snapshots are hydrated by the caller from sources actually
@@ -163,7 +163,7 @@ RELATION_RULES: Mapping[str, RelationRule] = {
     "same_as": _rule(ENTITY_KINDS, ENTITY_KINDS),
 }
 # A subject someone keeps returning to is `interested_in` a topic; `likes` is a
-# preference for one specific thing (notebook-memory-types/10 §3).
+# preference for one specific thing (notebook-memory-types/10-relations.md §3).
 for _rel in ("likes", "dislikes"):
     RELATION_RULES = {**RELATION_RULES, _rel: _rule(("person",), ("work", "place", "event"))}
 RELATION_RULES = {**RELATION_RULES, "interested_in": _rule(("person",), ("topic",))}

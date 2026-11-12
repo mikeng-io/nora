@@ -1,5 +1,0 @@
-uv run python scripts/mutate.py scripts/mutations/note-format-s1a-roster-names.json
-RED  (good)  S1a eval path: minted sender ids are left minted
-RED  (good)  S1a eval path: a minted id resolving to someone else is kept
-
-ALL MUTATIONS CAUGHT

@@ -2,7 +2,7 @@ package instameow
 
 // Inbound normalization: instameow's typed delta -> the JSON on GET /events.
 //
-// The shapes here are fixed by design/instagram-adoption/03-transport-contract.md
+// The shapes here are fixed by design/instagram-adoption/bridge.md
 // and nothing else. Drift between this file and that document is a contract
 // failure, not a judgement call — the Python adapter is written against the
 // document, not against this code.
@@ -32,7 +32,7 @@ import (
 )
 
 // Event kinds on the SSE stream. `message` is the contract's; the rest are
-// documented extensions — the contract's §"Inbound event shape" defines only
+// documented extensions — design/instagram-adoption/bridge.md «Messaging contract» defines only
 // the message object, and an adapter is expected to ignore kinds it does not
 // know (the same posture whatsapp-bridge's `type` discriminator takes).
 const (
@@ -153,7 +153,7 @@ type eventShared struct {
 	// Caption is `caption_body_text`: the post's own caption, as its author
 	// wrote it, passed through when a delta carries one. It is NOT the free
 	// depth: measured 2026-09-24, a live shared reel and a live shared story
-	// carried no caption at all (design/instagram-adoption/13, the dated
+	// carried no caption at all (design/instagram-adoption/social.md, the dated
 	// section). What is free is the author and TargetURL, from which the
 	// adapter reads the kind and a clean link.
 	Caption string `json:"caption,omitempty"`
@@ -417,7 +417,7 @@ func extractMedia(msg *slidetypes.Message) []*eventMedia {
 
 	case *slidetypes.MessageContentXMA:
 		// The THUMBNAIL of a shared post, not the post. It is a real, fetchable
-		// image and it is the middle of design/13's three depths: cheap enough
+		// image and it is the middle of design/instagram-adoption/social.md's three depths: cheap enough
 		// to take at ingest, and enough for Nora to say what a reel looks like
 		// without fetching the video. `kind` is image even for a shared VIDEO,
 		// because these bytes are a still — calling it a video would make her

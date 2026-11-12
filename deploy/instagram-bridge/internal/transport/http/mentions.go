@@ -4,7 +4,7 @@ package httptransport
 // feed: the read-only probe route behind a later "summons" reply
 // (design/instagram-adoption task: Nora learning when someone @mentions her
 // in a COMMENT on a post). Superseded as the summons intake on 2026-09-26
-// (design 19): the summons arrives as a DM card and the SSE `summons` event;
+// (design/instagram-adoption/summons.md): the summons arrives as a DM card and the SSE `summons` event;
 // this route stays as a read and authorizes no comment write.
 //
 // On 16's list convention: success is `{"items": [...], "next_cursor":
@@ -18,7 +18,7 @@ package httptransport
 // # What never leaves in telemetry
 //
 // A comment's text and a commenter's igid/username must never reach a span,
-// a log line or an error (16 §Tracing's never-list, applied here the same
+// a log line or an error (design/instagram-adoption/bridge.md «Observation»'s never-list, applied here the same
 // way handlePost's file header applies it to a caption). The gateway
 // (gateway/instameow/mentions.go) already keeps them out of the upstream
 // span and every error it raises; this handler adds only a COUNT to the
@@ -117,7 +117,7 @@ func (s *Server) handleMentions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// COUNTS only — never an id, a username or comment text (file header;
-	// 16 §Tracing's never-list). The same convention handlePost's item_count
+	// design/instagram-adoption/bridge.md «Observation»'s never-list). The same convention handlePost's item_count
 	// and handleAccountsSearch's result_count already use.
 	//
 	// skipped_count is the number of SKIPPED STORIES (the sum of every

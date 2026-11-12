@@ -3,7 +3,7 @@ import { checkSession } from "@/server/session";
 import { resolveUpstream } from "@/server/upstream";
 
 // Server-only: NORA_API_BASE never reaches the browser. This route is the
-// only thing that talks to Nora's :9100 API (design spec §6), and it only
+// only thing that talks to Nora's :9100 API (design/artifact/lifecycle.md), and it only
 // forwards what src/server/upstream.ts's table allows.
 const NORA_API_BASE = process.env.NORA_API_BASE ?? "http://nora:9100";
 const UPSTREAM_TIMEOUT_MS = 15_000;

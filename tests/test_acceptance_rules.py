@@ -873,7 +873,7 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     read, search = vocabulary["instagram_read"], vocabulary["instagram_search"]
     assert read | search == EXCEPTION_ROUTES, (
         "instagram_read and instagram_search read through the instagram-bridge "
-        "only (design/instagram-adoption/15)"
+        "only (design/instagram-adoption/bridge.md)"
     )
     assert not (EXCEPTION_ROUTES & set(bridge_server.READ_ONLY_ALLOWLIST)), (
         "a pair is on the bridge's list AND in OpenCLI's allowlist, so a verb "

@@ -72,7 +72,7 @@ assembled*, not of how identity is fragmented. `RoomView.people` resolves within
 scope instead of resolving-then-filtering, and it does that without giving a
 person two identities. Workspace-per-group would give a person one Honcho
 identity per room, which is the same shape as the `#n`-beside-`ts` problem
-design/18 §3.1 refuses: two identities that can diverge, with nothing that
+design/18-media-custody.md §3.1 refuses: two identities that can diverge, with nothing that
 notices.
 
 **The choice is the operator's and has not been made.** This ADR records the
@@ -128,7 +128,7 @@ start over.
 **Deciding it now on the strength of the argument alone.** The recommendation
 above is an argument, and the R-21 precedent is a good one, but this is an
 operator decision about how Nora's memory is partitioned across social
-contexts, and this repo's standing preference (DEC-39, and design/14 §4's
+contexts, and this repo's standing preference (DEC-39, and design/system/grounding.md's
 "read the counter first") is to prefer evidence over a well-formed argument
 where evidence is obtainable. There is exactly one room today, so there is no
 evidence to obtain and no cost to waiting — until there is a second room, at

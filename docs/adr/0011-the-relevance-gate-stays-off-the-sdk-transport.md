@@ -4,7 +4,7 @@
 - **Date:** 2026-09-11
 - **Index:** none — this changes no rule about what Nora may do, only which
   transport one existing decision's verdict
-  (`design/dreamer-agent-loop/36-relevance-gate.md`) is formed on. The property
+  (`design/cognition-loop/proactive.md`) is formed on. The property
   is pinned by a named test instead:
   `tests/architecture/test_the_gate_does_not_form_its_verdict_through_the_sdk.py`.
   DEC-140's clause about the standing fold's transport is corrected in

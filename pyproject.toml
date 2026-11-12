@@ -59,7 +59,7 @@ sentry = [
     "sentry-sdk==2.44.0",
 ]
 
-# Makes `nora groups` and `nora persons pending` — the commands design/10 §6,
+# Makes `nora groups` and `nora persons pending` — the commands design/10-identity-and-policy-schema.md §6,
 # policy.example.toml and `nora.policy`'s own error messages all name — real
 # commands rather than shorthand for `python -m nora …`. Same entry point, so
 # the container's `python -m nora` CMD is unaffected.
@@ -185,7 +185,7 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", 
 #           `test_an_empty_batch_renders_NOTHING_so_the_runtime_does_not_fire`. The
 #           convention is deliberate and load-bearing for readability; N802 was
 #           finding it, not finding a defect. Added 2026-09-17 (#285) after 25 N802s
-#           accumulated across the culture-tier and participation-measure suites and
+#           accumulated across the self-growth and participation-measure suites and
 #           `make gate` went red at its FIRST step. Renaming them was the alternative
 #           and is worse: it costs the emphasis and churns names `design/09-decision-index.md`
 #           cites (#187: the reproducible derivation in
@@ -216,7 +216,7 @@ forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus
 name = "the room policy is composed in, never imported by a lower layer"
 type = "forbidden"
 # `resolve_voice_room` (nora/web/voice.py) and `resolve_music_channel`
-# (nora/platform/discord/music_notify.py, design/discord-music/10) are both
+# (nora/platform/discord/music_notify.py, design/voice-channel/music.md) are both
 # threaded as `Callable[[str], str | None]` rather than as the `Policy` itself,
 # each justified in a docstring by "this layer must not learn that nora.policy
 # exists". Both were true and neither was enforced — the same "a neutrality
@@ -268,7 +268,7 @@ type = "layers"
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
 #
 # nora.ingest sits ABOVE nora.engagement, not beside it: the standing event fold
-# (design/standing-watermark/10) is triggered from the ingest path — every message,
+# (design/standing-watermark/10-event-trigger.md) is triggered from the ingest path — every message,
 # tagged or not, spawns the watermark check — while the fold machinery it reuses
 # (ConversationSlots, the debrief objective/prompt/parse) is engagement's. That is
 # engagement's own framing ("ingest decides WHETHER to engage; engagement decides
@@ -276,7 +276,7 @@ type = "layers"
 # The reverse import does not exist and stays forbidden.
 layers = [
     # `nora.subject` obtains the composed graph for a caller that is NOT
-    # production (design/evaluation/01-boundaries.md §6, operator 2026-09-17).
+    # production (design/evaluation/subject.md, operator 2026-09-17).
     # It sits ABOVE `nora.app` so it may reach the composition root while the
     # reverse is refused — the property that stops the application learning it
     # is being measured. Before this layer existed there was no slot for that
@@ -326,7 +326,7 @@ type = "forbidden"
 # and `build_dependencies` takes a `Config`. It reads config for the same reason
 # `nora.app` does. Recorded because this list is explicit — a package not named
 # here is unconstrained because nothing looks, not because anything decided, and
-# that was measured while choosing the layer (design/evaluation/01-boundaries §6).
+# that was measured while choosing the layer (design/evaluation/subject.md).
 source_modules = [
     "nora.agent", "nora.obs", "nora.doctrine", "nora.language", "nora.platform",
     "nora.domain", "nora.persons", "nora.tag",

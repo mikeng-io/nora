@@ -16,7 +16,7 @@ FROM a file under it, and a citation OF a path under it from anywhere else.
 sweep of every backticked, slash-containing token in every tracked `.md` file
 produces mostly non-defects: version-like numbers and IPs (no extension), bare
 relative mentions inside a file already scoped to that subtree
-(`agent/guards.py` inside a doc under `design/whatsapp-adoption/`), and — the
+(`agent/guards.py` inside a doc under `design/whatsapp-adoption/README.md`), and — the
 largest category — prose that talks ABOUT a deleted or not-yet-built file
 rather than pointing at a live one. Each tightening below is a STRUCTURAL
 signal already present in this repo's own conventions, not a per-path guess:
@@ -35,9 +35,6 @@ signal already present in this repo's own conventions, not a per-path guess:
     design node is marked — and is skipped whole, the same reasoning as the
     superpowers exemption one level down from a directory to a single file. A
     `PARTLY DEPRECATED` banner does not qualify (see `_DEPRECATED_BANNER`).
-  - `design/proposed/` names its own status in its path: a not-yet-built
-    design describing a file that does not exist yet is not dangling, it is
-    early.
   - A PARAGRAPH (not just the one line the path sits on) containing the word
     "RETIRED", "DEPRECATED", "SUPERSEDED", or "deleted", or the phrase
     "resolves in git history", is read as the same kind of deliberate
@@ -111,7 +108,7 @@ _EXEMPT_TARGET_PREFIXES = ("docs/superpowers/", ".superpowers/")
 
 # A DOC under any of these is never scanned — it is itself historical
 # provenance, or it is explicitly describing something not yet built.
-_EXEMPT_SOURCE_PREFIXES = ("docs/superpowers/", ".superpowers/", "design/proposed/")
+_EXEMPT_SOURCE_PREFIXES = ("docs/superpowers/", ".superpowers/")
 
 # A paragraph carrying any of these is read as a deliberate historical
 # citation (a RETIRED/DEPRECATED/SUPERSEDED decision-index row, or prose
@@ -253,41 +250,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "Issue #385 folds triage into contribution-content.yml. The historical ADR "
         "records the earlier workflow and remains historical; resolves in git history."
     ),
-    ('design/evaluation/11-the-sandbox-rebuild.md', 'evals/PERSONA_IDENTITY.md'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('design/private-dm/01-current-flow.md', 'nora/infra/sql/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('design/unified-memory/45-persona-adaptor.md', 'nora/language/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    (
-        'design/unified-memory/45-persona-adaptor.md',
-        'nora/language/persona_collective.py',
-    ): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('design/unified-memory/47-character-dimensions.md', 'nora/domain/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('design/unified-memory/47-character-dimensions.md', 'nora/infra/sql/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('design/unified-memory/47-character-dimensions.md', 'nora/language/persona_verdict.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('design/unified-memory/70-honcho-cutover.md', 'nora/infra/sql/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
     ('openwiki/concepts/persona-and-provenance.md', 'nora/domain/persona.py'): (
         "ADR 0029 renamed this typed-tier file; this historical design or generated "
         "evidence citation resolves in git history. Current code uses profile names."
@@ -352,32 +314,11 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ),
 
     (
-        "design/context-assembly/04-every-occasion.md",
-        "nora/app/announce.py",
-    ): (
-        "deleted 2026-10-16 with the manual release scheme and the upgrade "
-        "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
-    ),
-    (
-        "design/media-read-lane/05-decisions-and-index.md",
-        "scripts/render_release_notes.py",
-    ): (
-        "deleted 2026-10-16 with the manual release scheme and the upgrade "
-        "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
-    ),
-    (
         "design/online-status/04-consumers.md",
         "scripts/render_release_notes.py",
     ): (
         "deleted 2026-10-16 with the manual release scheme and the upgrade "
         "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
-    ),
-    (
-        "docs/adr/0014-a-tagged-place-outranks-an-auto-identified-one.md",
-        "design/proposed/27-presence-analytics.md",
-    ): (
-        "deleted in the 2026-10 PII scrub (the design held real locations). "
-        "ADR 0014 is accepted, so its text keeps naming the file as it was."
     ),
     (
         "docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
@@ -406,35 +347,13 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "this decision-index prose, never as a real file); drop this entry "
         "the day that move ships"
     ),
-    (
-        "design/instagram-adoption/17-implementation-plan.md",
-        "nora/infra/social/instagram_links.py",
-    ): (
-        "planned file, created by P10 (Instagram link parsing); drop this entry in that PR"
-    ),
     # --- found once list items were split out of their list ---
     #
     # `_paragraphs` treats each list item as its own record; each of these is a
     # design record naming the code of its day.
-    ("design/evaluation/10-the-scenario-map.md", "evals/rebuilt/__main__.py"): (
-        "the old CLI, recorded as deleted in the same bullet (capitalized "
-        "'Deleted.', which the lowercase marker does not match)"
-    ),
-    ("design/evaluation/10-the-scenario-map.md", "evals/rebuilt/report.py"): (
-        "the old CLI's renderer, deleted in the same step"
-    ),
-    ("design/social-per-network/10-changes.md", "tests/test_social_fetch_tool.py"): (
-        "the plan names the file it replaces; DEC-201 PR 1 (abeab8e4) moved "
-        "those tests to per-tool tests under tests/unit/"
-    ),
     # --- the self-reference bundle, DEC-193 ---
     #
     # `scripts/ingest_self_asset.py` exists. What remains is history.
-    ("design/self-reference/00-overview.md", "design/proposed/31-self-reference.md"): (
-        "the single-file draft this bundle replaced; deleted when it was "
-        "restructured into design/self-reference/, and the line records that "
-        "history (see _index.yaml `revision`)"
-    ),
     # --- the one-path rebuild ---
     #
     # The old harness `evals/rebuilt/runner.py` and the pre-port corpus copies
@@ -442,26 +361,10 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # corpora are `evals/corpora/*.yaml` and the runner is
     # `evals/backbone.py`. These lines record what was true when written.
     **{
-        (doc, "evals/rebuilt/runner.py"): (
-            "the old harness, deleted 2026-09-21; `evals/backbone._drive` is "
-            "the one path (design/evaluation/11 §1.3)"
-        )
-        for doc in (
-            "design/evaluation/04-the-convention.md",
-            "design/evaluation/07-sdk-native.md",
-            "design/evaluation/08-the-sdk-surface.md",
-            "design/evaluation/GOAL.md",
-        )
-    },
-    **{
         (doc, old): f"pre-port copy deleted 2026-09-21; now evals/corpora/{new}"
         for doc, old, new in (
             ("design/09-decision-index.md",
              "evals/adversarial/being_contradicted.yaml", "being_contradicted.yaml"),
-            ("design/dreamer-agent-loop/13-doctrine.md",
-             "evals/cases/note_candidates/note_candidates.yaml", "note_candidates.yaml"),
-            ("design/dreamer-agent-loop/35-ambient-participation.md",
-             "evals/cases/participation/participation.yaml", "participation.yaml"),
         )
     },
     # --- the old eval layer ---
@@ -484,9 +387,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
             "design/ambient-loop/02-doctrine-and-measurement.md",
             "design/capability-drop/03-code-surface.md",
             "design/capability-drop/implementation-brief.md",
-            "design/dreamer-agent-loop/13-doctrine.md",
-            "design/dreamer-agent-loop/39-proactive-ooda-loop.md",
-            "design/evaluation/06-first-full-run.md",
         )
     },
     # The eval-layer modules live in `tests/`; these references name where the
@@ -511,42 +411,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
         "reference records where it lived"
     ),
-    ("design/dreamer-agent-loop/16-open-items.md", "evals/harness.py"): (
-        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/dreamer-agent-loop/39-proactive-ooda-loop.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/01-boundaries.md", "evals/harness.py"): (
-        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/01-boundaries.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/01-boundaries.md", "nora/app/offline.py"): (
-        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/02-the-rebuild.md", "nora/app/offline.py"): (
-        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/04-the-convention.md", "evals/harness.py"): (
-        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/04-the-convention.md", "nora/app/offline.py"): (
-        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/05-live-parity.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
     (
         "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md",
         "nora/app/eval_support.py",
@@ -554,22 +418,12 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
         "reference records where it lived"
     ),
-    ("design/evaluation/04-the-convention.md", "nora/app/eval_support.py"): (
-        "the convention names where it WAS while explaining where it went"
-    ),
-    ("design/evaluation/04-the-convention.md", "evals/relevance_gate.py"): (
-        "the convention quotes its docstring as the evidence that the facade was a boundary adapter"
-    ),
-    ("design/evaluation/04-the-convention.md", "tests/integration/test_live_parity_gate.py"): (
-        "the convention names the parity test as the one-way door the delete passed; the "
-        "reference is the point"
-    ),
     # The ROUTING tier, which has no counterpart — DEC-76 is NOT ENFORCED.
     # These two lines NAME that absence, so the reference is the point.
     ("voice-lab/docs/audit-brief-kimi-integration.md", "nora/platform/discord/voice_session.py"): (
         "a 2026-09 audit brief moved in from the voice-lab repo; it proposes where "
         "stage-1 TTS+ducking WOULD live. The file was never created (the voice "
-        "channel went the sidecar route, design/voice-channel/05) — the brief is a "
+        "channel went the sidecar route, design/voice-channel/receive.md) — the brief is a "
         "historical record of the proposal, not a link to fix"
     ),
     ("design/discord-integration/00-overview.md", "deploy/watchdog.sh"): (
@@ -577,9 +431,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "condition with a real delivery path; this design records the reasoning as it "
         "stood, and rewriting a decision record to match later code is what this "
         "repo's design docs deliberately do not do"
-    ),
-    ("design/whatsapp-adoption/01-bridge-container.md", "deploy/watchdog.sh"): (
-        "same deletion, same reason — a historical decision record, not a broken link"
     ),
     ("design/08-stack-refactor-brief.md", "nora/store/db.py"): (
         "pre-refactor handoff brief describing the SQLite-era code the brief itself "
@@ -593,33 +444,12 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
         "and the file was never added back after that decision"
     ),
-    (
-        "design/dreamer-agent-loop/34-note-dreamer-consolidation.md",
-        "nora/language/note_revisitor.py",
-    ): (
-        "the consolidation this document designs never happened: NoteRevisitor "
-        "was deleted outright rather than merged into the curator (2026-09-08 "
-        "deprecation, R-75), and issue #99 was closed as superseded on that "
-        "basis. Surfaced only once PARTLY DEPRECATED stopped exempting whole "
-        "files. The document needs its own banner; that is the author's call, "
-        "not this gate's"
-    ),
     ("design/11-recall-and-threading.md", "nora/engagement/recall.py"): (
         "early recall design; the module never landed at this path"
     ),
     ("design/11-recall-and-threading.md", "nora/infra/sql/migrations/versions/0003_quoted_ts.py"): (
         "migration was renumbered/renamed before landing (0003_presence_places.py today), "
         "same shape as 0017_events.py's own documented renumbering"
-    ),
-    (
-        "design/discord-music/01-playback-and-source.md",
-        "tests/contract/test_track_source_contract.py",
-    ): (
-        "planned contract suite; TrackSource has no shared fake or contract suite yet "
-        "(also pinned NO_SHARED_FAKE in test_port_fakes_live_in_nora_testing.py)"
-    ),
-    ("design/discord-music/04-deferred.md", "tests/contract/test_track_source_contract.py"): (
-        "same not-yet-built contract suite as 01-playback-and-source.md"
     ),
     ("design/event-abstraction/02-naming-rename.md", "nora/infra/sql/events.py"): (
         "naming-rename plan; shipped as nora/domain/events.py instead"
@@ -647,10 +477,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ),
     ("design/event-abstraction/04-dispatch-and-batching.md", "tests/test_events.py"): (
         "same event-abstraction planning-doc-vs-shipped-name drift as 02-naming-rename.md"
-    ),
-    ("design/artifact/00-design.md", "nora/compute/smith/skills/html_report/render.py"): (
-        "the design's measured account of the HTML path ADR 0020 replaced; Smith's tree "
-        "was deleted in S3b (DEC-254) and this dated record deliberately is not rewritten"
     ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
      "nora/compute/smith/page_shell.py"): (

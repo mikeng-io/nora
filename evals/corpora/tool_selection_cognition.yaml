@@ -1,5 +1,5 @@
 # S2 — tool routing, the COGNITION catalogue (design/cognition-loop/
-# 30-cognition.md §2, §4: "tool_selection is measured on the cognition
+# design/cognition-loop/session.md «Reasoning and authority»: "tool_selection is measured on the cognition
 # catalogue, on the runtime model, at step 3"; migration step 3a-ii).
 #
 # THE QUESTION is the same as `tool_selection.yaml`'s — does she reach for
@@ -235,7 +235,7 @@ cases:
     metadata: {tools: [memo_create, note_set_status], not_tools: [note_create]}
     snapshot: *room_a
 
-  # ---- `social_read` (design/cognition-loop/22 §6, the map's `social_items`):
+  # ---- `social_read` (design/cognition-loop/observation.md, the map's `social_items`):
   # a member's recorded stories, posts and reels, against the reads it is
   # confusable with. The input is the sentence a live agenda's `<social>` row
   # carries (`nora.language.cognition_render._social_row`: «<name> posted

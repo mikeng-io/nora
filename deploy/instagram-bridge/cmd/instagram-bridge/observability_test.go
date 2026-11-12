@@ -171,7 +171,7 @@ func TestAColdRoomsThreadLookupIsASpanUnderTheRequest(t *testing.T) {
 
 // writeCase is one write route, called on a COLD room (a fresh bridge), with
 // the server span it must produce and the upstream spans beneath it: exactly
-// one per instameow call (17 P1), the room's route lookup first.
+// one per instameow call (), the room's route lookup first.
 type writeCase struct {
 	name     string
 	pattern  string
@@ -469,7 +469,7 @@ func TestSearchQueryNeverLeaksOnFailure(t *testing.T) {
 	}
 }
 
-// The same rule for GET /accounts?username= (17 P10): a username is a name
+// The same rule for GET /accounts?username= (): a username is a name
 // typed about a person, exactly like a search query, and must never land in
 // a span — including instagram.accounts_by_username.match_count
 // (accounts_search.go), which must carry the COUNT and never the username

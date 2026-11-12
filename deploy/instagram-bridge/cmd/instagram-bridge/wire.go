@@ -39,7 +39,7 @@ type durable struct {
 // the gateway emits into: admit → journal → enqueue → (compat) hub.
 //
 // The summons ledger (comments.json) lives in the same session directory as
-// the credential, so a restart keeps it (design 19).
+// the credential, so a restart keeps it (design/instagram-adoption/summons.md).
 func wire(o gateway.Options, hub *stream.Hub, startedAt time.Time, comments app.CommentPolicy, d *durable) (*gateway.Bridge, http.Handler, *bridge.Sink) {
 	var sink *bridge.Sink
 	if d != nil && d.journal != nil {

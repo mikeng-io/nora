@@ -4,7 +4,7 @@
 // `instameow`, used standalone: no Matrix homeserver, no appservice, no
 // bridgev2 runtime) and exposes a small HTTP + SSE surface to the Nora Python
 // process. The wire contract is pinned in
-// design/instagram-adoption/03-transport-contract.md — every route, every
+// design/instagram-adoption/bridge.md — every route, every
 // field, the status mapping and the four inbound media shapes are defined
 // there, not here.
 //
@@ -34,7 +34,7 @@
 package main
 
 // The composition root: flags, logging, tracing, and wiring. Every behaviour
-// lives in internal/ (design/instagram-adoption/16 §Layers).
+// lives in internal/ (design/instagram-adoption/bridge.md).
 
 import (
 	"context"

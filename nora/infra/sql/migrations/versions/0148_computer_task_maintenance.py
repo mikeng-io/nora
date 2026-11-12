@@ -1,6 +1,6 @@
 """computer_tasks kind: + maintenance (the elected cleanup segment)
 
-`design/browser-runtime/00-design.md`: the browser lifecycle sweep — idle
+`design/browser-runtime/README.md`: the browser lifecycle sweep — idle
 tab close, orphan reconcile, browser stop — is execution on the scope's VM,
 so it runs INSIDE the one transactionally-elected scope owner, never as a
 second admission path beside it. The sweep writes a `computer_tasks` row

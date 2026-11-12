@@ -175,7 +175,7 @@ func TestRosterRefusesAnEmptyMemberList(t *testing.T) {
 
 	rec := getRoster(t, b, threadShort)
 
-	// 502 since P14: Instagram answered, and the answer was not a room. It
+	// 502 since bridge.md: Instagram answered, and the answer was not a room. It
 	// was 500 under the legacy status table, which had no 502.
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("an empty roster answered %d, want 502: %s", rec.Code, rec.Body.String())

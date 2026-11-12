@@ -1,7 +1,7 @@
 package instameow
 
 // These tests are the executable half of
-// design/instagram-adoption/03-transport-contract.md's inbound section.
+// design/instagram-adoption/bridge.md's inbound section.
 //
 // The fixtures are the SHAPES of deltas captured live on 2026-09-21, replayed
 // through instameow's own decoder rather than through a hand-written parser —
@@ -607,7 +607,7 @@ func xmaMessage(x *slidetypes.XMAContent, textBody string) *slidetypes.Message {
 // XMA carries them. This fixture is the fullest shape the library declares; a
 // live share measured 2026-09-24 carried the author and TargetURL and NO
 // caption, so the caption is not the free depth
-// (design/instagram-adoption/13, the dated section).
+// (design/instagram-adoption/social.md, the dated section).
 func TestSharedReelCarriesCaptionAndAuthorForFree(t *testing.T) {
 	ev := normalizeMessage(threadShort, xmaMessage(&slidetypes.XMAContent{
 		HeaderTitleText: "someaccount",

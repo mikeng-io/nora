@@ -1,7 +1,0 @@
-RC=1 wall=71s sha=1320cf03
---- tool_selection: 81 total, 80 active, 1 parked, 1 unanchored [3 selected] ---
-  spend: 17 model call(s), in=305559 (cached 192244, fresh 113315), out=1409
-  turn:  14 call(s) over 3 turn(s) (4.67/turn), in/turn=94782 (fresh 31664, cached 63117), out/turn=313
-  passed=2 failed=1 errored=0
-  route_computer_run_parse_csv             FAIL   expected one of ['computer_run']; ran ['send_reply', 'send_reply', 'send_reply']
-context arm=full draws=3 selector_errors=0 (full-context fallback)

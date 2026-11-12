@@ -73,7 +73,7 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the warehouse queries
     "record_query", "rollup_read", "event_search", "memo_read", "character_read",
     "standing_read", "social_read",
-    # the typed source-object reads (platform-observations 05)
+    # the typed source-object reads (platform-observations/exposure.md)
     "poll_list", "poll_read", "room_state_read", "group_members",
     # the tiers' reads that already exist
     "where_been", "routine_read", "note_read", "note_search",
@@ -82,7 +82,7 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the graph surface's (DEC-316): built instead of the Honcho memory verbs
     # above while `[memory.index] read`, never beside them
     "memory_search", "memory_read",
-    # the room's own rows, roster and people (platform-observations 05)
+    # the room's own rows, roster and people (platform-observations/exposure.md)
     "room_read", "load_transcript", "who_said", "lookup_person",
     # the stored-object reads: a media object, a shared file, the
     # generated-image library

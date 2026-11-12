@@ -1,4 +1,4 @@
-# S2 — tool routing (design/tool-catalogue/05-measurement.md §2c).
+# S2 — tool routing (design/tool-catalogue/deferral.md).
 #
 # THE QUESTION: does she reach for the right tool? Asked of the SAME cases on
 # both sides of `[llm] defer_tools` — every schema resident vs six resident and
@@ -54,7 +54,7 @@ cases:
     metadata: {tools: [where_been], not_tools: [where_is, routine_read]}
     snapshot: *room_a
 
-  # routine_read (design/27 §4.3): a question about LATER is neither where_is
+  # routine_read (design/group-situation/20-context-awareness-target-shape.md): a question about LATER is neither where_is
   # (now) nor where_been (the past). The third case is the overlap the design
   # names: «usually on Tuesday nights» is a routine, not a history of hours.
   - name: route_routine_read_future
@@ -81,7 +81,7 @@ cases:
     metadata: {tools: [routine_read], not_tools: [where_is, where_been]}
     snapshot: *room_a
 
-  # design/27 §4.4 M1: WHEN someone usually gets somewhere or leaves is
+  # design/cognition-loop/observation.md: WHEN someone usually gets somewhere or leaves is
   # routine_read's too (what=arrival/departure), never where_is or where_been.
   - name: route_routine_read_arrival
     entry: tag
@@ -100,7 +100,7 @@ cases:
     snapshot: *room_a
 
   # note_create's opening lost a clause restating its first sentence (the
-  # catalogue ceiling, design/27 §4.3); its routing had no case until now.
+  # catalogue ceiling, design/group-situation/20-context-awareness-target-shape.md); its routing had no case until now.
   - name: route_note_create_open_question
     entry: tag
     expect: reply
@@ -246,7 +246,7 @@ cases:
     metadata: {tools: [generate_image]}
     snapshot: *room_a
 
-  # --- Nora's computer (design/sandbox-runtime §4, DEC-243) -------------------------
+  # --- Nora's computer (design/sandbox-runtime/runtime.md, DEC-243) -------------------------
   # The four computer tools against their nearest siblings: `calculate` for
   # maths, `web_fetch` for reading a page, `generate_image` for a picture.
   #
@@ -273,7 +273,7 @@ cases:
   # visibly rather than being deleted: nothing in a turn says the file exists
   # until S2b-2's <computer> block renders the workspace, and an anchor cannot
   # carry that state. It is owed work, not a parking reason (P-B was
-  # rejected, design/evaluation/11). It gains its anchor with S2b-2.
+  # rejected, design/evaluation/subject.md). It gains its anchor with S2b-2.
   # A trend's slope on eight numbers is a few `calculate` expressions, a
   # correct route; the first version of this case expected the computer for it
   # and measured the expectation (0/5, every draw used calculate). A p-value
@@ -368,7 +368,7 @@ cases:
     metadata: {tools: [web_fetch], not_tools: [computer_run, computer_browse]}
     snapshot: *room_a
 
-  # file_fetch (design/external-files §3, S3): a shared document, sheet or
+  # file_fetch (design/external-files/00-design.md §3, S3): a shared document, sheet or
   # deck link reaches her as a link handle (`[Google Doc link …]`), so the
   # call is `file_fetch(code=…)`, never `web_fetch` on a sign-in page. The
   # control below keeps a plain web page with `web_fetch`. The file ids are
@@ -393,7 +393,7 @@ cases:
     snapshot: *room_a
 
   # Putting a shared sheet on her computer to compute on is `computer_import`
-  # with the link (S4, design/external-files §5): the copy is the import
+  # with the link (S4, design/external-files/00-design.md §5): the copy is the import
   # tool's, never `file_fetch` (a read into the reply) and never `web_fetch`.
   # Same synthetic-id caveat as above: a refused copy can be followed by a
   # `file_fetch`, which this case grades as a FAIL.
@@ -406,7 +406,7 @@ cases:
     snapshot: *room_a
 
   # A shared PHOTO is looked at, not read: `media_fetch` asks the same
-  # external-files source for the file's bytes (design/external-files §2,
+  # external-files source for the file's bytes (design/external-files/00-design.md §2,
   # 2026-10-11), so the call is `media_fetch`, never `file_fetch` (text) or
   # `web_fetch` (a sign-in page). The file id is synthetic, but the eval
   # subject IS wired to Drive: the call is refused or not found, and a draw
@@ -427,7 +427,7 @@ cases:
     metadata: {tools: [web_fetch], not_tools: [file_fetch]}
     snapshot: *room_a
 
-  # computer_browse (design/browser-runtime 00 §5, ADR 0022, B2): a task that
+  # computer_browse (design/browser-runtime/browser.md, ADR 0022): a task that
   # needs a page operated, not read. Offered only under `[computer.browse]`
   # enabled, so these measure only an arm whose deployment config has it on;
   # the control above keeps a plain link with web_fetch.
@@ -495,7 +495,7 @@ cases:
     metadata: {tools: [computer_import], not_tools: [media_fetch]}
     snapshot: *room_a
 
-  # --- documents (design/artifact/00-design.md §26, ADR 0020) ----------------------
+  # --- documents (design/artifact/lifecycle.md, ADR 0020) ----------------------
   # `document_publish` against the tools a written piece could be mistaken for:
   # `note_create` (a private memory, not a page), `generate_image` and the
   # computer (a FILE: CSV, PDF, a script's output). The HTML path it replaced
@@ -660,7 +660,7 @@ cases:
       before: {document_read: [document_publish]}
     snapshot: *room_a
 
-  # --- the room tools (design/self-awareness/07) ----------------------------------
+  # --- the room tools (design/self-awareness/rooms.md) ----------------------------------
   # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
   # from: `room_list` from `group_members` (who is HERE vs which rooms exist),
   # `room_read` from `load_transcript` (another room vs this one). The third
@@ -696,7 +696,7 @@ cases:
     metadata: {tools: [group_members], not_tools: [room_list, room_read]}
     snapshot: *room_a
 
-  # --- the Record over an interval (design/cognition-loop/15-map.md §4) ------
+  # --- the Record over an interval (design/cognition-loop/README.md) ------
   # `record_query` (2026-09-29) reads what was said over a stretch of time, by
   # author or by words, under lineage. Each case names the neighbour it could
   # lose to: `load_transcript` pages back from now in this room with no filter;
@@ -751,7 +751,7 @@ cases:
     metadata: {tools: [web_search]}
     snapshot: *room_a
 
-  # --- per-network social reads (design/instagram-adoption/18, P5, P11) -------
+  # --- per-network social reads (design/instagram-adoption/social.md) -------
   # `instagram_read` takes a PERSON by name; `instagram_search` finds ACCOUNTS
   # from free text (P11); X is `x_read` and `x_search` (DEC-201). The names are synthetic and
   # need not be in the room: an honest `nothing_found` is still a correctly
@@ -904,7 +904,7 @@ cases:
     metadata: {tools: [linkedin_search], not_tools: [linkedin_read, instagram_search, web_search]}
     snapshot: *room_a
 
-  # design/social-per-network/30-link-owner-registry.md, "Migration" PR 2:
+  # design/social-per-network/links.md, PR 2:
   # X and LinkedIn register in the link-owner registry, so `web_fetch`/
   # `media_fetch` now REDIRECT a pasted page link instead of fetching it.
   # These two are NOT `route_x_read_link`/`route_linkedin_read_profile_link`
@@ -924,7 +924,7 @@ cases:
   # about a LATER, unrelated `web_fetch` call, so the ordering constraint was
   # an anchor defect, not a model one, and is dropped here (and never added
   # to the PR-3 case below). `args_include` is the link WITHOUT its scheme
-  # (`x_read`/`linkedin_read` accept either — design 30 "What each owning
+  # (`x_read`/`linkedin_read` accept either — design/social-per-network/networks.md "What each owning
   # tool accepts"), so a call that dropped the scheme along the way still
   # matches. The id and handle are synthetic.
   - name: route_x_read_link_owner_registry
@@ -951,7 +951,7 @@ cases:
         linkedin_read: ["www.linkedin.com/in/synth-pr2-person"]
     snapshot: *room_a
 
-  # design/social-per-network/30-link-owner-registry.md, "Migration" PR 3:
+  # design/social-per-network/links.md, PR 3:
   # the OWNERS now consult the registry too, so a wrong-first-owner call
   # recovers instead of dead-ending on "I can't read that." The wrong owner
   # here is `instagram_read` ON PURPOSE, not `linkedin_read`: before PR 3,
@@ -960,7 +960,7 @@ cases:
   # pair would pass on the reverted code too, since the model still gets a
   # routing hint either way and this grader does not read `status`. Only
   # `instagram_read` (an X or LinkedIn link) and `x_read` (a LinkedIn link)
-  # are the cells design 30's own table calls out as new: `instagram_read`
+  # are the cells design/social-per-network/networks.md's own table calls out as new: `instagram_read`
   # named NO other network at all before this PR, a genuine dead end. So: an
   # X status link, introduced as "this insta post" — a model that reaches
   # for `instagram_read` first, off the person's own word, now gets
@@ -1000,7 +1000,7 @@ cases:
   # expected Saturday moves with the day the case runs. If the deployment's
   # `[image_gen]` is enabled, each draw spends one provider call, as
   # `route_generate_image` already does. Run on norty 2026-09-24 at n=5 per
-  # arm; the numbers are in design/self-reference/06 §10 and §11.
+  # arm; the numbers are in design/self-reference/references.md
   #
   # The self case also fails on a prompt that gives her only a blank
   # backdrop (2026-09-24, live on WhatsApp): a prompt restating the
@@ -1037,7 +1037,7 @@ cases:
   # Standing CANNOT be seeded with the live line, so the condition that
   # produced the failure (her believing she already knew) is not present
   # here. Standing is REPLAYED from real production folds, never authored
-  # (`design/evaluation/11-the-sandbox-rebuild.md`, "standing | replayed";
+  # (`design/evaluation/subject.md`, "standing | replayed";
   # `standing_revision` keyed by conversation and time). Querying
   # `nora_eval`'s `standing_revision` for `draw`/`portrait`/`picture of`
   # (2026-09-25) found no room whose replayed standing says this, and writing
@@ -1112,7 +1112,7 @@ cases:
   # the link; live it succeeds and the turn ends.
   #
   # So the parser now drops the picture from a share whose link validated
-  # (design 13, «a linked share carries no picture»), and these inputs are
+  # (design/13-trace-content-and-redaction.md, «a linked share carries no picture»), and these inputs are
   # EXACTLY that rendering: the sharer's words, then the shared line with its
   # link, and no handle. The input now matches production, which removes the
   # typed-handle distortion. Two differences from the live turn remain,
@@ -1216,7 +1216,7 @@ cases:
     metadata: {tools: [media_fetch], not_tools: [media_search]}
     snapshot: *room_a
 
-  # --- the sub-agent (design/subagent §3, DEC-283) ---------------------------------
+  # --- the sub-agent (design/subagent/00-design.md §3, DEC-283) ---------------------------------
   # `subagent_create` against what one reply or one tool call answers. ON ARM ONLY for the
   # positives (`route_subagent_create_*`): the four tools are withheld from every surface
   # unless `[subagent] enabled` (`ToolRegistry._withheld`), so with it off they FAIL by
@@ -1292,7 +1292,7 @@ cases:
   # NOT RUN when written: the eval owner runs them on master and the branch.
   # `remember` is on both memory surfaces, a different write on each: a Honcho
   # conclusion off the graph, a Profile `told` line on it (operator ruling
-  # 2026-10-17, design/unified-memory/45). So the own-fact case runs on both,
+  # 2026-10-17, design/unified-memory/profiles.md). So the own-fact case runs on both,
   # and on each a note is not where a settled fact goes (DEC-316).
   - name: route_keep_group_fact_is_not_remember
     entry: tag
@@ -1539,7 +1539,7 @@ cases:
     metadata: {tools: [send_reply], not_tools: [remember]}
     snapshot: *room_a
 
-  # --- platform-observation source reads (design/platform-observations 05) ---
+  # --- platform-observation source reads (design/platform-observations/exposure.md) ---
   # The task-shaped reads vs their siblings: a poll is a SOURCE OBJECT, not a
   # message — «did the poll close» is `poll_list`/`poll_read`, never
   # `record_query`'s message branch (whose `kind` branch exists but the task

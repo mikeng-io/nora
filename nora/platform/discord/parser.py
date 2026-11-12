@@ -407,7 +407,7 @@ def parse_discord_delete(
         return None
 
 
-# ── platform observations (design/platform-observations) ───────────────────
+# ── platform observations (design/platform-observations/README.md) ───────────────────
 # One parse function per Gateway family. Each answers a typed `Observation`
 # — never a fabricated `NormalizedMessage` — and is bridge-mode only: the
 # `PlatformAdapter` message API is unchanged. Every event without its own

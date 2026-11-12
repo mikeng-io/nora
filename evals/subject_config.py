@@ -412,7 +412,7 @@ _HEADER = """\
 # effort, and the relevance gate, participation, standing, culture, notes, the
 # Dreamer and most tools. The suite measured a different Nora, and no case
 # could have caught it: the prompt was right, the reader was not.
-# See `design/evaluation/01-boundaries.md` §5.
+# See `design/evaluation/subject.md`  «Anchored input»
 #
 # WHAT IS DELIBERATELY NOT TAKEN, and why none is a behaviour difference:
 #   platforms.*   the adapters would dial Signal/Discord; an eval drives the

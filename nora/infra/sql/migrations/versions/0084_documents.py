@@ -1,5 +1,5 @@
 """documents, document_revision — what Nora publishes to the portal (ADR 0020,
-design/artifact/00-design.md §5).
+design/artifact/README.md).
 
 1. `documents`: the identity of a document, written once (platform, room, creator;
    `recorded_at` is when it first existed). Never updated.

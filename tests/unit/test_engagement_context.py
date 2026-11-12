@@ -638,9 +638,9 @@ async def test_no_shared_reader_is_the_dormant_default():
 
 async def test_the_position_is_read_by_platform_and_conversation():
     """The room's Standing paragraph is a READ ADAPTER in the shared view
-    (design 20): the store is still keyed `(platform, conversation_id)`, and
-    a store called with the wrong key would return a plausible position
-    belonging to another room."""
+    (design/notebook-memory-types/20-standing.md): the store is still keyed
+    `(platform, conversation_id)`; a store called with the wrong key would
+    return a plausible position belonging to another room."""
     from nora.agent.shared_state import shared_reader
     from nora.domain.standing import Standing
     from nora.testing import InMemoryStandingStore
