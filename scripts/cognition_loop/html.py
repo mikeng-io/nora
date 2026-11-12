@@ -453,11 +453,18 @@ def _toc(report: dict[str, Any], orphans: list[Path]) -> str:
     return f"<nav><h2>contents</h2><ul>{''.join(items)}</ul></nav>"
 
 
+def _load(path: Path) -> dict[str, Any]:
+    """A missing or truncated file renders as empty, never stops the report."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _availability(output: Path) -> str:
     avails = []
     for path in sorted(output.glob("wake-*.json")):
-        avail = (json.loads(path.read_text(encoding="utf-8"))
-                 .get("trajectory") or {}).get("availability")
+        avail = (_load(path).get("trajectory") or {}).get("availability")
         if avail:
             avails.append((path.stem, avail))
     if not avails:
@@ -499,8 +506,7 @@ def render(output: Path) -> Path:
         {"status": "ERROR", "run": {}, "cases": [],
          "evidence": {"status": "ERROR", "causes": ["report.json missing"]}})
     budget_path = output / "run_budget.json"
-    budget = (json.loads(budget_path.read_text(encoding="utf-8"))
-              if budget_path.is_file() else None)
+    budget = _load(budget_path) or None
     expected = {
         f"wake-{wi}-{wake.get('recorded_wake_id')}.json"
         for case in report.get("cases") or []
@@ -527,18 +533,14 @@ def render(output: Path) -> Path:
         for wi, wake in enumerate(case.get("wakes") or []):
             frozen_path = output / (
                 f"wake-{wi}-{wake.get('recorded_wake_id')}.json")
-            frozen = (json.loads(frozen_path.read_text(encoding="utf-8"))
-                      if frozen_path.is_file() else {})
+            frozen = _load(frozen_path)
             parts.append(_wake(ci, wi, wake, frozen))
         parts.append("</section>")
     if orphans:
         parts.append('<section class="case">'
                      "<h2>frozen wakes absent from report.json</h2>")
         for i, path in enumerate(orphans):
-            try:
-                frozen = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                frozen = {}
+            frozen = _load(path)
             # `wake-<index>-<recorded id>.json`; an unparseable name still
             # renders, index -1.
             stem = path.name[:-len(".json")].split("-", 2)

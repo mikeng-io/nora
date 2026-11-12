@@ -262,3 +262,13 @@ def test_a_frozen_wake_absent_from_report_json_still_renders(tmp_path):
     assert "orphan-note" in html
     assert "note_create" in html
     assert "wake 0" in html
+
+
+def test_a_truncated_wake_file_still_renders(tmp_path):
+    out = _run_dir(tmp_path, cases=[{
+        "case": "generated case", "unit": "u", "status": "ERROR",
+        "errors": [], "wakes": [_wake_report(status="ERROR")],
+    }])
+    (out / "wake-0-7.json").write_text('{"trajectory": {"blo')
+    (out / "run_budget.json").write_text("{")
+    assert "generated case" in render(out).read_text(encoding="utf-8")

@@ -23,7 +23,7 @@ from scripts.cognition_loop.cases import load_case
 from scripts.cognition_loop.html import render
 from scripts.cognition_loop.judges import judge_expectation
 from scripts.cognition_loop.state import Entry, KindDiff, StateDiff, UnitState
-from scripts.cognition_loop.verdicts import ERROR, ExpectationVerdict, rollup
+from scripts.cognition_loop.verdicts import ERROR, WAKE_ERRED, ExpectationVerdict, rollup
 from scripts.memory_graph_spike import Judges
 
 _STATUSES = ("created", "revised", "retired", "unchanged")
@@ -46,7 +46,8 @@ def case_status(row: dict[str, Any], statuses: list[str]) -> str:
     """Judging again never clears a step that failed: case errors roll up."""
     if not statuses:
         return ERROR
-    return rollup(*statuses, *([ERROR] if row.get("errors") else []))
+    kept = [e for e in row.get("errors") or [] if e != WAKE_ERRED]
+    return rollup(*statuses, *([ERROR] if kept else []))
 
 
 def run_status_after(report: dict[str, Any]) -> str:
@@ -94,8 +95,10 @@ async def rejudge(output: Path, case_path: Path, config: Path,
                         encoding="utf-8")
         wakes = row.get("wakes") or []
         recorded = wakes[index] if index < len(wakes) else {}
-        failed = frozen.get("error") or recorded.get("step") or (
-            recorded.get("status") == ERROR and not recorded.get("expectations"))
+        step = (frozen.get("error") or {}).get("step") or recorded.get("step")
+        failed = step not in (None, "report") or (
+            step is None and recorded.get("status") == ERROR
+            and not recorded.get("expectations"))
         status = rollup(ERROR if failed else "PASS", *(j["verdict"] for j in judged))
         if index < len(row.get("wakes") or []):
             row["wakes"][index]["status"] = status

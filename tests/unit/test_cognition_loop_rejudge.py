@@ -28,3 +28,11 @@ def test_rejudging_keeps_a_case_error_and_a_failed_evidence_receipt():
     assert run_status_after(passed) == "PASS"
     assert run_status_after({**passed, "evidence": {"status": "ERROR"}}) == "ERROR"
     assert run_status_after({**passed, "errors": [{"step": "room_directory"}]}) == "ERROR"
+
+
+def test_rejudging_recomputes_the_derived_wake_error():
+    from scripts.cognition_loop.rejudge import case_status
+    from scripts.cognition_loop.verdicts import WAKE_ERRED
+
+    assert case_status({"errors": [WAKE_ERRED]}, ["PASS"]) == "PASS"
+    assert case_status({"errors": [WAKE_ERRED, "advance failed"]}, ["PASS"]) == "ERROR"

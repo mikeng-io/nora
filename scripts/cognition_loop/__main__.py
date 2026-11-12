@@ -236,7 +236,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         (output / "report.json").write_text(
             json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n"
         )
-        report_html.render(output)
+        try:
+            report_html.render(output)
+        except Exception as exc:  # noqa: BLE001 — report.json stands; the run's own error is not masked
+            print(f"report.html not rendered: {exc!r}", file=sys.stderr)
     return report
 
 

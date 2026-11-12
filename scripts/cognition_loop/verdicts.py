@@ -16,6 +16,8 @@ PASS = "PASS"  # noqa: S105 — a verdict word, not a credential
 FAIL = "FAIL"
 REVIEW = "REVIEW"
 ERROR = "ERROR"
+# Derived from the wakes' statuses, so judging again recomputes it.
+WAKE_ERRED = "a wake ended in ERROR"
 
 #: A single judge's answer to one expectation.
 JUDGE_VERDICTS = ("met", "not_met", "cannot_tell")

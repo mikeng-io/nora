@@ -9,3 +9,7 @@ def test_a_judge_error_lets_the_next_wake_run():
 
 def test_a_failed_step_stops_the_chain():
     assert stops_chain({"status": "ERROR", "step": "session", "error": "boom"})
+
+
+def test_a_report_side_failure_lets_the_next_wake_run():
+    assert not stops_chain({"status": "ERROR", "step": "report", "error": "x"})
