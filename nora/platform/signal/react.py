@@ -90,6 +90,8 @@ class SignalReactor:
         self, payload: dict, conversation_id: str, request_id: str,
     ) -> ReactionResult:
         """One JSON-RPC POST — `react` keeps the refusals and the payload."""
+        conversation_id = conversation_id.replace("\r", "").replace("\n", "")
+        request_id = request_id.replace("\r", "").replace("\n", "")
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
