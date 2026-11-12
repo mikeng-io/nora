@@ -35,6 +35,7 @@ from nora.subject.eval_evidence import read_events
 from nora.subject.memory_workspace import draw_workspace
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.advance import advance_record, bump_sequences
+from scripts.cognition_loop.availability import availability
 from scripts.cognition_loop.egress import assert_no_egress
 from scripts.cognition_loop.judges import judge_expectation
 from scripts.cognition_loop.trajectory import session_events, wake_trajectory
@@ -105,6 +106,16 @@ def _profile_keys(subject: Any, unit: str) -> list[str]:
 #: Overrides the run reserves: arm overrides cannot set these at all —
 #: a clash refuses before composition. The measured surface stays
 #: configurable (`llm.*`, doctrine, tools); the delivery surface does not.
+#: The reads Cognition's loop depends on, on for every case unless an arm
+#: sets them back: a closed read cascades into refused writes (no graph
+#: search before `memory_propose`, no profile before a note or lesson
+#: names a person), so the default measures the loop with every read open.
+OPEN_LOOP: dict[str, Any] = {
+    "memory.index.read": True,
+    "memory.profile.read": True,
+}
+
+
 def reserved_overrides(workspace: str) -> dict[str, Any]:
     """Every override the run owns outright."""
     return {
@@ -153,7 +164,7 @@ async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
         database_url=url, workdir=Path(spec_args.workdir),
         room=(room.platform, room.primary_id), now=_dt(at_ms),
         identity=identity_text, policy=policy_text,
-        overrides={**arm, **reserved},
+        overrides={**OPEN_LOOP, **arm, **reserved},
     )
     directory = getattr(spec_args, "channel_directory", None)
     if directory is None:
@@ -457,6 +468,7 @@ async def _run_wake(
                     events, wake_id=wake.wake_id, session_id=session_id,
                     tokens=tokens or None,
                 )
+                trajectory["availability"] = availability(subject.cfg, trajectory)
                 if inspection is not None:
                     # The inspection assembled the wake's context through the
                     # same `_session_input` a session runs; only the model

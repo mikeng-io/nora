@@ -454,6 +454,33 @@ def _toc(report: dict[str, Any], orphans: list[Path]) -> str:
     return f"<nav><h2>contents</h2><ul>{''.join(items)}</ul></nav>"
 
 
+def _availability(output: Path) -> str:
+    """The first frozen wake's availability, at the top: a closed read
+    is seen before any verdict."""
+    for path in sorted(output.glob("wake-*.json")):
+        frozen = json.loads(path.read_text(encoding="utf-8"))
+        avail = (frozen.get("trajectory") or {}).get("availability")
+        if avail:
+            break
+    else:
+        return ('<section><h2>availability</h2>'
+                '<p class="not-recorded">not recorded</p></section>')
+    rows = "".join(
+        f"<tr><td>{esc(k)}</td><td class=\"tool-{'ok' if v else 'unavailable'}\">"
+        f"{esc('on' if v else ('off' if v is False else 'not set'))}</td></tr>"
+        for k, v in (avail.get("switches") or {}).items())
+    offered = avail.get("offered")
+    offered_html = (f"<p>{len(offered)} tools offered: {esc(', '.join(offered))}</p>"
+                    if offered else '<p class="not-recorded">tools offered: '
+                    'not recorded (no model call)</p>')
+    closed = avail.get("unavailable") or []
+    closed_html = ("<p>calls that answered unavailable: " + esc(", ".join(
+        f"{c.get('tool')} ({c.get('reason') or 'no reason'})" for c in closed))
+        + "</p>") if closed else "<p>no call answered unavailable</p>"
+    return ("<section><h2>availability</h2><table><tr><th>switch</th>"
+            f"<th>value</th></tr>{rows}</table>{offered_html}{closed_html}</section>")
+
+
 def render(output: Path) -> Path:
     """`report.html` beside `report.json`, 0600; re-derivable any time.
 
@@ -482,6 +509,7 @@ def render(output: Path) -> Path:
         "<title>cognition loop report</title>"
         f"<style>{_CSS}</style></head><body>",
         _run(report, budget),
+        _availability(output),
         _toc(report, orphans),
     ]
     for ci, case in enumerate(report.get("cases") or []):
