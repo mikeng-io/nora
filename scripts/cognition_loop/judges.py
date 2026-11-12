@@ -11,6 +11,7 @@ that is not the alias it claims makes the answer unusable.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 from nora.subject.eval_evidence import EvidenceError
@@ -102,9 +103,11 @@ async def judge_one(
             raise EvidenceError(
                 f"judge alias {model} was served by {served}, expected {expected}"
             )
-        return parse_answer(text)
+        return replace(
+            parse_answer(text), model=model, served=str(served or ""))
     except Exception:  # noqa: BLE001 — a judge outage is an ERROR, not a crash
-        return JudgeAnswer(verdict="error", reason="judge call failed")
+        return JudgeAnswer(verdict="error", reason="judge call failed",
+                           model=model)
 
 
 async def judge_expectation(
@@ -130,6 +133,7 @@ async def judge_expectation(
                 verdict="error",
                 reason=f"cites a nonexistent entry {bogus}",
                 entry_ids=answer.entry_ids,
+                model=answer.model, served=answer.served,
             ))
         else:
             checked.append(answer)

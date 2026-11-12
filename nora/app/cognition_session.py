@@ -904,6 +904,8 @@ class CognitionSessionRunner:
                 last_session_ms=last_looked_ms, max_items=self._max_items)
             if situation.agenda.is_empty:
                 self._inc("nora_cognition_session_skipped_total", reason="empty_agenda")
+                if inspect_only:
+                    return None  # an inspection persists nothing
                 await self._finish(
                     wake_id, unit, None, "closed",
                     "empty agenda" if not skipped else
@@ -933,34 +935,10 @@ class CognitionSessionRunner:
             grounding, lesson_view = await lesson_read(self._lessons, unit=unit,
                 grounding=grounding, historical=historical, inc=self._inc)
             if inspect_only:
-                # BEFORE ANYTHING IS RECORDED: an inspection returns what a
-                # session would be run on and persists nothing — no session
-                # row, no outcome write, no stimulus consumption. The live
-                # path below records first and the replay path shares it.
-                # `work` names each agenda item's memory-work identity —
-                # `(work_id, input_hash)`, the dedup key
-                # `comprehend_result` records `readings` under — so a caller
-                # (the unified backfill's dry check) can tell, per item,
-                # whether THIS exact input was already comprehended without
-                # spending a model call to find out.
-                state, _, system, agenda = await self._session_input(
-                    unit=unit, view=view, situation=situation, session_id=0,
-                    wake_id=0, now_ms=now_ms, doctrine_text=doctrine_text,
-                    skill_text=skill_text, grounding=grounding,
-                    historical=historical, doctrine_sha256=doctrine_sha256, lesson_view=lesson_view)
-                return {
-                    "system": system, "agenda": agenda,
-                    **({"new_sources": rendered_new_sources(agenda)}
-                       if eval_capture_enabled() else {}),
-                    "work": [
-                        {
-                            "index": index,
-                            "work_id": item.work.id, "input_hash": item.work.input_hash,
-                            "inputs": item.snapshot.get("stimulus_inputs", {}),
-                        }
-                        for index, item in sorted(state.memory_items.items())
-                    ],
-                }
+                return await self._inspect(
+                    unit, view, situation, now_ms, doctrine_text,
+                    doctrine_sha256, skill_text, skill_versions, grounding,
+                    lesson_view, historical)
             session = NewCognitionSession(
                 unit=unit, mode="live", started_at_ms=now_ms,
                 from_stimulus_id=min(s.id for s in view.pending),
@@ -1061,6 +1039,30 @@ class CognitionSessionRunner:
             spec[name] = getattr(self, self._CTOR_RENAMES.get(name, f"_{name}"))
         spec.update(changes)
         return CognitionSessionRunner(**spec)
+
+    async def _inspect(
+        self, unit: str, view: UnitView, situation: Situation, now_ms: int,
+        doctrine_text: str, doctrine_sha256: str | None, skill_text: str,
+        skill_versions: dict[str, object], grounding: Any,
+        lesson_view: Any, historical: bool) -> dict[str, Any]:
+        # BEFORE ANYTHING IS RECORDED: returns what a session would run on
+        # and persists nothing; `work` carries each item's dedup key.
+        state, _, system, agenda = await self._session_input(
+            unit=unit, view=view, situation=situation, session_id=0, wake_id=0,
+            now_ms=now_ms, doctrine_text=doctrine_text, skill_text=skill_text,
+            grounding=grounding, historical=historical,
+            doctrine_sha256=doctrine_sha256, lesson_view=lesson_view)
+        return {"system": system, "agenda": agenda,
+                "items": [i.as_dict() for i in situation.agenda.items],
+                "stimuli": [{"id": s.id, "kind": s.kind, "ref": s.ref} for s in view.pending],
+                "instructions": {"doctrine_sha256": doctrine_sha256,
+                                 "skill_versions": skill_versions},
+                **({"new_sources": rendered_new_sources(agenda)}
+                   if eval_capture_enabled() else {}),
+                "work": [{"index": index, "work_id": w.work.id,
+                          "input_hash": w.work.input_hash,
+                          "inputs": w.snapshot.get("stimulus_inputs", {})}
+                         for index, w in sorted(state.memory_items.items())]}
 
     async def inspect(
         self, *, view: UnitView, now_ms: int, historical: bool = False,
@@ -1165,9 +1167,7 @@ class CognitionSessionRunner:
         """`_finish`, shielded: a SECOND cancel (a `shutdown` and the
         evaluator's `cancel_in_flight` both cancelling this task) interrupts
         the wait, never the write."""
-        write = asyncio.ensure_future(
-            self._finish(wake_id, unit, session_id, outcome, detail),
-        )
+        write = asyncio.ensure_future(self._finish(wake_id, unit, session_id, outcome, detail))
         self._finishing.add(write)
         write.add_done_callback(self._finishing.discard)
         await asyncio.shield(write)

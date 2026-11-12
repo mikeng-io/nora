@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 import tomllib
 import uuid
 from pathlib import Path
@@ -21,6 +22,9 @@ from typing import Any
 from evals.subject_config import materialise
 from nora.config import load
 from nora.infra.sql.engine import create_sql_engine
+from nora.platform.bridge.client import BridgeEndpoint
+from nora.platform.discord.bridge_control import BridgeControlClient
+from nora.platform.discord.channels import StaticChannelDirectory
 from nora.policy import load_policy
 from nora.subject.eval_evidence import (
     RunEvidence,
@@ -30,11 +34,13 @@ from nora.subject.eval_evidence import (
     revision,
     validate_events,
 )
+from scripts.cognition_loop import html as report_html
 from scripts.cognition_loop.cases import Case, load_case
 from scripts.cognition_loop.run import run_case
 from scripts.cognition_loop.verdicts import ERROR, PASS, rollup
 from scripts.memory_graph_spike import (
     Judges,
+    freeze,
     measured_run_budget,
     private_directory,
     snapshot_only,
@@ -71,16 +77,77 @@ def parse_overrides(pairs: list[str]) -> dict[str, Any]:
     return out
 
 
-def run_status(cases: list[dict[str, Any]], evidence: dict[str, Any]) -> str:
+def _static_directory(frozen: dict[str, Any]) -> StaticChannelDirectory:
+    return StaticChannelDirectory(
+        channels={
+            str(g): {str(k): str(v) for k, v in m.items()}
+            for g, m in (frozen.get("channels") or {}).items()
+        },
+        threads={
+            str(k): str(v) for k, v in (frozen.get("threads") or {}).items()
+        },
+    )
+
+
+async def _room_directory(
+    args: argparse.Namespace, cfg: Any, policy: Any, output: Path,
+) -> StaticChannelDirectory | None:
+    """The guild→channel map subjects expand through, frozen at run start."""
+    room_directory_path = getattr(args, "room_directory", None)
+    if room_directory_path is not None:
+        frozen = json.loads(room_directory_path.read_text(encoding="utf-8"))
+        frozen["source"] = str(room_directory_path)
+        freeze(output / "room-directory.json", frozen)
+        return _static_directory(frozen)
+    guilds = sorted({
+        c.guild for c in getattr(policy, "conversations", ()) or () if c.guild
+    })
+    if not guilds:
+        return None
+    base_url = (getattr(args, "channel_reads_url", None)
+                or cfg.platforms.discord.base_url)
+    client = BridgeControlClient(BridgeEndpoint(
+        base_url, cfg.credentials.get(cfg.bridges.token_env, "")))
+    channels: dict[str, dict[str, str]] = {}
+    threads: dict[str, str] = {}
+    unread: list[str] = []
+    try:
+        for guild_id in guilds:
+            body = await client.read("channels", {"guild_id": guild_id})
+            value = (body or {}).get("value") or {}
+            gmap = value.get("channels")
+            if not (body or {}).get("available") or not isinstance(gmap, dict):
+                unread.append(guild_id)
+                continue
+            channels[guild_id] = {str(k): str(v) for k, v in gmap.items()}
+            tmap = value.get("threads")
+            if isinstance(tmap, dict):
+                threads.update({str(k): str(v) for k, v in tmap.items()})
+    finally:
+        await client.close()
+    freeze(output / "room-directory.json", {
+        "read_at_ms": int(time.time() * 1000),
+        "source": base_url,
+        "channels": channels,
+        "threads": threads,
+        "unread_guilds": unread,
+    })
+    return StaticChannelDirectory(channels=channels, threads=threads)
+
+
+def run_status(
+    cases: list[dict[str, Any]], evidence: dict[str, Any],
+    errors: list[dict[str, Any]] | None = None,
+) -> str:
     """The run's verdict: the cases' own PASS/FAIL/REVIEW/ERROR rolled up
-    fail-closed, plus ERROR for unreadable or invalid evidence — never a
-    collapsed "done"."""
+    fail-closed, plus ERROR for a failed step or unreadable evidence —
+    never a collapsed "done"."""
     statuses = [
         c.get("status") if c.get("status") in {PASS, "FAIL", "REVIEW", ERROR}
         else ERROR
         for c in cases
     ]
-    if evidence.get("status") != PASS:
+    if evidence.get("status") != PASS or errors:
         statuses.append(ERROR)
     return rollup(*statuses) if statuses else ERROR
 
@@ -138,19 +205,55 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             private_root=output,
         )
         report: dict[str, Any] = {"status": "ERROR"}
+        report["run"] = {
+            "run_id": args.run_id,
+            "evidence_run_id": getattr(evidence, "run_id", None),
+            "mode": "inspect-only" if args.inspect_only else "live",
+            "token_budget": budget,
+            "per_wake_tokens": args.per_wake_tokens,
+            **revision(_REPO),
+            "config_sha256": fingerprint(args.config),
+            "subject_config_sha256": fingerprint(generated),
+        }
+        report["errors"] = []
         try:
             with evidence.capture(trace.get_tracer_provider(), export=export):
                 source = create_sql_engine(args.database_url)
                 try:
-                    policy = load_policy(args.policy)
-                    with measured_run_budget(args, evidence, output, report):
-                        report["cases"] = [
-                            await run_case(
-                                args, case, source, judges, policy,
-                                evidence, output,
-                            )
-                            for case in cases
-                        ]
+                    # The deployment's channel directory, read once at run
+                    # start and frozen: every compose expands guild entries
+                    # through the static copy, not a live read.
+                    try:
+                        args.channel_directory = await _room_directory(
+                            args, cfg, load_policy(args.policy), output)
+                    except Exception as exc:  # noqa: BLE001 — the step names itself
+                        report["errors"].append({
+                            "step": "room_directory",
+                            "message": f"{exc!r}",
+                        })
+                        report["cases"] = []
+                    else:
+                        policy = load_policy(
+                            args.policy, channels=args.channel_directory)
+                        with measured_run_budget(
+                            args, evidence, output, report,
+                        ):
+                            report["cases"] = []
+                            for case in cases:
+                                try:
+                                    report["cases"].append(await run_case(
+                                        args, case, source, judges, policy,
+                                        evidence, output,
+                                    ))
+                                except Exception as exc:  # noqa: BLE001 — ERROR, never a crash
+                                    report["cases"].append({
+                                        "status": ERROR, "case": case.name,
+                                        "unit": case.unit,
+                                        "errors": [
+                                            f"the case run failed: {exc!r}"],
+                                        "wakes": [],
+                                    })
+                                    break
                 finally:
                     await source.dispose()
         finally:
@@ -160,10 +263,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 receipt = {"status": "ERROR", "causes": ["unreadable_record"]}
             report["evidence"] = {**receipt, "ref": evidence.path.name}
             report["status"] = run_status(
-                report.get("cases", []), report["evidence"])
+                report.get("cases", []), report["evidence"],
+                report["errors"])
     (output / "report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n"
     )
+    report_html.render(output)
     return report
 
 
@@ -190,6 +295,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--override", action="append", default=[],
                         metavar="KEY=VALUE",
                         help="arm override applied to the composed subject's config")
+    parser.add_argument("--room-directory", type=Path,
+                        help="a previously frozen room-directory.json; "
+                             "without it the live reader is queried once "
+                             "at run start")
+    parser.add_argument("--channel-reads-url",
+                        help="the bridge's read base URL (default: the "
+                             "config's platforms.discord.base_url); the "
+                             "deploy host reaches it over loopback")
     args = parser.parse_args(argv)
     try:
         args.overrides = parse_overrides(args.override)
