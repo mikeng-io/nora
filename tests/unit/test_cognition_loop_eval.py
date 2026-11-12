@@ -320,7 +320,8 @@ def _subject(**deps):
     from types import SimpleNamespace
     registry = SimpleNamespace(adapters=deps.pop("adapters", {}))
     base = {"bridge_runtime": None, "fire_path": None, "dispatcher": None,
-                "social_poller": None}
+            "social_poller": None, "computer_lifecycle": None,
+            "background": SimpleNamespace(_tasks=set())}
     base.update(deps)
     return SimpleNamespace(deps=SimpleNamespace(registry=registry, **base))
 
@@ -334,7 +335,7 @@ def test_a_live_sender_is_a_refusal():
     from scripts.cognition_loop.egress import assert_no_egress
     subject = _subject(
         adapters={"signal": SimpleNamespace(_sender=RealSignalSender())})
-    with pytest.raises(EvidenceError, match=r"lands? nowhere"):
+    with pytest.raises(EvidenceError, match="real platform transports"):
         assert_no_egress(subject)
 
 
@@ -351,7 +352,7 @@ def test_the_landed_sender_passes():
     from scripts.cognition_loop.egress import assert_no_egress
     report = assert_no_egress(_subject(
         adapters={"signal": SimpleNamespace(_sender=LandedSignalSender())}))
-    assert report["senders"]["signal"] == {"_sender": "LandedSignalSender"}
+    assert report["transports"]["signal"] == {"_sender": "LandedSignalSender"}
 
 
 # --------------------------------------------------------------------------
@@ -410,7 +411,7 @@ def test_the_egress_guard_refuses_a_real_sender_on_any_platform():
     for platform in ("signal", "discord", "instagram", "whatsapp", "anychat"):
         subject = _subject(
             adapters={platform: SimpleNamespace(_sender=RealSender())})
-        with pytest.raises(EvidenceError, match="senders"):
+        with pytest.raises(EvidenceError, match="real platform transports"):
             assert_no_egress(subject)
 
 
@@ -445,7 +446,7 @@ def test_a_sender_under_another_attribute_name_is_still_found():
     subject = _subject(adapters={
         "discord": SimpleNamespace(transport=BridgeSender()),
     })
-    with pytest.raises(EvidenceError, match="senders"):
+    with pytest.raises(EvidenceError, match="real platform transports"):
         assert_no_egress(subject)
 
 
