@@ -289,9 +289,8 @@ no entry.
   deletes and reactions; her loop decisions and reminder results; presence
   fixes and the collector's polls; social items; play samples; perceptions
   of media (what it shows, whose face); face labels and `character_dispute`
-  items (`design/cognition-loop/data.md` «Layers by authority»'s words). Written by code. This is what "the
-  record store" / "the RECORD" above already names — never "a database row"
-  in general.
+  items (`design/cognition-loop/data.md` «Layers by authority»). Written by code. This is what "the
+  record store" / "the RECORD" above names — never "a database row" in general.
 - **reading** — a perception of a Record item: a media reading says what was shown; an extraction says what was said, about whom and how, tied to source message ids. Every Record item is perceived once on arrival; text is a medium like any other. Code runs extraction on every batch; they record statements, not truth, and are versioned, rebuildable and superseded rather than deleted. See [18 · Extraction](design/unified-memory/graph.md).
 
 - **Rollup** — the computed layer: **episodes** (a Rollup row for one bounded
@@ -379,10 +378,9 @@ no entry.
   (`self_tension`, `nora lessons tensions`). Operator-only; she never reads one.
 - **topic account** — the unit's account of a subject that recurs across
   people and days (one mention earns none): one live account per subject,
-  `active`/`dormant`/`retired`, nothing writing after retired. Written only
-  by the Cognition session's `topic_*` verbs on shown Record or Rollup
-  citations; each revision's lineage gates which rooms may read it, as
-  `<topics>` in the live lane only — no as-of view.
+  `active`/`dormant`/`retired`, nothing after retired. Written only by the
+  Cognition session's `topic_*` verbs on shown Record or Rollup citations;
+  a revision's lineage gates which rooms read it — `<topics>`, live lane only.
 - **Standing** — see above; one of the Notebook's four tiers.
 
 Other words this bundle introduces:
@@ -391,9 +389,8 @@ Other words this bundle introduces:
   citations reach down to; decides which rooms may be shown it, checked at
   assembly — this file's own "enforced at assembly, not at egress" (below),
   never at egress. Not the citations themselves.
-- **reasoning** — the mode a derived row was reached by: `computed`, `told`,
-  `deduced`, `induced`, `abduced`, `said` (`design/cognition-loop/data.md` «Layers by authority»). Never the
-  model's chain of thought.
+- **reasoning** — the mode a derived row was reached by: `computed`, `told`, `deduced`,
+  `induced`, `abduced`, `said` (`design/cognition-loop/data.md` «Layers by authority»). Never the model's chain of thought.
 - **stimulus** (plural **stimuli**) — what ingestion, the Rollup, the clock,
   a `self` wake Cognition scheduled, or a tag turn's `handoff` raises to wake
   Cognition. Never the Signal platform, a Python/OS signal or an event.
