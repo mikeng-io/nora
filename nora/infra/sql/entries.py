@@ -50,6 +50,35 @@ class SqlEntryStore:
             ).first()
         return Entry(entry_id, row.kind, unit, _revision(row)) if row else None
 
+    async def held(self, *, unit: str) -> tuple[Entry, ...]:
+        """The unit's non-retired entries at their heads, by subject."""
+        latest = (
+            sa.select(R.c.entry_id, sa.func.max(R.c.seq).label("seq"))
+            .group_by(R.c.entry_id)
+            .subquery()
+        )
+        async with self.engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    sa.select(E.c.kind, *R.c)
+                    .join(R, R.c.entry_id == E.c.id)
+                    .join(
+                        latest,
+                        sa.and_(
+                            latest.c.entry_id == R.c.entry_id, latest.c.seq == R.c.seq
+                        ),
+                    )
+                    .where(E.c.unit == unit)
+                )
+            ).all()
+        entries = [
+            Entry(row.entry_id, row.kind, unit, _revision(row))
+            for row in rows
+            if _revision(row).content.state != "retired"
+        ]
+        entries.sort(key=lambda e: e.head.content.about[0][1].casefold())
+        return tuple(entries)
+
     async def revisions(self, *, unit: str, entry_id: str) -> tuple[EntryRevision, ...]:
         async with self.engine.connect() as conn:
             rows = (

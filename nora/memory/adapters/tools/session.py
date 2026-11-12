@@ -49,6 +49,7 @@ from nora.domain.notes import (
 from nora.domain.reminders import ReminderState
 from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
 from nora.infra.sql.standing_revise import standing_revise as live_standing_revise
+from nora.memory.adapters.tools.topics import topic_verbs
 
 
 def session_verbs(d: SessionDeps) -> tuple[tuple[Any, ...], ...]:
@@ -58,6 +59,7 @@ def session_verbs(d: SessionDeps) -> tuple[tuple[Any, ...], ...]:
         (_make_note_create(d), _make_note_revise(d),
          _make_note_set_status(d), _make_note_merge(d)),
         (_make_memo_create(d), _make_memo_revise(d), _make_memo_set_status(d),),
+        topic_verbs(d),
         (_make_standing_revise(d),),
         (_make_memory_propose(d), _make_profile_read(d), _make_profile_revise(d),),
     )

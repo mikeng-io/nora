@@ -25,6 +25,18 @@ class FakeEntryStore:
         entry = self.entries.get(entry_id)
         return entry if entry and entry.unit == unit else None
 
+    async def held(self, *, unit: str) -> tuple[Entry, ...]:
+        return tuple(
+            sorted(
+                (
+                    e
+                    for e in self.entries.values()
+                    if e.unit == unit and e.head.content.state != "retired"
+                ),
+                key=lambda e: e.head.content.about[0][1].casefold(),
+            )
+        )
+
     async def revisions(self, *, unit: str, entry_id: str) -> tuple[EntryRevision, ...]:
         return (
             tuple(reversed(self.history[entry_id]))

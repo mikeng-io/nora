@@ -109,6 +109,23 @@ async def test_entry_refuses_what_its_kind_does_not_admit(
         await store.create(kind=kind, unit="u", content=replace(CONTENT, **change))
 
 
+async def test_held_returns_the_units_non_retired_entries_by_subject(
+    store: EntryStore,
+) -> None:
+    retired = await store.create(kind="topic", unit="u", content=CONTENT)
+    await store.append(
+        unit="u", entry_id=retired.id, base_revision_id=retired.head.id,
+        content=replace(CONTENT, state="retired"))
+    beta = await store.create(
+        kind="topic", unit="u",
+        content=replace(CONTENT, about=(("topic", "generated-beta"),)))
+    alpha = await store.create(
+        kind="topic", unit="u",
+        content=replace(CONTENT, about=(("topic", "generated-alpha"),)))
+    await store.create(kind="topic", unit="other", content=CONTENT)
+    assert [e.id for e in await store.held(unit="u")] == [alpha.id, beta.id]
+
+
 async def test_entry_stale_base(store: EntryStore) -> None:
     entry = await store.create(kind="topic", unit="u", content=CONTENT)
     first = await store.append(

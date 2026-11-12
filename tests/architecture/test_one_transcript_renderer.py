@@ -105,6 +105,8 @@ _NOT_A_TRANSCRIPT = {
     # THE BROWSE TASK'S BRIEF, not a transcript — the objective and the start
     # page as `part` elements for the browse agent, like the sub-agent's.
     "nora/language/browse_render.py": "renders the browse task's brief, not a transcript",
+    # THE HELD TOPIC INDEX — one element per held account, its own words, no message.
+    "nora/language/topic_render.py": "renders the topic account index, not a transcript",
 }
 
 #: The operator's surfaces: a Discord review channel, not a prompt. Exempt from

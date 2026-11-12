@@ -60,6 +60,7 @@ COMPOSERS = frozenset(
         "nora.language.shared_render:render_shared_state",
         "nora.language.subagent_render:render_brief",
         "nora.language.subagents_render:render_subagents",
+        "nora.language.topic_render:render_topics",
         "nora.skills.loader:SkillStore.render_available",
         "nora.testing.context_blocks:compose_fixture",
         "scripts.memory_graph_spike:prompt",

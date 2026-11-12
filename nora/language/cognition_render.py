@@ -134,9 +134,9 @@ _BLOCKS: tuple[BlockDeclaration, ...] = (
     BlockDeclaration("standing", 45, "what she owes, holds open, already did"),
     BlockDeclaration("events", 50, "propose or revise an event"),
     BlockDeclaration("memos", 55, "write a memo, or not"),
-    BlockDeclaration(
-        "graph", 60, "match an existing entity or create one; correct a contradiction"
-    ),
+    BlockDeclaration("topics", 57, "write a topic account, or revise the one that exists"),
+    BlockDeclaration("graph", 60,
+                     "match an existing entity or create one; correct a contradiction"),
     BlockDeclaration("lessons", 65, "how she should write, from past corrections"),
     BlockDeclaration(
         "held_lessons", 66, "reinforce or reword a held lesson, or retire one"

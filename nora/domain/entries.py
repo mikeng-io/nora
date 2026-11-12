@@ -5,6 +5,9 @@ from typing import Literal, Protocol
 
 from nora.domain.memory_graph import RECORD, ROLLUP, Key
 
+#: One account's text, like `MEMO_BODY_MAX_CHARS` for a memo.
+TOPIC_BODY_MAX_CHARS = 1600
+
 
 @dataclass(frozen=True)
 class EntryContent:
@@ -73,10 +76,11 @@ def check_entry(kind: str, content: EntryContent, previous: EntryContent | None 
         raise ValueError("instruction_hash")
 
 
-# ponytail: topic-only storage; add disclosure/search when a live entry writer joins.
+# ponytail: topic-only storage; add disclosure/search when a kind needs it.
 class EntryStore(Protocol):
     async def create(self, *, kind: str, unit: str, content: EntryContent) -> Entry: ...
     async def get(self, *, unit: str, entry_id: str) -> Entry | None: ...
+    async def held(self, *, unit: str) -> tuple[Entry, ...]: ...
     async def revisions(self, *, unit: str, entry_id: str) -> tuple[EntryRevision, ...]: ...
     async def append(
         self, *, unit: str, entry_id: str, base_revision_id: str, content: EntryContent

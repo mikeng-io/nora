@@ -81,6 +81,7 @@ serve a reply in one room, most of them for no decision this session makes.
 | which rooms exist, and where a read or a reminder can go | every room of the unit: id, label, platform, purpose, recent activity | `rooms` (§5) |
 | write a note, or revise the one that exists | the open notes | `notes` |
 | write a memo, or not | the settled memos | `memos` |
+| write a topic account, or revise the one that exists | the unit's held topic accounts, by id, subject, state, confidence and head revision; retired accounts are not shown | `topics` |
 | propose or revise an event | the rooms' events | `events` |
 | what she owes, holds open, already did | her standing | `standing` |
 | move or cancel a reminder she wrote | her pending reminders in the agenda rooms, by id and due time (today: the `reminds` field on each note, `nora/app/cognition_grounding.py` ~769–797, scoped to agenda rooms because `remind_move`/`remind_cancel` refuse others) | `notes` (`reminds` field, kept) |
@@ -235,7 +236,7 @@ would change the reply prompt is measured by the same replay (§8).
 One integrated change from this spec, measured once (AGENTS.md):
 
 1. One Cognition context assembly over the shared builders: `rooms`,
-   `members`, `profile`, `transcript` (one unit block), `notes`, `memos`, `events`,
+   `members`, `profile`, `transcript` (one unit block), `notes`, `memos`, `topics`, `events`,
    `standing`, `lessons`, `clock`, `reads`, `documents`, `tool_catalogue`; Cognition keeps
    only `agenda` and `graph` as its own types.
 2. Delete Cognition's entries from `LEGACY_COMPOSERS` and `_INITIAL_LEGACY`

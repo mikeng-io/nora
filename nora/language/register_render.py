@@ -16,6 +16,7 @@ from nora.domain.prompt import ago
 from nora.language.event_render import render_event_rows
 from nora.language.memo_render import render_memos
 from nora.language.note_render import render_notes
+from nora.language.topic_render import render_topics
 
 
 class RegisterBudget(Protocol):
@@ -113,6 +114,9 @@ def render_register(
             render_memos(grounding.memos, tz=tz, lines=budget.memo_lines, chars=budget.memo_chars),
             placement,
         )
+    )
+    blocks.append(
+        restamp(render_topics(grounding.topics, lines=budget.register_lines), placement)
     )
     return blocks
 
