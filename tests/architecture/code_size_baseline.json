@@ -1777,10 +1777,7 @@
   "comment_blocks": 1
  },
  "nora/platform/discord/send.py": {
-  "comment_blocks": 8,
-  "functions": {
-   "DiscordSender.send": 176
-  }
+  "comment_blocks": 8
  },
  "nora/platform/instagram/adapter.py": {
   "comment_blocks": 1

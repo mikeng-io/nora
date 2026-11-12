@@ -208,6 +208,16 @@ class DiscordSender:
                 "message_id": quote.platform_message_id,
                 "fail_if_not_exists": False,
             }
+        return await self._post(
+            target, message, headers=headers, attachments=attachments,
+            text_len=len(text), channel_id=channel_id, request_id=request_id)
+
+    async def _post(
+        self, target: ConversationTarget, message: dict, *,
+        headers: dict, attachments: tuple[OutboundAttachment, ...],
+        text_len: int, channel_id: str, request_id: str,
+    ) -> SendResult:
+        """One POST (multipart with attachments) — `send` keeps the refusals."""
         post_channel = target.thread or channel_id
         try:
             async with aiohttp.ClientSession(timeout=self._timeout) as session:
@@ -261,7 +271,7 @@ class DiscordSender:
             )
             return SendResult(ok=False)
         message_id = body.get("id") if isinstance(body, dict) else None
-        log.info("sent %d chars to %s (id=%s)", len(text), target.conversation_id, request_id)
+        log.info("sent %d chars to %s (id=%s)", text_len, target.conversation_id, request_id)
         return SendResult(
             ok=True,
             timestamp=timestamp_ms(int(message_id)) if message_id is not None else None,

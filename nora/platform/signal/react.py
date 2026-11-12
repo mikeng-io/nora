@@ -83,6 +83,13 @@ class SignalReactor:
             },
             "id": request_id or "nora",
         }
+        return await self._rpc(
+            payload, target.conversation_id, request_id)
+
+    async def _rpc(
+        self, payload: dict, conversation_id: str, request_id: str,
+    ) -> ReactionResult:
+        """One JSON-RPC POST — `react` keeps the refusals and the payload."""
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
@@ -90,15 +97,15 @@ class SignalReactor:
             ):
                 if resp.status != 200:
                     log.warning("reaction failed: HTTP %s (conversation=%s, id=%s)",
-                                resp.status, target.conversation_id, request_id)
+                                resp.status, conversation_id, request_id)
                     return ReactionResult(ok=False)
                 body = await resp.json()
         except Exception as exc:            # noqa: BLE001 — a reaction is decoration
             log.warning("reaction failed: %s (conversation=%s, id=%s)",
-                        type(exc).__name__, target.conversation_id, request_id)
+                        type(exc).__name__, conversation_id, request_id)
             return ReactionResult(ok=False)
         if isinstance(body, dict) and body.get("error"):
             log.warning("reaction rejected by signal-cli (conversation=%s, id=%s)",
-                        target.conversation_id, request_id)
+                        conversation_id, request_id)
             return ReactionResult(ok=False)
         return ReactionResult(ok=True)

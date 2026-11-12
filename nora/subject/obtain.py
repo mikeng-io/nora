@@ -39,7 +39,7 @@ from .memory_workspace import (
     shared_eval_workspace,
 )
 from .recording_subagent import recording_subagent_worker
-from .sandbox_signal import landed_signal_sends
+from .sandbox_platforms import landed_platform_transports
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -373,7 +373,7 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # call to signal-cli at startup and raises `StartupError` when nothing
     # answers. An override returns immediately with no network. Composing Nora
     # reaches the world unless told otherwise. It does not cover a
-    # send: `landed_signal_sends` below does.
+    # send or react: `landed_platform_transports` below does.
     cfg = _with(cfg, "platforms.signal.account", _PLACEHOLDER_ACCOUNT)
     # `platforms.*.mode` — a deployment on `mode = "bridge"` needs Redis and
     # live bridges; a sandbox has neither, so composition would refuse to boot.
@@ -625,7 +625,7 @@ async def obtain(spec: SubjectSpec) -> Subject:
                      if spec.circle and spec.circle.memory else None)
     with (
         recording_subagent_worker() if cfg.subagent.enabled else contextlib.nullcontext(),
-        landed_signal_sends(),
+        landed_platform_transports(),
         external_boundaries(spec.circle, signal_url=spec.signal_rpc_url, memory=circle_memory),
     ):
         deps = await build_dependencies(

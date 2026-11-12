@@ -10,6 +10,7 @@ it. Failures at any step are `ERROR`, never `PASS`.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,8 +27,7 @@ from nora.infra.sql.schema import COGNITION_WAKE
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.subject import SubjectSpec, obtain, sandbox_as_of
 from nora.subject.eval_evidence import read_events
-from nora.subject.memory_workspace import draw_workspace_id
-from nora.subject.sandbox_signal import landed_signal_sends
+from nora.subject.memory_workspace import draw_workspace
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.advance import advance_record, bump_sequences
 from scripts.cognition_loop.egress import assert_no_egress
@@ -67,28 +67,58 @@ def _profile_keys(subject: Any, unit: str) -> list[str]:
     ]
 
 
-async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
-                   policy_text: str, identity_text: str,
-                   workspace: str = "") -> Any:
-    overrides = {
+#: Overrides the run reserves: arm overrides cannot set these at all —
+#: a clash refuses before composition. The measured surface stays
+#: configurable (`llm.*`, doctrine, tools); the delivery surface does not.
+def reserved_overrides(workspace: str) -> dict[str, Any]:
+    """Every override the run owns outright."""
+    return {
+        # What is measured.
         "cognition.enabled": True,
         "memory.graph.enabled": True,
         "memory.graph.comprehend.enabled": True,
-        # Workers that could reach the world are never composed; the
-        # no-egress assertion refuses anything that still is.
+        # Nothing that can reach the world is composed: no fire path
+        # (heartbeat, compute, participation, relevance), no social
+        # poller or Instagram surface, no preflight or lifecycle loop.
         "computer.enabled": False,
         "computer.scoped.enabled": False,
+        "heartbeat.enabled": False,
+        "compute.enabled": False,
+        "participation.enabled": False,
+        "relevance_gate.enabled": False,
+        "presence.enabled": False,
+        "social.instagram.enabled": False,
+        "social.instagram.summons.enabled": False,
+        "social.poll.enabled": False,
+        # A Discord or WhatsApp adapter resolves its own identity with a
+        # live call at composition; off is the only inert shape.
+        "platforms.discord.enabled": False,
+        "platforms.whatsapp.enabled": False,
+        # Every enabled adapter is direct: bridge mode is a delivery
+        # path the landed transports cannot land.
+        "platforms.signal.mode": "direct",
+        "platforms.discord.mode": "direct",
+        "platforms.whatsapp.mode": "direct",
+        "platforms.instagram.mode": "direct",
+        # The case's own Honcho draw, never the deployment's workspace.
+        "honcho.workspace_id": workspace,
     }
-    if workspace:
-        # Each case writes its own Honcho workspace (a draw inside the
-        # eval namespace), never the deployment's or a shared sibling's.
-        overrides["honcho.workspace_id"] = workspace
-    overrides.update(getattr(spec_args, "overrides", {}))
+
+
+async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
+                   policy_text: str, identity_text: str,
+                   workspace: str) -> Any:
+    reserved = reserved_overrides(workspace)
+    arm = getattr(spec_args, "overrides", {}) or {}
+    clash = sorted(set(arm) & set(reserved))
+    if clash:
+        raise ValueError(
+            f"arm overrides cannot set the run's reserved keys: {clash}")
     return await obtain(SubjectSpec(
         database_url=url, workdir=Path(spec_args.workdir),
         room=(room.platform, room.primary_id), now=_dt(at_ms),
         identity=identity_text, policy=policy_text,
-        overrides=overrides,
+        overrides={**arm, **reserved},
     ))
 
 
@@ -137,53 +167,55 @@ async def run_case(
         roll.error(f"case unit {case.unit!r} names no policy room")
         return _report(case, roll, wakes_report)
 
-    deployment = getattr(args, "deployment_workspace", "")
-    # One draw workspace per CASE — its writes carry into its later wakes;
-    # the nonce is drawn once, not per wake.
-    workspace = (
-        draw_workspace_id(deployment, run_id=getattr(args, "run_id", "run"),
-                          case=case.name)
-        if deployment else ""
-    )
-    first = datetime.fromtimestamp(instants[0] / 1000, UTC)
-    with TemporaryDirectory(prefix="nora-cognition-loop-") as workdir:
-        args.workdir = workdir
-        async with sandbox_as_of(args.database_url, first) as (url, _seed):
-            source_engine = create_async_engine(args.database_url)
-            sandbox = create_async_engine(url)
-            try:
-                await bump_sequences(source_engine, sandbox)
-                for i, wake_id in enumerate(case.wakes):
-                    at_ms = instants[i]
-                    if i:
-                        advance = await advance_record(
-                            source_engine, sandbox,
-                            after_ms=instants[i - 1], at_ms=at_ms,
-                        )
-                        if not advance.wrote_only_record():
-                            roll.error(
-                                f"advance before wake {i} wrote a derived "
-                                f"store: {advance.written}"
-                            )
-                            break
+    # The whole case lives inside ONE Honcho draw — created with its
+    # draw marker before any subject composes, deleted when the case
+    # exits, whichever way that is.
+    try:
+        async with draw_workspace(
+            case.name, run_id=getattr(args, "run_id", "run"),
+        ) as draw:
+            workspace = draw.id
+            first = datetime.fromtimestamp(instants[0] / 1000, UTC)
+            with TemporaryDirectory(prefix="nora-cognition-loop-") as workdir:
+                args.workdir = workdir
+                async with sandbox_as_of(args.database_url, first) as (url, _seed):
+                    source_engine = create_async_engine(args.database_url)
+                    sandbox = create_async_engine(url)
                     try:
-                        with evidence.case(
-                            f"wake:{case.unit}:{wake_id}",
-                            input={"recorded_wake_id": wake_id},
-                            metadata={"wake_id": wake_id, "unit": case.unit,
-                                      "at_ms": at_ms},
-                        ):
-                            wakes_report.append(await _run_wake(
-                                args, case, i, wake_id, at_ms, url,
-                                recorded_reasons[i], judges, evidence, output,
-                                room, workspace,
-                            ))
-                    except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
-                        roll.error(f"wake {i} (recorded {wake_id}): {exc!r}")
-                        break
-            finally:
-                await sandbox.dispose()
-                await source_engine.dispose()
+                        await bump_sequences(source_engine, sandbox)
+                        for i, wake_id in enumerate(case.wakes):
+                            at_ms = instants[i]
+                            if i:
+                                advance = await advance_record(
+                                    source_engine, sandbox,
+                                    after_ms=instants[i - 1], at_ms=at_ms,
+                                )
+                                if not advance.wrote_only_record():
+                                    roll.error(
+                                        f"advance before wake {i} wrote a derived "
+                                        f"store: {advance.written}"
+                                    )
+                                    break
+                            try:
+                                with evidence.case(
+                                    f"wake:{case.unit}:{wake_id}",
+                                    input={"recorded_wake_id": wake_id},
+                                    metadata={"wake_id": wake_id, "unit": case.unit,
+                                              "at_ms": at_ms},
+                                ):
+                                    wakes_report.append(await _run_wake(
+                                        args, case, i, wake_id, at_ms, url,
+                                        recorded_reasons[i], judges, evidence,
+                                        output, room, workspace,
+                                    ))
+                            except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
+                                roll.error(f"wake {i} (recorded {wake_id}): {exc!r}")
+                                break
+                    finally:
+                        await sandbox.dispose()
+                        await source_engine.dispose()
+    except Exception as exc:  # noqa: BLE001 — the draw's own failure is a case ERROR
+        roll.error(f"the case's Honcho draw could not be made: {exc!r}")
     for wake in wakes_report:
         for verdict in wake.get("expectations", []):
             roll.add(verdict["verdict_obj"])
@@ -199,94 +231,113 @@ async def _run_wake(
     reason: str, judges: Any | None, evidence: Any, output: Path,
     room: Any, workspace: str,
 ) -> dict[str, Any]:
-    """One wake: compose, assert no egress, record, run live, diff, judge."""
-    with landed_signal_sends():
-        subject = await _compose(
-            args, url, at_ms, room, args.policy.read_text(),
-            args.identity.read_text(), workspace=workspace,
-        )
-    egress = assert_no_egress(subject)
-    await index_replay_sandbox(subject, source_url=args.database_url)
-    runner = subject.deps.cognition_runner
-    evaluator = subject.deps.wake_evaluator
-    if runner is None or evaluator is None:
-        raise ValueError("the subject composes no cognition runner/evaluator")
-    engine = create_async_engine(url)
+    """One wake: compose, assert inert, record, run live, diff, judge."""
+    subject = await _compose(
+        args, url, at_ms, room, args.policy.read_text(),
+        args.identity.read_text(), workspace=workspace,
+    )
     try:
-        rooms = _rooms(subject, case.unit)
-        stimuli = SqlStimulusStore(engine)
-        view = await stimuli.view(
-            unit=case.unit, mode="live", now_ms=at_ms,
-            limit=evaluator._policy.batch_max,
-            stale_before_ms=at_ms - int(
-                evaluator._policy.session_timeout_seconds * 1000),
-        )
-        decided = decide(view, evaluator._policy, at_ms)
-        recorded_reason = cast(WakeReason, reason)
-        verdict, forced = eval_verdict(view, decided, reason=recorded_reason)
-        wake = await record_eval_wake(
-            evaluator, view, verdict,
-            verdict.reason or recorded_reason, at_ms,
-            forced=forced,
-        )
-        before = await state_mod.snapshot(
-            engine, unit=case.unit, rooms=rooms,
-            profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
-            metrics=subject.deps.metrics,
-        )
-        tokens_before = subject.deps.metrics.get(
-            "nora_cognition_unit_tokens_total")
-        session_id = None
-        if judges is not None:
-            outcome = await runner.on_wake(
-                unit=case.unit, view=view, now_ms=at_ms,
+        egress = assert_no_egress(subject)
+        await index_replay_sandbox(subject, source_url=args.database_url)
+        runner = subject.deps.cognition_runner
+        evaluator = subject.deps.wake_evaluator
+        if runner is None or evaluator is None:
+            raise ValueError("the subject composes no cognition runner/evaluator")
+        engine = create_async_engine(url)
+        try:
+            rooms = _rooms(subject, case.unit)
+            stimuli = SqlStimulusStore(engine)
+            view = await stimuli.view(
+                unit=case.unit, mode="live", now_ms=at_ms,
+                limit=evaluator._policy.batch_max,
+                stale_before_ms=at_ms - int(
+                    evaluator._policy.session_timeout_seconds * 1000),
+            )
+            decided = decide(view, evaluator._policy, at_ms)
+            recorded_reason = cast(WakeReason, reason)
+            verdict, forced = eval_verdict(view, decided, reason=recorded_reason)
+            wake = await record_eval_wake(
+                evaluator, view, verdict,
+                verdict.reason or recorded_reason, at_ms,
+                forced=forced,
+            )
+            before = await state_mod.snapshot(
+                engine, unit=case.unit, rooms=rooms,
+                profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
+                metrics=subject.deps.metrics,
+            )
+            tokens_before = subject.deps.metrics.get(
+                "nora_cognition_unit_tokens_total")
+            session_id = None
+            if judges is not None:
+                outcome = await runner.on_wake(
+                    unit=case.unit, view=view, now_ms=at_ms,
+                    wake_id=wake.wake_id,
+                )
+                if outcome is not None:
+                    session_id = outcome.session_id
+            else:
+                await runner.inspect(view=view, now_ms=at_ms)
+            tokens = (subject.deps.metrics.get("nora_cognition_unit_tokens_total")
+                      - tokens_before)
+            after = await state_mod.snapshot(
+                engine, unit=case.unit, rooms=rooms,
+                profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
+                metrics=subject.deps.metrics,
+            )
+            diff = state_mod.diff(before, after)
+            events = session_events(
+                read_events(evidence.path), session_id=session_id,
                 wake_id=wake.wake_id,
             )
-            if outcome is not None:
-                session_id = outcome.session_id
-        else:
-            await runner.inspect(view=view, now_ms=at_ms)
-        tokens = (subject.deps.metrics.get("nora_cognition_unit_tokens_total")
-                  - tokens_before)
-        after = await state_mod.snapshot(
-            engine, unit=case.unit, rooms=rooms,
-            profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
-            metrics=subject.deps.metrics,
-        )
-        diff = state_mod.diff(before, after)
-        events = session_events(
-            read_events(evidence.path), session_id=session_id,
-            wake_id=wake.wake_id,
-        )
-        trajectory = wake_trajectory(
-            events, wake_id=wake.wake_id, session_id=session_id,
-            tokens=tokens or None,
-        )
-        expectations = []
-        if judges is not None:
-            for expectation in case.expectations:
-                if expectation.wake != index:
-                    continue
-                verdict_obj = await judge_expectation(
-                    judges, (args.judge_a, args.judge_b), expectation,
-                    diff, after, trajectory,
-                )
-                expectations.append({
-                    "expectation": expectation.text,
-                    "verdict": verdict_obj.verdict,
-                    "verdict_obj": verdict_obj,
-                    "answers": [asdict(a) for a in verdict_obj.answers],
-                })
-        return _freeze_wake(
-            output, index, wake_id, wake, at_ms, reason, session_id,
-            egress, judges is not None, diff, trajectory, expectations, after,
-        )
-    finally:
-        try:
-            from evals.backbone import _close
-            await _close(subject)
+            trajectory = wake_trajectory(
+                events, wake_id=wake.wake_id, session_id=session_id,
+                tokens=tokens or None,
+            )
+            expectations = []
+            if judges is not None:
+                for expectation in case.expectations:
+                    if expectation.wake != index:
+                        continue
+                    verdict_obj = await judge_expectation(
+                        judges, (args.judge_a, args.judge_b), expectation,
+                        diff, after, trajectory,
+                    )
+                    expectations.append({
+                        "expectation": expectation.text,
+                        "verdict": verdict_obj.verdict,
+                        "verdict_obj": verdict_obj,
+                        "answers": [asdict(a) for a in verdict_obj.answers],
+                    })
+            return _freeze_wake(
+                output, index, wake_id, wake, at_ms, reason, session_id,
+                egress, judges is not None, diff, trajectory, expectations, after,
+            )
         finally:
             await engine.dispose()
+    finally:
+        await _close_subject(subject)
+
+
+async def _close_subject(subject: Any) -> None:
+    """The composed subject's teardown, the app's own order. Never raises."""
+    deps = subject.deps
+    lifecycle = getattr(deps, "computer_lifecycle", None)
+    if lifecycle is not None:
+        with contextlib.suppress(Exception):
+            await lifecycle.close()
+    shuts = []
+    for name in ("background", "audit", "client"):
+        part = getattr(deps, name, None)
+        if part is not None:
+            shuts.append(
+                part.cancel_all() if name == "background"
+                else part.aclose() if name == "audit"
+                else part.close())
+    shuts.extend(c.close() for c in getattr(deps, "model_clients", ()) or ())
+    for shut in shuts:
+        with contextlib.suppress(Exception):
+            await shut
 
 
 def _freeze_wake(

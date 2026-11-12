@@ -71,6 +71,10 @@ class WhatsAppReactor:
             "emoji": emoji,
             "remove": remove,
         }
+        return await self._post(payload, conversation_id=target.conversation_id)
+
+    async def _post(self, payload: dict, *, conversation_id: str) -> ReactionResult:
+        """One POST against the bridge — `react` keeps the refusals."""
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
@@ -85,14 +89,14 @@ class WhatsAppReactor:
                     log.warning(
                         "reaction target not in the bridge's recent-message cache "
                         "(conversation=%s) — the message predates it or never landed",
-                        target.conversation_id,
+                        conversation_id,
                     )
                     return ReactionResult(ok=False, supported=True)
                 log.error("reaction failed: HTTP %s (conversation=%s)",
-                          resp.status, target.conversation_id)
+                          resp.status, conversation_id)
                 return ReactionResult(ok=False, supported=True)
         except Exception:
             # Never raises, for the reason in the module docstring.
-            log.error("reaction failed (conversation=%s)", target.conversation_id,
+            log.error("reaction failed (conversation=%s)", conversation_id,
                       exc_info=True)
             return ReactionResult(ok=False, supported=True)
