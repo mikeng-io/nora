@@ -78,14 +78,14 @@ async def bump_sequences(source: AsyncEngine, target: AsyncEngine) -> None:
     async with source.connect() as src, target.connect() as dst, dst.begin():
         for table in (*RECORD_HISTORY_TABLES, *RECORD_APPEND_TABLES,
                       "stimulus", "row_history"):
-            source_max = (await src.execute(sa.text(
-                f'SELECT COALESCE(MAX(id), 0) FROM "{table}"'  # noqa: S608 — constants
-            ))).scalar_one()
             seq = (await dst.execute(sa.text(
                 "SELECT pg_get_serial_sequence(:t, 'id')"), {"t": table}
             )).scalar_one_or_none()
-            if seq is None:
+            if seq is None:  # a uuid or text id has no sequence to collide on
                 continue
+            source_max = (await src.execute(sa.text(
+                f'SELECT COALESCE(MAX(id), 0) FROM "{table}"'  # noqa: S608 — constants
+            ))).scalar_one()
             local_max = (await dst.execute(sa.text(
                 f'SELECT COALESCE(MAX(id), 0) FROM "{table}"'  # noqa: S608 — constants
             ))).scalar_one()
