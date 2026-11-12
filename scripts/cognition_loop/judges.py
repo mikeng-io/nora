@@ -144,10 +144,18 @@ def judge_payload(
 
 
 def parse_answer(text: str) -> JudgeAnswer:
-    raw = json.loads(text)
+    # A judge may wrap its object in a fence or a sentence; the object is
+    # still checked field by field. An answer with no object names its size.
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end < start:
+        raise EvidenceError(
+            f"no JSON object in the judge's answer ({len(text)} chars)")
+    raw = json.loads(text[start:end + 1])
     if not isinstance(raw, dict):
         raise EvidenceError("a judge answer is a JSON object")
     verdict = str(raw.get("verdict", ""))
+    if verdict not in ("met", "not_met", "cannot_tell"):
+        raise EvidenceError(f"a judge verdict must be met|not_met|cannot_tell, got {verdict!r}")
     ids = raw.get("entry_ids", [])
     if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
         raise EvidenceError("a judge's entry_ids must be a list of strings")
