@@ -213,7 +213,7 @@ class WakeEvaluator:
                 # tick.
                 self._metrics.inc("nora_cognition_wake_deferred_total", brake="concurrency")
                 continue
-            wake_id = await self._record(view, verdict, verdict.reason, cutoff_ms)
+            wake_id = await self.record(view, verdict, verdict.reason, cutoff_ms)
             if wake_id is not None:
                 written.append(wake_id)
                 flying.add(view.unit)
@@ -489,7 +489,7 @@ class WakeEvaluator:
         age = (now_ms - min(eligible)) / 1000 if eligible else 0.0
         self._metrics.gauge("nora_stimulus_pending_age_seconds", max(0.0, age), unit=view.unit)
 
-    async def _record(
+    async def record(
         self, view: UnitView, verdict: Verdict, reason: WakeReason, at_ms: int,
     ) -> int | None:
         """`at_ms` is the read's cutoff: the watermark's time bound."""

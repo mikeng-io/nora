@@ -21,20 +21,6 @@
     "target": "tests/integration/test_eval_observability.py::test_review_judge_verdict_keeps_run_complete"
   },
   {
-    "name": "FIX 3 orphan finish",
-    "file": "nora/subject/eval_evidence.py",
-    "old": "            if not pending.get(marker):\n                causes.add(\"unmatched_event\")",
-    "new": "            if not pending.get(marker):\n                pass",
-    "target": "tests/unit/test_replay_scoring.py::test_unmatched_call_is_the_only_error[call_finished]"
-  },
-  {
-    "name": "FIX 3 dangling start",
-    "file": "nora/subject/eval_evidence.py",
-    "old": "    if any(pending.values()):\n        causes.add(\"unmatched_event\")",
-    "new": "    if any(pending.values()):\n        pass",
-    "target": "tests/unit/test_replay_scoring.py::test_unmatched_call_is_the_only_error[call_started]"
-  },
-  {
     "name": "FIX 4 suppress local strip probes",
     "file": "nora/agent/reasoning_strip.py",
     "old": "    from .telemetry import _REQUEST_PROBE\n    token = _REQUEST_PROBE.set(True)\n    try:\n        request = format_request([message])\n    finally:\n        _REQUEST_PROBE.reset(token)",

@@ -103,11 +103,18 @@ class InstagramReactor:
             "emoji": emoji,
             "remove": remove,
         }
+        return await self._put(
+            payload, target.conversation_id, to_message_id)
+
+    async def _put(
+        self, payload: dict, conversation_id: str, message_id: str,
+    ) -> ReactionResult:
+        """One PUT against the bridge — `react` keeps the refusals."""
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
                 session.put(
-                    f"{self._base_url}{reaction_path(target.conversation_id, to_message_id)}",
+                    f"{self._base_url}{reaction_path(conversation_id, message_id)}",
                     json=payload, headers=propagation_headers(),
                 ) as resp,
             ):
@@ -117,14 +124,14 @@ class InstagramReactor:
                     log.error(
                         "reaction refused: instagram session is checkpointed or logged "
                         "out (conversation=%s) — a human has to clear it",
-                        target.conversation_id,
+                        conversation_id,
                     )
                     return ReactionResult(ok=False, supported=True)
                 log.error("reaction failed: HTTP %s (conversation=%s)",
-                          resp.status, target.conversation_id)
+                          resp.status, conversation_id)
                 return ReactionResult(ok=False, supported=True)
         except Exception:
             # Never raises, for the reason in the module docstring.
-            log.error("reaction failed (conversation=%s)", target.conversation_id,
+            log.error("reaction failed (conversation=%s)", conversation_id,
                       exc_info=True)
             return ReactionResult(ok=False, supported=True)

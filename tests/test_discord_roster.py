@@ -34,7 +34,7 @@ ROOM = f"{GUILD}/{CHANNEL}"
 async def api(aiohttp_server):
     """A stand-in for `GET /guilds/{id}/members` that distinguishes its own
     failure modes instead of answering everything identically."""
-    state: dict = {"status": 200, "members": [], "calls": [], "body": None}
+    state: dict = {"status": 200, "members": [], "calls": [], "body": None, "stray": []}
 
     async def handler(request: web.Request) -> web.Response:
         state["calls"].append(request.match_info["guild"])
@@ -44,8 +44,13 @@ async def api(aiohttp_server):
             return web.json_response(state["body"])
         return web.json_response(state["members"])
 
+    async def stray(request: web.Request) -> web.Response:
+        state["stray"].append(request.path_qs)
+        return web.json_response([])
+
     app = web.Application()
     app.router.add_get("/guilds/{guild}/members", handler)
+    app.router.add_route("*", "/{tail:.*}", stray)
     server = await aiohttp_server(app)
     server.state = state
     return server
@@ -136,15 +141,21 @@ async def test_a_guild_too_large_to_read_in_one_page_refuses_the_whole_read(api)
     assert roster.members == ()
 
 
-@pytest.mark.parametrize("bad", ["", "no-slash", "/100000000000000205", "100000000000000203/"])
+@pytest.mark.parametrize("bad", [
+    "", "no-slash", "/100000000000000205", "100000000000000203/",
+    f"../users/@me/{CHANNEL}", f"{GUILD}?limit=1/{CHANNEL}", f"{GUILD}%2F..%2Fx/{CHANNEL}",
+    f"\u0661\u0662/{CHANNEL}", f"+{GUILD}/{CHANNEL}",
+])
 async def test_a_malformed_conversation_id_is_unavailable_and_never_reaches_the_network(
     api, bad,
 ):
-    """A wiring fault, not an empty room — and it must not be attempted."""
+    """A wiring fault, not an empty room — and it must not be attempted: a guild
+    half that is not a snowflake never becomes part of a request path."""
     roster = await _roster(api).roster(conversation_id=bad)
 
     assert roster.available is False
     assert api.state["calls"] == []
+    assert api.state["stray"] == []
 
 
 async def test_an_unreachable_api_never_raises():

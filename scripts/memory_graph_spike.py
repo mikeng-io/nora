@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-import argparse
-import asyncio
 import hashlib
 import json
-import logging
 import math
 import os
 import random
 import re
 import statistics
-import sys
-import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -25,12 +19,9 @@ import sqlalchemy as sa
 from jsonschema import ValidationError, validate
 from sqlalchemy.engine import make_url
 
-from evals.grading_contract import GradingContract, contract_for
 from evals.rebuilt.judge import criterion_verdict, parse_json_response
-from nora.agent.replay_inspection import compare_inspection
 from nora.agent.structured import ask_text, build_structured_model
-from nora.app.graph_project import graph_project, projection_context
-from nora.config import load
+from nora.config import load  # noqa: F401  (judge_controls reaches it through this module)
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.composed import compose_body
 from nora.domain.memory_graph import Walk
@@ -39,23 +30,15 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memory_graph import WALK_SQL, walk_parameters
 from nora.infra.sql.schema import METADATA
 from nora.language.cognition_parse import ledger_source_row, shown_source_rows
-from nora.obs.metrics import Metrics
-from nora.persons import load_persons
-from nora.policy import load_policy
-from nora.secret import credentials
 from nora.subject.eval_evidence import (
-    EvidenceError,
     RunEvidence,
-    current,
-    evaluation_export_for,
+    evaluation_export_for,  # noqa: F401  (tests patch it through this module)
     fingerprint,
     read_events,
-    revision,
     validate_events,
 )
 from nora.subject.obtain import model_endpoint
 from nora.subject.sandbox_index import (
-    EMBEDDER_FROM_HOST,
     SandboxIndex,
     check_served_model,
     index_sandbox,
@@ -63,15 +46,10 @@ from nora.subject.sandbox_index import (
 from scripts.memory_graph_facts import (
     _FIXED_COVERAGE_OUTPUT,  # noqa: F401  (tests read it through this module)
     _FIXED_SUPPORT_OUTPUT,  # noqa: F401
-    decision_judge,
-    fact_quality,
-    freeze_fact_session,
     miss_in_new_sources,  # noqa: F401  (tests import it through this module)
     parse_fact_output,
     recorded_fact_sessions,  # noqa: F401
-    rescore_facts,
-    smoke_fact_support,
-)
+    )
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (("cited_sources", 10, "turn"),)
 _ROW = {n: (o, k) for n, o, k in _BLOCKS}
@@ -562,31 +540,6 @@ SMOKE_MARKS = {
 }
 
 
-def session_smoke(
-    samples: Sequence[dict[str, Any]], *, expected: int | None = None,
-) -> dict[str, Any]:
-    missing = sum(s.get("tokens") is None for s in samples)
-    errors = sum(s.get("status") == "ERROR" for s in samples)
-    completed = sum(s.get("status") == "PASS" for s in samples)
-    changed = sum(s.get("acts", 0) for s in samples)
-    counted = sum(s.get("admitted", 0) + s.get("refused", 0) for s in samples)
-    return {
-        "status": "ERROR"
-        if (errors or missing or len(samples) < 5
-            or (expected is not None and len(samples) != expected))
-        else "PASS"
-        if completed == len(samples) and counted and not changed
-        else "FAIL",
-        "sessions": len(samples),
-        "completed": completed,
-        "proposals_admitted": sum(s.get("admitted", 0) for s in samples),
-        "proposals_refused": sum(s.get("refused", 0) for s in samples),
-        "acts": changed,
-        "missing_usage": missing,
-        "marks": {**SMOKE_MARKS, "sample": expected or SMOKE_MARKS["sample"]},
-    }
-
-
 def check_acts(before: Mapping[str, Any], after: Mapping[str, Any]) -> int:
     """Measure any change, including deletion; the snapshot has no other writers."""
     return sum(after.get(k) != before.get(k) for k in set(before) | set(after))
@@ -700,103 +653,6 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return exchanges
 
 
-async def session_quality(
-    judges: Judges, inspection: Any, exchanges: list[dict[str, Any]]
-) -> dict[str, Any]:
-    """Judge committed understanding against exactly the shown input and reads.
-
-    The recorded `memory_propose` result names committed relation ids; the
-    depth-1 `connected` preview does not always carry their relation rows, so
-    the scored population is committed ∩ preview. Committed relations with no
-    preview row are missing measurements — recorded as ERROR verdicts, never
-    silently dropped from the denominator or judged unsupported.
-    """
-    evidence = {
-        "input": inspection,
-        "reads": [
-            e for e in exchanges if e["name"] not in {"memory_propose", "profile_revise", "close"}
-        ],
-    }
-    scored: dict[str, list[list[str]]] = {
-        k: [[], []]
-        for k in (
-            "reading_precision",
-            "reading_recall",
-            "relation_precision",
-            "wrong_merges",
-            "enrichment_support",
-            "enrichment_entity",
-        )
-    }
-    committed_ids: set[str] = set()
-    preview_ids: set[str] = set()
-    scored_ids: set[str] = set()
-
-    async def score(name: str, proposition: Any) -> None:
-        for i, verdict in enumerate(
-            await judges.score({"proposition": proposition, "evidence": evidence})
-        ):
-            scored[name][i].append(verdict)
-
-    readings = []
-    for exchange in exchanges:
-        if exchange["name"] != "memory_propose" or not isinstance(exchange["result"], dict):
-            continue
-        result, proposal = exchange["result"], exchange["input"]
-        raw = proposal.get("statements", [])
-        statements = [raw[row["index"]] for row in result.get("statements", [])
-                      if row.get("status") == "saved" and 0 <= row["index"] < len(raw)]
-        new_entities = [
-            endpoint["new"] for st in statements if st.get("type") == "relation"
-            for endpoint in (st.get("subject"), st.get("object"))
-            if isinstance(endpoint, dict) and isinstance(endpoint.get("new"), dict)
-        ]
-        for reading in (s for s in statements if s.get("type") == "reading"):
-            readings.append(reading)
-            await score("reading_precision", reading)
-        committed = set(result.get("committed", []))
-        committed_ids |= committed
-        for edge in result.get("connected", {}).get("relations", []):
-            relation = edge["relation"]
-            preview_ids.add(relation["id"])
-            if relation["id"] in committed and relation["id"] not in scored_ids:
-                scored_ids.add(relation["id"])
-                await score("relation_precision", relation)
-                if relation["rel"] == "same_as":
-                    await score("wrong_merges", {"different_entities": relation})
-        for entity in new_entities:
-            for attr, cited in entity.get("attributes", {}).items():
-                await score(
-                    "enrichment_support",
-                    {
-                        "attribute": attr,
-                        "value": cited.get("value"),
-                        "requirement": "supported by the cited fetched page",
-                    },
-                )
-                await score(
-                    "enrichment_entity",
-                    {"entity": entity, "requirement": "cited fetched page is about this entity"},
-                )
-    # A committed relation with no preview row cannot be judged from the
-    # recorded result; a missing one cannot be ruled out as a merge either.
-    missing = committed_ids - scored_ids
-    for _ in missing:
-        for name in ("relation_precision", "wrong_merges"):
-            for verdicts in scored[name]:
-                verdicts.append("ERROR")
-    await score("reading_recall", {"all_storable_statements_covered": True, "readings": readings})
-    return {
-        "verdicts": scored,
-        "population": {
-            "committed": len(committed_ids),
-            "preview": len(preview_ids),
-            "scored": len(scored_ids),
-            "missing": len(missing),
-        },
-    }
-
-
 async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex:
     """The replay sandbox's memory index, built before inspect or replay:
     `sandbox_as_of` restores no `memory_*` table
@@ -818,498 +674,6 @@ async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex
     )
 
 
-async def project(engine: Any, scope: Any, rate: float) -> None:
-    await graph_project(engine, scope=scope, apply=True, rows_per_second=rate)
-    from nora.infra.sql.graph_projection import form_batch, project_source
-
-    # Projection backfill deliberately disables work production; replay its existing
-    # source projector with production enabled in this isolated snapshot only.
-    projected = engine.execution_options(memory_graph=scope)
-    nodes = await rows(engine, "SELECT kind,source_id FROM memory_node ORDER BY at_ms,id")
-    for node in nodes:
-        async with projected.begin() as conn:
-            await project_source(conn, node["kind"], node["source_id"])
-    async with projected.begin() as conn:
-        while await form_batch(conn, now=datetime.now(UTC)):
-            pass
-
-
-
-async def _replay_wake(
-    subject: Any, engine: Any, args: argparse.Namespace, wake: dict[str, Any],
-    wake_index: int, result_index: int, view: Any, replay_ms: int, judges: Judges,
-    contract: Any, sample_sha256: str, output: Path, measured: dict[str, Any],
-    scores: dict[str, Any], population: dict[str, int], persons: Any,
-) -> dict[str, Any] | None:
-    """Replay the wake's session and score it; None on an inspect-only freeze."""
-    runner = subject.deps.cognition_runner
-    if runner is None:
-        raise ValueError("snapshot session unavailable")
-    measured["index"] = (
-        await index_replay_sandbox(
-            subject, source_url=args.database_url
-        )
-    ).line()
-    inspection = await runner.inspect(view=view, now_ms=replay_ms, historical=True)
-    if contract is not None:
-        if inspection is None:
-            raise EvidenceError("required inspection unavailable")
-        contract.memory_reference(str(wake["id"]), inspection)
-    if getattr(args, "inspect_only", False):
-        if inspection is None:
-            raise ValueError("inspection unavailable")
-        freeze(output / f"inspection-{wake_index}.json", inspection)
-        return None
-    tokens_before = subject.deps.metrics.get(
-        "nora_cognition_unit_tokens_total"
-    )
-    outcome = await runner.replay(view=view, now_ms=replay_ms, historical=True)
-    if outcome is None:
-        raise ValueError("empty session")
-    evidence = current()
-    if evidence is None:
-        raise ValueError("capture_unavailable")
-    evidence.record("replay_session", wake_id=wake["id"],
-                    session_id=outcome.session_id,
-                    sample_sha256=sample_sha256)
-    events = read_events(evidence.path)
-    starts = [i for i, e in enumerate(events)
-              if e.get("name") == "nora.session.started"]
-    session_events = events[starts[-1]:] if starts else []
-    judges.served.setdefault("writer", []).extend(
-        e["headers"] for e in session_events
-        if e["kind"] == "transport_response")
-    exchanges = evidence_exchanges(session_events)
-    requests = [json.loads(e["attributes"]["nora.model.request.body"])
-                for e in session_events
-                if e.get("name") == "nora.model.request"]
-    if (inspection is None or not requests
-            or not compare_inspection(inspection, requests[0])):
-        raise ValueError("inspection_projection_mismatch")
-    freeze_fact_session(
-        output, result_index, wake, inspection, session_events
-    )
-    proposals = [e for e in exchanges if e["name"] == "memory_propose"]
-    measured["proposal_argument_errors"] = sum(
-        e.get("argument_validation") == "rejected_before_dispatch"
-        for e in proposals)
-    if (proposals and proposals[-1].get("argument_validation")
-            == "rejected_before_dispatch"):
-        raise ValueError("unrecovered proposal argument error")
-    proposals = [e for e in proposals if e.get("argument_validation")
-                 != "rejected_before_dispatch"]
-    if any(not isinstance(e["result"], dict) for e in proposals):
-        raise ValueError("unreadable admission result")
-    tokens = (
-        subject.deps.metrics.get("nora_cognition_unit_tokens_total")
-        - tokens_before
-    )
-    from nora.agent.comprehend_tools import egress_reason
-
-    private_names = tuple(
-        name
-        for p in persons.by_person.values()
-        for name in (p.name, *p.aliases)
-    )
-    queries = [
-        str(e["input"].get("query", e["input"].get("url", "")))
-        for e in exchanges
-        if e["name"] in {"web_search", "web_fetch"}
-    ]
-    measured["egress_hits"] = sum(
-        bool(egress_reason(q, private_names)) for q in queries
-    )
-    measured["trace_truncated"] = (
-        subject.deps.metrics.get("nora_tagtrace_truncations_total") > 0
-    )
-    measured.update(
-        status="PASS",
-        tokens=tokens if tokens > 0 else None,
-        admitted=sum(any(s.get("status") == "saved"
-                         for s in e["result"].get("statements", []))
-                     for e in proposals),
-        refused=sum(bool(e["result"].get("refused")) for e in proposals),
-        session_outcome=outcome.stop_reason,
-    )
-    scored = await smoke_fact_support(
-        judges,
-        inspection,
-        exchanges,
-        contract=contract,
-        reference_key=str(wake["id"]),
-    )
-    measured.update(scored)
-    measured["memory_quality"] = fact_quality(scored)
-    if not args.smoke:
-        quality = await session_quality(judges, inspection, exchanges)
-        for name, pair in quality["verdicts"].items():
-            target = scores.setdefault(name, [[], []])
-            for i, values in enumerate(pair):
-                target[i].extend(values)
-        for key, count in quality["population"].items():
-            population[key] = population.get(key, 0) + count
-    return measured
-
-
-async def _measure_wake(
-    args: argparse.Namespace, engine: Any, cfg: Any, policy: Any,
-    wake: dict[str, Any], wake_index: int, result_index: int, judges: Judges, contract: Any,
-    sample_sha256: str, output: Path, scores: dict[str, Any],
-    population: dict[str, int], persons: Any,
-) -> dict[str, Any] | None:
-    """One recorded wake in its evidence case; None on an inspect-only freeze."""
-    from tempfile import TemporaryDirectory
-
-    from nora.agent.replay_capture import record
-    from nora.infra.sql.cognition_replay import recorded_wake
-    from nora.subject import SubjectSpec, obtain, sandbox_as_of
-
-    replay_ms, view = await recorded_wake(engine, wake["id"])
-    evidence = current()
-    if evidence is None:
-        raise ValueError("capture_unavailable")
-    with evidence.case(
-        f"wake:{view.unit}:{wake['id']}",
-        input=wake,
-        metadata={
-            "wake_id": wake["id"],
-            "unit": view.unit,
-            "replay_ms": replay_ms,
-            "frozen_sample_sha256": sample_sha256,
-            "seed": args.seed,
-            "snapshot_locator_sha256": hashlib.sha256(
-                args.database_url.encode()
-            ).hexdigest(),
-        },
-    ):
-        at = datetime.fromtimestamp(replay_ms / 1000, UTC)
-        room = next((c for c in policy.rooms() if c.unit == view.unit), None)
-        if room is None:
-            raise ValueError("wake has no policy room")
-        # ponytail: recorded_wake has no last_session or carry; each wake replays
-        # as the unit's first session. Restore session continuity if that is measured.
-        measured: dict[str, Any] = {
-            "status": "ERROR", "tokens": None, "memory_quality": {"status": "ERROR"}}
-        async with sandbox_as_of(args.database_url, at) as (url, _):
-            with TemporaryDirectory(prefix="nora-spike-") as workdir:
-                subject = await obtain(
-                    SubjectSpec(
-                        database_url=url,
-                        workdir=Path(workdir),
-                        room=(room.platform, room.primary_id),
-                        now=at,
-                        identity=args.identity.read_text(),
-                        policy=args.policy.read_text(),
-                        overrides={
-                            "cognition.enabled": True,
-                            "memory.graph.enabled": True,
-                            "memory.graph.comprehend.enabled": True,
-                            # The deployment's embedder name resolves only
-                            # on the compose network; the spike runs on the
-                            # host, where compose publishes it on loopback
-                            # (`evals.scenarios.MEMORY_INDEX_OVERRIDES`).
-                            "memory.index.embedder_url": EMBEDDER_FROM_HOST,
-                            "llm": cfg.llm.model_dump(),
-                            "providers": {
-                                k: v.model_dump() for k, v in cfg.providers.items()
-                            },
-                            "model_routes": {
-                                k: v.model_dump() for k, v in cfg.model_routes.items()
-                            },
-                            "cognition": {**cfg.cognition.model_dump(), "enabled": True},
-                        },
-                    )
-                )
-                sandbox_engine = create_sql_engine(url)
-                before_sandbox = await acts(sandbox_engine)
-                try:
-                    return await _replay_wake(
-                        subject, engine, args, wake, wake_index, result_index,
-                        view, replay_ms,
-                        judges, contract, sample_sha256, output, measured,
-                        scores, population, persons,
-                    )
-                except Exception as exc:  # noqa: BLE001 - private exceptions stay on host
-                    import traceback
-
-                    measured["status"] = "ERROR"
-                    measured["error_type"] = type(exc).__name__
-                    record("replay_session_error", wake_id=wake["id"],
-                           error_type=type(exc).__name__,
-                           frames=[(Path(f.filename).name, f.lineno, f.name)
-                                   for f in traceback.extract_tb(exc.__traceback__)[-8:]])
-                finally:
-                    measured["acts"] = check_acts(
-                        before_sandbox, await acts(sandbox_engine)
-                    )
-                    await sandbox_engine.dispose()
-                    from evals.backbone import _close
-
-                    await _close(subject)
-        return measured
-
-async def _run(args: argparse.Namespace) -> dict[str, Any]:
-    cfg = load(args.config)
-    production = credentials()[cfg.store.database_url_env]
-    snapshot_only(args.database_url, production, args.snapshot)
-    if args.age_url:
-        snapshot_only(args.age_url, production, args.snapshot)
-        snapshot_only(args.age_url, args.database_url, args.snapshot)
-    output = args.output
-    # Prevent libraries from echoing private prompts, queries, URLs or SQL parameters.
-    # The PRIOR threshold is restored on every exit — engine creation failure
-    # included: a bare disable() would leave the caller's logging muted.
-    previous_disable = logging.root.manager.disable
-    logging.disable(logging.CRITICAL)
-    engine: Any | None = None
-    try:
-        engine = create_sql_engine(args.database_url)
-        policy, persons = load_policy(args.policy), load_persons(args.identity)
-        metrics = Metrics()
-        scope = projection_context(policy, persons, nora_name="Nora", metrics=metrics)
-        before = await acts(engine)
-        # ponytail: projection is the slow part (about 75 minutes on the October
-        # snapshot); --project-only runs it once and is dumped, and later runs
-        # restore that dump with --skip-projection.
-        if not args.skip_projection:
-            await project(engine, scope, args.projection_rate)
-        if args.project_only:
-            return {
-                "status": "REPORTED",
-                "projected": True,
-                "acts": {"status": "FAIL" if check_acts(before, await acts(engine)) else "PASS"},
-            }
-
-        from nora.infra.sql.cognition_replay import recorded_wake
-
-        wakes = await rows(engine, "SELECT id,at_ms FROM cognition_wake ORDER BY at_ms,id")
-        candidates = []
-        for wake in wakes:
-            _, view = await recorded_wake(engine, wake["id"])
-            kinds = {s.kind for s in view.pending}
-            strata = []
-            for stimulus in view.pending:
-                if stimulus.kind == "message":
-                    message = await rows(
-                        engine,
-                        "SELECT body FROM messages WHERE id=:id",
-                        {"id": int(stimulus.ref.split(":")[-1])},
-                    )
-                    body = str(message[0]["body"]) if message else ""
-                    strata.append(
-                        "link"
-                        if "http://" in body or "https://" in body
-                        else "attachment"
-                        if "[image " in body
-                        or "[audio " in body
-                        or "[video " in body
-                        or "[file " in body
-                        else "text"
-                    )
-            if "social" in kinds:
-                strata.append("social")
-            if "rollup" in kinds and len(kinds) > 1:
-                strata.append("multi_signal")
-            candidates.append({**wake, "strata": sorted(set(strata))})
-        sample = stratify(candidates, 1 if args.smoke else args.per_stratum, args.seed)
-        selected = {w["id"]: w for group in sample.values() for w in group}
-        # Smoke is five distinct wakes; absent strata remain explicitly counted.
-        if args.smoke:
-            for wake in candidates:
-                if len(selected) >= SMOKE_MARKS["sample"]:
-                    break
-                selected.setdefault(wake["id"], wake)
-            requested = getattr(args, "session_count", None)
-            if requested is not None:
-                selected = extend_sample(candidates, selected, size=requested, seed=args.seed)
-        sample_sha256 = freeze(output / "sample.json", list(selected.values()))
-        expected_sample = getattr(args, "sample_sha256", None)
-        if expected_sample and sample_sha256 != expected_sample:
-            raise ValueError("frozen replay sample differs from the approved baseline")
-        contract = getattr(args, "bound_contract", None)
-        if contract is not None:
-            contract.verify_sample(sample_sha256, list(selected.values()))
-        from nora.agent.replay_capture import record
-
-        record("snapshot_manifest", sample_sha256=sample_sha256,
-               migration_revision=await rows(engine, "SELECT version_num FROM alembic_version"))
-        results: list[dict[str, Any]] = []
-        scores: dict[str, list[list[str]]] = {}
-        population: dict[str, int] = {}
-        age_results = []
-        judges = Judges(cfg, [args.judge_a, args.judge_b], args.config)
-        inspections = 0
-        for wake_index, wake in enumerate(selected.values()):
-            measured = await _measure_wake(
-                args, engine, cfg, policy, wake, wake_index, len(results), judges,
-                contract, sample_sha256, output, scores, population, persons,
-            )
-            if measured is None:
-                inspections += 1
-                continue
-            results.append(measured)
-        if getattr(args, "inspect_only", False):
-            return {"status": "PASS" if inspections == len(selected) else "ERROR",
-                    "inspection_only": True, "inspections": inspections,
-                    "sample_sha256": sample_sha256}
-        # ponytail: one engine comparison per run, on the frozen projected
-        # source. An as-of sandbox correctly holds no graph rows at its wake
-        # instant, so a per-wake comparison there measures emptiness N times.
-        if not args.smoke:
-            age_dir = output / "age"
-            age_dir.mkdir(mode=0o700)
-            evidence = current()
-            if evidence is None:
-                raise ValueError("capture_unavailable")
-            with evidence.case("engine-comparison", input={"minimum": args.minimum},
-                               metadata={"frozen_sample_sha256": sample_sha256}):
-                age_results.append(
-                    await age_comparison(engine, args.age_url, judges, age_dir, args.minimum)
-                )
-        health = session_smoke(results, expected=getattr(args, "session_count", None))
-        report = {
-            "driver": "cognition_session",
-            "sample_sha256": sample_sha256,
-            "seed": args.seed,
-            "effective_judges": judges.effective_models,
-            "independence": served_independence(judges.served),
-            "judge_selection": {
-                "status": "PASS" if judges.models == judges.effective_models else "ERROR"
-            },
-            "judges": [args.judge_a, args.judge_b],
-            "smoke": health,
-            "strata": ({s: sum(s in w["strata"] for w in selected.values()) for s in STRATA}
-                       if getattr(args, "session_count", None) is not None
-                       else {s: len(v) for s, v in sample.items()}),
-            "acts": {
-                "status": "FAIL"
-                if check_acts(before, await acts(engine)) or health["acts"]
-                else "PASS"
-            },
-            "cost_per_batch": {
-                "status": "ERROR" if health["missing_usage"] else "REPORTED",
-                "token_median": percentile(
-                    [s["tokens"] for s in results if s["tokens"] is not None], 0.5
-                ),
-                "token_p95": percentile(
-                    [s["tokens"] for s in results if s["tokens"] is not None], 0.95
-                ),
-                "batches": {
-                    hashlib.sha256(str(wid).encode()).hexdigest(): result
-                    for wid, result in zip(selected, results, strict=True)
-                },
-                "budget_unit": "tokens per wake; billing split unavailable",
-            },
-            "retired": {
-                "monetary_cost": "Billing split unavailable; tokens remain reported.",
-                "step_1_step_2_cost_and_sessions": "One session per wake replaces both stages.",
-                "work_item_retry_and_lost": (
-                    "Per-item worker retired; measure completion and refused consumption."
-                ),
-            },
-        }
-        if not args.smoke:
-            thresholds = {
-                "reading_precision": 0.95,
-                "reading_recall": 0.8,
-                "relation_precision": 0.9,
-                "wrong_merges": 0.02,
-                "enrichment_support": 0.95,
-                "enrichment_entity": 0.9,
-            }
-            for name, threshold in thresholds.items():
-                pair = [
-                    rate(v, args.minimum, threshold, maximum=name == "wrong_merges")
-                    for v in scores.get(name, [[], []])
-                ]
-                status = next(
-                    s
-                    for s in ("ERROR", "INSUFFICIENT", "FAIL", "PASS")
-                    if any(r["status"] == s for r in pair)
-                )
-                row: dict[str, Any] = {"status": status, "judges": pair}
-                if name in {"relation_precision", "wrong_merges"}:
-                    row["population"] = population
-                report[name] = row
-            report["age"] = {
-                "status": age_status(age_results),
-                "decision": "adopt"
-                if age_results
-                and all(r.get("within_latency_and_more_correct") for r in age_results)
-                else "retain SQL",
-                "runs": age_results,
-                "cost": "custom image, duplicate link schema, Postgres upgrades wait on AGE",
-            }
-            verdicts = [depth3_verdict(r, args.minimum) for r in age_results]
-            report["query_depth_3"] = {
-                "status": next(
-                    (
-                        s
-                        for s in ("ERROR", "INSUFFICIENT", "FAIL", "PASS")
-                        if s in verdicts
-                    ),
-                    "ERROR",
-                ),
-                "p95_ms_ceiling": max(
-                    (r["sql_p95_ms"] for r in age_results if r.get("sql_p95_ms") is not None),
-                    default=None,
-                ),
-                "minimum": args.minimum,
-                "runs": [
-                    {
-                        "questions": r.get("questions", 0),
-                        "sql_p95_ms": r.get("sql_p95_ms"),
-                        "status": v,
-                    }
-                    for r, v in zip(age_results, verdicts, strict=True)
-                ],
-            }
-            hits = sum(s.get("egress_hits", 0) for s in results)
-            report["egress"] = {
-                "status": "ERROR"
-                if any(s["status"] == "ERROR" or s.get("trace_truncated") for s in results)
-                else "FAIL"
-                if hits
-                else "PASS",
-                "count": hits,
-            }
-        return report
-    finally:
-        try:
-            if engine is not None:
-                await engine.dispose()
-        finally:
-            logging.disable(previous_disable)
-
-
-def spike_contract(args: Any, entrypoint: str) -> GradingContract | None:
-    if entrypoint != "replay" and (
-        getattr(args, "inspect_only", False) or getattr(args, "project_only", False)
-    ):
-        raise EvidenceError("inspection and projection cover the replay path only")
-    if getattr(args, "project_only", False) and (
-        getattr(args, "grading_contract", None) or getattr(args, "grading_contract_sha256", None)
-    ):
-        raise EvidenceError("project-only does not consume a grading contract")
-    if (getattr(args, "inspect_only", False) or getattr(args, "project_only", False)) and not (
-        getattr(args, "grading_contract", None) or getattr(args, "grading_contract_sha256", None)
-    ):
-        return None
-    if not getattr(args, "grading_contract", None) or not getattr(
-        args, "grading_contract_sha256", None
-    ):
-        raise EvidenceError("paid evaluation requires --grading-contract and its SHA256")
-    if entrypoint == "replay":
-        selection = {
-            k: getattr(args, k, None)
-            for k in ("seed", "per_stratum", "minimum", "smoke", "session_count")
-        }
-    else:
-        source = args.rescore if entrypoint == "rescore" else args.decision_judge
-        selection = {"source_sha256": fingerprint(evidence_file(source))}
-    return contract_for(
-        args, entrypoint=entrypoint, judges=(args.judge_a, args.judge_b), selection=selection
-    )
 
 
 @contextmanager
@@ -1346,66 +710,6 @@ def measured_run_budget(
                 active_run_budget.reset(token)
 
 
-async def run(args: Any) -> dict[str, Any]:
-    from tempfile import TemporaryFile
-
-    from opentelemetry import trace
-
-    from evals.backbone import _prefill_capture
-
-    args.bound_contract = spike_contract(args, "replay")
-    export = evaluation_export_for(args.config)
-    _prefill_capture()
-    output = private_directory(args.output)
-    with TemporaryFile() as lock:
-        evidence = RunEvidence(
-            run_id=f"spike-{uuid.uuid4().hex}",
-            metadata={
-                **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
-                "config_sha256": fingerprint(args.config),
-                **(
-                    {"grading_contract": args.bound_contract.receipt()}
-                    if args.bound_contract is not None
-                    else {}
-                ),
-            },
-            lock_fd=lock.fileno(),
-            private_root=output,
-        )
-        report: dict[str, Any] = {"status": "ERROR"}
-        capture_failed = False
-        body_completed = False
-        try:
-            with evidence.capture(trace.get_tracer_provider(), export=export):
-                if args.bound_contract is not None:
-                    args.bound_contract.record()
-                trace_id = trace.get_current_span().get_span_context().trace_id
-                print(f"eval trace: {trace_id:032x}", file=sys.stderr)
-                with measured_run_budget(args, evidence, output, report):
-                    result = await _run(args)
-                    report.clear()
-                    report.update(result)
-                    body_completed = True
-        except EvidenceError:
-            if not body_completed:
-                raise
-            capture_failed = True
-        try:
-            receipt = validate_events(read_events(evidence.path))
-        except EvidenceError:
-            receipt = {"status": "ERROR", "causes": ["unreadable_record"]}
-        if capture_failed:
-            receipt = {**receipt, "status": "ERROR",
-                       "causes": sorted(set(receipt.get("causes", [])) | {"capture_failed"})}
-        report["evidence"] = {**receipt, "ref": evidence.path.name}
-        if args.bound_contract is not None:
-            report["grading_contract"] = args.bound_contract.receipt()
-        if receipt["status"] == "ERROR":
-            report["status"] = "ERROR"
-        freeze(output / "report.json", report)
-        return report
-
-
 def evidence_file(directory: Path) -> Path:
     if (directory / "events.jsonl").is_file():
         return directory / "events.jsonl"
@@ -1416,182 +720,20 @@ def evidence_file(directory: Path) -> Path:
     return paths[0]
 
 
-async def run_rescore(args: Any) -> dict[str, Any]:
-    from tempfile import TemporaryFile
-
-    from opentelemetry import trace
-
-    from evals.backbone import _prefill_capture
-
-    args.bound_contract = spike_contract(args, "rescore")
-    export = evaluation_export_for(args.config)
-    _prefill_capture()
-    output = private_directory(args.output)
-    with TemporaryFile() as lock:
-        evidence = RunEvidence(
-            run_id=f"rescore-{uuid.uuid4().hex}",
-            metadata={
-                "grading_contract": args.bound_contract.receipt(),
-                **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
-                "config_sha256": fingerprint(args.config),
-                "source_locator_sha256": hashlib.sha256(str(args.rescore).encode()).hexdigest(),
-            },
-            lock_fd=lock.fileno(),
-            private_root=output,
-        )
-        report: dict[str, Any] = {"status": "ERROR"}
-        try:
-            with evidence.capture(trace.get_tracer_provider(), export=export):
-                trace_id = trace.get_current_span().get_span_context().trace_id
-                print(f"eval trace: {trace_id:032x}", file=sys.stderr)
-                args.bound_contract.record()
-                with measured_run_budget(args, evidence, output, report):
-                    report.update(await rescore_facts(
-                        args.rescore,
-                        Judges(load(args.config), [args.judge_a, args.judge_b], args.config),
-                        contract=args.bound_contract,
-                    ))
-        except Exception:  # noqa: BLE001 - the private record retains failure details
-            report["status"] = "ERROR"
-        report["evidence"] = validate_events(read_events(evidence.path))
-        report["grading_contract"] = args.bound_contract.receipt()
-        freeze(output / "report.json", report)
-    return report
 
 
-async def run_diagnostic(args: Any) -> dict[str, Any]:
-    from tempfile import TemporaryFile
-
-    from opentelemetry import trace
-
-    from evals.backbone import _prefill_capture
-
-    args.bound_contract = spike_contract(args, "diagnostic")
-    export = evaluation_export_for(args.config)
-    _prefill_capture()
-    output = private_directory(args.output)
-    with TemporaryFile() as lock:
-        evidence = RunEvidence(
-            run_id=f"diagnostic-{uuid.uuid4().hex}",
-            metadata={
-                "grading_contract": args.bound_contract.receipt(),
-                **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
-                "config_sha256": fingerprint(args.config),
-                "source_locator_sha256": hashlib.sha256(
-                    str(args.decision_judge).encode()
-                ).hexdigest(),
-            },
-            lock_fd=lock.fileno(),
-            private_root=output,
-        )
-        report: dict[str, Any] = {"status": "ERROR"}
-        try:
-            with evidence.capture(trace.get_tracer_provider(), export=export):
-                trace_id = trace.get_current_span().get_span_context().trace_id
-                print(f"eval trace: {trace_id:032x}", file=sys.stderr)
-                args.bound_contract.record()
-                with measured_run_budget(args, evidence, output, report):
-                    report.update(await decision_judge(args.decision_judge,
-                        Judges(load(args.config), [args.judge_a, args.judge_b], args.config)))
-        except Exception:  # noqa: BLE001 - only the private evidence records failure details
-            report["status"] = "ERROR"
-        report["evidence"] = validate_events(read_events(evidence.path))
-        report["grading_contract"] = args.bound_contract.receipt()
-        freeze(output / "report.json", report)
-    return report
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--compare", type=Path)
-    parser.add_argument("--decision-judge", type=Path)
-    parser.add_argument("--rescore", type=Path)
-    parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--policy", type=Path)
-    parser.add_argument("--identity", type=Path)
-    parser.add_argument("--database-url")
-    parser.add_argument("--snapshot", action="store_true")
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--per-stratum", type=int, default=20)
-    parser.add_argument("--minimum", type=int, default=20)
-    parser.add_argument("--seed", type=int, default=20261029)
-    parser.add_argument("--judge-a", default="nora-judge")
-    parser.add_argument("--judge-b", default="nora-judge-2")
-    parser.add_argument("--grading-contract", type=Path)
-    parser.add_argument("--grading-contract-sha256")
-    parser.add_argument("--age-url")
-    parser.add_argument("--projection-rate", type=float, default=100)
-    parser.add_argument("--project-only", action="store_true")
-    parser.add_argument("--skip-projection", action="store_true")
-    parser.add_argument("--smoke", action="store_true")
-    parser.add_argument("--session-count", type=int,
-                        help="Expand the five-session smoke sample to this exact count")
-    parser.add_argument("--inspect-only", action="store_true",
-                        help="Render private snapshot inputs with zero model dispatches")
-    parser.add_argument("--sample-sha256", help="Refuse a different frozen replay sample")
-    parser.add_argument("--stop-after-tokens", type=int,
-                        help="Measured input+output cutoff across all model calls; last call "
-                             "may overrun; also capped at 1000 requests/600k output tokens "
-                             "(inspection-only always permits zero requests)")
-    args = parser.parse_args()
-    if args.stop_after_tokens is not None and args.stop_after_tokens <= 0:
-        parser.error("measured token cutoff must be positive")
-    if args.session_count is not None and (not args.smoke or args.session_count < 5):
-        parser.error("session-count requires smoke mode and at least five sessions")
-    if (args.inspect_only or args.project_only or args.sample_sha256
-            or args.session_count) and (
-            args.rescore or args.decision_judge):
-        parser.error("inspection and sample pinning cover the replay path only")
-    if args.per_stratum <= 0 or args.minimum <= 0:
-        parser.error("sample sizes must be positive")
-
-    try:
-        if args.rescore:
-            report = asyncio.run(run_rescore(args))
-        elif args.decision_judge:
-            report = asyncio.run(run_diagnostic(args))
-        else:
-            if not all((args.policy, args.identity, args.database_url)):
-                parser.error("replay requires --policy, --identity and --database-url")
-            report = asyncio.run(run(args))
-    except EvidenceError as exc:
-        print(json.dumps({"status": "ERROR", "reason": str(exc)}))
-        return 2
-    except Exception:  # noqa: BLE001 - fail closed without private exception text
-        print('{"status":"ERROR","reason":"spike failed; inspect private host state"}')
-        return 2
-    if args.compare:
-        try:
-            print(compare_reports(json.loads(args.compare.read_text()), report))
-        except ValueError:
-            print('{"status":"ERROR","reason":"comparison populations differ or are missing"}')
-            return 2
-    else:
-        print(json.dumps(report, sort_keys=True))
-    return report_exit(report)
-
-
-def report_exit(report: Any) -> int:
-    statuses = []
-
-    def collect(value: Any) -> None:
-        if isinstance(value, dict):
-            if "status" in value:
-                statuses.append(value["status"])
-            for child in value.values():
-                collect(child)
-        elif isinstance(value, list):
-            for child in value:
-                collect(child)
-
-    collect(report)
-    return (
-        2
-        if "ERROR" in statuses
-        else 1
-        if any(s not in {"PASS", "REPORTED", "ok", "nothing_found"} for s in statuses)
-        else 0
+    """The graph-only replay scorer and its frozen-evidence entries are
+    retired: `python -m scripts.cognition_loop` is the evaluator. The
+    helpers below stay for the tests that still import them."""
+    raise SystemExit(
+        "the graph-only replay scorer is retired; "
+        "use `python -m scripts.cognition_loop`"
     )
+
+
 
 
 if __name__ == "__main__":
