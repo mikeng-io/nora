@@ -813,6 +813,10 @@ _REPLY_REPAIR_INSTRUCTION = (
     "with that same answer, preserving its wording and meaning. Do not do more work."
 )
 
+#: The one `tool_choice` a repair may run under — nothing else counts, not
+#: even a pin already installed for a different tool.
+_SEND_REPLY_CHOICE = {"type": "function", "function": {"name": "send_reply"}}
+
 
 async def repair_unsent_reply(
     agent: Agent, *, limits: dict, timeout_seconds: float,
@@ -830,17 +834,19 @@ async def repair_unsent_reply(
         return None
     try:
         previous = dict(model.get_config().get("params") or {})
-        forced = tool_choice.force(model, "send_reply")
-        current = (model.get_config().get("params") or {}).get("tool_choice")
-        if not forced and not isinstance(current, dict):
-            return None
     except Exception:  # noqa: BLE001 — a config the model will not take is not worth losing the prose over
         return None
     try:
+        tool_choice.force(model, "send_reply")
+        # A pin may already be installed for a DIFFERENT tool (`force`'s own
+        # return only says whether it changed anything): run under exactly the
+        # named `send_reply` choice or not at all.
+        if (model.get_config().get("params") or {}).get("tool_choice") != _SEND_REPLY_CHOICE:
+            return None
         return await asyncio.wait_for(
             agent.invoke_async(
                 _REPLY_REPAIR_INSTRUCTION, invocation_state={},
-                limits={**limits, "turns": 2},
+                limits={**limits, "turns": min(2, limits.get("turns", 2))},
             ),
             timeout=timeout_seconds,
         )

@@ -179,8 +179,13 @@ def _nothing_answered(handle: Any) -> bool:
     gate on this rather than on «nothing delivered»: a heads-up sent with
     `more=true` IS delivered, so gating on delivery alone would drop an answer
     she then wrote as prose, or a turn cut off mid-work, while the turn read as
-    `replied`."""
-    return bool(handle.guard.answer_still_owed)
+    `replied`.
+
+    `send_unresolved` vetoes all three: a send killed mid-wire may already be
+    in the room while `delivered` still reads False, and speaking again here
+    could say the same thing twice. Silence over a duplicate."""
+    return bool(handle.guard.answer_still_owed) and not getattr(
+        handle.deliverer, "send_unresolved", False)
 
 class EngagementPipeline:
     def __init__(

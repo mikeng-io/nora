@@ -50,9 +50,11 @@ class _ScriptedModel(Model):
     a toolUse, `("text", words)` ends the turn with prose. Records a copy of
     the messages every call was sent, which is the instrument here."""
 
-    def __init__(self, script: list[tuple[str, str]], *, tokens_per_call: int = 10) -> None:
+    def __init__(self, script: list[tuple[str, str]], *, tokens_per_call: int = 10,
+                 send_reply_input: str = '{"text": "sent answer"}') -> None:
         self._script = list(script)
         self._tokens = tokens_per_call
+        self._send_reply_input = send_reply_input
         self.seen: list[list[dict[str, Any]]] = []
         self.sent: list[str] = []
         self.params: dict[str, Any] = {}
@@ -77,7 +79,7 @@ class _ScriptedModel(Model):
         if kind == "tool":
             yield {"contentBlockStart": {"start": {"toolUse": {
                 "name": value, "toolUseId": f"t{len(self.seen)}"}}}}
-            tool_input = '{"text": "sent answer"}' if value == "send_reply" else "{}"
+            tool_input = self._send_reply_input if value == "send_reply" else "{}"
             yield {"contentBlockDelta": {"delta": {"toolUse": {"input": tool_input}}}}
         else:
             yield {"contentBlockStart": {"start": {}}}
@@ -111,10 +113,12 @@ def _ctx() -> TagContext:
 async def _invoke(
     model: _ScriptedModel, *, follow_up: Any, limits: dict | None = None,
     clock: _Clock | None = None, force_send_reply: bool = False,
+    deliverer: Any = None, send_reply_budget: int = 1,
 ) -> tuple[str | None, str]:
     stop_reason, text, _trace = await _invoke_traced(
         model, follow_up=follow_up, limits=limits, clock=clock,
-        force_send_reply=force_send_reply,
+        force_send_reply=force_send_reply, deliverer=deliverer,
+        send_reply_budget=send_reply_budget,
     )
     return stop_reason, text
 
@@ -122,11 +126,14 @@ async def _invoke(
 async def _invoke_traced(
     model: _ScriptedModel, *, follow_up: Any, limits: dict | None = None,
     clock: _Clock | None = None, force_send_reply: bool = False,
+    deliverer: Any = None, send_reply_budget: int = 1,
 ) -> tuple[str | None, str, Any]:
     clock = clock or _Clock()
 
     async def send(text: str) -> str:
         model.sent.append("send_reply")
+        if deliverer is not None:
+            deliverer.delivered = True
         return "sent"
 
     runner = LiveAgentRunner(models=FixedModelSource(model), retry=RETRY)
@@ -134,11 +141,14 @@ async def _invoke_traced(
         doctrine=_doctrine(),
         tools=[
             adapt(ToolSpec(name="now", description="", schema={}, call=clock.now, budget=1)),
-            adapt(ToolSpec(name="send_reply", description="", schema={}, call=send, budget=1)),
+            adapt(ToolSpec(name="send_reply", description="", schema={}, call=send,
+                           budget=send_reply_budget)),
         ],
         pre_fill=[],
-        guard=ReplyGuard(conversation_id="summons:1", budgets={"now": 1, "send_reply": 1},
-                         terminal=frozenset({"send_reply"}), metrics=Metrics()),
+        guard=ReplyGuard(conversation_id="summons:1",
+                         budgets={"now": 1, "send_reply": send_reply_budget},
+                         terminal=frozenset({"send_reply"}), metrics=Metrics(),
+                         deliverer=deliverer),
         tag_message="<summons/>", limits=dict(limits or LIMITS), ctx=_ctx(),
         trace_attributes={}, follow_up=follow_up, force_send_reply=force_send_reply,
     )
@@ -203,10 +213,21 @@ async def test_send_reply_repair_uses_only_the_remaining_budget():
 
 
 async def test_send_reply_repair_does_not_run_after_a_normal_send():
-    model = _ScriptedModel([("tool", "send_reply")])
-    await _invoke(model, follow_up=None, force_send_reply=True)
+    """A send landed, then she still wrote prose: the words that follow a
+    DELIVERED reply are not an unsent answer — `answer_still_owed` is the
+    check, so drop it and the repair runs (a third model call appears)."""
+    deliverer = SimpleNamespace(delivered=False, exhausted=False)
+    model = _ScriptedModel(
+        [("tool", "send_reply"), ("text", "a second thought")],
+        send_reply_input='{"text": "first", "more": true}',
+    )
+    stop_reason, text = await _invoke(
+        model, follow_up=None, force_send_reply=True, deliverer=deliverer,
+        send_reply_budget=2,
+    )
     assert model.sent == ["send_reply"]
-    assert len(model.seen) == 1
+    assert len(model.seen) == 2
+    assert (stop_reason, text) == ("end_turn", "a second thought")
 
 
 async def test_send_reply_repair_is_off_by_default():
@@ -222,6 +243,82 @@ async def test_a_raising_send_reply_repair_preserves_the_original_prose():
     assert model.sent == []
     assert len(model.seen) == 2
     assert (stop_reason, text) == ("end_turn", "original answer")
+
+
+class _Agent:
+    """An agent-shaped stub for `repair_unsent_reply`: a `model` plus an
+    invoke that records the limits it was handed rather than running a loop."""
+
+    def __init__(self, model: _ScriptedModel) -> None:
+        self.model = model
+        self.calls = 0
+        self.limits: dict | None = None
+
+    async def invoke_async(
+        self, _message: str, *, invocation_state: Any = None, limits: dict | None = None,
+    ) -> Any:
+        self.calls += 1
+        self.limits = dict(limits or {})
+        return SimpleNamespace(stop_reason="end_turn")
+
+
+async def test_send_reply_repair_is_capped_at_the_remaining_turns():
+    """One turn left of the invocation's caps: the repair gets ONE, never the
+    blanket two — a repair that spent an extra model call would exceed the
+    turn's own budget."""
+    agent = _Agent(_ScriptedModel([("tool", "send_reply")]))
+    await factory.repair_unsent_reply(
+        agent, limits={"turns": 1, "output_tokens": 5}, timeout_seconds=5)
+    assert agent.limits == {"turns": 1, "output_tokens": 5}
+
+    agent = _Agent(_ScriptedModel([("tool", "send_reply")]))
+    await factory.repair_unsent_reply(agent, limits={"turns": 5}, timeout_seconds=5)
+    assert agent.limits["turns"] == 2
+
+
+async def test_send_reply_repair_refuses_a_pin_for_a_different_tool():
+    """A named `tool_choice` is not interchangeable: a model already pinned to
+    `place_info` whose config refuses the swap must NOT run the repair under
+    the other tool."""
+    model = _ScriptedModel([])
+    model.params = {"params": {
+        "tool_choice": {"type": "function", "function": {"name": "place_info"}}}}
+
+    def refuse(**_config: Any) -> None:
+        raise RuntimeError("update_config refused")
+
+    model.update_config = refuse  # type: ignore[method-assign]
+    agent = _Agent(model)
+    assert await factory.repair_unsent_reply(agent, limits={}, timeout_seconds=5) is None
+    assert agent.calls == 0
+
+
+async def test_send_reply_repair_restores_params_when_the_pin_cannot_be_verified():
+    """`get_config` answers for the snapshot and `force`'s own read, then
+    fails: the repair must bail AND still hand the model its params back."""
+    model = _ScriptedModel([])
+    writes: list[dict] = []
+    real_update = model.update_config
+
+    def record(**config: Any) -> None:
+        writes.append(dict(config))
+        real_update(**config)
+
+    model.update_config = record  # type: ignore[method-assign]
+    get_calls = 0
+
+    def flaky_get() -> Any:
+        nonlocal get_calls
+        get_calls += 1
+        if get_calls > 2:
+            raise RuntimeError("get_config refused")
+        return dict(model.params)
+
+    model.get_config = flaky_get  # type: ignore[method-assign]
+    agent = _Agent(model)
+    assert await factory.repair_unsent_reply(agent, limits={}, timeout_seconds=5) is None
+    assert agent.calls == 0
+    assert writes[-1]["params"] == {}
 
 
 async def test_send_reply_repair_needs_wall_clock_left():

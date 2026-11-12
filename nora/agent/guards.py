@@ -209,6 +209,11 @@ class Deliverer:
         self._send_calls = 0
         self._delivered_count = 0
         self._reaction_delivered = False
+        # Sends admitted to the wire whose outcome was never recorded: the
+        # counter is decremented only on the resolved path, so a task killed
+        # mid-send leaves it non-zero forever — "maybe delivered" (the
+        # platform may already have the message), not "not sent".
+        self._send_unresolved = 0
         # Every message actually SENT this turn (Honcho v2): the feedback stage
         # feeds each under the Nora aiPeer. Populated only on a successful send,
         # so a refused/failed message is never fed.
@@ -279,6 +284,16 @@ class Deliverer:
     @property
     def attempted(self) -> bool:
         return self._attempts > 0
+
+    @property
+    def send_unresolved(self) -> bool:
+        """A send went to the wire and its outcome was never recorded.
+
+        True only when the send task was cancelled between `adapter.send` and
+        the outcome bookkeeping: the platform may have the message while
+        `delivered` still reads False, so a second send could say the same
+        thing twice."""
+        return self._send_unresolved > 0
 
     @property
     def called(self) -> bool:
@@ -605,6 +620,7 @@ class Deliverer:
                 and getattr(adapter, "action_owner", None) is None):
             adapter = bind_owner(
                 ActionOwner(kind="live_invocation", id=str(row_id)))
+        self._send_unresolved += 1
         try:
             result = await adapter.send(
                 target=self._target, text=outbound.text,
@@ -693,6 +709,10 @@ class Deliverer:
             "sent" if result.ok
             else "send_uncertain" if getattr(result, "uncertain", False)
             else "send_failed")
+        # Resolved: the send's outcome is recorded. A task killed above this
+        # line leaves `_send_unresolved` elevated — `send_unresolved` is the
+        # "maybe delivered" read the recovery nets check before speaking again.
+        self._send_unresolved -= 1
         return result.ok
 
 

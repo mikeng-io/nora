@@ -4,7 +4,10 @@ and owns the post-invocation "did anything actually go out" check.
 
 from __future__ import annotations
 
+import asyncio
 import time
+
+import pytest
 
 from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.registry import ToolRegistry
@@ -41,6 +44,19 @@ class _FakeAdapter:
     ) -> SendResult:
         self.sent.append((target, text))
         return SendResult(ok=self._succeed)
+
+
+class _HangingAdapter(_FakeAdapter):
+    """A wire call that never returns: the only way out is cancellation."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = asyncio.Event()
+
+    async def send(self, **kwargs: object) -> SendResult:
+        self.entered.set()
+        await asyncio.Event().wait()
+        return SendResult(ok=False)
 
 
 class _LLMState:
@@ -422,3 +438,44 @@ async def test_a_delivered_reply_records_the_sent_outcome(exported_spans):
     assert recorded.attributes["nora.outcome"] == "sent"
     assert recorded.attributes["nora.delivered"] is True
 
+
+
+async def test_a_send_cancelled_on_the_wire_stays_unresolved():
+    """`deliver` killed inside `adapter.send` never records an outcome:
+    `send_unresolved` must say so, and `_nothing_answered` must veto the
+    recovery nets — the platform may already have the message, so sending the
+    same words again is how one reply lands twice."""
+    from nora.engagement.pipeline import _nothing_answered
+
+    adapter = _HangingAdapter()
+    handle = build(
+        store=FakeRecordStore(), adapter=adapter, target=TARGET,
+        doctrine=_doctrine(), canary="C", tag_id="t1", nora_sender_id="nora",
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+        metrics=Metrics(), audience="tag", composer=None,
+    )
+    task = asyncio.create_task(handle.deliverer.deliver("hello"))
+    await adapter.entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert handle.deliverer.send_unresolved is True
+    assert handle.deliverer.delivered is False
+    assert _nothing_answered(handle) is False
+
+
+async def test_a_resolved_send_is_not_unresolved():
+    """The control: a send that FAILED still records its outcome, so
+    `send_unresolved` stays False and recovery may speak for it."""
+    from nora.engagement.pipeline import _nothing_answered
+
+    handle = build(
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=False), target=TARGET,
+        doctrine=_doctrine(), canary="C", tag_id="t1", nora_sender_id="nora",
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+        metrics=Metrics(), audience="tag", composer=None,
+    )
+    assert await handle.deliverer.deliver("hello") is False
+    assert handle.deliverer.send_unresolved is False
+    assert _nothing_answered(handle) is True
