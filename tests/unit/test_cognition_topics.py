@@ -16,6 +16,7 @@ from nora.app.cognition_grounding import build_grounder
 from nora.domain.cognition_ground import Grounding
 from nora.domain.cognition_session import AgendaItem
 from nora.domain.entries import EntryContent
+from nora.domain.lineage import ROW, Lineage, message
 from nora.domain.stimuli import UnitView
 from nora.language.comprehend_render import render_session_system
 from nora.language.topic_render import render_topics
@@ -39,9 +40,13 @@ from tests.unit.test_cognition_session_runner import (
 )
 
 DOCTRINE = "a" * 64
+#: What a real store resolves for a message said in room-a; the fake
+#: wants the cited row's own lineage, so this is its stand-in.
+ROOM_A_LINEAGE = Lineage.of({ROW: (message("signal:room-a"),)})
+LINES = {("message", "101"): ROOM_A_LINEAGE}
 #: The provenance a revision must record; all four are wired or the write is off.
 ARGS: dict[str, Any] = {
-    "entries": FakeEntryStore(), "memory": None,
+    "entries": FakeEntryStore(lineages=LINES), "memory": None,
     "model_id": "generated-model", "doctrine_sha256": DOCTRINE,
 }
 CITE = [["message", "101"]]
@@ -51,7 +56,7 @@ TOPIC_VERBS = {"topic_create", "topic_revise", "topic_set_status"}
 
 def _kwargs(entries: FakeEntryStore | None = None, **overrides: Any) -> dict[str, Any]:
     return {
-        **ARGS, "entries": entries if entries is not None else FakeEntryStore(),
+        **ARGS, "entries": entries if entries is not None else FakeEntryStore(lineages=LINES),
         "memory": wake_memory(), **overrides,
     }
 
@@ -68,7 +73,7 @@ async def _one(call: str, entries: FakeEntryStore | None = None,
 
 
 async def test_topic_create_writes_an_active_account_with_session_provenance():
-    entries = FakeEntryStore()
+    entries = FakeEntryStore(lineages=LINES)
     _, answer = await _one(
         "topic_create", entries, subject="generated-racing", body=BODY,
         confidence="medium", citations=CITE)
@@ -104,7 +109,7 @@ async def test_topic_create_refuses_what_the_contract_and_custody_do():
 
 
 async def test_a_held_subject_is_revised_never_started_a_second_time():
-    entries = FakeEntryStore()
+    entries = FakeEntryStore(lineages=LINES)
     await _one("topic_create", entries, subject="Karting", body=BODY,
                confidence="medium", citations=CITE)
     _, twin = await _one(
@@ -135,7 +140,7 @@ async def test_topic_verbs_are_unavailable_without_the_wiring_they_need():
 
 
 async def test_topic_revise_replaces_the_body_and_carries_its_citations():
-    entries = FakeEntryStore()
+    entries = FakeEntryStore(lineages=LINES)
     await _one("topic_create", entries, subject="racing", body=BODY,
                confidence="low", citations=CITE)
     (entry,) = await entries.held(unit="u")
@@ -156,7 +161,7 @@ async def test_topic_revise_replaces_the_body_and_carries_its_citations():
 
 
 async def test_topic_revise_refuses_a_missing_or_stale_account():
-    entries = FakeEntryStore()
+    entries = FakeEntryStore(lineages=LINES)
     _, missing = await _one(
         "topic_revise", entries, entry_id="no-such", base_revision_id="r",
         body=BODY, confidence="low")
@@ -171,7 +176,7 @@ async def test_topic_revise_refuses_a_missing_or_stale_account():
 
 
 async def test_the_lifecycle_ends_at_retired_and_nothing_writes_after_it():
-    entries = FakeEntryStore()
+    entries = FakeEntryStore(lineages=LINES)
     await _one("topic_create", entries, subject="racing", body=BODY,
                confidence="medium", citations=CITE)
     (entry,) = await entries.held(unit="u")
@@ -213,7 +218,7 @@ async def test_the_lifecycle_ends_at_retired_and_nothing_writes_after_it():
 
 
 async def test_held_topics_reach_the_grounding_and_the_block_with_citable_handles():
-    entries = FakeEntryStore()
+    entries = FakeEntryStore(lineages=LINES)
     entry = await entries.create(
         kind="topic", unit="u",
         content=EntryContent(
@@ -320,7 +325,7 @@ def test_the_topic_guidance_is_gated_on_the_verbs_being_offered():
 async def test_cognition_is_the_live_topic_writer():
     """The session's verbs are the account's writer: create carries the
     session's provenance, and a held subject is revised, never doubled."""
-    entries = FakeEntryStore()
+    entries = FakeEntryStore(lineages=LINES)
     _, created = await _one(
         "topic_create", entries, subject="generated-racing", body=BODY,
         confidence="medium", citations=CITE)
@@ -343,7 +348,7 @@ async def test_cognition_is_the_live_topic_writer():
 async def test_an_account_is_shown_only_where_its_citations_lineage_permits():
     """Gated like memos: the account reaches a session whose agenda rooms its
     citations' lineage passes and is withheld elsewhere."""
-    entries = FakeEntryStore(rooms={("message", "101"): "signal:room-a"})
+    entries = FakeEntryStore(lineages=LINES)
     entry = await entries.create(
         kind="topic", unit="u",
         content=EntryContent(
@@ -376,7 +381,7 @@ async def test_an_account_is_shown_only_where_its_citations_lineage_permits():
 async def test_a_citation_must_be_shown_even_when_the_account_holds_it():
     """Custody binds the named citation to THIS session: carrying the account's
     own citations is only what omitting the argument does."""
-    entries = FakeEntryStore()
+    entries = FakeEntryStore(lineages=LINES)
     _, created = await _one(
         "topic_create", entries, subject="generated-racing", body=BODY,
         confidence="low", citations=CITE)
@@ -398,7 +403,7 @@ async def test_a_citation_must_be_shown_even_when_the_account_holds_it():
 async def test_the_historical_lane_reads_and_renders_no_topics():
     """The lane has no as-of view: the held index is never called, a failed
     read is not marked, and the prompt carries no <topics> block."""
-    entries = FakeEntryStore()
+    entries = FakeEntryStore(lineages=LINES)
     entry = await entries.create(
         kind="topic", unit="u",
         content=EntryContent(

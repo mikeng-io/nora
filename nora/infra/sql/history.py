@@ -133,6 +133,9 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     # 0074_event_revision: the head is the compare-and-swap cache over
     # `event_revision` (APPEND_ONLY, below).
     "events": ("id",),
+    # 0153_topic_lineage: `retired` is updated in place by topic_set_status;
+    # the head is a cache over `notebook_entry_revision` (APPEND_ONLY, below).
+    "notebook_entry": ("id",),
     # 0082_computer_sessions: a session is
     # continued and expired in place; its versions are what it was at T.
     "computer_sessions": ("id",),
@@ -152,7 +155,6 @@ APPEND_ONLY: dict[str, str] = {
     "graph_refusal": "created_at",
     "comprehend_web_page": "recorded_at",
     "comprehend_result": "recorded_at",
-    "notebook_entry": "recorded_at",
     "notebook_entry_revision": "recorded_at",
     "note_revision": "recorded_at",
     # ADR 0020 (0084_documents): a document's identity and one snapshot per revision,

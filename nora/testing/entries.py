@@ -5,27 +5,28 @@ from collections.abc import Callable, Mapping
 from uuid import uuid4
 
 from nora.domain.entries import Entry, EntryContent, EntryRevision, check_entry
-from nora.domain.lineage import topic_revision_lineage
+from nora.domain.lineage import Lineage, topic_revision_lineage
 
 
 class FakeEntryStore:
     """Mirrors `SqlEntryStore`: check-then-write, store-derived lineage, and the
     one-live-subject-per-unit rule the unique index enforces for real.
 
-    `rooms` is the fake's stand-in for the Record lookups the SQL store runs:
-    each citation key to the room it rests on; an unmapped key is unplaceable
-    and lands `unresolved` at no origin. `clock` supplies `written_ms`.
+    `lineages` is the fake's stand-in for the lookups the SQL store runs:
+    each citation key to the cited row's own lineage; an unmapped key
+    resolves to nothing, and the write is refused `citation_lineage` exactly
+    as the store refuses it. `clock` supplies `written_ms`.
     """
 
     def __init__(
         self,
         *,
-        rooms: Mapping[tuple[str, str], str] | None = None,
+        lineages: Mapping[tuple[str, str], Lineage] | None = None,
         clock: Callable[[], int] | None = None,
     ) -> None:
         self.entries: dict[str, Entry] = {}
         self.history: dict[str, list[EntryRevision]] = {}
-        self._rooms = dict(rooms or {})
+        self._lineages = dict(lineages or {})
         self._clock = clock or (lambda: int(time.time() * 1000))
 
     def _live(self, *, unit: str) -> dict[str, Entry]:
@@ -38,11 +39,14 @@ class FakeEntryStore:
     def _head(
         self, entry_id: str, base: str | None, seq: int, content: EntryContent
     ) -> EntryRevision:
+        cited = set(content.citations)
+        if any(k not in self._lineages for k in cited):
+            raise ValueError("citation_lineage")
         return EntryRevision(
             str(uuid4()), entry_id, base, seq, content,
             written_ms=self._clock(),
             lineage=topic_revision_lineage(
-                cited=content.citations, rooms=self._rooms
+                cited=content.citations, lineages=self._lineages
             ),
         )
 

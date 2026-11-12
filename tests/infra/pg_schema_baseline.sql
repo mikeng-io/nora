@@ -1331,6 +1331,7 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.music
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.music_session FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('guild_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.note FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.note_candidate FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.notebook_entry FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.participation_window_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('platform', 'conversation_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.platform_object_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.platform_observation FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
@@ -1386,6 +1387,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.music_queue F
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.music_session FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.note FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.note_candidate FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.notebook_entry FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.participation_window_state FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.platform_object_state FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.platform_observation FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -1420,6 +1422,7 @@ CREATE UNIQUE INDEX idx_bridge_event_stream ON public.bridge_event USING btree (
 CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (unit, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
 CREATE UNIQUE INDEX uq_cognition_wake_outcome_wake ON public.cognition_wake_outcome USING btree (wake_id);
 CREATE UNIQUE INDEX uq_computer_sessions_open_scope ON public.computer_sessions USING btree (scope) WHERE (status = 'open'::text);
+CREATE UNIQUE INDEX uq_entry_live_subject ON public.notebook_entry USING btree (unit, subject) WHERE (NOT retired);
 CREATE UNIQUE INDEX uq_entry_revision_seq ON public.notebook_entry_revision USING btree (entry_id, seq);
 CREATE UNIQUE INDEX uq_lesson_revision_seq ON public.lesson_revision USING btree (lesson_id, seq);
 CREATE UNIQUE INDEX uq_memo_revision_seq ON public.memo_revision USING btree (memo_id, seq);
@@ -2470,6 +2473,7 @@ lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb NOT NULL,
 lineage jsonb NOT NULL,
 lineage jsonb NOT NULL,
@@ -2928,6 +2932,7 @@ result_summary text,
 result_url text,
 results jsonb DEFAULT '[]'::jsonb NOT NULL,
 retire_reason text,
+retired boolean DEFAULT false NOT NULL,
 retired_at bigint,
 retired_at timestamp with time zone
 retired_at timestamp with time zone,
@@ -3124,6 +3129,7 @@ strike integer NOT NULL,
 strikes integer DEFAULT 0 NOT NULL,
 strip_calls integer NOT NULL,
 stripped_blocks integer NOT NULL,
+subject text DEFAULT ''::text NOT NULL,
 subject text NOT NULL,
 subject text NOT NULL,
 subject text NOT NULL,

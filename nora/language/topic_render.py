@@ -4,9 +4,10 @@ account, bounded — an account is short, and a revision needs all of it.
 One `topic` element per held (non-retired) account: its id (what
 `topic_revise` and `topic_set_status` take), the subject it is about, its
 state, confidence, head revision and seq, when it was last written, and the
-account as the content. Unit-wide like `<memos>`: an account written from one
-room renders in every room of its unit, because the subject it tracks recurs
-across them.
+account as the content. An account renders only where its revision's lineage
+permits — the union of its cited rows' own lineage — so the grounder has
+already filtered it to the agenda's rooms; what reaches this renderer can be
+emitted whole.
 
 **Capped**: at most `lines` rows; the block says how many it left out
 (`not_listed`) rather than cutting a row.

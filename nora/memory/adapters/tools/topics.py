@@ -157,6 +157,11 @@ def _make_topic_create(d: SessionDeps) -> Any:
                         f"an account about {subject!r} is already held; "
                         "revise it with topic_revise instead of starting a second",
                     )
+                if str(exc) == "citation_lineage":
+                    return _refused(
+                        "citation_lineage",
+                        "a cited row resolves to no lineage an account can rest "
+                        "on; cite rows that carry their own")
                 return _refused("invalid_entry", str(exc))
         return wrote("", "", None, entry_id=entry.id, revision_id=entry.head.id)
     return topic_create
@@ -225,6 +230,11 @@ def _make_topic_revise(d: SessionDeps) -> Any:
                 return _refused(
                     "stale_base", f"the account's head is now {entry.head.id}; "
                     "redo your change against what it says now")
+            if str(exc) == "citation_lineage":
+                return _refused(
+                    "citation_lineage",
+                    "a cited row resolves to no lineage an account can rest on; "
+                    "cite rows that carry their own")
             return _refused("invalid_entry", str(exc))
         return wrote("", "", None, revision_id=revision.id)
     return topic_revise
@@ -289,6 +299,11 @@ def _make_topic_set_status(d: SessionDeps) -> Any:
                 return _refused(
                     "stale_base", f"the account's head is now {entry.head.id}; "
                     "redo your change against what it says now")
+            if str(exc) == "citation_lineage":
+                return _refused(
+                    "citation_lineage",
+                    "a cited row resolves to no lineage an account can rest on; "
+                    "cite rows that carry their own")
             return _refused("invalid_entry", str(exc))
         return wrote("", "", None, revision_id=revision.id)
     return topic_set_status

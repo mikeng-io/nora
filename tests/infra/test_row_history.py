@@ -40,7 +40,11 @@ from nora.infra.sql.history import (
     NOT_RESTORED,
     as_of,
 )
-from nora.infra.sql.migrations_runner import alembic_config, run_migrations
+from nora.infra.sql.migrations_runner import (
+    alembic_config,
+    run_migrations,
+    sync_url_for,
+)
 from nora.infra.sql.schema import METADATA
 
 
@@ -137,6 +141,50 @@ async def test_one_rows_chain_is_every_version_it_held(engine: Any) -> None:
     held = [[r["last_allowed_at"] for r in await _held(engine, "tag_debounce_state", m)]
             for m in moments]
     assert held == [[1], [2], [], [3]]
+
+
+def test_0153_refuses_a_database_that_already_holds_topic_accounts(empty_pg_url):
+    """Written for an empty `notebook_entry` (`subject` is store-written
+    casefolded, so no SQL normalisation and no backfill): a held row is a
+    hand-written account needing reconciliation — refuse it, keep 0152."""
+    cfg = alembic_config(empty_pg_url)
+    command.upgrade(cfg, "0152_fetched_pages")
+    engine = sa.create_engine(sync_url_for(empty_pg_url))
+    try:
+        with engine.begin() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO notebook_entry (id, kind, unit) VALUES ('e', 'topic', 'u')"))
+        with pytest.raises(Exception, match="existing topic account"):
+            command.upgrade(cfg, "0153_topic_lineage")
+        with engine.connect() as conn:
+            assert "subject" not in {
+                c["name"] for c in sa.inspect(conn).get_columns("notebook_entry")}
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_retired_entry_restores_as_the_live_row_it_was(engine: Any) -> None:
+    """`notebook_entry.retired` is written in place by `topic_set_status`: a
+    restore at T must hand back the live row T held, not today's retired
+    head — the same mutable-head pattern `events` carries."""
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "INSERT INTO notebook_entry (id, kind, unit, subject) "
+            "VALUES ('generated-entry', 'topic', 'generated-unit', 'racing')"
+        ))
+    between = await _now(engine)
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "UPDATE notebook_entry SET retired = true WHERE id = 'generated-entry'"
+        ))
+
+    [then, now] = [
+        await _held(engine, "notebook_entry", m)
+        for m in (between, await _now(engine))
+    ]
+    assert [r["retired"] for r in then] == [False]
+    assert [r["retired"] for r in now] == [True]
 
 
 @pytest.mark.asyncio

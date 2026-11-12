@@ -391,24 +391,27 @@ def note_revision_lineage(
 
 
 def topic_revision_lineage(
-    *, cited: Iterable[tuple[str, str]], rooms: Mapping[tuple[str, str], str]
+    *, cited: Iterable[tuple[str, str]],
+    lineages: Mapping[tuple[str, str], Lineage | None],
 ) -> Lineage:
     """A topic revision's lineage, derived by code from its citation keys.
 
-    `rooms` is the caller's resolution of each cited key to the room the row
-    lives in (a `message` to the room it was said in, a Rollup-layer stimulus
-    to the room it names). A key the caller could not place — a dead citation
-    or a kind with no room to resolve — is `unresolved` at NO origin: an
-    account belongs to the unit, not a room, so what cannot be placed is
-    shown nowhere.
+    `lineages` is the caller's resolution of each cited key to the cited
+    row's OWN lineage — the rule `note_revision_lineage` applies to a cited
+    Rollup row, applied to every cited row: a cited row brings the entries
+    its own lineage holds, so a topic resting on a presence row is shown only
+    where that row may be. A key that resolves to nothing is `unresolved` at
+    NO origin: an account belongs to the unit, not a room, so what cannot be
+    placed is shown nowhere — and the store refuses the write instead.
     """
     entries: list[LineageEntry] = []
     missing = False
     for key in sorted(set(cited)):
-        if (room := rooms.get(key)) is not None:
-            entries.append(message(room))
-        else:
+        row = lineages.get(key)
+        if row is None:
             missing = True
+        else:
+            entries.extend(e for _, es in row.sections for e in es)
     if missing:
         entries.append(unresolved(None))
     return Lineage.of({ROW: entries})
