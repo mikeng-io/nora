@@ -328,9 +328,12 @@ def _subject(**deps):
 def test_a_live_sender_is_a_refusal():
     from types import SimpleNamespace
 
+    class RealSignalSender:
+        pass
+
     from scripts.cognition_loop.egress import assert_no_egress
     subject = _subject(
-        adapters={"signal": SimpleNamespace(_sender=object())})
+        adapters={"signal": SimpleNamespace(_sender=RealSignalSender())})
     with pytest.raises(EvidenceError, match=r"lands? nowhere"):
         assert_no_egress(subject)
 
@@ -348,7 +351,7 @@ def test_the_landed_sender_passes():
     from scripts.cognition_loop.egress import assert_no_egress
     report = assert_no_egress(_subject(
         adapters={"signal": SimpleNamespace(_sender=LandedSignalSender())}))
-    assert report["senders"]["signal"] == "LandedSignalSender"
+    assert report["senders"]["signal"] == {"_sender": "LandedSignalSender"}
 
 
 # --------------------------------------------------------------------------
@@ -389,7 +392,7 @@ async def test_over_budget_refuses_before_starting(monkeypatch, tmp_path):
 def test_the_egress_guard_refuses_every_delivery_worker():
     from scripts.cognition_loop.egress import assert_no_egress
 
-    for worker in ("fire_path", "dispatcher", "social_poller",
+    for worker in ("fire_path", "social_poller",
                    "computer_lifecycle", "bridge_runtime"):
         subject = _subject(**{worker: object()})
         with pytest.raises(EvidenceError, match=worker):
@@ -411,6 +414,41 @@ def test_the_egress_guard_refuses_a_real_sender_on_any_platform():
             assert_no_egress(subject)
 
 
+def test_an_adapter_whose_sender_cannot_be_identified_is_a_refusal():
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop.egress import assert_no_egress
+
+    class BridgeLikeClient:
+        pass
+
+    subject = _subject(adapters={
+        "signal": SimpleNamespace(_endpoint=object(), _client=BridgeLikeClient()),
+    })
+    with pytest.raises(EvidenceError, match="cannot be identified"):
+        assert_no_egress(subject)
+
+    subject = _subject()
+    subject.deps.registry = SimpleNamespace()  # no `adapters`
+    with pytest.raises(EvidenceError, match="cannot be enumerated"):
+        assert_no_egress(subject)
+
+
+def test_a_sender_under_another_attribute_name_is_still_found():
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop.egress import assert_no_egress
+
+    class BridgeSender:
+        pass
+
+    subject = _subject(adapters={
+        "discord": SimpleNamespace(transport=BridgeSender()),
+    })
+    with pytest.raises(EvidenceError, match="senders"):
+        assert_no_egress(subject)
+
+
 def test_the_egress_guard_passes_only_when_everything_is_landed():
     from types import SimpleNamespace
 
@@ -419,7 +457,9 @@ def test_the_egress_guard_passes_only_when_everything_is_landed():
     class LandedSignalSender:
         pass
 
-    subject = _subject(
+    # A dispatcher is a required inbound entry point on every composed
+    # subject — present, and not a delivery worker.
+    subject = _subject(dispatcher=object(),
         adapters={"signal": SimpleNamespace(_sender=LandedSignalSender())})
     report = assert_no_egress(subject)
     assert not any(report["workers"].values())

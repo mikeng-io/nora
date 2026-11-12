@@ -328,7 +328,7 @@ def _freeze_wake(
 
 
 def _rooms(subject: Any, unit: str) -> list[tuple[str, str]]:
-    from nora.app.composition import social_unit_rooms
+    from nora.app.composition_readers import social_unit_rooms
     allowlist = subject.deps.config_reload.policy
     return list(social_unit_rooms(allowlist).get(unit, ()))
 
