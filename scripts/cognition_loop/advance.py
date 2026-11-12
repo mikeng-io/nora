@@ -26,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.infra.sql import snapshot_at
-from nora.infra.sql.history import APPEND_ONLY
+from nora.infra.sql.history import APPEND_ONLY, CAPTURE_SETTING
 from nora.infra.sql.schema import METADATA, ROW_HISTORY
 
 #: The Record's history tables: messages and their edit/reaction/delete
@@ -107,6 +107,10 @@ async def advance_record(
         await src.execute(sa.text(
             "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
         ))
+        # The seed's own bypass: a replayed write is not a new version,
+        # and a replay-dated open one would collide with the copied
+        # chain under `uq_row_history_open`.
+        await dst.execute(sa.text(f"SET LOCAL {CAPTURE_SETTING} = 'off'"))
         for table in RECORD_HISTORY_TABLES:
             written[table] = await _replay_history(src, dst, table, prev, at)
         copied, tables = await _copy_history(src, dst, prev, at)
@@ -175,9 +179,57 @@ async def _copy_history(
     src: AsyncConnection, dst: AsyncConnection, prev: datetime, at: datetime,
 ) -> tuple[int, frozenset[str]]:
     rows = await _history_window(src, prev, at)
-    stmt = pg_insert(ROW_HISTORY).on_conflict_do_nothing(index_elements=["id"])
-    for chunk in (rows[i:i + 2000] for i in range(0, len(rows), 2000)):
-        await dst.execute(stmt, [dict(r) for r in chunk])
+    insert = pg_insert(ROW_HISTORY).on_conflict_do_nothing(index_elements=["id"])
+    #: The trigger's own close, applied by hand: the copied version
+    #: replaces whatever the sandbox holds open for its row — never a
+    #: second open version beside it (which `uq_row_history_open` refuses).
+    close = sa.update(ROW_HISTORY).where(
+        ROW_HISTORY.c.table_name == sa.bindparam("b_table"),
+        ROW_HISTORY.c.row_key == sa.bindparam(
+            "b_key", type_=ROW_HISTORY.c.row_key.type),
+        ROW_HISTORY.c.superseded_at.is_(None),
+        ~sa.exists().where(ROW_HISTORY.c.id == sa.bindparam("b_id")),
+    ).values(
+        superseded_at=sa.bindparam("b_at"),
+        superseded_by=sa.bindparam("b_id"),
+    )
+    held_q = sa.select(
+        ROW_HISTORY.c.table_name, ROW_HISTORY.c.row_key,
+        ROW_HISTORY.c.recorded_at,
+    ).where(ROW_HISTORY.c.id == sa.bindparam("b_id"))
+    retarget = sa.update(ROW_HISTORY).where(
+        ROW_HISTORY.c.superseded_by == sa.bindparam("b_old"),
+    ).values(superseded_by=sa.bindparam("b_new"))
+    renumber = sa.update(ROW_HISTORY).where(
+        ROW_HISTORY.c.id == sa.bindparam("b_old"),
+    ).values(id=sa.bindparam("b_new"))
+    next_id = sa.text("SELECT nextval('row_history_id_seq')")
+    for row in rows:
+        row = dict(row)
+        # A version superseded past the window's edge was still open AT the
+        # edge — the same clearing the restore applies (`snapshot_at`).
+        if row["superseded_at"] is not None and row["superseded_at"] > at:
+            row["superseded_at"] = row["superseded_by"] = None
+        held = (await dst.execute(
+            held_q, {"b_id": row["id"]})).mappings().one_or_none()
+        if held is not None and (
+            held["table_name"] != row["table_name"]
+            or held["row_key"] != row["row_key"]
+            or held["recorded_at"] != row["recorded_at"]
+        ):
+            # A session-written version holds this id: it stays in the
+            # chain, moved to a fresh id (links retargeted), then closed
+            # like any open version the incoming world version replaces.
+            new_id = (await dst.execute(next_id)).scalar_one()
+            await dst.execute(
+                retarget, {"b_old": row["id"], "b_new": new_id})
+            await dst.execute(
+                renumber, {"b_old": row["id"], "b_new": new_id})
+        await dst.execute(close, {
+            "b_table": row["table_name"], "b_key": row["row_key"],
+            "b_id": row["id"], "b_at": row["recorded_at"],
+        })
+        await dst.execute(insert, [row])
     return len(rows), frozenset(r["table_name"] for r in rows)
 
 
