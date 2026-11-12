@@ -55,8 +55,9 @@ async def test_topic_lifecycle_transitions(store: EntryStore) -> None:
             base_revision_id=entry.head.id,
             content=replace(CONTENT, state=state),
         )
-        entry = await store.get(unit="u", entry_id=entry.id)
-        assert entry and entry.head == head
+        got = await store.get(unit="u", entry_id=entry.id)
+        assert got and got.head == head
+        entry = got
     with pytest.raises(ValueError, match="lifecycle"):
         await store.append(unit="u", entry_id=entry.id, base_revision_id=head.id, content=CONTENT)
     assert [r.content.state for r in await store.revisions(unit="u", entry_id=entry.id)] == [
@@ -165,3 +166,20 @@ async def test_entry_concurrent_append_and_unit_boundary(store: EntryStore) -> N
     )
     assert sum(isinstance(r, ValueError) and str(r) == "stale_base" for r in results) == 1
     assert len(await store.revisions(unit="u", entry_id=entry.id)) == 2
+
+
+async def test_two_concurrent_creates_share_one_live_subject(store: EntryStore) -> None:
+    """One live account per (unit, subject), case-folded, and the answer is
+    the store's — the uniqueness the session's own read cannot guarantee."""
+    results = await asyncio.gather(
+        store.create(kind="topic", unit="u", content=CONTENT),
+        store.create(
+            kind="topic", unit="u",
+            content=replace(CONTENT, about=(("topic", "Generated-RACING"),))),
+        return_exceptions=True,
+    )
+    created = [r for r in results if not isinstance(r, BaseException)]
+    refused = [r for r in results if isinstance(r, ValueError)]
+    assert len(created) == 1 and len(refused) == 1
+    assert str(refused[0]) == "duplicate"
+    assert len(await store.held(unit="u")) == 1

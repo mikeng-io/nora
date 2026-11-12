@@ -13,13 +13,22 @@ from dataclasses import replace
 from typing import Any
 
 from nora.app.cognition_grounding import build_grounder
+from nora.domain.cognition_ground import Grounding
+from nora.domain.cognition_session import AgendaItem
 from nora.domain.entries import EntryContent
 from nora.domain.stimuli import UnitView
 from nora.language.comprehend_render import render_session_system
 from nora.language.topic_render import render_topics
+from nora.testing.cognition_grounding import StaticGrounder
 from nora.testing.entries import FakeEntryStore
+from tests.unit.cognition_rig import B as RIG_B
 from tests.unit.cognition_rig import Stores, session
-from tests.unit.test_cognition_grounding import _PERSONS, _lineage
+from tests.unit.test_cognition_grounding import (
+    _PERSONS,
+    _lineage,
+)
+from tests.unit.test_cognition_grounding import A as ROOM_A
+from tests.unit.test_cognition_grounding import B as ROOM_B
 from tests.unit.test_cognition_prompt_surface import rendered_session
 from tests.unit.test_cognition_session_runner import (
     NOW,
@@ -232,12 +241,13 @@ async def test_held_topics_reach_the_grounding_and_the_block_with_citable_handle
     grounding = await grounder("u", (), ())
     assert [t.id for t in grounding.topics] == [entry.id]  # retired is not shown
 
-    block = render_topics(grounding.topics)
+    block = render_topics(grounding.topics, now_ms=NOW)
     body = block.body.text
     assert block.name == "topics" and f'id="{entry.id}"' in body
     assert f'revision="{entry.head.id}"' in body
     assert 'subject="generated-racing"' in body and BODY in body
     assert 'state="active"' in body and 'confidence="medium"' in body
+    assert 'written="' in body  # every block says how old it is
 
 
 class _EmptyRecords:
@@ -305,3 +315,132 @@ def test_the_topic_guidance_is_gated_on_the_verbs_being_offered():
             "<!-- cognition-orient --><!-- cognition-act-skill -->", "N",
             tool_names=names)
         assert "keeps coming back across people or days" not in without
+
+
+async def test_cognition_is_the_live_topic_writer():
+    """The session's verbs are the account's writer: create carries the
+    session's provenance, and a held subject is revised, never doubled."""
+    entries = FakeEntryStore()
+    _, created = await _one(
+        "topic_create", entries, subject="generated-racing", body=BODY,
+        confidence="medium", citations=CITE)
+    assert created["status"] == "ok"
+    (entry,) = await entries.held(unit="u")
+    content = entry.head.content
+    assert (content.writer, content.model, content.instruction_hash) == (
+        "cognition:u", "generated-model", DOCTRINE) and content.session_id
+    _, twin = await _one(
+        "topic_create", entries, subject="Generated-Racing", body=BODY,
+        confidence="low", citations=CITE)
+    assert twin["status"] == "refused" and twin["reason"] == "duplicate"
+    _, revised = await _one(
+        "topic_revise", entries, entry_id=entry.id,
+        base_revision_id=entry.head.id, body="the revised account",
+        confidence="high")
+    assert revised["status"] == "ok" and len(await entries.held(unit="u")) == 1
+
+
+async def test_an_account_is_shown_only_where_its_citations_lineage_permits():
+    """Gated like memos: the account reaches a session whose agenda rooms its
+    citations' lineage passes and is withheld elsewhere."""
+    entries = FakeEntryStore(rooms={("message", "101"): "signal:room-a"})
+    entry = await entries.create(
+        kind="topic", unit="u",
+        content=EntryContent(
+            (("topic", "generated-racing"),), BODY, (("message", "101"),),
+            "medium", "active", "cognition", "s", "m", DOCTRINE))
+
+    async def nothing(unit: str) -> tuple:
+        return ()
+
+    async def no_events(unit: str, platform: str, room: str) -> tuple:
+        return ()
+
+    grounder = build_grounder(
+        records=_EmptyRecords(), persons=_PERSONS, media_join=None,
+        note_index=nothing, events_in=no_events, lineage=_lineage("on"),
+        unit_rooms=lambda unit: {
+            (ROOM_A.platform, ROOM_A.conversation_id),
+            (ROOM_B.platform, ROOM_B.conversation_id)},
+        topic_index=lambda u: entries.held(unit=u))
+
+    def item(room: Any) -> AgendaItem:
+        return AgendaItem("message", room, "generated", (), (), 0.0)
+
+    a_side = await grounder("u", (item(ROOM_A),), ())
+    assert [t.id for t in a_side.topics] == [entry.id]
+    b_side = await grounder("u", (item(ROOM_B),), ())
+    assert b_side.topics == ()
+
+
+async def test_a_citation_must_be_shown_even_when_the_account_holds_it():
+    """Custody binds the named citation to THIS session: carrying the account's
+    own citations is only what omitting the argument does."""
+    entries = FakeEntryStore()
+    _, created = await _one(
+        "topic_create", entries, subject="generated-racing", body=BODY,
+        confidence="low", citations=CITE)
+    assert created["status"] == "ok"
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers.append(await by["topic_revise"](
+            entry_id=created["entry_id"],
+            base_revision_id=created["revision_id"], body="a revised account",
+            confidence="low", citations=[["message", "101"]]))
+
+    # Room B's agenda shows message 201, never the account's own 101.
+    await session(behave, rooms=(RIG_B,), runner_kwargs=_kwargs(entries))
+    assert answers[0]["status"] == "refused"
+    assert answers[0]["reason"] == "unseen_citation"
+
+
+async def test_the_historical_lane_reads_and_renders_no_topics():
+    """The lane has no as-of view: the held index is never called, a failed
+    read is not marked, and the prompt carries no <topics> block."""
+    entries = FakeEntryStore()
+    entry = await entries.create(
+        kind="topic", unit="u",
+        content=EntryContent(
+            (("topic", "generated-racing"),), BODY, (("message", "101"),),
+            "medium", "active", "cognition", "s", "m", DOCTRINE))
+    called = 0
+
+    async def counting(unit: str) -> tuple:
+        nonlocal called
+        called += 1
+        return await entries.held(unit=unit)
+
+    async def nothing(unit: str) -> tuple:
+        return ()
+
+    async def no_events(unit: str, platform: str, room: str) -> tuple:
+        return ()
+
+    grounder = build_grounder(
+        records=_EmptyRecords(), persons=_PERSONS, media_join=None,
+        note_index=nothing, events_in=no_events, lineage=_lineage(),
+        unit_rooms=lambda unit: set(), topic_index=counting)
+    grounding = await grounder("u", (), (), historical=True)
+    assert called == 0 and grounding.topics == () and grounding.historical
+    assert "topics" not in grounding.unavailable
+
+    held = StaticGrounder(Grounding(topics=(entry,)))
+    fake = FakeCognitionAgentRunner(script=[])
+    runner, _, _ = _runner(
+        agent_runner=fake, memory=wake_memory(), grounder=held)
+    await runner.replay(
+        view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+                      last_activity_ms=None, last_wake=None),
+        now_ms=NOW, historical=True)
+    assert "<topic" not in fake.last_prompt
+
+    live = FakeCognitionAgentRunner(script=[])
+    runner, _, _ = _runner(
+        agent_runner=live, memory=wake_memory(), grounder=held)
+    await runner.on_wake(
+        unit="unit-1",
+        view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+                      last_activity_ms=None, last_wake=None),
+        now_ms=NOW, wake_id=1)
+    assert "<topic" in live.last_prompt

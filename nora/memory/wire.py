@@ -12,7 +12,7 @@ from nora.app.startup import StartupError
 from nora.domain.live import LiveMapping
 from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
 from nora.infra.honcho import HonchoClient
-from nora.infra.sql.entries import SqlEntryStore
+from nora.infra.sql import SqlEntryStore
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.memory_read import SqlMemoryIndex

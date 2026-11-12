@@ -60,6 +60,7 @@ from nora.agent.lineage import (
     excluded,
     memo_permits,
     profile_lines_for,
+    topic_permits,
     visible_sections,
 )
 from nora.agent.room import Room as AgentRoom
@@ -650,7 +651,7 @@ def build_grounder(
 
     async def ground(
         unit: str, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
-        now_ms: int | None = None,
+        now_ms: int | None = None, historical: bool = False,
     ) -> Grounding:
         # `now_ms` is the SESSION's instant — live clock or a historical
         # session's evidence time; bounded reads show what stood at T, never
@@ -735,10 +736,9 @@ def build_grounder(
             records_out[item.ref] = item
 
         agenda_rooms = list(dict.fromkeys(i.room for i in items))
-        targets = [
-            lineage.render_room(platform=r.platform, conversation_id=r.conversation_id)
-            for r in agenda_rooms
-        ]
+        targets = [lineage.render_room(platform=r.platform,
+                                       conversation_id=r.conversation_id)
+                   for r in agenda_rooms]
         # `on` removes, `shadow` only REPORTS what it would have removed (a log
         # line with the counts) and `off` applies nothing — the tag path's own
         # reading (`nora.agent.prefill._enforced`) computes the same answer.
@@ -797,12 +797,13 @@ def build_grounder(
         # Turn citations carry requirements into the index; a failed read raises.
         memos = tuple(m for m in await memo_index(unit)
                       if all(memo_permits(m.head, t) for t in targets)) if memo_index else ()
-        # Held topic accounts: a failed read is `unavailable`, never an empty
-        # index — she revises only what she was shown.
+        # Held topics, gated like memos on each citation's lineage for every
+        # agenda target; `unavailable` on a failed read, unread when historical.
         topics: tuple[Any, ...] | None = None
-        if topic_index is not None:
+        if topic_index is not None and not historical:
             try:
-                topics = tuple(await topic_index(unit))
+                topics = tuple(e for e in await topic_index(unit)
+                               if all(topic_permits(e, t) for t in targets))
             except Exception:
                 log.exception("cognition grounding: topic accounts read failed")
         events: list[EventLine] = []
@@ -878,7 +879,7 @@ def build_grounder(
                 retained=retained_refs))
         result = Grounding(
               records=records_out, notes=notes, memos=memos, topics=topics or (),
-              events=tuple(events),
+              historical=historical, events=tuple(events),
               rollups=rollups, socials=_social_lines(pending, claimed, persons),
               observations=observations_out, source_objects=source_objects,
               source_objects_more=source_objects_more,
@@ -893,7 +894,7 @@ def build_grounder(
                 tuple((hit.hit.platform, hit.hit.conversation_id, row, stimulus.id)
                       for (stimulus, _, hit), row in zip(pairs, named, strict=True)),
                 now_ms=session_ms)
-        if topic_index is not None and topics is None:
+        if topic_index is not None and not historical and topics is None:
             result = replace(result, unavailable=result.unavailable | {"topics"})
         return result
 

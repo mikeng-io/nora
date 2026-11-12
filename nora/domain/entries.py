@@ -1,8 +1,9 @@
 """Notebook entries. Topic is the only admitted kind; existing stores stay put."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
+from nora.domain.lineage import Lineage
 from nora.domain.memory_graph import RECORD, ROLLUP, Key
 
 #: One account's text, like `MEMO_BODY_MAX_CHARS` for a memo.
@@ -30,6 +31,12 @@ class EntryRevision:
     base_revision_id: str | None
     seq: int
     content: EntryContent
+    #: When the revision was written, epoch ms — the account's `written` age.
+    written_ms: int = 0
+    #: Derived by the store at write time from the revision's citations
+    #: (`topic_revision_lineage`), never by the writer; the empty Lineage is
+    #: unknown and shown nowhere.
+    lineage: Lineage = field(default_factory=Lineage)
 
 
 @dataclass(frozen=True)

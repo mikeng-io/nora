@@ -297,6 +297,9 @@ class Grounding:
     #: unit-wide like `memos`: id, subject, state, head revision and the
     #: account itself — the whole of what a revision needs.
     topics: tuple[Entry, ...] = ()
+    #: A historical session's evidence has no as-of view of held accounts:
+    #: the store reads heads only, so the lane neither reads nor renders them.
+    historical: bool = False
     events: tuple[EventLine, ...] = ()
     #: A Rollup stimulus's readable fields, by the stimulus `ref`. A rollup
     #: stimulus with no entry here cannot be shown, and is not an agenda item.

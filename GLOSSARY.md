@@ -278,7 +278,8 @@ writes it, **Authored** (humans) → **Record** (ingestion) → **Rollup**
 time through one path, never stored), with **Memory** (Honcho) beside the
 flow; and the hierarchy **Layer › Tier › Kind › Entry**. A **tier** is a
 subdivision inside the Notebook only (Register, Character, Standing,
-Lessons); the Record and the Rollup are layers, not tiers.
+Lessons); the shared entry store beside them holds the **topic account**
+below; the Record and the Rollup are layers, not tiers.
 **`design/cognition-loop/10-tiers.md` is canonical for the Record and Rollup layers and the four
 tiers below and every word they use**; this section only resolves what
 collides with words already in use elsewhere in this file, and adds what had
@@ -322,8 +323,8 @@ no entry.
   identity in a tag
   ([ADR 0029](docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md),
   measured by a blind reader test). This replaces **Character**, **entry**,
-  **profile / traits / hypotheses** and **Persona** below. The typed shadow implementation uses these names. The live
-  prose blocks keep their tags until the switch deletes them.
+  **profile / traits / hypotheses** and **Persona** below; the typed shadow
+  uses these names, the live prose blocks theirs until the switch.
 - **Character** — *(the code name; the vocabulary is **Profile**, ADR 0029)* the Notebook tier for a **person**, a **room** (culture's
   home, above), the **unit** or **Nora**. One row is an **entry**, a judgement
   with **profile** (who they are), **traits** (what they are like) and
@@ -371,38 +372,37 @@ no entry.
   prescriptive lines, each with the outcomes that taught it. Written only by
   the Cognition session, through `lesson_write`/`lesson_retire`, citing the
   evidence it was shown (DEC-297, off by default behind `[lessons] enabled`).
-  Not doctrine (a rule she may not break) and not a runtime skill. Every
-  lesson passes the **doctrine check** first (DEC-298).
-- **Tension** — a lesson the doctrine check refused because acting on it would
-  loosen or contradict a law rule: the rule quoted, what the lesson would have
-  said, its evidence (`self_tension`, `nora lessons tensions`). Operator-only;
-  she never reads one.
+  Not doctrine, not a runtime skill; every lesson passes the
+  **doctrine check** first (DEC-298).
+- **Tension** — a lesson the doctrine check refused because it would loosen a
+  law rule: the rule quoted, what the lesson would have said, its evidence
+  (`self_tension`, `nora lessons tensions`). Operator-only; she never reads one.
+- **topic account** — the unit's account of a subject that recurs across
+  people and days (one mention earns none): one live account per subject,
+  `active`/`dormant`/`retired`, nothing writing after retired. Written only
+  by the Cognition session's `topic_*` verbs on shown Record or Rollup
+  citations; each revision's lineage gates which rooms may read it, as
+  `<topics>` in the live lane only — no as-of view.
 - **Standing** — see above; one of the Notebook's four tiers.
 
 Other words this bundle introduces:
 
 - **lineage** — the `(kind, subject, origin room)` set a derived row's
   citations reach down to; decides which rooms may be shown it, checked at
-  assembly — this file's own "enforced at assembly, not at egress" (below),
-  never at egress. Not the citations themselves.
-- **reasoning** — the mode a derived row was reached by: `computed`, `told`,
-  `deduced`, `induced`, `abduced`, `said` (`10-tiers.md` §4). Never the
-  model's chain of thought.
+  assembly (this file's own rule below), never at egress. Not the citations.
+- **reasoning** — a derived row's mode: `computed`, `told`, `deduced`,
+  `induced`, `abduced`, `said` (`10-tiers.md` §4); never the model's chain of thought.
 - **stimulus** (plural **stimuli**) — what ingestion, the Rollup, the clock,
   a `self` wake Cognition scheduled, or a tag turn's `handoff` raises to wake
-  Cognition. Never the Signal platform, never a Python/OS
-  signal, never an event.
+  Cognition. Never the Signal platform, a Python/OS signal or an event.
 - **cognition** — the fast adaptor: orient, decide, act in one session per
-  unit per wake. Never a tier, never "the cognition tier" or "a cognition
-  layer" (see *placement*, below).
-- **event** — Register's third kind, a dated thing people attend; code:
-  `Gathering` (above). Never the fire-turn occasion (code `Event`, DEC-139,
-  see *occasion*, below).
+  unit per wake; never a tier or "a cognition layer" (see *placement*).
+- **event** — Register's third kind, a dated thing people attend; code
+  `Gathering`. Never the fire-turn occasion (code `Event`, DEC-139, *occasion* below).
 - **subconscious / conscious** — the operator's own words (潛意識 / 明意識,
-  `design/cognition-loop/55-self.md` §6) for the conscious and the subconscious: the Dreamer's
-  four adaptors run underneath, always; the tag turn and the fire turn
-  speak. Not code names, and never "tier" or "layer" (a layer is a data
-  layer, DEC-249).
+  `design/cognition-loop/55-self.md` §6): the Dreamer's four adaptors run
+  underneath, always; the tag turn and the fire turn speak. Not code names,
+  never "tier" or "layer" (a layer is a data layer, DEC-249).
 
 ## Doctrine — what was decided
 

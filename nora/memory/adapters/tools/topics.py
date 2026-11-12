@@ -51,9 +51,6 @@ def _topic_citations(
                 "each citation is [kind, id], a Record or Rollup row you were shown",
             )
         key = (pair[0], pair[1])
-        if key in carried:
-            keys.append(key)
-            continue
         source = sources.get(key)
         if source is None:
             return _refused(
@@ -94,8 +91,8 @@ def _make_topic_create(d: SessionDeps) -> Any:
         citations: list[list[str]],
     ) -> dict[str, object]:
         """Open an account of a subject this unit keeps coming back to.
-        Call this when a subject recurs across people or days — a game the
-        group returns to, a place it keeps going, a show it follows — and no
+        Call this when a subject recurs across people or days, a game the
+        group returns to, a place it keeps going, a show it follows, and no
         account of it is held yet. One mention never earns an account, and
         an account already held is revised, never started a second time.
 
@@ -111,7 +108,7 @@ def _make_topic_create(d: SessionDeps) -> Any:
             confidence: How sure the account is: `low`, `medium` or `high`.
             citations: What the account rests on, at least one, each a
                 [kind, id] source key of a Record or Rollup row you were
-                shown, like `["message", "5201"]` — the `@kind:id` the
+                shown, like `["message", "5201"]`, the `@kind:id` the
                 graph block renders.
         """
         if (off := _topic_ready(d)) is not None:
@@ -152,6 +149,14 @@ def _make_topic_create(d: SessionDeps) -> Any:
                         d, about=(("topic", subject),), body=body.strip(),
                         confidence=confidence, state="active", citations=cited))
             except ValueError as exc:
+                # `duplicate` is the store's atomic answer — the live-subject
+                # uniqueness — when two writes raced past the held() read.
+                if str(exc) == "duplicate":
+                    return _refused(
+                        "duplicate",
+                        f"an account about {subject!r} is already held; "
+                        "revise it with topic_revise instead of starting a second",
+                    )
                 return _refused("invalid_entry", str(exc))
         return wrote("", "", None, entry_id=entry.id, revision_id=entry.head.id)
     return topic_create
@@ -167,7 +172,7 @@ def _make_topic_revise(d: SessionDeps) -> Any:
         """Revise a held topic account. Call this when what the subject is
         to the unit has changed or grown. Give back the WHOLE account with
         your change folded in: `body` replaces it, and the old revision is
-        kept. A retired account takes nothing more — it is refused.
+        kept. A retired account takes nothing more; it is refused.
 
         Returns `status`: ok (with the new `revision_id`), refused or
         unavailable, with a `reason` and `detail` when it is not ok
@@ -235,7 +240,7 @@ def _make_topic_set_status(d: SessionDeps) -> Any:
         """Move a held topic account along its life. Call this when the
         subject stops coming back (dormant), comes back (active), or the
         account no longer describes this unit (retired). Nothing writes
-        after retired — it is refused.
+        after retired; it is refused.
 
         Returns `status`: ok (with the new `revision_id`), refused or
         unavailable, with a `reason` and `detail` when it is not ok.

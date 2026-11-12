@@ -766,10 +766,10 @@ BLOCK_TYPES: dict[str, BlockType] = {
         subject="the subject the account is about, named the way the unit says it",
         state="where the account stands: `active` still recurs, `dormant` stopped",
         confidence="how sure the account is: `low`, `medium` or `high`",
+        written="how long ago you last rewrote the account",
         revision="its head revision, the base a change is written against",
         seq="how many revisions deep the account is",
-        not_listed="present when more accounts were left out to fit: how many",
-        store="entries",
+        not_listed="present when more accounts were left out to fit: how many", store="entries",
     ),
     _t(
         "memos",

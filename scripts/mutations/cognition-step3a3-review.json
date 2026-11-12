@@ -72,14 +72,14 @@
   {
     "name": "major 2: the session is not grounded",
     "file": "nora/app/cognition_session.py",
-    "old": "            grounding = await self._grounder(\n                unit, situation.agenda.items, pending, now_ms)",
+    "old": "            grounding = await self._grounder(\n                unit, situation.agenda.items, pending, now_ms, historical)",
     "new": "            grounding = Grounding()",
     "target": "tests/unit/test_cognition_grounding.py::test_a_session_with_no_record_query_tool_still_reads_who_said_what tests/unit/test_cognition_grounding.py::test_a_session_that_cannot_be_grounded_fails_and_makes_no_model_call"
   },
   {
     "name": "major 2: a grounding read that fails is swallowed into an empty one",
     "file": "nora/app/cognition_session.py",
-    "old": "            grounding = await self._grounder(\n                unit, situation.agenda.items, pending, now_ms)",
+    "old": "            grounding = await self._grounder(\n                unit, situation.agenda.items, pending, now_ms, historical)",
     "new": "            try:\n                grounding = await self._grounder(\n                    unit, situation.agenda.items, pending, now_ms)\n            except Exception:\n                grounding = Grounding()",
     "target": "tests/unit/test_cognition_grounding.py::test_a_session_that_cannot_be_grounded_fails_and_makes_no_model_call"
   },

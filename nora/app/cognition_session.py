@@ -332,10 +332,10 @@ ReadToolsFor = Callable[..., list[Any]]
 #: stimulus and the Register index lines. RAISES when it cannot read: a session
 #: that could not be grounded must not run on the bare counts.
 #: The fourth argument is the session's own instant (`now_ms`): a live
-#: wake's clock or a historical session's evidence time, for reads that can
-#: be bounded as-of. `None` means "now".
+#: wake's clock or a historical session's evidence time; `None` means "now".
+#: The fifth (`historical`) withholds reads with no as-of view — held topics.
 Grounder = Callable[
-    [str, Sequence[AgendaItem], Sequence[Stimulus], int | None],
+    [str, Sequence[AgendaItem], Sequence[Stimulus], int | None, bool],
     Awaitable[Grounding],
 ]
 #: A historical session passes its evidence instant as `clock`, binding every
@@ -926,7 +926,7 @@ class CognitionSessionRunner:
             # stimuli stay pending: a session never runs on bare counts it
             # cannot judge from.
             grounding = await self._grounder(
-                unit, situation.agenda.items, pending, now_ms)
+                unit, situation.agenda.items, pending, now_ms, historical)
             # BEFORE THE SESSION ROW: it persists `grounding.as_dict()`, so a
             # live session's lesson evidence must already be on it, and the
             # same view is reused for the prompt — never a second read.

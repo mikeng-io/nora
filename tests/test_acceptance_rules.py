@@ -9,10 +9,7 @@ from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.egress import scan_identifiers
 from nora.domain.media import MediaBlob, MediaObject, MediaRef
 from nora.domain.media_join import MediaJoin
-from nora.domain.models import (
-    NormalizedMessage,
-    PersonRef,
-)
+from nora.domain.models import NormalizedMessage, PersonRef
 from nora.domain.ports import EngageDecision, EngagementRequest
 from nora.engagement.context import TranscriptInjection
 from nora.ingest.comprehension import MediaComprehension, Subject
@@ -47,6 +44,7 @@ RULE_TESTS = {
     "DEC-97": "test_running_identity_is_independent_of_the_latest_release",
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
+    "DEC-329": "test_cognition_is_the_live_topic_writer",
     # R-1: untagged ambient traffic reaches the agent ONLY under the participation
     # occasion's gating: an operator-opted-in room, one quiescence-closed window, one
     # evaluation through `FirePath.speak`. The named test pins that ordinary ambient

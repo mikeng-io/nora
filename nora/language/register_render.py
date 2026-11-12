@@ -115,9 +115,15 @@ def render_register(
             placement,
         )
     )
-    blocks.append(
-        restamp(render_topics(grounding.topics, lines=budget.register_lines), placement)
-    )
+    # A historical session has no as-of view of held accounts: the entry store
+    # reads heads only, so the block is withheld in that lane, not rendered.
+    if not grounding.historical:
+        blocks.append(
+            restamp(
+                render_topics(grounding.topics, now_ms=now_ms, lines=budget.register_lines),
+                placement,
+            )
+        )
     return blocks
 
 
