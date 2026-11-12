@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.infra.sql.cognition_store import SqlCognitionStore
+from nora.infra.sql.entries import SqlEntryStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.memo import SqlMemoStore
@@ -168,7 +169,9 @@ async def snapshot(
     }
     anchors = {f"anchor:{n}": {"kind": k[0], "id": k[1]}
                for n, k in (await graph.aliases(unit=unit)).items()}
-    kinds["topic"] = {**topics, **anchors}
+    notebook = {f"entry:{e.id}": _payload(e)
+                for e in await SqlEntryStore(engine).held(unit=unit) if e.kind == "topic"}
+    kinds["topic"] = {**topics, **anchors, **notebook}
 
     stimuli = SqlStimulusStore(engine)
     view = await stimuli.view(unit=unit, mode="live", now_ms=now_ms, limit=500)
