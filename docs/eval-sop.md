@@ -252,8 +252,8 @@ against a sandbox database of the case's own, seeds it with what that room
 held at that instant, and drives one entry point. Declared stimuli and
 counterfactuals may be authored; they must not be presented as recorded history.
 The subject uses the corpus's canonical assembly rather than a bespoke
-per-case dependency graph (`design/evaluation/11-the-sandbox-rebuild.md`
-§1.2–§1.3 and its later amendments).
+per-case dependency graph (`design/evaluation/subject.md`
+«Obtained through production»–«Counterfactuals»).
 
 ```bash
 # on the deploy host, in a checkout of the branch under test (NOT the deploy checkout)
@@ -509,7 +509,7 @@ A failure you fixed but did not add a case for is a failure you will ship
 again.
 
 
-## The participation suite — the flip gate (design/dreamer-agent-loop/35 §9)
+## The participation suite — the flip gate (design/cognition-loop/proactive.md)
 
 `make eval-participation` runs the 15-case participation corpus, including
 relevance-Yes cases, their knowledge-cut twins, and the pure-No cases (S6-S10) — the S1 and S4 pairs were

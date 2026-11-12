@@ -1,7 +1,6 @@
 """The collective Profile sessions — a room's, the unit's and Nora's own
 account — sharing the person session's checked writer
-(design/unified-memory/45 §4: «The unit, room (Culture) and Nora accounts
-follow the same shape with their own inputs»).
+(design/unified-memory/profiles.md).
 
 One implementation because settlement and validation are identical
 (`ProfilePersonAdaptor`'s verbs, accept and commit); the three registered

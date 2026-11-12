@@ -1,14 +1,14 @@
 """cognition_session / cognition_session_close / cognition_would_write --
 the Cognition adaptor's session and its dry-run write verbs, shadow
-(design/cognition-loop/70-migration.md §2 row 3a: "the Cognition adaptor's
+(design/cognition-loop/README.md «Invariants» row 3a: "the Cognition adaptor's
 session and agenda; its note, event and Standing verbs in dry run (would-
-write rows recorded, nothing committed)"; 30-cognition.md §1-§2; migration
+write rows recorded, nothing committed)"; design/cognition-loop/session.md; migration
 step 3a).
 
 WHAT THIS ADDS, additive only, three new tables:
 
 `cognition_session` (new): one row per session, written once at its start
-and never revised -- 30-cognition.md §1: "a session is replayable. Its row
+and never revised -- design/cognition-loop/session.md "a session is replayable. Its row
 records its inputs: the situation and agenda as handed, the stimulus ids it
 claimed, the doctrine sha256, the skill versions injected, the config
 revision in force, and the model id and route." `situation`/`agenda` are
@@ -24,7 +24,7 @@ nullable, because a test or a replay may construct a session with no
 underlying wake row.
 
 `cognition_session_close` (new): one row per agenda item's close
-(30-cognition.md §2 "Closing" -- `written`, `no_change`, `waiting`,
+(design/cognition-loop/session.md "Closing" -- `written`, `no_change`, `waiting`,
 `covered`, or code's own `struck` at `max_strikes`), append-only, one
 session to many closes.
 
@@ -33,7 +33,7 @@ session to many closes.
 have done, never what it did: `outcome` is `would_commit` (carrying
 `candidate`, the row that would have been written) or `refused` (carrying
 `refusal_reason`/`refusal_detail`). `tier` is one of `note`, `event`,
-`standing` -- the three families 30-cognition.md §2's write-verb table
+`standing` -- the three families design/cognition-loop/session.md write-verb table
 lists for Cognition, minus `memo` (memo ships at step 7 and no verb exists
 yet, so 3a's own migration table row names only "note, event and Standing
 verbs"). `session_id` is nullable: a would-write recorded outside a

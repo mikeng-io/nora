@@ -1,4 +1,4 @@
-// Print and "save as PDF" (design/artifact §34): the browser's own print is the PDF path;
+// Print and "save as PDF" (design/artifact/lifecycle.md): the browser's own print is the PDF path;
 // there is no server-side renderer. The stylesheet is src/components/documents/print.css;
 // this is the one decision in it that needs the page's text, so it is made here and
 // tested without a browser.

@@ -1,5 +1,5 @@
 /**
- * The shared `/v1` bridge API (frozen wire §actions_api): actions, self,
+ * The shared `/v1` bridge API (design/platform-bridges/02-wire-and-platforms.md «One synchronous wire API»): actions, self,
  * health, reads and attachment custody, all behind the shared bearer.
  *
  * Action truth: `confirmed` means Baileys' sendMessage RESOLVED with a stanza —

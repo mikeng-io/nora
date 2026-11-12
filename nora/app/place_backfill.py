@@ -1,7 +1,7 @@
 """`nora memory backfill-places [--apply] [--per-second N] [--limit N]`: give
 the places resolved before `0118_place_area` their district and city.
 
-design/unified-memory/00-intent.md «Sequence» step 3a. Two work lists, each
+design/unified-memory/graph.md «Named places» (build step 3a). Two work lists, each
 the rows that still name no area, so a re-run asks only what is left:
 
 - **Event venues** (`SqlGatheringStore.without_venue_area`): one Geocoding

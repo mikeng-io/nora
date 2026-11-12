@@ -1,5 +1,5 @@
 """standing -- Nora's own position in one conversation, revised in place
-(design/dreamer-agent-loop/26-standing.md).
+(design/cognition-loop/data.md).
 
 One row per `(platform, conversation_id)`, and the composite primary key IS
 S4's decision: every lock, queue and slot in this repo keys that way and the

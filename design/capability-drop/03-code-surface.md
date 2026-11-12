@@ -26,7 +26,7 @@ doctrine tier machinery (`nora/doctrine/`), and the tests that pin both.
 | `read_only_tools()` etc. | keep — read by Dreamer adaptor grants, unrelated |
 
 **`time_shiftable` is KEPT**, even though its only renderer dies. It is a
-load-bearing declaration on the tool itself (design/14 §5.1) with direct values
+load-bearing declaration on the tool itself (design/system/grounding.md) with direct values
 pinned by `tests/unit/test_tool_registry.py::test_every_tool_declares_a_time_axis`
 and referenced in `tests/test_routes.py` (`arrive_by` tests) — deleting the
 *renderer* (`live_only_tools`) does not delete the *declaration*. The two are

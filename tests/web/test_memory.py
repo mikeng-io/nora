@@ -207,7 +207,7 @@ def _line(line_id: str, text: str, **overrides) -> ProfileLine:
 
 
 async def test_a_callers_own_profile_accounts_ride_their_workspace_entries():
-    """The switch's portal half (cognition-loop/50 §4): the caller sees the
+    """The switch's portal half (cognition-loop/data.md §4): the caller sees the
     account about them per unit that lists them, each under its workspace's
     entry — every chain head with its state, the evidence behind it, and the
     open disputes."""

@@ -131,7 +131,7 @@ test test-fast test-affected:
 # the LLM key env set) ---
 #
 # `python -m evals` runs a NAMED corpus (or `--class`, or `--all`) rather than
-# a file path — `design/evaluation/10-the-scenario-map.md` §15's port put the
+# a file path — `design/evaluation/coverage.md`  «Classes»'s port put the
 # 150 corpus cases behind `evals.scenarios.experiment_for()`, and adding a
 # corpus adds a dict entry there, not a target here.
 #
@@ -139,7 +139,7 @@ test test-fast test-affected:
 # (`nora_eval`, made by `scripts/refresh_eval_clone.sh`). Every case names a
 # real room at a real instant, is seeded from the clone into a sandbox
 # database of its own, and composes the deployment's own config, policy and
-# roster (design/evaluation/11-the-sandbox-rebuild.md §1.2). Off the deploy
+# roster (design/evaluation/subject.md). Off the deploy
 # host there is no source and no deployment to compose, and the run says so.
 EVAL_GRADING = --grading-contract "$(EVAL_GRADING_CONTRACT)" --grading-contract-sha256 "$(EVAL_GRADING_CONTRACT_SHA256)"
 
@@ -147,7 +147,7 @@ EVAL_GRADING = --grading-contract "$(EVAL_GRADING_CONTRACT)" --grading-contract-
 eval-source:
 	./scripts/refresh_eval_clone.sh
 
-# The ambient-participation flip gate (design/dreamer-agent-loop/35 §9): all
+# The ambient-participation flip gate (design/cognition-loop/proactive.md): all
 # 15 cases must reach their expected verdict — zero false-speaks on the
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:

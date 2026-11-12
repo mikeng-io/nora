@@ -1,5 +1,5 @@
 """music_queue — the Discord music bot's upcoming-queue, the one thing that
-survives a restart (design/discord-music/03-state-and-persistence.md)
+survives a restart (design/voice-channel/music.md)
 
 Now-playing/playback position is deliberately NOT here — in-memory only on
 `MusicPlayer`, lost on a restart or a Discord Gateway reconnect, same

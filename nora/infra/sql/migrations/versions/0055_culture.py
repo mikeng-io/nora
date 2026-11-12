@@ -1,5 +1,5 @@
 """culture / culture_revision -- an account of how a room works and why, kept
-over time (design/culture-tier, DEC-182..185).
+over time (design/self-growth/character.md, DEC-182..185).
 
 WHY A STORE EXISTS AT ALL. A model asked to describe a room's culture reasons
 from scratch and has no memory of its last answer, so any single account is a

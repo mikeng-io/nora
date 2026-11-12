@@ -6,7 +6,7 @@ package fakeig
 //
 // NewsInboxJSON: KEYS CAPTURED FROM THE LIVE WEB CLIENT 2026-09-25, VALUES
 // SYNTHETIC. The top-level keys and every story's `args` keys are the ones
-// the operator's own browser received (design 19, phase 1); every value
+// the operator's own browser received (design/instagram-adoption/summons.md, phase 1); every value
 // (ids, names, text, urls, times) is made up. The story-level keys beside
 // `story_type` and `args` were not listed by the capture: `type` carries the
 // capture's "tN" note where it gave one, and is left out where it did not.

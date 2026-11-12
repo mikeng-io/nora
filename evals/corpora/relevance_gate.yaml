@@ -1,4 +1,4 @@
-# The Relevance Gate suite (design/dreamer-agent-loop/36).
+# The Relevance Gate suite (design/cognition-loop/proactive.md).
 #
 # This grades the GATE, not a turn: each case is `transcript + standing ->
 # expected verdict`, driven through the real `RelevanceGate.decide` against
@@ -86,7 +86,7 @@
 # gate reads is every row the room held at or before `before_ms`; the newest
 # row IS the judged line. A case with no real moment is `parked:` (P-A) with
 # the reason and the condition that brings it back; it is counted on every
-# run and never driven (`11-the-sandbox-rebuild.md` §7.1).
+# run and never driven (`design/evaluation/subject.md`).
 #
 # HOW MOMENTS WERE CHOSEN — structurally, from the deployment's clone:
 # every untagged member line (no @-mention, no reply to her) whose SHAPE is

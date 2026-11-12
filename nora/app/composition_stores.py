@@ -303,7 +303,7 @@ def readers(cfg: Any, content_checks: Any, engine: Any)-> ReadersWiring:
     lessons_reader: ActiveLessons | None = (
         ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
     )
-    # THE SWITCH (design/unified-memory/45 §5, 00 «Sequence» step 8): the Profile accounts'
+    # THE SWITCH (design/unified-memory/profiles.md): the Profile accounts'
     # read half — one store, read-only by the Protocol the readers are typed against
     # (`ProfileHeads` has `account_heads` and nothing else), handed to the tag assembler,…
     profile_store_reader = (

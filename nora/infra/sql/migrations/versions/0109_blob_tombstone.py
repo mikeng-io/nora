@@ -1,6 +1,6 @@
 """blob_tombstone: what deleting a story frame's bytes leaves behind.
 
-design/cognition-loop/22-social-stream.md §5 and 70-migration.md §9. A story
+design/cognition-loop/observation.md and design/cognition-loop/data.md. A story
 frame's media bytes are deleted at their bound; this APPEND-ONLY table keeps,
 per deletion, the content address, the kind of thing the bytes were, why and
 when they went, so a restore to an earlier time knows it is incomplete for

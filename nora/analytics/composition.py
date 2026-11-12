@@ -97,7 +97,7 @@ def _subjects_from_identity(persons: Persons) -> tuple[Subject, ...]:
             f"Life360 member id(s) {unplaced} have a [[persons.<id>.life360]] "
             "block with no circle_id in identity.toml — analytics cannot "
             "derive a circle_id to write stays/places under for their "
-            "subject; add circle_id or remove the block (design/19 §3)"
+            "subject; add circle_id or remove the block (DEC-54)"
         )
     return tuple(
         Subject(

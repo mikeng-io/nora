@@ -1598,8 +1598,8 @@ class LinkedInSocialConfig(BaseModel):
 
 
 class SocialPollConfig(BaseModel):
-    """The social stream's poller (design/cognition-loop/22-social-stream.md §3,
-    §4): each member's Instagram account is probed, and a story or a list of
+    """The social stream's poller (design/cognition-loop/observation.md):
+    each member's Instagram account is probed, and a story or a list of
     posts and reels is read only when the probe says it changed. Every value is
     a starting value, sized after a week of `social_poll` rows.
 
@@ -1711,7 +1711,7 @@ class SocialConfig(BaseModel):
     tool result is re-sent on every subsequent model call and what accumulates
     must be bounded.
 
-    **A story frame's bytes** (design/cognition-loop/22-social-stream.md §5),
+    **A story frame's bytes** (design/cognition-loop/observation.md),
     kept in custody by the poller, are deleted `story_media_keep_days` after
     the frame's `expires_at` once its media is both perceived and embedded,
     and `story_media_keep_max_days` after it whatever is done
@@ -1851,7 +1851,7 @@ class SidecarEntry(SpeechEntryConfigBase):
                 f"sidecars entry guild {value!r} must be a bare Discord guild "
                 "id, not \"<guild_id>/<channel_id>\" — an entry maps a GUILD "
                 "to the audio-controller that owns its voice connection "
-                "(design/voice-channel/07 §12.5). Where a guild's SPEECH is "
+                "(design/voice-channel/audio). Where a guild's SPEECH is "
                 "recorded is policy.toml's `voice = true`, not here."
             )
         return value
@@ -2055,7 +2055,7 @@ class SpeechTtsConfig(BaseModel):
                 raise ValueError(
                     f"[speech.tts] sidecars lists guild {entry.guild!r} twice — "
                     "one guild has exactly one audio-controller "
-                    "(design/voice-channel/07 §12.5)"
+                    "(design/voice-channel/audio)"
                 )
             seen.add(entry.guild)
         return self
@@ -2674,15 +2674,15 @@ class NoraProfileConfig(BaseModel):
 
 
 class ProfileConfig(BaseModel):
-    """`[memory.profile]`: the Profile sessions, in shadow (design/unified-memory/45 §4,
-    00 «Sequence» step 6). One Dreamer session per (unit, listed person), woken
+    """`[memory.profile]`: the Profile sessions, in shadow (design/unified-memory/profiles.md,
+    ). One Dreamer session per (unit, listed person), woken
     like the person's Character session (`[memory.profile.person] update_every_messages` and
     `[memory.profile] update_every_seconds`) and at once by a `told` line a turn wrote about them,
     writing typed lines through `profile_write`.
 
     **Off by default.** On, the sessions write `profile_line` and nothing reads
     it: no prompt changes until the switch (step 8). The first session of each
-    person is the backfill (35 §4). Needs `[dreamer] enabled` and `[culture]
+    person is the backfill. Needs `[dreamer] enabled` and `[culture]
     enabled` (it reads the Character head and the room cultures).
     """
 
@@ -2690,7 +2690,7 @@ class ProfileConfig(BaseModel):
 
     write: bool = False
 
-    #: THE SWITCH (45 §5, 00 «Sequence» step 8). On, prompts read the Profile
+    #: THE SWITCH. On, prompts read the Profile
     #: accounts through `read_profile` and render `<profile>` blocks INSTEAD of
     #: `<peer_card>`, `<peer_history>`, `<people_in_window>`, `<culture>`,
     #: `<unit_culture>`, `<character>` and `<self>`. Off — the default — is the

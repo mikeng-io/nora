@@ -1,6 +1,6 @@
 """culture_revision.citations — what each account revision rests on.
 
-`character_revise` (design/self-growth/10-character.md §3, C2a) checks that every
+`character_revise` (design/self-growth/character.md, C2a) checks that every
 citation of a revision resolves to a row its session was handed: a Record message
 id (`"4812"`) or a Rollup response episode (`"response:4790"`, by her send's id).
 This column keeps what was checked, so a revision can be re-derived from its

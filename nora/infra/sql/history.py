@@ -138,7 +138,7 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "computer_sessions": ("id",),
     # 0117_persona: an account's head, its `revision` bumped by every write.
     "profile": ("key",),
-    # design/platform-observations 02 (0144): the typed observation history —
+    # design/platform-observations/observations.md(0144): the typed observation history —
     # in place because `target_message_id` re-links a retained row when its
     # target arrives — and the fold's compare-and-swap head.
     "platform_observation": ("id",),
@@ -267,7 +267,7 @@ NOT_RESTORED: dict[str, str] = {
     "rendered_claim": "deprecated tier (2026-09-07); table kept, code gone",
     "note_entity": "deprecated chain (2026-09-08); nothing writes it",
     "presence_corridor_speed": (
-        "retired writer (design/27 §4.4 M2): nothing writes or reads it; table kept"
+        "retired writer (design/cognition-loop/observation.md): nothing writes it; table kept"
     ),
     # 0151: a cache of «live and not permanently consumed», deleted on
     # closed claims and retractions; `snapshot_at.seed` rebuilds it from the

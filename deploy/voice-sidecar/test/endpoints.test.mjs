@@ -1,4 +1,4 @@
-// Endpoint contract tests (design/voice-channel/07 §3): response shapes,
+// Endpoint contract tests (design/voice-channel/audio.md): response shapes,
 // generation scoping, single-guild binding, replace-play, stop-vs-exit,
 // pause-during-speech, volume bounds, speech bounds, status/health,
 // request_id dedupe, voice-death and channel-emptied events.
@@ -66,7 +66,7 @@ test('join is idempotent in the same channel and 409 connected_elsewhere in anot
   assert.equal(again.body.state.generation, first.generation);
   assert.equal(h.joinCalls.length, 1); // no second join happened
 
-  // §12.2 reversed 2026-09-17: a second channel is no longer refused for
+  // design/voice-channel/audio.md «Connection lifecycle» reversed 2026-09-17: a second channel is no longer refused for
   // being unconfigured (400 not_in_allowed_channel) — it is refused because
   // Discord allows ONE voice connection per bot per guild, which is the
   // lifecycle's 409 and not an allow-list at all.
@@ -77,7 +77,7 @@ test('join is idempotent in the same channel and 409 connected_elsewhere in anot
   await h.close();
 });
 
-test('join admits ANY channel in the guild when idle (§12.2, reversed 2026-09-17)', async () => {
+test('join admits ANY channel in the guild when idle (design/voice-channel/audio.md «Connection lifecycle», reversed 2026-09-17)', async () => {
   // The regression this guards: phase 1 answered 400 not_in_allowed_channel
   // for every channel but the configured one, so a member sitting in any
   // other voice channel could never be joined — which is the whole reason
@@ -385,7 +385,7 @@ test('voice-death after a failed disconnect recovery window', async () => {
   await h.close();
 });
 
-// §12.6 (2026-09-16, Miles): the last human leaving no longer fires
+// design/voice-channel/audio.md «Connection lifecycle» (2026-09-16, Miles): the last human leaving no longer fires
 // channel-emptied immediately — it arms a 1-minute grace timer, and the
 // event (plus the controller's own teardown) only happens if nobody returns
 // before the timer fires. h.clock is the fake clock threaded into
@@ -423,7 +423,7 @@ test('channel-emptied fires 60s after the human count drops to zero', async () =
   assert.equal(emptied.length, 1);
   assert.equal(emptied[0].generation, generation);
   assert.equal(emptied[0].channel_id, CHANNEL);
-  // The timer firing tears the connection down itself (§12.6: "the
+  // The timer firing tears the connection down itself (design/voice-channel/audio.md «Connection lifecycle»: "the
   // controller tears the connection down AND writes desired=idle").
   assert.ok(await until(() => h.core.lifecycle.voice() === 'idle'));
   assert.ok(await waitFor(() => h.leaves() > 0));
@@ -462,7 +462,7 @@ test('channel-emptied fires 60s after the FIRST update after join is the last hu
 });
 
 test('channel-emptied arms on join into an already-empty channel and fires after 60s', async () => {
-  // §12.6: "if Nora is alone in the channel from the start... the timer
+  // design/voice-channel/audio.md «Connection lifecycle»: "if Nora is alone in the channel from the start... the timer
   // arms on join and applies the same policy" — this used to be the ONE
   // case that never fired at all (old comment: "the bot sitting alone since
   // join is not a drop"). That is now wrong; it arms just like any other
@@ -529,7 +529,7 @@ test('a manual Discord-UI disconnect during the empty-channel grace period cance
   // Operator addendum (2026-09-16, mandatory): a manual disconnect already
   // fires stateChange -> destroyed -> handleDeath (existing, correct path,
   // not retested here beyond confirming it still fires). What's new is
-  // making sure it also cancels a pending §12.6 timer so that timer doesn't
+  // making sure it also cancels a pending design/voice-channel/audio.md «Connection lifecycle» timer so that timer doesn't
   // later fire into an already-idle connection with a second event/leave.
   const h = await makeHarness();
   const channel = { members: new Map() };

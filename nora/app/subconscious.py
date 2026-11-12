@@ -1,7 +1,7 @@
 """Cognition's Dreamer-side face: the adaptor and its executor.
 
 `SubconsciousExecutor` is the wake hook the wake evaluator hands an admitted
-wake to (design/cognition-loop/18 and 30): it wraps the session's `on_wake`
+wake to (design/cognition-loop/execution.md and 30): it wraps the session's `on_wake`
 in a `CognitionSessionAdaptor` and hands it to `DreamerRuntime.dispatch` —
 the subconscious execution boundary. The Dreamer lane admits the unit,
 creates the session task and owns it: in-process occupancy, task lifecycle

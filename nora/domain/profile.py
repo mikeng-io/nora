@@ -1,4 +1,4 @@
-"""Profile: one account per entity, kept as typed lines (design/unified-memory/45).
+"""Profile: one account per entity, kept as typed lines (design/unified-memory/profiles.md).
 
 An account is who an entity is to Nora, in three parts: **facts** (who or
 what it is), **traits** (what it is like) and **guesses** (why it is
@@ -144,7 +144,7 @@ VERDICTS: tuple[str, ...] = ("open", "confirmed", "refuted", "expired", "unknown
 LINE_MAX_CHARS = 300
 
 #: Current lines per part (45 §2). Starting values, to be sized on what the
-#: shadow sessions produce (00 «Sequence» step 6). For `guess` the count
+#: shadow sessions produce (). For `guess` the count
 #: is lines whose prediction window is still open, whatever their state.
 CAPS: Mapping[str, int] = {"traits": 9, "guesses": 3}
 

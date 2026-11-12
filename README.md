@@ -109,8 +109,8 @@ Four ideas run through all of it:
   revised from evidence. Doctrine is never rewritten by her.
 
 The [architecture map](ARCHITECTURE.md) is the full runtime and code map. The
-memory tiers are specified in the [tier model](design/cognition-loop/10-tiers.md)
-and the [prior-art note](design/cognition-loop/80-prior-art.md) records what she
+memory tiers are specified in the [tier model](design/cognition-loop/data.md)
+and the [prior-art note](design/cognition-loop/README.md) records what she
 adopts and refuses from existing memory systems.
 
 ## A continuing presence

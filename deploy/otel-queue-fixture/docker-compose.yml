@@ -1,4 +1,4 @@
-# Disposable queue-observability fixture (design/platform-bridges/04,
+# Disposable queue-observability fixture (design/platform-bridges/04-operations.md,
 # issue #422). Three containers, no volumes, no credentials — `docker compose
 # -f deploy/otel-queue-fixture/docker-compose.yml up -d --build`, and down
 # when done. It is disposable BY CONSTRUCTION: the sink forgets on restart

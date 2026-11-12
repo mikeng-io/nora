@@ -13,8 +13,8 @@ Everything she is comes from the repo, read as data:
   group chats (Signal, WhatsApp, Discord, Instagram), listens, remembers at
   five speeds, answers when tagged, and would rather say nothing than say
   something wrong.
-- `design/self-reference/05-visual-identity-spec.md` and
-  `design/self-reference/07-native-and-embodied-form.md`: Mini Nora is her
+- `design/self-reference/identity.md` and
+  `design/self-reference/modeling.md`: Mini Nora is her
   native form on every internet surface. The eight anchors (proportions, messy
   bun, minimal face, blush, grey hoodie, white wired earphones, blue-grey
   jeans, white sneakers) hold in every frame; the embodied form never appears.

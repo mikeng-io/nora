@@ -1259,7 +1259,7 @@ def _read_deployment(name: str) -> str:
             "own policy entry and the roster its speakers resolve through. "
             "Run this where the deployment lives, or point "
             "$NORA_DEPLOYMENT_DIR at it "
-            "(design/evaluation/11-the-sandbox-rebuild.md §1.2)."
+            "(design/evaluation/subject.md)."
         ) from exc
 
 
@@ -1720,7 +1720,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             "(a real room and a real instant) and is not parked. A case with "
             "no anchor cannot run — there is no room to reconstruct — and is "
             "an ERROR rather than a skip, so the report shows the work "
-            "(11-the-sandbox-rebuild.md §7.1)."
+            "(design/evaluation/subject.md)."
         )
     unknown = set(shot) - SNAPSHOT_KEYS
     if unknown:
@@ -1830,7 +1830,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         f"{platform} adapter — `FirePath._turn` resolves the "
                         "room's adapter before speaking, so the turn cannot "
                         "run. Anchor a turn case where an adapter is wired "
-                        "(design/evaluation/11-the-sandbox-rebuild.md §1.2's "
+                        "(design/evaluation/subject.md 's "
                         "declared Discord divergence)."
                     )
             if spec.memory_surface is not None and not (overlay and overlay.memory):

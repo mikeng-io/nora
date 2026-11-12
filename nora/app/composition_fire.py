@@ -577,7 +577,7 @@ def build_gate(
         # error. This is a turn with no gate in FRONT of it, which is a legal config that…
         log.error(
             "participation.enabled = true but relevance_gate.enabled = false — "
-            "NOTHING will happen: since design/dreamer-agent-loop/36 the "
+            "NOTHING will happen: since design/cognition-loop/proactive.md the "
             "quiescence trigger and the room policy are the gate's, so with the "
             "gate off no window is ever noted, judged or turned into a turn. "
             "Set [relevance_gate] enabled = true (it ships in shadow mode)."

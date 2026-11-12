@@ -1,4 +1,4 @@
-"""The shared authenticated bridge API (design 02-wire §actions).
+"""The shared authenticated bridge API (design/platform-bridges/02-wire-and-platforms.md).
 
 One vocabulary for POST /v1/actions, GET /v1/actions/{id}, GET /v1/self,
 GET /v1/health, GET /v1/reads, POST /v1/reads, and attachment custody

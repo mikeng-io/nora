@@ -108,7 +108,7 @@ func TestAccountsSearchUpstreamGraphQLErrorAnswers502(t *testing.T) {
 	}
 }
 
-// --- GET /accounts?username= (17 P10), wired end to end --------------------
+// --- GET /accounts?username= (), wired end to end --------------------
 
 // The exact match, over the real gateway, real use case and real HTTP
 // surface: the fixture's fuzzy hit is dropped and the exact one kept, in

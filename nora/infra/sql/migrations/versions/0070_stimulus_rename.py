@@ -2,7 +2,7 @@
 with Signal, the messaging platform Nora lives on.
 
 **THE COLLISION.** `0069_cognition_signal` named the per-unit table that wakes
-cognition `signal` (design/cognition-loop/20-observe.md §3). That word is also
+cognition `signal` (design/cognition-loop/observation.md). That word is also
 the name of a whole messaging platform this deployment runs on
 (`nora/platform/signal/`, `signal-cli`, the `signal` platform string in every
 room's config) — two unrelated things spelled the same, the exact shape

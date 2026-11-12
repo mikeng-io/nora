@@ -1,7 +1,7 @@
 // Package domain is the bridge's vocabulary: the ids Instagram uses, the
 // closed set of ways a request can fail, and the entities a read returns.
 // It imports the standard library and nothing else
-// (design/instagram-adoption/16 §Layers).
+// (design/instagram-adoption/bridge.md).
 package domain
 
 // # Why the ids are types
@@ -148,7 +148,7 @@ func (u Username) String() string { return u.s }
 //
 // It arrives as a PATH SEGMENT on the message routes
 // (`/threads/{thread_fbid}/messages/{message_id}`), so the parse is what
-// makes it a value before any use case runs (16 §Resources: "a malformed id
+// makes it a value before any use case runs (design/instagram-adoption/bridge.md «Messaging contract»: "a malformed id
 // is 400 before any use case runs").
 type MessageID struct{ s string }
 

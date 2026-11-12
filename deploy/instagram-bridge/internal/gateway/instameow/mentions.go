@@ -5,7 +5,7 @@ package instameow
 // learn when someone @mentions her in a COMMENT on a post before anything can
 // answer it.
 //
-// SUPERSEDED as the summons intake (design 19, "Intake, re-measured
+// SUPERSEDED as the summons intake (design/instagram-adoption/summons.md, "Intake, re-measured
 // 2026-09-26"): the feed never carried a comment-mention; the mention reaches
 // the account as a DM-thread card instead (summons.go). This route stays as a
 // read and authorizes no write.
@@ -15,7 +15,7 @@ package instameow
 // `POST https://www.instagram.com/api/v1/news/inbox/`, form-encoded, with
 // `jazoest` and `fb_dtsg` and nothing else — the request Instagram WEB's own
 // notifications panel makes on its "All" tab, as captured from the operator's logged-in browser on 2026-09-25
-// (design 19, phase 1). It goes through restDo as a `webForm` POST (call.go):
+// (design/instagram-adoption/summons.md, phase 1). It goes through restDo as a `webForm` POST (call.go):
 // the form tokens come from the session's own configs, built the way the
 // library builds its own web POST form (pkg/instameow/misc.go:40-48,57-58).
 // Being a POST, it goes out through MakeRequestOnceNoRedirect: no library

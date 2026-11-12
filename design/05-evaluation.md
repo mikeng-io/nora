@@ -5,9 +5,9 @@ description: "How Nora's performance is measured and improved: Strands Evals SDK
 tags: [nora, design, evaluation, evals, strands, quality, latency]
 timestamp: '2026-08-03'
 edges:
-  - {dst: ../00-overview.md, rel: decided_by, provenance: asserted}
-  - {dst: ../02-tagging-path.md, rel: evaluates, provenance: asserted}
-  - {dst: ../03-strands-reuse.md, rel: uses, provenance: asserted}
+  - {dst: 00-overview.md, rel: decided_by, provenance: asserted}
+  - {dst: 02-tagging-path.md, rel: evaluates, provenance: asserted}
+  - {dst: 03-strands-reuse.md, rel: uses, provenance: asserted}
 ---
 
 # Nora — Evaluation

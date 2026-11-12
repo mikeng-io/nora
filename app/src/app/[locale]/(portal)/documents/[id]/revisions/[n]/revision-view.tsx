@@ -18,7 +18,7 @@ import { isOldRevision, restoreProblem, revisionParam } from "@/lib/documents/hi
 import { formatRelative } from "@/lib/format";
 import { useNow } from "@/hooks/use-now";
 
-// One old revision of a document, read-only (design/artifact §34). The banner says which
+// One old revision of a document, read-only (design/artifact/lifecycle.md). The banner says which
 // revision this is and that it is not the current one, on screen only; Restore publishes
 // it again as a NEW revision (the old ones all stay), and is offered only while the
 // document is active. A number that is not a revision answers like an unknown document.

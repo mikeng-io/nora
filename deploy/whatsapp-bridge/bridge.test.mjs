@@ -723,7 +723,7 @@ test('the editor is tried as the original sender, whatsmeow\'s first choice', ()
   assert.ok(opened.msg, `not decrypted: ${opened.reason}`);
 });
 
-// ── reactions and revokes (design/cognition-loop/20-observe.md §1) ─────────
+// ── reactions and revokes (design/cognition-loop/observation.md) ─────────
 
 test('a reactionMessage becomes a reaction event naming its target', () => {
   const event = extractMessageEvent({

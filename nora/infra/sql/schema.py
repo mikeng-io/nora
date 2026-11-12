@@ -840,7 +840,7 @@ ROLLUP_OUTING = sa.Table(
 #: Daybook: one person's local (Hong Kong) day in one unit. Counts of
 #: what the Record and the rollups below it hold, never an event attended (no
 #: upward input). `items_posted` is NULL where the person's social accounts were not
-#: observed that day (design/cognition-loop/25-rollup.md §3), 0 where observed and none.
+#: observed that day (design/cognition-loop/observation.md), 0 where observed and none.
 ROLLUP_DAYBOOK = sa.Table(
     "rollup_daybook",
     METADATA,
@@ -2441,7 +2441,7 @@ NOTE = sa.Table(
     sa.Column("anchor_date", sa.Integer),
     sa.Column("anchor_entity_ids", pg.ARRAY(sa.Text), nullable=False,
               server_default=sa.text("'{}'")),
-    # The curated source-object pointers (design/platform-observations 03's
+    # The curated source-object pointers (design/platform-observations/projections.md's
     # retained lane): [{platform, conversation_id, thread, handle}] — the
     # objects this matter still concerns, resolved fresh at every assembly.
     sa.Column("object_refs", pg.JSONB, nullable=False,
@@ -5086,7 +5086,7 @@ IDX_SOCIAL_PERCEPTION_ITEM = sa.Index(
 IDX_SOCIAL_PERCEPTION_AT = sa.Index("idx_social_perception_at", SOCIAL_PERCEPTION.c.at)
 
 # What deleting a blob's bytes leaves behind (0109, design/cognition-loop/
-# 70-migration.md §9): the content address, the kind of thing the bytes were
+# design/cognition-loop/data.md): the content address, the kind of thing the bytes were
 # and when they went, APPEND-ONLY, one row per deletion. The same bytes can be
 # stored again later (a member posts them anew), so a tombstone says the bytes
 # were gone for the rows recorded before `deleted_at`, never for a row
@@ -5116,7 +5116,7 @@ IDX_BLOB_TOMBSTONE_SHA = sa.Index(
 )
 
 
-# `profile` / `profile_line` (migration `0117_persona`, design/unified-memory/45
+# `profile` / `profile_line` (migration `0117_persona`, design/unified-memory/profiles.md
 # §1): one account per entity, kept as typed lines. `profile` is the account
 # and changes in place (`revision`, bumped by every committed write, is the
 # compare-and-set a session writes against), so it keeps `row_history`.
@@ -5127,7 +5127,7 @@ IDX_BLOB_TOMBSTONE_SHA = sa.Index(
 # `documents` gives. The rules a CHECK can carry are here; the rest
 # (premises, instances per day, the listed-room rule, caps, precedence) are
 # `nora.domain.profile.plan_write`'s, run inside the write's transaction.
-# Nothing renders these rows before the switch (00 «Sequence» step 8), so
+# Nothing renders these rows before the switch (), so
 # they are the shadow by construction.
 PROFILE = sa.Table(
     "profile",
@@ -5451,7 +5451,7 @@ LEDGER_COMMITMENT_REVISION = _ledger_table(
 )
 LEDGER_THREAD_REVISION = _ledger_table("standing_thread_revision", "thread", history=True)
 
-# Generic memory graph stores (design/unified-memory/27). Vocabularies live in code.
+# Generic memory graph stores (design/unified-memory/graph.md). Vocabularies live in code.
 ENTITY = sa.Table(
     "entity",
     METADATA,
@@ -5781,7 +5781,7 @@ sa.Index("idx_bridge_action_owner", BRIDGE_ACTION.c.owner_kind,
          BRIDGE_ACTION.c.owner_id)
 
 
-# ---- platform observations (design/platform-observations 02) --------------
+# ---- platform observations (design/platform-observations/observations.md) --------------
 # The typed Record of what a source reported about an OBJECT — a poll, a
 # room/thread, a member set, a pin set, an artifact, a reaction's target or a
 # message's own metadata. `platform_observation` is the history: one row per

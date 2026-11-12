@@ -219,7 +219,7 @@ def test_the_readme_documents_the_same_egress_policy_as_the_script() -> None:
             documented.add(cells[0].strip("`"))
     assert documented == EXPECTED_DENY
     # The accepted limit is stated where the policy is, with its measurement.
-    assert "04-s1-runbook.md" in section and "IP literals" in section
+    assert "security.md" in section and "IP literals" in section
 
 
 def test_the_script_parses_and_is_executable() -> None:

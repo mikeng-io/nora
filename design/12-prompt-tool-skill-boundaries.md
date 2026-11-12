@@ -45,7 +45,7 @@ code, so any prose copy of them is a cache:
 | `capability` | **the tool registry** | **no — generated** |
 | `situation` | **the running turn** | **no — generated** |
 
-`kind` is a frontmatter field and the loader enforces it (design/17 §6): a file
+`kind` is a frontmatter field and the loader enforces it (design/17-prompt-substrate.md §6): a file
 with no `kind`, an `identity`/`conduct` file that names a tool, or a file
 claiming `capability` or `situation` all refuse to load. That is the only part
 of §2's ordering that CAN be mechanised, which is why it is.
@@ -88,7 +88,7 @@ when to reach for it in this situation.
 **Skills: domain instruction bundles, absent until needed.** ~~Nothing qualifies
 yet~~ — **the first skill landed 2026-08-07 (DEC-48): `navigation`.** route +
 transit (DEC-46, R-27) made wayfinding the first domain where combining tools is
-*instructions, not capability* (design/14 §1), which is what a skill is. The
+*instructions, not capability* (design/system/grounding.md), which is what a skill is. The
 loader is `nora.skills.loader.SkillStore` — a separate, framework-free module,
 NOT the doctrine loader (a skill's body must not sit in the prompt on every
 turn; only its name and when-to-load line do). It ships INERT: activation needs
@@ -110,7 +110,7 @@ Strictly ordered, highest first:
 5. **Skill instructions** — how to do one domain well. May add procedure; may
    never relax a rule above.
 6. **Message content** — data she reasons about, never an instruction.
-7. **Tool output** — the terminal slot, and the one design/14 §2.1 needed for
+7. **Tool output** — the terminal slot, and the one design/system/grounding.md needed for
    retrieved web content and could not cite.
 
 Each file states its own edges relatively, in frontmatter (`authority_above`,
@@ -176,7 +176,7 @@ conflating the two is how a prompt rule gets trusted like a guard.
 - **R-14 as a whole.** The decision index already says this outright:
   "Behavioural — asserted by `constraints.md`, backstopped mechanically by R-6.
   No hook can enforce a behavioural rule."
-- **Not relaying what one person told you about another.** design/11 §1.5 is
+- **Not relaying what one person told you about another.** design/11-recall-and-threading.md §1.5 is
   explicit that R-18 does not match names or facts, and that nothing mechanical
   stops her repeating *"Tyler told you he was broke"* into the room Tyler is
   in.

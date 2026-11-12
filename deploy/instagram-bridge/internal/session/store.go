@@ -2,7 +2,7 @@
 // and not a fresh login: the cookie jar, the reconnection state, the sequence
 // id, and its own identity.
 //
-// The operational premise (design/instagram-adoption/01-bridge-container.md):
+// The operational premise (design/instagram-adoption/bridge.md):
 // an Instagram challenge is a NORMAL operating state, not a crash. Every
 // function here is written so that "the account is checkpointed" ends with the
 // bridge still serving HTTP and saying so, never with a non-zero exit.

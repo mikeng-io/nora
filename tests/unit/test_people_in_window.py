@@ -606,7 +606,8 @@ def test_the_relevance_gate_gained_no_memory_reader() -> None:
         "MemoryStore", "representation", "peer_card", "people_in_window", "self_account",
     ):
         assert forbidden not in source, (
-            f"{forbidden!r} reached nora/ingest/relevance_gate.py — design 36 §6 "
+            f"{forbidden!r} reached nora/ingest/relevance_gate.py — "
+            f"design/ambient-loop/01-stages-and-seams.md §2.3 "
             f"says the gate sees transcript + Standing and nothing else"
         )
 

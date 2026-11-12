@@ -4,7 +4,7 @@ kind: objective
 version: 5
 applies_to: [profile_nora_adaptor]
 description: >-
-  The agent's own Profile in one unit (design/unified-memory/45 §4).
+  The agent's own Profile in one unit (design/unified-memory/profiles.md).
   Reads the lines the account holds and the unit's closed response episodes
   (how its people answered her), and on the first session her prose Character
   account; writes typed lines (facts, traits, guesses) with their

@@ -8,7 +8,8 @@ force-recreated twice inside two hours on 2026-09-06, and a "daily" adaptor
 that was really "once per deploy". `nora.app.participation.ParticipationTrigger`
 and `nora.tag.Debounce` were the same class of state, unfixed:
 
-* `_last_send_at` is the participation SEND cooldown (design 35 §10.3). Lost on
+* `_last_send_at` is the participation SEND cooldown
+  (design/ambient-loop/01-stages-and-seams.md). Lost on
   every recreate, so she could speak again immediately after a restart however
   recently she had spoken -- the one piece of state whose whole job is to cap
   what a room HEARS.

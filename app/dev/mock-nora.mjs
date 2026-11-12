@@ -1719,7 +1719,7 @@ const DOCUMENTS = [
     media: [DOC_PICTURE_SHA],
     document: DOC_SPEC("Lisbon in December", [
       { type: "Image", props: { media: DOC_PICTURE_SHA, alt: "The hotel door", caption: "Where we are staying" } },
-      // A scroll region that owns its keys in the present view (design/artifact §34).
+      // A scroll region that owns its keys in the present view (design/artifact/lifecycle.md).
       { type: "Code", props: { language: "text", text: "Train 07:10 Lisbon Santa Apolonia" } },
     ]),
   },

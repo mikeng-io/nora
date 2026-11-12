@@ -58,7 +58,7 @@ def resolve_clockless_transition(
 ) -> tuple[str | None, None]:
     """The ledger answer for a clockless observation that carries NO upstream
     revision — frame lost, buffer overflow, or a delayed callback after a
-    restart (design 02 §wire semantics: "a reconnect replay without a source
+    restart (design/platform-bridges/02-wire-and-platforms.md: "a reconnect replay without a source
     revision that can distinguish an old transition from a new one is
     ambiguous, retained for diagnosis without fabricating a new
     transition").
@@ -305,7 +305,7 @@ class JournalPublisher:
                 try:
                     # A journaled envelope's publication is a NEW bounded
                     # root — never ambient — LINKED to the producer context
-                    # the envelope froze at capture (design 04 §producer).
+                    # the envelope froze at capture (design/platform-bridges/04-operations.md).
                     with bt.producer_span(
                         env.platform,
                         links=bt.carrier_links(env.trace),
@@ -391,7 +391,8 @@ class JournalCaptureSink:
     def note_ambiguous(self, record: dict[str, Any]) -> None:
         """A clockless event whose identity could NOT be established is
         retained as diagnostic evidence in the same journal — never
-        guessed an identity, never silently dropped (design 00: "the bridge
+        guessed an identity, never silently dropped —
+        design/platform-bridges/00-contract.md: "the bridge
         either identifies it durably or retains it as ambiguous evidence").
         """
         self._journal.append({"ambiguous": record})
@@ -481,7 +482,7 @@ class DurableActionService:
             return ActionReply(
                 "conflict", kind="id_reused", message="action id spent")
         # The outbound effect is its own bounded root — never a child of an
-        # ambient span (design 04 §delivery): it links to the producer
+        # ambient span (design/platform-bridges/04-operations.md): it links to the producer
         # context only when the caller carries one (the receipt lane).
         with bt.operation_span("deliver", platform=self._platform,
                                links=list(links or []),
