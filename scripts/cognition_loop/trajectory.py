@@ -18,6 +18,35 @@ from typing import Any
 from scripts.memory_graph_spike import evidence_exchanges
 
 
+def result_values(result: Any) -> list[Any]:
+    """A Strands tool result's content values, JSON-decoded — the same
+    decode `evidence_exchanges` applies, so a caller never reads the
+    raw envelope."""
+    if not isinstance(result, dict):
+        return []
+    values = []
+    for part in result.get("content") or []:
+        if not isinstance(part, dict):
+            continue
+        if "json" in part:
+            values.append(part["json"])
+        elif "text" in part:
+            try:
+                values.append(json.loads(part["text"]))
+            except ValueError:
+                values.append(part["text"])
+    return values
+
+
+def tool_outcome(result: Any) -> dict[str, Any]:
+    """The tool's own three-state outcome inside the Strands envelope: the
+    envelope says `success` for a refused or unavailable write too."""
+    for value in result_values(result):
+        if isinstance(value, dict) and "status" in value:
+            return value
+    return {}
+
+
 def _body(event: dict[str, Any]) -> dict[str, Any]:
     attrs = event.get("attributes") or {}
     raw = attrs.get("body") or attrs.get("nora.model.request.body")
@@ -78,9 +107,12 @@ def wake_trajectory(
             model.append(_body(entry))
         elif entry.get("kind") == "tool_finished":
             use = entry.get("tool") or {}
+            outcome = tool_outcome(entry.get("result"))
             tools.append({
                 "tool": use.get("name"),
                 "arguments": use.get("input"),
+                "status": outcome.get("status"),
+                "reason": outcome.get("reason"),
                 "result": entry.get("result"),
                 "error_type": entry.get("error_type"),
                 "refusal": entry.get("argument_validation"),

@@ -144,13 +144,13 @@ async def snapshot(
             standing[f"{platform}:{cid}"] = _payload(head)
     kinds["standing"] = standing
 
+    # The Standing ledger's commitments, threads and decisions are Standing's,
+    # not topics: they join the room heads under `standing`.
     ledger = SqlStandingLedger(engine, metrics=metrics)
-    topics: dict[str, Mapping[str, Any]] = {}
     for platform, cid in rooms:
         for entry in await ledger.read(unit=unit, platform=platform, conversation_id=cid):
             key = f"{entry.kind}:{getattr(entry, 'id', '')}:{platform}:{cid}"
-            topics[key] = _payload(entry)
-    kinds["topic"] = topics
+            standing[key] = _payload(entry)
 
     lessons = await SqlLessonStore(engine).lessons(unit=unit)
     kinds["lesson"] = {str(lesson.id): _payload(lesson) for lesson in lessons}
@@ -171,7 +171,7 @@ async def snapshot(
                for n, k in (await graph.aliases(unit=unit)).items()}
     notebook = {f"entry:{e.id}": _payload(e)
                 for e in await SqlEntryStore(engine).held(unit=unit) if e.kind == "topic"}
-    kinds["topic"] = {**topics, **anchors, **notebook}
+    kinds["topic"] = {**anchors, **notebook}
 
     stimuli = SqlStimulusStore(engine)
     view = await stimuli.view(unit=unit, mode="live", now_ms=now_ms, limit=500)

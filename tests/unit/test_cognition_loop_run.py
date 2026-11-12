@@ -76,7 +76,7 @@ def test_run_materialises_the_config_and_folds_the_status(
 
     args = SimpleNamespace(
         case=case_file, case_dir=None, smoke=False,
-        per_wake_tokens=1, token_budget=10,
+        per_wake_tokens=1, token_budget=10_000_000,
         config=config_file, policy=None, identity=None,
         database_url="postgresql+asyncpg://x", snapshot=True,
         output=tmp_path, judge_a="a", judge_b="b",
@@ -631,7 +631,7 @@ def test_a_corrupt_room_directory_still_freezes_the_report(
 
     args = SimpleNamespace(
         case=case_file, case_dir=None, smoke=False,
-        per_wake_tokens=1, token_budget=10,
+        per_wake_tokens=1, token_budget=10_000_000,
         config=config_file, policy=None, identity=None,
         database_url="postgresql+asyncpg://x", snapshot=True,
         output=tmp_path, judge_a="a", judge_b="b",

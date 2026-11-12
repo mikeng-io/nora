@@ -36,6 +36,8 @@ from nora.subject.eval_evidence import (
 )
 from scripts.cognition_loop import html as report_html
 from scripts.cognition_loop.cases import Case, load_case
+from scripts.cognition_loop.judges import JUDGE_TOKENS_PER_CALL
+from scripts.cognition_loop.rosters import frozen_rosters
 from scripts.cognition_loop.run import run_case
 from scripts.cognition_loop.verdicts import ERROR, PASS, rollup
 from scripts.memory_graph_spike import (
@@ -46,9 +48,8 @@ from scripts.memory_graph_spike import (
     snapshot_only,
 )
 
-#: A cognition session's token spend per wake, as a planning bound; the
-#: measured `RunBudget` cut-off still applies at `stop_after_total_tokens`.
-DEFAULT_TOKENS_PER_WAKE = 200_000
+#: A cognition session's token spend per wake — the measured live figure.
+DEFAULT_TOKENS_PER_WAKE = 800_000
 
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -62,7 +63,12 @@ def cases_in(directory: Path) -> list[Case]:
 
 
 def token_budget(cases: list[Case], per_wake: int) -> int:
-    return sum(len(c.wakes) for c in cases) * per_wake
+    """The run's stated budget: wakes x per-wake plus the judge allowance
+    (every expectation judged by two judges)."""
+    return (
+        sum(len(c.wakes) for c in cases) * per_wake
+        + sum(len(c.expectations) for c in cases) * 2 * JUDGE_TOKENS_PER_CALL
+    )
 
 
 def parse_overrides(pairs: list[str]) -> dict[str, Any]:
@@ -98,11 +104,18 @@ async def _room_directory(
         frozen = json.loads(room_directory_path.read_text(encoding="utf-8"))
         frozen["source"] = str(room_directory_path)
         freeze(output / "room-directory.json", frozen)
+        args.frozen_rosters = frozen_rosters(frozen)
         return _static_directory(frozen)
-    guilds = sorted({
-        c.guild for c in getattr(policy, "conversations", ()) or () if c.guild
+    conversations = getattr(policy, "conversations", ()) or ()
+    guilds = sorted({c.guild for c in conversations if c.guild})
+    # A Discord room the policy names one by one has no guild entry; it
+    # still needs its roster frozen.
+    explicit = sorted({
+        cid for c in conversations
+        if getattr(c, "platform", None) == "discord" and not c.guild
+        for cid in c.ids
     })
-    if not guilds:
+    if not guilds and not explicit:
         return None
     base_url = (getattr(args, "channel_reads_url", None)
                 or cfg.platforms.discord.base_url)
@@ -123,6 +136,16 @@ async def _room_directory(
             tmap = value.get("threads")
             if isinstance(tmap, dict):
                 threads.update({str(k): str(v) for k, v in tmap.items()})
+        # ponytail: Discord rooms only; Signal rosters read live in the
+        # sandbox's direct mode and answer unavailable until frozen too.
+        rosters: dict[str, Any] = {}
+        rooms = {f"{g}/{c}" for g, gmap in channels.items() for c in gmap}
+        for cid in sorted(rooms | set(explicit)):
+            body = await client.read("roster", {"conversation_id": cid})
+            if (body or {}).get("available"):
+                rosters[cid] = [
+                    sorted(str(i) for i in ids)
+                    for ids in ((body.get("value") or {}).get("members") or [])]
     finally:
         await client.close()
     freeze(output / "room-directory.json", {
@@ -131,7 +154,9 @@ async def _room_directory(
         "channels": channels,
         "threads": threads,
         "unread_guilds": unread,
+        "rosters": rosters,
     })
+    args.frozen_rosters = rosters
     return StaticChannelDirectory(channels=channels, threads=threads)
 
 
@@ -160,9 +185,19 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     if budget > args.token_budget:
         raise ValueError(
             f"the run states {budget} tokens for {sum(len(c.wakes) for c in cases)} "
-            f"wake(s) at {args.per_wake_tokens}/wake; the budget is "
-            f"{args.token_budget} — refuse rather than start"
+            f"wake(s) at {args.per_wake_tokens}/wake plus the judge "
+            f"allowance; the budget is {args.token_budget} — refuse "
+            "rather than start"
         )
+    # The stated budget is printed before any model call — the figure the
+    # run plans against, never a post-hoc measure.
+    print(
+        f"stated budget: {budget} tokens = "
+        f"{sum(len(c.wakes) for c in cases)} wakes x "
+        f"{args.per_wake_tokens}/wake + "
+        f"{sum(len(c.expectations) for c in cases)} expectations x 2 judges x "
+        f"{JUDGE_TOKENS_PER_CALL}"
+    )
 
     # The config under test is the run's --config: materialise it into
     # `config.evaluation.toml`, refusing when the generated file differs
@@ -172,8 +207,6 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         deployment=args.config,
         target=_REPO / "config.evaluation.toml",
     )
-
-    from opentelemetry import trace
 
     from evals.backbone import _prefill_capture
 
@@ -191,32 +224,73 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     args.run_id = f"cl-{uuid.uuid4().hex[:8]}"
     export = evaluation_export_for(args.config)
     _prefill_capture()
+    report: dict[str, Any] = {"status": "ERROR", "errors": []}
+    # report.json and report.html are written in EVERY outcome — a failed
+    # run (a model error the evidence capture raises on, a crashed case)
+    # still leaves its report, its cause named at the top.
+    try:
+        await _run_locked(
+            args, cases, judges, export, budget, output, cfg,
+            generated, report)
+    finally:
+        (output / "report.json").write_text(
+            json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n"
+        )
+        report_html.render(output)
+    return report
+
+
+async def _run_cases(
+    args: argparse.Namespace, cases: list[Case], source: Any, judges: Any,
+    policy: Any, evidence: Any, output: Path, report: dict[str, Any],
+) -> None:
+    with measured_run_budget(args, evidence, output, report):
+        report["cases"] = []
+        for case in cases:
+            try:
+                report["cases"].append(await run_case(
+                    args, case, source, judges, policy, evidence, output,
+                ))
+            except Exception as exc:  # noqa: BLE001 — ERROR, never a crash
+                report["cases"].append({
+                    "status": ERROR, "case": case.name, "unit": case.unit,
+                    "errors": [f"the case run failed: {exc!r}"],
+                    "wakes": [],
+                })
+                break
+
+
+async def _run_locked(
+    args: argparse.Namespace, cases: list[Case], judges: Any, export: Any,
+    budget: int, output: Path, cfg: Any, generated: Path,
+    report: dict[str, Any],
+) -> None:
+    from opentelemetry import trace
+
     with TemporaryFile() as lock:
-        evidence = RunEvidence(
-            run_id=f"cognition-loop-{uuid.uuid4().hex}",
-            metadata={
+        evidence: Any = None
+        try:
+            evidence = RunEvidence(
+                run_id=f"cognition-loop-{uuid.uuid4().hex}",
+                metadata={
+                    **revision(_REPO),
+                    "config_sha256": fingerprint(args.config),
+                    "subject_config_sha256": fingerprint(generated),
+                    "honcho_workspace": "per-case draw",
+                    "token_budget": budget,
+                },
+                lock_fd=lock.fileno(), private_root=output,
+            )
+            report["run"] = {
+                "run_id": args.run_id,
+                "evidence_run_id": getattr(evidence, "run_id", None),
+                "mode": "inspect-only" if args.inspect_only else "live",
+                "token_budget": budget,
+                "per_wake_tokens": args.per_wake_tokens,
                 **revision(_REPO),
                 "config_sha256": fingerprint(args.config),
                 "subject_config_sha256": fingerprint(generated),
-                "honcho_workspace": "per-case draw",
-                "token_budget": budget,
-            },
-            lock_fd=lock.fileno(),
-            private_root=output,
-        )
-        report: dict[str, Any] = {"status": "ERROR"}
-        report["run"] = {
-            "run_id": args.run_id,
-            "evidence_run_id": getattr(evidence, "run_id", None),
-            "mode": "inspect-only" if args.inspect_only else "live",
-            "token_budget": budget,
-            "per_wake_tokens": args.per_wake_tokens,
-            **revision(_REPO),
-            "config_sha256": fingerprint(args.config),
-            "subject_config_sha256": fingerprint(generated),
-        }
-        report["errors"] = []
-        try:
+            }
             with evidence.capture(trace.get_tracer_provider(), export=export):
                 source = create_sql_engine(args.database_url)
                 try:
@@ -228,48 +302,37 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                             args, cfg, load_policy(args.policy), output)
                     except Exception as exc:  # noqa: BLE001 — the step names itself
                         report["errors"].append({
-                            "step": "room_directory",
-                            "message": f"{exc!r}",
-                        })
+                            "step": "room_directory", "message": f"{exc!r}"})
                         report["cases"] = []
                     else:
                         policy = load_policy(
                             args.policy, channels=args.channel_directory)
-                        with measured_run_budget(
-                            args, evidence, output, report,
-                        ):
-                            report["cases"] = []
-                            for case in cases:
-                                try:
-                                    report["cases"].append(await run_case(
-                                        args, case, source, judges, policy,
-                                        evidence, output,
-                                    ))
-                                except Exception as exc:  # noqa: BLE001 — ERROR, never a crash
-                                    report["cases"].append({
-                                        "status": ERROR, "case": case.name,
-                                        "unit": case.unit,
-                                        "errors": [
-                                            f"the case run failed: {exc!r}"],
-                                        "wakes": [],
-                                    })
-                                    break
+                        await _run_cases(
+                            args, cases, source, judges, policy, evidence,
+                            output, report)
                 finally:
                     await source.dispose()
+        except BaseException as exc:
+            # The evidence cause (e.g. `model_error`) is named at the top
+            # of the report the caller's finally still writes.
+            report["errors"].append({
+                "step": "run",
+                "error": type(exc).__name__,
+                "message": str(exc) or type(exc).__name__,
+            })
+            raise
         finally:
-            try:
-                receipt = validate_events(read_events(evidence.path))
-            except Exception:  # noqa: BLE001 — unreadable evidence is an ERROR receipt
-                receipt = {"status": "ERROR", "causes": ["unreadable_record"]}
-            report["evidence"] = {**receipt, "ref": evidence.path.name}
+            if evidence is not None:
+                try:
+                    receipt = validate_events(read_events(evidence.path))
+                except Exception:  # noqa: BLE001 — unreadable evidence is an ERROR receipt
+                    receipt = {"status": "ERROR", "causes": ["unreadable_record"]}
+                report["evidence"] = {**receipt, "ref": evidence.path.name}
+            else:
+                report["evidence"] = {
+                    "status": "ERROR", "causes": ["evidence_not_started"]}
             report["status"] = run_status(
-                report.get("cases", []), report["evidence"],
-                report["errors"])
-    (output / "report.json").write_text(
-        json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n"
-    )
-    report_html.render(output)
-    return report
+                report.get("cases", []), report["evidence"], report["errors"])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -288,9 +351,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--inspect-only", action="store_true")
     parser.add_argument("--per-wake-tokens", type=int,
-                        default=DEFAULT_TOKENS_PER_WAKE)
+                        default=DEFAULT_TOKENS_PER_WAKE,
+                        help="the stated per-wake token figure the run "
+                             "budgets against (the measured live figure "
+                             "is the default)")
     parser.add_argument("--token-budget", type=int, default=4_000_000)
-    parser.add_argument("--stop-after-tokens", type=int)
+    parser.add_argument("--stop-after-tokens", type=int,
+                        help="refused: the run's model calls are parallel "
+                             "and a measured cutoff needs sequential "
+                             "calls — it would only fail mid-run")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--override", action="append", default=[],
                         metavar="KEY=VALUE",
@@ -310,6 +379,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
     if args.case is None and args.case_dir is None:
         parser.error("one of --case or --case-dir is required")
+    if args.stop_after_tokens is not None:
+        parser.error(
+            "--stop-after-tokens is refused: a session's model calls are "
+            "parallel, and a measured cutoff only works against sequential "
+            "calls — the run would start, then fail mid-wake")
     report = asyncio.run(run(args))
     print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
     return 0 if report["status"] == "PASS" else 1
