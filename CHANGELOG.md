@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.18.12](https://github.com/mikeng-io/nora/compare/v7.18.11...v7.18.12) (2026-11-13)
+
+
+### Bug Fixes
+
+* **eval:** a replay sandbox carries the code-owned graph relations ([0730edc](https://github.com/mikeng-io/nora/commit/0730edc3e53362d5f54a8ae8ac59aa87c0940c56))
+
 ## [7.18.11](https://github.com/mikeng-io/nora/compare/v7.18.10...v7.18.11) (2026-11-13)
 
 
