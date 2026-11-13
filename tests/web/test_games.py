@@ -14,6 +14,8 @@ bearer-authed, and distinct from the LLM tool-calling path's
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
@@ -240,6 +242,27 @@ async def test_a_connection_failure_becomes_unavailable_not_a_raw_exception():
     )
     with pytest.raises(GamesUnavailableError, match="request failed"):
         await build_games_servers_payload(client=client)
+
+
+async def test_a_timeout_becomes_unavailable_not_a_raw_exception():
+    async def hang(request: web.Request) -> web.Response:
+        await asyncio.sleep(1)
+        return web.json_response([])
+
+    app = web.Application()
+    app.router.add_get("/v1/servers", hang)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        client = PulseGamesClient(
+            token="test-token",  # noqa: S106 — names a dummy bearer for the fake server
+            base_url=str(server.make_url("/v1")).rstrip("/"),
+            timeout_seconds=0.05,
+        )
+        with pytest.raises(GamesUnavailableError, match="request failed"):
+            await build_games_servers_payload(client=client)
+    finally:
+        await server.close()
 
 
 async def test_weekly_calls_the_server_scoped_route(pulse):

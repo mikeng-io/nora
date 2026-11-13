@@ -182,7 +182,7 @@ class PulseGamesClient:
                     raise GamesUnavailableError(
                         f"GET {path} did not return JSON: {exc}"
                     ) from exc
-        except aiohttp.ClientError as exc:
+        except (TimeoutError, aiohttp.ClientError) as exc:
             raise GamesUnavailableError(f"GET {path} request failed: {exc}") from exc
 
 
