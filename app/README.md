@@ -1,7 +1,6 @@
 # app — the portal
 
-The circle's side of Nora: where everyone is, what is planned, the game
-servers, and Nora herself (whether she is listening, what she remembers about
+The circle's side of Nora: where everyone is, what is planned, and Nora herself (whether she is listening, what she remembers about
 you, how she behaves, what she can do). Behind a sign-in, open only to people
 in `identity.toml`: Discord, or a one-time code Nora sends to the person's own
 Signal or WhatsApp account (DEC-287). Either way the session is the same
@@ -19,7 +18,7 @@ own files sit under paths the site does not claim (`/sw.js`,
 
 | route | what it is |
 |---|---|
-| `/today` | the front page: Nora's state, who is around, who is playing, what is coming up, a line from her notes about you, the circle |
+| `/today` | the front page: Nora's state, who is around, what is coming up, a line from her notes about you, the circle |
 | `/map` | everyone on a live map; a person's detail and route window; `?person=` and `?trail=` in the URL |
 | `/people`, `/people/<id>` | the roster; a person with their last day, plans you share, and three pattern tabs: places, a usual week, routes. Your own page adds her memory of you |
 | `/plans`, `/plans/<id>` | plans by week and by month; a plan's venue, who is coming, add to calendar, open in maps, share |

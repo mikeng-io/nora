@@ -64,12 +64,12 @@ must never claim "not playing" when the field is simply withheld.
 - Key is **free** (Steam Web API registration: login → key form), standard
   rate limits (100k calls/day per key in practice; GetPlayerSummaries is
   cheap and batchable — up to 100 steamids per call).
-- The deployment supplies its Steam Web API credential through `STEAM_API_KEY`.
+- The deployment supplies its Steam Web API credential through `STEAM_WEB_API_KEY`.
 - Config shape follows the established `[search]` / `[presence]` precedent:
   a `[online]` section that **ships INERT by default** — no section, or
   `enabled = false`, registers the tool but has it answer `unavailable`
   (same posture as whereis with no `[presence]` wiring —
-  `composition.py:1654-1672`); `api_key_env = "STEAM_API_KEY"`
+  `composition.py:1654-1672`); `api_key_env = "STEAM_WEB_API_KEY"`
   env-indirection, `timeout_seconds`. Missing key / non-200 / non-JSON →
   `unavailable`, never `nothing_found` (R-27 core vocabulary; no `refused`
   — there is no guard that says no, see 03-guards).

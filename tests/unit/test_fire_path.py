@@ -1556,7 +1556,7 @@ _MILES_ONLINE = SteamPlayerState(
 
 
 def _online_persons() -> Persons:
-    """The `persons` fixture plus the `demo` index entry `online_now` reads —
+    """The `persons` fixture plus the `steam` index entry `online_now` reads —
     Miles's Steam id, so the room roster resolves to a checkable account."""
     return Persons(
         by_person={"miles": MILES},
