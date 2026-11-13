@@ -894,7 +894,7 @@ async def test_association_shown_only_by_a_memory_search_is_admissible():
     memory = wake_memory()
     stores = Stores()
     memory.records.load = _register_load(stores)
-    event = _seed_event(memory, "u:event:search-gala")
+    event = _seed_event(memory, "u:event:search-gala", shown=False)
     answers = []
 
     class SearchTool:

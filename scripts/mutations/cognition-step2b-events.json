@@ -16,8 +16,8 @@
   {
     "name": "a revision actually chains onto the head it replaced",
     "file": "nora/infra/sql/gatherings.py",
-    "old": "            revision = _revision_of(row, parent_revision_id=current.head_revision_id)",
-    "new": "            revision = _revision_of(row, parent_revision_id=None)",
+    "old": "                row, parent_revision_id=current.head_revision_id,",
+    "new": "                row, parent_revision_id=None,",
     "target": "tests/contract/test_gathering_store_contract.py -k test_update_appends_a_revision_chained_to_the_old_head"
   },
   {

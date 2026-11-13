@@ -65,7 +65,7 @@ import sys
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any, ClassVar, Protocol
 
@@ -1312,14 +1312,14 @@ class CognitionSessionRunner:
             wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
             skill_text=skill_text, grounding=grounding, historical=historical,
             doctrine_sha256=doctrine_sha256, lesson_view=lesson_view)
-        from dataclasses import asdict
-
         if eval_capture_enabled():
             record_eval_event("nora.session.started", {"body": json.dumps({
                 "session_id": session_id, "wake_id": wake_id, "clock_ms": now_ms,
                 "timezone": str(self._tz), "historical": historical,
                 "budgets": asdict(replace(self._budget, reserve_tokens=historical)),
                 "system": system_prompt, "agenda": prompt,
+                "graph_keys": sorted(state.shown_keys),
+                "graph_relations": sorted(state.shown_relations),
                 "items": [i.as_dict() for i in items],
                 "stimuli": [{"id": s.id, "kind": s.kind, "ref": s.ref} for s in view.pending],
             }, default=str)})

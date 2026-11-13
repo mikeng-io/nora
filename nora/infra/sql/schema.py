@@ -1919,18 +1919,12 @@ EVENT_REVISION = sa.Table(
     sa.Column("venue_maps_url", sa.Text, nullable=True),
     sa.Column("venue_district", sa.Text, nullable=True),
     sa.Column("venue_city", sa.Text, nullable=True),
-    sa.Column(
-        "people", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"),
-    ),
+    sa.Column("people", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
     sa.Column("reasoning", sa.Text, nullable=True),
     sa.Column("confidence", sa.Text, nullable=True),
-    sa.Column(
-        "lineage", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
-    ),
+    sa.Column("lineage", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("as_of", sa.BigInteger, nullable=True),
-    sa.Column(
-        "field_meta", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
-    ),
+    sa.Column("field_meta", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("body", sa.Text, nullable=True),
     sa.Column("written_by", sa.Text, nullable=False, server_default=sa.text("'tag'")),
     sa.Column("written_at", sa.DateTime(timezone=True), nullable=False),
@@ -1938,6 +1932,8 @@ EVENT_REVISION = sa.Table(
         "recorded_at", sa.DateTime(timezone=True), nullable=False,
         server_default=sa.text("clock_timestamp()"),
     ),
+    # The citation fold `{part: [refs]}`; NULL on rows written before it.
+    sa.Column("citations", pg.JSONB(none_as_null=True), nullable=True),
     sa.CheckConstraint(
         "status IN (" + ", ".join(f"'{s}'" for s in _EVENT_LIFECYCLE) + ")",
         name="ck_event_revision_status",
@@ -1956,6 +1952,9 @@ EVENT_REVISION = sa.Table(
     sa.CheckConstraint(
         "jsonb_typeof(field_meta) = 'object'", name="ck_event_revision_field_meta_shape",
     ),
+    sa.CheckConstraint(
+        "citations is null or jsonb_typeof(citations) = 'object'",
+        name="ck_event_revision_citations_shape"),
 )
 
 IDX_EVENT_REVISION_EVENT = sa.Index(

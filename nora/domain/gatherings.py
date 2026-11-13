@@ -20,7 +20,7 @@ on-demand check, never a cached column).
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -294,6 +294,27 @@ def event_lineage(
     return Lineage.of(sections)
 
 
+def event_citations(
+    held: Mapping[str, Iterable[str]], evidence: EventEvidence,
+) -> dict[str, tuple[str, ...]]:
+    """The citation fold an `EventRevision` carries: each part `evidence`
+    restates takes its own citations' refs (in the citations-column spelling —
+    a message id, a `rollup(kind|key)`), the way `event_lineage` replaces that
+    part's lineage; every other part keeps `held`'s."""
+    sections = {p: tuple(r) for p, r in held.items()}
+    for part in evidence.parts:
+        refs = tuple(
+            c.ref if c.store == CITED_MESSAGE else f"rollup({c.ref})"
+            for c in evidence.citations
+            if c.part == part
+        )
+        if refs:
+            sections[part] = refs
+        else:
+            sections.pop(part, None)
+    return sections
+
+
 @dataclass(frozen=True, slots=True)
 class Gathering:
     id: UUID
@@ -392,6 +413,10 @@ class EventRevision:
     #: The head's venue areas, snapshotted like its other venue fields.
     venue_district: str | None = None
     venue_city: str | None = None
+    #: The citation fold (`event_citations`): each part's refs in the
+    #: citations-column spelling. `None` on a row written before the column
+    #: existed — unknown, so it projects nothing.
+    citations: Mapping[str, tuple[str, ...]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
