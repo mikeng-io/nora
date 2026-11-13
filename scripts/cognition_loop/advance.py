@@ -146,19 +146,20 @@ async def _replay_history(
     )
     delete = sa.text(f'DELETE FROM "{table}" WHERE id = :id')  # noqa: S608 — constants
     touched = 0
-    upserts: list[dict[str, Any]] = []
+    # One upsert may touch a row once: a later version replaces the earlier.
+    upserts: dict[Any, dict[str, Any]] = {}
     for version in versions:
         image = version["image"]
         if version["op"] == "delete":
             if upserts:
-                await dst.execute(upsert, {"rows": json.dumps(upserts, default=str)})
-                upserts = []
+                await dst.execute(upsert, {"rows": json.dumps([*upserts.values()], default=str)})
+                upserts = {}
             await dst.execute(delete, {"id": image.get("id")})
         else:
-            upserts.append(dict(image))
+            upserts[image.get("id")] = dict(image)
         touched += 1
     if upserts:
-        await dst.execute(upsert, {"rows": json.dumps(upserts, default=str)})
+        await dst.execute(upsert, {"rows": json.dumps([*upserts.values()], default=str)})
     return touched
 
 

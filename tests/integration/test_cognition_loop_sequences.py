@@ -90,6 +90,46 @@ async def test_advance_supersedes_the_restored_open_version(clean_pg_url, pg_tem
         await source.dispose()
 
 
+async def test_advance_replays_a_row_edited_twice_in_one_window(clean_pg_url, pg_template):
+    """Two versions of one row in a window land as its latest, never as
+    one upsert touching the row twice."""
+    source = create_sql_engine(clean_pg_url)
+    messages = METADATA.tables["messages"]
+    message = ROWS["messages"](0)
+    try:
+        async with source.begin() as conn:
+            await conn.execute(sa.insert(messages).values(message))
+            t1 = (await conn.execute(
+                sa.text("SELECT clock_timestamp()"))).scalar_one()
+        async with sandbox_as_of(
+            clean_pg_url, t1, template=pg_template,
+        ) as (sandbox_url, _seed):
+            sandbox = create_sql_engine(sandbox_url)
+            try:
+                for body in ("first edit", "second edit"):
+                    async with source.begin() as conn:
+                        await conn.execute(
+                            sa.update(messages)
+                            .where(messages.c.id == message["id"])
+                            .values(body=body))
+                        t2 = (await conn.execute(
+                            sa.text("SELECT clock_timestamp()"))).scalar_one()
+                await bump_sequences(source, sandbox)
+                await advance_record(
+                    source, sandbox,
+                    after_ms=int(t1.timestamp() * 1000),
+                    at_ms=int(t2.timestamp() * 1000) + 5)
+                async with sandbox.connect() as conn:
+                    body = (await conn.execute(
+                        sa.select(messages.c.body)
+                        .where(messages.c.id == message["id"]))).scalar_one()
+            finally:
+                await sandbox.dispose()
+            assert body == "second edit"
+    finally:
+        await source.dispose()
+
+
 async def test_advance_supersedes_a_version_the_session_wrote(clean_pg_url, pg_template):
     """The session between wakes writes its own open version for a row; the
     world's later version still replaces it — the trigger's own close,
