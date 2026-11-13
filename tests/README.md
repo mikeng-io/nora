@@ -75,7 +75,8 @@ A timeout is a failure. The baseline covers unit/domain tests plus CI plumbing g
 slow modules listed in `scripts/ci_fast_tests.py`; SQL contracts, integration,
 source-wide architecture tests and the complete suite are manual validation.
 Dispatch the **CI** workflow at the desired ref to run complete acceptance,
-including timing tests and dependency recording. Release PRs use the fast checks
+including timing tests and dependency recording. Timing tests are excluded from
+the automatic baseline to preserve teardown headroom. Release PRs use the fast checks
 and do not wait for a complete run. A green automatic run is not full acceptance.
 
 Python CodeQL is on demand through manual CI dispatch; its hosted analysis exceeded

@@ -7,7 +7,9 @@
 Automatic validation targets three minutes and has a five-minute ceiling.
 The automatic backend baseline runs unit/domain tests plus the cheap CI plumbing guards, excluding the measured
 slow modules in `scripts/ci_fast_tests.py`. It has a 170-second interrupt deadline
-and a further ten seconds for teardown. Timeout fails the check.
+and a further ten seconds for teardown. Timing contracts stay on the manual
+path; the automatic baseline must leave headroom for process startup and cleanup.
+Timeout fails the check.
 
 Complete acceptance is on demand: dispatch the **CI** workflow at the desired
 branch/ref. It runs every backend test, including SQL contracts, integration,
