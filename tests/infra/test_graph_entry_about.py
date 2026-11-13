@@ -535,3 +535,34 @@ async def test_event_citations_live_on_the_revision_and_survive_a_rebuild(engine
         }
     assert ("event_citations.what", str(event.id), mid) in cites
     assert not [c for c in cites if c[1] == str(bare.id)]
+
+
+async def test_a_citation_only_eligible_in_another_unit_refuses_the_unit(engine):
+    """Evidence eligible in unit V but not U never drops out of U's relation:
+    U gets no relation at all, so a walk scoped to U alone cannot reach the
+    entry through a restriction its evidence never permitted."""
+    from nora.domain.memory_index import MemoryScope
+
+    engine.update_execution_options(memory_graph=ProjectionContext(
+        {"signal:g1": "u", "signal:ga": "u", "signal:other": "v"},
+        {"u": frozenset({"member-a"}), "v": frozenset({"member-a", "member-b"})},
+    ))
+    mid = await _said(engine, person="member-b", room="other")
+    stay = await _stay(engine, person="member-a")
+    await _unit_proven(engine)
+    await SqlCultureStore(engine).append(
+        key=character_key("u", "member-a"), body="generated conclusion",
+        written_at=10, established_by="dreamer",
+        citations=(mid, f"rollup(stay|{stay})"))
+    rows = [
+        r for r in await _abouts(engine)
+        if r["src_kind"] == "character" and r["status"] == "current"
+    ]
+    assert not [r for r in rows if r["unit"] == "u"]
+    people = frozenset({"member-a"})
+    scope = MemoryScope(
+        ("u",), ("signal:g1",), people, people, True, people,
+        {"signal:g1": people}, social_off=frozenset())
+    key = pointer_entity("person", "u", "member-a", "member-a").key
+    walked = await SqlMemoryGraph(engine).walk((key,), Walk("u", people, scope=scope))
+    assert not any(n.key[0] == "character" for n in walked.nodes)

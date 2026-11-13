@@ -135,7 +135,8 @@ async def project_about(
         unit_sources = {
             key: per[unit] for key, per in resolved.items() if unit in per
         }
-        if not unit_sources:
+        if len(unit_sources) != len(resolved):
+            # Every citation must be eligible here; dropping one would lose its restriction.
             continue
         restricted = tuple(sorted(
             set(persons) | {p for s in unit_sources.values() for p in s.persons}
