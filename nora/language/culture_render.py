@@ -2,7 +2,7 @@
 how this room works and why.
 
 **What makes it different from every other block in the prompt.** `<notes>` is
-what the room has not settled, `<group_transcript>` is what it said,
+what the room has not settled, `<transcript>` is what it said,
 `<standing>` is where she had got to. All three are about a moment. This one is
 about the room ITSELF — not what happened in it, but what it is and why it
 became so.

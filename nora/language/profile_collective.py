@@ -1,7 +1,6 @@
 """The collective Profile sessions — a room's, the unit's and Nora's own
 account — sharing the person session's checked writer
-(design/unified-memory/45 §4: «The unit, room (Culture) and Nora accounts
-follow the same shape with their own inputs»).
+(design/unified-memory/profiles.md).
 
 One implementation because settlement and validation are identical
 (`ProfilePersonAdaptor`'s verbs, accept and commit); the three registered
@@ -107,6 +106,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("about_entity", 5, "turn"),
     ("profile_lines", 10, "turn"),
     ("previous_character", 20, "turn"),
+    ("room_cultures", 30, "turn"),
     ("profile_messages", 40, "turn"),
     ("profile_episodes", 50, "turn"),
     ("social_items", 55, "turn"),

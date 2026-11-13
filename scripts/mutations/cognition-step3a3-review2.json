@@ -21,13 +21,6 @@
     "target": "tests/unit/test_cognition_grounding.py::test_no_standing_is_ever_pushed_it_is_pulled"
   },
   {
-    "name": "the objective promises complete Standing even when unavailable",
-    "file": "nora/dreamer/objectives/cognition.md",
-    "old": "your own position and pending work when supplied",
-    "new": "your complete Standing position and pending work on every occasion",
-    "target": "tests/unit/test_cognition_grounding.py::test_the_instruction_conditions_self_position_on_supplied_context"
-  },
-  {
     "name": "major: the strike counts every failure, infra included",
     "file": "nora/app/wake.py",
     "old": "            or view.agenda_failures < self._policy.max_consecutive_failures",
@@ -37,15 +30,15 @@
   {
     "name": "major: the session records every failure as infra",
     "file": "nora/app/cognition_session.py",
-    "old": "                cause=classify_failure(exc),\n",
-    "new": "                cause=\"infra\",\n",
+    "old": "                cause=classify_failure(exc))\n",
+    "new": "                cause=\"infra\")\n",
     "target": "tests/unit/test_cognition_failure_backoff.py::test_an_always_failing_static_agenda_stops_after_five_sessions tests/unit/test_cognition_failure_backoff.py::test_the_session_runner_records_why_it_failed"
   },
   {
     "name": "major: the session records every failure as agenda",
     "file": "nora/app/cognition_session.py",
-    "old": "                cause=classify_failure(exc),\n",
-    "new": "                cause=\"agenda\",\n",
+    "old": "                cause=classify_failure(exc))\n",
+    "new": "                cause=\"agenda\")\n",
     "target": "tests/unit/test_cognition_failure_backoff.py::test_twenty_infrastructure_failures_back_off_to_the_cap_and_strike_nothing"
   },
   {

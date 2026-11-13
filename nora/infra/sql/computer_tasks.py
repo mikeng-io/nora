@@ -36,7 +36,7 @@ _FIELDS = (
 )
 
 
-def _row(r: Row[Any]) -> ComputerTask:
+def _row(r: Row[*tuple[Any, ...]]) -> ComputerTask:
     return normalise_task(ComputerTask(**{f: getattr(r, f) for f in _FIELDS}))
 
 

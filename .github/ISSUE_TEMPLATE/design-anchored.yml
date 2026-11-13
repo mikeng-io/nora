@@ -41,8 +41,8 @@ body:
     id: design
     attributes:
       label: Design anchor
-      description: "`design/<bundle>/<NN-name>.md` §<n> — the section this issue builds."
-      placeholder: design/culture-tier/01-the-adaptor.md §3
+      description: "`design/<bundle>/<subject>.md` «<heading>» — the section this issue builds."
+      placeholder: design/self-growth/character.md
     validations:
       required: true
 

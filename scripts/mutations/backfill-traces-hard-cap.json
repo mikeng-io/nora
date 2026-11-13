@@ -28,27 +28,6 @@
   "target": "tests/unit/test_backfill_limits_and_traces.py::test_historical_session_applies_reservation_before_first_call"
  },
  {
-  "name": "backfill rereads committed inputs after a session exception",
-  "file": "nora/app/unified_backfill.py",
-  "old": "                # A limit or a later tool failure cannot undo committed readings.\n                # The exact input receipts below decide which stimuli still failed.\n                pass",
-  "new": "                for s in pending:\n                    await sql.fail_historical(engine, unit, s.id, None)\n                outcome.failures += 1\n                outcome.stopped = \"session_failed\"\n                break",
-  "target": "tests/unit/test_backfill_limits_and_traces.py::test_committed_inputs_survive_session_limit"
- },
- {
-  "name": "session failure excludes admitted stimuli",
-  "file": "nora/app/cognition_session.py",
-  "old": "            committed.update(sid for i, item in state.items_by_index.items()\n                             if i in state.admitted_indices for sid in item.stimulus_ids)",
-  "new": "            committed.clear()",
-  "target": "tests/unit/test_backfill_limits_and_traces.py::test_session_failure_receipts_exclude_committed_inputs"
- },
- {
-  "name": "admission is recorded before the connected graph read",
-  "file": "nora/app/cognition_memory.py",
-  "old": "            state.admitted_indices.update(admitted)\n        seeds = tuple(",
-  "new": "        seeds = tuple(",
-  "target": "tests/unit/test_backfill_limits_and_traces.py::test_session_failure_receipts_exclude_committed_inputs[graph_failure]"
- },
- {
   "name": "cancelled in-flight model usage remains unknown",
   "file": "nora/agent/token_reservation.py",
   "old": "        return None if self._in_flight else self.total",

@@ -390,6 +390,33 @@ def note_revision_lineage(
     return Lineage.of({ROW: entries})
 
 
+def topic_revision_lineage(
+    *, cited: Iterable[tuple[str, str]],
+    lineages: Mapping[tuple[str, str], Lineage | None],
+) -> Lineage:
+    """A topic revision's lineage, derived by code from its citation keys.
+
+    `lineages` is the caller's resolution of each cited key to the cited
+    row's OWN lineage — the rule `note_revision_lineage` applies to a cited
+    Rollup row, applied to every cited row: a cited row brings the entries
+    its own lineage holds, so a topic resting on a presence row is shown only
+    where that row may be. A key that resolves to nothing is `unresolved` at
+    NO origin: an account belongs to the unit, not a room, so what cannot be
+    placed is shown nowhere — and the store refuses the write instead.
+    """
+    entries: list[LineageEntry] = []
+    missing = False
+    for key in sorted(set(cited)):
+        row = lineages.get(key)
+        if row is None:
+            missing = True
+        else:
+            entries.extend(e for _, es in row.sections for e in es)
+    if missing:
+        entries.append(unresolved(None))
+    return Lineage.of({ROW: entries})
+
+
 def own_room_lineage(room: str, sections: Iterable[str], *, keyed: bool = True) -> Lineage:
     """A Standing or culture row's lineage: its own room, and `unresolved` at
     it for what its fold was shown and did not cite (the unit-wide `<notes>`

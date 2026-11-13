@@ -304,7 +304,7 @@ async def test_the_window_it_searches_is_the_one_the_prefill_rendered(persons, t
     """Every line `who_said` can return is a line the model is already looking
     at, and every line in the block is one it can find.
 
-    The tool and `<group_transcript>` are two renderers of one tuple (DEC-80).
+    The tool and `<transcript>` are two renderers of one tuple (DEC-80).
     Asserting the tool against the ACTUAL rendered block — not against `WINDOW`
     again — is what makes this a check rather than a restatement of the fixture.
     """

@@ -121,7 +121,7 @@ function Loaded({
   const who = { name: doc.createdBy.name, room: roomName(doc) };
   // The page's own controls are drawn inside the printed subtree (under the title), so
   // they carry `data-print-hide`; paper gets the document and, when it is archived, one
-  // line saying so (design/artifact §34).
+  // line saying so (design/artifact/lifecycle.md).
   const chrome = (
     <>
     <div className="flex flex-col gap-3" data-print-hide>

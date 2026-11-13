@@ -12,7 +12,7 @@ edges:
 
 ## 1. What runs today
 
-- **The computer** ([sandbox-runtime](../sandbox-runtime/00-design.md)): one
+- **The computer** ([sandbox-runtime](../sandbox-runtime/README.md)): one
   persistent sbx microVM serving computerd, Nora its only client, through the
   `SandboxRuntime` port (`nora/domain/ports.py`): `run` (a command, capped at
   900 seconds, `MAX_RUN_SECONDS` in `deploy/computer/computerd.py`), `read`,

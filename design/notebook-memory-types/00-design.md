@@ -5,12 +5,12 @@ description: "Notebook taxonomy: note, topic, lesson, profile and decision. Oper
 tags: [nora, notebook, memory-types, note, topic, lesson, profile, decision, vocabulary]
 timestamp: '2026-10-29'
 edges:
-  - {dst: ../cognition-loop/05-data-model.md, rel: amends, provenance: asserted}
-  - {dst: ../cognition-loop/40-register.md, rel: supersedes, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: amends, provenance: asserted}
+  - {dst: ../cognition-loop/data.md, rel: supersedes, provenance: asserted}
   - {dst: ../standing-ledger/20-the-ledger.md, rel: amends, provenance: asserted}
   - {dst: ../standing-ledger/50-migration.md, rel: amends, provenance: asserted}
   - {dst: ../standing-ledger/30-turn-records.md, rel: amends, provenance: asserted}
-  - {dst: ../personalisation/00-intent.md, rel: informs, provenance: asserted}
+  - {dst: ../personalisation/README.md, rel: informs, provenance: asserted}
 ---
 
 # 00 · The Notebook by memory type
@@ -35,12 +35,12 @@ do not line up either: `note_create` / `memo_create` / `event_propose`,
 topic the same way would make five copies.
 
 The data model already said the Notebook is **one entry, one machinery, with a
-rule per kind** ([05](../cognition-loop/05-data-model.md) §3). This node keeps
+rule per kind** ([05](../cognition-loop/data.md) §3). This node keeps
 that and changes what the kinds ARE: the tiers were named after the items they
 held, so the items' names became the architecture. The kinds are named after
 **what kind of memory they are**. They organize
 use, writer authority and lifecycle; they do not exhaust the ontology of what
-Nora can understand. The [memory map](../unified-memory/15-memory-map.md) owns
+Nora can understand. The [memory map](../unified-memory/README.md) owns
 their place in the whole system, including profiles and graph/index ownership.
 Revision applies across kinds; a lesson is one possible result of learning,
 not a container every correction must enter.
@@ -50,7 +50,7 @@ not a container every correction must enter.
 Three things place every kind, and none of them is a new layer.
 
 1. **Layer, unchanged**: who writes it and how it is derived (Authored,
-   Record, Rollup, Notebook, Views; [05](../cognition-loop/05-data-model.md)
+   Record, Rollup, Notebook, Views; [05](../cognition-loop/data.md)
    §1). Only the Record and the Rollup are evidence.
 2. **Memory type**: what it remembers. It replaces "tier", and unlike a tier
    it spans layers.
@@ -71,7 +71,7 @@ Three things place every kind, and none of them is a new layer.
 Five types are the cognitive-science categories (CoALA lists working,
 episodic, semantic and procedural; prospective memory is remembering to act
 on an intention). **Interests is ours**: no standard taxonomy has it, and it is
-here because personalisation reads it ([personalisation](../personalisation/00-intent.md)).
+here because personalisation reads it ([personalisation](../personalisation/README.md)).
 
 **The vocabulary becomes Layer › Memory type › Kind › Entry.** "Tier" retires,
 and with it "Register", "Character" and "Standing" as tier names.
@@ -122,7 +122,7 @@ Views) is written once.
    the ledger's thread was ("a pointer to a topic the room keeps returning
    to", [standing-ledger 20](../standing-ledger/20-the-ledger.md) §4), and it is the
    grounded signal personalisation weights by. Amended 2026-10-29
-   ([unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §6b): the
+   ([unified-memory/graph.md](../unified-memory/graph.md) §6b): the
    activity is counted by code from the judged `interested_in` relation's
    evidence, not built in the Rollup, because which messages are about a topic
    is a judgement.
@@ -152,7 +152,7 @@ storage-kind migration before consolidating the three renderings:
 | room `Where it stands` paragraph | splits into decisions and topic activity (already standing-ledger step 4) |
 | person `I owe them` | **note** |
 | person `How they take me` | **profile** of that person (it rests on the Rollup's responses to her) |
-| person `Between us` | **dropped**: named in [12-schemas](../cognition-loop/12-schemas.md) §5, never defined, never written (operator, option A) |
+| person `Between us` | **dropped**: named in [12-schemas](../cognition-loop/data.md) §5, never defined, never written (operator, option A) |
 
 Folding standing into profile was considered and refused: a profile is
 third-person and re-derivable, standing first-person and by definition not.
@@ -184,7 +184,7 @@ immediately; they do not wait for a summary or a synchronous Cognition session.
 ## 6. External kinds: postings, and the one crossing
 
 An **event** and a **document** are postings: Nora's published acts, so Record
-(a document already is, [05](../cognition-loop/05-data-model.md) §1a), shown
+(a document already is, [05](../cognition-loop/data.md) §1a), shown
 through Views. A **staged** event is a hypothesis and is a note; **publishing**
 it is the act that makes it a posting; "did it happen?" is a note again until
 evidence settles it. Publishing is the one place the external disclosure
@@ -199,7 +199,7 @@ authority test for a layer, and audience is a property.
 |---|---|
 | the topic entity's graph kind and the Rollup builder's topic-activity rows | the build PR, measured on a generated corpus |
 | how an event's graph entity and its posting relate once the event is Record | the build PR |
-| the model-facing verb names (one vocabulary over all kinds: write, revise, end, read, search). **Decided 2026-10-29** ([unified-memory/29](../unified-memory/29-one-cognition-session.md) §4): `create`, `revise`, `set_status`, `read`, `search` | ADR 0015's `tool_selection` before and after, per rename |
+| the model-facing verb names (one vocabulary over all kinds: write, revise, end, read, search). **Decided 2026-10-29** ([unified-memory/understanding.md](../unified-memory/understanding.md) §4): `create`, `revise`, `set_status`, `read`, `search` | ADR 0015's `tool_selection` before and after, per rename |
 | the migration order of the existing stores onto the entry | a migration node, under render parity, no table dropped |
 
 Amendment, 2026-10-29: the shared entry store, append-only revision chain and
@@ -207,12 +207,13 @@ Amendment, 2026-10-29: the shared entry store, append-only revision chain and
 is internal, about exactly one topic entity, cites Record/Rollup keys and has no
 links. Existing stores stay on their own machinery. Topic activity reads current
 `interested_in` evidence directly, grouped by person with asserted times and
-source keys. Step 2 can record topic-account would-writes in its existing shadow
-receipts; it does not write the entry store. No live topic writer, lineage rendering, search, or migration of other kinds
-is built.
+source keys. The unit's Cognition session is the live writer: it creates the
+account, revises it against the head it read, and moves it active ↔ dormant →
+retired, citing only rows the session was shown. Search and migration of
+other kinds are not built.
 
 Each kind's rules get their named tests when that kind is built on
-the entry, as [05](../cognition-loop/05-data-model.md) §3 already requires.
+the entry, as [05](../cognition-loop/data.md) §3 already requires.
 
 **This holds unless** a kind converged onto the entry is measured losing a row,
 a citation or a withdrawal its own store kept, or two kinds are found sharing

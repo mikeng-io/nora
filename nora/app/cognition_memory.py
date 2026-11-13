@@ -120,6 +120,13 @@ class WakeMemory:
         for sid in ids:
             await self.records.fail_stimulus(unit, sid, session)
 
+    async def completed(self, state: Any) -> None:
+        """Record the inputs of a normally ended historical session for resume."""
+        await self.records.complete_session(state.unit, state.session_id, {
+            sid: digest for item in state.memory_items.values()
+            for sid, digest in item.snapshot.get("stimulus_inputs", {}).items()
+        })
+
     async def prepare(self, state: Any, stimuli: Any, grounding: Any) -> None:
         """Freeze exactly what the agenda shows, including each non-message source."""
         at = datetime.fromtimestamp(state.now_ms / 1000, UTC)
@@ -134,15 +141,14 @@ class WakeMemory:
                 stimulus = stimuli[sid]
                 start = len(sources)
                 row = grounding.records.get(stimulus.ref)
-                if row is not None and row.text is not None:
+                # A reaction's actor does not author its target's words.
+                if row is not None and row.kind != "reaction" and row.text is not None:
                     sources.append(Source(("message", str(row.message_id)), "record", state.unit,
                                           (row.person_id,) if row.person_id else (), row.text))
-                    # `records.load` answers TODAY's projected source — its
-                    # text/reply/media fold can postdate the evidence instant
-                    # and would silently overwrite the as-of Source above on
-                    # dedup. A historical session takes the grounding's as-of
-                    # source alone (same ceiling as media: no as-of fold
-                    # exists to offer instead).
+                    # `records.load` answers TODAY's projected source — its fold
+                    # can postdate the evidence instant and would silently
+                    # overwrite the as-of Source on dedup; a historical session
+                    # takes the grounding's as-of source alone (same ceiling).
                     loaded = None if state.historical else await _load_message(
                         self.records, sid, row, state, at)
                     if loaded is not None:
@@ -309,21 +315,13 @@ class WakeMemory:
                     state.graph_fetched.show(
                         replace(source, text=emitted.get(n, source.text)))
 
-    async def propose(
-        self, state: Any, *, items: list[int], statements: list[Any],
-        nothing_here: Iterable[int] = (),
-    ) -> dict[str, Any]:
-        # `memory_items` is what `prepare` built; `probe` never prepares.
-        if not items or any(i not in state.memory_items for i in items):
-            return {"status": "refused", "admitted": [], "statements": [],
-                    "refused": [{"reason": "no_such_item"}]}
-        if any(i not in state.memory_items for i in nothing_here):
-            return {"status": "refused", "admitted": [], "statements": [],
-                    "refused": [{"reason": "no_such_item"}]}
+    async def propose(self, state: Any, *, statements: list[Any]) -> dict[str, Any]:
+        if not state.memory_items:
+            return {"status": "unavailable", "statements": [], "note": "No shown input."}
         from nora.obs.tracing import eval_capture_enabled, record_eval_event
         if eval_capture_enabled():
             catalogue = proposal_scope(
-                [state.memory_items[i] for i in items], state.graph_fetched).catalogue
+                list(state.memory_items.values()), state.graph_fetched).catalogue
             record_eval_event("nora.proposal.sources", {"body": json.dumps({
                 str(n): {"key": list(key), "text": state.graph_fetched.sources[key].text}
                 for n, key in catalogue.items() if key in state.graph_fetched.sources
@@ -342,19 +340,14 @@ class WakeMemory:
                                   "reason": "schema",
                                   "errors": _shape_errors(error)}
         output = Proposal(statements=valid)
-        # Each proposal has one evidence scope. A multi-item proposal is validated
-        # against their union, then consumes only the explicitly named items.
-        inputs = [state.memory_items[i] for i in items]
+        # Every statement is validated against the session's shown evidence.
+        inputs = list(state.memory_items.values())
         base = inputs[0]
         from dataclasses import replace
         combined = replace(base, sources=tuple(s for v in inputs for s in v.sources), snapshot={
             "messages": [r for v in inputs for r in v.snapshot["messages"]], "context": [],
             "source_keys": {k: source for v in inputs
                             for k, source in v.snapshot.get("source_keys", {}).items()},
-            "completion": [
-                {"work_id": v.work.id, "input_hash": v.work.input_hash,
-                 "inputs": v.snapshot.get("stimulus_inputs", {})}
-                for v in inputs],
         })
         combined = replace(combined, work=replace(combined.work, input_hash=hashlib.sha256(
             json.dumps(_source_payload(combined.sources),
@@ -375,11 +368,9 @@ class WakeMemory:
             admitted=set(getattr(state, "admitted_relations", ())))
         result, local_refusals, aux = await self.admission._admit(
             combined.work, output, state.graph_fetched, state.session_id, scope,
-            indices)
+            indices, confirmed=getattr(state, "possible_existing", frozenset()))
         report: dict[int, dict[str, Any]] = aux["report"]
-        cited_items: dict[int, set[int]] = aux["cited_items"]
         claims: list[dict[str, Any]] = []
-        claim_of: dict[int, dict[str, Any]] = {}
         for index, claim in aux["claims"].items():
             claim_valid, drops = partition_claims(
                 {"claims": [claim]}, combined.snapshot)
@@ -390,38 +381,11 @@ class WakeMemory:
                                  "reason": drops[0]}
             else:
                 claims.extend(claim_valid)
-                claim_of[index] = claim_valid[0]
                 report[index] = {"status": "saved", "kind": "reading"}
-        # Claims persist before coverage is decided: an input is done only
-        # when its saved statement's claim is actually stored (the writer
-        # merges additional claims idempotently for the same input), or the
-        # model explicitly declared it nothing_here.
-        persisted = (await self.records.readings(
-            combined.work, state.session_id,
-            replace(combined, snapshot={**combined.snapshot, "completion": []}),
-            claims) or []) if claims else []
-        covered = set(nothing_here)
-        for index, entry in report.items():
-            if entry["status"] != "saved":
-                continue
-            if index in claim_of and claim_of[index] not in persisted:
-                continue
-            covered.update(items[i] for i in cited_items.get(index, set()))
-        admitted = sorted(covered)
+        if claims:
+            await self.records.readings(combined.work, state.session_id, combined, claims)
         refused = [*[asdict(r) for r in result.refused], *local_refusals,
-                   *({"kind": "schema", "reason": "schema"}
-                     for _i in pre_refused)]
-        if admitted:
-            record_item = replace(combined, snapshot={
-                **combined.snapshot,
-                "completion": [
-                    {"work_id": v.work.id, "input_hash": v.work.input_hash,
-                     "inputs": v.snapshot.get("stimulus_inputs", {})}
-                    for v in (state.memory_items[i] for i in admitted)],
-            })
-            await self.records.readings(
-                combined.work, state.session_id, record_item, [])
-            state.admitted_indices.update(admitted)
+                   *({"kind": "schema", "reason": "schema"} for _i in pre_refused)]
         seeds = tuple(dict.fromkeys(k for r in result.relations for k in (r.src, r.dst)))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, depth=1,
             persons=frozenset(p for s in combined.sources for p in s.persons),
@@ -512,9 +476,22 @@ class WakeMemory:
         note = "Read the connected state before deciding whether to act."
         if refused and committed:
             note = "Valid statements were saved (see committed). " + note
-        return {"status": "ok" if admitted else "refused",
-                "admitted": admitted,
-                "open": [i for i in items if i not in covered],
+        # What a returned `possible_existing` card showed is shown state —
+        # the ONLY keys and relation ids registered are the ones the cards
+        # emit; the refusal itself is what `new.distinct` may later confirm.
+        # Registered here, after every fallible step, so a call that raises
+        # returns no cards and grants nothing.
+        state.shown_keys.update(aux.get("candidate_keys", ()))
+        if aux.get("candidate_relations"):
+            if getattr(state, "shown_relations", None) is None:
+                state.shown_relations = set()
+            state.shown_relations.update(aux["candidate_relations"])
+        prior = getattr(state, "possible_existing", None)
+        if prior is None:
+            state.possible_existing = prior = set()
+        prior.update(aux.get("possible_existing", ()))
+        return {"status": "ok" if not refused or any(
+                    row["status"] == "saved" for row in statements_report) else "refused",
                 "statements": statements_report,
                 "refused": refused, "primary_refusals": primary,
                 "committed": committed,

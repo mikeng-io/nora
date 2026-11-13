@@ -173,7 +173,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "system time stripped: what the step-2 determinism gate compares "
         "between an incremental build and a rebuild "
         "(tests/integration/test_rollup_builds.py). Its consumer at runtime is "
-        "`rollup_read` (design/cognition-loop/30-cognition.md §2), not built "
+        "`rollup_read` (design/cognition-loop/session.md), not built "
         "in step 2a.",
     ),
     ("computer_events.py", "orphaned_starts"): _Pin(
@@ -201,24 +201,24 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ),
     ("gatherings.py", "revisions_for"): _Pin(
         "read_back_affordance",
-        "An event's full revision chain (10-tiers.md §3/§8; migration "
+        "An event's full revision chain (design/cognition-loop/data.md; migration "
         "0074_event_revision). No prompt block or tool reads the chain today "
         "— `event_propose`/`event_revise`/`event_set_status` only ever read "
         "the head through `head_revision_id` for `base_revision_id`'s "
         "compare-and-swap. Its consumer is a `History` section on an event "
-        "(12-schemas.md §3's `Changes`, 'every revision: field, from, to, "
+        "(design/cognition-loop/data.md's `Changes`, 'every revision: field, from, to, "
         "mode, why, when'), not built at step 2b.",
     ),
     ("social_stream.py", "item_state"): _Pin(
         "deferred_consumer",
         "An item's current state, the join every read of social items makes "
-        "(design/cognition-loop/22-social-stream.md §5). The poller writes "
+        "(design/cognition-loop/observation.md). The poller writes "
         "states; nothing reads social items yet.",
     ),
     ("standing.py", "write_if_unchanged"): _Pin(
         "operator_script",
         "The compare-and-set write for a manual Standing edit (design/"
-        "dreamer-agent-loop/26-standing.md §9, 2026-09-25). Its one caller is "
+        "cognition-loop/data.md §9, 2026-09-25). Its one caller is "
         "`scripts/standing_edit.py`, deliberately outside `nora/` — this is "
         "the operator's own entry point, not a verb the tag/participation "
         "loop should ever reach, and `_call_sites` scans `nora/` only.",
@@ -226,7 +226,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("observations.py", "resolve_targets"): _Pin(
         "deferred_consumer",
         "The port's standalone re-link of a retained observation to its "
-        "target (design/platform-observations 02). Production relinking "
+        "target (design/platform-observations/observations.md). Production relinking "
         "instead commits inside the arriving message row's own transaction — "
         "`relink_arriving_targets` (nora/app/bridge_queue.py) — so no caller "
         "outside an ingest commit exists yet.",
@@ -234,7 +234,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("observations.py", "unresolved_targets"): _Pin(
         "deferred_consumer",
         "The retained-but-unresolved target listing, named for the exposure "
-        "lanes in design/platform-observations 02 («read "
+        "lanes in design/platform-observations/observations.md («read "
         "ObservationStore.current/heads/history and unresolved_targets»). No "
         "lane reads it this stage: the context and grounding reads take "
         "recent/heads/by_ids/head_for_handle only.",
@@ -286,6 +286,9 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "cancel",
         # `SqlMemoStore.revisions` (DEC-306) shares the name with `SqlLessonStore`'s.
         "revisions",
+        # `SqlEntryStore.held` (the topic-account index) shares the name with
+        # the lesson store's held read; both are driven by contract suites.
+        "held",
         # `SqlRecordStore.drain_index_queue` (memory index S4) shares the name
         # with `SqlRollupStore`'s: both drain the one queue, from the nora and
         # the analytics process. Callers: `nora.app.runtime.memory_drain_loop`
@@ -321,6 +324,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
         "computer_sessions.py", "computer_tasks.py", "browser_tabs.py",
         "character.py", "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",
+        "fetched_pages.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "memo.py", "memory_embed.py",
         "memory_read.py", "mobility.py",

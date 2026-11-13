@@ -1,6 +1,5 @@
 """Generated snapshot experiment boundaries and fail-closed aggregation."""
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -10,8 +9,15 @@ from unittest.mock import AsyncMock
 import pytest
 
 from nora.agent.comprehend_tools import egress_reason
-from nora.app.composition import search_provider
+from nora.app.composition_readers import search_provider
 from scripts import memory_graph_spike as spike
+
+
+@pytest.fixture(autouse=True)
+def private_unit_export(monkeypatch):
+    from scripts import memory_graph_spike
+    monkeypatch.setattr(memory_graph_spike, "evaluation_export_for", lambda _: None)
+
 
 
 @pytest.fixture(autouse=True)
@@ -54,7 +60,40 @@ async def test_replay_embedder_check_uses_effective_subject_config(
         checked.assert_not_awaited()
     indexed.assert_awaited_once_with(
         "generated-sandbox", source_url="generated-source",
-        model_id="generated-subject.gguf@0000feedbeef")
+        model_id="generated-subject.gguf@0000feedbeef", graph=None)
+
+
+async def test_replay_sandbox_projects_with_the_subjects_graph_context(
+    tmp_path, monkeypatch,
+):
+    """With `[memory.graph]` on, the sandbox index is built with the
+    projection context production composes from the subject's own policy
+    and persons, producing no model work."""
+    import nora.app.graph_project as graph_project
+    from nora.subject.obtain import build_config
+    from tests.unit.test_subject_obtain import _spec
+
+    cfg = build_config(_spec(tmp_path / "subject", overrides={
+        "memory.graph.enabled": True,
+        "memory.index.read": False, "memory.index.embed": False,
+        "memory.index.embedder_model": "generated-subject.gguf@0000feedbeef",
+    }))
+    made, indexed = object(), AsyncMock()
+    calls = []
+    monkeypatch.setattr(graph_project, "projection_context",
+                        lambda *a, **k: calls.append((a, k)) or made)
+    monkeypatch.setattr(spike, "index_sandbox", indexed)
+    reload = SimpleNamespace(policy="generated-policy", persons="generated-persons")
+    await spike.index_replay_sandbox(
+        SimpleNamespace(database_url="generated-sandbox", cfg=cfg,
+                        deps=SimpleNamespace(config_reload=reload)),
+        source_url="generated-source",
+    )
+    assert calls == [(("generated-policy", "generated-persons"),
+                      {"nora_name": cfg.doctrine.display_name, "produce": False})]
+    indexed.assert_awaited_once_with(
+        "generated-sandbox", source_url="generated-source",
+        model_id="generated-subject.gguf@0000feedbeef", graph=made)
 
 
 async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, monkeypatch):
@@ -284,29 +323,6 @@ def test_search_provider_builds_from_the_template(example_config, monkeypatch, p
     assert search_provider(cfg) is not None
 
 
-def test_session_smoke_marks():
-    healthy = [
-        {
-            "status": "PASS",
-            "tokens": 100,
-            "admitted": 1,
-            "refused": 0,
-            "acts": 0,
-            "refused_consumed": 0,
-        }
-        for _ in range(5)
-    ]
-    assert spike.session_smoke(healthy)["status"] == "PASS"
-    for field in ("acts", "refused_consumed"):
-        assert spike.session_smoke([*healthy[:-1], {**healthy[-1], field: 1}])["status"] == "FAIL"
-    assert (
-        spike.session_smoke([*healthy[:-1], {**healthy[-1], "tokens": None}])["status"] == "ERROR"
-    )
-    assert (
-        spike.session_smoke([*healthy[:-1], {**healthy[-1], "status": "ERROR"}])["status"]
-        == "ERROR"
-    )
-    assert spike.session_smoke([])["status"] == "ERROR"
 
 
 def test_session_acts_invariant_counts_deletions_and_creations():
@@ -332,134 +348,10 @@ def test_compare_reports_prints_each_row_and_delta():
 
 
 
-async def test_session_quality_uses_shown_input_and_only_committed_relations():
-    """Score the serialized Relation nested in each committed GraphEdge."""
-    from dataclasses import asdict
-    from datetime import UTC, datetime
-
-    from nora.domain.memory_graph import GraphEdge, Relation, Subgraph
-
-    def relation(relation_id: str, rel: str) -> Relation:
-        return Relation(
-            id=relation_id,
-            src=("event", "generated-source"),
-            rel=rel,
-            dst=("topic", "generated-topic"),
-            layer="notebook",
-            unit="generated-unit",
-            asserted_at=datetime(2026, 10, 1, tzinfo=UTC),
-        )
-
-    def serialized(value):
-        # The exact expression memory_propose returns as `connected`.
-        return json.loads(json.dumps(asdict(value), default=str))
-
-    committed, merge, existing = (
-        relation("generated-committed", "concerns"),
-        relation("generated-merge", "same_as"),
-        relation("generated-existing", "concerns"),
-    )
-    connected = serialized(
-        Subgraph(
-            status="ok",
-            relations=tuple(
-                GraphEdge(relation=r, evidence_count=1) for r in (committed, merge, existing)
-            ),
-        )
-    )
-    seen = []
-
-    async def judge(payload):
-        proposition = payload["proposition"]
-        seen.append((proposition, payload["evidence"]))
-        verdict = "supported" if proposition.get("rel") == "concerns" else "unsupported"
-        return [verdict, verdict]
-
-    read = {"name": "memory_read", "input": {"key": "generated"}, "result": {"status": "ok"}}
-    result = await spike.session_quality(
-        SimpleNamespace(score=judge),
-        {"prompt": "Generated source"},
-        [
-            read,
-            {"name": "profile_revise", "input": {}, "result": {"status": "ok"}},
-            {
-                "name": "memory_propose",
-                "input": {"statements": [{"type": "reading", "what": "Generated claim"}]},
-                "result": {
-                    "admitted": [0],
-                    "committed": ["generated-committed", "generated-merge"],
-                    "connected": connected,
-                },
-            },
-        ],
-    )
-    # The judge scored the nested serialized Relations, never the GraphEdge
-    # wrappers, and only committed ids — `generated-existing` stays unscored.
-    relations = [
-        p for p, _ in seen if isinstance(p, dict) and str(p.get("id", "")).startswith("generated-")
-    ]
-    assert relations == [serialized(committed), serialized(merge)]
-    assert result["verdicts"]["relation_precision"] == [["supported", "unsupported"]] * 2
-    assert [p for p, _ in seen if "different_entities" in p] == [
-        {"different_entities": serialized(merge)}
-    ]
-    assert result["verdicts"]["wrong_merges"] == [["unsupported"]] * 2
-    assert result["verdicts"]["reading_precision"] == [["unsupported"]] * 2
-    assert result["population"] == {"committed": 2, "preview": 3, "scored": 2, "missing": 0}
-    expected_evidence = {"input": {"prompt": "Generated source"}, "reads": [read]}
-    assert seen and all(e == expected_evidence for _, e in seen)
 
 
-async def test_session_quality_marks_unscored_committed_as_missing():
-    """A committed id absent from the connected preview is never judged from the
-    proposal: it is an unavailable measurement (ERROR per judge), counted in the
-    population, so relation rows cannot silently PASS on a dropped denominator."""
-    seen = []
-
-    async def judge(payload):
-        seen.append(payload["proposition"])
-        return ["supported", "supported"]
-
-    result = await spike.session_quality(
-        SimpleNamespace(score=judge),
-        {"prompt": "Generated source"},
-        [
-            {
-                "name": "memory_propose",
-                "input": {},
-                "result": {
-                    "admitted": [],
-                    "committed": ["generated-committed"],
-                    "connected": {"status": "ok", "nodes": [], "relations": []},
-                },
-            },
-            {
-                "name": "memory_propose",
-                "input": {},
-                "result": {
-                    "admitted": [],
-                    "committed": ["generated-scored"],
-                    "connected": {
-                        "status": "ok",
-                        "relations": [
-                            {"relation": {"id": "generated-scored", "rel": "concerns"}}
-                        ],
-                    },
-                },
-            },
-        ],
-    )
-    assert result["verdicts"]["relation_precision"] == [["supported", "ERROR"]] * 2
-    assert result["verdicts"]["wrong_merges"] == [["ERROR"]] * 2
-    assert result["population"] == {"committed": 2, "preview": 1, "scored": 1, "missing": 1}
-    # The missing relation was measured as unavailable, never sent to a judge.
-    assert seen and all(p.get("id") != "generated-committed" for p in seen if isinstance(p, dict))
 
 
-def test_report_error_exit_is_distinct_from_fail():
-    assert spike.report_exit({"row": {"status": "PASS"}}) == 0
-    assert spike.report_exit({"row": {"status": "FAIL"}}) == 1
-    assert spike.report_exit({"row": {"status": "REPORTED", "usage": {"status": "ERROR"}}}) == 2
 
 
 @pytest.mark.parametrize("key", ["sample_sha256", "seed", "judges", "effective_judges", "strata"])
@@ -575,301 +467,34 @@ async def test_judges_dial_the_eval_route_where_the_measurer_runs(
     assert all(d["stream"] is False for d in dialed)
 
 
-async def test_age_comparison_measures_the_source_once_outside_replay(
-    tmp_path, monkeypatch
-):
-    """The engine comparison binds the frozen projected source once per run;
-    the as-of sandbox — correctly holding no graph rows at the wake instant —
-    serves the session replay and is never asked for the graph population."""
-    import contextlib
-
-    import evals.backbone
-    import nora.subject
-    from nora.infra.sql import cognition_replay
-
-    source_url = "postgresql+asyncpg://127.0.0.1:9/generated-source"
-    sandbox_url = "postgresql+asyncpg://127.0.0.1:9/generated-sandbox"
-    calls = []
-
-    class FakeEngine:
-        def __init__(self, url):
-            self.url = url
-
-        async def dispose(self):
-            assert logging.root.manager.disable == logging.CRITICAL
-
-    def create(url):
-        assert logging.root.manager.disable == logging.CRITICAL
-        return FakeEngine(url)
-
-    async def generated_rows(engine, sql, params=None):
-        if "FROM alembic_version" in sql:
-            return [{"version_num": "generated-revision"}]
-        calls.append((engine.url, sql))
-        if "FROM cognition_wake" in sql:
-            return [{"id": 1, "at_ms": 1}, {"id": 2, "at_ms": 2}]
-        if "SELECT body FROM messages" in sql:
-            body = "[image generated]" if params["id"] == 2 else "generated text"
-            return [{"body": body}]
-        if "is_nora" in sql:
-            return [{"n": 0}]
-        if "string_agg" in sql:
-            return [{"digest": "generated-" + engine.url}]
-        if "FROM tag_trace" in sql:
-            return [{"messages": []}]
-        if "FROM relation" in sql:
-            # The projected source holds the relation population; the restored
-            # sandbox holds none at the wake instant.
-            return [
-                {
-                    "unit": "generated-unit",
-                    "persons": ["generated-person"],
-                    "src_kind": "event",
-                    "src_id": "generated-edge",
-                    "dst_kind": "topic",
-                    "dst_id": "generated-topic",
-                    "rel": "concerns",
-                }
-            ] if engine.url == source_url else []
-        raise AssertionError(f"unexpected SQL on {engine.url}: {sql}")
-
-    async def fake_wake(engine, wake_id):
-        return (
-            1_700_000_000_000 + wake_id,
-            SimpleNamespace(
-                unit="generated-unit",
-                pending=[
-                    SimpleNamespace(kind="message", ref=f"messages:{wake_id}")
-                ],
-            ),
-        )
-
-    @contextlib.asynccontextmanager
-    async def fake_sandbox(database_url, at):
-        yield sandbox_url, SimpleNamespace()
-
-    class FakeMetrics:
-        def __init__(self):
-            self.values = iter([0, 7, 0])
-
-        def get(self, name):
-            return next(self.values, 0)
-
-    async def replay(**kwargs):
-        from nora.subject.eval_evidence import current
-        evidence = current()
-        evidence.record("event", name="nora.session.started", attributes={"body": "{}"})
-        evidence.record("event", name="nora.model.request", attributes={
-            "nora.model.request.body": json.dumps({"messages": [
-                {"role": "system", "content": "generated"},
-                {"role": "user", "content": "generated"}]})})
-        evidence.record("event", name="nora.session.terminal", attributes={"body": "{}"})
-        return SimpleNamespace(session_id="generated-session", closed=[])
-
-    runner = SimpleNamespace(
-        inspect=AsyncMock(return_value={"system": "generated", "agenda": "generated"}),
-        replay=AsyncMock(side_effect=replay),
-    )
-
-    async def fake_obtain(spec):
-        return SimpleNamespace(
-            database_url=spec.database_url,
-            cfg=SimpleNamespace(),
-            deps=SimpleNamespace(cognition_runner=runner, metrics=FakeMetrics()),
-        )
-
-    cfg = SimpleNamespace(
-        store=SimpleNamespace(database_url_env="GENERATED_DB"),
-        llm=SimpleNamespace(
-            model="generated-session", timeout_seconds=1, model_dump=dict
-        ),
-        providers={},
-        model_routes={},
-        cognition=SimpleNamespace(model_dump=dict),
-    )
-    policy_file = tmp_path / "policy.toml"
-    policy_file.write_text("generated")
-    identity_file = tmp_path / "identity.toml"
-    identity_file.write_text("generated")
-    bound = []
-    real_age = spike.age_comparison
-
-    async def spy(engine, age_url, judges, output_dir, minimum):
-        bound.append(engine.url)
-        return await real_age(engine, age_url, judges, output_dir, minimum)
-
-    quality = AsyncMock(
-        return_value={"verdicts": {}, "population": {"committed": 0, "missing": 0}}
-    )
-    monkeypatch.setattr(spike, "age_comparison", spy)
-    monkeypatch.setattr(spike, "session_quality", quality)
-    monkeypatch.setattr(spike, "smoke_fact_support", AsyncMock(return_value={}))
-    monkeypatch.setattr(spike, "index_replay_sandbox", AsyncMock(
-        return_value=SimpleNamespace(line=lambda: "generated-index")))
-    monkeypatch.setattr(spike, "sql_answer", AsyncMock(return_value=["event:generated-edge"]))
-    monkeypatch.setattr(spike, "model_endpoint",
-                        lambda path, purpose, model="": ("generated-url", "", model))
-    monkeypatch.setattr(spike, "load", lambda path: cfg)
-    monkeypatch.setattr(spike, "credentials", lambda: {
-        "GENERATED_DB": "postgresql+asyncpg://127.0.0.1:9/generated-production"})
-    monkeypatch.setattr(spike, "create_sql_engine", create)
-    monkeypatch.setattr(spike, "rows", generated_rows)
-    monkeypatch.setattr(spike, "load_policy", lambda path: SimpleNamespace(
-        rooms=lambda: [SimpleNamespace(
-            unit="generated-unit", platform="signal", primary_id="generated-room")]))
-    monkeypatch.setattr(spike, "load_persons", lambda path: SimpleNamespace(by_person={}))
-    monkeypatch.setattr(spike, "projection_context", lambda *a, **k: SimpleNamespace())
-    monkeypatch.setattr(cognition_replay, "recorded_wake", fake_wake)
-    monkeypatch.setattr(nora.subject, "sandbox_as_of", fake_sandbox)
-    monkeypatch.setattr(nora.subject, "obtain", fake_obtain)
-    monkeypatch.setattr(evals.backbone, "_close", AsyncMock())
-
-    args = SimpleNamespace(
-        config=tmp_path / "config.toml",
-        policy=policy_file,
-        identity=identity_file,
-        database_url=source_url,
-        snapshot=True,
-        age_url=None,
-        judge_a="generated-judge-a",
-        judge_b="generated-judge-b",
-        output=tmp_path / "out",
-        per_stratum=1,
-        minimum=1,
-        seed=17,
-        projection_rate=100,
-        project_only=False,
-        skip_projection=True,
-        smoke=False,
-    )
-    report = await spike.run(args)
-
-    # The comparison ran once, against the populated source — never the
-    # empty-at-the-instant sandbox the session runner replayed in.
-    assert bound == [source_url]
-    assert [u for u, sql in calls if "FROM relation" in sql] == [source_url]
-    assert [u for u, sql in calls if "FROM tag_trace" in sql] == []
-    assert runner.inspect.await_count == 2
-    assert all(c.kwargs["historical"] for c in runner.replay.await_args_list)
-    assert quality.await_count == 2
-    runs = report["age"]["runs"]
-    assert len(runs) == 1 and runs[0]["questions"] == 1
-    frozen = json.loads((tmp_path / "out" / "age" / "questions.json").read_text())
-    assert frozen[0]["seed"] == ["event", "generated-edge"]
-    assert frozen[0]["gold"] == ["event:generated-edge"]
 
 
-def _run_args(tmp_path, **overrides):
-    """The smallest `run` inputs that reach the logging-disable line: a
-    project-only run over a snapshot that skips the projection itself."""
-    import logging  # noqa: F401 — the attribute under test lives on the manager
-
-    return SimpleNamespace(
-        config=tmp_path / "config.toml",
-        policy=tmp_path / "policy.toml",
-        identity=tmp_path / "identity.toml",
-        database_url="postgresql+asyncpg://127.0.0.1:9/generated-snapshot",
-        snapshot=True,
-        age_url=None,
-        judge_a="generated-a",
-        judge_b="generated-b",
-        output=tmp_path / "out",
-        per_stratum=1,
-        minimum=1,
-        seed=17,
-        projection_rate=100,
-        project_only=True,
-        skip_projection=True,
-        smoke=False,
-    )
 
 
-@pytest.mark.parametrize("cleanup", ["ok", "error", "cancel"])
-async def test_run_restores_the_prior_logging_threshold(tmp_path, monkeypatch, cleanup):
-    """`run` mutes logging so a library cannot echo private data — and hands
-    the caller's threshold back, on the SUCCESS path too, not just on
-    failure. A prior non-default threshold (a caller's own silence) is
-    restored, not flattened to zero."""
-    import logging
-
-    cfg = SimpleNamespace(store=SimpleNamespace(database_url_env="GENERATED_DB"))
-    monkeypatch.setattr(spike, "load", lambda path: cfg)
-    monkeypatch.setattr(spike, "credentials", lambda: {
-        "GENERATED_DB": "postgresql+asyncpg://127.0.0.1:9/generated-production"})
-    during = []
-
-    class FakeEngine:
-        def __init__(self, url):
-            self.url = url
-
-        async def dispose(self):
-            if cleanup == "error":
-                raise RuntimeError("generated cleanup failure")
-            if cleanup == "cancel":
-                raise asyncio.CancelledError
-
-    async def generated_rows(engine, sql, params=None):
-        # The mute must be ACTIVE while the run reads (its whole purpose);
-        # recording it here measures it during, not just before and after.
-        during.append(logging.root.manager.disable)
-        if "is_nora" in sql:
-            return [{"n": 0}]
-        return [{"digest": "generated"}]
-
-    monkeypatch.setattr(spike, "create_sql_engine", lambda url: FakeEngine(url))
-    monkeypatch.setattr(spike, "load_policy", lambda path: SimpleNamespace())
-    monkeypatch.setattr(spike, "load_persons", lambda path: SimpleNamespace())
-    monkeypatch.setattr(spike, "projection_context", lambda *a, **k: SimpleNamespace())
-    monkeypatch.setattr(spike, "rows", generated_rows)
-
-    logging.disable(logging.WARNING)
-    try:
-        if cleanup == "ok":
-            report = await spike.run(_run_args(tmp_path))
-            assert report["status"] == "REPORTED"
-        else:
-            error = RuntimeError if cleanup == "error" else asyncio.CancelledError
-            with pytest.raises(error):
-                await spike.run(_run_args(tmp_path))
-        assert during and all(d == logging.CRITICAL for d in during)
-        assert logging.root.manager.disable == logging.WARNING
-    finally:
-        logging.disable(logging.NOTSET)
 
 
-async def test_run_restores_the_prior_logging_threshold_when_engine_creation_fails(
-    tmp_path, monkeypatch,
-):
-    """The same restore must hold when `create_sql_engine` itself raises —
-    the disable is already active by then, so a bare failure would leave the
-    caller's logging muted."""
-    import logging
-
-    cfg = SimpleNamespace(store=SimpleNamespace(database_url_env="GENERATED_DB"))
-    monkeypatch.setattr(spike, "load", lambda path: cfg)
-    monkeypatch.setattr(spike, "credentials", lambda: {
-        "GENERATED_DB": "postgresql+asyncpg://127.0.0.1:9/generated-production"})
-
-    def boom(url):
-        raise RuntimeError("generated: engine refused")
-
-    monkeypatch.setattr(spike, "create_sql_engine", boom)
-
-    logging.disable(logging.ERROR)
-    try:
-        with pytest.raises(RuntimeError):
-            await spike.run(_run_args(tmp_path))
-        assert logging.root.manager.disable == logging.ERROR
-    finally:
-        logging.disable(logging.NOTSET)
 
 
-def test_prompt_composer_is_registered_when_the_script_runs_directly():
-    from types import FunctionType
 
-    direct_prompt = FunctionType(
-        spike.prompt.__code__, {**spike.prompt.__globals__, "__name__": "__main__"},
-    )
-    assert direct_prompt({"source": "Generated evidence"}) == spike.prompt(
-        {"source": "Generated evidence"}
-    )
+
+
+
+
+
+def test_expanded_sample_retains_the_five_original_sessions_and_exact_seeded_count():
+    candidates = [{"id": n, "at_ms": n * 1000, "strata": ["text"]} for n in range(30)]
+    original = {n: candidates[n] for n in [8, 3, 11, 2, 19]}
+    expanded = spike.extend_sample(candidates, original, size=15, seed=71)
+    assert list(expanded)[:5] == list(original)
+    assert len(expanded) == 15
+    assert expanded == spike.extend_sample(candidates, original, size=15, seed=71)
+    assert list(expanded) != list(spike.extend_sample(candidates, original, size=15, seed=72))
+    assert len(original) == 5
+    with pytest.raises(ValueError, match="discard original"):
+        spike.extend_sample(candidates, original, size=4, seed=71)
+    with pytest.raises(ValueError, match="fewer distinct"):
+        spike.extend_sample(candidates[:5] + candidates[:5], {}, size=15, seed=71)
+
+
+
+

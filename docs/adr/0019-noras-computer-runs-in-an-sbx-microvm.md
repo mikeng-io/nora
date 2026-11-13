@@ -9,7 +9,7 @@
 
 ## Context
 
-`design/sandbox-runtime/00-design.md` studies giving Nora a coding agent's
+`design/sandbox-runtime/README.md` studies giving Nora a coding agent's
 toolkit (run commands, read and write files, and later browse and export)
 executed on a machine she can afford to lose. Four facts measured on
 2026-09-30 decide the shape:
@@ -90,7 +90,7 @@ always the disposable side. That is the split taken here.
 - **A hosted dependency for a local capability.** If the Docker login lapses
   or Docker's auth service is down, `nora-computer ensure` cannot create or
   list sandboxes, and the tools answer `unavailable`. Whether a running
-  sandbox survives an expired token is **untested** (design §13 S1). `sbx
+  sandbox survives an expired token is **untested** (design/sandbox-runtime/README.md). `sbx
   logout` is documented to stop running sandboxes.
 - **A young CLI with no documented API.** `nora-computer` parses
   `sbx ls --json` and shells out. A breaking sbx release breaks the lifecycle

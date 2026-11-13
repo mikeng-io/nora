@@ -159,6 +159,7 @@ class _World:
             transit_source=None, vision_source=self.vision, blob_store=self.blobs,
             vision_cache=self.cache, video_readings=self.readings,
             describe_models=models, media_store=self.index, external_files=source,
+            google_account="nora@example.org",
             **({"computer": FakeSandboxRuntime(), "computer_events": FakeComputerEventStore()}
                if computer else {}),
         )
@@ -327,7 +328,7 @@ async def test_a_link_the_domain_knows_and_the_source_does_not_is_unavailable(mo
     never the public download of its sign-in page."""
     async def no_download(url: str) -> tuple[bytes, str]:
         raise AssertionError("a file link must never reach the public download")
-    monkeypatch.setattr("nora.agent.tools._download_media", no_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", no_download)
     world = _World(FakeExternalFilesSource(name="another_provider"))
     for args in ({"url": _url(PHOTO)}, {"code": _url(PHOTO)}):
         out = await world.look(**args)
@@ -364,7 +365,7 @@ async def test_an_unshared_file_is_refused_with_the_share_note():
     for args in ({"code": _code(UNSHARED)}, {"url": _url(UNSHARED)}):
         out = await world.look(**args)
         assert out["status"] == "refused", out
-        assert "nora@67.zone" in out["note"]
+        assert "nora@example.org" in out["note"]
         _no_id_or_url(json.dumps(out), UNSHARED)
     assert world.vision.seen == []
 
@@ -372,7 +373,7 @@ async def test_an_unshared_file_is_refused_with_the_share_note():
 async def test_unwired_a_file_link_is_unavailable_and_never_downloaded(monkeypatch):
     async def no_download(url: str) -> tuple[bytes, str]:
         raise AssertionError("a file link must never reach the public download")
-    monkeypatch.setattr("nora.agent.tools._download_media", no_download)
+    monkeypatch.setattr("nora.media.adapters.tools.fetch._download_media", no_download)
     world = _World(None, await _store(_url(PHOTO)))
     for args in ({"code": _code(PHOTO)}, {"url": _url(PHOTO)}):
         out = await world.look(**args)

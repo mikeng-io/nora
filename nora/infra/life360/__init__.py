@@ -1,4 +1,4 @@
-"""Life360's private API, behind the presence collector (design/19 §4).
+"""Life360's private API, behind the presence collector (design/cognition-loop/observation.md).
 
 `Life360Client` is the one public entry point — auth, token cache, and one
 circle read, all degrading to a typed `CircleRead` rather than raising. The

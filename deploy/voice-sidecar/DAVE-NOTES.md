@@ -54,7 +54,7 @@ packets**, already bound to a user. Decoding Opus → PCM is done with
 
 ## The live spike — PASSED
 
-The stage-2 gate from `design/voice-channel/05-sidecar-receive.md` (a live
+The stage-2 gate from `design/voice-channel/receive.md` (a live
 DAVE spike in the real guild: MLS negotiation, SSRC→userId mapping,
 decrypted PCM actually flowing) was run with `spike.mjs --live` and PASSED:
 per-user WAVs were non-silent and intelligible. That prototype run is the

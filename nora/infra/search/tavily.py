@@ -178,21 +178,24 @@ class TavilySearchProvider:
             return {"status": "nothing_found", "results": []}
         return {"status": "ok", "results": wrapped}
 
-    async def fetch(self, *, url: str) -> dict[str, Any]:
-        """One page's content, capped and wrapped. NEVER raises. Three states
-        (R-27): `ok` with `text`, `nothing_found` when Tavily could not read
-        the page (it landed in `failed_results`, not a transport failure of the
-        CALL), `unavailable` for any transport/auth failure of the call itself —
-        «I could not check», never «nothing found»."""
+    async def fetch(self, *, url: str, max_chars: int | None = None) -> dict[str, Any]:
+        """One page's content, capped at `max_chars` (default
+        `extract_max_chars`) and NOT wrapped — `web_fetch` stores the raw text
+        and wraps each slice it serves (R-13), so the wrapper lives in the
+        tool, not here. NEVER raises. Three states (R-27): `ok` with `text`,
+        `nothing_found` when Tavily could not read the page (it landed in
+        `failed_results`, not a transport failure of the CALL), `unavailable`
+        for any transport/auth failure of the call itself — «I could not
+        check», never «nothing found»."""
         try:
-            return await self._fetch(url)
+            return await self._fetch(url, max_chars)
         except Exception:
             # The never-raises backstop: a contract violation degrades to
             # unavailable, never propagates into the loop (R-5).
             log.exception("tavily extract failed")
             return dict(UNAVAILABLE_FETCH)
 
-    async def _fetch(self, url: str) -> dict[str, Any]:
+    async def _fetch(self, url: str, max_chars: int | None) -> dict[str, Any]:
         body = {
             "urls": [url],
             "extract_depth": self._extract_depth,
@@ -240,18 +243,20 @@ class TavilySearchProvider:
         raw_content = str(item.get("raw_content") or "")
         if not raw_content:
             return {"status": "nothing_found"}
-        clamped, truncated = clamp_chars(raw_content, self._extract_max_chars)
-        # Page-controlled → wrapped `fetched_page` with the source URL as
-        # provenance, the same discipline as a search snippet (R-13). The key
-        # is `text`, NOT `content` — see the bridge client's identical note:
-        # Strands passes a dict with both `status` and `content` through
-        # unchanged, so a bare-string `content` reaches the model outside the
-        # standard text-block envelope and reads as "empty". `web_search`
-        # works precisely because its dict has no `content` key.
+        cap = max_chars if max_chars is not None else self._extract_max_chars
+        clamped, truncated = clamp_chars(raw_content, cap)
+        # RAW text, not `fetched_page`-wrapped: `web_fetch` seals this into the
+        # page store and wraps each slice it serves (R-13), so one fetch's text
+        # is stored once and wrapped per read. The key is `text`, NOT `content` —
+        # see the bridge client's identical note: Strands passes a dict with both
+        # `status` and `content` through unchanged, so a bare-string `content`
+        # reaches the model outside the standard text-block envelope and reads
+        # as "empty". `web_search` works precisely because its dict has no
+        # `content` key.
         out: dict[str, Any] = {
             "status": "ok",
             "url": url,
-            "text": wrap("fetched_page", url, clamped),
+            "text": clamped,
             "truncated": truncated,
         }
         if images := image_links(item.get("images")):

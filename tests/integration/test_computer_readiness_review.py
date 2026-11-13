@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from nora.agent.registry import ToolRegistry
-from nora.app.composition import _note_unit_of
+from nora.app.composition_helpers import _note_unit_of
 from nora.app.computer_dispatch import ComputerToolDispatch
 from nora.app.computer_queue import (
     ComputerAdmission,

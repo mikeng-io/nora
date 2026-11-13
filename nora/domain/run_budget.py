@@ -68,6 +68,7 @@ class RunBudget:
     max_input_tokens: int | None = None
     max_output_tokens: int = 40_000
     max_input_bytes: int | None = None
+    stop_after_total_tokens: int | None = None
     deadline: float | None = None
     output_reserve: int = 0
     requests: int = 0
@@ -79,6 +80,12 @@ class RunBudget:
     monotonic: Callable[[], float] = time.monotonic
 
     def __post_init__(self) -> None:
+        # A measured cutoff stops the NEXT call; the final dispatched call
+        # may overshoot. It is deliberately distinct from a hard token cap.
+        if self.stop_after_total_tokens is not None and (
+                type(self.stop_after_total_tokens) is not int
+                or self.stop_after_total_tokens <= 0):
+            raise ValueError("measured token cutoff must be a positive integer")
         # A strict input-TOKEN bound is a real request — and there is no
         # authoritative pre-dispatch bound for it: provider-side
         # template/framing expansion is not measurable without a
@@ -112,6 +119,11 @@ class RunBudget:
         admission still happens once at the transport."""
         if self._spent_reason is not None:
             raise RunBudgetError(self._spent_reason)
+        if self.stop_after_total_tokens is not None:
+            if self.input_tokens + self.output_tokens >= self.stop_after_total_tokens:
+                raise self._fail("run budget: measured total-token cutoff reached")
+            if self._reserved_out:
+                raise self._fail("run budget: measured cutoff requires sequential calls")
         left = self.remaining()
         if left is not None and left <= 0:
             raise self._fail("run budget: active-time cap reached")
@@ -128,6 +140,11 @@ class RunBudget:
         attempt's response finishes reconciling."""
         if self._spent_reason is not None:
             raise RunBudgetError(self._spent_reason)
+        if self.stop_after_total_tokens is not None:
+            if self.input_tokens + self.output_tokens >= self.stop_after_total_tokens:
+                raise self._fail("run budget: measured total-token cutoff reached")
+            if self._reserved_out:
+                raise self._fail("run budget: measured cutoff requires sequential calls")
         left = self.remaining()
         if left is not None and left <= 0:
             raise self._fail("run budget: active-time cap reached")
@@ -191,6 +208,7 @@ class RunBudget:
             "max_requests": self.max_requests,
             "max_input_tokens": self.max_input_tokens,
             "max_input_bytes": self.max_input_bytes,
+            "stop_after_total_tokens": self.stop_after_total_tokens,
             "max_output_tokens": self.max_output_tokens,
             "deadline": self.deadline,
             "output_reserve": self.output_reserve,

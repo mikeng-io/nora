@@ -20,7 +20,6 @@ import tiktoken
 
 from nora.skills.loader import SkillStore
 
-TOOLS = Path(__file__).resolve().parents[2] / "nora" / "agent" / "tools.py"
 SKILLS_DIR = Path(__file__).resolve().parents[2] / "nora" / "skills"
 
 #: ADR 0015 §3's Level 3 ceiling: Level 1 plus a contract of statuses she
@@ -29,11 +28,11 @@ LEVEL_3_CEILING = 320
 
 
 def _function() -> ast.AsyncFunctionDef:
-    tree = ast.parse(TOOLS.read_text())
-    return next(
-        node for node in ast.walk(tree)
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "generate_image"
-    )
+    """`generate_image`'s callable, de-split to the one nested def the checks read."""
+    from tests.tool_view import _tool_view
+
+    fn, _, _ = _tool_view("generate_image")
+    return fn
 
 
 def _description() -> str:

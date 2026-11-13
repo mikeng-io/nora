@@ -19,7 +19,7 @@ THE ALLOWLIST (`_ALLOWED`) is keyed by the ENCLOSING FUNCTION's name, not a
 line number, so it survives the file moving around it: `x_read`,
 `linkedin_read` and `instagram_read` each read their OWN network's link to
 decide what to read (never another's, which goes through
-`nora.agent.tools._other_link_owner`/`owner_of` instead), and
+`nora.agent.toolkit.files._other_link_owner`/`owner_of` instead), and
 `_shared_page_link` is the Instagram share render's own helper (a different
 question, from a different input -- a rendered transcript line or a stored
 share's own two links, never a model-facing tool argument). It only SHRINKS:
@@ -39,7 +39,10 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-AGENT_DIR = ROOT / "nora" / "agent"
+#: Where the governed call sites live: `nora/agent/` (the registry and its
+#: helpers) and, after ADR 0037 split `tools.py` by area, `nora/social/` —
+#: the home of `x_read`, `linkedin_read` and `instagram_read`.
+SCAN_DIRS = (ROOT / "nora" / "agent", ROOT / "nora" / "social")
 
 #: The registry module is exempt everywhere: it IS the registry.
 _EXEMPT_MODULES = frozenset({"link_owners.py"})
@@ -102,6 +105,17 @@ def _enclosing_function_name(tree: ast.Module, call: ast.Call) -> str | None:
     return best.name if best is not None else None
 
 
+def _allowlisted(fn_name: str | None) -> bool:
+    """`fn_name` in `_ALLOWED`, a `_<tool>__<step>` helper (ADR 0037) counting as its tool."""
+    if fn_name is None:
+        return False
+    if fn_name in _ALLOWED:
+        return True
+    import re
+    base = re.sub(r"^_+|__.*$", "", fn_name)
+    return base in _ALLOWED
+
+
 def _offenders_in(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     aliases = _governed_aliases(tree)
@@ -114,7 +128,7 @@ def _offenders_in(path: Path) -> list[str]:
         if node.func.id not in aliases:
             continue
         fn_name = _enclosing_function_name(tree, node)
-        if fn_name in _ALLOWED:
+        if _allowlisted(fn_name):
             continue
         out.append(
             f"{path.relative_to(ROOT)}:{node.lineno}: "
@@ -126,13 +140,14 @@ def _offenders_in(path: Path) -> list[str]:
 
 def test_no_function_calls_a_network_parser_or_host_predicate_outside_the_registry() -> None:
     offenders: list[str] = []
-    for path in sorted(AGENT_DIR.rglob("*.py")):
-        if path.name in _EXEMPT_MODULES:
-            continue
-        offenders.extend(_offenders_in(path))
+    for scan_dir in SCAN_DIRS:
+        for path in sorted(scan_dir.rglob("*.py")):
+            if path.name in _EXEMPT_MODULES:
+                continue
+            offenders.extend(_offenders_in(path))
     assert not offenders, (
         "a function outside the link-owner registry calls a network parser "
-        "or host predicate directly (design/social-per-network/"
+        "or host predicate directly (design/social-per-network/links.md"
         "30-link-owner-registry.md, \"Tests and enforcement\"): "
         f"{offenders}. Route it through nora.agent.link_owners.owner_of "
         "instead, or add the function to _ALLOWED with the reason."
@@ -145,16 +160,24 @@ def test_the_allowlist_is_actually_exercised() -> None:
     guards nothing forever, exactly the shape the sweep above cannot itself
     detect -- an empty offenders list is also what a vacuous allowlist
     produces."""
-    tree = ast.parse((AGENT_DIR / "tools.py").read_text(encoding="utf-8"))
-    aliases = _governed_aliases(tree)
     called_in: set[str] = set()
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
-            continue
-        if node.func.id not in aliases:
-            continue
-        fn_name = _enclosing_function_name(tree, node)
-        if fn_name is not None:
-            called_in.add(fn_name)
+    for scan_dir in SCAN_DIRS:
+        for path in sorted(scan_dir.rglob("*.py")):
+            if path.name in _EXEMPT_MODULES:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            aliases = _governed_aliases(tree)
+            if not aliases:
+                continue
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+                    continue
+                if node.func.id not in aliases:
+                    continue
+                fn_name = _enclosing_function_name(tree, node)
+                if fn_name is not None:
+                    called_in.add(fn_name)
+                    import re
+                    called_in.add(re.sub(r"^_+|__.*$", "", fn_name))
     stale = set(_ALLOWED) - called_in
     assert not stale, f"_ALLOWED name(s) that call nothing governed: {sorted(stale)}"

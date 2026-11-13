@@ -6,9 +6,9 @@ tags: [nora, personalisation, presence, context, tag-path, planning, measurement
 timestamp: 2026-09-25
 status: measured-null
 edges:
-  - {dst: ../context-assembly/00-overview.md, rel: extends, provenance: asserted}
-  - {dst: ../proposed/27-presence-analytics.md, rel: consumes, provenance: asserted}
-  - {dst: ../dreamer-agent-loop/39-proactive-ooda-loop.md, rel: precedes, provenance: asserted}
+  - {dst: ../context-assembly/registry.md, rel: extends, provenance: asserted}
+  - {dst: ../cognition-loop/observation.md, rel: consumes, provenance: asserted}
+  - {dst: ../cognition-loop/README.md, rel: precedes, provenance: asserted}
 ---
 
 # Intent
@@ -19,7 +19,7 @@ edges:
 ## 0. What the operator asked for
 
 Operator, 2026-09-25: «I expect Nora to think with/for us, and not for us to
-have to ask Nora to think.» Personalisation today is «you like hotpot, here is
+have to ask Nora to think.» today is «you like hotpot, here is
 hotpot nearby». What he wants is a reply that uses what Nora already holds:
 where the people in the room live, where they will be at the time being
 planned, and what else that day holds.
@@ -27,7 +27,7 @@ planned, and what else that day holds.
 This bundle is step 1 of three:
 
 1. **This node.** The tag turn carries the room's situation (§3).
-2. Place identity (`design/proposed/27` §3.7), then the time-anchored forecast
+2. Place identity (`design/unified-memory/graph.md`), then the time-anchored forecast
    (Tier 4) with an instrument somebody other than its author can re-run.
 3. A proactive pass that wakes on time anchors and world changes, not only on
    note and Standing changes (`nora/language/proactive.py::_changed_since`).
@@ -146,7 +146,7 @@ others; with n this small that does not change the reading below.
 The instrument is not committed: its inputs are private rows (members' names,
 home areas and chat), so it lives on the deploy host outside the checkout
 (`~/workspace/nora-replay/group-situation-2026-09-25/`). By the rule
-`design/proposed/27` §4.1 applies to its own forecast numbers, these are one
+`design/cognition-loop/observation.md` «Wake policy» applies to its own forecast numbers, these are one
 party's single measurement.
 
 ### 4.2 What the null says

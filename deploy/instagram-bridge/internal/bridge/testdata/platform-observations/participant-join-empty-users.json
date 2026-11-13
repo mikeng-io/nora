@@ -4,7 +4,7 @@
     "generated": true,
     "native_event": "delta __typename=SlideUQPPParticipantsAddedToGroupThread",
     "capture_today": "captured -> embedded admin message + membership snapshot with an EMPTY covered member set — covered-set semantics, a partial snapshot covers nothing",
-    "semantic": "users[] empty is a PARTIAL snapshot: it covers nothing, so it can never erase members (design/02 partial-snapshot rule). An empty covered set is observable evidence only of 'the snapshot listed nobody', not 'the room is empty'."
+    "semantic": "users[] empty is a PARTIAL snapshot: it covers nothing, so it can never erase members (design/02-tagging-path.md partial-snapshot rule). An empty covered set is observable evidence only of 'the snapshot listed nobody', not 'the room is empty'."
   },
   "payload": {
     "__typename": "SlideUQPPParticipantsAddedToGroupThread",

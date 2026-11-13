@@ -31,6 +31,31 @@ from strands.tools.decorator import FunctionToolMetadata
 from strands.types._events import ToolResultEvent
 from strands.types.tools import AgentTool
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.catalog.groups import (
+    COMPUTER_TOOLS,
+    DOCUMENT_TOOLS,
+    GRAPH_MEMORY_TOOLS,
+    HONCHO_MEMORY_TOOLS,
+    HOT_TOOLS,
+    LOADER_TOOL,
+    NATIVE_TOOL_BUDGETS,
+    SUBAGENT_TOOLS,
+    VIDEO_TOOLS,
+    hot_tools,
+)
+from nora.agent.toolkit.clock import utc_now
+from nora.agent.toolkit.ports import (
+    DocumentPublisher,
+    EventsCollaborator,
+    NoteCollaborator,
+    RecordQuerySource,
+    RollupReadSource,
+    RoomDirectory,
+    SocialItemsSource,
+    StandingHeadSource,
+)
+from nora.agent.tools import build_tool_specs
 from nora.domain.standing_ledger import StandingLedger
 
 from ..domain.computer import ComputerToolSettings
@@ -48,6 +73,7 @@ from ..domain.ports import (
     DiscordPresenceSource,
     ExternalFilesSource,
     GifSource,
+    ImageGenerator,
     MediaDescriptionStore,
     MediaObjectStore,
     MusicToolBridge,
@@ -90,43 +116,18 @@ from .surface import (
     ToolShelf,
     ToolSurface,
 )
-from .tools import (
-    COMPUTER_TOOLS,
-    DOCUMENT_TOOLS,
-    GRAPH_MEMORY_TOOLS,
-    HONCHO_MEMORY_TOOLS,
-    HOT_TOOLS,
-    LOADER_TOOL,
-    NATIVE_TOOL_BUDGETS,
-    NATIVE_TOOLS,
-    SUBAGENT_TOOLS,
-    VIDEO_TOOLS,
-    DocumentPublisher,
-    EventsCollaborator,
-    ImageGenerator,
-    NoteCollaborator,
-    RecordQuerySource,
-    RollupReadSource,
-    RoomDirectory,
-    SocialItemsSource,
-    StandingHeadSource,
-    build_tool_specs,
-    hot_tools,
-    utc_now,
-)
 from .video_desk import VideoDesk
 from .whereis import Circle, PresenceReader
 
 log = logging.getLogger("nora.agent.registry")
 
-#: Parameters Strands injects itself rather than asks the model to supply;
-#: mirrors `FunctionToolMetadata._is_special_parameter` in
-#: `strands/tools/decorator.py`. `tool_param_names()` below excludes these
-#: from what it calls a tool's ACCEPTED arguments: the model is never asked to
-#: supply them, so a call missing one is not the R-99 defect this table
-#: exists to catch. `"tool_context"` is fixed rather than read per tool:
-#: `nora.agent.ports.adapt` always passes `context=True` (never a renamed
-#: parameter) when a tool's signature declares one at all.
+#: : Parameters Strands injects itself rather than asks the model to supply; : mirrors
+#: `FunctionToolMetadata._is_special_parameter` in : `strands/tools/decorator.py`.
+#: `tool_param_names()` below excludes these : from what it calls a tool's ACCEPTED arguments:
+#: the model is never asked to : supply them, so a call missing one is not the R-99 defect this
+#: table : exists to catch. `"tool_context"` is fixed rather than read per tool: :
+#: `nora.agent.ports.adapt` always passes `context=True` (never a renamed : parameter) when a
+#: tool's signature declares one at all.
 _SPECIAL_TOOL_PARAMS: frozenset[str] = frozenset({"self", "cls", "agent", "tool_context"})
 
 
@@ -245,6 +246,12 @@ class ToolRegistry:
         descriptions: MediaDescriptionStore | None = None,
         video_readings: VideoReadingStore | None = None,
         search: SearchProvider | None = None,
+        # `web_fetch`'s OWN backend ([search] fetch_provider): None means the
+        # `search` provider serves both verbs, the pre-split shape.
+        fetch: SearchProvider | None = None,
+        # `web_fetch`'s page index (fetched_pages): None leaves every call
+        # serving straight from the provider's text with no persistence.
+        fetched_pages: Any = None,
         social: SocialProvider | None = None,
         linkedin: SocialProvider | None = None,
         weather: WeatherProvider | None = None,
@@ -256,8 +263,7 @@ class ToolRegistry:
         relay: Relay | None = None,
         # The room tools' collaborator: the ONE presence reader, seen through
         # `RoomDirectory`. `None` leaves `room_list`/`room_read` answering
-        # `unavailable` (R-5), the shape every offline and eval composition
-        # ships in.
+        # `unavailable` (R-5) — the shape offline and eval compositions ship.
         rooms: RoomDirectory | None = None,
         refresher: Any = None,
         geocoder: Any = None,
@@ -304,7 +310,7 @@ class ToolRegistry:
         # and answers `computer_capture`. Both `None` keep the shared-VM shape.
         computer_admission: Any = None,
         browser_manager: Any = None,
-        # The canonical-DM scope resolver (`design/private-dm/05`): a DM
+        # The canonical-DM scope resolver (`design/private-dm/workspaces.md`): a DM
         # room's `(person, anchor unit)` scope id — process-lifetime because
         # it is the policy, not the turn. `None` leaves DM computer calls
         # `unavailable` (fail-closed, never a group VM for a DM).
@@ -356,9 +362,9 @@ class ToolRegistry:
         video: VideoDesk | None = None,
         video_ref_kinds: frozenset[str] = frozenset(),
         # `[external_files]` (ships off): the one read-only source a shared file
-        # link is opened through, held for the life of the process like
-        # `route`. `None` answers the open `unavailable`.
-        external_files: ExternalFilesSource | None = None,
+        # link is opened through; `None` answers the open `unavailable`. Its
+        # `google_account` names who the NOT_SHARED note says to share with.
+        external_files: ExternalFilesSource | None = None, google_account: str = "",
         # `[memory.index] read` (ships off): the retrieval service
         # `memory_search` answers from, and the switch between the two memory
         # surfaces (DEC-316): wired, every build offers `memory_search` and no
@@ -368,7 +374,7 @@ class ToolRegistry:
         # Process-lifetime like `record`.
         memory_search: MemorySearch | None = None,
         # The Profile write the graph surface's `remember` makes (a `told`
-        # line, design/unified-memory/45). Wired with `memory_search`.
+        # line, design/unified-memory/profiles.md). Wired with `memory_search`.
         profile: ProfileWriter | None = None,
         # THE SWITCH (45 §5): `character_read`'s Profile source while
         # `[memory.profile] read` is on beside `[memory.profile] write`. Wired, it
@@ -389,7 +395,7 @@ class ToolRegistry:
         self._budget_overrides = dict(budget_overrides or {})
         self._profile = profile
         self._profile_read = profile_read
-        self._external_files = external_files
+        self._external_files, self._google_account = external_files, google_account
         self._memory_search = memory_search
         self._record = record
         self._documents = documents
@@ -511,6 +517,12 @@ class ToolRegistry:
         # is needed for either verb: Tavily fetches from its own servers, never
         # Nora's, whether it is handed a query or a url.
         self._search = search
+        # `fetch` is `web_fetch`'s own backend when `[search] fetch_provider`
+        # splits it (None: `search` serves both verbs); `fetched_pages` is the
+        # page index its `offset`/`about` reads answer from (None: no
+        # persistence, the pre-split shape).
+        self._fetch = fetch
+        self._fetched_pages = fetched_pages
         # `social` (OpenCLI bridge, DEC-151) is NOT default-constructed either:
         # `x_read`/`x_search` ship INERT behind `[social] enabled` (keyless; the
         # bridge is loopback-only and holds the read-only allowlist host-side),
@@ -678,8 +690,8 @@ class ToolRegistry:
         `.build()`. `ReplyGuard.evaluate` renders the WHOLE dict's keys into
         the model-facing R-7 unknown-tool veto message
         (`guards.py::_list_tool_names`), so an unconditional fold would tell a
-        conversation with no `pulse` allowlist entry that
-        `pulse_server_status` exists the moment the model named any wrong
+        conversation with no `demo` allowlist entry that
+        `demo_server_status` exists the moment the model named any wrong
         tool, and R-7's default-deny would not cover those names for an
         unauthorized conversation. The default (`frozenset()`) is the safe
         one: a caller with no conversation context (`nora.app.composition`'s
@@ -1138,7 +1150,7 @@ class ToolRegistry:
 
         `transcript` is in it for the same reason and is the most per-turn value
         here: it is `TagContext.transcript`, the window the prefill rendered
-        `<group_transcript>` from, and `who_said` (DEC-146) answers out of it.
+        `<transcript>` from, and `who_said` (DEC-146) answers out of it.
         It must never become a registry field: a window living for the life of
         the process would let one conversation's messages be searched from
         another, which is a disclosure. Passing the SAME tuple the prefill used
@@ -1179,6 +1191,7 @@ class ToolRegistry:
             video_max_chunks=self._video_max_chunks,
             media_join=self._media_join,
             search_source=self._search, weather_source=self._weather,
+            fetch_source=self._fetch, fetched_pages=self._fetched_pages,
             parking_source=self._parking,
             street_parking_source=self._street_parking,
             social_source=self._social,
@@ -1236,7 +1249,7 @@ class ToolRegistry:
             documents=self._documents,
             subagent=self._subagent,
             video=self._video, video_ref_kinds=self._video_ref_kinds,
-            external_files=self._external_files,
+            external_files=self._external_files, google_account=self._google_account,
             shelf=shelf,
             on_rows=on_rows,
             content_checks=self._content_checks,

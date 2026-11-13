@@ -4,11 +4,11 @@ import importlib.metadata
 
 
 def test_strands_is_pinned_to_1_50_2():
-    assert importlib.metadata.version("strands-agents") == "1.50.2"
+    assert importlib.metadata.version("strands-agents") == "1.64.0"
 
 
-def test_strands_evals_is_pinned_to_1_0_3():
-    assert importlib.metadata.version("strands-agents-evals") == "1.0.3"
+def test_strands_evals_is_pinned_to_1_9_0():
+    assert importlib.metadata.version("strands-agents-evals") == "1.9.0"
 
 
 def test_nora_package_imports():

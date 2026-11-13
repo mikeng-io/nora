@@ -29,8 +29,8 @@ hooks:
 	@if [ -f "$${NORA_PII_KEEP_PHRASES:-$$HOME/.config/nora/pii-keep-phrases.txt}" ]; then echo "pii keep-phrases: present"; else echo "pii keep-phrases: none (optional)"; fi
 	@if [ -f "$${NORA_PII_PSEUDONYMS:-$$HOME/.config/nora/pii-pseudonyms.txt}" ]; then echo "pii pseudonyms: present"; else echo "pii pseudonyms: none (optional)"; fi
 
-# --- validation (focused local checks by impact; required hosted contracts
-# own full-suite PR acceptance; make gate/full-gate remain explicit commands) ---
+# --- validation (focused local checks; automatic CI runs the fast baseline;
+# complete acceptance is manual; make gate/full-gate remain explicit commands) ---
 
 test-all:
 	uv run python -m scripts.pytest_gate --workers 0
@@ -131,7 +131,7 @@ test test-fast test-affected:
 # the LLM key env set) ---
 #
 # `python -m evals` runs a NAMED corpus (or `--class`, or `--all`) rather than
-# a file path — `design/evaluation/10-the-scenario-map.md` §15's port put the
+# a file path — `design/evaluation/coverage.md`  «Classes»'s port put the
 # 150 corpus cases behind `evals.scenarios.experiment_for()`, and adding a
 # corpus adds a dict entry there, not a target here.
 #
@@ -139,18 +139,19 @@ test test-fast test-affected:
 # (`nora_eval`, made by `scripts/refresh_eval_clone.sh`). Every case names a
 # real room at a real instant, is seeded from the clone into a sandbox
 # database of its own, and composes the deployment's own config, policy and
-# roster (design/evaluation/11-the-sandbox-rebuild.md §1.2). Off the deploy
+# roster (design/evaluation/subject.md). Off the deploy
 # host there is no source and no deployment to compose, and the run says so.
+EVAL_GRADING = --grading-contract "$(EVAL_GRADING_CONTRACT)" --grading-contract-sha256 "$(EVAL_GRADING_CONTRACT_SHA256)"
 
 # Refresh the eval source from production. Deploy host only.
 eval-source:
 	./scripts/refresh_eval_clone.sh
 
-# The ambient-participation flip gate (design/dreamer-agent-loop/35 §9): all
+# The ambient-participation flip gate (design/cognition-loop/proactive.md): all
 # 15 cases must reach their expected verdict — zero false-speaks on the
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:
-	uv run python -m evals participation
+	uv run python -m evals participation $(EVAL_GRADING)
 
 # Releases are cut on GitHub by release-please (DEC-314, the nora-release
 # skill); there is no release target here.
@@ -208,7 +209,7 @@ schema-parity:
 # adversarial corpora, judged.
 eval-adversarial-corpora:
 	uv run python -m evals injections near_miss transcript_injection \
-	  identity_grounding source_scope being_contradicted --judge
+	  identity_grounding source_scope being_contradicted --judge $(EVAL_GRADING)
 
 eval-gate:
-	uv run python -m evals relevance_gate
+	uv run python -m evals relevance_gate $(EVAL_GRADING)

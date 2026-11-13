@@ -1,6 +1,6 @@
 package instameow
 
-// The summons intake (design/instagram-adoption/19, "Intake, re-measured
+// The summons intake (design/instagram-adoption/summons.md, "Intake, re-measured
 // 2026-09-26").
 //
 // # What a summons looks like on the wire (measured 2026-09-26)
@@ -144,7 +144,7 @@ func (b *Bridge) recorder() SummonsRecorder {
 	return b.summonsRecorder
 }
 
-// The measured summons card's two discriminators (design 19, 2026-09-26).
+// The measured summons card's two discriminators (design/instagram-adoption/summons.md, 2026-09-26).
 // Any other XMA is a share, not a summons: a post shared into a group chat
 // whose caption tags her is somebody showing the room a post, and must not
 // cost a thread read or become a summons.

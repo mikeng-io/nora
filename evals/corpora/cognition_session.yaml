@@ -1,4 +1,4 @@
-# Scenario suite for design/unified-memory/31 §2. All data is generated.
+# Scenario suite for evals/COGNITION_SCENARIOS.md. All data is generated.
 # ToolRouteGrader reads tools, required_tools, not_tools, before and args checks.
 # expected_output explains the property; it is not a separate semantic scorer.
 # Anchor confirmation must specialise argument checks to shown evidence/ids.
@@ -10,7 +10,7 @@ cases:
   expect: reply
   input: room A has new messages
   expected_output: Propose the visit, read the admitted answer with the open gift handover note, then
-    act on that note; never act before proposing.
+    act on that note as useful; acts do not require a prior proposal.
   metadata:
     scenario: 1
     held_out: false
@@ -22,9 +22,6 @@ cases:
     args_include:
       memory_propose:
       - plans
-    before:
-      memory_propose:
-      - note_revise
   parked:
     reason: 'anchor pending: chosen privately on the deploy host'
     why: No private clone has been inspected for this case. No anchor is asserted.
@@ -35,7 +32,7 @@ cases:
   category: cognition
   expect: reply
   input: room A has new messages
-  expected_output: 'Explicit no-change: empty statements with nothing_here; no act.'
+  expected_output: 'No durable claim: empty statements and no act; no coverage declaration.'
   metadata:
     scenario: 2
     held_out: false
@@ -70,7 +67,6 @@ cases:
     args_include:
       memory_propose:
       - '"statements": []'
-      - '"nothing_here"'
   parked:
     reason: 'anchor pending: chosen privately on the deploy host'
     why: No private clone has been inspected for this case. No anchor is asserted.

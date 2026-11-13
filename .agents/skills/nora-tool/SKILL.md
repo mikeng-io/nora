@@ -9,7 +9,7 @@ The source of truth is `docs/adr/0015-tool-surface-policy-v2.md` (read it in ful
 before writing a line), which extends `docs/adr/0004-tool-naming-is-measured.md`
 and supersedes parts of `docs/adr/0007-tool-surface-policy.md`. Its §6 table says
 which rule is a test and which is review. This skill is the order and the checks;
-it does not restate the reasons. Every tool lives in `nora/agent/tools.py`.
+it does not restate the reasons. Every tool lives in its area's adapter (`nora/<area>/adapters/tools.py` or `nora/<area>/adapters/tools/<module>.py`, registered in that module's `build()`); the catalogue is `nora/agent/catalog/entries/` and `build_tool_specs` still assembles the whole surface in `nora/agent/tools.py` (ADR 0037).
 
 ## 1. Before designing
 
@@ -20,7 +20,7 @@ it does not restate the reasons. Every tool lives in `nora/agent/tools.py`.
    unify, a new verb, a new result form): vendor tool-use docs, the MCP tools
    spec, and 0015's Sources as the starting set. A good measurement of the
    problem is not evidence the structure is right.
-3. **Read the siblings.** `grep -n '"<domain>_' nora/agent/tools.py` lists the
+3. **Read the siblings.** `grep -rn '"<domain>_' nora/*/adapters/` lists the
    same-domain tools; copy the shape of one written to 0015 (`x_search`,
    `x_read`, `linkedin_read`).
 
@@ -40,11 +40,13 @@ it does not restate the reasons. Every tool lives in `nora/agent/tools.py`.
 
 ## 3. The declaration
 
-1. Add the `NativeTool(...)` entry to `NATIVE_TOOLS`: budget, `terminal`,
+1. Add the `NativeTool(...)` entry to `NATIVE_TOOLS` in the area's file
+   under `nora/agent/catalog/entries/`: budget, `terminal`,
    `time_shiftable`, `source_tier`, `cacheable`, `read_only`,
    `side_effect_state`, `idempotency`, `retry` (0008), `output_contract`
    (`"three_state"` for a status-carrying result), and `level` (1, 2 or 3).
-2. Register the closure with `_spec("<name>", <function>)`. The docstring tests
+2. Register the closure with `_spec("<name>", <function>)` in the area
+   module's `build()`. The docstring tests
    find tools by that call; a tool registered another way escapes them.
 3. Add its budget to `test_budgets_match_todays_table` in
    `tests/unit/test_tool_registry.py`, which pins the whole table.
@@ -61,7 +63,7 @@ it does not restate the reasons. Every tool lives in `nora/agent/tools.py`.
    contract, one line per status). Measure it:
    ```bash
    uv run python -c "
-   import tiktoken; from nora.agent.registry import ToolRegistry; from nora.agent.tools import NATIVE_TOOLS
+   import tiktoken; from nora.agent.registry import ToolRegistry; from nora.agent.catalog.entries import NATIVE_TOOLS
    e=tiktoken.get_encoding('cl100k_base'); d=dict(ToolRegistry()._descriptions()); n='<name>'
    print(n, 'level', NATIVE_TOOLS[n].level, 'tokens', len(e.encode(d[n])))"
    ```
@@ -130,8 +132,10 @@ What the tests enforce:
      --case route_routine_read_future --case route_routine_read_english \
      --case route_routine_read_usually --case route_routine_read_arrival \
      --case route_routine_read_departure_english --case route_typed_residence_correction \
-     --case route_weather_not_web --sample N --reasons
+     --case route_weather_not_web --sample N --reasons \
+     --grading-contract "$GRADING_CONTRACT" --grading-contract-sha256 "$GRADING_CONTRACT_SHA256"
    ```
+   Take the independent contract/hash from `nora-eval`'s fixed run brief.
    `--reasons` prints the tools each draw executed. Choose N for the claim and
    check the `estimate:` line — the run refuses over 60 minutes, so the whole
    corpus at `--sample 5` (~7 h an arm) can never be the recipe. How and where
@@ -152,7 +156,7 @@ The release/image/Komodo pipeline builds and deploys a merged tool. Do not
 manually rebuild after merge. When acceptance requires live evidence, follow
 `nora-deploy` to read back the automatic deployment, then:
 1. Confirm the running process has it:
-   `ssh nora-host 'cd ~/workspace/nora && python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora /app/.venv/bin/python -c "from nora.agent.tools import NATIVE_TOOLS; print(NATIVE_TOOLS[\"<name>\"].level)"'`
+   `ssh nora-host 'cd ~/workspace/nora && python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora /app/.venv/bin/python -c "from nora.agent.catalog.entries import NATIVE_TOOLS; print(NATIVE_TOOLS[\"<name>\"].level)"'`
 2. Find a real call in Langfuse (`nora-readback`) and read its input and result.
    Check: the live result has the status and shape your eval cases assumed. If
    it differs, the eval number does not stand; say so on the PR.

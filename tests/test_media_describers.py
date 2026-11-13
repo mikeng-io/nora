@@ -164,7 +164,7 @@ def test_the_composition_root_offers_only_enabled_describers_that_name_a_model()
     where the `vision_model` alias resolution lands. An empty loop would leave
     every photo answering «I can't take in image».
     """
-    from nora.app.composition import _describe_models
+    from nora.app.composition_media import _describe_models
 
     resolved = _describe_models(_cfg_with(
         image={"enabled": True, "model": "m/image"},
@@ -177,7 +177,7 @@ def test_the_composition_root_offers_only_enabled_describers_that_name_a_model()
 def test_the_composition_root_resolves_the_legacy_alias():
     """A pre-split config names only `vision_model`; images must still be
     described, and the alias must be folded in exactly once — here."""
-    from nora.app.composition import _describe_models
+    from nora.app.composition_media import _describe_models
 
     cfg = Config.model_construct(media=MediaConfig(vision_model="legacy/only"))
     assert _describe_models(cfg) == {"image": "legacy/only"}
@@ -187,7 +187,7 @@ def test_the_composition_root_offers_providers_only_for_live_describers():
     """`_describe_providers` must track `_describe_models` — a modality that
     cannot describe appears in NEITHER map, and one that can describe defaults
     to omniroute unless the config names kimi."""
-    from nora.app.composition import _describe_providers
+    from nora.app.composition_media import _describe_providers
 
     resolved = _describe_providers(_cfg_with(
         image={"enabled": True, "model": "m/image"},
@@ -202,7 +202,7 @@ def test_the_kimi_key_env_name_resolves_through_api_key_env():
     names one, and fall back to `KIMI_CODE_API_KEY` when it does not — the
     contract `DescriberConfig.api_key_env`'s docstring promises (DEC-8: config
     names the env var, never the key)."""
-    from nora.app.composition import _direct_lane_key_env
+    from nora.app.composition_media import _direct_lane_key_env
 
     declared = _direct_lane_key_env(_cfg_with(
         image={"enabled": True, "model": "m/image"},
@@ -227,7 +227,7 @@ def test_the_opencode_go_key_env_name_is_its_own_not_kimis():
     """Each direct lane reads ITS key: an `opencode-go` describer falls back to
     `OPENCODE_GO_API_KEY`, and a kimi describer's `api_key_env` beside it does
     not leak across — one key source per lane (DEC-197)."""
-    from nora.app.composition import _direct_lane_key_env
+    from nora.app.composition_media import _direct_lane_key_env
 
     cfg = _cfg_with(
         audio={"enabled": True, "model": "mimo-v2.6-flash", "provider": "opencode-go"},
@@ -243,7 +243,7 @@ def test_a_direct_lane_whose_key_is_unset_is_not_built(monkeypatch):
     LEFT OUT of the direct clients, so `VisionClient` refuses that provider
     (`unavailable`) rather than building a keyless client or falling back to
     OmniRoute. A lane nothing selects is not built at all."""
-    from nora.app.composition import _direct_describer_clients
+    from nora.app.composition_media import _direct_describer_clients
 
     monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)
     monkeypatch.setenv("KIMI_CODE_API_KEY", "kimi-key")
@@ -289,7 +289,7 @@ def test_every_describable_modality_has_an_authored_prompt():
     dispatch list, and the prompt table — are written in three files. A modality
     in one and not another is a silent `_PROMPT` fallback ("Describe this image"
     asked about a voice note)."""
-    from nora.agent.tools import _MODALITIES
+    from nora.agent.toolkit.media import _MODALITIES
     from nora.config import DescribersConfig
 
     assert set(_MODALITIES) == set(DESCRIBE_PROMPTS)

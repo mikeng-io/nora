@@ -60,7 +60,7 @@ export const ROUTES: RouteSpec[] = [
   // `q` is the search box: the current title or text, a substring, any script.
   { pattern: ["documents"], scope: "self", query: ["page", "pageSize", "state"], freeText: ["q"] },
   { pattern: ["documents", ":id"], scope: "self", params: { id: DOCUMENT_REF } },
-  // A document's history (design/artifact §34): behind the document's own read gate in
+  // A document's history (design/artifact/lifecycle.md): behind the document's own read gate in
   // Nora, so the same viewer rule; by its UUID only, and a revision is a positive number.
   { pattern: ["documents", ":id", "revisions"], scope: "self", params: { id: DOCUMENT_UUID } },
   {
@@ -81,18 +81,6 @@ export const ROUTES: RouteSpec[] = [
   { pattern: ["presence", "analytics", "rhythm"], scope: "self", query: ["subjectId", "days"] },
   { pattern: ["presence", "analytics", "routes"], scope: "self", query: ["subjectId", "days"] },
   { pattern: ["presence", ":personId", "history"], scope: "self", query: ["hours"] },
-  { pattern: ["games", "servers"] },
-  { pattern: ["games", "servers", ":id", "status"] },
-  { pattern: ["games", "servers", ":id", "graph"], query: ["hours"] },
-  { pattern: ["games", "servers", ":id", "weekly"] },
-  { pattern: ["games", "servers", ":id", "world"] },
-  { pattern: ["games", "servers", ":id", "progress"] },
-  { pattern: ["games", "servers", ":id", "save-history"], query: ["hours"] },
-  { pattern: ["games", "servers", ":id", "insights"], query: ["days"] },
-  { pattern: ["games", "servers", ":id", "players"], query: ["page", "pageSize", "online"] },
-  { pattern: ["games", "servers", ":id", "players", ":playerKey"] },
-  { pattern: ["games", "servers", ":id", "activity"], query: ["page", "pageSize"] },
-  { pattern: ["games", "servers", ":id", "sessions"], query: ["page", "pageSize", "playerKey"] },
 ];
 
 const ID_SEGMENT = /^[A-Za-z0-9_\-:.@]{1,128}$/;

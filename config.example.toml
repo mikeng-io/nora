@@ -207,7 +207,6 @@ floor_grace_seconds = 3600
 upcoming_days = 3
 store_timeout_seconds = 5
 max_items = 12                        # items per session
-max_strikes = 3
 # session_timeout_seconds = 3900
 max_self_wakes = 5
 max_self_wakes_per_day = 12
@@ -283,7 +282,6 @@ batch_limit = 300
 
 [lessons]
 enabled = false
-wake_batch = 50
 stale_seconds = 604800
 horizon_seconds = 5184000
 batch_limit = 100
@@ -454,6 +452,10 @@ api_key_env = "GOOGLE_MAPS_API_KEY"
 [search]
 enabled = false
 provider = "tavily"              # "tavily" | "exa"
+# fetch_provider = "tavily"       # "" = same as provider; the backend web_fetch
+                                # extracts through. Tavily returns full pages
+                                # (materialized into fetched_pages); Exa caps
+                                # at 10k chars and reads as truncated.
 # max_results = 5                 # at most 20
 # content_max_chars = 1500        # per-result snippet clamp
 # extract_max_chars = 3000        # fetched-page clamp
@@ -534,12 +536,6 @@ provider = "hko"           # only "hko" exists
 # lang = "tc"              # HKO language: tc | en | sc
 # timeout_seconds = 8.0
 
-[tools.mcp.pulse]
-enabled = false
-base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
-token_env = "PULSE_MCP_TOKEN"
-budget = 5
-
 [compute]
 enabled = false
 # poll_tick_seconds = 10      # seconds between poller checks for a finished job; a lateness bound, not a deadline
@@ -611,6 +607,8 @@ sources = ["google_drive"]
 client_id_env = "GOOGLE_OAUTH_CLIENT_ID"
 client_secret_env = "GOOGLE_OAUTH_CLIENT_SECRET"
 refresh_token_env = "GOOGLE_OAUTH_REFRESH_TOKEN"
+# her own Google account: the NOT_SHARED note tells the owner who to share with
+account = "nora@example.org"
 
 [subagent]
 enabled = false

@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from nora.app.composition import _image_gen_wiring
+from nora.app.composition_media import _image_gen_wiring
 from nora.app.oauth_keepalive import KeepaliveTiming, OAuthKeepalive
 from nora.obs.metrics import Metrics
 

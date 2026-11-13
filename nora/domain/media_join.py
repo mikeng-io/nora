@@ -75,7 +75,7 @@ Screen = Callable[[str], str | None]
 #: is inside the strict mypy override, but not every call site is in a package
 #: it reaches, so a static-only guard would be a claim.
 JoinPath = Literal[
-    "tag", "fire", "debrief", "dreamer",
+    "tag", "fire", "debrief", "dreamer", "cognition",
     "adoption", "load_transcript", "relevance_gate",
     # The eval seam's two readers (`nora.subject`): its dream pass, and the
     # window a judge grades a reply against. `nora.subject` is outside the

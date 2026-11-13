@@ -118,7 +118,7 @@ from a complete index in which every node in scope was searched; `ok`.
 
 The floors, the cut and the `about` seed's score are set from the cosine
 spread measured on the backfilled index
-(`design/unified-memory/65-build-step-3-vectors.md` §6); the walk's other
+(`design/unified-memory/graph.md` «Retrieval»); the walk's other
 constants are starting values.
 """
 
@@ -142,7 +142,7 @@ from nora.domain.comprehend import Preview
 from nora.domain.external_files import render_file_links
 from nora.domain.lineage import PRESENCE, ROW, Lineage, LineageEntry, RenderRoom, RoomFacts
 from nora.domain.media import HANDLE_CHARS
-from nora.domain.memory_graph import MemoryGraph, Walk
+from nora.domain.memory_graph import GraphNode, MemoryGraph, Walk
 from nora.domain.memory_index import (
     EPISODE_KINDS,
     SOCIAL_KINDS,
@@ -156,6 +156,8 @@ from nora.domain.memory_index import (
     SearchStatus,
     Seed,
     exact_holds,
+    in_scope,
+    narrowed,
 )
 from nora.domain.models import PersonRef
 from nora.domain.prompt import stamp
@@ -213,7 +215,7 @@ DEFAULT_DEPTH = "low"
 RELEVANCE_FLOOR = 0.1
 #: The floor of a seed scored by its cosine to the question: a dense seed
 #: and an exact hit past the pinned ones (and the `about` seed, which scores
-#: above it). Measured on the backfilled index (design/unified-memory/65 §6):
+#: above it). Measured on the backfilled index (design/unified-memory/graph.md):
 #: this model's cosines cluster high, the top 50's non-hits at 0.35 at the
 #: 10th percentile and up to 0.78; a known item ranked in the top 20 of its
 #: own query never scored under 0.387 (127 of 143 queries), and a query
@@ -255,7 +257,7 @@ PINNED_LIMIT = 5
 #: 2,500 found 115 for a quarter more text every call.
 PACKET_TOKENS = 2_000
 #: The pre-fetch block's budget (`nora.engagement.context`, design
-#: unified-memory/00 step 3b): the same cut as `memory_search`'s answer, run
+#: unified-memory/README.md): the same cut as `memory_search`'s answer, run
 #: from the message's own seeds before the turn, on a smaller budget because
 #: it rides every tag turn on the graph surface whether or not she needs it.
 #: Set from the same replay as `PACKET_TOKENS` (65 §6, 143 known items):
@@ -475,7 +477,7 @@ def scope_for(
     passes presence here.
 
     `social_off` are the persons whose `identity.toml` block sets `social =
-    false`: none of their social items is read (design/cognition-loop/22 §2),
+    false`: none of their social items is read (design/cognition-loop/observation.md),
     whenever it was recorded. Required with no default: a caller that
     forgot it would read every opted-out person's items."""
     here = target.room
@@ -849,7 +851,6 @@ class MemorySearch:
         """One graph surface; the index finds seeds, never supplies adjacency."""
         from dataclasses import asdict
         from datetime import UTC
-
         if self._graph is None or not 0 <= depth <= 4:
             return {"status": "unavailable", "note": "The graph could not be read."}
         try:
@@ -905,15 +906,19 @@ class MemorySearch:
                 unit, scope.listed_here, depth=depth, scope=scope,
                 layers=("record", "rollup", "notebook"),
             )
-            # Every search walks afresh: a retry with another person, span or
-            # query is a new question. A read re-reads only what some search of
-            # this turn captured, whatever that search narrowed to.
+            # Searches walk afresh; reads use this turn's scoped snapshots.
             held_all: list[Any] = cache.setdefault("_subgraphs", []) if cache is not None else []
             if seed is None or not held_all:
                 entry: list[Any] = [scope, None]
                 # Reserve before awaiting: a parallel read waits for no walk it cannot see.
                 held_all.append(entry)
                 graph = await self._graph.walk(seeds, walk_query)
+                if seed is None and graph.status != "unavailable":
+                    by_key = {n.key: n for n in graph.nodes}
+                    for node in (h.node for h in found.hits):
+                        key = ("event_entry", node.source_id) if node.kind == "event" else node.key
+                        by_key.setdefault(key, GraphNode(key, indexed=node))
+                    graph = replace(graph, nodes=tuple(by_key.values()))
                 entry[1] = graph
             else:
                 held = next((g for s, g in held_all
@@ -924,7 +929,6 @@ class MemorySearch:
                     return {"status": "unavailable",
                             "note": "This turn's graph does not cover this read."}
                 from nora.domain.memory_admission import AdmissionState
-
                 state = AdmissionState()
                 state.entities = {n.entity.id: n.entity for n in held.nodes if n.entity}
                 state.relations = {e.relation.id: e.relation for e in held.relations}
@@ -935,16 +939,16 @@ class MemorySearch:
                 graph = await state._walk(seeds, walk_query)
                 held_nodes = {n.key: n for n in held.nodes}
                 held_edges = {e.relation.id: e for e in held.relations}
-                # The captured frontier is bounded; a re-read cannot claim completeness
-                # beyond it. Preserve full fields/evidence from the original snapshot.
-                graph = replace(graph, status="partial",
-                    nodes=tuple(held_nodes[n.key] for n in graph.nodes if n.key in held_nodes),
+                # Re-reads retain scoped standalone seeds from the captured snapshot.
+                kept = {n.key: held_nodes[n.key] for n in graph.nodes if n.key in held_nodes}
+                for n in held.nodes:
+                    if (n.key in seeds and n.indexed is not None
+                            and in_scope(n.indexed, scope) and narrowed(n.indexed, scope)):
+                        kept.setdefault(n.key, n)
+                graph = replace(graph, status="partial", nodes=tuple(kept.values()),
                     relations=tuple(held_edges[e.relation.id] for e in graph.relations))
             if graph.status == "unavailable":
                 return {"status": "unavailable", "note": "The graph could not be read."}
-            if seed is None and found.hits and not graph.nodes:
-                return {"status": "unavailable",
-                        "note": "Matching memory has no readable graph projection."}
             if kinds:
                 # Kind narrowing is an answer/seed filter; bridges retain every kind.
                 wanted = set(kinds) | ({"event_entry"} if "event" in kinds else set())
@@ -977,11 +981,7 @@ class MemorySearch:
                 "keys": sorted(emitted),
                 "relations": sorted(emitted_relations),
             }
-            if partial:
-                result = {"status": "partial", "preview": text,
-                          "note": "More memory is available.",
-                          "keys": sorted(emitted),
-                          "relations": sorted(emitted_relations)}
+            result = {**result, "status": "partial"} if partial else result
             if seed is not None and depth == 0:
                 result["nodes"] = [asdict(n) for n in graph.nodes]
                 result["evidence"] = [asdict(e) for e in graph.relations]

@@ -256,8 +256,11 @@ class _Answers:
         if type(ceiling) is not int or ceiling <= 0:
             raise ValueError("a positive output ceiling is required")
         return SimpleNamespace(
+            model="generated-judge-model", id="generated-response",
             choices=[SimpleNamespace(
                 finish_reason="stop", message=SimpleNamespace(content=self._raw))],
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5,
+                                  total_tokens=15, prompt_tokens_details=None),
         )
 
     async def close(self) -> None:

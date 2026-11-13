@@ -1,5 +1,5 @@
-// Durable desired-state (design/voice-channel/07-audio-owner-controller.md
-// §12.1): a tiny JSON file on a local volume recording whether the
+// Durable desired-state (design/voice-channel/audio.md
+// design/voice-channel/audio.md «Connection lifecycle»): a tiny JSON file on a local volume recording whether the
 // controller WANTS to be connected. Writes are atomic (tmp + rename) so a
 // crash mid-write never leaves a half file.
 //

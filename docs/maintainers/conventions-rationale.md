@@ -246,7 +246,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   modules that are not occasions are the named MECHANISM, RUNNER and EXEMPT
   entries in the test, each with a written reason, reviewed in the PR that adds
   it and re-checked by the test. A new occasion follows
-  `design/context-assembly/04-every-occasion.md` «How a new occasion joins»
+  `design/context-assembly/registry.md`
   (DEC-273, ADR 0021).
 
 - **Never read a gate's success through a pipe.** `make gate | tail` returns
@@ -275,7 +275,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
 
 ## Reaching the deployment — the detail
 
-The terse rule is in `AGENTS.md` («Reaching the deployment»); this is the why.
+The terse rule is in `AGENTS.md` («Deployment and releases»); this is the why.
 
 **Checkout-era history:** the following explains the earlier checkout deployment
 model. The installed Komodo release stack now owns application deployment;
@@ -389,7 +389,7 @@ compose and disagreed with this file). Identity and policy are bind-mounted read
 validation every three seconds**. Invalid edits retain the last good version;
 workspace-binding edits refuse the whole reload until recreation. The
 `nora_config_reloads_total` outcomes and `/health` staleness expose pending or
-refused changes (see `design/policy-reload/00-design.md`). `identity.toml` takes one
+refused changes (see `design/policy-reload/README.md`). `identity.toml` takes one
 `[[persons.<id>.<platform>]]` block **per account**, all resolving to one
 `person_id` (their Honcho peer, A2/DEC-14). `policy.toml` is deny-by-default and
 Nora **refuses to start** if it is missing or allows nothing (R-5). Memory's
@@ -435,8 +435,8 @@ tier.** Both are gone: the code is deleted, the decision-index rows are marked
 (never renumbered), and every design node and spec that describes them carries a
 `DEPRECATED` banner. **Their database tables are NOT dropped** — the code goes,
 the schema stays, and dropping them is a separate explicit decision. The evidence
-that decided it is `design/dreamer-agent-loop/20-knowledge-tier.md` §0; the issue
-is #115. Nothing under `design/dreamer-agent-loop/` numbered 20, 21, 23, 24, 25,
+that decided it is `design/cognition-loop/data.md` ; the issue
+is #115. Nothing under `design/cognition-loop/` numbered 20, 21, 23, 24, 25,
 28, 31 or 32 describes code that exists.
 
 **Deprecated 2026-09-08 — the note tier's entity-resolution chain and the
@@ -513,11 +513,11 @@ and was not reached for until the third rewrite.
 collector, how to instrument a model call, how to read it back — is
 `docs/observability.md`. This section is why the rules are what they are.)*
 
-`design/dreamer-agent-loop/02-instrument-blindness.md` is the catalogue: eight
+The catalogue: eight
 layers where an instrument could not observe the thing it existed to observe,
 plus the silent-match family one level down — the instruments we use to FIND
 those layers returning a positive-looking answer without ever engaging.
-`design/dreamer-agent-loop/09-measurement.md` is where the bundle gives that
+`design/cognition-loop/execution.md` is where the bundle gives that
 discipline a home for its own change. Neither is repeated here. This section
 carries the eight rules and the measurement behind each.
 
@@ -697,7 +697,7 @@ lived only in the plan, and nothing in this repo had ever looked at one. The
 fix is `== sa.false()` (`nora/infra/sql/turn_verdicts.py:100`) and the check is
 `tests/contract/test_turn_verdict_store_contract.py::test_the_trigger_read_
 actually_uses_its_partial_index`. (Both were deleted on 2026-09-24 with the
-grounding verdict, `design/standing-compact/`; the lesson stands.)
+grounding verdict, `design/standing-ledger/00-intent.md`; the lesson stands.)
 
 **And the first version of that test compiled its OWN statement** with the
 correct spelling and EXPLAINed that — so reverting the store's predicate to the
@@ -814,7 +814,7 @@ return None` from `_should_rebuild` and the stage raises `AttributeError` on
 assertions still hold. R-72 named that test among the ones enforcing it, and it
 measured nothing. It was found by a reviewer mutating a clause the author had
 not. (R-72 is retired and the test gone with `_should_rebuild` itself, deleted
-2026-09-24 with the grounding verdict, `design/standing-compact/`; the lesson
+2026-09-24 with the grounding verdict, `design/standing-ledger/00-intent.md`; the lesson
 stands.)
 
 At least five tests in that one file had the shape. The fix in each is two
@@ -889,18 +889,11 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
   If a module feels too big, count what it is responsible for.
 - **Comments describe, git records.** A comment says what the code or key IS
   and the constraint a reader cannot see from it: units, bounds, the default,
-  what it requires, when to change it. It is never a log: no dates, issue or PR
-  numbers, measurements, review stories or "was X, now Y" — the commit, the
-  issue and the ADR hold those, and a comment copy drifts from them. A decision
-  is cited as a bare pointer (`DEC-123`, `ADR 0023`), never retold. The same
-  holds for docstrings, including a test's: it says what the test guards, not
-  how the bug was found. Gated on these markers, never on length: example TOMLs
-  by `tests/architecture/test_example_toml_comments_are_reference.py`, Python
-  by `tests/architecture/test_comments_carry_no_new_log.py` (dates and issue
-  numbers; the baseline in `log_marker_baseline.json` only goes down, and
-  `python scripts/log_markers.py --write` records a cleanup). A model-facing
-  docstring (a tool's) is behaviour: change it through the nora-tool skill,
-  not as a comment edit.
+  what it requires. It is never a log or a decision citation; the commit, the
+  ADR and the decision index hold those, and a copy in a comment drifts from
+  them. The gates and limits are in `AGENTS.md` «Comments and maintained
+  documentation»; example TOMLs are held by
+  `tests/architecture/test_example_toml_comments_are_reference.py`.
 - Test-seam policy: production classes take collaborators through `__init__`
   only — no `*_fn` hooks, no `_for_test` params, no module-level mutable
   singletons.
@@ -1067,25 +1060,13 @@ dependency marker skips macOS arm64, so on an Apple Silicon machine every
 SQL-touching test errored with "the greenlet library is required". The
 container is Linux and never saw it. `greenlet` is now declared directly.
 
-**Which tests a change runs.** Selection (`scripts/affected_tests.py`) combines
-two sources, each used for what it can see: the recorded dependency map
-(`pytest-testmon`, `.testmondata`, recorded by the post-merge and weekly full
-runs and fetched as the `testmon-data` artifact) answers for `.py` outside
-`tests/`; the reader scan answers for everything else — documents, config,
-`app/`/`deploy/`/`scripts/` non-Python, and `.py` a test only runs as a
-subprocess (its dotted name counts as a literal). `nora/` non-`.py`, build and
-environment files stay ALL: loaders open them at computed paths neither source
-sees. A static import closure cannot substitute — a composition-root hub is
-imported by ~84% of test files, so imports alone do not narrow. Every failure
-mode (missing, corrupt, environment-mismatched record; an unreadable mutation
-table; a selector crash) is ALL, never NONE — a slow correct answer beats a
-fast wrong one. The record's own environment check (installed packages and
-Python version) selects everything on mismatch, which the selector reads as
-ALL. A release pull request does not run the suite: it waits for the full run
-on its base commit and passes only on success, so a release never publishes a
-commit the full suite has not passed. The escape report after each post-merge
-full run counts failures the merged diff's selection skipped; two in 30 days
-reopens the mechanism.
+**Which tests a change runs.** Automatic hosted checks are a bounded fast
+baseline, targeting three minutes and capped at five minutes overall. The full
+suite, including SQL, integration and broad source checks, is on demand through
+manual dispatch of CI. Release PRs do not wait for a full run. A timeout is failure,
+not partial success. Local affected selection remains available, and may broaden
+to ALL when dependency evidence is unavailable; use focused targets for iteration.
+See [ADR 0038](../adr/0038-bound-automatic-validation-and-run-full-tests-on-demand.md).
 
 ## Local comments and configuration sources
 

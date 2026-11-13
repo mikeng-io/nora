@@ -128,7 +128,7 @@ built-in image tool) from Nora's two canonical references,
 `assets/nora-canonical-self.png` and `assets/nora-character-reference-sheet.png`,
 the shared brief in `art/prompts/_brief.txt` and its own prompt in
 `art/prompts/`. Each was checked by eye against the eight anchors of
-`design/self-reference/05-visual-identity-spec.md` before it was used; none is
+`design/self-reference/identity.md` before it was used; none is
 a `role: self` asset. The run's JSONL event log sits beside each image in
 `art/raw/`, carrying its thread id.
 
@@ -170,7 +170,7 @@ copy, rerun it.
 
 ## Bauhinia production transition — 2026-10-26
 
-The later operator ruling in `design/self-reference/09-mini08-balanced.md`
+The later operator ruling in `design/self-reference/identity.md`
 requires 2D anime Bauhinia art for all non-3D uses, including closed-eye art.
 All 23 production sources and their image derivatives are integrated through
 `scripts/visual_assets.py sync`, with public filenames preserved. Props, empty

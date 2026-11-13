@@ -5,14 +5,14 @@
  * that disappears or fails to parse degrades health, never silently widens or
  * narrows admission.
  *
- * Shape (frozen wire §projection):
+ * Shape (design/platform-bridges/02-wire-and-platforms.md):
  *   { revision:int in [0,2^53-1], generated_ms:int, enabled:bool,
  *     account_key:str, rooms:[conversation_id...],
  *     dm_allowed_senders:[sender_id...], self_aliases:[id...],
  *     deterministic_triggers:[str|{pattern}...], receipt_emoji:str|null,
  *     room_receipt_senders:{conversation_id:[sender_id...|'*']} }
  *
- * Rules (design 02 §admission + the private-projection amendment):
+ * Rules (design/platform-bridges/02-wire-and-platforms.md «Admission and receipt» + the private-projection amendment):
  *   - no valid projection at startup → refuse content capture/receipts
  *     (everything is denied)
  *   - denied/unconfigured room → no body/attachment capture, no journal row

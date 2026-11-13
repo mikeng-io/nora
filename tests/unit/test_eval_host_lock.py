@@ -16,6 +16,9 @@ import pytest
 
 import evals.__main__ as m
 from nora.subject import sandbox
+from tests.integration.test_grading_contract import generated_cli_contract as generated_cli_contract
+from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
+from tests.unit.test_eval_main_budget import configured_main as configured_main
 
 
 def _set_argv(monkeypatch: pytest.MonkeyPatch, *args: str) -> None:
@@ -69,7 +72,7 @@ class _Stop(Exception):
 
 
 def test_the_lock_is_held_through_the_run_and_released_when_it_ends(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, configured_main,
 ) -> None:
     lock = tmp_path / "nora-eval.lock"
     monkeypatch.setattr(sandbox, "EVAL_HOST_LOCK", lock)

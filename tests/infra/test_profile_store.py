@@ -252,3 +252,18 @@ async def test_a_verdict_is_the_judges_path_and_open_until_its_window(env) -> No
     assert await env.store.record_verdict(
         key=ACCOUNT.key, line_id=premise.id, verdict="confirmed",
         verdict_by="test", now_ms=NOW + 31 * DAY) == "refused"
+
+
+async def test_context_heads_keep_historical_chain_and_known_at_bound(env):
+    from datetime import UTC, datetime
+    first=await _write(env,[_told('engineer')])
+    assert first.status=='ok'
+    head=(await env.store.account_heads(key=ACCOUNT.key))[0]
+    await _write(env,[_told('teacher')],now=NOW+DAY)
+    async with env.engine.begin() as conn:
+        await conn.execute(sa.update(PROFILE_LINE).where(PROFILE_LINE.c.id==head.id)
+            .values(recorded_at=datetime.fromtimestamp(NOW/1000,UTC)))
+    historical=await env.store.account_heads(key=ACCOUNT.key,as_of_ms=NOW)
+    assert len(historical)==1 and historical[0].text=='engineer'
+    before=await env.store.account_heads(key=ACCOUNT.key,as_of_ms=NOW-1)
+    assert before==()

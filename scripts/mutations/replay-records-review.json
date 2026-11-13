@@ -2,14 +2,14 @@
   {
     "name": "FIX 1 beta client surface",
     "file": "nora/agent/replay_capture.py",
-    "old": "            beta=SimpleNamespace(chat=SimpleNamespace(\n                completions=_Completions(client.beta.chat.completions))),",
+    "old": "            beta=SimpleNamespace(chat=SimpleNamespace(\n                completions=_Completions(client.beta.chat.completions, role))),",
     "new": "",
     "target": "tests/integration/test_eval_observability.py::test_structured_call_captures_beta_parse"
   },
   {
     "name": "FIX 1 beta parse response capture",
     "file": "nora/agent/replay_capture.py",
-    "old": "            beta=SimpleNamespace(chat=SimpleNamespace(\n                completions=_Completions(client.beta.chat.completions))),",
+    "old": "            beta=SimpleNamespace(chat=SimpleNamespace(\n                completions=_Completions(client.beta.chat.completions, role))),",
     "new": "            beta=client.beta,",
     "target": "tests/integration/test_eval_observability.py::test_structured_call_captures_beta_parse"
   },
@@ -19,20 +19,6 @@
     "old": "                out.append({\"PASS\": \"supported\", \"FAIL\": \"unsupported\", \"REVIEW\": \"ERROR\"}[verdict])",
     "new": "                if verdict == \"REVIEW\":\n                    record(\"judge_error\", cause=\"judge_incomplete\")\n                out.append({\"PASS\": \"supported\", \"FAIL\": \"unsupported\", \"REVIEW\": \"ERROR\"}[verdict])",
     "target": "tests/integration/test_eval_observability.py::test_review_judge_verdict_keeps_run_complete"
-  },
-  {
-    "name": "FIX 3 orphan finish",
-    "file": "nora/subject/eval_evidence.py",
-    "old": "            if not pending.get(marker):\n                causes.add(\"unmatched_event\")",
-    "new": "            if not pending.get(marker):\n                pass",
-    "target": "tests/unit/test_replay_scoring.py::test_unmatched_call_is_the_only_error[call_finished]"
-  },
-  {
-    "name": "FIX 3 dangling start",
-    "file": "nora/subject/eval_evidence.py",
-    "old": "    if any(pending.values()):\n        causes.add(\"unmatched_event\")",
-    "new": "    if any(pending.values()):\n        pass",
-    "target": "tests/unit/test_replay_scoring.py::test_unmatched_call_is_the_only_error[call_started]"
   },
   {
     "name": "FIX 4 suppress local strip probes",

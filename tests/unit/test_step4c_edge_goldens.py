@@ -50,7 +50,7 @@ import pytest
 
 from nora.agent.prefill import render_transcript
 from nora.agent.reaction import RECENT_LINES, ReactionPicker, render_recent
-from nora.agent.tools import _transcript_messages
+from nora.agent.toolkit.transcript import _transcript_messages
 from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.blocks import wrap_outside_text
 from nora.domain.media import GifCandidate
@@ -627,15 +627,15 @@ async def test_a_duplicated_timestamp_now_resolves_a_reply_to_the_first_row():
 async def test_the_debrief_transcript_follows_the_same_rule():
     name = "by-ts-duplicate-timestamps-a-reply-to-the-shared-ms"
     got, master = await CASES[name](), GOLDEN[name]
-    # The debrief renders only the PARENT'S CLOCK, which two rows sharing a ts
-    # also share, so who the parent is changes nothing it shows. What does
-    # change is a row that quotes its own ms: it is Zoe (row 5), the second at
-    # it, and was a self-pointer (dropped) under last-wins.
-    assert got["debrief"] != master["debrief"]
+    # The shared transcript resolves the duplicate timestamp to the first source row.
+    from xml.etree import ElementTree
+
+    rendered = ElementTree.fromstring("<rows>" + got["debrief"] + "</rows>")  # noqa: S314
+    assert len(rendered) == 6
+    assert rendered[4].attrib["replying_to"] == "4"
+    assert rendered[5].attrib["replying_to"] == "1"
     assert "replying_to" not in master["debrief"].splitlines()[4]
-    assert "replying_to" in got["debrief"].splitlines()[4]
-    for i in (0, 1, 2, 3, 5):
-        assert got["debrief"].splitlines()[i] == master["debrief"].splitlines()[i], i
+
 
 
 #: What the block says its words are a record of. Written out here, a second
@@ -720,5 +720,10 @@ async def test_the_earlier_duplicate_that_quotes_the_shared_ms_is_now_a_self_poi
     assert "replying_to" not in got["debrief"].splitlines()[1]
     for i in (0, 2, 3):
         assert got["tool"][i] == master["tool"][i], i
-        assert got["debrief"].splitlines()[i] == master["debrief"].splitlines()[i], i
+        from xml.etree import ElementTree
+
+        shown = ElementTree.fromstring(got["debrief"].splitlines()[i])  # noqa: S314
+        prior = ElementTree.fromstring(master["debrief"].splitlines()[i])  # noqa: S314
+        assert shown.text == prior.text and shown.attrib["from"] == prior.attrib["from"]
+        assert shown.attrib["at"][:16].replace("T", " ") == prior.attrib["at"]
     assert got["tool_threaded"] == master["tool_threaded"] - 1

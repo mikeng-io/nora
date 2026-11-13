@@ -534,7 +534,7 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
         store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms={"u1": Room("signal", CID)},
         read_tools_for=lambda unit, rooms: [],
-        skill_text_for=lambda kinds: "", grounder=grounder,
+        skill_text_for=lambda: "", grounder=grounder,
         doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=lambda *a, **k: _ret(()),
         open_events=lambda *a, **k: _ret(()),
@@ -543,7 +543,7 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
                              timeout_seconds=30.0),
         cooldown_seconds=0.0, units=("u1",),
         session_timeout_seconds=policy.session_timeout_seconds,
-        max_items=12, max_strikes=3, metrics=Metrics(),
+        max_items=12, metrics=Metrics(),
         clock=lambda: clock_ms[0] / 1000)
     ev = WakeEvaluator(
         store=stimuli, units=lambda: ("u1",), policy=policy, metrics=Metrics(),
@@ -873,7 +873,7 @@ async def test_source_event_links_to_its_shown_transcript_row():
     pin_events = [e for e in ctx.source_events if e.kind == "pin"]
     assert len(pin_events) == 2
     assert all(e.target_message_id is None for e in pin_events)
-    transcript_part = prompt.split("<group_transcript")[1]
+    transcript_part = prompt.split("<transcript")[1]
     assert all(' on="' not in line
                for line in transcript_part.splitlines()
                if line.startswith("<source_event"))

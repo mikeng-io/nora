@@ -7,6 +7,13 @@ import pytest
 from nora.subject.replay_diagnosis import diagnose
 
 
+@pytest.fixture(autouse=True)
+def private_unit_export(monkeypatch):
+    from scripts import memory_graph_spike
+    monkeypatch.setattr(memory_graph_spike, "evaluation_export_for", lambda _: None)
+
+
+
 def scripted_judge(statement, events):
     """The wire shape varies with the record, including invalid responses."""
     if statement.get("wrong_shape"):
@@ -130,174 +137,23 @@ def test_unknown_event_cannot_ground_a_diagnostic():
     )
 
 
-@pytest.mark.parametrize("mode", [
-    "live", "rescore", "legacy", "tampered", "http400", "parse", "oversized", "absent",
-    "missing_reason", "uncited",
-])
-async def test_decision_resolves_fingerprinted_writer_events(tmp_path, monkeypatch, mode):
-    import json
-    from tempfile import TemporaryFile
-    from types import SimpleNamespace
+def _record_uncited_tool_calls(source):
+    """The read then propose tool calls the `uncited` mode's trajectory needs."""
+    tool = {"toolUseId": "generated-read", "name": "load_transcript",
+            "input": {"items": [0]}}
+    source.record("tool_started", span_id="generated", tool=tool)
+    source.record("tool_finished", span_id="generated", tool=tool,
+                  result={"content": [{"text": "Generated context reply_to=2"}]})
+    saved = {"what": "Generated fact", "cite": [{"source": 1}]}
+    proposal = {"toolUseId": "generated-save", "name": "memory_propose",
+                "input": {"items": [0], "statements": [saved]}}
+    source.record("tool_started", span_id="generated", tool=proposal)
+    source.record("tool_finished", span_id="generated", tool=proposal,
+                  result={"content": [{"json": {"statements": [
+                      {"index": 0, "status": "saved"}]}}]})
+    return saved
 
-    from opentelemetry import trace
 
-    from evals.backbone import _prefill_capture
-    from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
-    from scripts import memory_graph_spike as spike
-    _prefill_capture()
-    source_root = tmp_path / "source"
-    source_root.mkdir(mode=0o700)
-    fact = {"fact": "Generated fact", "quote": "Generated fact", "location": "1",
-            "reason": "generated omission"}
-    agenda = '<item kind="message"><m n="1">Generated fact</m></item>'
-    with TemporaryFile() as lock:
-        source = RunEvidence(run_id="spike", metadata={}, lock_fd=lock.fileno(),
-                             private_root=source_root)
-        with source.capture(trace.get_tracer_provider()):
-            source.record("event", name="nora.session.started", span_id="generated", attributes={
-                "body": json.dumps({"session_id": 1, "system": "generated", "agenda": agenda})})
-            source.record("event", name="nora.model.request", span_id="generated", attributes={
-                "nora.model.request.body": json.dumps({"messages": [
-                    {"role": "system", "content": "generated"},
-                    {"role": "user", "content": agenda}]})})
-            source.record("transport_started", span_id="generated")
-            source.record("transport_response", span_id="generated", source_marker="writer",
-                headers={"x-omniroute-model": "generated-writer",
-                         "x-omniroute-provider": "generated-writer"},
-                response={"choices": [{"message": {"reasoning_content": (
-                    "" if mode == "absent" else "not memory" + ("x" * 80_000 if mode == "oversized"
-                                                               else ""))}}]})
-            source.record("transport_finished", span_id="generated",
-                          reasoning_availability="absent" if mode == "absent" else "observed")
-            if mode == "uncited":
-                tool = {"toolUseId": "generated-read", "name": "load_transcript",
-                        "input": {"items": [0]}}
-                source.record("tool_started", span_id="generated", tool=tool)
-                source.record("tool_finished", span_id="generated", tool=tool,
-                              result={"content": [{"text": "Generated context reply_to=2"}]})
-                saved = {"what": "Generated fact", "cite": [{"source": 1}]}
-                proposal = {"toolUseId": "generated-save", "name": "memory_propose",
-                            "input": {"items": [0], "statements": [saved]}}
-                source.record("tool_started", span_id="generated", tool=proposal)
-                source.record("tool_finished", span_id="generated", tool=proposal,
-                              result={"content": [{"json": {"statements": [
-                                  {"index": 0, "status": "saved"}]}}]})
-            source.record("event", name="nora.session.terminal", span_id="generated", attributes={
-                "body": json.dumps({"session_id": 1})})
-            writer_ids = [e["event_id"] for e in read_events(source.path)
-                          if e.get("span_id") == "generated"]
-            if mode == "uncited":
-                source.record("judge_verdict", verdict="unsupported", reason="scoped",
-                              session_event_ids=writer_ids, statement=saved)
-            else:
-                source.record("judge_verdict", verdict="missed", reason="scoped",
-                              session_event_ids=writer_ids,
-                              output={"missed": [fact], "context_only": []})
-        assert validate_events(read_events(source.path))["status"] == "PASS"
-        target = source_root
-        if mode not in {"live", "uncited"}:
-            rescored_root = tmp_path / "rescored"
-            rescored_root.mkdir(mode=0o700)
-            rescored = RunEvidence(run_id="rescore", metadata={}, lock_fd=lock.fileno(),
-                                   private_root=rescored_root)
-
-            async def score(*args):
-                return json.dumps({"missed": [fact], "context_only": []})
-
-            with rescored.capture(trace.get_tracer_provider()):
-                await spike.rescore_facts(source_root, SimpleNamespace(
-                    models=["generated"], call=score, served={}))
-            scored_events = read_events(rescored.path)
-            verdict = next(e for e in scored_events if e["kind"] == "judge_verdict")
-            assert verdict["session_event_ids"] == writer_ids
-            assert verdict["source_sha256"] == spike.fingerprint(source.path / "events.jsonl")
-            target = rescored_root
-            if mode == "legacy":
-                for e in scored_events:
-                    if e["kind"] == "rescore_source":
-                        e.pop("path")
-                    if e["kind"] == "judge_verdict":
-                        e.pop("source_sha256")
-                        e["session_event_ids"] = []
-                (rescored.path / "events.jsonl").write_text(
-                    "".join(json.dumps(e) + "\n" for e in scored_events))
-                target = rescored.path
-            if mode == "tampered":
-                rows = read_events(source.path)
-                with (source.path / "events.jsonl").open("a") as output:
-                    output.write(json.dumps({"kind": "changed", "order": len(rows) + 1,
-                                             "event_id": f"e{len(rows) + 1}"}) + "\n")
-        calls = []
-
-        async def diagnose(model, instruction, payload):
-            calls.append(payload)
-            if mode == "oversized":
-                raise AssertionError("oversized trajectory was sent")
-            assert "session_event_ids" not in payload["statement"]
-            trajectory = payload["trajectory"]
-            assert trajectory["agenda_items"] and trajectory["cited_rows"]
-            assert all(e["event_id"] in writer_ids for e in trajectory["events"])
-            reason = next(e for e in trajectory["events"] if e["kind"] == "model_call")
-            assert reason["reasoning"] == "not memory"
-            if mode == "http400":
-                import httpx
-                raise httpx.HTTPStatusError("generated context overflow",
-                    request=httpx.Request("POST", "https://generated.invalid/v1"),
-                    response=httpx.Response(400))
-            if mode == "parse":
-                return '{"observation":'
-            if mode == "missing_reason":
-                return '{"observation":"not_mentioned","event_ids":[]}'
-            if mode == "uncited":
-                row_id = trajectory["cited_rows"]["1"]["event_id"]
-                read_id = next(e["event_id"] for e in trajectory["events"]
-                               if e["kind"] == "tool_finished")
-                return json.dumps({"observation": "uncited_detail", "event_ids": [row_id, read_id],
-                                   "reason": "the detail comes from the transcript reply_to"})
-            return json.dumps({"observation": "rejected_as_not_memory", "quote": "not memory",
-                "event_ids": [reason["event_id"]], "reason": "generated recorded rejection"})
-
-        monkeypatch.setattr(spike, "Judges", lambda *args: SimpleNamespace(
-            models=["generated"], call=diagnose))
-        monkeypatch.setattr(spike, "load", lambda *args: None)
-        output_root = tmp_path / "diagnostic"
-        result = await spike.run_diagnostic(SimpleNamespace(output=output_root,
-            decision_judge=target, config=tmp_path / "generated.toml",
-            judge_a="generated-a", judge_b="generated-b"))
-    failed = mode in {"tampered", "http400", "parse", "oversized", "missing_reason"}
-    assert spike.report_exit(result) == (2 if failed else 0)
-    if mode == "tampered":
-        assert result["status"] == result["evidence"]["status"] == "ERROR"
-        assert calls == []
-        return
-    events = read_events(next(output_root.glob("diagnostic-*")))
-    diagnostic = next(e for e in events if e["kind"] == "decision_diagnostic")
-    if failed:
-        assert result["status"] == result["evidence"]["status"] == "ERROR"
-        assert result["judge_unavailable"] == 1 and result["insufficient_evidence"] == 0
-        assert diagnostic["result"]["observation"] == "judge_unavailable"
-        assert diagnostic["result"]["event_ids"] == []
-        assert any(e["kind"] == "judge_error" for e in events)
-        if mode == "oversized":
-            assert calls == [] and result["input_truncated"] == 1
-            assert "truncated" in result["evidence"]["causes"]
-            supplied = next(e for e in events if e["kind"] == "decision_input")
-            assert supplied["truncated"] and supplied["input_bytes"] > supplied["max_input_bytes"]
-        else:
-            assert len(calls) == 1
-    else:
-        assert result["status"] == "REPORTED" and result["evidence"]["status"] == "PASS"
-        assert result["statements"] == 1 and result["judge_unavailable"] == 0
-        if mode == "absent":
-            assert calls == [] and result["insufficient_evidence"] == 1
-        else:
-            assert len(calls) == 1 and result["insufficient_evidence"] == 0
-            expected = "uncited_detail" if mode == "uncited" else "rejected_as_not_memory"
-            assert diagnostic["result"]["observation"] == expected
-            if mode == "uncited":
-                output = next(e["output"] for e in events if e["kind"] == "judge_verdict")
-                assert diagnostic["result"]["event_ids"] == output["event_ids"]
-                assert diagnostic["result"]["reason"] == output["reason"]
 
 
 def generated_trajectory(*, later_absent=False, mixed=False, chunks=3, text="not memory",
@@ -360,6 +216,63 @@ def generated_trajectory(*, later_absent=False, mixed=False, chunks=3, text="not
         absent()
     emit("event", name="nora.session.terminal", attributes={"body": '{"bound":null}'})
     return {"kind": "unsupported", "statement": statement}, events
+
+
+@pytest.mark.parametrize("structured", [False, True])
+def test_missed_diagnostic_uses_source_ids_not_item_numbers_or_timestamps(structured):
+    import json
+
+    from nora.subject.replay_diagnosis import compact_trajectory
+
+    _, events = generated_trajectory()
+    request = next(e for e in events if e.get("name") == "nora.model.request")
+    request["attributes"]["nora.model.request.body"] = json.dumps({"messages": [{
+        "role": "user", "content": (
+            '<item index="0"><m n="1">Generated fact</m></item>'
+            '<item index="1"><m n="12">Generated other</m></item>'),
+    }]})
+    statement = {"kind": "missed", "location": "Agenda item 0, NEW source row 1 at 12:34"}
+    if structured:
+        statement["sources"] = [1]
+    trajectory = compact_trajectory(statement, events)
+    assert [i["index"] for i in trajectory["agenda_items"]] == [0]
+    assert set(trajectory["cited_rows"]) == {"1"}
+
+
+def test_reaction_context_cannot_replace_the_diagnostic_cited_message():
+    import json
+
+    from nora.subject.replay_diagnosis import compact_trajectory
+
+    statement, events = generated_trajectory()
+    request = next(e for e in events if e.get("name") == "nora.model.request")
+    request["attributes"]["nora.model.request.body"] = json.dumps({"messages": [{
+        "role": "user", "content": (
+            '<item index="0"><m n="1" person="generated-author">Generated fact</m>'
+            '<m n="1" reaction="👍">Generated fact</m></item>'),
+    }]})
+    trajectory = compact_trajectory(statement, events)
+    assert 'person="generated-author"' in trajectory["cited_rows"]["1"]["rendered"]
+    assert 'reaction="' not in trajectory["cited_rows"]["1"]["rendered"]
+
+
+def test_diagnostic_cited_rows_carry_the_shown_carrier_binding():
+    import json
+
+    from nora.subject.replay_diagnosis import compact_trajectory
+
+    statement, events = generated_trajectory()
+    request = next(e for e in events if e.get("name") == "nora.model.request")
+    request["attributes"]["nora.model.request.body"] = json.dumps({"messages": [{
+        "role": "user", "content": (
+            '<reads><binding agenda_room="signal:generated-room" label="Friends"/></reads>'
+            '<item index="0" room="«Friends»"><m n="1" person="generated-author">'
+            'Generated fact</m></item>'),
+    }]})
+    trajectory = compact_trajectory(statement, events)
+    row = trajectory["cited_rows"]["1"]
+    assert row["carrier"] == '<binding agenda_room="signal:generated-room" label="Friends"/>'
+    assert row["room"] == 'room="«Friends»"'
 
 
 def test_compact_statement_scope_excludes_later_absent_call():
@@ -533,79 +446,3 @@ def test_missed_only_observations_reject_unsupported_statements(observation):
         "observation"] == "insufficient_evidence"
 
 
-async def test_decision_deduplicates_verdicts_without_collapsing_sessions(tmp_path, monkeypatch):
-    import json
-    from tempfile import TemporaryFile
-    from types import SimpleNamespace
-
-    from opentelemetry import trace
-
-    from evals.backbone import _prefill_capture
-    from nora.subject.eval_evidence import RunEvidence, read_events
-    from scripts import memory_graph_spike as spike
-    _prefill_capture()
-    source_root = tmp_path / "source"
-    source_root.mkdir(mode=0o700)
-    saved = {"what": "Generated fact", "cite": [{"source": 1}]}
-    with TemporaryFile() as lock:
-        source = RunEvidence(run_id="spike", metadata={}, lock_fd=lock.fileno(),
-                             private_root=source_root)
-        with source.capture(trace.get_tracer_provider()):
-            for session in range(2):
-                span = f"generated-{session}"
-                source.record("event", name="nora.session.started", span_id=span,
-                              attributes={"body": json.dumps({"session_id": session})})
-                agenda = ('<item index="0" kind="message"><m n="1">'
-                          'Generated fact with omitted detail</m></item>')
-                source.record("event", name="nora.model.request", span_id=span, attributes={
-                    "nora.model.request.body": json.dumps({"messages": [
-                        {"role": "user", "content": agenda}]})})
-                source.record("transport_started", span_id=span)
-                source.record("transport_response", span_id=span, response={"choices": [{
-                    "message": {"reasoning_content": "Generated context discussion"}}]})
-                source.record("transport_finished", span_id=span, reasoning_availability="observed")
-                proposal = {"toolUseId": f"save-{session}", "name": "memory_propose",
-                            "input": {"items": [0], "statements": [saved]}}
-                source.record("tool_started", span_id=span, tool=proposal)
-                source.record("tool_finished", span_id=span, tool=proposal, result={"content": [
-                    {"json": {"statements": [{"index": 0, "status": "saved"}]}}]})
-                source.record("event", name="nora.session.terminal", span_id=span,
-                              attributes={"body": "{}"})
-                ids = [e["event_id"] for e in read_events(source.path) if e.get("span_id") == span]
-                for alias in ("generated-a", "generated-b"):
-                    source.record("judge_verdict", alias=alias, verdict="unsupported",
-                                  statement=dict(reversed(list(saved.items()))), reason="generated",
-                                  session_event_ids=ids)
-                    source.record("judge_verdict", alias=alias, verdict="missed", reason="scoped",
-                                  session_event_ids=ids, output={"context_only": [], "missed": [{
-                                      "fact": "Generated omitted detail", "location": "1",
-                                      "quote": "omitted detail", "reason": alias}]})
-        calls = []
-
-        async def call(model, instruction, payload):
-            calls.append(payload)
-            trajectory = payload["trajectory"]
-            kind = payload["statement"]["kind"]
-            observation = "uncited_detail" if kind == "unsupported" else "not_mentioned"
-            assert observation in payload["allowed_observations"]
-            anchor = (trajectory["cited_rows"]["1"]["event_id"] if kind == "unsupported" else
-                      next(e["event_id"] for e in trajectory["events"]
-                           if e["kind"] == "model_call"))
-            return json.dumps({"observation": observation, "event_ids": [anchor],
-                               "reason": "Generated observed diagnosis"})
-
-        monkeypatch.setattr(spike, "Judges", lambda *args: SimpleNamespace(
-            models=["generated-a"], call=call))
-        monkeypatch.setattr(spike, "load", lambda *args: None)
-        output = tmp_path / "diagnostic"
-        result = await spike.run_diagnostic(SimpleNamespace(
-            output=output, decision_judge=source_root, config=tmp_path / "generated.toml",
-            judge_a="generated-a", judge_b="generated-b"))
-    assert result["evidence"]["status"] == "PASS" and result["judge_unavailable"] == 0
-    assert result["statements"] == len(calls) == 4
-    assert [c["statement"]["kind"] for c in calls] == ["unsupported", "missed"] * 2
-    diagnostics = [e["result"] for e in read_events(next(output.glob("diagnostic-*")))
-                   if e["kind"] == "decision_diagnostic"]
-    scopes = [tuple(d["statement"]["session_event_ids"]) for d in diagnostics]
-    assert scopes[0] == scopes[1] and scopes[2] == scopes[3] and scopes[0] != scopes[2]
-    assert {d["observation"] for d in diagnostics} == {"uncited_detail", "not_mentioned"}

@@ -15,9 +15,10 @@ forced by the data:
   a new revision, never an edit, and an operator's retirement is undone the same
   way (`rollback` to an earlier, active revision).
 
-**One model-facing surface: the Lessons session** (L2,
-`nora.language.lessons.LessonsAdaptor`), built only under `[lessons] enabled`
-(default off). No turn holds these verbs, and nothing renders a lesson until L5.
+**One model-facing surface: the Cognition session** — its `lesson_write` and
+`lesson_retire` verbs (through `nora.language.lessons.CognitionLessons`), built
+only under `[lessons] enabled` (default off). No turn holds these verbs, and
+nothing renders a lesson until L5.
 
 **The doctrine check (L3) runs last**, when the book is built with one: a separate
 instrument call (`nora.language.doctrine_check.DoctrineCheck`) reads the lesson

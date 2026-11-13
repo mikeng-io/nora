@@ -35,41 +35,6 @@
     "target": "tests/unit/test_cognition_rollup_stay_context.py::test_a_presence_read_that_fails_leaves_the_line_as_it_was"
   },
   {
-    "name": "3 quiet close: the loop is not stopped at the last close",
-    "file": "nora/app/cognition_session.py",
-    "old": "                    request[\"stop_event_loop\"] = True",
-    "new": "                    request[\"stop_event_loop\"] = False",
-    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_session_that_closes_every_item_no_change_makes_exactly_one_model_call"
-  },
-  {
-    "name": "3 quiet close: the loop stops at the last close whatever the closes were (a written close is guarded twice, by its reason and by the write marking the session acted, so only dropping both reddens)",
-    "file": "nora/app/cognition_session.py",
-    "old": "    return (\n        not state.acted\n        and len(state.closed_indices) == len(state.items_by_index)\n        and all(c.reason in _QUIET_CLOSES for c in state.closes)\n    )",
-    "new": "    return len(state.closed_indices) == len(state.items_by_index)",
-    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_session_with_a_written_close_keeps_the_follow_up_call"
-  },
-  {
-    "name": "3 quiet close: a waiting close ends the loop too",
-    "file": "nora/app/cognition_session.py",
-    "old": "_QUIET_CLOSES: frozenset[str] = frozenset({\"no_change\", \"covered\"})",
-    "new": "_QUIET_CLOSES: frozenset[str] = frozenset({\"no_change\", \"covered\", \"waiting\"})",
-    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_waiting_close_keeps_the_follow_up_call"
-  },
-  {
-    "name": "3 quiet close: another verb called does not keep the loop",
-    "file": "nora/app/cognition_session.py",
-    "old": "                state.acted = True\n",
-    "new": "                state.acted = False\n",
-    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_any_other_verb_called_keeps_the_follow_up_call_even_when_it_was_refused"
-  },
-  {
-    "name": "3 quiet close: the stop fires before every item is closed",
-    "file": "nora/app/cognition_session.py",
-    "old": "        and len(state.closed_indices) == len(state.items_by_index)\n",
-    "new": "",
-    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_the_loop_ends_only_once_the_last_item_is_closed"
-  },
-  {
     "name": "4 lookup: an Instagram username is not read",
     "file": "nora/agent/room.py",
     "old": "            *(p for p in view.people if p.person_id in owners),\n",
@@ -124,13 +89,6 @@
     "old": "        run = run + 1 if previous == start else 1\n",
     "new": "        run = run + 1\n",
     "target": "tests/unit/test_culture_adaptor.py::test_the_third_unsettled_session_of_one_batch_in_a_row_advances_past_it"
-  },
-  {
-    "name": "3 review: a verb in the same turn as a quiet close does not take the stop back",
-    "file": "nora/app/cognition_session.py",
-    "old": "                state.request_state.pop(\"stop_event_loop\", None)",
-    "new": "                pass",
-    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_write_in_the_same_turn_as_a_quiet_close_keeps_the_follow_up_call"
   },
   {
     "name": "2 review: the place is named whatever the unit's rooms",

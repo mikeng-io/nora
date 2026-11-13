@@ -1556,13 +1556,13 @@ _MILES_ONLINE = SteamPlayerState(
 
 
 def _online_persons() -> Persons:
-    """The `persons` fixture plus the `pulse` index entry `online_now` reads —
+    """The `persons` fixture plus the `steam` index entry `online_now` reads —
     Miles's Steam id, so the room roster resolves to a checkable account."""
     return Persons(
         by_person={"miles": MILES},
         index={
             ("signal", "+85212345678"): "miles",
-            ("pulse", "111"): "miles",
+            ("steam", "111"): "miles",
         },
     )
 
@@ -3074,7 +3074,7 @@ async def test_a_deferred_participation_turn_gets_the_same_surface_as_a_tag(
     SAME `ToolRegistry.surface()` the tag path does, so `[llm] defer_tools`
     means the same thing on both — hot tools plus the loader, the catalogue
     in the prompt, one more turn for the load."""
-    from nora.agent.tools import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
 
     calls: list = []
     path = _fire_path(
@@ -3288,7 +3288,7 @@ async def test_a_proactive_act_runs_when_only_optional_display_coverage_fails(
     record_store, memory_store,
 ):
     """Optional display coverage — positions/findings and ledger readbacks —
-    degrades the prompt without withholding the act itself (design 20 §5:
+    degrades the prompt without withholding the act itself (design/cognition-loop/proactive.md:
     "a display-only cap must not permanently prevent all proactive
     activity")."""
     from dataclasses import replace

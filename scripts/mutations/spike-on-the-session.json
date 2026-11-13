@@ -1,12 +1,5 @@
 [
   {
-    "name": "smoke errors cannot pass",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "\"ERROR\"\n        if errors or missing or len(samples) < 5",
-    "new": "\"PASS\"\n        if errors or missing or len(samples) < 5",
-    "target": "tests/unit/test_memory_graph_spike.py::test_session_smoke_marks"
-  },
-  {
     "name": "acts detect in-place durable writes",
     "file": "scripts/memory_graph_spike.py",
     "old": "\"SELECT md5(coalesce(string_agg(body, ',' ORDER BY body), '')) AS digest \"",

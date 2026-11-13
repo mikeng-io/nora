@@ -428,12 +428,6 @@ _MUST_SEE: dict[str, frozenset[str]] = {
         "self._profile.account_state", "self._profile.account_heads",
         "self._culture.head", "self._reads.rows_by_id",
     }),
-    # Lessons: the held lessons in, and the horizon's retirements out. Its verbs write
-    # through the book during the loop, outside `inputs`/`commit`, and are not awaited in
-    # this class.
-    "LessonsAdaptor": frozenset({
-        "self._book.active", "self._book.retire",
-    }),
     # note-merge: the change check's two reads, the fold's transaction, and the stamp that
     # must come last.
     "NoteMergeAdaptor": frozenset({

@@ -11,7 +11,7 @@ package fakeig
 // `image_versions2.candidates`, `video_versions`, `video_duration`,
 // `carousel_media`), not captured from the wire, so they pin what this code
 // does with that SHAPE and nothing about whether Instagram sends it. The live
-// probe (17 P12) replaces them with captured bytes, scrubbed.
+// probe () replaces them with captured bytes, scrubbed.
 //
 // Every value is synthetic: the shortcode/media-id pairs are the synthetic
 // pairs domain/shortcode_test.go pins (computed with Python's base64 running

@@ -72,8 +72,8 @@
   {
     "name": "service publish: the not-active check before the write is dropped",
     "file": "nora/app/documents_service.py",
-    "old": "            if current.summary.state != \"active\":\n                return _not_active(current.summary.state)\n",
-    "new": "",
+    "old": "        # API never distinguishes them either).\n        here = self._room_ids(platform, conversation_id) | {conversation_id}\n        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or not may_read(current.summary, person_id, self._named(person_id))\n        ):\n            return _no_such_document()\n        if current.summary.state != \"active\":\n            return _not_active(current.summary.state)\n",
+    "new": "        # API never distinguishes them either).\n        here = self._room_ids(platform, conversation_id) | {conversation_id}\n        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or not may_read(current.summary, person_id, self._named(person_id))\n        ):\n            return _no_such_document()\n",
     "target": "tests/unit/test_documents_service.py::test_a_revision_of_an_archived_or_deleted_document_is_refused_as_not_active"
   },
   {
@@ -107,22 +107,22 @@
   {
     "name": "service set_state: the same-room rule is dropped, so another room changes this room's document",
     "file": "nora/app/documents_service.py",
-    "old": "        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or not may_read(current.summary, person_id, named)\n        ):\n            return None\n        return current",
-    "new": "        if current is None:\n            return None\n        return current",
+    "old": "            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or not may_read(current.summary, person_id, named)\n",
+    "new": "            or False\n",
     "target": "tests/unit/test_documents_service.py::test_another_rooms_document_cannot_have_its_state_changed"
   },
   {
     "name": "service set_state: an unknown person changes a state",
     "file": "nora/app/documents_service.py",
-    "old": "        if not self._is_person(person_id):\n            return StateResult(",
-    "new": "        if False:\n            return StateResult(",
+    "old": "if isinstance(person_id, DocumentAuthority) or not self._is_person(person_id):",
+    "new": "if False:",
     "target": "tests/unit/test_documents_service.py::test_only_a_known_person_changes_a_state_and_only_to_a_known_state"
   },
   {
     "name": "review 1: the reader never reads the put-away documents, so a later turn has no id to restore",
     "file": "nora/engagement/documents_context.py",
-    "old": ", states=(\"archived\", \"deleted\"),\n",
-    "new": ",\n",
+    "old": "                        states=(\"archived\", \"deleted\"),",
+    "new": "                        states=(\"active\",),",
     "target": "tests/unit/test_document_tools.py::test_a_deleted_document_is_restored_from_what_a_later_turn_sees"
   },
   {
@@ -142,8 +142,8 @@
   {
     "name": "review 1: the put-away section is not capped",
     "file": "nora/engagement/documents_context.py",
-    "old": "                        platform=platform, conversation_ids=ids, limit=self._put_away,",
-    "new": "                        platform=platform, conversation_ids=ids, limit=self._shown,",
+    "old": "limit=0 if autonomous else self._put_away,",
+    "new": "limit=0 if autonomous else self._shown,",
     "target": "tests/unit/test_documents_block.py::test_put_away_documents_are_a_bounded_section_led_by_their_state"
   },
   {
@@ -155,8 +155,8 @@
   },
   {
     "name": "review 1: the tool refuses a link's handle",
-    "file": "nora/agent/tools.py",
-    "old": "        if target is None and not _is_document_handle(handle):\n            _record(metrics, tool, \"not_found\", reason=\"bad_id\")\n            return {\"status\": \"not_found\",\n                    \"note\": \"That is not a document id, so nothing changed.\"}",
+    "file": "nora/documents/adapters/tools.py",
+    "old": "if target is None and not _is_document_handle(handle):\n            _record(metrics, tool, \"not_found\", reason=\"bad_id\")\n            return {\"status\": \"not_found\", \"note\": \"That is not a document id, so nothing changed.\"}",
     "new": "        if target is None:\n            _record(metrics, tool, \"not_found\", reason=\"bad_id\")\n            return {\"status\": \"not_found\",\n                    \"note\": \"That is not a document id, so nothing changed.\"}",
     "target": "tests/unit/test_document_tools.py::test_a_put_away_document_is_restored_by_the_handle_its_link_carries"
   },
@@ -183,7 +183,7 @@
   },
   {
     "name": "review 4: the tool text routes a bare remove to a delete",
-    "file": "nora/agent/tools.py",
+    "file": "nora/documents/adapters/tools.py",
     "old": "        when somebody asks to archive, delete or bring back a document.",
     "new": "        when somebody asks to archive, delete, remove or bring back a document.",
     "target": "tests/unit/test_document_tools.py::test_the_lifecycle_texts_never_route_a_remove_to_a_delete"

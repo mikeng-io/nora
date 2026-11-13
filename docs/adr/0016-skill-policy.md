@@ -2,7 +2,7 @@
 
 - **Status:** proposed (2026-09-24)
 - **Date:** 2026-09-24
-- **Extends:** [design/12](../../design/12-prompt-tool-skill-boundaries.md) §1
+- **Extends:** [design/12-prompt-tool-skill-boundaries.md](../../design/12-prompt-tool-skill-boundaries.md) §1
   (placement) with a cost test and a reach test. §2 (authority) is unchanged,
   except that its line calling item 5 "an empty rank" has been stale since
   DEC-48 shipped the first skill.
@@ -18,10 +18,10 @@
 Nora's skills live in `nora/skills/`. Only a skill's name and description sit
 in the prompt, rendered by the Strands `AgentSkills` plugin
 (`nora/agent/factory.py`); the body arrives when she calls the `skills` tool
-(design/12 §1, progressive disclosure). Until now the rules for skills lived
+(design/12-prompt-tool-skill-boundaries.md §1, progressive disclosure). Until now the rules for skills lived
 in three places and covered little:
 
-- design/12 §1: needed every turn is prompt, a capability is a tool,
+- design/12-prompt-tool-skill-boundaries.md §1: needed every turn is prompt, a capability is a tool,
   "instructions for a domain that is usually irrelevant" is a skill.
 - `tests/test_skill_content.py`: a description needs a "Not for" half, the
   skill names no scenario, and the body stays under 30 non-blank lines
@@ -54,7 +54,7 @@ tools.
   35.5k input tokens per call. The 12 skill-loading turns averaged 4.2 calls,
   but that gap is not the load's cost: planning, recommending and drawing
   turns use several tools whether or not a skill loads. Structurally, a load
-  is one model call (design/12 §4), so one load costs about C = 35.5k cached
+  is one model call (design/12-prompt-tool-skill-boundaries.md §4), so one load costs about C = 35.5k cached
   tokens plus the body.
 - Doctrine text is part of the cached prefix and is re-read on every call,
   so B tokens of doctrine cost B × k cached tokens per tag turn, and it is
@@ -173,7 +173,7 @@ Nora's descriptions gave the when and the not-for, but not the what.
 
 ### 6. Authority
 
-Unchanged from design/12 §2: a skill ranks below the doctrine and above
+Unchanged from design/12-prompt-tool-skill-boundaries.md §2: a skill ranks below the doctrine and above
 message content, may add procedure and MUST NOT relax a rule above it, is
 operator-only to edit, and MUST NOT load because a message names it (R-29).
 
@@ -270,7 +270,7 @@ listing silently rather than raising.
   not, now fails the gate instead.
 - **Worse (added 2026-09-25):** a skill's operator-only editing convention
   is no longer a checked frontmatter field, only review — the same as it
-  always was for every OTHER rule §6 lists (design/12 §2's authority item 5
+  always was for every OTHER rule §6 lists (design/12-prompt-tool-skill-boundaries.md §2's authority item 5
   was never machine-checked; only the two keys borrowed from doctrine's
   vocabulary looked like they were).
 - **Worse:**

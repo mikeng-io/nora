@@ -35,8 +35,8 @@ RollupKind = Literal["stay", "trip", "colocation", "outing", "daybook", "tie"]
 
 #: The rollups `rollup_read` reads. The aggregates that answer «where
 #: does X usually go» (place, occupancy, rhythm, corridor) stay behind
-#: `routine_read`, which forecasts from them; `response` is the Lessons
-#: adaptor's, not a session's.
+#: `routine_read`, which forecasts from them; `response` is lesson
+#: evidence for the Cognition session, not a read tool's.
 ROLLUP_READ_KINDS: tuple[str, ...] = ("stay", "trip", "colocation", "outing", "daybook", "tie")
 
 #: The most rows one call returns: a bounded read, like `record_query`'s.

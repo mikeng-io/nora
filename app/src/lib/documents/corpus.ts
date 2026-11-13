@@ -66,7 +66,7 @@ export const INVALID: Array<[string, unknown]> = [
   ["an empty Accordion", page({ type: "Accordion", props: { items: [] } })],
   ["a Stat with a className", page({ type: "Stat", props: { label: "a", value: "1", className: "x" } })],
   ["children on a Stat", page({ type: "Stat", props: { label: "a", value: "1" }, children: [] })],
-  ["a Tabs (removed: nothing used it and it needed three schema branches, design §42)", page({ type: "Tabs", props: {}, children: [] })],
+  ["a Tabs (removed: nothing used it and it needed three schema branches, design/artifact/catalog.md)", page({ type: "Tabs", props: {}, children: [] })],
   ["a Code block with a className", page({ type: "Code", props: { text: "x", className: "y" } })],
   ["a one-point Chart (a single number is a Stat)", page({ type: "Chart", props: { kind: "bar", caption: "c", data: [{ label: "a", value: 1 }] } })],
   ["a Chart without a caption", page({ type: "Chart", props: { kind: "bar", data: [{ label: "a", value: 1 }, { label: "b", value: 2 }] } })],

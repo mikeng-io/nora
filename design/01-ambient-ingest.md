@@ -5,9 +5,9 @@ description: "Every Signal group message is written to SQLite (audit) and fed to
 tags: [nora, design, ambient, ingest, signal, sqlite, honcho]
 timestamp: '2026-08-03'
 edges:
-  - {dst: ../00-overview.md, rel: decided_by, provenance: asserted}
-  - {dst: ../02-tagging-path.md, rel: triggers, provenance: asserted}
-  - {dst: ../04-config-identity.md, rel: uses, provenance: asserted}
+  - {dst: 00-overview.md, rel: decided_by, provenance: asserted}
+  - {dst: 02-tagging-path.md, rel: triggers, provenance: asserted}
+  - {dst: 04-config-identity.md, rel: uses, provenance: asserted}
 ---
 
 # Nora — Ambient Ingest Path

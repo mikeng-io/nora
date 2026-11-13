@@ -71,6 +71,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
+from nora.agent.catalog.model import turn_occasion
 from nora.agent.guards import ReplyGuard
 from nora.agent.lineage import (
     LineagePolicy,
@@ -87,7 +88,6 @@ from nora.agent.prefill import (
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.standing_ledger import ledger_permits, ledger_target
-from nora.agent.tools import turn_occasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
 from nora.domain.blocks import RowStyle, render_rows
@@ -639,7 +639,7 @@ class FirePath:
         profile: ProfileHeads | None = None,
         tag_trace_store: Any = None,
         # The unit's shared cognitive state reader (design/notebook-memory-
-        # types/20-shared-cognitive-state.md): bound at the composition root
+        # types/20-standing.md): bound at the composition root
         # over the canonical stores, `None` in every harness that wires none.
         # A PROACTIVE occasion withholds on an `unavailable` view — a claimed
         # due row is not proof the act is still needed, and an unread premise
@@ -1558,13 +1558,11 @@ class FirePath:
             if view is not None:
                 views.append(view)
         # THE ROOM's, keyed its `primary_id` like `_read_culture`.
-        # `of` is the room's `policy.toml` label, its id in the prompt (ADR
-        # 0029). `primary_id` is the store key, often a platform conversation
-        # id, and never reaches a prompt. A room with no label shows no block.
+        # The stored subject id is shared with Cognition and the read tools.
         if convo.primary_id and convo.label:
             view = await one(
                 convo.primary_id,
-                entity="room", of=convo.label,
+                entity="room", of=convo.primary_id,
                 stage="fire_profile_room",
             )
             if view is not None:

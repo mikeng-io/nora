@@ -29,11 +29,11 @@ edges:
   - {src: 02-doctrine-and-measurement, dst: 01-stages-and-seams, rel: depends_on, provenance: asserted}
   - {src: 03-decisions, dst: 00-overview, rel: summarises, provenance: asserted}
 external_edges:
-  - {dst: "dreamer-agent-loop/39-proactive-ooda-loop", rel: revises, provenance: asserted}
-  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: depends_on, provenance: asserted}
-  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: depends_on, provenance: asserted}
-  - {dst: "dreamer-agent-loop/26-standing", rel: depends_on, provenance: asserted}
-  - {dst: "dreamer-agent-loop/33-note-dreamer-schedule", rel: depends_on, provenance: asserted}
+  - {dst: "cognition-loop/README.md", rel: revises, provenance: asserted}
+  - {dst: "cognition-loop/proactive.md", rel: depends_on, provenance: asserted}
+  - {dst: "cognition-loop/proactive.md", rel: depends_on, provenance: asserted}
+  - {dst: "cognition-loop/data.md", rel: depends_on, provenance: asserted}
+  - {dst: "cognition-loop/observation.md", rel: depends_on, provenance: asserted}
   - {dst: "live-threads", rel: relates_to, provenance: asserted}
 decisions:
   reserved: "DEC-176 .. DEC-180"

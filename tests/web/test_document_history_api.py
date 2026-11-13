@@ -87,7 +87,6 @@ async def history_client(aiohttp_client):
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO, "sam": SAM}, index={}),
         ai_peer="nora",
         started_at=0.0,
-        games_client=None,
         presence=None,
         presence_circles=(),
         skills_dir=NO_SKILLS_DIR,

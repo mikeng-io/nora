@@ -231,7 +231,7 @@ class TranscriptInjection:
         # `None` renders no block.
         self._memos_store = memos
         # The unit's shared cognitive state reader (design/notebook-memory-types/
-        # 20-shared-cognitive-state.md): one callable bound at the composition
+        # 20-standing.md): one callable bound at the composition
         # root over the canonical stores, `None` in every harness that wires
         # none — which renders no `<standing>` block.
         self._shared_reader = shared
@@ -685,13 +685,11 @@ class TranscriptInjection:
             if view is not None:
                 views.append(view)
         # THE ROOM's, keyed its `primary_id` for `_culture`'s reason (DEC-181).
-        # `of` is the room's `policy.toml` label, its id in the prompt (ADR
-        # 0029). `primary_id` is the store key, often a platform conversation
-        # id, and never reaches a prompt. A room with no label shows no block.
+        # The stored subject id is shared with Cognition and the read tools.
         if convo.primary_id and convo.label:
             view = await one(
                 convo.primary_id,
-                entity="room", of=convo.label,
+                entity="room", of=convo.primary_id,
                 stage="tag_profile_room",
             )
             if view is not None:
@@ -1112,7 +1110,7 @@ class TranscriptInjection:
         tuple[SourceEvent, ...], tuple[SourceEvent, ...], bool, int, int,
     ]:
         """`(events, objects, failed, events_more, objects_more)` of THIS
-        room — the scoped source read of design/platform-observations 04.
+        room — the scoped source read of design/platform-observations/exposure.md.
 
         `recent` is bounded by the prompt window; `heads` by
         `_SOURCE_OBJECT_MAX` of the objects OBSERVED NEWEST first (an old

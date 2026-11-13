@@ -9,7 +9,7 @@
  * about an OBJECT (poll, room, member set, pin set, artifact) is never an
  * utterance — no fabricated speaker line, no fake empty message.
  *
- * Identity rules (design/platform-observations/02):
+ * Identity rules (design/platform-observations/observations.md):
  *   - `upstream` is the transition identity for the envelope's source_key;
  *     stanza-bearing events use `s:{stanza}`-family forms, stanza-less
  *     callbacks a content hash that a redelivery reproduces byte-identically.

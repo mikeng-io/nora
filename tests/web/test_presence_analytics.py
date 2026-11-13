@@ -98,7 +98,6 @@ def _app(*, presence: object | None, mobility: FakeAnalyticsStore) -> web.Applic
         persons=Persons(by_person={"miles": MILES, "daisy": DAISY}, index={}),
         ai_peer="nora",
         started_at=0.0,
-        games_client=None,
         presence=presence,
         presence_circles=(CIRCLE,),
         skills_dir=Path("/nonexistent-skills"),

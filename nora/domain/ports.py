@@ -125,7 +125,7 @@ version reintroduces the bug it avoids:
 
 - `BlobStore` is `put`, `get` and `delete`. `delete` is the mechanism; the
   one policy that calls it is a story frame's bound
-  (design/cognition-loop/22-social-stream.md §5, `nora.app.social_expiry`),
+  (design/cognition-loop/observation.md, `nora.app.social_expiry`),
   which deletes only bytes no other row names
   (`nora.infra.sql.blob_refs.held_elsewhere`) and leaves a tombstone. Room
   media has no retention (DEC-43): nothing deletes it.
@@ -964,7 +964,10 @@ class RecordStore(Protocol):
 
     async def set_person_id(self, *, row_id: int, person_id: str) -> None: ...
 
-    async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
+    async def room_activity(
+        self, *, conversation_id: str, since_ts: int,
+        platform: str | None = None, as_of_ms: int | None = None,
+    ) -> RoomActivity:
         """People's messages in this conversation at or after `since_ts`, how
         many distinct people sent them, and the newest person's `ts` at any
         time (`RoomActivity`). One indexed
@@ -1011,15 +1014,20 @@ class StimulusStore(Protocol):
         stale_before_ms: int | None = None,
     ) -> UnitView:
         """One tick's read for one unit: its newest wake in `mode`, the
-        stimuli pending against the WATERMARK (the newest wake whose session
-        did not fail; `UnitView.mark`) and due by `now_ms` (ascending id, at
-        most `limit`), plus the stimuli a closed session returned with a
-        strike (`UnitView.carry`, delivered `waits` when a person's wait
-        closed them), and the `recorded_at` of its newest person-authored item
-        (a `message` stimulus, `waits` included). A `self` stimulus that was
+        stimuli pending by `now_ms` (ascending id, at most `limit`) — pending
+        is a per-row fact: live, eligible, and NOT claimed by a wake that did
+        not fail (`stimulus_claim`), read through `stimulus_pending`, the
+        materialized «not permanently consumed» set per `(unit, mode)`, so
+        the walk visits the backlog itself and never consumed history — plus
+        the stimuli a closed session returned with a strike
+        (`UnitView.carry`, delivered `waits` when a person's wait closed
+        them), and the `recorded_at` of its newest person-authored item (a
+        `message` stimulus, `waits` included). A `self` stimulus that was
         retracted (`retract`) is never pending. A wake that claimed only the
-        stimuli of its own kind names the rest it left inside its range
-        (`WakeRow.unclaimed_ids`): those are pending too.
+        stimuli of its own kind still names the rest it left inside its
+        range (`WakeRow.unclaimed_ids`) — the early-door list a reader may
+        re-offer before they are due; they stay pending on their own, no
+        claim was ever written for them.
 
         `stale_before_ms` (a REAL clock, unlike `now_ms`, which is the settle
         cutoff): a TRACKED wake recorded before it with no outcome row is
@@ -1031,7 +1039,9 @@ class StimulusStore(Protocol):
         self, *, wake: NewWake, recorded_at_ms: int, guard: WakeGuard | None = None,
     ) -> int | None:
         """Append one wake row; it is the unit's new watermark in its mode
-        unless it fails or expires (see `view`). With `guard`, the write is
+        unless it fails or expires (see `view`). Its `claimed_ids` are written
+        as `stimulus_claim` rows — the append-only consumption fact `view`
+        reads. With `guard`, the write is
         made only if, under the unit's lock, the newest wake and its outcome
         are still what the guard says; otherwise nothing is written and the
         answer is None (the caller reads again next tick)."""
@@ -1093,10 +1103,11 @@ class StimulusStore(Protocol):
 
 @dataclass(frozen=True)
 class NewCarry:
-    """A stimulus's standing after a CLOSED wake: it returns to the next agenda
-    with a strike, and at `max_strikes` code closes it `struck`. `waits`: it rides
-    the next wake and never starts one.
-    Written only with its wake's `closed` outcome (`record_outcome`)."""
+    """An unseen stimulus deferred by a closed wake, committed with its outcome.
+
+    `strike` is a legacy storage column, always zero for new carries.
+    `waits` retains unreadable input without starting a wake by itself.
+    """
 
     unit: str
     stimulus_id: int
@@ -1159,16 +1170,6 @@ class NewCognitionSession:
     wake_id: int | None = None
 
 
-@dataclass(frozen=True)
-class NewCognitionSessionClose:
-    """One agenda item's close, `nora.domain.cognition_session.CloseOutcome`
-    as stored."""
-
-    session_id: int
-    item_index: int
-    kind: str
-    reason: str
-    strike: int = 0
 
 
 @runtime_checkable
@@ -1301,8 +1302,8 @@ class ObservationStore(Protocol):
 
 @runtime_checkable
 class CognitionStore(Protocol):
-    """A Cognition session's own bookkeeping: `cognition_session`,
-    `cognition_session_close` and `cognition_self_wake`, each append-only. The
+    """A Cognition session's own bookkeeping: `cognition_session` and
+    `cognition_self_wake`, each append-only. The
     session's writes to the tiers go to the tiers' own stores (notes, events,
     Standing, reminders), never here.
     Implementations: `nora.infra.sql.cognition_store.SqlCognitionStore`,
@@ -1315,11 +1316,6 @@ class CognitionStore(Protocol):
         """Append the session row and return its id."""
         ...
 
-    async def record_close(
-        self, *, close: NewCognitionSessionClose, recorded_at_ms: int,
-    ) -> int:
-        """Append one agenda item's close row and return its id."""
-        ...
 
     async def record_pace(
         self, *, pace: NewCognitionPace, recorded_at_ms: int,
@@ -2055,7 +2051,7 @@ class PlaceArea:
     neighbourhood (旺角 / Mong Kok), `city` the locality or first-level area
     that holds it (九龍 / Kowloon). Either may be None. Never a street, an
     address or a coordinate: these are public names, and they become the
-    memory index's place hubs (design/unified-memory/25-memory-graph.md §6a)."""
+    memory index's place hubs (design/unified-memory/graph.md)."""
 
     district: str | None = None
     city: str | None = None
@@ -2196,8 +2192,10 @@ class SearchProvider(Protocol):
     an exception into the loop (R-5). A PORT so another backend plugs in with no
     tool change: `TavilySearchProvider` and `ExaSearchProvider` both implement
     it (DEC-157), selected by `[search] provider`, and the branch lives at the
-    composition root alone. `search` returns ranked results, `fetch` returns one
-    page's content; both `untrusted`-wrapped and clamped, and both backends pass
+    composition root alone. `search` returns ranked results `untrusted`-wrapped
+    and clamped; `fetch` returns one page's RAW text at `max_chars` (the tool
+    wraps each served slice itself, so one materialization feeds every
+    `offset`/`about` read); both backends pass
     the shared contract suite (`tests/contract/test_search_provider_contract.py`)
     — including the `unavailable` note, which is model-facing instruction and
     must not differ with the operator's billing preference. **No SSRF surface**
@@ -2210,7 +2208,7 @@ class SearchProvider(Protocol):
 
     async def search(self, *, query: str) -> dict[str, Any]: ...
 
-    async def fetch(self, *, url: str) -> dict[str, Any]: ...
+    async def fetch(self, *, url: str, max_chars: int | None = None) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -2362,7 +2360,7 @@ class SocialSubjectIndex(Protocol):
     async def members(self) -> frozenset[str] | None:
         """Every person `is_tier_zero` answers True for, less anyone whose
         `identity.toml` block sets `social = false`: the social stream's
-        membership (design/cognition-loop/20-observe.md §2), or `None` when
+        membership (design/cognition-loop/observation.md), or `None` when
         the index could not be read."""
         ...
 
@@ -2526,21 +2524,6 @@ class EngagePolicy(Protocol):
 @runtime_checkable
 class ContextAssembler(Protocol):
     async def assemble(self, *, request: EngagementRequest) -> TagContext: ...
-
-
-@dataclass(frozen=True)
-class VerbProvenance:
-    """`Proposal`'s three provenance fields, for an adaptor whose write verbs
-    WRITE when called instead of staging for `commit`
-    (`nora.language.lessons.LessonsAdaptor`: a lesson's cap is judged against
-    what the unit holds now, so a retirement must land before the next write is
-    judged). The runtime hands it to `verbs(key=..., provenance=...)` when the
-    adaptor's `verbs` takes the argument; the values are the ones it stamps on a
-    `Proposal`, read for the same run."""
-
-    instruction_sha256: str
-    model: str
-    established_by: str
 
 
 @dataclass(frozen=True)
@@ -2836,6 +2819,38 @@ class DreamAdaptor(Protocol):
         that duplicates a standing note without adding anything — so a legal
         commit of three proposals can write one row. The count is what
         `nora_dream_written_total` reports."""
+        ...
+
+
+@runtime_checkable
+class SessionAdaptor(Protocol):
+    """The subconscious session shape — node 30's SECOND form of work the
+    `DreamerRuntime` lane admits, beside the envelope `DreamAdaptor`.
+
+    A session IS the work: `session_run` owns its agenda, its tools, its
+    outcome rows and its settlement, and the runtime contributes what it
+    contributes to every adaptor — admission, the lane task, cancellation,
+    the root span, the objective's digest, the sample metric and a counted
+    `unavailable`. It deliberately does NOT carry `DreamAdaptor`'s envelope
+    members: a session builds its prompt inside `session_run` through the
+    occasion's own context assembly, so an `inputs` here would name a prompt
+    builder that does not exist — a stub the `inputs` net reads as an
+    undeclared occasion.
+    """
+
+    name: str
+    """The metric label and trace name, same contract as `DreamAdaptor.name`."""
+
+    objective: str
+    """The objective FILE NAME resolved against `DreamerInstructions` — the
+    session reads its digest for the run's provenance, same rule as the
+    envelope shape."""
+
+    def session_run(self, *, key: str) -> Any:
+        """The bound `on_wake` — called `session_run(key=key)` inside the
+        lane task; its result's `stop_reason` annotates the outcome.
+        Declared as a method so the adaptor's own callable attribute
+        satisfies it."""
         ...
 
 

@@ -477,27 +477,50 @@ def _same_database(a: str, b: str) -> bool:
 
 
 async def _target_columns(conn: AsyncConnection, table: str) -> list[tuple[str, str | None, bool]]:
-    """(name, default expression, not-null) of each column, in table order."""
+    """(name, default expression, not-null) of each column, in table order.
+
+    GENERATED columns (`is_generated = 'ALWAYS'`) are not insertable:
+    Postgres refuses an explicit value for them, and their value is
+    derived from the columns the expression reads anyway. A column the
+    contract wants WRITABLE (`due_tick`, the eligibility authority a
+    restore must carry) is a real stored column: the insert names it, and
+    `BACKFILLED` coalesces the derivation for an image that predates it.
+    """
     rows = (await conn.execute(sa.text(
         "SELECT column_name, column_default, is_nullable = 'NO' "
         "FROM information_schema.columns "
-        "WHERE table_schema = 'public' AND table_name = :t ORDER BY ordinal_position"
+        "WHERE table_schema = 'public' AND table_name = :t "
+        "AND is_generated = 'NEVER' ORDER BY ordinal_position"
     ), {"t": table})).all()
     return [(r[0], r[1], bool(r[2])) for r in rows]
 
 
-#: NOT NULL columns a migration added AFTER history began (0068) with a
-#: backfill default it then DROPPED, keyed `(table, column)` to the value that
-#: migration gave every existing row. The target column has no default to read
-#: back, so without this an image recorded before the migration restores the
-#: column as NULL and the whole table's insert is refused. One entry per
-#: `alter_column(..., server_default=None)` on a copied table;
+#: Columns a migration added AFTER history began (0068) whose value a
+#: pre-migration image cannot carry, keyed `(table, column)` to the
+#: expression the migration gave every existing row — read against the
+#: image's OWN fields (`r.` qualifies the jsonb recordset row). The target
+#: column has no default to read back, so without this an image recorded
+#: before the migration restores the column as NULL: for a NOT NULL column
+#: the whole table's insert is refused; for `due_tick` the restored row's
+#: deadline silently never arrives. One entry per
+#: `alter_column(..., server_default=None)` or added-without-default column
+#: on a copied table;
 #: `tests/architecture/test_restore_knows_every_dropped_backfill.py` holds the
 #: list to the migrations.
 BACKFILLED: dict[tuple[str, str], str] = {
     # 0094_compute_jobs_generic_outbox: "every existing row is `legacy`".
     ("compute_jobs", "kind"): "'legacy'::text",
     ("compute_jobs", "payload"): "'{}'::jsonb",
+    # 0150_due_ticks: the writable eligibility authority — the tick the
+    # image's own instant proves, the CHECK's derivation verbatim.
+    ("reminders", "due_tick"): (
+        "(ceil((extract(epoch from (r.\"due_at\" - "
+        "'1970-01-01 00:00:00+00'::timestamptz)) * 1000) / 60000))::bigint"
+    ),
+    ("stimulus", "due_tick"): (
+        "CASE WHEN r.\"due_ms\" IS NULL THEN NULL ELSE (r.\"due_ms\" / 60000) "
+        "+ CASE WHEN mod(r.\"due_ms\", 60000) > 0 THEN 1 ELSE 0 END END"
+    ),
 }
 
 
@@ -515,10 +538,10 @@ def _insert_sql(table: str, columns: list[tuple[str, str | None, bool]]) -> str:
     names = ", ".join(f'"{c}"' for c, _, _ in columns)
     exprs = []
     for name, default, not_null in columns:
-        if not_null and default is not None and not default.startswith("nextval("):
-            exprs.append(f'coalesce(r."{name}", {default})')
-        elif not_null and (table, name) in BACKFILLED:
+        if (table, name) in BACKFILLED:
             exprs.append(f'coalesce(r."{name}", {BACKFILLED[(table, name)]})')
+        elif not_null and default is not None and not default.startswith("nextval("):
+            exprs.append(f'coalesce(r."{name}", {default})')
         else:
             exprs.append(f'r."{name}"')
     guards = []
@@ -562,7 +585,7 @@ async def _reset_sequences(conn: AsyncConnection, table: str) -> None:
 
 async def _refuse_a_target_that_holds_rows(conn: AsyncConnection) -> None:
     held = []
-    for table in (*copied_tables(), "row_history"):
+    for table in (*copied_tables(), "row_history", "stimulus_pending"):
         if (await conn.execute(sa.text(f'SELECT EXISTS (SELECT 1 FROM "{table}")'))).scalar_one():  # noqa: S608 — table and column names are module constants, never input
             held.append(table)
     if held:
@@ -621,7 +644,44 @@ async def seed(source: AsyncEngine, target: AsyncEngine, at: datetime) -> SeedRe
                 orphaned[table] = offered - inserted
             await _reset_sequences(dst, table)
         history_rows = await _copy_history(src, dst, at)
+        await _rebuild_derived(dst)
     return SeedReport(at=at, copied=copied, orphaned=orphaned, history_rows=history_rows)
+
+
+async def _rebuild_derived(dst: AsyncConnection) -> None:
+    """Rebuild `stimulus_pending` on the restored rows: it is DERIVED state —
+    the «not permanently consumed» set `view` walks — not restorable state,
+    so nothing copies it; it is recomputed once, exactly as `view` would
+    lazily seed it: a mode sentinel plus every live stimulus not CONSUMED in
+    that `(unit, mode)` — claimed by a `closed` wake, or by an untracked one
+    (already the watermark, never releasable), in either case not failed."""
+    await dst.execute(sa.text(
+        "INSERT INTO stimulus_pending (unit, mode, stimulus_id)"
+        " SELECT s.unit, m.mode, s.id FROM stimulus s"
+        " JOIN (SELECT DISTINCT unit, mode FROM cognition_wake"
+        "       UNION SELECT DISTINCT unit, 'live' FROM stimulus) m"
+        "   ON m.unit = s.unit"
+        " WHERE NOT EXISTS (SELECT 1 FROM stimulus_retraction r"
+        "                   WHERE r.stimulus_id = s.id)"
+        "   AND NOT EXISTS ("
+        "     SELECT 1 FROM stimulus_claim c"
+        "     JOIN cognition_wake w ON w.id = c.wake_id"
+        "     WHERE c.stimulus_id = s.id AND w.unit = s.unit AND w.mode = m.mode"
+        "       AND (w.tracked = 0 OR EXISTS ("
+        "         SELECT 1 FROM cognition_wake_outcome o"
+        "         WHERE o.wake_id = w.id AND o.outcome = 'closed'))"
+        "       AND NOT EXISTS ("
+        "         SELECT 1 FROM cognition_wake_outcome o2"
+        "         WHERE o2.wake_id = w.id AND o2.outcome <> 'closed'))"
+        " ON CONFLICT (unit, mode, stimulus_id) DO NOTHING"
+    ))
+    await dst.execute(sa.text(
+        "INSERT INTO stimulus_pending (unit, mode, stimulus_id)"
+        " SELECT unit, mode, 0 FROM ("
+        "  SELECT DISTINCT unit, mode FROM cognition_wake"
+        "  UNION SELECT DISTINCT unit, 'live' FROM stimulus) m"
+        " ON CONFLICT (unit, mode, stimulus_id) DO NOTHING"
+    ))
 
 
 async def _copy_history(src: AsyncConnection, dst: AsyncConnection, at: datetime) -> int:

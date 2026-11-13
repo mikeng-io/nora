@@ -30,7 +30,7 @@ from nora.infra.sql.tag_traces import body_turn_lineage
 __all__ = ["SqlMemoStore"]
 
 
-def _revision(row: sa.Row[Any]) -> MemoRevision:
+def _revision(row: sa.Row[*tuple[Any, ...]]) -> MemoRevision:
     return MemoRevision(
         id=row.id, memo_id=row.memo_id, seq=row.seq, title=row.title, body=row.body,
         citations=tuple(row.citations), mode=row.mode, state=row.state,
@@ -38,7 +38,7 @@ def _revision(row: sa.Row[Any]) -> MemoRevision:
     )
 
 
-async def _memo(conn: Any, row: sa.Row[Any]) -> Memo:
+async def _memo(conn: Any, row: sa.Row[*tuple[Any, ...]]) -> Memo:
     return Memo(
         id=row.mid, unit=row.unit, platform=row.platform,
         conversation_id=row.conversation_id, created_at=row.created_at,

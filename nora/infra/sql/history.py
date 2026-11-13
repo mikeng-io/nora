@@ -133,12 +133,15 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     # 0074_event_revision: the head is the compare-and-swap cache over
     # `event_revision` (APPEND_ONLY, below).
     "events": ("id",),
+    # 0153_topic_lineage: `retired` is updated in place by topic_set_status;
+    # the head is a cache over `notebook_entry_revision` (APPEND_ONLY, below).
+    "notebook_entry": ("id",),
     # 0082_computer_sessions: a session is
     # continued and expired in place; its versions are what it was at T.
     "computer_sessions": ("id",),
     # 0117_persona: an account's head, its `revision` bumped by every write.
     "profile": ("key",),
-    # design/platform-observations 02 (0144): the typed observation history —
+    # design/platform-observations/observations.md(0144): the typed observation history —
     # in place because `target_message_id` re-links a retained row when its
     # target arrives — and the fold's compare-and-swap head.
     "platform_observation": ("id",),
@@ -152,7 +155,6 @@ APPEND_ONLY: dict[str, str] = {
     "graph_refusal": "created_at",
     "comprehend_web_page": "recorded_at",
     "comprehend_result": "recorded_at",
-    "notebook_entry": "recorded_at",
     "notebook_entry_revision": "recorded_at",
     "note_revision": "recorded_at",
     # ADR 0020 (0084_documents): a document's identity and one snapshot per revision,
@@ -237,6 +239,9 @@ APPEND_ONLY: dict[str, str] = {
     "cognition_wake_outcome": "recorded_at",
     "cognition_carry": "recorded_at",
     "stimulus_retraction": "recorded_at",
+    # The stimuli a wake claimed — the pending read's consumption fact
+    # (0151). One row per claimed stimulus, never revised.
+    "stimulus_claim": "recorded_at",
 }
 
 #: Changes in place and not yet migrated. Not restorable as of T; `nora
@@ -264,8 +269,12 @@ NOT_RESTORED: dict[str, str] = {
     "rendered_claim": "deprecated tier (2026-09-07); table kept, code gone",
     "note_entity": "deprecated chain (2026-09-08); nothing writes it",
     "presence_corridor_speed": (
-        "retired writer (design/27 §4.4 M2): nothing writes or reads it; table kept"
+        "retired writer (design/cognition-loop/observation.md): nothing writes it; table kept"
     ),
+    # 0151: a cache of «live and not permanently consumed», deleted on
+    # closed claims and retractions; `snapshot_at.seed` rebuilds it from the
+    # restored rows exactly as `view` would lazily seed it.
+    "stimulus_pending": "derived; snapshot_at.seed rebuilds it",
     # 0105_memory_index: a projection of the stores above, so a restore leaves
     # it empty and `memory_index_state` reads `never` until a rebuild.
     "memory_node": "derived; nora memory rebuild",
@@ -293,6 +302,10 @@ NOT_RESTORED: dict[str, str] = {
         "live scope-FIFO ledger; obligations of the running deployment, not replayed as of T"
     ),
     "browser_tasks": "live CDP target bindings; no restore holds tabs on absent VMs",
+    # 0152_fetched_pages: a 24h materialization of a public page — its bytes
+    # live in RustFS under `blob_key`; a restore re-fetches the url rather
+    # than replaying a cache, and the row's own expires_at bounds it.
+    "fetched_pages": "ephemeral page materialization; refetched on demand, never restored",
 }
 
 

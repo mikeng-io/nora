@@ -4,9 +4,9 @@ package main
 // properties of that, both about WHEN the parse happens:
 //
 //  1. a malformed id never reaches Instagram, not even the route lookup;
-//  2. it is parsed BEFORE the session gate (P14, 16 §Resources: "a malformed
+//  2. it is parsed BEFORE the session gate (design/instagram-adoption/bridge.md «Messaging contract»: "a malformed
 //     id is 400 before any use case runs"), so a malformed id is 400 whatever
-//     the session's state. Before P14 the gate ran first and a checkpointed
+//     the session's state. Before bridge.md the gate ran first and a checkpointed
 //     session answered 409 to a malformed id; that order moved with the
 //     resource paths, as this file said it would.
 

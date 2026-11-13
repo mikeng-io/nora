@@ -534,7 +534,7 @@ class TestLinkedLifecycle:
         attempt_b_ctx = bt.attempt_link(rec_b)
 
         # the model turn is a SEPARATE generation root that links BACK —
-        # never a queue child (design 04)
+        # never a queue child (design/platform-bridges/04-operations.md)
         gen_fields = bt.generation_link_fields(
             attempt=bt.last_attempt(finished), event_id="ev-t1",
             attempt_id=bt.attempt_identity(work_id, 2),

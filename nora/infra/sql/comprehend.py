@@ -653,25 +653,15 @@ class SqlComprehendRecords:
                 )
                 stored = [canonical(c) for c in contents]
 
-            # Completion points to this ONE validated union extraction. It never
-            # rewrites union claims with a follower's room or source map.
-            for completed in item.snapshot.get("completion", []):
-                markers = [(completed["work_id"], completed["input_hash"], "readings")]
-                markers.extend(
-                    (f"input:{work.unit}:{sid}", digest, "readings_input")
-                    for sid, digest in completed.get("inputs", {}).items())
-                for work_id, digest, part in markers:
-                    exists = (await conn.execute(sa.select(RESULT.c.id).where(
-                        RESULT.c.work_id == work_id,
-                        RESULT.c.input_hash == digest,
-                        RESULT.c.part == part,
-                    ).limit(1))).first()
-                    if exists is None:
-                        await conn.execute(sa.insert(RESULT).values(
-                            work_id=work_id, input_hash=digest,
-                            session_id=session, part=part,
-                            payload={"extraction_id": extraction}))
         return stored
+
+    async def complete_session(self, unit: str, session: int, inputs: dict[str, str]) -> None:
+        """One receipt for a session that ended normally, including quiet sessions."""
+        async with self.engine.begin() as conn:
+            await conn.execute(sa.insert(RESULT).values(
+                work_id=f"session:{unit}", input_hash="", session_id=session,
+                part="session_complete", payload={"unit": unit, "inputs": inputs},
+            ))
 
     async def graph_write(self, work: WorkItem, session: int, admission: Admission) -> None:
         # Retain changed endpoints for reshape if its model fails after admission.

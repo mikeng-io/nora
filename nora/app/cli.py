@@ -956,7 +956,7 @@ async def cmd_profile_history(args: argparse.Namespace) -> int:
     """No model calls. Restart clears only history cursors, retaining all claims."""
     import sqlalchemy as sa
 
-    from nora.app.composition import character_person_keys
+    from nora.app.composition_helpers import character_person_keys
     from nora.domain.profile import FACT_KINDS
     from nora.infra.sql.character import SqlCharacterEvidence
     from nora.infra.sql.profile import SqlProfileStore
@@ -1046,7 +1046,7 @@ def _profile_tracing(cfg: Config) -> None:
 async def cmd_profile_window(args: argparse.Namespace) -> int:
     from datetime import datetime
 
-    from nora.app.composition import character_person_keys
+    from nora.app.composition_helpers import character_person_keys
     from nora.app.profile_spike import history_days, window
     from nora.domain.profile import PROFILE_HKT
     from nora.infra.sql.profile_inputs import SqlProfileInputs
@@ -1184,7 +1184,7 @@ async def cmd_profile_retry_media(args: argparse.Namespace) -> int:
     """Queue a wake; never compose Nora, call a model, or reset evidence cursors."""
     import sqlalchemy as sa
 
-    from nora.app.composition import character_person_keys
+    from nora.app.composition_helpers import character_person_keys
     from nora.infra.sql.profile_inputs import SqlProfileInputs
     from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
 
@@ -1257,8 +1257,8 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
     import json
     from datetime import UTC, datetime
 
-    from nora.app import unified_backfill
-    from nora.app.composition import build_dependencies, social_person_rooms
+    from nora.app import composition_readers, unified_backfill
+    from nora.app.composition import build_dependencies
     from nora.domain.cognition_session import Room
     from nora.infra.sql.stimuli import SqlStimulusStore
 
@@ -1273,7 +1273,7 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
         (c.platform, cid): c.unit for c in allowlist.rooms() for cid in c.ids
     }
     unit_of = lambda platform, cid: room_units.get((platform, cid))  # noqa: E731
-    person_rooms = social_person_rooms(allowlist)
+    person_rooms = composition_readers.social_person_rooms(allowlist)
     from_ms, until_ms = args.from_ms, args.until_ms
 
     if args.apply:
@@ -1447,7 +1447,7 @@ async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
     run-nightly`. Venue areas come from the Geocoding API with the route
     key, cached geocodes' from the configured reverse geocoder. Prints counts
     only. Exit 1 when a lookup or a write failed."""
-    from nora.app.composition import reverse_geocoder
+    from nora.app.composition_readers import reverse_geocoder
     from nora.infra.geocode import CachingBilingualGeocoder, GoogleGeocoder
 
     cfg = _config(args)
@@ -1859,7 +1859,7 @@ def _database_url(cfg: Config) -> str:
             f"environment variable {cfg.store.database_url_env} is not set — it "
             "must hold the PostgreSQL URL of the record store. After cutover this "
             "command runs via `docker exec` into a nora-network container, where "
-            "the container already carries it (design/20 §3)."
+            "the container already carries it (DEC-51)."
         )
     return url
 

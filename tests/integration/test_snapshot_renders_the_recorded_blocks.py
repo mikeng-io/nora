@@ -49,7 +49,7 @@ OVERRIDES = {"notes.enabled": True, "standing.enabled": True, "culture.enabled":
 
 #: Blocks that must be COMPARED, not merely allowed to match: a restore that
 #: rendered none of them would otherwise pass on an empty comparison.
-MUST_COMPARE = {"group_transcript", "standing", "culture"}
+MUST_COMPARE = {"transcript", "standing", "culture"}
 
 
 def _spec(url: str, src: Source, workdir: Any) -> SubjectSpec:
@@ -113,7 +113,7 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
             ),),
         ),
         template=pg_template, before_ms=BEFORE_MS,
-        # A room that LISTS its person, with aliases, so `<room_members>`
+        # A room that LISTS its person, with aliases, so `<members>`
         # renders (a `persons = "*"` room, the default, has none).
         policy=(
             'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
@@ -193,27 +193,27 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
 
     diff = compare_blocks(recorded, restored)
     assert set(diff.compared) >= MUST_COMPARE, diff
-    # `<room_members>` is authored (policy + identity, recorded by
+    # `<members>` is authored (policy + identity, recorded by
     # `config_revision`), so a restore renders it identically; it is compared,
     # not excepted, and does not move with the record (so it is not in the
     # control's `differs` above).
-    assert "room_members" in diff.compared, diff
-    assert "Miles: 俊爺, 阿Miles" in recorded["room_members"]
+    assert "members" in diff.compared, diff
+    assert 'id="miles_novak" name="Miles" aliases="俊爺, 阿Miles"' in recorded["members"]
     assert diff.equal, {
         name: (recorded.get(name), restored.get(name))
         for name in (*diff.differs, *diff.missing, *diff.extra)
     }
-    assert "a red bicycle" in recorded["group_transcript"]
+    assert "a red bicycle" in recorded["transcript"]
 
 
 def test_blocks_of_cuts_a_prefill_into_its_blocks() -> None:
     text = (
         "Right now it is noon.\n"
         '<notes description="x">\na &lt;/notes&gt; line\n</notes>\n'
-        '<group_transcript description="y">\n<m id="1">hi</m>\n</group_transcript>\n'
+        '<transcript description="y">\n<m id="1">hi</m>\n</transcript>\n'
     )
     blocks = blocks_of(text)
-    assert list(blocks) == ["notes", "group_transcript"]
+    assert list(blocks) == ["notes", "transcript"]
     assert blocks["notes"].endswith("</notes>")
     with pytest.raises(ValueError, match="twice"):
         blocks_of(text + '<notes description="x">\nagain\n</notes>\n')

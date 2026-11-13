@@ -271,7 +271,7 @@ class LimitsConfig(BaseModel):
     `nora.agent.factory.build_limits`.
 
     None of the three is optional. A missing `output_tokens` would silently mean
-    "unbounded" to Strands (`_check_limits` skips a cap it cannot find).
+    "unbounded" to Strands (`_reached_own_limit` skips a cap it cannot find).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -351,7 +351,7 @@ class LLMConfig(BaseModel):
         # contract), so this edge has no return path. It validates against the LIVE table,
         # so adding or removing a tool changes what is accepted with no second list to
         # maintain.
-        from nora.agent.tools import NATIVE_TOOLS
+        from nora.agent.catalog.entries import NATIVE_TOOLS
 
         for name, value in self.budgets.items():
             if name not in NATIVE_TOOLS:
@@ -1457,12 +1457,23 @@ class SearchConfig(BaseModel):
     higher than `content_max_chars` because a page is one whole document rather
     than a snippet, but still bounded: a tool result is re-sent on every
     subsequent model call, so what accumulates must be bounded.
+
+    `fetch_provider` selects the backend `web_fetch` EXTRACTS through when it
+    should differ from `provider` (the search backend). Empty means "the same
+    as `provider`" — the shape that existed before the split. The split exists
+    because the two verbs want different ceilings: `web_fetch` materializes a
+    whole page into `fetched_pages` (the stored copy serves every later
+    `offset`/`about` read), so its bound is the provider's own text ceiling,
+    not `extract_max_chars`. Tavily `/extract` returns full `raw_content`;
+    Exa `/contents` stops at 10k characters, so `exa` as fetch backend is a
+    real ceiling, honestly reported as `truncated`.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     provider: Literal["tavily", "exa"] = "tavily"
+    fetch_provider: Literal["", "tavily", "exa"] = ""
     max_results: int = Field(default=5, ge=1, le=20)
     content_max_chars: int = Field(default=1500, ge=1)
     extract_max_chars: int = Field(default=3000, ge=1)
@@ -1587,8 +1598,8 @@ class LinkedInSocialConfig(BaseModel):
 
 
 class SocialPollConfig(BaseModel):
-    """The social stream's poller (design/cognition-loop/22-social-stream.md §3,
-    §4): each member's Instagram account is probed, and a story or a list of
+    """The social stream's poller (design/cognition-loop/observation.md):
+    each member's Instagram account is probed, and a story or a list of
     posts and reels is read only when the probe says it changed. Every value is
     a starting value, sized after a week of `social_poll` rows.
 
@@ -1700,7 +1711,7 @@ class SocialConfig(BaseModel):
     tool result is re-sent on every subsequent model call and what accumulates
     must be bounded.
 
-    **A story frame's bytes** (design/cognition-loop/22-social-stream.md §5),
+    **A story frame's bytes** (design/cognition-loop/observation.md),
     kept in custody by the poller, are deleted `story_media_keep_days` after
     the frame's `expires_at` once its media is both perceived and embedded,
     and `story_media_keep_max_days` after it whatever is done
@@ -1840,7 +1851,7 @@ class SidecarEntry(SpeechEntryConfigBase):
                 f"sidecars entry guild {value!r} must be a bare Discord guild "
                 "id, not \"<guild_id>/<channel_id>\" — an entry maps a GUILD "
                 "to the audio-controller that owns its voice connection "
-                "(design/voice-channel/07 §12.5). Where a guild's SPEECH is "
+                "(design/voice-channel/audio). Where a guild's SPEECH is "
                 "recorded is policy.toml's `voice = true`, not here."
             )
         return value
@@ -2044,7 +2055,7 @@ class SpeechTtsConfig(BaseModel):
                 raise ValueError(
                     f"[speech.tts] sidecars lists guild {entry.guild!r} twice — "
                     "one guild has exactly one audio-controller "
-                    "(design/voice-channel/07 §12.5)"
+                    "(design/voice-channel/audio)"
                 )
             seen.add(entry.guild)
         return self
@@ -2663,15 +2674,15 @@ class NoraProfileConfig(BaseModel):
 
 
 class ProfileConfig(BaseModel):
-    """`[memory.profile]`: the Profile sessions, in shadow (design/unified-memory/45 §4,
-    00 «Sequence» step 6). One Dreamer session per (unit, listed person), woken
+    """`[memory.profile]`: the Profile sessions, in shadow (design/unified-memory/profiles.md,
+    ). One Dreamer session per (unit, listed person), woken
     like the person's Character session (`[memory.profile.person] update_every_messages` and
     `[memory.profile] update_every_seconds`) and at once by a `told` line a turn wrote about them,
     writing typed lines through `profile_write`.
 
     **Off by default.** On, the sessions write `profile_line` and nothing reads
     it: no prompt changes until the switch (step 8). The first session of each
-    person is the backfill (35 §4). Needs `[dreamer] enabled` and `[culture]
+    person is the backfill. Needs `[dreamer] enabled` and `[culture]
     enabled` (it reads the Character head and the room cultures).
     """
 
@@ -2679,7 +2690,7 @@ class ProfileConfig(BaseModel):
 
     write: bool = False
 
-    #: THE SWITCH (45 §5, 00 «Sequence» step 8). On, prompts read the Profile
+    #: THE SWITCH. On, prompts read the Profile
     #: accounts through `read_profile` and render `<profile>` blocks INSTEAD of
     #: `<peer_card>`, `<peer_history>`, `<people_in_window>`, `<culture>`,
     #: `<unit_culture>`, `<character>` and `<self>`. Off — the default — is the
@@ -2727,37 +2738,31 @@ class MemoryConfig(BaseModel):
 
 
 class LessonsConfig(BaseModel):
-    """`[lessons]`: the Lessons session: one Dreamer session per unit, woken by
-    closed `response` episodes, writing lessons through `lesson_write` and
-    `lesson_retire`.
+    """`[lessons]`: lessons, written by the unit's Cognition session, which is
+    shown the closed `response` episodes past its lessons cursor and writes
+    through `lesson_write` and `lesson_retire`.
 
     **Off by default, and off is the safe reading.** On, the session writes lessons
-    into its store; `render` decides whether they reach a prompt. Needs `[dreamer]
-    enabled`.
+    into its store; `render` decides whether they reach a prompt. Needs
+    `[cognition] enabled`.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
 
-    #: Closed episodes in a unit (her sends with what followed, `unanswered`
-    #: included) that wake its session at once. **50**; every quieter unit is woken by
-    #: `stale_seconds` instead. A lower value would induce lessons from too few days
-    #: of one unit.
-    wake_batch: int = Field(default=50, ge=1)
-
-    #: Seconds after a unit's last session at which ANY new closed episode
-    #: wakes it, so a quiet unit is still read weekly. **604800** (7 days), the
-    #: Character sessions' rule; a unit with nothing new never fires.
+    #: How far back the correction fast path looks on a unit's first session
+    #: (the lower edge of its window when no session has settled yet).
+    #: **604800** (7 days): a unit's whole history is not handed in as
+    #: corrections.
     stale_seconds: int = Field(default=604_800, ge=3600)
 
     #: A lesson not re-evidenced (written or reinforced) for this long is
     #: retired by code. **5184000** (60 days); unmeasured.
     horizon_seconds: int = Field(default=5_184_000, ge=86_400)
 
-    #: Closed episodes one session is handed, the newest. Twice `wake_batch`,
-    #: so a stale wake after a long gap reads two batches, not the whole gap;
-    #: what is past it is consumed, as a Character session's backlog is.
+    #: Closed episodes one session is handed, the newest. What is past it is
+    #: consumed, as a Character session's backlog is.
     batch_limit: int = Field(default=100, ge=1)
 
     #: Render the unit's active lessons as `<lessons>` on tag and fire turns, after
@@ -2768,8 +2773,8 @@ class LessonsConfig(BaseModel):
     render: bool = False
 
     #: The correction fast path: a message that speaks to her and reads as an
-    #: instruction about how she acts wakes the unit's session once it is this many
-    #: seconds old, instead of waiting for `wake_batch` episodes. **600** (10
+    #: instruction about how she acts is shown to the next session once it is
+    #: this many seconds old, not held for the episode count. **600** (10
     #: minutes): long enough for the conversation around it to settle, short enough
     #: that the lesson lands the same evening. `0` turns the fast path off.
     correction_quiet_seconds: int = Field(default=600, ge=0)
@@ -3078,7 +3083,7 @@ class DreamBudgetConfig(BaseModel):
 
     `turns`/`total_tokens`/`output_tokens` are `LimitsConfig`'s three caps —
     R-8's, applied to a Dreamer run instead of a tag turn — and are three
-    fields for `LimitsConfig`'s own reason: Strands' `_check_limits` SKIPS a
+    fields for `LimitsConfig`'s own reason: Strands' `_reached_own_limit` SKIPS a
     cap it cannot find, so a missing one means "unbounded" rather than
     "default".
 
@@ -3500,7 +3505,6 @@ class CognitionConfig(BaseModel):
     #: Agenda items per session; a starting value.
     max_items: int = Field(default=12, ge=1)
     #: Strikes after which an item's stimuli are struck (`struck`); a starting value.
-    max_strikes: int = Field(default=3, ge=1)
     # DEC-242: how long a TRACKED wake may stay OPEN (no outcome row) before it is
     # EXPIRED and read as failed: its unit stops being in flight and its stimuli are
     # pending again. The session's own wall clock (`AdaptorBudget.timeout_seconds`)
@@ -3746,19 +3750,19 @@ class DocumentsConfig(BaseModel):
 
 
 class GoogleConfig(BaseModel):
-    """Nora's ONE Google identity: one Desktop-app OAuth client and one refresh token
-    for her own account (`nora@67.zone`), shared by every Google service she uses
-    (shared files today), never a client or variable per service. Each field NAMES the
-    environment variable that holds the value (DEC-8), never the value. The scopes are
-    declared by each service in code (`nora.infra.google.scopes`) and granted together
-    by `scripts/google_auth.py`. An API KEY (the Maps key under `[route]`) is a
-    different mechanism and stays with its feature."""
+    """Nora's ONE Google identity: one OAuth client and one refresh token for her own
+    Google account (`account`), shared by every Google service she uses (shared files
+    today), never a client or variable per service. Each `*_env` field NAMES the environment
+    variable that holds the value (DEC-8), never the value; `account` is the mailbox itself
+    (empty → "Nora's Google account" in the note). The scopes are declared by each service
+    in code (`nora.infra.google.scopes`); the Maps API KEY under `[route]` stays separate."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     client_id_env: str = "GOOGLE_OAUTH_CLIENT_ID"
     client_secret_env: str = "GOOGLE_OAUTH_CLIENT_SECRET"  # noqa: S105 — names an env var, not a secret
     refresh_token_env: str = "GOOGLE_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
+    account: str = ""
 
 
 class ExternalFilesConfig(BaseModel):
@@ -4030,7 +4034,7 @@ class Config(BaseModel):
         return {**values, **os.environ}
 
     def redaction_values(self) -> list[str]:
-        names = {"NORA_BRIDGE_TOKEN", "GIPHY_API_KEY", "PULSE_API_TOKEN", "PULSE_MCP_TOKEN"}
+        names = {"NORA_BRIDGE_TOKEN", "GIPHY_API_KEY"}
 
         def collect(data: dict[str, object]) -> None:
             for key, value in data.items():
@@ -4547,13 +4551,15 @@ class Config(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _lessons_need_the_dreamer(self) -> Config:
-        """A Lessons session is a Dreamer adaptor; `[lessons] enabled` without
-        the Dreamer would build nothing and say nothing."""
-        if self.lessons.enabled and not self.dreamer.enabled:
+    def _lessons_need_cognition(self) -> Config:
+        """Lessons are written by the Cognition session (its `lesson_write`
+        and `lesson_retire` verbs); `[lessons] enabled` without Cognition
+        would build nothing and say nothing. Cognition itself needs the
+        Dreamer, checked above."""
+        if self.lessons.enabled and not self.cognition.enabled:
             raise ValueError(
-                "[lessons] enabled = true needs [dreamer] enabled = true: "
-                "the Lessons session runs on the Dreamer"
+                "[lessons] enabled = true needs [cognition] enabled = true: "
+                "the Cognition session writes lessons"
             )
         # The doctrine check is "a model other than the session": a judge on the
         # writer's own model grades its own homework. Compared by the configured

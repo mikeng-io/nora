@@ -7,10 +7,10 @@
 
 > **Subsequent topology:** per-unit/canonical private-DM VM routing source
 > merged in [PR #584](https://github.com/mikeng-io/nora/pull/584); see the
-> [current browser status](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
+> [current browser status](../browser-runtime/README.md)
 > for acceptance limits. It preserves this shipped migration. Automatic VM
 > provisioning and idle stop are a separate
-> [lifecycle source and remaining live acceptance](../browser-runtime/05-microvm-lifecycle.md).
+> [lifecycle source and remaining live acceptance](../browser-runtime/scope.md).
 > Historical login continuity below does not add login to the anonymous slice.
 
 Status: proposed, 2026-10-21. Operator decisions are settled; implementation,
@@ -36,7 +36,7 @@ inherit the relay's per-request membership checks. A room needing privacy
 from its unit belongs in its own unit; no per-room file filter is proposed.
 
 Only group rooms use this scope. Private DMs require the separate person-plus-
-anchor scope in the [private DM bundle](../private-dm/00-contract.md).
+anchor scope in the [private DM bundle](../private-dm/README.md).
 This design is its prerequisite, not permission to give a group access to DMs.
 
 ## 2. Source baseline and existing seams

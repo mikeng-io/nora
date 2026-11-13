@@ -3,7 +3,7 @@ existing durable state it resumes on.
 
 No new persistence — no queue, no ledger, no migration. Progress is exactly
 what the one Cognition session already writes (`cognition_session` rows, and
-`comprehend_result` `readings`/`stimulus_failure`/`stimulus_requeue` rows);
+`comprehend_result` normal-completion, legacy reading, failure and requeue receipts);
 29 §5 retired the per-item work-item table as intake and nothing here revives
 it.
 
@@ -198,24 +198,24 @@ async def fabricated_message_stimuli(
             at_ms=int(r.ts), platform=r.platform, conversation_id=r.conversation_id,
             person_id=r.person_id, cues=cues_of(r.body),
         ))
-    for r in edits.all():
-        if r.is_nora:
+    for e in edits.all():
+        if e.is_nora:
             continue
         out.append(_fabricate(
-            unit, kind="message", item="edit", ref=f"messages:{r.message_id}",
-            at_ms=int(r.ts), platform=r.platform, conversation_id=r.conversation_id,
-            person_id=r.person_id, cues=cues_of(r.body),
+            unit, kind="message", item="edit", ref=f"messages:{e.message_id}",
+            at_ms=int(e.ts), platform=e.platform, conversation_id=e.conversation_id,
+            person_id=e.person_id, cues=cues_of(e.body),
         ))
     for table, item, rows in (("message_reaction", "reaction", reactions),
                               ("message_delete", "delete", deletes)):
-        for r in rows.all():
-            sender = r.sender_id or ""
-            if sender in mine or (not sender and r.is_nora):
+        for x in rows.all():
+            sender = x.sender_id or ""
+            if sender in mine or (not sender and x.is_nora):
                 continue
             out.append(_fabricate(
-                unit, kind="message", item=item, ref=f"{table}:{r.id}",
-                at_ms=int(r.ts), platform=r.platform,
-                conversation_id=r.conversation_id, person_id=r.person_id,
+                unit, kind="message", item=item, ref=f"{table}:{x.id}",
+                at_ms=int(x.ts), platform=x.platform,
+                conversation_id=x.conversation_id, person_id=x.person_id,
             ))
     return out
 
@@ -320,22 +320,57 @@ async def stimulus_keys(
     return out
 
 
-async def readings_done(
+async def session_inputs_done(
     conn: AsyncConnection, work_ids: Collection[str],
 ) -> set[tuple[str, str]]:
-    """Every `(work_id, input_hash)` PAIR that has a `readings` receipt —
-    the exact dedup key `SqlComprehendRecords.readings` writes and reads.
-    All pairs, not the newest per work id: an older pair is real completion
-    even when a newer hash also holds a receipt."""
-    if not work_ids:
+    """Read exact input hashes from normal completions and legacy reading receipts."""
+    wanted = set(work_ids)
+    by_unit: dict[str, list[str]] = {}
+    for key in wanted:
+        unit, sid = key.removeprefix("input:").rsplit(":", 1)
+        by_unit.setdefault(unit, []).append(sid)
+    if not by_unit:
         return set()
-    rows = (await conn.execute(
+    rows = (await conn.execute(sa.select(RESULT.c.payload).where(
+        RESULT.c.part == "session_complete",
+        sa.or_(*(sa.and_(RESULT.c.work_id == f"session:{unit}",
+                        RESULT.c.payload["inputs"].has_any(sa.cast(ids, sa.ARRAY(sa.Text))))
+                 for unit, ids in by_unit.items())),
+    ))).scalars()
+    current = {(key, digest) for row in rows for sid, digest in row["inputs"].items()
+               if (key := f"input:{row['unit']}:{sid}") in wanted}
+    legacy = (await conn.execute(
         sa.select(RESULT.c.work_id, RESULT.c.input_hash)
         .where(RESULT.c.part.in_(("readings", "readings_input")),
-               RESULT.c.work_id.in_(list(work_ids)))
+               RESULT.c.work_id.in_(list(wanted)))
         .distinct()
     )).all()
-    return {(str(r.work_id), str(r.input_hash)) for r in rows}
+    return current | {(str(r.work_id), str(r.input_hash)) for r in legacy}
+
+
+async def completed_sessions(conn: AsyncConnection, unit: str) -> list[dict[str, str]]:
+    """Inputs of normally ended sessions and legacy completed readings."""
+    rows = (await conn.execute(sa.select(RESULT.c.payload).where(
+        RESULT.c.part == "session_complete", RESULT.c.work_id == f"session:{unit}",
+    ))).scalars()
+    legacy = (await conn.execute(
+        sa.select(RESULT.c.work_id, RESULT.c.input_hash)
+        .select_from(RESULT.join(
+            COGNITION_SESSION, COGNITION_SESSION.c.id == RESULT.c.session_id))
+        .where(COGNITION_SESSION.c.unit == unit,
+               RESULT.c.part.in_(("readings", "readings_input")))
+        .distinct()
+    )).all()
+    completed = [row["inputs"] for row in rows]
+    for work_id, digest in legacy:
+        if work_id.startswith("stimuli:"):
+            ids = work_id.removeprefix("stimuli:").split(",")
+        elif work_id.startswith(f"input:{unit}:"):
+            ids = [work_id.rsplit(":", 1)[1]]
+        else:
+            continue
+        completed.append({sid: digest for sid in ids if sid})
+    return completed
 
 
 #: The isolated identity historical attempts write under — the SAME

@@ -270,7 +270,7 @@ class SocialRouter(SocialProvider):
                 f"{unknown} is not on the social exception list "
                 f"{sorted(EXCEPTION_ROUTES)} — an Instagram verb moves to the "
                 "bridge only when its route works end to end "
-                "(design/instagram-adoption/15)"
+                "(design/instagram-adoption/bridge.md)"
             )
         self._default = default
         self._exceptions: Mapping[tuple[str, str], SocialProvider] = (
@@ -311,7 +311,7 @@ class SocialRouter(SocialProvider):
                     "a Tier 0 reach check) and a backend for it is wired, but "
                     "no SocialSubjectIndex was given — the person index is the "
                     "only thing that may resolve a subject or decide reach "
-                    "(design/instagram-adoption/07, /18)"
+                    "(design/instagram-adoption/social.md)"
                 )
 
     def _provider_for(self, row: tuple[str, str]) -> SocialProvider | None:

@@ -1,6 +1,6 @@
 """Social reads behind the `x_read`, `x_search`, `linkedin_read` and
 `linkedin_search` (DEC-201), `instagram_read` and `instagram_search`
-(design/instagram-adoption/18) tools — X, LinkedIn and Instagram, READ-ONLY,
+(design/instagram-adoption/social.md) tools — X, LinkedIn and Instagram, READ-ONLY,
 over two backends the model never learns the names of.
 
 `SocialRouter` is what the composition root injects; it is itself a
@@ -35,7 +35,7 @@ The Instagram half has no host-side half here at all:
   into (typed views, no id field anywhere), the ONE renderer that turns a
   view into what the model reads, and the readings that fill in what each
   item of a post or story shows through the caller's own `media_fetch`
-  (design/instagram-adoption/18 §"Typed views, one renderer, and readings").
+  (design/instagram-adoption/social.md).
 
 * `subjects.py::PersonsSubjectIndex` — the production `SocialSubjectIndex`:
   `person_id -> igid` off `identity.toml` (kind-aware), Tier 0 off the rooms'
@@ -47,7 +47,7 @@ on the read), which is the other thing every social read passes through and
 the reason the router is more than a dispatch table: both used to sit in
 `instagram_client.py`, where they could only govern that file's one row while
 the OpenCLI rows ran with no subject authorization at all
-(design/instagram-adoption/07 §tiers, /10 §"Who owns what", /18).
+(design/instagram-adoption/social.md).
 
 **The invariant is the same across both and is what survives a backend that
 is not a host subprocess**: every social read is re-authorized against a

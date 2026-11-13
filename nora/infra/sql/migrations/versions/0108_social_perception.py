@@ -1,6 +1,6 @@
 """social_perception, social_item.read_id, and one `social` stimulus per read.
 
-design/cognition-loop/22-social-stream.md §5, §7. `social_perception` is
+design/cognition-loop/observation.md. `social_perception` is
 APPEND-ONLY: one row per attempt to perceive an item's media, with the units
 it was charged to, how many vision calls it spent and why it ended, so the per-unit daily
 cap is a sum over the day's rows and survives a restart. `at` is the

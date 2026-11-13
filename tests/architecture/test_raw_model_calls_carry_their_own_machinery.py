@@ -111,7 +111,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     # All three facets, none exempted: `nora.app` may import `nora.obs`, the
     # call runs while the conversation's slot is held, and a truncated verdict
     # still parses as JSON into something shorter and wrong.
-    "nora/app/composition.py": ("timeout", "finish_reason", "usage"),
+    "nora/app/raw_clients.py": ("timeout", "finish_reason", "usage"),
     # NOT `usage`, and the reason is structural rather than an oversight:
     # `nora.infra` may not import `nora.obs` (the layered-architecture
     # contract, enforced by `lint-imports`), so a raw client in this layer
@@ -218,7 +218,7 @@ def _on_the_call_path(
     **The walk starts from a NODE, not from a name**, and that is not tidiness.
     Keyed by name, a module holding two classes with a `complete` method has
     one of them silently overwrite the other, and the gate then reads the wrong
-    function's body: `nora/app/composition.py` holds two model-client classes
+    function's body: `nora/app/raw_clients.py` holds two model-client classes
     with a `complete` each (the debrief's serves the standing fold too), and a
     name-keyed walk would report the relevance gate's correctly-bounded
     `complete` as unbounded because the name resolves to the debrief's. A gate

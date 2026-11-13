@@ -21,7 +21,7 @@ import pytest
 
 from nora.agent.registry import ToolRegistry
 from nora.agent.run_budget_transport import _BoundedTransport
-from nora.app.composition import _note_unit_of
+from nora.app.composition_helpers import _note_unit_of
 from nora.app.computer_dispatch import ComputerToolDispatch
 from nora.app.computer_queue import (
     ComputerAdmission,
@@ -576,7 +576,8 @@ async def test_malformed_nonempty_capture_is_refused():
 
 
 async def test_journey_rejects_foreign_handle_and_unrelated_export():
-    from evals.backbone import NORA_TOOL_INPUTS, NORA_TOOL_RESULTS, ToolRouteGrader
+    from evals.backbone import NORA_TOOL_INPUTS, NORA_TOOL_RESULTS
+    from evals.route_grader import ToolRouteGrader
 
     ran = ["computer_browse", "computer_capture", "computer_export"]
     results = [
@@ -620,7 +621,8 @@ async def test_journey_rejects_foreign_handle_and_unrelated_export():
     "changed", [None, "handle", "target", "path", "digest", "export_digest", "kept"],
 )
 async def test_real_journey_accepts_successful_keep_receipt(changed):
-    from evals.backbone import NORA_TOOL_INPUTS, NORA_TOOL_RESULTS, ToolRouteGrader
+    from evals.backbone import NORA_TOOL_INPUTS, NORA_TOOL_RESULTS
+    from evals.route_grader import ToolRouteGrader
 
     ran = ["computer_browse", "computer_capture", "computer_export"]
     values = [

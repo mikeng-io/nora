@@ -10,12 +10,7 @@ from typing import Any
 import pytest
 
 from nora.agent import factory
-from nora.agent.guards import Deliverer, ReplyGuard
-from nora.agent.mcp import McpToolGroup
-from nora.agent.registry import ToolRegistry, aggregate_budgeted_tools
-from nora.agent.room import Room
-from nora.agent.surface import WORKER_ONLY_TOOLS
-from nora.agent.tools import (
+from nora.agent.catalog.groups import (
     COMPUTER_TOOLS,
     GRAPH_MEMORY_TOOLS,
     LOADER_TOOL,
@@ -23,6 +18,11 @@ from nora.agent.tools import (
     SUBAGENT_TOOLS,
     VIDEO_TOOLS,
 )
+from nora.agent.guards import Deliverer, ReplyGuard
+from nora.agent.mcp import McpToolGroup
+from nora.agent.registry import ToolRegistry, aggregate_budgeted_tools
+from nora.agent.room import Room
+from nora.agent.surface import WORKER_ONLY_TOOLS
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
@@ -186,22 +186,19 @@ def test_the_registry_exposes_every_declared_tool():
     ))
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
-        "who_said",
-        "now", "load_transcript", "send_reply", "reaction_send", "search_gifs", "send_gif",
-        "send_to",
+        "who_said", "now", "load_transcript", "send_reply", "reaction_send", "search_gifs",
+        "send_gif", "send_to",
         # which rooms this group has, and what is
         # said in one of them.
-        "room_list", "room_read",
+        "room_list",
+        "room_read",
         # the Record over an interval,
         # under lineage.
         "record_query",
         # the Dreamer-only reads.
-        "rollup_read", "standing_read", "character_read", "social_read",
-        "group_members", "lookup_person", "about", "ask_memory", "search_memory",
-        "recall_lookups",
-        "calculate", "transit", "route",
-        "place_info", "saved_places",
-        "where_is",
+        "rollup_read", "standing_read", "character_read", "social_read", "group_members",
+        "lookup_person", "about", "ask_memory", "search_memory", "recall_lookups", "calculate",
+        "transit", "route", "place_info", "saved_places", "where_is",
         # DEC-156: the coordinate -> street-address fetch surface. `where_is`
         # carries no address, so this is the ONLY tool that resolves one, and
         # R-57 screens routes against what it disclosed.
@@ -215,13 +212,11 @@ def test_the_registry_exposes_every_declared_tool():
         "online_now",
         "media_fetch",
         # a shared file link, read as text.
-        "file_fetch",
-        "generate_image",
-        "media_search", "media_send",
-        "web_search", "web_fetch",
+        "file_fetch", "generate_image", "media_search", "media_send", "web_search", "web_fetch",
         # x_read and x_search (DEC-201, replacing DEC-151's social_fetch):
         # READ-ONLY X via the host bridge.
-        "x_read", "x_search",
+        "x_read",
+        "x_search",
         # linkedin_read and linkedin_search (DEC-201): READ-ONLY LinkedIn via
         # the same host bridge, inert unless [social.linkedin] enabled.
         "linkedin_read", "linkedin_search",
@@ -230,28 +225,32 @@ def test_the_registry_exposes_every_declared_tool():
         "instagram_read",
         # instagram_search: Instagram
         # accounts matching free text, over the instagram-bridge.
-        "instagram_search",
-        "weather",
+        "instagram_search", "weather",
         # HK parking: TD open-data vacancy for a named car park,
         # and Google Places nearby-search + street meters for «near X».
         "parking_status", "find_parking",
         # Discord-only music.
-        "play_music", "skip_music", "top_music", "stop_music", "music_status",
-        "set_music_volume",
+        "play_music", "skip_music", "top_music", "stop_music", "music_status", "set_music_volume",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
-        "event_propose", "event_revise", "event_rsvp", "event_set_status",
-        "event_search", "suggest_venue",
+        "event_propose",
+        "event_revise",
+        "event_rsvp",
+        "event_set_status",
+        "event_search",
+        "suggest_venue",
         # Nora's computer (DEC-243).
-        "computer_run", "computer_read", "computer_write", "computer_edit",
-        "computer_export", "computer_import", "computer_session_list",
+        "computer_run", "computer_read", "computer_write", "computer_edit", "computer_export",
+        "computer_import", "computer_session_list",
         # a whole browser task, by a sub-agent.
         "computer_browse",
         # the scoped pair: a picture of a task's own tab; a queued or
         # running task stopped.
-        "computer_capture", "computer_cancel",
+        "computer_capture",
+        "computer_cancel",
         # a document is published to the web app, read back to edit.
-        "document_publish", "document_read", "document_set_status",
+        "document_publish", "document_read", "document_set_status", "document_list",
+        "document_revise",
         # (the four `subagent_*` tools are tag-turn only: this Dreamer-path build omits them,
         # and tests/unit/test_subagent_tools.py pins where they ARE built.)
         # DEC-97: what she is running, and what was in an earlier version.
@@ -365,7 +364,7 @@ def test_budgets_match_todays_table():
         # stop of a queued or running task, a second to read the row back.
         "computer_capture": 2, "computer_cancel": 2,
         # no-spec catalog read, publish, a fix, an edit; a read.
-        "document_publish": 6, "document_read": 2,
+        "document_publish": 6, "document_read": 2, "document_list": 2, "document_revise": 2,
         # Archive, delete or restore one document; a second call is an undo or
         # another document.
         "document_set_status": 2,
@@ -443,7 +442,7 @@ def test_budgets_match_todays_table():
         # fetch (DEC-116, Tavily /extract): a page is heavier than a snippet
         # round trip and there is rarely a reason to open more than one or two
         # links in a turn.
-        "web_fetch": 2,
+        "web_fetch": 5,
         # x_read (DEC-201): a post, then its author's profile or posts, and a
         # second try. x_search: a search and one refinement.
         "x_read": 3,
@@ -548,7 +547,7 @@ def test_budgets_do_not_require_runtime_dependencies():
 
 
 def test_specs_carry_the_same_budgets_as_budgets():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     registry = ToolRegistry()
     specs = registry.specs(
@@ -623,7 +622,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
     that the SPEC carries the table's value — `_spec()` silently dropping the
     field would give every tool the dataclass default, and a live-only tool
     quietly declaring it never goes stale is the failure worth catching."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     registry = ToolRegistry()
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
@@ -644,7 +643,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
 
 
 def test_transit_is_declared_live_only_and_not_terminal():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     assert NATIVE_TOOLS["transit"].time_shiftable is False
     assert NATIVE_TOOLS["transit"].terminal is False
     assert "transit" not in ToolRegistry().terminal_tools()
@@ -710,7 +709,7 @@ def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
     """The taxonomy must stay COMPLETE over the tools routing actually confuses —
     a new local tool added untagged would silently sit outside the priority. Pins
     the tier of each tool in the seed confusability clusters."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     expected = {
         "weather": "confirmed", "transit": "confirmed", "route": "confirmed",
         "place_info": "confirmed", "where_is": "confirmed",
@@ -746,7 +745,7 @@ def test_skills_is_budgeted_so_r7_admits_it_but_the_registry_does_not_build_it()
 
 
 def test_skills_declares_terminal_false_and_no_time_dimension():
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     spec = NATIVE_TOOLS["skills"]
     assert spec.plugin is True
     assert spec.terminal is False
@@ -762,9 +761,9 @@ class _FakeMcpTool:
 
 def _mcp_groups() -> dict[str, McpToolGroup]:
     return {
-        "pulse": McpToolGroup(
+        "demo": McpToolGroup(
             budget=5,
-            tools=(_FakeMcpTool("pulse_server_status"), _FakeMcpTool("pulse_weekly")),
+            tools=(_FakeMcpTool("demo_server_status"), _FakeMcpTool("demo_weekly")),
         ),
     }
 
@@ -773,21 +772,21 @@ def test_budgets_excludes_mcp_tools_not_in_allowed_mcp():
     """R-7's default-deny must actually cover an unauthorized server's tool
     names: `budgets()` called with no `allowed_mcp`
     (the default, matching an unauthorized conversation) must not admit
-    `pulse_server_status`/`pulse_weekly` at all — not merely leave them
+    `demo_server_status`/`demo_weekly` at all — not merely leave them
     un-callable elsewhere."""
     registry = ToolRegistry(mcp_tools=_mcp_groups())
     budgets = registry.budgets()
-    assert "pulse_server_status" not in budgets
-    assert "pulse_weekly" not in budgets
+    assert "demo_server_status" not in budgets
+    assert "demo_weekly" not in budgets
     # native budgets are untouched
     assert budgets["now"] == 4
 
 
 def test_budgets_includes_mcp_tools_only_for_allowed_servers():
     registry = ToolRegistry(mcp_tools=_mcp_groups())
-    budgets = registry.budgets(allowed_mcp=frozenset({"pulse"}))
-    assert budgets["pulse_server_status"] == 5
-    assert budgets["pulse_weekly"] == 5
+    budgets = registry.budgets(allowed_mcp=frozenset({"demo"}))
+    assert budgets["demo_server_status"] == 5
+    assert budgets["demo_weekly"] == 5
     # native budgets are untouched
     assert budgets["now"] == 4
 
@@ -795,7 +794,7 @@ def test_budgets_includes_mcp_tools_only_for_allowed_servers():
 def test_unauthorized_conversations_veto_message_never_names_mcp_tools():
     """The R-7 unknown-tool veto message is built from `ReplyGuard`'s
     `budgets` dict (`guards.py::_list_tool_names`). A conversation not
-    authorized for `pulse` must never have that server's tool names appear in
+    authorized for `demo` must never have that server's tool names appear in
     the message the MODEL sees when it hallucinates a wrong tool name —
     a non-disclosure claim, stated concretely."""
     registry = ToolRegistry(mcp_tools=_mcp_groups())
@@ -806,8 +805,8 @@ def test_unauthorized_conversations_veto_message_never_names_mcp_tools():
     )
     message = guard.evaluate("totally_made_up_tool", {})
     assert message is not None
-    assert "pulse_server_status" not in message
-    assert "pulse_weekly" not in message
+    assert "demo_server_status" not in message
+    assert "demo_weekly" not in message
 
 
 class _SpyMcpTool:
@@ -829,15 +828,15 @@ async def test_a_servers_aggregate_budget_refuses_the_call_past_it_spread_over_i
     though its own tool is within its budget, and the refused call never runs."""
     ran: list[str] = []
     group = McpToolGroup(budget=2, tools=(
-        _SpyMcpTool("pulse_server_status", ran), _SpyMcpTool("pulse_weekly", ran),
+        _SpyMcpTool("demo_server_status", ran), _SpyMcpTool("demo_weekly", ran),
     ))
     first, second = aggregate_budgeted_tools(group)
 
     async def call(tool: Any, ref: str) -> list[Any]:
         return [e async for e in tool.stream({"toolUseId": ref, "input": {}}, {})]
 
-    assert await call(first, "r1") == [{"ok": "pulse_server_status"}]
-    assert await call(second, "r2") == [{"ok": "pulse_weekly"}]
+    assert await call(first, "r1") == [{"ok": "demo_server_status"}]
+    assert await call(second, "r2") == [{"ok": "demo_weekly"}]
     refused = await call(first, "r3")
     assert refused[0].tool_result["status"] == "error"
     assert ran == ["r1", "r2"]
@@ -847,18 +846,18 @@ async def test_the_built_surface_gates_a_servers_tools_on_its_aggregate_budget()
     """The same budget, reached the way a turn reaches it: `build` hands the model the
     server's tools, and calls through those handed-over tools are counted together."""
     ran: list[str] = []
-    registry = ToolRegistry(mcp_tools={"pulse": McpToolGroup(budget=1, tools=(
-        _SpyMcpTool("pulse_server_status", ran), _SpyMcpTool("pulse_weekly", ran),
+    registry = ToolRegistry(mcp_tools={"demo": McpToolGroup(budget=1, tools=(
+        _SpyMcpTool("demo_server_status", ran), _SpyMcpTool("demo_weekly", ran),
     ))})
     tools = {t.tool_name: t for t in registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
-        metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"pulse"}),
-    ) if t.tool_name.startswith("pulse_")}
-    assert set(tools) == {"pulse_server_status", "pulse_weekly"}
-    first = [e async for e in tools["pulse_server_status"].stream({"toolUseId": "a"}, {})]
-    second = [e async for e in tools["pulse_weekly"].stream({"toolUseId": "b"}, {})]
-    assert first == [{"ok": "pulse_server_status"}]
+        metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"demo"}),
+    ) if t.tool_name.startswith("demo_")}
+    assert set(tools) == {"demo_server_status", "demo_weekly"}
+    first = [e async for e in tools["demo_server_status"].stream({"toolUseId": "a"}, {})]
+    second = [e async for e in tools["demo_weekly"].stream({"toolUseId": "b"}, {})]
+    assert first == [{"ok": "demo_server_status"}]
     assert second[0].tool_result["status"] == "error" and ran == ["a"]
 
 
@@ -872,8 +871,8 @@ def test_registry_derivations_are_unaffected_by_mcp_tools():
 def test_build_omits_mcp_tools_when_allowed_mcp_is_empty():
     tools = _built_tools(ToolRegistry(mcp_tools=_mcp_groups()))
     names = {t.tool_name for t in tools}
-    assert "pulse_server_status" not in names
-    assert "pulse_weekly" not in names
+    assert "demo_server_status" not in names
+    assert "demo_weekly" not in names
 
 
 def test_build_includes_only_the_allowed_mcp_servers_tools():
@@ -881,10 +880,10 @@ def test_build_includes_only_the_allowed_mcp_servers_tools():
     tools = registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
-        metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"pulse"}),
+        metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"demo"}),
     )
     names = {t.tool_name for t in tools}
-    assert {"pulse_server_status", "pulse_weekly"} <= names
+    assert {"demo_server_status", "demo_weekly"} <= names
 
 
 # ---- [llm.budgets]: a per-deployment DELTA, not a second table -------------
@@ -937,7 +936,7 @@ def test_cacheable_tools_is_a_frozenset_not_a_list():
 # Hand-listed HERE, in the test, and DERIVED in the code: a hand-copied list of
 # act verbs goes stale as verbs are added (the events family, DEC-117), and a
 # stale list would hand a background agent write verbs.
-ACT_VERBS = frozenset({
+ACT_VERBS = frozenset({"document_revise",
     "remind", "cancel_reminder",
     "event_propose", "event_revise", "event_rsvp", "event_set_status",
     # a command, a file write and a file edit all
@@ -989,7 +988,7 @@ ACT_VERBS = frozenset({
 # this red as MISSING, and a new act verb that wrongly carries it turns the
 # test above red as a LEAK. The two directions are what make a fail-closed
 # default safe.
-READ_ONLY = frozenset({
+READ_ONLY = frozenset({"document_list",
     # registers shelf tools onto this turn's own
     # agent and nothing else — no store, no room, nothing outside the turn.
     "load_tools",
@@ -1020,8 +1019,7 @@ READ_ONLY = frozenset({
     # DEC-316: the graph surface's memory search, an index read
     "memory_search", "memory_read",
     # reads a shared file; the account cannot write.
-    "file_fetch",
-    "media_search",
+    "file_fetch", "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "event_search",
     "suggest_venue", "version_list", "version_read", "search_gifs",
     # The two parking verbs: live reads that act on nothing —
@@ -1036,8 +1034,7 @@ READ_ONLY = frozenset({
     # The unit-wide memory variant — a pure read of a store the tag path
     # already trusts, granted to a unit-keyed adaptor through
     # `UNIT_SAFE_TOOLS`.
-    "search_memory_workspace",
-    "music_status",
+    "search_memory_workspace", "music_status",
     # DEC-151, DEC-201: the X tools are pure reads at all three layers, the
     # tools' closed vocabulary, the bridge's host-side allowlist, this
     # declaration.
@@ -1082,7 +1079,7 @@ def test_every_registered_tool_declares_whether_it_only_reads():
     the activation is registered by Strands' own plugin, so there is nothing
     here to classify. It is excluded from the Dreamer by the fail-closed
     default, which is the correct answer for a tool nobody here builds."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     unclassified = {
         name for name, spec in NATIVE_TOOLS.items()
@@ -1113,7 +1110,7 @@ def test_the_read_and_act_halves_partition_the_table():
     failure this guards is a tool added to one list and forgotten in the other
     — the exact failure `NativeTool`'s own docstring says the table exists to
     prevent."""
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
 
     assert READ_ONLY | ACT_VERBS | {"skills"} == set(NATIVE_TOOLS)
     assert not READ_ONLY & ACT_VERBS

@@ -1,4 +1,4 @@
-// HTTP control plane (design/voice-channel/07-audio-owner-controller.md §3):
+// HTTP control plane (design/voice-channel/audio.md):
 // the audio-controller is the SOLE owner of the Discord voice connection;
 // nora decides everything and drives it through these routes.
 //
@@ -7,9 +7,9 @@
 // deviate. Every state-changing command except /voice/join is
 // generation-scoped: a stale generation gets 409 generation_conflict and
 // nothing happens. Any body guild_id != the configured guild gets 400
-// wrong_guild (single-guild hard-bound, §12.5).
+// wrong_guild (single-guild hard-bound, design/voice-channel/audio.md «Connection lifecycle»).
 //
-// /voice/join admits ANY channel in that guild (§12.2, reversed 2026-09-17).
+// /voice/join admits ANY channel in that guild (design/voice-channel/audio.md «Connection lifecycle», reversed 2026-09-17).
 // Phase 1 pinned one immutable CHANNEL_ID; a real server's voice channels are
 // not a fixed list (Zone 42 has 10+ and gains more), so the channel half of
 // the binding could not be kept true and the guild half — which the
@@ -24,7 +24,7 @@
 // Every route requires the shared service bearer (NORA_BRIDGE_TOKEN). The check
 // runs before any body is read, and a missing or wrong bearer is 401.
 //
-// Request dedupe (§3.3): control POSTs may carry request_id; the FIRST
+// Request dedupe (design/voice-channel/audio.md «Connection lifecycle»): control POSTs may carry request_id; the FIRST
 // occurrence reserves an in-flight promise BEFORE the handler runs, so
 // concurrent duplicates await the same execution and get the same response;
 // once completed, the response is memoized for 5 minutes and a retry
@@ -221,7 +221,7 @@ export function createController({
       if (typeof body.channel_id !== 'string' || !body.channel_id) {
         throw httpError(400, 'invalid_body', 'channel_id is required');
       }
-      // Any channel in this guild (§12.2, reversed 2026-09-17). The guild
+      // Any channel in this guild (design/voice-channel/audio.md «Connection lifecycle», reversed 2026-09-17). The guild
       // check above is the whole admission; nora's own join gate has already
       // required the caller to be a member physically sitting in the channel
       // it is naming.
@@ -238,7 +238,7 @@ export function createController({
       if (typeof body.stream_url !== 'string' || !body.stream_url) {
         throw httpError(400, 'invalid_body', 'stream_url is required');
       }
-      // Optional source capability (§5 position policy): false marks a
+      // Optional source capability (design/voice-channel/audio.md «Speech and music arbitration»): false marks a
       // live/non-seekable stream; absent leaves the arbiter's default.
       if (body.resumable !== undefined && typeof body.resumable !== 'boolean') {
         throw httpError(400, 'invalid_body', 'resumable must be a boolean when present');
@@ -676,7 +676,7 @@ export function createFrontDoor({
 // keyed by guild, because a core IS a guild.
 export function createCore({
   guildId,
-  // No CHANNEL_ID here (§12.2, reversed 2026-09-17): the control plane admits
+  // No CHANNEL_ID here (design/voice-channel/audio.md «Connection lifecycle», reversed 2026-09-17): the control plane admits
   // any channel in the guild, and a restart's channel comes from this guild's
   // own desired-state file.
   joinVoice,

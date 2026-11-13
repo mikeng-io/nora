@@ -299,10 +299,9 @@ async def test_cognition_self_location_passes_presence_in_every_target_room(loca
 
 
 @pytest.mark.parametrize("surface", ["tag", "fire"])
-async def test_a_room_profile_names_the_room_by_its_policy_label_never_its_platform_id(surface):
-    """ADR 0029: a room is its `policy.toml` id in the prompt. `primary_id`
-    keys the store and is often a platform conversation id, which must not
-    reach `of=`."""
+async def test_a_room_profile_keeps_its_canonical_subject_id(surface):
+    """Shared profiles carry the canonical subject id accepted by profile tools.
+    The room label remains presentation, separate from this store identity."""
     reader = _Heads({"g1": (_line("plans late"),)})
     if surface == "tag":
         views = await _assembler(_LISTED, reader, _ROSTER_CLEAN)._profiles(
@@ -311,5 +310,6 @@ async def test_a_room_profile_names_the_room_by_its_policy_label_never_its_platf
         views = await _fire_path(_LISTED, reader, _ROSTER_CLEAN)._read_profiles(
             _occasion(), None, [])
     room = next(v for v in views if v.entity == "room")
-    assert room.of == "Room"
-    assert room.of != _LISTED.primary_id
+    assert room.of == "g1"
+    assert room.entity == "room"
+    assert room.of == _LISTED.primary_id

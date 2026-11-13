@@ -15,10 +15,10 @@ import json
 
 import pytest
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.guards import ReplyGuard
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import NATIVE_TOOLS
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.obs.metrics import Metrics
 from nora.testing import FakeMemoryStore, FakeRosterSource

@@ -10,7 +10,7 @@ package bridge
 // A source event about an OBJECT (pin set, room, member set, artifact) is
 // never an utterance: no fabricated speaker line, no fake empty message.
 //
-// Identity rules (design/platform-observations/02):
+// Identity rules (design/platform-observations/observations.md):
 //   - `upstream` is the transition identity for the envelope's source_key.
 //     `uq_seq_id` is the upstream's own per-delta monotonic revision —
 //     present it grounds identity AND ordering (source_position inside

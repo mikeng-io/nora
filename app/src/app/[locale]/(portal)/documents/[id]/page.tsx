@@ -18,7 +18,7 @@ export default async function DocumentPage({
 }) {
   const { id } = await params;
   const { view, slide, from } = await searchParams;
-  // `?view=present` is the same document, one Section per slide (design/artifact §34).
+  // `?view=present` is the same document, one Section per slide (design/artifact/lifecycle.md).
   if (view === "present") {
     return (
       <PresentView

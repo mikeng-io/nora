@@ -1,5 +1,5 @@
 """The platform-observation durable ingest path against REAL Postgres +
-Redis (design/platform-observations 02, 04).
+Redis (design/platform-observations/observations.md, 04).
 
 Every test drives the production seam `test_bridge_queue` drives —
 `StreamProducer.enqueue` → `StreamReader._register` → `WorkRunner._execute`
@@ -7,7 +7,7 @@ Every test drives the production seam `test_bridge_queue` drives —
 `IngestPipeline` and `permissive_policy` wired the way composition wires
 them (nora/app/composition.py).
 
-The contract under test (design/platform-observations 05): a co-delivered
+The contract under test (design/platform-observations/exposure.md): a co-delivered
 message and its observation sidecar are ONE durable source obligation —
 the typed `platform_observation` row + folded `platform_object_state`
 head + ONE ordinal-90 `stimulus` obligation naming BOTH refs — never two
@@ -301,7 +301,7 @@ async def test_observation_replay_and_rotated_alias_do_not_duplicate(
 @pytest.mark.parametrize("separate_target", [False, True])
 async def test_message_sidecar_is_one_source_obligation_with_both_refs(
         bridge, redis_client, harness, separate_target):
-    """The single-source-wake contract (design/platform-observations 05):
+    """The single-source-wake contract (design/platform-observations/exposure.md):
     a message envelope carrying an observation sidecar commits ONE durable
     stimulus obligation naming BOTH refs — the observation row and the
     utterance row — never two independent wakes of one source event. The

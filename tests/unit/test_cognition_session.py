@@ -1,15 +1,14 @@
 """`nora.domain.cognition_session` — the Cognition adaptor's session and
 agenda, built by code."""
 
+
 from __future__ import annotations
 
 from nora.domain.cognition_session import (
-    CLOSE_REASONS,
     AgendaItem,
     Room,
     build_agenda,
     build_situation,
-    close_or_strike,
 )
 from nora.domain.stimuli import Stimulus
 
@@ -68,7 +67,7 @@ def test_play_rollup_time_and_self_bind_the_home_room_not_a_stimulus_room():
 
 def test_a_social_read_binds_the_room_it_names_and_home_when_it_names_none():
     """A social stimulus names a room of the unit that lists its author
-    (`composition.social_person_rooms`): its item reads through that room, the
+    (`social_person_rooms`): its item reads through that room, the
     only kind of room that may be shown the author's items."""
     named = build_agenda(
         [_stimulus(1, kind="social", conversation_id="room-b", platform="signal")],
@@ -145,55 +144,16 @@ def test_an_agenda_item_serialises_to_json_shapes_only():
 
 # -- closing --------------------------------------------------------------
 
-def _item(strike: int = 0) -> AgendaItem:
-    return AgendaItem(
-        kind="message", room=HOME, summary="s", stimulus_ids=(1,), cues=(),
-        surprise=1.0, strike=strike,
-    )
 
 
-def test_written_no_change_and_covered_never_strike():
-    for reason in ("written", "no_change", "covered"):
-        outcome = close_or_strike(_item(strike=0), item_index=0, reason=reason)
-        assert outcome.reason == reason
-        assert outcome.strike == 0
 
 
-def test_waiting_strikes_and_escalates_to_struck_at_max_strikes():
-    item = _item(strike=0)
-    first = close_or_strike(item, item_index=0, reason="waiting", max_strikes=3)
-    assert first.reason == "waiting"
-    assert first.strike == 1
-
-    second = close_or_strike(_item(strike=1), item_index=0, reason="waiting", max_strikes=3)
-    assert second.reason == "waiting"
-    assert second.strike == 2
-
-    third = close_or_strike(_item(strike=2), item_index=0, reason="waiting", max_strikes=3)
-    assert third.reason == "struck"
-    assert third.strike == 3
 
 
-def test_close_or_strike_refuses_an_unknown_reason():
-    import pytest
-
-    with pytest.raises(ValueError):
-        close_or_strike(_item(), item_index=0, reason="nonsense")
 
 
-def test_close_or_strike_refuses_struck_as_a_caller_supplied_reason():
-    """`struck` is code's OWN close at `max_strikes`, never a session's
-    argument (`CLOSE_REASONS`'s docstring) — a caller asking to close
-    `struck` directly is refused even though `CloseOutcome` itself would
-    accept it as a value."""
-    import pytest
-
-    with pytest.raises(ValueError):
-        close_or_strike(_item(), item_index=0, reason="struck")
 
 
-def test_close_reasons_names_every_reason_the_schema_allows():
-    assert set(CLOSE_REASONS) == {"written", "no_change", "waiting", "covered", "struck"}
 
 
 def test_agenda_is_a_dataclass_not_a_mutable_list():
@@ -203,9 +163,9 @@ def test_agenda_is_a_dataclass_not_a_mutable_list():
 
     import pytest
 
-    item = _item()
+    item = AgendaItem("message", HOME, "generated", (1,), (), 0.0)
     with pytest.raises(dataclasses.FrozenInstanceError):
-        item.strike = 5  # type: ignore[misc]
+        item.surprise = 5  # type: ignore[misc]
 
 
 def test_deferred_ids_are_sorted():

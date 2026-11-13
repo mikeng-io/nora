@@ -26,7 +26,7 @@ from nora.domain.doctrine_check import CheckVerdict, LawRule, Tension, parse_ver
 from nora.language.doctrine_check import DoctrineCheck, render_check_input
 from nora.language.lesson_book import LessonBook
 from nora.obs.metrics import Metrics
-from tests.unit.test_lessons_adaptor import _Clock, _Store
+from tests.unit.test_cognition_lessons import _Clock, _Store
 
 RULES = (
     LawRule(file="core/constraints.md", line=10, text="Never share where a member is."),
@@ -223,7 +223,7 @@ def test_no_model_surface_reads_a_tension_row():
         str(p.relative_to(root.parent)) for p in root.rglob("*.py")
         if "from nora.infra.sql.tension import" in p.read_text(encoding="utf-8")
     }
-    assert users == {"nora/app/composition.py", "nora/app/cli.py"}
+    assert users == {"nora/app/composition_dream.py", "nora/app/cli.py"}
 
 
 def test_the_objective_answers_in_the_shape_the_parser_reads():

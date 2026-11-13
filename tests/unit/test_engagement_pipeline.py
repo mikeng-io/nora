@@ -400,9 +400,9 @@ def _policy_allowing(*, conversation_id: str = "g1", tools: frozenset[str] = fro
     return Policy(conversations=(convo,), _by_id={("signal", conversation_id): convo})
 
 
-def _registry_with_pulse() -> ToolRegistry:
+def _registry_with_demo() -> ToolRegistry:
     groups = {
-        "pulse": McpToolGroup(budget=5, tools=(_FakeMcpTool("pulse_server_status"),)),
+        "demo": McpToolGroup(budget=5, tools=(_FakeMcpTool("demo_server_status"),)),
     }
     return ToolRegistry(mcp_tools=groups)
 
@@ -412,26 +412,26 @@ class _FakeMcpTool:
         self.tool_name = tool_name
 
 
-async def test_unauthorized_conversation_never_receives_pulse_tools():
+async def test_unauthorized_conversation_never_receives_demo_tools():
     pipeline, _metrics, _audit, _memory, background = _build_pipeline(
-        tool_registry=_registry_with_pulse(),
-        policy=_policy_allowing(tools=frozenset()),  # not authorized for pulse
+        tool_registry=_registry_with_demo(),
+        policy=_policy_allowing(tools=frozenset()),  # not authorized for demo
     )
     await pipeline.run(_request())
     await _drain(background)
     delivered_tools = pipeline._runner.calls[-1]["tools"]
-    assert not any(t.tool_name == "pulse_server_status" for t in delivered_tools)
+    assert not any(t.tool_name == "demo_server_status" for t in delivered_tools)
 
 
-async def test_authorized_conversation_receives_pulse_tools():
+async def test_authorized_conversation_receives_demo_tools():
     pipeline, _metrics, _audit, _memory, background = _build_pipeline(
-        tool_registry=_registry_with_pulse(),
-        policy=_policy_allowing(tools=frozenset({"pulse"})),
+        tool_registry=_registry_with_demo(),
+        policy=_policy_allowing(tools=frozenset({"demo"})),
     )
     await pipeline.run(_request())
     await _drain(background)
     delivered_tools = pipeline._runner.calls[-1]["tools"]
-    assert any(t.tool_name == "pulse_server_status" for t in delivered_tools)
+    assert any(t.tool_name == "demo_server_status" for t in delivered_tools)
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +467,7 @@ async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
     hot tools plus `load_tools`, the prompt carries `<tool_catalogue>`, and
     the loop gets one more turn for the load. All three come from ONE
     `ToolSurface`, so they cannot disagree about what was deferred."""
-    from nora.agent.tools import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
 
     pipeline, _metrics, _audit, _memory, background = _build_pipeline(defer_tools=True)
     await pipeline.run(_request())
@@ -487,8 +487,8 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
     tools declared `hot_on` voice and the same words typed do not."""
     import dataclasses
 
+    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
     from nora.agent.surface import DISCORD_ONLY_TOOLS
-    from nora.agent.tools import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
 
     seen: list = []
 
@@ -516,7 +516,7 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
 async def test_without_deferral_nothing_changes():
     """`defer_tools = false`: every admitted schema,
     no loader, no catalogue block, the configured turn ceiling."""
-    from nora.agent.tools import LOADER_TOOL
+    from nora.agent.catalog.groups import LOADER_TOOL
 
     pipeline, _metrics, _audit, _memory, background = _build_pipeline()
     await pipeline.run(_request())
@@ -3149,7 +3149,7 @@ async def test_the_tag_s_room_carries_the_record_row_of_the_message_that_raised_
 
 
 async def test_who_said_searches_the_whole_read_window_not_the_prompt_slice():
-    """`[store] prompt_window` trims what `<group_transcript>` shows; the
+    """`[store] prompt_window` trims what `<transcript>` shows; the
     lookup tool is handed the deeper read, so a lookup never shrinks with the
     prompt. 12 rows read (`context_window=10` plus the tag), 4 shown."""
     seen: dict = {}

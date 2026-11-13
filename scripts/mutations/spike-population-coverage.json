@@ -12,12 +12,5 @@
     "old": "    if run.get(\"questions\", 0) < minimum:\n        return \"INSUFFICIENT\"\n    if run.get(\"sql_p95_ms\") is None:",
     "new": "    if run.get(\"sql_p95_ms\") is None:",
     "target": "tests/unit/test_memory_graph_spike.py::test_depth3_latency_verdict_binds_question_population"
-  },
-  {
-    "name": "unscored committed relations are missing measurements",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "    missing = committed_ids - scored_ids\n    for _ in missing:\n        for name in (\"relation_precision\", \"wrong_merges\"):\n            for verdicts in scored[name]:\n                verdicts.append(\"ERROR\")",
-    "new": "    missing = committed_ids - scored_ids",
-    "target": "tests/unit/test_memory_graph_spike.py::test_session_quality_marks_unscored_committed_as_missing"
   }
 ]

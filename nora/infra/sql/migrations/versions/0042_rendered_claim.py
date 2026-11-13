@@ -1,6 +1,6 @@
 """rendered_claim -- what she actually rendered, which nothing recorded
 
-`design/dreamer-agent-loop/31-recognition.md` §3. Step 3 of the correction loop
+`design/cognition-loop/data.md` «Notebook vocabulary» 3 of the correction loop
 is "RECOGNISE a member contradicting a claim Nora just RENDERED", and nothing in
 the codebase records what she rendered. `TagTrace` keeps the turn's `messages`
 and `transcript`; it does not keep which `fact` or `room_lexeme` rows went into

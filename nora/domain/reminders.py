@@ -136,7 +136,7 @@ def open_proactive_subject(row: Reminder) -> tuple[str, str, str] | None:
 
     ONE OPEN PROACTIVE ROW PER (SUBJECT, ACTION, DESTINATION) — the resolved
     shared-object reference, never a citation set or a prose match (DEC
-    pending; `design/notebook-memory-types/20-shared-cognitive-state.md`).
+    pending; `design/notebook-memory-types/20-standing.md`).
     Same shape `open_proactive_note` established: both stores hold it at
     insert (`uq_reminders_proactive_open_subject`,
     `DuplicateProactiveSubjectError`). A row carrying no resolved subject has
@@ -757,7 +757,8 @@ class ReminderStore(Protocol):
         scope. A full page means «unproven remainder», never absence."""
         ...
     async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
-        """PENDING rows whose `due_at` has passed, oldest first, `id`
+        """PENDING rows whose `due_tick` has passed — the eligibility
+        authority (node 18): `due_tick <= tick(now)`, oldest first, `id`
         ASCENDING within an equal `due_at`.
 
         The tiebreak is part of the contract, not an incidental: `due_at` alone

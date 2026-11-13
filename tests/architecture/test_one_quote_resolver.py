@@ -53,8 +53,8 @@ SCANNED = ("nora", "scripts", "evals")
 #: must resolve it the way prefill does.
 RESOLVERS = (
     "nora/agent/prefill.py",
-    "nora/agent/tools.py",
-    "nora/engagement/debrief_render.py",
+    "nora/agent/toolkit/transcript.py",
+    "nora/language/context_render.py",
 )
 
 HELPER = "first_by_ts"

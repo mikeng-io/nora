@@ -623,10 +623,10 @@ def _reaction_receipts(
 
 
 #: Blocks `_shown_blocks` captures that `_judge_source` does NOT add as
-#: recall context: `group_transcript` is already the source's first part
+#: recall context: `transcript` is already the source's first part
 #: (`_shown_transcript`), and `tool_catalogue` describes her tools rather than
 #: holding any record of the group, so neither can support a recalled claim.
-_NOT_RECALL_CONTEXT = frozenset({"group_transcript", "tool_catalogue"})
+_NOT_RECALL_CONTEXT = frozenset({"transcript", "tool_catalogue"})
 _CONTEXTUAL_CRITERIA = frozenset({
     "recall_grounded", "social_suitability", "personality",
     "contextual_identity", "public_provenance",
@@ -796,22 +796,22 @@ def _shown_now(exporter: InMemorySpanExporter) -> str | None:
     return None
 
 
-#: `<group_transcript window="N" description="…">…rows…</group_transcript>`
+#: `<transcript window="N" description="…">…rows…</transcript>`
 #: (`nora.domain.blocks.ContextBlock.render`, `nora.agent.prefill.
 #: _transcript_block`) — the body is what `_transcript_block` names group 1.
-#: A body row is XML-escaped (R-13/R-13b), so a real `</group_transcript>`
+#: A body row is XML-escaped (R-13/R-13b), so a real `</transcript>`
 #: cannot appear inside one and end the match early; `re.DOTALL` lets `.`
 #: cross the row boundaries a multi-row window always has.
 #:
 #: Runs on the DECODED text (`_texts_in`), never on the raw span attribute — Strands writes
 #: that as `json.dumps(..., ensure_ascii=False)` (`strands.telemetry.tracer.serialize`), so a
 #: real body's newline is the two characters `\` `n` there, not the one this pattern's
-#: `\n?`/`re.DOTALL` assume. Matching the raw JSON text would find `</group_transcript>` a line
+#: `\n?`/`re.DOTALL` assume. Matching the raw JSON text would find `</transcript>` a line
 #: early and leave a literal `\n` at each end of the captured group — the exact shape
 #: `_shown_now`'s own clock-line pattern already hedges for with `(?=\s|\\n|$)`, which this
 #: module's regexes are not otherwise immune to just because they look like plain text.
 _GROUP_TRANSCRIPT = re.compile(
-    r'<group_transcript\b[^>]*>\n?(.*?)\n?</group_transcript>', re.DOTALL,
+    r'<transcript\b[^>]*>\n?(.*?)\n?</transcript>', re.DOTALL,
 )
 
 
@@ -861,7 +861,7 @@ def _texts_in(raw: str) -> list[str]:
 def _shown_transcript(
     exporter: InMemorySpanExporter, *, agent: str | None = None,
 ) -> str | None:
-    """The `<group_transcript>` block's body exactly as the turn's own model
+    """The `<transcript>` block's body exactly as the turn's own model
     call carried it — the window HER TURN rendered, quote-chase growth
     included, read back off the call rather than re-derived from
     `context_window` (`sandbox_from_snapshot`'s `Sandboxed.transcript` is every
@@ -870,7 +870,7 @@ def _shown_transcript(
 
     **`agent` scopes this to the TURN's own calls (`_under_agent`), and that
     is load-bearing, not a nicety.** The relevance gate renders its OWN
-    `<group_transcript>` too (`nora.ingest.relevance_gate.RelevanceGate`,
+    `<transcript>` too (`nora.ingest.relevance_gate.RelevanceGate`,
     on a raw model call — see `_under_agent`'s docstring), and `[participation]`
     and `[relevance_gate]` are one subsystem (`ENTRY_POINTS["participation"]`'s
     own comment): a `participation` drive can carry the gate's admission call
@@ -893,7 +893,7 @@ def _shown_transcript(
     (not merely claimed) by `tests/unit/test_tool_route_grader.py::
     test_shown_transcript_decodes_the_real_strands_serialized_span`, which
     round-trips a realistic multi-row window — multi-line body, a quote,
-    CJK, an attacker row whose body is a literal `</group_transcript>` —
+    CJK, an attacker row whose body is a literal `</transcript>` —
     through the real renderer, the real `strands.telemetry.tracer.serialize`,
     and this function, and asserts equality.
 
@@ -946,11 +946,11 @@ def _shown_blocks(
     exporter: InMemorySpanExporter, *, agent: str | None = None,
 ) -> tuple[tuple[str, str], ...] | None:
     """`(block name, block as rendered)` for every context block in the message
-    that carried the turn's `<group_transcript>` — `build_prefill`'s volatile
+    that carried the turn's `<transcript>` — `build_prefill`'s volatile
     message, the clock line plus `assemble(declared)` — read off the turn's own
     first model call exactly as `_shown_transcript` reads the window, and
     scoped by `agent` for the same reason (the relevance gate renders a
-    `<group_transcript>` of its own).
+    `<transcript>` of its own).
 
     Anchored on the transcript block rather than on any message with a tag in
     it: the tag message (`<tag_message>`, `<replying_to>`) is the judge's
@@ -1259,7 +1259,7 @@ def _read_deployment(name: str) -> str:
             "own policy entry and the roster its speakers resolve through. "
             "Run this where the deployment lives, or point "
             "$NORA_DEPLOYMENT_DIR at it "
-            "(design/evaluation/11-the-sandbox-rebuild.md §1.2)."
+            "(design/evaluation/subject.md)."
         ) from exc
 
 
@@ -1720,7 +1720,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             "(a real room and a real instant) and is not parked. A case with "
             "no anchor cannot run — there is no room to reconstruct — and is "
             "an ERROR rather than a skip, so the report shows the work "
-            "(11-the-sandbox-rebuild.md §7.1)."
+            "(design/evaluation/subject.md)."
         )
     unknown = set(shot) - SNAPSHOT_KEYS
     if unknown:
@@ -1830,7 +1830,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         f"{platform} adapter — `FirePath._turn` resolves the "
                         "room's adapter before speaking, so the turn cannot "
                         "run. Anchor a turn case where an adapter is wired "
-                        "(design/evaluation/11-the-sandbox-rebuild.md §1.2's "
+                        "(design/evaluation/subject.md 's "
                         "declared Discord divergence)."
                     )
             if spec.memory_surface is not None and not (overlay and overlay.memory):
@@ -2025,7 +2025,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     # cannot itself tell apart from a case that carries no
                     # source BY DESIGN (an injection case, say). A turn that
                     # SPOKE always ran `build_prefill`, which renders
-                    # `<group_transcript>` unconditionally, so a miss here,
+                    # `<transcript>` unconditionally, so a miss here,
                     # scoped to this turn's own agent, is the CAPTURE breaking
                     # — an ERROR about the instrument, never a verdict about
                     # her, and it must cost a judged draw rather than spend one
@@ -2033,7 +2033,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     outcome = dataclasses.replace(
                         outcome,
                         error=(
-                            "no <group_transcript> was captured off the turn's "
+                            "no <transcript> was captured off the turn's "
                             "own model call; the judge's source cannot be bound "
                             "to the window she was shown, so this draw is not "
                             "judged (#459)"
@@ -2599,245 +2599,6 @@ class MeetsGrader(Evaluator):
         )
 
 
-#: How much of a call's input an argument verdict quotes, PASS or FAIL. A
-#: failure that names what was expected and not what was PASSED cannot be
-#: read: «no call wrote out Saturday 26 September» with none of the prompts
-#: shown says nothing about what the call carried. A PASS
-#: is quoted too, because a pass on an exclusion («no «mascot»») says nothing
-#: about whether the case can separate two arms until the prompt is read. 900
-#: characters, because a poster prompt states its date near the end.
-_SEEN_CHARS = 900
-
-
-def _seen(texts: list[str]) -> str:
-    """What the call actually carried, quoted for a FAIL reason."""
-    if not texts:
-        return "(no call)"
-    return " | ".join(f"«{t[:_SEEN_CHARS]}»" for t in texts)
-
-
-class ToolRouteGrader(Evaluator):
-    """Did the turn reach for the RIGHT tool?
-
-    `metadata.tools` names the acceptable tools — any one of them executing
-    is a PASS, because «what is the weather» may honestly be answered by
-    `weather` and a case should not pretend there is one right verb when
-    there are two. `metadata.not_tools` names the confusable sibling that
-    must NOT run — the half of a confusable pair that is the actual error
-    (`where_been` for a «where is she NOW» question). Both are read from what
-    EXECUTED (`NORA_TOOLS`), never from what the reply says.
-
-    `metadata.required_tools` optionally names tools that must ALL execute,
-    in addition to the ANY choice in `metadata.tools`.
-
-    `load_tools` is plumbing and is never the answer to anything: it is
-    dropped before either check, so a deferred turn and a resident one are
-    graded on the same question.
-
-    `metadata.before` is an ORDER criterion: `{instagram_read: [media_fetch]}`
-    says `media_fetch` must not run before the first `instagram_read`, and
-    may run after it. Some errors are an order, not a choice: calling `media_fetch` on a
-    shared reel's cover, reading one frame and stopping, is a defect that a case
-    whose `media_fetch` finds nothing then points her at the link, so without
-    the order it grades PASS. `NORA_TOOLS` is in
-    start order (`_tools_called`), which is what makes this readable at all. A
-    `before` that is not a mapping of tool to a list of tools is an ERROR: a
-    criterion the grader cannot read is not one it applied.
-
-    ERROR, never FAIL, when the case did not run or recorded no tools state:
-    a broken instrument is not a wrong answer.
-
-    **What the call carried**, read from `NORA_TOOL_INPUTS` and
-    checked only once routing has passed, each keyed by tool name:
-
-    - `args_include: {tool: [text, ...]}`: some call of `tool` carries every
-      text (case-insensitive), e.g. her canonical picture's sha on «draw
-      yourself».
-    - `args_exclude: {tool: [text, ...]}`: no call of `tool` carries any.
-    - `args_date: {tool: <weekday>}`: some call of `tool` writes out the
-      date of «this <weekday>», resolved against the clock line she was
-      SHOWN (`NORA_SHOWN_NOW`).
-
-    Inputs not captured, or no clock line for `args_date`, is ERROR: the
-    instrument could not see, which is not the same as she did not pass it.
-    """
-
-    _PLUMBING = frozenset({"load_tools"})
-
-    def _args(self, data: EvaluationData, md: Mapping[str, Any]) -> EvaluationOutput | None:
-        """The argument checks, or None when the case states none."""
-        include = md.get("args_include") or {}
-        exclude = md.get("args_exclude") or {}
-        dated = md.get("args_date") or {}
-        if not (include or exclude or dated):
-            return None
-        inputs = state_of(data, NORA_TOOL_INPUTS)
-        if inputs is None:
-            return self._out(ERROR, 0.0, "no tool inputs recorded")
-        calls: dict[str, list[str]] = {}
-        for name, text in inputs:
-            calls.setdefault(str(name), []).append(str(text).lower())
-        for tool in {*include, *exclude, *dated}:
-            if tool in calls and not any(calls[tool]):
-                return self._out(ERROR, 0.0, f"{tool} ran but its input was not captured")
-        for tool, needles in exclude.items():
-            for text in calls.get(tool, ()):
-                hit = [n for n in needles if str(n).lower() in text]
-                if hit:
-                    return self._out(
-                        FAIL, 0.0, f"{tool} was called with {hit}: {_seen([text])}")
-        for tool, needles in include.items():
-            if not any(all(str(n).lower() in text for n in needles)
-                       for text in calls.get(tool, ())):
-                return self._out(
-                    FAIL, 0.0,
-                    f"no {tool} call carried all of {list(needles)}: {_seen(calls.get(tool, []))}",
-                )
-        if dated:
-            clock = state_of(data, NORA_SHOWN_NOW)
-            today = date_shown(clock) if clock else None
-            if today is None:
-                return self._out(ERROR, 0.0, "no clock line was shown, so no date to expect")
-            for tool, weekday in dated.items():
-                day = this_weekday(today, str(weekday))
-                if not any(states_the_date(text, day) for text in calls.get(tool, ())):
-                    return self._out(
-                        FAIL, 0.0,
-                        f"no {tool} call wrote out {day:%A %-d %B %Y} (from {clock!r}): "
-                        f"{_seen(calls.get(tool, []))}",
-                    )
-        carried = [t for tool in {*include, *exclude, *dated} for t in calls.get(tool, [])]
-        return self._out(PASS, 1.0, f"the call carried what the case asks: {_seen(carried)}")
-
-    def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
-        error = state_of(data, NORA_ERROR)
-        called = state_of(data, NORA_TOOLS)
-        md = data.metadata or {}
-        want = frozenset(md.get("tools") or ())
-        avoid = frozenset(md.get("not_tools") or ())
-        required = frozenset(md.get("required_tools") or ())
-        before = md.get("before") or {}
-        if error:
-            return [self._out(ERROR, 0.0, f"the case did not run: {error}")]
-        if called is None:
-            return [self._out(ERROR, 0.0, "no tools state recorded")]
-        if not want:
-            return [self._out(ERROR, 0.0, "case names no metadata.tools to expect")]
-        if not isinstance(before, dict) or not all(
-            isinstance(v, (list, tuple)) for v in before.values()
-        ):
-            return [self._out(
-                ERROR, 0.0, f"metadata.before must map a tool to a list, got {before!r}",
-            )]
-        ran = [name for name in called if name not in self._PLUMBING]
-        wrong = sorted(avoid & set(ran))
-        if wrong:
-            return [self._out(FAIL, 0.0, f"called the sibling {wrong}; ran {ran}")]
-        missing = sorted(required - set(ran))
-        if missing:
-            return [self._out(FAIL, 0.0, f"missing required tools {missing}; ran {ran}")]
-        for first, not_before in before.items():
-            if first not in ran:
-                continue
-            early = sorted(set(ran[:ran.index(first)]) & set(not_before))
-            if early:
-                return [self._out(
-                    FAIL, 0.0, f"called {early} before {first}; ran {ran}",
-                )]
-        if want & set(ran):
-            carried = self._args(data, md)
-            if carried is not None and carried.label != PASS:
-                return [carried]
-            if md.get("journey"):
-                verified = self._journey(data, ran)
-                if verified is not None:
-                    return [verified]
-            routed = f"called {sorted(want & set(ran))}; ran {ran}"
-            if carried is not None:
-                routed = f"{routed}; {carried.reason}"
-            return [self._out(PASS, 1.0, routed)]
-        return [self._out(FAIL, 0.0, f"expected one of {sorted(want)}; ran {ran}")]
-
-    async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
-        return self.evaluate(data)
-
-    def _journey(self, data: EvaluationData, ran: list[str]) -> EvaluationOutput | None:
-        """Correlate successful calls to one owned capture and its exported bytes."""
-        results = state_of(data, NORA_TOOL_RESULTS)
-        inputs = state_of(data, NORA_TOOL_INPUTS)
-        if results is None or inputs is None:
-            return self._out(ERROR, 0.0, "journey inputs/results unavailable")
-
-        tools = ("computer_browse", "computer_capture", "computer_export")
-        ordered_inputs = [(name, text) for name, text in inputs if name in tools]
-        ordered_results = [(name, text) for name, text in results if name in tools]
-        expected = [name for name in ran if name in tools]
-        if ([name for name, _ in ordered_inputs] != expected
-                or [name for name, _ in ordered_results] != expected):
-            return self._out(ERROR, 0.0, "journey call inputs/results do not align")
-        successful: dict[str, list[tuple[int, dict[str, Any], dict[str, Any]]]] = {
-            tool: [] for tool in tools
-        }
-        # Both extractors retain every tool span in start order, including missing evidence.
-        for index, ((name, raw_input), (_, raw_result)) in enumerate(
-            zip(ordered_inputs, ordered_results, strict=True)
-        ):
-            try:
-                args = json.loads(raw_input)
-            except (ValueError, TypeError):
-                args = None
-            if not isinstance(args, dict):
-                return self._out(ERROR, 0.0, f"{name} input unavailable")
-            result = None
-            for fragment in _texts_in(raw_result):
-                try:
-                    value = json.loads(fragment)
-                except (ValueError, TypeError):
-                    continue
-                if isinstance(value, dict) and isinstance(value.get("status"), str):
-                    result = value
-                    break
-            if result is None or not result["status"]:
-                return self._out(ERROR, 0.0, f"{name} result unavailable")
-            if result["status"] == "ok":
-                successful[name].append((index, args, result))
-
-        for browse_index, _, browse in successful["computer_browse"]:
-            handle, target = browse.get("task"), browse.get("tab")
-            if not handle or not target:
-                continue
-            for capture_index, args, capture in successful["computer_capture"]:
-                if capture_index <= browse_index:
-                    continue
-                digest = capture.get("sha256")
-                if (args.get("task") != handle or capture.get("tab") != target
-                        or not capture.get("path") or not isinstance(digest, str)
-                        or len(digest) != 64
-                        or any(c not in "0123456789abcdef" for c in digest)):
-                    continue
-                for export_index, args, exported in successful["computer_export"]:
-                    if export_index <= capture_index:
-                        continue
-                    if (args.get("path") != capture["path"]
-                            or exported.get("sha256") != digest):
-                        continue
-                    destination = args.get("to", "chat")
-                    receipt = ((destination == "keep" and exported.get("kept") is True)
-                               or (destination == "chat" and exported.get("sent") is True)
-                               or (destination == "link" and exported.get("artifact_id")
-                                   and exported.get("url")))
-                    if receipt:
-                        return None
-        return self._out(FAIL, 0.0,
-                         "no successful same-task/target capture and matching export receipt")
-
-    @staticmethod
-    def _out(verdict: str, score: float, reason: str) -> EvaluationOutput:
-        return EvaluationOutput(
-            score=score, test_pass=(verdict == PASS), reason=reason, label=verdict,
-        )
-
-
 class ContextGrader(Evaluator):
     """*The blocks she needs were rendered non-empty.* Deterministic: no model call, reads only
     what `build_prefill` assembled, off `NORA_BLOCKS_EMPTY`.
@@ -2846,7 +2607,7 @@ class ContextGrader(Evaluator):
     for and therefore expects non-empty — `_BLOCKS`' own names in
     `nora/agent/prefill.py`: `self`, `peer_card`, `peer_history`,
     `people_in_window`, `notes`, `loop_decisions`, `standing`,
-    `group_transcript`. A case naming none is ungradable by this grader, not
+    `transcript`. A case naming none is ungradable by this grader, not
     a silent pass — the same rule `AbsenceGrader` follows for an `expect` it
     does not recognise.
     """

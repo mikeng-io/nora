@@ -28,9 +28,10 @@ import itertools
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from nora.agent import tools as tools_module
+from nora.agenda.adapters.tools.shared import _SELF_OWNER, _UNKNOWN_OWNER
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.toolkit.clock import _HKT
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.reminders import (
     Recurrence,
@@ -496,7 +497,7 @@ async def test_list_reminders_says_so_when_the_setter_is_no_longer_known():
     assert row["id"] == str(orphan.id)
     assert row["set_by"]
     assert "someone_who_left" not in row["set_by"]
-    assert row["set_by"] == tools_module._UNKNOWN_OWNER
+    assert row["set_by"] == _UNKNOWN_OWNER
 
 
 async def test_cancel_refuses_an_id_from_another_conversation():
@@ -600,7 +601,7 @@ async def test_a_list_reminders_ok_note_carries_only_the_rules_its_rows_need():
     await plain_store.create(_row(requester_person_id="tyler"))
     plain = await _tools(reminders=plain_store)["list_reminders"]()
     assert "everyone's" in plain["note"]
-    for clause in ("real answer", "series", tools_module._UNKNOWN_OWNER):
+    for clause in ("real answer", "series", _UNKNOWN_OWNER):
         assert clause not in plain["note"], clause
 
     series_store = FakeReminderStore()
@@ -608,14 +609,14 @@ async def test_a_list_reminders_ok_note_carries_only_the_rules_its_rows_need():
     await tools["remind"](when=SOON, text="食藥", repeat="daily", times=3)
     series = await tools["list_reminders"]()
     assert "series" in series["note"]
-    assert tools_module._UNKNOWN_OWNER not in series["note"]
+    assert _UNKNOWN_OWNER not in series["note"]
 
     orphan_store = FakeReminderStore()
     await orphan_store.create(_row(requester_person_id="someone_who_left"))
     orphan = await _tools(reminders=orphan_store)["list_reminders"]()
-    assert tools_module._UNKNOWN_OWNER in orphan["note"]
+    assert _UNKNOWN_OWNER in orphan["note"]
     assert "series" not in orphan["note"]
-    assert "\u2014" not in tools_module._SELF_OWNER
+    assert "\u2014" not in _SELF_OWNER
 
 
 async def test_a_cancel_ok_says_how_to_report_it():
@@ -680,10 +681,12 @@ def test_every_status_remind_can_emit_is_named_in_the_metric_help():
     import re
     from pathlib import Path
 
+    from nora.agenda.adapters.tools import reminders, shared
     from nora.obs.metric_specs import _COUNTERS
 
-    source = Path(tools_module.__file__).read_text(encoding="utf-8")
-    emitted = set(re.findall(r'_record_created\(\s*metrics,\s*"([a-z_]+)"', source))
+    source = "".join(Path(m.__file__).read_text(encoding="utf-8")
+                     for m in (reminders, shared))
+    emitted = set(re.findall(r'_record_created\(\s*c\.metrics,\s*"([a-z_]+)"', source))
     emitted |= set(re.findall(r'_RepeatRefusal\(\s*\n?\s*"([a-z_]+)"', source))
     assert len(emitted) >= 11, f"expected every status to be a literal; found {emitted}"
     assert {"bad_repeat", "bad_bound"} <= emitted, emitted
@@ -696,13 +699,11 @@ def test_every_status_remind_can_emit_is_named_in_the_metric_help():
     )
 
 
-# ---- DEC-85: recurrence, and the three asks that produced it ------------------
-#
-# Each of the three is verbatim from the group. They are tests rather than an
-# anecdote in a design document because what they pin is the SHAPE the model
-# has to produce: a recurrence is `when` + `repeat` + a bound, and lead time
-# (「前兩個星期」) is arithmetic on `when` rather than a concept anything here
-# stores.
+# ---- DEC-85: recurrence, and the three asks that produced it ------------------  Each of
+# the three is verbatim from the group. They are tests rather than an anecdote in a design
+# document because what they pin is the SHAPE the model has to produce: a recurrence is
+# `when` + `repeat` + a bound, and lead time (「前兩個星期」) is arithmetic on `when` rather than a
+# concept anything here stores.
 
 # `max_horizon_days` bounds the FIRST occurrence. Two of the three asks name a
 # date months out, so they are exercised against a cap widened to a year; the
@@ -846,7 +847,7 @@ async def test_an_until_given_as_a_bare_date_covers_that_whole_day():
     assert row.series is not None
     ends = row.series.rule.until
     assert ends is not None
-    local = ends.astimezone(tools_module._HKT)
+    local = ends.astimezone(_HKT)
     assert local.date().isoformat() == "2026-10-11"
     assert (local.hour, local.minute) == (23, 59)
 
@@ -1138,13 +1139,12 @@ async def test_the_f1_ask_is_one_call_not_twelve():
 
     # THE STORED RULE, and the firings it will actually produce.
     #
-    # Asserting the RESULT DICT alone is not enough: `_occurrences_through`
-    # receives `step` separately, so `repeat_left` comes out as 6 even when the
-    # rule that will fire has lost its multiplier entirely (a series that finishes
-    # in six MINUTES instead of an hour, with every assertion above satisfied).
-    #
-    # So the times are read off the persisted row. `repeat_left` is what she
-    # SAYS; this is what will HAPPEN, and the two must be the same thing.
+    # Asserting the RESULT DICT alone is not enough: `_occurrences_through` receives
+    # `step` separately, so `repeat_left` comes out as 6 even when the rule that will
+    # fire has lost its multiplier entirely (a series that finishes in six MINUTES
+    # instead of an hour, with every assertion above satisfied).  So the times are read
+    # off the persisted row. `repeat_left` is what she SAYS; this is what will HAPPEN,
+    # and the two must be the same thing.
     [row] = await store.pending_for(CONVERSATION)
     assert row.series is not None
     assert row.series.rule.interval == 10
@@ -1324,7 +1324,7 @@ async def test_list_reminders_names_a_row_nora_set_herself():
     listing = await _tools(reminders=store)["list_reminders"]()
 
     assert listing["status"] == "ok"
-    assert listing["reminders"][0]["set_by"] == tools_module._SELF_OWNER
+    assert listing["reminders"][0]["set_by"] == _SELF_OWNER
 
 
 async def test_a_remind_ok_says_to_confirm_the_moment_and_only_a_real_limit():

@@ -36,7 +36,7 @@ def test_the_corpus_is_registered_and_routed():
 
 def test_the_runner_collects_every_case_with_no_error():
     cases = load_corpus(NAME)
-    assert len(cases) == 27
+    assert len(cases) == 26
     for case in cases:
         assert case.metadata["snapshot"], case.name
         assert not case.metadata["parked"], case.name
@@ -44,8 +44,8 @@ def test_the_runner_collects_every_case_with_no_error():
 
 def test_census_reports_every_case_active_and_none_parked():
     result = census(NAME)
-    assert result.total == 27
-    assert result.active == 27
+    assert result.total == 26
+    assert result.active == 26
     assert result.parked == 0
     assert result.unanchored == 0
 

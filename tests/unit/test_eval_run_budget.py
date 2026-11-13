@@ -98,7 +98,7 @@ async def test_extra_body_cannot_enlarge_the_ceiling():
     token = active_run_budget.set(budget)
     try:
         async with _client(requests) as client:
-            with pytest.raises(openai.APIConnectionError):
+            with pytest.raises(RunBudgetError):
                 await client.chat.completions.create(
                     model="m", max_tokens=200, messages=[{"role": "user", "content": "hi"}],
                     extra_body={"max_tokens": 50_000})
@@ -124,7 +124,7 @@ async def test_schema_expansion_counts_the_final_wire_bytes():
     token = active_run_budget.set(budget)
     try:
         async with _client(requests) as client:
-            with pytest.raises(openai.APIConnectionError):
+            with pytest.raises(RunBudgetError):
                 await client.beta.chat.completions.parse(
                     model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}],
@@ -146,7 +146,7 @@ async def test_negative_usage_is_terminal_never_credit():
         async with _client(requests, usage={
                 "prompt_tokens": -50, "completion_tokens": -30,
                 "total_tokens": -80}) as client:
-            with pytest.raises(openai.APIConnectionError):
+            with pytest.raises(RunBudgetError):
                 await client.chat.completions.create(
                     model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}])
@@ -246,7 +246,7 @@ async def test_sdk_owned_provider_dispatches_through_the_budget():
             model_id="m", max_tokens=100, temperature=0.0,
             http_client=httpx.AsyncClient(transport=transport))
         async with model._get_client() as client:   # the SDK-owned AsyncOpenAI
-            with pytest.raises(openai.APIConnectionError):
+            with pytest.raises(RunBudgetError):
                 await client.chat.completions.create(
                     model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}])
@@ -313,7 +313,7 @@ async def test_a_request_without_an_output_ceiling_refuses_before_http():
         client = factory.create_client(
             base_url="https://generated.invalid/v1", api_key="generated-key",
             http_client=httpx.AsyncClient(transport=transport))
-        with pytest.raises(openai.APIConnectionError):
+        with pytest.raises(RunBudgetError):
             await client.chat.completions.create(
                 model="m",
                 messages=[{"role": "user", "content": "hi"}])
@@ -439,6 +439,49 @@ async def test_an_error_response_surfaces_its_status_not_a_fake_no_usage():
         assert "model_not_found" in (budget.spent or "")
     finally:
         active_run_budget.reset(token)
+
+
+async def test_measured_cutoff_counts_distinct_writer_and_judge_clients():
+    """One last call may cross the measured cutoff; a third never dispatches."""
+    requests: list[dict] = []
+    budget = RunBudget(max_requests=10, max_output_tokens=10_000,
+                       stop_after_total_tokens=25)
+    token = active_run_budget.set(budget)
+    try:
+        async with _client(requests) as writer, _client(requests, usage={
+                "prompt_tokens": 9, "completion_tokens": 3, "total_tokens": 12}) as judge:
+            await writer.chat.completions.create(
+                model="writer", max_tokens=200,
+                messages=[{"role": "user", "content": "write"}])
+            assert budget.input_tokens + budget.output_tokens == 15
+            await judge.chat.completions.create(
+                model="judge", max_tokens=200,
+                messages=[{"role": "user", "content": "judge the result"}])
+            assert budget.input_tokens + budget.output_tokens == 27
+            with pytest.raises(RunBudgetError, match="measured total-token cutoff"):
+                await writer.chat.completions.create(
+                    model="writer", max_tokens=200,
+                    messages=[{"role": "user", "content": "must not dispatch"}])
+            assert budget.requests == 2
+            assert [r["model"] for r in requests] == ["writer", "judge"]
+    finally:
+        active_run_budget.reset(token)
+
+
+def test_measured_cutoff_denies_overlapping_dispatch_and_unknown_usage():
+    budget = RunBudget(max_requests=10, stop_after_total_tokens=100)
+    reservation = budget.admit(input_bytes=20, declared_output_tokens=10)
+    with pytest.raises(RunBudgetError, match="sequential"):
+        budget.admit(input_bytes=20, declared_output_tokens=10)
+    budget.release(reservation)
+    assert budget.requests == 1
+    with pytest.raises(RunBudgetError):
+        budget.would_admit()
+    unknown = RunBudget(max_requests=10, stop_after_total_tokens=100)
+    with pytest.raises(RunBudgetError, match="invalid input usage"):
+        unknown.reconcile(input_tokens=None, output_tokens=1)
+    with pytest.raises(RunBudgetError):
+        unknown.would_admit()
 
 
 @pytest.mark.parametrize("finish", ["stop", "length", "content_filter"])

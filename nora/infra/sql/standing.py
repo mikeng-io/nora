@@ -82,7 +82,8 @@ def _derived(standing: Standing) -> dict[str, Any]:
     # The room's own defaults UNION the lineage the write actually carried:
     # `standing.lineage` is where consumed Record requirements (and the
     # prior's inherited gates) live — stamping only `own_room_lineage` would
-    # launder them away (design 20 §4, sources derived by code and carried
+    # launder them away (design/notebook-memory-types/20-standing.md §4, sources derived by code and
+    # carried
     # to the write).
     own = own_room_lineage(
         room_key(standing.platform, standing.conversation_id), SECTIONS,
@@ -98,7 +99,7 @@ def _derived(standing: Standing) -> dict[str, Any]:
     }
 
 
-def _standing(row: sa.Row[Any]) -> Standing:
+def _standing(row: sa.Row[*tuple[Any, ...]]) -> Standing:
     """The shared row -> `Standing` mapping for `read` and `read_as_of`.
 
     One mapping rather than two, because the two tables carry the same six

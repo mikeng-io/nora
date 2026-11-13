@@ -1,4 +1,4 @@
-"""`SqlProfileStore`: Profile accounts and their lines (design/unified-memory/45).
+"""`SqlProfileStore`: Profile accounts and their lines (design/unified-memory/profiles.md).
 
 **One write path.** `write` opens one transaction, locks the account row,
 reads every line of the account, asks `nora.domain.profile.plan_write`
@@ -25,6 +25,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import sqlalchemy as sa
@@ -54,7 +55,7 @@ from nora.infra.sql.schema import PROFILE, PROFILE_DISPUTE, PROFILE_LINE
 __all__ = ["SqlProfileStore", "chain_heads", "row_to_line"]
 
 
-def row_to_line(row: sa.Row[Any]) -> ProfileLine:
+def row_to_line(row: sa.Row[*tuple[Any, ...]]) -> ProfileLine:
     return ProfileLine(
         content=row.content, location=row.location,
         source_medium=tuple(row.source_medium), strength=row.strength,
@@ -139,10 +140,17 @@ class SqlProfileStore:
         self._screen = screen
         self._index = index
 
-    async def account_heads(self, *, key: str) -> tuple[ProfileLine, ...]:
+    async def account_heads(
+        self, *, key: str, as_of_ms: int | None = None
+    ) -> tuple[ProfileLine, ...]:
         """The account as it stands: every chain head, in every state."""
         stmt = (sa.select(PROFILE_LINE).where(PROFILE_LINE.c.profile_key == key)
                 .order_by(PROFILE_LINE.c.written_at, PROFILE_LINE.c.id))
+        if as_of_ms is not None:
+            stmt = stmt.where(
+                PROFILE_LINE.c.written_at <= as_of_ms,
+                PROFILE_LINE.c.recorded_at <= datetime.fromtimestamp(as_of_ms / 1000, UTC),
+            )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return chain_heads([row_to_line(r) for r in rows])[0]

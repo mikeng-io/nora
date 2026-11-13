@@ -94,11 +94,11 @@ def recorded_rosters(*, database_url: str, now: datetime) -> Iterator[None]:
     NOT re-entrant, unlike `landed_signal_sends`: that patch is the same for
     every subject, and this one names ONE database, so a second subject
     composing inside the block would read the first one's record. Refused."""
-    from nora.app import composition
+    from nora.app import composition_platforms
     from nora.platform.instagram import roster as instagram_roster
     from nora.platform.signal.roster import SignalRoster
 
-    if composition.SignalRoster is not SignalRoster:
+    if composition_platforms.SignalRoster is not SignalRoster:
         raise RuntimeError("recorded_rosters is already active for another subject")
 
     def _signal(**_: Any) -> RecordedRoster:
@@ -107,12 +107,12 @@ def recorded_rosters(*, database_url: str, now: datetime) -> Iterator[None]:
     def _instagram(*_: Any, **__: Any) -> RecordedRoster:
         return RecordedRoster(platform="instagram", database_url=database_url, now=now)
 
-    signal_was: Any = composition.SignalRoster
+    signal_was: Any = composition_platforms.SignalRoster
     instagram_was: Any = instagram_roster.InstagramRoster
-    setattr(composition, "SignalRoster", _signal)  # noqa: B010
+    setattr(composition_platforms, "SignalRoster", _signal)  # noqa: B010
     setattr(instagram_roster, "InstagramRoster", _instagram)  # noqa: B010
     try:
         yield
     finally:
-        setattr(composition, "SignalRoster", signal_was)  # noqa: B010
+        setattr(composition_platforms, "SignalRoster", signal_was)  # noqa: B010
         setattr(instagram_roster, "InstagramRoster", instagram_was)  # noqa: B010

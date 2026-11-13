@@ -79,6 +79,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nora.infra.embedder import EmbedderUnavailableError, LlamaEmbedder, fingerprint, model_file
 from nora.infra.sql import create_readonly_sql_engine, create_sql_engine, memory_index
+from nora.infra.sql.graph_projection import ProjectionContext
 from nora.infra.sql.memory_index import EmbedCounts, IndexImage
 
 __all__ = [
@@ -247,6 +248,7 @@ def refuse_low_coverage(sandbox: Coverage, source: Coverage) -> None:
 async def index_sandbox(
     database_url: str, *, source_url: str, model_id: str,
     cache: IndexCache | None = None, key: Hashable = (),
+    graph: ProjectionContext | None = None,
 ) -> SandboxIndex:
     """Project the sandbox's index, adopt the source's vectors of `model_id`
     (`[memory.index] embedder_model`), and read the coverage back; refused
@@ -257,6 +259,11 @@ async def index_sandbox(
     model = fingerprint(model_id)
     source_cov = await source_coverage(source_url, model_id)
     target = create_sql_engine(database_url)
+    if graph is not None:
+        # Production's projection context: the rebuild also writes the
+        # code-owned graph relations a live write would have.
+        # ponytail: a cached image carries no relations; no caller passes both.
+        target.update_execution_options(memory_graph=graph)
     source = create_readonly_sql_engine(source_url)
     reused = False
     projected: dict[str, int] = {}

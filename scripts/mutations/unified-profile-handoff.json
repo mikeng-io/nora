@@ -9,7 +9,7 @@
   {
     "name": "a-write-invalidates-the-shown-handles",
     "file": "nora/app/cognition_memory.py",
-    "old": "            # A write renumbers the account's handles — drop the shown view\n            # rather than bind the model to P-numbers it never re-saw; the\n            # next write requires a fresh profile_read.\n            state.profile_accounts.pop(account.key, None)",
+    "old": "            # A write renumbers the account's handles \u2014 drop the shown view\n            # rather than bind the model to P-numbers it never re-saw; the\n            # next write requires a fresh profile_read.\n            state.profile_accounts.pop(account.key, None)",
     "new": "",
     "target": "tests/unit/test_cognition_profile_handoff.py::test_a_write_invalidates_the_shown_view"
   },
@@ -36,9 +36,9 @@
   },
   {
     "name": "writer-retirement-requires-cognition-and-every-unit-home",
-    "file": "nora/app/composition.py",
-    "old": "if (profile_index and graph_comprehend and cognition_enabled\n            and units and units <= home_units) else frozenset())",
-    "new": "if profile_index and graph_comprehend else frozenset())",
+    "file": "nora/app/composition_helpers.py",
+    "old": "        if (\n            profile_index\n            and graph_comprehend\n            and cognition_enabled\n            and units\n            and units <= home_units\n        )\n        else frozenset()",
+    "new": "        if profile_index and graph_comprehend\n        else frozenset()",
     "target": "tests/unit/test_cognition_profile_handoff.py::test_writers_stay_without_cognition_or_complete_unit_coverage"
   },
   {

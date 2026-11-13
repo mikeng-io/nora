@@ -52,6 +52,7 @@ from nora.domain.stimuli import (
     restart_detail,
     unit_in_flight,
 )
+from nora.domain.ticks import seconds_to_boundary
 
 log = logging.getLogger("nora.app.wake")
 
@@ -143,9 +144,9 @@ class WakeEvaluator:
         logged, counted and contained: it never aborts the tick for another
         unit.
 
-        `floors_ready` (DEC-245): whether a skill ships for the `time`
-        agenda kind (`AgendaSkills.by_kind`). False, a unit whose wakes start sessions raises NO
-        floor, because a session woken by one would have nothing to do.
+        `floors_ready` (DEC-245): whether the session can do the daily notebook
+        review. False, a unit whose wakes start sessions raises NO floor, because
+        a session woken by one would have nothing to do.
 
         `upcoming(unit, now_ms)` (DEC-303): the unit's rooms holding an event
         that is coming up. With each floor it raises one `time` stimulus per
@@ -212,7 +213,7 @@ class WakeEvaluator:
                 # tick.
                 self._metrics.inc("nora_cognition_wake_deferred_total", brake="concurrency")
                 continue
-            wake_id = await self._record(view, verdict, verdict.reason, cutoff_ms)
+            wake_id = await self.record(view, verdict, verdict.reason, cutoff_ms)
             if wake_id is not None:
                 written.append(wake_id)
                 flying.add(view.unit)
@@ -259,6 +260,12 @@ class WakeEvaluator:
             self._background.discard(finished)
             if self._live.get(unit) is finished:
                 del self._live[unit]
+            # A task cancelled before its first step never reached
+            # `await outcome`: close the coroutine or its frame leaks and the
+            # interpreter warns "never awaited". A completed one's close is a
+            # no-op.
+            if inspect.iscoroutine(outcome):
+                outcome.close()
 
         task.add_done_callback(_done)
 
@@ -437,12 +444,12 @@ class WakeEvaluator:
 
     async def _strike_failed(self, view: UnitView, now_ms: int) -> UnitView:
         """At `max_consecutive_failures` AGENDA failures strike what those wakes
-        claimed: every pending stimulus their newest watermark consumes is
-        retracted with reason `failed`, so an agenda that always fails stops, and
-        a stimulus that arrived after the last agenda-failed wake is never struck
-        unseen. INFRASTRUCTURE failures (provider outage, kill, database) back
-        the unit off (`view.failures`) and never strike, however many in a row
-        (DEC-244): a human message is not dropped for an
+        claimed: every pending stimulus in the run's union of `stimulus_claim`
+        rows is retracted with reason `failed`, so an agenda that always fails
+        stops, and a stimulus that arrived after the last agenda-failed wake is
+        never struck unseen. INFRASTRUCTURE failures (provider outage, kill,
+        database) back the unit off (`view.failures`) and never strike, however
+        many in a row (DEC-244): a human message is not dropped for an
         outage."""
         mark = view.failed_mark
         if (
@@ -450,7 +457,7 @@ class WakeEvaluator:
             or view.agenda_failures < self._policy.max_consecutive_failures
         ):
             return view
-        struck = [s for s in view.pending if mark.consumed(s)]
+        struck = [s for s in view.pending if s.id in mark.claimed]
         if not struck:
             return view
         wrote = 0
@@ -482,7 +489,7 @@ class WakeEvaluator:
         age = (now_ms - min(eligible)) / 1000 if eligible else 0.0
         self._metrics.gauge("nora_stimulus_pending_age_seconds", max(0.0, age), unit=view.unit)
 
-    async def _record(
+    async def record(
         self, view: UnitView, verdict: Verdict, reason: WakeReason, at_ms: int,
     ) -> int | None:
         """`at_ms` is the read's cutoff: the watermark's time bound."""
@@ -508,6 +515,7 @@ class WakeEvaluator:
                 "rooms": len({s.conversation_id for s in claimed if s.conversation_id}),
             },
             unclaimed_ids=verdict.unclaimed_ids,
+            claimed_ids=tuple(sorted(verdict.claimed_ids)),
         )
         # Tracked: the write re-checks, under the unit's lock, that the view
         # this verdict came from still holds (`WakeGuard`).
@@ -555,7 +563,11 @@ async def wake_loop(
     tick is logged and counted and never takes the loop down."""
     log.info("cognition wake evaluator started: tick every %gs", tick_seconds)
     while True:
-        await asyncio.sleep(tick_seconds)
+        # Aligned (node 18): the next boundary of the cadence grid, never
+        # `tick_seconds` after the last pass ended — a pass's duration does
+        # not drift the phase, and a slow pass skips an opportunity rather
+        # than losing due work.
+        await asyncio.sleep(seconds_to_boundary(tick_seconds))
         try:
             await evaluator.tick()
         except Exception:

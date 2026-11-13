@@ -1,59 +1,77 @@
 # Mini Nora character study
 
 Public asset for the shared `/nora/showcase` page, still a partial candidate for
-issue #245. The approved 2D surfaces are unchanged.
+issue #245. Mini Nora keeps her approved Bauhinia appearance and original eyes.
 
-`character.glb`: 13,799,764 bytes, 316,622 rendered triangles, 55 unique joints,
-three facial morphs, embedded PNG textures, original `Walk`/`Run` clips.
-Meshopt compression requires the decoder in `stage.ts`. Download remains opt-in.
+`character.glb`: 64,950,252 bytes, about 316,622 rendered character triangles,
+55 unique joints, three facial morphs, embedded PNG textures, and `Walk`, `Run`
+and `IdlePilotCalibrated` clips. Meshopt compression requires the decoder in
+`stage.ts`. Download remains opt-in.
 
-## Implemented
+## Texture master
 
-- Both reconstructed hands retain ten individual digit controls, three joints per
-  digit, thumb opposition, and open/fist/point presets. Maximum-curl creases remain.
-- Neutral retains the original head geometry, UVs and texture payloads before
-  compression. Smile/Happy/Puzzled remain restrained mouth/cheek/brow morphs.
-- Original body clips, head/arm controls and the existing side-lock hair movement
-  remain. No new whole-body rig or remesh.
-- Body UV charts are repacked with padded, locally extended colour and PBR maps.
-  This removes bright atlas-edge bleed that made the navy trousers look cracked.
-  Lower-cloth normals are averaged across coincident seam vertices within a
-  60-degree neighbourhood, with tangents re-orthogonalized. Silhouette, positions,
-  skin weights and motion are preserved before compression. Head textures are
-  excluded from this repair to preserve eyelash/iris detail.
-- The showcase uses broad key/fill lights, a rim light, balanced environment and
-  one 512-square blurred shadow caster. Other lights do not cast shadows.
+The accepted high-resolution restoration preserves the retained source maps:
 
-The body uses three 2K maps; the original head keeps its 1K maps. Original normal
-strength remains 0.22. The texture and download cost increased; the asset test
-caps the current package at 14 MB. Position/UV/weight quantization is 16-bit;
-normal/tangent quantization is 14-bit. One compressed stream is stored as its exact
-decoded bytes to avoid an accidental identifier-shaped binary run. No scanner
-bypass or acknowledgement was used.
+| Surface | Base colour and normal | Metallic/roughness |
+|---|---|---|
+| Body atlas | 4096 × 5632 | 2048 × 2816 |
+| Head | 4096 × 4096 | 2048 × 2048 |
 
-## Unfinished
+Body charts retain the source's native 4096-pixel sampling density. Lossless PNG
+re-encoding preserves exact decoded pixels while reducing package size. Complete
+source interiors are extended into complete chart gutters with nearest valid
+texels. This avoids neighbouring-chart bleed under browser mipmapping and the
+black streaks caused by bounded dilation on thin branches. Geometry, weights,
+Smile/Happy and existing animation data are preserved; Puzzled is localized below.
+Normal strength remains 0.22. Texture resolution takes priority over the previous 14 MB package
+budget; the asset check now caps this full-quality package at 90 MB and verifies
+map dimensions. Real-device loading and memory acceptance remain outstanding.
 
-Eye gaze and blink are not shipped. A new joined eye/lid implementation corrected
-boundary ordering and retained separately intersecting hair components, but its
-lid ridges and iris/sclera occlusion still fail neutral and animation appearance.
-It remains diagnostic only. No fake eye controls are exposed. Fine head/hair
-faceting and baked shading remain. Full character acceptance is unmet; do not
-close issue #245. Real-phone GPU, memory and thermal acceptance is unavailable.
+## Rig and expressions
 
-## Evidence
+- Both reconstructed hands retain ten individual digit controls, three joints
+  per digit, thumb opposition, and open/fist/point presets. Maximum-curl creases
+  remain.
+- Smile/Happy/Puzzled remain restrained expressions. Puzzled uses a localized
+  asymmetric mouth/cheek deformation; its upper-face/fringe movement is removed.
+- Head/arm controls and the existing side-lock hair movement remain. No new
+  whole-body rig or remesh.
+- `IdlePilotCalibrated` carries a four-second idle calibrated against the target
+  Stand pose. The showcase exposes Stand/Idle/Walk/Run with a 250 ms pose blend
+  when switching. Playback still starts only on request.
+- The viewer retains Three.js, broad key/fill and rim lights, a restrained studio
+  environment and explicit sRGB output with ACES tone mapping. A height-faded,
+  blurred contact projection replaces the hard directional floor shadow. It
+  updates for pose changes and is reused for camera-only movement. The default
+  camera shows a slight three-quarter view. No post-processing dependency is added.
 
-Latest external source/evidence folder:
-`/Users/mike/Workplace/nora-artifacts/mini-nora-eye-finish-2026-11-06/`.
-Its `REPORT.md` records the diagnosis, accepted/rejected local work, exact files,
-checks and limits. It contains the editable final reimport, separate failed-eye
-Blend/GLB, source scripts, matched browser controls and before/after frames,
-24 fps body and failed-eye motion with decoded frames, and validator reports.
-Earlier hand/expression evidence remains in
+## Remaining acceptance
+
+Eye gaze, blink and eye/lid reconstruction are parked. The original eye geometry
+and appearance remain; no failed reconstruction or fake eye controls are exposed.
+Fine head/hair faceting and source-painted shading remain.
+
+Texture-transfer review passed in matched fresh-import stills from front, back
+and both sides. Eight idle poses were visually inspected; all 97 clip frames were
+evaluated for finite mesh coordinates. This is not continuous collision proof.
+
+Generic asset QA reports unchanged baseline issues: hand helper surfaces without
+UV maps (flat materials need no image UVs).
+The Icosphere warning comes from Blender's generated bone-display shape and
+is not an exported GLB object. Collapsed UV faces were repaired with shifts
+below 0.012 texture pixel, preserving geometry and image resolution. Its collision
+checks skip the full model above the default triangle cap.
+Desktop and phone-viewport browser checks pass. Full character acceptance and
+real-phone GPU/memory/thermal acceptance remain unmet. Keep issue #245 open.
+
+## Source and editable files
+
+External editable Blend, build scripts, transfer diagnostics, matched renders and
+checks are retained in:
+`/Users/mike/Workplace/nora-artifacts/mini-nora-completion-2026-11-13/`.
+`mini-nora-final.blend` preserves the editable geometry and decoded RGB texture
+content; `ready-encoding-check.json` records the final lossless PNG re-encoding.
+Earlier restoration evidence is in
+`/Users/mike/Workplace/nora-artifacts/mini-nora-hires-cleanup-2026-11-13/`.
+Earlier hand/expression source remains in
 `/Users/mike/Workplace/nora-artifacts/mini-nora-character-completion-2026-11-06/`.
-
-Focused app typecheck/build and seven selected tests pass. Both compressed and
-fully decoded GLBs validate with zero errors; the inherited non-root skinned-mesh
-warning remains. Fresh Blender reimport checks retain all ten digit controls and
-three expressions with measured vertex movement. Browser desktop and phone-size
-viewport checks are desktop GPU evidence only. No paid Meshy stage, independent
-review, merge or deployment was performed by this implementation worker.

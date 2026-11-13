@@ -21,6 +21,9 @@ from strands.hooks import (
     HookRegistry,
 )
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.toolkit.clock import utc_now
+
 from ..doctrine.loader import Doctrine
 from ..domain.actions import ActionOwner
 from ..domain.media import MediaBlob
@@ -32,6 +35,7 @@ from ..domain.models import (
     Touch,
     TranscriptRow,
 )
+from ..domain.notes import note_handle
 from ..domain.ports import OutboundAttachment, OutboundQuote, SendResult, Styled
 from ..obs.metrics import Metrics
 from . import tool_choice
@@ -40,7 +44,6 @@ from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
 from .markdown import render_markdown
 from .outbound import Outbound, OutboundComposer
-from .tools import NATIVE_TOOLS, note_handle, utc_now
 
 log = logging.getLogger("nora.guards")
 
@@ -206,6 +209,7 @@ class Deliverer:
         self._send_calls = 0
         self._delivered_count = 0
         self._reaction_delivered = False
+        self.send_unresolved = 0  # wire-admitted sends with no recorded outcome
         # Every message actually SENT this turn (Honcho v2): the feedback stage
         # feeds each under the Nora aiPeer. Populated only on a successful send,
         # so a refused/failed message is never fed.
@@ -502,22 +506,17 @@ class Deliverer:
             self._last_outcome = "doctrine_leak"
             return False
 
-        # R-18: see `nora.agent.egress` for what it deliberately does not match.
-        # This is the one caller of `scan_reply`: `text` here is addressed to the
-        # group, so the identifier floor applies at its strictest. The model-name
-        # veto is disabled (`x_read` relays third-party content that names
-        # models).
-        #
-        # BOTH forms, as with R-6, and this is the sharper case. Every identifier
-        # pattern is `\b`-anchored, and removing an asterisk BETWEEN two word
-        # characters joins them and destroys the boundary:
-        #
-        #   "*a*deadbeef-1234-5678-9abc-def012345678"  raw->uuid   converted->None
-        #   "*+85298765432*a"                          raw->phone  converted->None
-        #
-        # so a member's real number wrapped in emphasis would otherwise be sent
-        # (in bold). A text transformation must never sit in front of a
-        # fail-closed guard without the guard seeing both sides.
+        # R-18: see `nora.agent.egress` for what it deliberately does not match. This
+        # is the one caller of `scan_reply`: `text` here is addressed to the group,
+        # so the identifier floor applies at its strictest. The model-name veto is
+        # disabled (`x_read` relays third-party content that names models).  BOTH
+        # forms, as with R-6, and this is the sharper case. Every identifier pattern
+        # is `\b`-anchored, and removing an asterisk BETWEEN two word characters
+        # joins them and destroys the boundary:  "*a*deadbeef-1234-5678-9abc-
+        # def012345678"  raw->uuid   converted->None "*+85298765432*a"
+        # raw->phone  converted->None  so a member's real number wrapped in emphasis
+        # would otherwise be sent (in bold). A text transformation must never sit in
+        # front of a fail-closed guard without the guard seeing both sides.
         kind = scan_reply(styled.text, content_checks=self._content_checks) or scan_reply(
             drafted, content_checks=self._content_checks
         )
@@ -603,10 +602,9 @@ class Deliverer:
         # adapter without bind_owner is not a bridge adapter at all.
         adapter = self._adapter
         bind_owner = getattr(adapter, "bind_owner", None)
-        if (bind_owner is not None
-                and getattr(adapter, "action_owner", None) is None):
-            adapter = bind_owner(
-                ActionOwner(kind="live_invocation", id=str(row_id)))
+        if bind_owner is not None and getattr(adapter, "action_owner", None) is None:
+            adapter = bind_owner(ActionOwner(kind="live_invocation", id=str(row_id)))
+        self.send_unresolved += 1
         try:
             result = await adapter.send(
                 target=self._target, text=outbound.text,
@@ -691,10 +689,9 @@ class Deliverer:
         # and invite a blind second send; calling it failed misreports an
         # outcome nobody disproved). The durable truth is the action row's,
         # and the outcome name keeps the in-process view equally honest.
-        self._last_outcome = (
-            "sent" if result.ok
-            else "send_uncertain" if getattr(result, "uncertain", False)
-            else "send_failed")
+        self._last_outcome = ("sent" if result.ok else "send_uncertain"
+                              if getattr(result, "uncertain", False) else "send_failed")
+        self.send_unresolved -= 1
         return result.ok
 
 
@@ -1178,11 +1175,8 @@ class ReplyGuard(HookProvider):
             # different call. A lookup that finds something lifts the refusal for
             # the rest of the turn; a model that re-fires `send_reply` against an
             # unchanged state is refused again.
-            if (
-                self._lookups is not None
-                and self._lookups_made > 0
-                and self._lookups_found == 0
-            ):
+            if (self._lookups is not None and self._lookups_made > 0
+                    and self._lookups_found == 0):
                 return self._veto(
                     "R-97",
                     f"You looked {self._lookups_made} time(s) this turn and "
@@ -1253,6 +1247,10 @@ class ReplyGuard(HookProvider):
         return bool(self._terminal) and all(
             self.counts.get(name, 0) >= self._budgets.get(name, 0) for name in self._terminal
         )
+
+    @property
+    def answer_still_owed(self) -> bool:
+        return not (self._deliverer and self._deliverer.delivered) or self.reply_still_owed
 
     @property
     def reply_still_owed(self) -> bool:

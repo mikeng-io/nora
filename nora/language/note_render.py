@@ -55,8 +55,9 @@ from typing import Protocol, TypeVar
 from nora.domain.composed import compose_body
 
 from ..domain.blocks import ContextBlock, render_elements
+from ..domain.cognition_ground import NoteLine
 from ..domain.notes import Note, NoteRevision
-from ..domain.prompt import age, escape
+from ..domain.prompt import age, clip, escape
 
 #
 # Between them sits what the line ALSO has to say — WHOSE WORDS THESE ARE. The
@@ -166,13 +167,17 @@ def render_note_rows(
     needs the note's anchor day, which only a `Note` carries, so an index of
     bare lines (`NoteLine`) renders no `about`.
     """
+
     def _attrs(n: N, i: int) -> tuple[tuple[str, str | None], ...]:
         anchor = n.anchor_date if isinstance(n, Note) else None
         return (("n", n.id if ids else str(i)), ("title", n.title),
                 ("about", _about(anchor, today)), *extra(n))
 
     return render_elements(
-        notes, tag="note", attrs=_attrs, body=lambda n: n.description,
+        notes,
+        tag="note",
+        attrs=_attrs,
+        body=lambda n: clip(n.description, 200) if isinstance(n, NoteLine) else n.description,
     )
 
 
@@ -189,15 +194,48 @@ def standing_only(notes: Sequence[Note]) -> tuple[Note, ...]:
 
 
 def render_notes(
-    notes: Sequence[Note], *, today: int | None = None,
-) -> ContextBlock | None:
-    """The tag path's `<notes>` block, or `None` when nothing is standing —
-    either no notes at all, or none surviving `standing_only`."""
-    standing = standing_only(notes)
-    if not standing:
-        return None
+    notes: Sequence[Note | NoteLine],
+    *,
+    today: int | None = None,
+    ids: bool = False,
+    lines: int | None = None,
+    chars: int | None = None,
+) -> ContextBlock:
+    """The shared note index. Cognition's review and reminder facts are fields
+    of the same rows, never a second block type. Cuts omit whole rows and count them.
+    """
+    standing = tuple(n for n in notes if not isinstance(n, Note) or n.is_standing)
+    rows: list[str] = []
+    spent = 0
+    for note in standing:
+        if lines is not None and len(rows) >= lines:
+            break
+        row = render_note_rows(
+            [note],
+            today=today,
+            ids=ids,
+            extra=lambda n: (
+                (("review", n.review), ("may_duplicate", n.may_duplicate), ("reminds", n.reminds))
+                if isinstance(n, NoteLine)
+                else ()
+            ),
+        )
+        # Positional handles are over the whole index, not each singleton.
+        if not ids:
+            row = row.replace('n="1"', f'n="{len(rows) + 1}"', 1)
+        if chars is not None and spent + len(row) + 1 > chars:
+            break
+        rows.append(row)
+        spent += len(row) + 1
+    left = len(standing) - len(rows)
     return ContextBlock(
-        name="notes", body=compose_body(render_note_rows(standing, today=today)),
+        name="notes",
+        body=compose_body("\n".join(rows)),
+        attrs=(
+            ("id_kind", "real" if ids else "positional"),
+            *((("not_listed", str(left)),) if left else ()),
+        ),
+        when_empty="self_close",
     )
 
 

@@ -1,16 +1,16 @@
 package instameow
 
 // Account search: the raw hit list behind `GET /accounts?query=`
-// (design/instagram-adoption/16 §Resources, 17 P9, P11).
+// (design/instagram-adoption/bridge.md).
 //
-// # Why this exists now, ahead of P11
+// # Why this exists now, ahead of design/instagram-adoption/social.md
 //
-// P9 is a measurement, not a feature: does `SearchUsers` find an arbitrary
+// the search probe (design/instagram-adoption/social.md) is a measurement, not a feature: does `SearchUsers` find an arbitrary
 // public Instagram account by its EXACT username, or only accounts already in
 // Nora's DM contact list? The operator chose to run that probe through this
 // real route rather than a second client against the live session, because a
 // second client could disturb the one session that exists. So this file is
-// P11's route, built early, to be P9's instrument.
+// design/instagram-adoption/social.md's route, built early, to be the search probe (design/instagram-adoption/social.md)'s instrument.
 //
 // # No re-ranking, no filtering, no invented paging
 //
@@ -58,7 +58,7 @@ import (
 // description, never the upstream message. That message can echo the
 // query itself — a validation error quoting bad input is a normal GraphQL
 // shape — and the query must never enter a span, a log line, or the
-// envelope message, the same never-list `16` §Tracing puts message text on.
+// envelope message, the same never-list `design/instagram-adoption/bridge.md` «Observation» puts message text on.
 //
 // `Unwrap` still exposes the real cause, so `classify`'s `needsHuman` and
 // `isGraphQLFailure` checks (call.go) — and anything downstream matching
@@ -73,7 +73,7 @@ func (e *upstreamSearchError) Unwrap() error { return e.cause }
 // back, in its own order.
 //
 // The QUERY TEXT is never an attribute on the upstream span — it is a name
-// typed about a person, the same never-list `16` §Tracing puts message text
+// typed about a person, the same never-list `design/instagram-adoption/bridge.md` «Observation» puts message text
 // on. Only its length crosses into the span, which is bounded and carries
 // nothing about who was searched for.
 func searchAccounts(ctx context.Context, cli Client, query string) ([]domain.AccountSummary, error) {

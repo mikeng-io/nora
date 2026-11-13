@@ -17,7 +17,6 @@ import {
   BookOpenText,
   CalendarDays,
   CornerDownLeft,
-  Gamepad2,
   Languages,
   LogOut,
   Moon,
@@ -27,7 +26,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "@/i18n/routing";
 import { PersonAvatar } from "@/components/ui/avatar";
-import { useDoctrine, usePlans, useRoster, useServers, useSkills, useTools } from "@/lib/queries";
+import { useDoctrine, usePlans, useRoster, useSkills, useTools } from "@/lib/queries";
 import { useTheme } from "@/lib/theme";
 import { formatWeekdayDate } from "@/lib/format";
 import { paletteScore } from "@/lib/palette";
@@ -35,10 +34,10 @@ import { MAIN_NAV, NORA_NAV } from "./nav";
 import { NavIcon } from "./nav-icon";
 import { LANGS, useLanguageSwitch, useSignOut } from "./account";
 
-// One search for the whole portal: pages, people, servers, plans, her
+// One search for the whole portal: pages, people, plans, her
 // doctrine and her tools. ⌘K or / opens it anywhere; "g" then a letter
 // jumps straight to a page (g t today, g m map, g p people, g l plans,
-// g g games, g n Nora).
+// g n Nora).
 const Ctx = createContext<{ open: () => void }>({ open: () => {} });
 export const useCommandPalette = () => useContext(Ctx);
 
@@ -47,7 +46,6 @@ const JUMPS: Record<string, string> = {
   m: "/map",
   p: "/people",
   l: "/plans",
-  g: "/games",
   n: "/nora",
 };
 
@@ -73,8 +71,6 @@ export function CommandPaletteProvider({ children }: { children: ReactNode }) {
         e.preventDefault();
         setOpen(true);
       } else if (Date.now() - pendingG.current < 1200 && JUMPS[e.key]) {
-        // The second key of a jump first, so "g g" reaches Games rather than
-        // starting another jump.
         pendingG.current = 0;
         router.push(JUMPS[e.key]);
       } else if (e.key === "g") {
@@ -118,7 +114,6 @@ function Palette({ close }: { close: () => void }) {
   const locale = useLocale();
   const router = useRouter();
   const roster = useRoster();
-  const servers = useServers();
   const plans = usePlans();
   const doctrine = useDoctrine();
   const tools = useTools();
@@ -197,23 +192,6 @@ function Palette({ close }: { close: () => void }) {
               >
                 <PersonAvatar id={p.personId} name={p.displayName} size={22} />
                 {p.displayName}
-              </Command.Item>
-            ))}
-          </Command.Group>
-        ) : null}
-
-        {servers.data?.length ? (
-          <Command.Group heading={t("games")} className={groupClass}>
-            {servers.data.map((s) => (
-              <Command.Item
-                key={s.id}
-                value={`server ${s.displayName}`}
-                keywords={[s.id]}
-                onSelect={() => go(`/games/${s.id}`)}
-                className={itemClass}
-              >
-                <Gamepad2 aria-hidden="true" />
-                {s.displayName}
               </Command.Item>
             ))}
           </Command.Group>

@@ -20,6 +20,7 @@ land on a document that was archived or deleted after it read the state.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -29,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.documents import (
+    DocumentAuthority,
     DocumentExistsError,
     DocumentState,
     DocumentSummary,
@@ -86,7 +88,7 @@ def _state() -> sa.ColumnElement[str]:
     return sa.func.coalesce(latest, sa.literal("active"))
 
 
-def _summary(r: Row[Any], created_at: Any) -> DocumentSummary:
+def _summary(r: Row[*tuple[Any, ...]], created_at: Any) -> DocumentSummary:
     return DocumentSummary(
         id=r.id,
         platform=r.platform,
@@ -101,7 +103,7 @@ def _summary(r: Row[Any], created_at: Any) -> DocumentSummary:
     )
 
 
-def _stored(r: Row[Any]) -> StoredDocument:
+def _stored(r: Row[*tuple[Any, ...]]) -> StoredDocument:
     return StoredDocument(
         summary=_summary(r, r.created_at),
         spec=r.spec,
@@ -164,7 +166,12 @@ def _spaced(column: sa.ColumnElement[str]) -> sa.ColumnElement[str]:
     return sa.func.regexp_replace(column, r"\s+", " ", "g")
 
 
-def _visible(person_id: str, rooms: frozenset[RoomKey]) -> sa.ColumnElement[bool]:
+def _visible(
+    person_id: str | DocumentAuthority, rooms: frozenset[RoomKey]
+) -> sa.ColumnElement[bool]:
+    if isinstance(person_id, DocumentAuthority):
+        allowed = rooms & person_id.rooms
+        return sa.tuple_(_D.platform, _D.conversation_id).in_(sorted(allowed))
     mine = _D.created_by == person_id
     if not rooms:
         return mine
@@ -316,7 +323,7 @@ class SqlDocumentStore:
     async def list_visible(
         self,
         *,
-        person_id: str,
+        person_id: str | DocumentAuthority,
         rooms: frozenset[RoomKey],
         limit: int,
         offset: int,
@@ -359,7 +366,7 @@ class SqlDocumentStore:
         platform: str,
         conversation_ids: frozenset[str],
         limit: int,
-        person_id: str,
+        person_id: str | DocumentAuthority,
         rooms: frozenset[RoomKey],
         states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
@@ -383,6 +390,14 @@ class SqlDocumentStore:
             .group_by(_R.document_id)
             .subquery()
         )
+        if isinstance(person_id, DocumentAuthority) and person_id.as_of_ms is not None:
+            # Filter before choosing each document's head and before the list limit.
+            top = (
+                sa.select(_R.document_id, sa.func.max(_R.revision).label("top"))
+                .where(_R.document_id.in_(sa.select(_D.id).where(in_room)),
+                       _R.recorded_at <= datetime.fromtimestamp(person_id.as_of_ms / 1000, UTC))
+                .group_by(_R.document_id).subquery()
+            )
         stmt = (
             sa.select(
                 _D.id,

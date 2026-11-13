@@ -325,7 +325,7 @@ class Persons:
         """
         return tuple(
             row if row.is_nora or (ref := self.resolve(platform, row.sender_id)) is None
-            else replace(row, person_name=ref.name)
+            else replace(row, person_name=ref.name, person_id=ref.person_id)
             for row in transcript
         )
 

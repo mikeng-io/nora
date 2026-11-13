@@ -1,7 +1,0 @@
-bundle: whatsapp-adoption
-title: "WhatsApp Adoption"
-description: "Adopt Nora onto personal WhatsApp via a containerized Baileys bridge — feasibility, container spec, pairing, identity, policy, and ban-risk posture."
-docs:
-  - 00-overview.md
-  - 01-bridge-container.md
-  - 02-identity-and-policy.md

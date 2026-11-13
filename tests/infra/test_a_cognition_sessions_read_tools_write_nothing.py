@@ -34,11 +34,11 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
 from nora.agent.dreamer import HomeRoom, RegistryToolSource, cognition_grant
 from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import MemorySearch
 from nora.agent.registry import ToolRegistry
-from nora.agent.tools import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
 from nora.agent.whereis import Circle
 from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,

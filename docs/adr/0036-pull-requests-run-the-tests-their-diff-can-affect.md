@@ -1,11 +1,11 @@
 # 0036 · Pull requests run the tests their diff can affect; the whole suite runs on master
 
-- **Status:** accepted (operator, 2026-11-08)
+- **Status:** superseded by ADR 0038 (operator, 2026-11-08)
 - **Date:** 2026-11-08
 - **Reverses, in part:** the test-selection rationale that every path no rule names runs the
   whole suite («a slow correct answer beats a fast wrong one», `scripts/affected_tests.py`
   before this change), for the paths below that now have a measured answer.
-- **Design:** [test selection](../../design/test-selection/00-design.md).
+- **Design:** [test selection](../../design/test-selection/README.md).
 - **Tracking:** [PR #644](https://github.com/mikeng-io/nora/pull/644).
 - **Index:** DEC-327.
 

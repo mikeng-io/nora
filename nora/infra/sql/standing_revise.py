@@ -149,7 +149,7 @@ async def standing_revise(
             i_owe=i_owe,
             # An omitted section or gate is PRESERVED, never cancelled:
             # the fold's output names what changed; the prior carries what
-            # did not (design/notebook-memory-types/20 §5, "a missing output
+            # did not (design/notebook-memory-types/20-standing.md §5, "a missing output
             # section does not cancel an obligation").
             exclude_persons=(
                 exclude_persons if exclude_persons is not None
@@ -172,7 +172,7 @@ async def standing_revise(
             standing=prior,
             refusal=Refusal(reason="invalid_standing", detail=str(exc)),
         )
-    # NO-CHANGE IS IDEMPOTENT (design/notebook-memory-types/20 §6): a revise
+    # NO-CHANGE IS IDEMPOTENT (design/notebook-memory-types/20-standing.md §6): a revise
     # whose produced CONTENT is the head writes nothing — content is body,
     # hold_open, i_owe, working_set and the fold watermark, so fold
     # bookkeeping (`fold_count`, `updated_at`) is compared OUT of the check:

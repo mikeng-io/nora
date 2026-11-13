@@ -110,7 +110,7 @@ async def test_know_seeds_roster_senders_for_production_name_projection() -> Non
     assert named[1].person_id is None and named[1].person_name is None
     assert named[2].is_nora and named[2].sender_id != "+85222222222"
     assert named[3].person_id == "no_account" and named[3].person_name is None
-    assert named[4].person_id == "ada_before" and named[4].person_name == "Ada Roster"
+    assert named[4].person_id == "ada" and named[4].person_name == "Ada Roster"
 
 
 async def test_know_ensures_the_peer_before_concluding_about_them() -> None:

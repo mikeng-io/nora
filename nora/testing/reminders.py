@@ -47,6 +47,7 @@ from nora.domain.reminders import (
     plan_successor,
     proactive_subject,
 )
+from nora.domain.ticks import due_tick_of_at, tick_of_at
 
 
 def _order(r: Reminder) -> tuple[datetime, UUID]:
@@ -166,8 +167,13 @@ class FakeReminderStore:
     async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
         cutoff = ensure_utc(now, field="now")
         size = check_limit(limit)
+        # The SQL store's CHECK-bound `due_tick` computed on the way through
+        # (`nora.domain.ticks`): `due_tick <= floor(now)`, the same
+        # eligibility the column answers.
+        tick = tick_of_at(cutoff)
         rows = [r for r in self._rows.values()
-                if r.state is ReminderState.PENDING and r.due_at <= cutoff]
+                if r.state is ReminderState.PENDING
+                and due_tick_of_at(r.due_at) <= tick]
         return sorted(rows, key=_order)[:size]
 
     async def pending_for(self, conversation_id: str) -> Sequence[Reminder]:

@@ -1,5 +1,5 @@
 """presence_trips + presence_corridors + presence_corridor_speed — Tier 5
-routes (design/27 §4, issue #6).
+routes (design/cognition-loop/observation.md, issue #6).
 
 Revision ID: 0021_presence_routes
 Revises: 0020_room_portrait

@@ -20,8 +20,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.catalog.groups import HOT_TOOLS
 from nora.agent.room import Room
-from nora.agent.tools import HOT_TOOLS, NATIVE_TOOLS, build_tools
+from nora.agent.tools import build_tools
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import AdapterHealth
 from nora.engagement.self_presence import PresenceReader
@@ -381,7 +383,9 @@ class _OneRoomUnreadable(FakeRecordStore):
     half checked: the case where an absence could wrongly cover a room
     nobody read."""
 
-    async def room_activity(self, *, conversation_id: str, since_ts: int):
+    async def room_activity(
+        self, *, conversation_id: str, since_ts: int, platform=None, as_of_ms=None
+    ):
         if conversation_id == "WA-FRIENDS-ID":
             raise RuntimeError("db down for this room")
         return await super().room_activity(conversation_id=conversation_id, since_ts=since_ts)
@@ -717,12 +721,31 @@ def test_production_hands_the_room_tools_the_presence_reader():
     import ast
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[2] / "nora" / "app" / "composition.py"
+    root = Path(__file__).resolve().parents[2] / "nora" / "app" / "composition_agent.py"
     tree = ast.parse(root.read_text())
-    wired = [
-        kw for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "ToolRegistry"
-        for kw in node.keywords
-        if kw.arg == "rooms" and getattr(kw.value, "id", None) == "presence_reader"
-    ]
-    assert len(wired) == 1
+    module_fns = {
+        n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    wired = 0
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "ToolRegistry"):
+            continue
+        for kw in node.keywords:
+            if kw.arg == "rooms" and getattr(kw.value, "id", None) == "presence_reader":
+                wired += 1
+            if kw.arg is None and isinstance(kw.value, ast.Call):
+                # `**helper(...)` — the registry's room tools get `rooms` from
+                # the helper's returned dict.
+                fn = module_fns.get(getattr(kw.value.func, "id", ""))
+                if fn is None:
+                    continue
+                for ret in ast.walk(fn):
+                    if not (isinstance(ret, ast.Return) and isinstance(ret.value, ast.Dict)):
+                        continue
+                    for key, value in zip(ret.value.keys, ret.value.values, strict=True):
+                        if (
+                            isinstance(key, ast.Constant) and key.value == "rooms"
+                            and getattr(value, "id", None) == "presence_reader"
+                        ):
+                            wired += 1
+    assert wired == 1

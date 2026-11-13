@@ -2,7 +2,7 @@
 
 Before this, Signal and WhatsApp wrote an edit as a NEW `messages` row with
 nothing linking it to the row it replaced, and Instagram and Discord dropped
-edits entirely (design/message-edits/00). This migration gives an edit
+edits entirely (design/message-edits/00-overview.md). This migration gives an edit
 somewhere to go that is not `messages`, and gives `messages` the two facts an
 edit needs to be joined and judged:
 

@@ -4,7 +4,7 @@
     "generated": true,
     "native_event": "ev 'groups.update': Partial<GroupMetadata>[]",
     "capture_today": "captured — subscribed in bridge.js; each entry's changed fields become a room revise observation (subject->title, desc->topic, ...); author carried as actor when the stub-derived update supplies one",
-    "semantic": "A DELTA surface for room state: each entry carries only changed fields (subject/desc/announce/restrict/ephemeralDuration/descId). Absent fields are unchanged, not null — partial-update semantics from design/02's room-change payload. No actor field exists on GroupMetadata entries; actor comes only from the parallel stub/participant events."
+    "semantic": "A DELTA surface for room state: each entry carries only changed fields (subject/desc/announce/restrict/ephemeralDuration/descId). Absent fields are unchanged, not null — partial-update semantics from design/02-tagging-path.md's room-change payload. No actor field exists on GroupMetadata entries; actor comes only from the parallel stub/participant events."
   },
   "payload": [
     {

@@ -30,11 +30,28 @@ import typing
 
 import pytest
 
-from nora.agent import tools as tools_module
+from nora.agent.link_owners import (
+    _INSTAGRAM_MOBILE_PAGE_LINK,
+    _INSTAGRAM_PAGE_LINK,
+    _WEB_FETCH_INSTAGRAM_MOBILE_PAGE,
+    _WEB_FETCH_INSTAGRAM_PAGE,
+)
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.toolkit.pages import _URL_AND_LINK_DIFFER
 from nora.infra.social import instagram_client, render, results
 from nora.obs.metrics import Metrics
+from nora.social.adapters.tools.shared import (
+    _INSTAGRAM_FAILED,
+    _INSTAGRAM_OFF,
+    _LINKEDIN_FAILED,
+    _LINKEDIN_OFF,
+    _LINKEDIN_READ_NOTES,
+    _LINKEDIN_SEARCH_NOTES,
+    _LINKEDIN_UNASKED,
+    _X_NOTES,
+    _X_OFF,
+)
 from nora.testing import FakeMemoryStore
 from tests.fakes import SinkSender
 
@@ -83,16 +100,16 @@ def test_no_string_in_the_closure_carries_a_dash(tool):
 
 def _shared_payloads() -> dict[str, object]:
     return {
-        "tools._X_OFF": tools_module._X_OFF,
-        "tools._X_NOTES[ok]": {"note": tools_module._X_NOTES["ok"]},
-        "tools._LINKEDIN_OFF": tools_module._LINKEDIN_OFF,
-        "tools._LINKEDIN_FAILED": tools_module._LINKEDIN_FAILED,
-        "tools._LINKEDIN_UNASKED": tools_module._LINKEDIN_UNASKED,
-        "tools._URL_AND_LINK_DIFFER": tools_module._URL_AND_LINK_DIFFER,
-        "tools._LINKEDIN_READ_NOTES[ok]": {"note": tools_module._LINKEDIN_READ_NOTES["ok"]},
-        "tools._LINKEDIN_SEARCH_NOTES[ok]": {"note": tools_module._LINKEDIN_SEARCH_NOTES["ok"]},
-        "tools._INSTAGRAM_OFF": tools_module._INSTAGRAM_OFF,
-        "tools._INSTAGRAM_FAILED": tools_module._INSTAGRAM_FAILED,
+        "tools._X_OFF": _X_OFF,
+        "tools._X_NOTES[ok]": {"note": _X_NOTES["ok"]},
+        "tools._LINKEDIN_OFF": _LINKEDIN_OFF,
+        "tools._LINKEDIN_FAILED": _LINKEDIN_FAILED,
+        "tools._LINKEDIN_UNASKED": _LINKEDIN_UNASKED,
+        "tools._URL_AND_LINK_DIFFER": _URL_AND_LINK_DIFFER,
+        "tools._LINKEDIN_READ_NOTES[ok]": {"note": _LINKEDIN_READ_NOTES["ok"]},
+        "tools._LINKEDIN_SEARCH_NOTES[ok]": {"note": _LINKEDIN_SEARCH_NOTES["ok"]},
+        "tools._INSTAGRAM_OFF": _INSTAGRAM_OFF,
+        "tools._INSTAGRAM_FAILED": _INSTAGRAM_FAILED,
         "results.UNAVAILABLE": results.UNAVAILABLE,
         "results.NOTHING_FOUND": results.NOTHING_FOUND,
         "results.AMBIGUOUS": results.AMBIGUOUS,
@@ -121,12 +138,12 @@ def _shared_payloads() -> dict[str, object]:
         "instagram_client.POST_UNSUPPORTED": instagram_client.POST_UNSUPPORTED,
         # `media_fetch`'s answer to an Instagram page link: it routes the
         # model to `instagram_read`, so it is a social note in all but tool.
-        "tools._INSTAGRAM_PAGE_LINK": {"note": tools_module._INSTAGRAM_PAGE_LINK},
-        "tools._INSTAGRAM_MOBILE_PAGE_LINK": {"note": tools_module._INSTAGRAM_MOBILE_PAGE_LINK},
+        "tools._INSTAGRAM_PAGE_LINK": {"note": _INSTAGRAM_PAGE_LINK},
+        "tools._INSTAGRAM_MOBILE_PAGE_LINK": {"note": _INSTAGRAM_MOBILE_PAGE_LINK},
         # `web_fetch`'s answer to the same links.
-        "tools._WEB_FETCH_INSTAGRAM_PAGE": {"note": tools_module._WEB_FETCH_INSTAGRAM_PAGE},
+        "tools._WEB_FETCH_INSTAGRAM_PAGE": {"note": _WEB_FETCH_INSTAGRAM_PAGE},
         "tools._WEB_FETCH_INSTAGRAM_MOBILE_PAGE": {
-            "note": tools_module._WEB_FETCH_INSTAGRAM_MOBILE_PAGE,
+            "note": _WEB_FETCH_INSTAGRAM_MOBILE_PAGE,
         },
     }
 

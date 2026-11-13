@@ -10,7 +10,6 @@ from nora.agent.comprehend_tools import egress_reason
 from nora.domain.comprehend import ComprehendItem, Preview, card_facts
 from nora.domain.memory_graph import (
     Entity,
-    Evidence,
     GraphEdge,
     GraphNode,
     Relation,
@@ -224,41 +223,6 @@ def test_web_page_preview_uses_found_layer_word():
 
 
 
-def test_the_instruction_lists_the_vocabulary_admission_checks():
-    from nora.domain.memory_graph import (
-        ENTRY,
-        PROPOSED_KINDS,
-        RELATION_RULES,
-        validate_relation,
-    )
-    from nora.language.comprehend_render import SESSION_INSTRUCTION
-
-    kinds = next(
-        line for line in SESSION_INSTRUCTION.splitlines()
-        if line.startswith("Entity kinds")
-    )
-    assert all(kind in kinds for kind in PROPOSED_KINDS) and "person" not in kinds
-    admitted = {
-        rel for rel, rule in RELATION_RULES.items()
-        if rule.layer == "notebook" and set(rule.sources) - set(ENTRY)
-    }
-    rels = next(
-        line for line in SESSION_INSTRUCTION.splitlines()
-        if "the only names admitted:" in line
-    )
-    listed = set(rels.split("the only names admitted:")[1].split("—")[0].replace(",", " ").split())
-    assert listed == admitted
-    # An entry's links are written by the entry's own writer and are never offered.
-    assert {"records", "concerns", "settles"} & admitted == set()
-    topic = Entity("generated-topic", "topic", UNIT, "Generated Sport")
-    evidence = (Evidence(SOURCE.key, relation_id="generated-interest", span="like Hall"),)
-    interest = Relation(
-        "generated-interest", PERSON.key, "interested_in", topic.key, "notebook", UNIT,
-        asserted_at=AT,
-    )
-    assert validate_relation(interest, evidence, {SOURCE.key: SOURCE}) is None
-    liked = replace(interest, rel="likes")
-    assert validate_relation(liked, evidence, {SOURCE.key: SOURCE}) == "wrong_ends"
 
 
 
@@ -304,3 +268,66 @@ def test_preview_text_never_reports_a_row_the_budget_omitted():
     assert ("place", "0") in shown
     assert ("place", "99") not in shown
     assert len(shown) < 100
+
+
+async def test_a_memory_read_marks_repeats_and_counts_what_is_new():
+    from nora.agent.comprehend_tools import ComprehendRead, LookupState
+    from nora.agent.fetch_watch import GraphFetched, _result_of
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.obs.metrics import Metrics
+    from nora.testing.comprehend import InMemoryComprehendRecords
+
+    async def read():
+        return {
+            "status": "ok",
+            "keys": [["person", "generated-person"], ["note", "generated-note"]],
+            "relations": [],
+        }
+
+    state = LookupState(
+        GraphFetched(), UNIT, 1, InMemoryComprehendRecords(), Metrics(), ())
+    tool = ComprehendRead(
+        adapt(ToolSpec(name="memory_search", description="", schema={}, call=read)),
+        state,
+    )
+
+    async def call(use_id):
+        events = [
+            event async for event in tool.stream(
+                {"toolUseId": use_id, "name": "memory_search", "input": {}}, {})
+        ]
+        return _result_of(events[-1])
+
+    first = await call("first")
+    assert first["status"] == "ok"
+    assert first["new"] == 2 and first["repeated"] == []
+    second = await call("second")
+    assert second["status"] == "ok"      # repeats-only keeps its own status
+    assert second["new"] == 0
+    assert second["repeated"] == [
+        ["note", "generated-note"], ["person", "generated-person"]]
+
+
+async def test_an_unavailable_read_carries_no_saturation_claim():
+    from nora.agent.comprehend_tools import ComprehendRead, LookupState
+    from nora.agent.fetch_watch import GraphFetched, _result_of
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.obs.metrics import Metrics
+    from nora.testing.comprehend import InMemoryComprehendRecords
+
+    async def read():
+        return {"status": "unavailable", "reason": "database unreachable"}
+
+    state = LookupState(
+        GraphFetched(), UNIT, 1, InMemoryComprehendRecords(), Metrics(), ())
+    tool = ComprehendRead(
+        adapt(ToolSpec(name="memory_read", description="", schema={}, call=read)),
+        state,
+    )
+    events = [
+        event async for event in tool.stream(
+            {"toolUseId": "u1", "name": "memory_read", "input": {}}, {})
+    ]
+    answer = _result_of(events[-1])
+    assert answer["status"] == "unavailable"
+    assert "new" not in answer and "repeated" not in answer

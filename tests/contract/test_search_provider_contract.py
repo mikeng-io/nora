@@ -299,7 +299,7 @@ async def test_both_clamp_a_long_body_and_say_that_they_did(provider):
 
     fetched = await impl.fetch(url=_URL)
     assert fetched["truncated"] is True
-    assert len(_body(fetched["text"])) <= 3000
+    assert len(fetched["text"]) <= 3000   # raw text; the tool wraps per slice
 
 
 async def test_fetch_returns_text_and_never_a_bare_content_key(provider):
@@ -311,7 +311,7 @@ async def test_fetch_returns_text_and_never_a_bare_content_key(provider):
     out = await impl.fetch(url=_URL)
     assert out["status"] == "ok"
     assert out["url"] == _URL
-    assert out["text"].startswith("<fetched_page ")
+    assert "<fetched_page" not in out["text"]
     assert "content" not in out
 
 

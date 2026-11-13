@@ -7,8 +7,8 @@ timestamp: 2026-09-25
 status: parked
 edges:
   - {dst: 00-intent, rel: realizes, provenance: asserted}
-  - {dst: ../instagram-adoption/08-social-adapter-architecture.md, rel: extends, provenance: asserted}
-  - {dst: ../instagram-adoption/16-bridge-architecture-and-observability.md, rel: follows, provenance: asserted}
+  - {dst: ../instagram-adoption/social.md, rel: extends, provenance: asserted}
+  - {dst: ../instagram-adoption/bridge.md, rel: follows, provenance: asserted}
 ---
 
 # Architecture
@@ -51,7 +51,7 @@ edges:
 | surface | new `SocialSurface` | Nora is summoned **on** Threads, and answers **there** | the summons occasion |
 
 They share a **session**, the one token in `threads-bridge`. They do not share
-a port. This is the same split design/instagram-adoption/08 made for the
+a port. This is the same split design/instagram-adoption/social.md made for the
 instagram-bridge, which serves both messaging and reads from one session.
 Nothing on the read axis can publish, and the surface axis never feeds a
 room.
@@ -97,7 +97,7 @@ Webhooks (topic `mentions`) would cut latency. They need a public HTTPS
 callback with `X-Hub-Signature-256` verification, and **nothing in this stack
 receives inbound internet traffic to Nora today.** `nora/web/api.py` is GET
 only, on :9100, internal. The one public listener, `drop`, deliberately
-carries no write route (design §5a of Nora Drop). A webhook route would be
+carries no write route (the retired Drop record). A webhook route would be
 Nora's first public inbound endpoint, a bigger decision than this feature
 needs. Polling at 30 s puts a summons about 15 s behind on average, which is
 within what a person tolerates for a researched public answer. **This holds

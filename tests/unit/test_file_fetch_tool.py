@@ -80,7 +80,7 @@ async def _store(*posts: tuple[str, str]) -> FakeRecordStore:
 def _tool(source, store=None, metrics: Metrics | None = None):
     room = Room(platform="signal", conversation_id="g1", roster_source=None,
                 persons=_NoPersons())
-    specs = ToolRegistry(external_files=source).specs(
+    specs = ToolRegistry(external_files=source, google_account="nora@example.org").specs(
         store=store or FakeRecordStore(), conversation_id="g1", conversation_type="group",
         persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=room,
@@ -136,7 +136,7 @@ async def test_a_code_from_another_room_is_nothing_found_and_reads_nothing():
 async def test_an_unshared_file_is_refused_with_how_to_share_it():
     out = await _tool(_drive(_server()))(link=UNSHARED_URL)
     assert out["status"] == "refused"
-    assert "nora@67.zone" in out["note"] and "Viewer" in out["note"]
+    assert "nora@example.org" in out["note"] and "Viewer" in out["note"]
     _no_secret_in(out, UNSHARED)
 
 

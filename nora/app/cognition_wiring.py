@@ -6,7 +6,9 @@ holds, what it is told, its budget, and how it is stopped.
 `build_cognition_runner` is not called, the model source is not touched and
 `nora.app.cognition_agent_runner` is not imported (it is imported inside the
 function, so importing this module costs nothing). `true` builds exactly one
-`CognitionSessionRunner` whose hook the wake evaluator is handed, and
+`SubconsciousExecutor` — the `CognitionSessionRunner` hosted as a Dreamer
+adaptor, whose hook the wake evaluator is handed and which runs every
+admitted wake through `DreamerRuntime.run` (node 30) — and
 `require_session_hook` refuses to boot if that did not happen.
 
 **What she reads**: the tools of the read catalogue that EXIST and are
@@ -33,7 +35,6 @@ import logging
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from types import MappingProxyType
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -42,6 +43,7 @@ from nora.agent.dreamer import (
     DreamToolSource,
     cognition_grant,
 )
+from nora.agent.room import Room as AgentRoom
 from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
 from nora.domain.gatherings import (
     OPEN_STATUSES,
@@ -51,6 +53,7 @@ from nora.domain.gatherings import (
 )
 from nora.domain.live import LiveMapping
 from nora.domain.ports import CognitionStore, StimulusStore
+from nora.domain.provenance import instruction_sha256
 from nora.domain.reminders import ReminderCaps
 from nora.domain.standing import StandingHead
 
@@ -70,7 +73,7 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the warehouse queries
     "record_query", "rollup_read", "event_search", "memo_read", "character_read",
     "standing_read", "social_read",
-    # the typed source-object reads (platform-observations 05)
+    # the typed source-object reads (platform-observations/exposure.md)
     "poll_list", "poll_read", "room_state_read", "group_members",
     # the tiers' reads that already exist
     "where_been", "routine_read", "note_read", "note_search",
@@ -79,7 +82,7 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the graph surface's (DEC-316): built instead of the Honcho memory verbs
     # above while `[memory.index] read`, never beside them
     "memory_search", "memory_read",
-    # the room's own rows, roster and people (platform-observations 05)
+    # the room's own rows, roster and people (platform-observations/exposure.md)
     "room_read", "load_transcript", "who_said", "lookup_person",
     # the stored-object reads: a media object, a shared file, the
     # generated-image library
@@ -92,11 +95,9 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
 #: Named deliberately ABSENT — an exclusion is a decision the catalogue
 #: states, not a gap it hides:
 #:
-#: * `document_read`: `DocumentsService.read` is PERSON-scoped — `may_read`
-#:   admits a named member of the document's room — and a Cognition session
-#:   holds no person identity to read through. Offering the name would
-#:   advertise a read that can only fail closed or, worse, authorize with a
-#:   guessed identity. Excluded until a read is genuinely authorized.
+#: Document list/read/revise are bound separately in the session through its
+#: explicit shared agenda-room capability. The generic requester-scoped reader
+#: in this catalogue must not borrow a human identity.
 #: * `linkedin_read`/`linkedin_search`: the existing unasked-turn rule protects
 #:   profile-view notifications and search quota; Cognition has no asked turn.
 
@@ -327,93 +328,43 @@ def read_tools_for(
 
 
 class SkillNotInstalledError(LookupError):
-    """A skill the agenda table maps is not in the corpus. At startup the
+    """Cognition's notebook guidance is not in the corpus. At startup the
     composition turns it into a `StartupError`; on a live hot reload that deleted
-    or renamed the file, the session that needed it records a `failed` wake
-    (cause `infra`, so the unit backs off and no message is struck) and never
-    runs without it."""
+    or renamed the file, the session records a `failed` wake, leaves its stimuli
+    pending and never runs without it."""
 
 
-class PreludeMissingError(RuntimeError):
-    """The `cognition` objective resolved WITHOUT its prelude: the file is gone,
-    or its `applies_to` no longer names `cognition`. The loader serves the
-    shared Dreamer doctrine to an objective that has no prelude, and that text
-    says «Nobody is waiting for you… You look; you do not act», which is false
-    of a session whose verbs write the notebook. Raised at startup, and again at
-    the start of every session, so a hot reload cannot swap it in unseen."""
+REGISTER_SKILL = "cognition-register"
+
+
+def cognition_instruction(instructions: Any) -> tuple[str, str]:
+    """The session's whole instruction and its digest: the `cognition` objective
+    alone, with no shared Dreamer doctrine and no wrapper tag around it."""
+    body = instructions.objective_body(COGNITION_OBJECTIVE).strip()
+    return body, instruction_sha256(body)
 
 
 @dataclass(frozen=True)
-class AgendaSkills:
-    """Skills injected per agenda kind: after the doctrine, in a fixed
-    order, so the prefix stays cached and only the skills vary. `by_kind` maps
-    an agenda kind to a skill name; `resolve` reads a skill by name (`Skill.
-    instructions`, `.sha256`) and is NOT memoised, so an edit on the bind mount
-    is live at the next session. A kind with no entry injects nothing. The
-    production table is `AGENDA_SKILLS`, built by `agenda_skills`."""
+class SessionGuidance:
+    """Resolve notebook guidance once per session; context assembly gates its tools."""
 
-    by_kind: Mapping[str, str]
     resolve: Callable[[str], Any]
 
-    def _names(self, kinds: Sequence[str]) -> list[str]:
-        return sorted({self.by_kind[k] for k in kinds if k in self.by_kind})
+    def resolved(self) -> tuple[str, dict[str, object]]:
+        skill = self.resolve(REGISTER_SKILL)
+        if skill is None:
+            raise SkillNotInstalledError(f"session skill {REGISTER_SKILL!r} is not installed")
+        return skill.instructions, {REGISTER_SKILL: skill.sha256}
 
-    def resolved_for(self, kinds: Sequence[str]) -> tuple[str, dict[str, object]]:
-        """The text injected and the versions recorded for these kinds, from ONE
-        resolution of each skill: the hash a session row records is over the text
-        the model reads, even when the corpus hot-reloads while the session is
-        being set up."""
-        text: list[str] = []
-        versions: dict[str, object] = {}
-        for name in self._names(kinds):
-            skill = self.resolve(name)
-            if skill is None:
-                raise SkillNotInstalledError(f"agenda skill {name!r} is not installed")
-            text.append(f"\n\n# Skill: {name}\n\n{skill.instructions}\n")
-            versions[name] = skill.sha256
-        return "".join(text), versions
+    def text(self) -> str:
+        return self.resolved()[0]
 
-    def text_for(self, kinds: Sequence[str]) -> str:
-        return self.resolved_for(kinds)[0]
-
-    def versions_for(self, kinds: Sequence[str]) -> dict[str, object]:
-        return self.resolved_for(kinds)[1]
+    def versions(self) -> dict[str, object]:
+        return self.resolved()[1]
 
 
-#: The prelude `cognition` reads in place of the shared Dreamer doctrine
-#: (`nora/dreamer/preludes/`); the startup check and every session hold the
-#: objective's resolved versions to name it.
-COGNITION_PRELUDE = "cognition-prelude"
-
-#: The Register skill: the note, event and reminder judgement, in
-#: `nora/dreamer/skills/`.
-REGISTER_SKILL = "cognition-register"
-
-#: Agenda kind -> the skill injected for it. ONE skill for every mapped kind, so
-#: every session that has an agenda reads the same system prompt and its prefix
-#: stays cached whichever kinds its agenda holds
-#: (`tests/unit/test_cognition_agenda_skills.py`). `time` is mapped: the daily
-#: floors wake a session that reviews the notebook (`note_set_status`, `note_merge`)
-#: and decides what to raise. `social` and `play` have no producer.
-AGENDA_SKILLS: Mapping[str, str] = MappingProxyType({
-    "message": REGISTER_SKILL, "rollup": REGISTER_SKILL, "self": REGISTER_SKILL,
-    "time": REGISTER_SKILL,
-})
-
-
-def floors_ready() -> bool:
-    """True once a skill ships for the `time` agenda kind: a floor then wakes a
-    session. Read at CALL time over `AGENDA_SKILLS`, so the composition root (through
-    the `AgendaSkills` it builds) and the wake evaluator's age gauge follow the ONE
-    table, and a test that replaces it reaches both."""
-    return "time" in AGENDA_SKILLS
-
-
-def agenda_skills(instructions: Any) -> AgendaSkills:
-    """The production table over the Dreamer's instruction store: each skill is
-    read through it per session, so an edit on the bind mount is live at the
-    next session and every load is in the corpus's revision history."""
-    return AgendaSkills(by_kind=AGENDA_SKILLS, resolve=instructions.skill)
+def session_guidance(instructions: Any) -> SessionGuidance:
+    return SessionGuidance(resolve=instructions.skill)
 
 
 #: How long a stopping process lets a session that is already running finish
@@ -429,11 +380,12 @@ SESSION_SHUTDOWN_GRACE_SECONDS = 30.0
 
 
 class CognitionShutdown:
-    """Stops the sessions at shutdown, once. The evaluator's background tasks
-    ARE the sessions' tasks, so `cancel_in_flight` and the runner's `shutdown`
-    both cancel the same tasks: each is called and the second call of the whole
-    thing is a no-op, so a process that reaches shutdown twice does not cancel
-    twice.
+    """Stops the sessions at shutdown, once. The session tasks live on the
+    Dreamer lane (`SubconsciousExecutor` → `DreamerRuntime.dispatch`), so
+    the wait and the cancel go through the executor to their owner; the
+    runner's `shutdown` then waits for the cancelled sessions' outcome
+    writes. The second call of the whole thing is a no-op, so a process
+    that reaches shutdown twice does not cancel twice.
 
     The wake loop is already stopped by the time this runs (`App.run` cancels
     every background task before `App.shutdown`), so no NEW wake starts while
@@ -453,8 +405,20 @@ class CognitionShutdown:
         if self._done:
             return
         self._done = True
-        await self._evaluator.wait_in_flight(self._grace)
-        await self._evaluator.cancel_in_flight()
+        # The lane owns the session tasks: wait and cancel there when the
+        # runner exposes it (the executor delegates to `DreamerRuntime`),
+        # falling back to the evaluator's own hook-task bookkeeping for a
+        # wiring that never went through dispatch.
+        wait = getattr(self._runner, "wait_in_flight", None)
+        if wait is not None:
+            await wait(self._grace)
+        else:
+            await self._evaluator.wait_in_flight(self._grace)
+        cancel = getattr(self._runner, "cancel_in_flight", None)
+        if cancel is not None:
+            await cancel()
+        else:
+            await self._evaluator.cancel_in_flight()
         await self._runner.shutdown()
 
 
@@ -560,20 +524,86 @@ def upcoming_reader(
     return read
 
 
+
+def context_screen(
+    *, content_checks: Any, doctrine_store: Callable[[], Any], canary: Any,
+) -> Callable[[str], str | None]:
+    """The cognition read's screen: the reply scan plus the doctrine canary.
+    `doctrine_store` is a getter — it is built after the screen is bound."""
+    def screen(text: str) -> str | None:
+        from nora.agent.egress import LeakGuard, scan_reply
+
+        return scan_reply(text, content_checks=content_checks) or LeakGuard(
+            doctrine_store().get(applies_to="cognition"), canary
+        ).check(text)
+    return screen
+
+
+def shared_document_room(
+    *, allowlist: Any, persons: Any,
+) -> Callable[[str, str, str], bool]:
+    """A room the unit's own identified persons share, for document reads."""
+    def shared(unit: str, platform: str, cid: str) -> bool:
+        c = allowlist.conversation(platform, cid)
+        return bool(c is not None and c.unit == unit and c.persons
+                    and c.persons <= persons.by_person.keys())
+    return shared
+
+
+def build_context_reader(
+    *,
+    engine: Any,
+    allowlist: Any,
+    persons: Any,
+    lineage: Any,
+    presence_reader: Any,
+    audit: Any,
+    rosters: Any,
+    registry: Any,
+    media_join: Any,
+    record_chars: int,
+    documents_context: Any,
+    screen: Callable[[str], str | None],
+    content_checks: Any,
+) -> Any:
+    """The shared-context reader the grounder calls per agenda room."""
+    import functools
+
+    from nora.agent.dream_screen import text_offence
+    from nora.app.cognition_context import CognitionContextReader
+    from nora.infra.sql.lessons import SqlLessonStore
+    from nora.infra.sql.profile import SqlProfileStore
+    from nora.infra.sql.record_query import SqlRecordQuery
+    from nora.language.lesson_render import ActiveLessons
+
+    profiles = SqlProfileStore(
+        engine,
+        screen=functools.partial(text_offence, content_checks=content_checks),
+    )
+    return CognitionContextReader(
+        policy=allowlist, persons=persons, lineage=lineage,
+        records=SqlRecordQuery(engine), directory=presence_reader, audit=audit,
+        profiles=profiles,
+        lessons=ActiveLessons(SqlLessonStore(engine)), media_join=media_join,
+        room_for=lambda platform, cid: AgentRoom(
+            platform=platform, conversation_id=cid,
+            roster_source=rosters.get(platform), persons=persons,
+            self_ids=registry.self_aliases()),
+        screen=screen, record_chars=record_chars, documents=documents_context,
+    )
+
 def build_cognition_runner(
     *,
     cfg: Any,
     tag_trace_store: Any = None, memory: Any = None,
     models: Any,
-    retry: Any,
-    metrics: Any,
+    retry: Any, metrics: Any,
     tools: DreamToolSource,
     instructions: Any,
     store: CognitionStore,
     stimulus_store: StimulusStore,
     note_titles: Callable[[str], Awaitable[Sequence[str]]],
-    notes: Any,
-    events: Any,
+    notes: Any, events: Any,
     standing: Any,
     reminders: Any,
     ai_peer: str,
@@ -583,9 +613,8 @@ def build_cognition_runner(
     standing_of: Callable[[str, str], Awaitable[StandingHead | None]],
     roster_of: Callable[[str, str], Awaitable[Mapping[str, str] | None]] | None = None,
     nora_names: frozenset[str] = frozenset(),
-    homes: Mapping[str, Any],
-    units: Sequence[str],
-    skills: AgendaSkills,
+    homes: Mapping[str, Any], units: Sequence[str],
+    skills: SessionGuidance,
     grounder: Any,
     person_known: Callable[[str], bool] | None = None,
     render_budget: Any,
@@ -595,20 +624,34 @@ def build_cognition_runner(
     model_route: str,
     budget: Any,
     result_caps: Mapping[str, int],
-    memos: Any = None,
+    memos: Any = None, entries: Any = None,
     ledger: Any = None,
     shared: Any = None,
     standing_fold: Any = None,
     rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
     observations: Any = None,
+    documents: Any = None, documents_context: Any = None,
+    runtime: Any = None,
+    # `CognitionLessons`; None ([lessons] disabled) offers no lesson verbs.
+    lessons: Any = None,
 ) -> Any:
-    """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
-    with it Strands) is loaded only when a session will actually run."""
-    from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
+    """The session executor: a `SubconsciousExecutor` whose hook the wake
+    evaluator is handed, running each admitted wake through
+    `DreamerRuntime.run`. Imported lazily: `DreamerAgentRunner` (and with it
+    Strands) is loaded only when a session will actually run. `runtime` is
+    the composition's one `DreamerRuntime`; `models`/`retry` are kept for
+    callers that build the runner shape directly in tests."""
+    from nora.app.cognition_agent_runner import DreamerAgentRunner
     from nora.app.cognition_session import CognitionSessionRunner
+    from nora.app.subconscious import SubconsciousExecutor
 
-    agent_runner = LiveCognitionAgentRunner(
-        models=models, retry=retry, metrics=metrics,
+    if runtime is None:
+        raise ValueError(
+            "build_cognition_runner requires the composition's DreamerRuntime: "
+            "a session executes through runtime.run, not a sibling runner",
+        )
+    agent_runner = DreamerAgentRunner(
+        runtime=runtime, metrics=metrics,
         # The READ tools' argument names only. The registry's table also holds
         # the tag path's `note_create`, `note_revise` and `remind`, whose
         # arguments differ from the session's own verbs of the same names
@@ -625,28 +668,14 @@ def build_cognition_runner(
     )
 
     def doctrine() -> tuple[str, str | None]:
-        loaded = instructions.for_objective(COGNITION_OBJECTIVE)
-        # A prelude that is gone, or whose `applies_to` no longer names this
-        # objective, is NOT an error to the loader: the objective then reads the
-        # shared doctrine (a judge's «you look; you do not act»). Refused here,
-        # at startup and at the start of every session, with its name.
-        if COGNITION_PRELUDE not in loaded.versions:
-            raise PreludeMissingError(
-                f"the {COGNITION_OBJECTIVE!r} objective resolved without its prelude "
-                f"{COGNITION_PRELUDE!r} (resolved: {', '.join(sorted(loaded.versions))}): "
-                "it would read the shared Dreamer doctrine, which says a judge looks and "
-                "does not act"
-            )
-        return loaded.text, loaded.sha256
+        return cognition_instruction(instructions)
 
-    # Read once here so a missing or malformed objective, a missing prelude, or a
-    # mapped skill that is not installed, is a startup failure with its name, not
-    # the first wake's (`DreamerInstructions` raises `InstructionError`,
-    # `doctrine` raises `PreludeMissingError`, `AgendaSkills` raises
-    # `SkillNotInstalledError`; the composition turns all three into a
-    # `StartupError`).
+    # Read once here so a missing or malformed objective, or a session skill that
+    # is not installed, is a startup failure with its name, not the first wake's
+    # (`DreamerInstructions` raises `InstructionError`, `SessionGuidance` raises
+    # `SkillNotInstalledError`; the composition turns both into a `StartupError`).
     text, sha = doctrine()
-    skills.resolved_for(sorted(skills.by_kind))
+    skills.resolved()
     home_rooms = LiveMapping(lambda: _by_home_room(homes))
 
     async def open_events(
@@ -657,18 +686,18 @@ def build_cognition_runner(
     async def prior(platform: str, conversation_id: str) -> StandingHead | None:
         return await standing_of(platform, conversation_id)
 
-    return CognitionSessionRunner(
+    runner = CognitionSessionRunner(
         tag_trace_store=tag_trace_store, memory=memory,
         store=store, stimulus_store=stimulus_store,
         notes=notes, events=events, standing=standing, reminders=reminders,
         ledger=ledger, shared=shared,
-        ai_peer=ai_peer, memos=memos,
+        ai_peer=ai_peer, memos=memos, entries=entries,
         agent_runner=agent_runner, home_rooms=home_rooms,
         read_tools_for=read_tools_for(tools, names=surface.wired),
         read_only_tools=surface.wired,
-        skill_text_for=skills.text_for, skill_versions_for=skills.versions_for,
-        skills_for=skills.resolved_for, grounder=grounder, render_budget=render_budget,
-        person_known=person_known,
+        skill_text_for=skills.text, skill_versions_for=skills.versions,
+        skills_for=skills.resolved, grounder=grounder, render_budget=render_budget,
+        person_known=person_known, documents=documents, documents_context=documents_context,
         doctrine_text=text, doctrine_sha256=sha, doctrine_source=doctrine,
         open_note_titles=note_titles, open_events=open_events,
         prior_standing=prior,
@@ -676,7 +705,7 @@ def build_cognition_runner(
         standing_fold=standing_fold,
         budget=budget, cooldown_seconds=cfg.cognition.cooldown_seconds,
         units=list(units), session_timeout_seconds=cfg.cognition.session_timeout_seconds,
-        max_items=cfg.cognition.max_items, max_strikes=cfg.cognition.max_strikes,
+        max_items=cfg.cognition.max_items,
         max_self_wakes=cfg.cognition.max_self_wakes,
         max_self_wakes_per_day=cfg.cognition.max_self_wakes_per_day,
         room_proactive=room_proactive,
@@ -695,24 +724,27 @@ def build_cognition_runner(
         # against: no store, no ref write (`unavailable`, never accepted
         # unchecked).
         observations=observations,
+        lessons=lessons,
     )
+    # Cognition hosted as a Dreamer adaptor (node 30): the evaluator's hook
+    # is the executor's, and every admitted wake executes inside
+    # `runtime.run(adaptor=…)` — admission, cancellation and the model call
+    # have the one owner every other subconscious adaptor has.
+    return SubconsciousExecutor(runtime=runtime, runner=runner)
 
 
 __all__ = [
-    "AGENDA_SKILLS",
     "COGNITION_ADAPTOR_NAME",
     "COGNITION_OBJECTIVE",
-    "COGNITION_PRELUDE",
     "COGNITION_READ_CATALOGUE",
     "REGISTER_SKILL",
-    "AgendaSkills",
     "CognitionShutdown",
-    "PreludeMissingError",
     "ReadSurface",
+    "SessionGuidance",
     "SkillNotInstalledError",
     "build_cognition_runner",
     "cognition_budget",
-    "floors_ready",
+    "cognition_instruction",
     "read_surface",
     "read_tools_for",
     "require_session_hook",

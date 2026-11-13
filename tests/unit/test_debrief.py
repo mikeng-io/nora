@@ -192,8 +192,7 @@ async def test_a_store_that_cannot_be_read_folds_nothing():
 
     store = _Broken()
     _, metrics = await _run(store=store)
-    assert await InMemoryStandingStore.read(
-        store, platform="signal", conversation_id="g1") is None
+    assert await InMemoryStandingStore.read(store, platform="signal", conversation_id="g1") is None
     assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
 
 
@@ -1069,7 +1068,8 @@ async def test_a_dead_turn_never_becomes_a_claim_that_she_never_answered():
         p for p in client.prompts if p.startswith("OBJECTIVE-TEXT"))
     assert "this turn's model call failed, so THIS TURN sent nothing" in fold_prompt
     assert "does not describe what any other turn of yours sent" in fold_prompt
-    assert 'from="Nora" delivery="delivered">聽朝 10 點到數碼港' in fold_prompt
+    needle = 'delivery="delivered">聽朝 10 點到數碼港'
+    assert any('from="Nora"' in row and needle in row for row in fold_prompt.splitlines())
 
 
 async def test_a_dead_turn_still_revises_the_position():
@@ -1538,7 +1538,7 @@ class _NoSynthesis:
 
 async def test_an_ordinary_fold_preserves_the_prior_sections_and_exclusions():
     """A fold that revises only the paragraph must not cancel `hold_open`,
-    `i_owe`, or the room's exclusions (design/notebook-memory-types/20 §5:
+    `i_owe`, or the room's exclusions (design/notebook-memory-types/20-standing.md §5:
     "a missing output section does not cancel an obligation"). The stored
     exclusions are the prior's UNION the Record's own requirements — derived
     by code, never asserted by the model."""

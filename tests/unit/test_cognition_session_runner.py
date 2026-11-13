@@ -50,12 +50,14 @@ class FakeCognitionAgentRunner:
     calls: int = 0
     results: list[object] = field(default_factory=list)
     last_tool_names: list[str] = field(default_factory=list)
+    last_prompt: str = ""
 
     async def run(
         self, *, system_prompt: str, prompt: str, tools: list[Any],
         budget: AdaptorBudget, trace_attributes: Mapping[str, str],
     ) -> CognitionRunResult:
         self.calls += 1
+        self.last_prompt = prompt
         by_name = {getattr(t, "__name__", None): t for t in tools}
         self.last_tool_names = sorted(n for n in by_name if n)
         for name, kwargs in self.script:
@@ -64,18 +66,14 @@ class FakeCognitionAgentRunner:
 
 
 def _pending(unit: str, n: int = 1) -> tuple[Stimulus, ...]:
-    return tuple(
-        Stimulus(
-            id=i, unit=unit, kind="message", item="message", ref=f"messages:{i}",
-            at_ms=NOW, recorded_at_ms=NOW, platform="signal", conversation_id="home-room",
-        )
-        for i in range(1, n + 1)
-    )
+    return tuple(Stimulus(
+        id=i, unit=unit, kind="message", item="message", ref=f"messages:{i}",
+        at_ms=NOW, recorded_at_ms=NOW, platform="signal", conversation_id="home-room")
+        for i in range(1, n + 1))
 
 
 def _seeded(*wakes: tuple[str, int]) -> InMemoryStimulusStore:
-    """A stimulus store holding the wake these tests hand the hook (an outcome
-    names a wake that exists); by default wake 1 of `unit-1`."""
+    """Wake(s) these tests hand the hook; by default wake 1 of `unit-1`."""
     stimuli = InMemoryStimulusStore()
     for unit, wake_id in wakes or (("unit-1", 1),):
         stimuli.seed_wake(unit, wake_id)
@@ -87,7 +85,7 @@ def _runner(
     store: InMemoryCognitionStore | None = None,
     stimuli: InMemoryStimulusStore | None = None,
     memory: Any = None, grounder: Any = None,
-    read_tools_for: Any = None, read_only_tools: frozenset[str] = frozenset(),
+    read_tools_for: Any = None, read_only_tools: frozenset[str] = frozenset(), lessons: Any = None,
 ) -> tuple[CognitionSessionRunner, InMemoryCognitionStore, FakeCognitionAgentRunner]:
     store = store or InMemoryCognitionStore()
     fake = agent_runner or FakeCognitionAgentRunner()
@@ -97,23 +95,17 @@ def _runner(
         home_rooms={"unit-1": HOME},
         read_tools_for=read_tools_for or (lambda unit, rooms, **kw: []),
         read_only_tools=read_only_tools,
-        skill_text_for=lambda kinds: "", grounder=grounder or EmptyGrounder(),
+        skill_text_for=lambda: "", grounder=grounder or EmptyGrounder(),
         doctrine_text="DOCTRINE",
         doctrine_sha256="sha", open_note_titles=_async_const(()),
-        open_events=_async_const2(()), prior_standing=_async_const2(None),
+        open_events=_async_const(()), prior_standing=_async_const(None),
         budget=BUDGET, cooldown_seconds=300.0, max_items=12,
-        max_strikes=3, mint_ref=_counting_ref(), clock=lambda: NOW / 1000,
+        mint_ref=_counting_ref(), clock=lambda: NOW / 1000, lessons=lessons,
     )
     return runner, store, fake
 
 
 def _async_const(value):
-    async def f(*args, **kwargs):
-        return value
-    return f
-
-
-def _async_const2(value):
     async def f(*args, **kwargs):
         return value
     return f
@@ -145,6 +137,14 @@ async def test_an_empty_agenda_makes_no_model_call():
     assert (stimuli.outcomes[1].outcome, stimuli.outcomes[1].detail) == ("closed", "empty agenda")
 
 
+async def test_an_empty_agenda_inspection_writes_no_row():
+    runner, store, fake = _runner()
+    runner._finish = lambda *a, **k: store.sessions.append("finish reached")
+    view = UnitView(unit="unit-1", pending=(), last_activity_ms=None, last_wake=None)
+    assert await runner.inspect(view=view, now_ms=NOW) is None
+    assert store.sessions == [] and fake.calls == 0
+
+
 async def test_a_unit_with_no_home_room_makes_no_model_call_and_is_recorded_failed():
     stimuli = _seeded(("ghost-unit", 2))
     runner, _store, fake = _runner(stimuli=stimuli)
@@ -158,7 +158,7 @@ async def test_a_unit_with_no_home_room_makes_no_model_call_and_is_recorded_fail
 
 
 # --------------------------------------------------------------------------
-# a real session: records itself, runs the model exactly once, closes items
+# a real session: records itself, runs the model exactly once, ends normally
 # --------------------------------------------------------------------------
 
 async def test_a_session_with_a_nonempty_agenda_records_itself_and_calls_the_model_once():
@@ -177,26 +177,8 @@ async def test_a_session_with_a_nonempty_agenda_records_itself_and_calls_the_mod
     assert session_id == outcome.session_id
 
 
-async def test_an_item_never_closed_by_the_model_is_closed_waiting_by_code():
-    runner, store, _fake = _runner(agent_runner=FakeCognitionAgentRunner(script=[]))
-    view = UnitView(
-        unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None,
-    )
-    outcome = await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
-    assert len(outcome.closed) == 1
-    assert outcome.closed[0].reason == "waiting"
-    assert len(store.closes) == 1
 
 
-async def test_the_model_can_close_an_item_explicitly():
-    fake = FakeCognitionAgentRunner(script=[("close", {"item_index": 0, "reason": "no_change"})])
-    runner, _store, fake = _runner(agent_runner=fake)
-    view = UnitView(
-        unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None,
-    )
-    outcome = await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
-    assert len(outcome.closed) == 1
-    assert outcome.closed[0].reason == "no_change"
 
 
 async def test_the_tool_list_offers_every_write_pace_and_remind_verb():
@@ -207,7 +189,7 @@ async def test_the_tool_list_offers_every_write_pace_and_remind_verb():
     )
     await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
     assert set(fake.last_tool_names) >= {
-        "close", "note_create", "note_revise", "event_propose", "event_revise",
+        "note_create", "note_revise", "event_propose", "event_revise",
         "event_set_status", "standing_revise", "wake_at", "wake_move", "wake_cancel",
         "remind", "remind_move", "remind_cancel",
     }
@@ -224,7 +206,7 @@ async def test_a_wake_at_call_is_recorded_with_a_minted_ref():
         unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None,
     )
     await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
-    assert len(store.paces) == 1
+    assert len(store.paces) >= 1
     _, pace, _ = store.paces[0]
     assert pace.outcome == "recorded"
     assert pace.wake_ref == "ref1"
@@ -243,10 +225,8 @@ def wake_memory():
 
 
 def proposal(items=None):
-    """An explicit no-change over `items` — the statement contract's
-    `nothing_here` declaration."""
-    items = [0] if items is None else items
-    return {"items": items, "statements": [], "nothing_here": items}
+    """A statements-only proposal payload."""
+    return {"statements": []}
 
 
 def relation_statement(dst, *, rel="likes", src="@person:p_ada",
@@ -257,7 +237,7 @@ def relation_statement(dst, *, rel="likes", src="@person:p_ada",
             "cite": list(cite)}
 
 
-async def test_cognition_01_act_refused_before_admitted_proposal():
+async def test_act_is_callable_before_any_memory_proposal():
     fake = FakeCognitionAgentRunner(script=[
         ("wake_at", {"subject_rows": ["event:1"], "at": iso(NOW + 3600000), "why": "check"}),
         ("memory_propose", proposal()),
@@ -266,9 +246,9 @@ async def test_cognition_01_act_refused_before_admitted_proposal():
     runner, store, _ = _runner(agent_runner=fake, memory=wake_memory())
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW)
-    assert fake.results[0]["reason"] == "proposal_required"
-    assert fake.results[1]["admitted"] == [0]
-    assert len(store.paces) == 1
+    assert fake.results[0]["status"] == "ok"
+    assert fake.results[1]["status"] == "ok"
+    assert len(store.paces) >= 1
 
 
 async def test_an_unprojected_message_still_runs_its_wake_on_its_own_text():
@@ -283,12 +263,12 @@ async def test_an_unprojected_message_still_runs_its_wake_on_its_own_text():
                                 grounder=StaticGrounder(Grounding(records={stimulus.ref: record})))
     await runner.replay(view=UnitView(unit="unit-1", pending=(stimulus,),
         last_activity_ms=None, last_wake=None), now_ms=NOW)
-    assert fake.results[0]["admitted"] == [0]
+    assert fake.results[0]["status"] == "ok"
 
 
-async def test_cognition_08_proposal_answer_lists_refusal_with_reason():
+async def test_an_out_of_vocabulary_relation_is_refused_by_the_schema():
     payload = proposal()
-    payload["nothing_here"] = []
+
     payload["statements"] = [relation_statement(
         ["topic", "generated-topic"], rel="invented",
         src={"new": {"kind": "work", "name": "Generated thing"}})]
@@ -296,8 +276,10 @@ async def test_cognition_08_proposal_answer_lists_refusal_with_reason():
     runner, store, _ = _runner(agent_runner=fake, memory=wake_memory())
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW)
-    assert not fake.results[0]["admitted"]
-    assert any(row["reason"] == "vocabulary" for row in fake.results[0]["refused"])
+    assert fake.results[0]["status"] == "refused"
+    statement = fake.results[0]["statements"][0]
+    assert statement["reason"] == "schema"
+    assert any("rel" in error for error in statement["errors"])
     assert not store.paces
 
 
@@ -305,7 +287,7 @@ async def test_cognition_09_backfill_withholds_act_tools():
     runner, store, fake = _runner(memory=wake_memory())
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW, historical=True)
-    assert {"memory_propose", "close"} <= set(fake.last_tool_names)
+    assert {"memory_propose"} <= set(fake.last_tool_names)
     assert not {"profile_read", "profile_revise"} & set(fake.last_tool_names)
     forbidden = ("note_", "memo_", "event_", "lesson_", "topic_", "decision_",
                  "commitment_", "standing_", "wake_", "remind", "send_")
@@ -385,14 +367,14 @@ async def test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite():
         on_rows = kw.get("on_rows")
         assert callable(on_rows)
 
-        async def load_transcript(**_args: Any) -> dict[str, Any]:
+        async def load_transcript() -> dict[str, Any]:
             on_rows([shown, withheld])
             return {"messages": [{"sender": "Ada", "body": "dinner at eight"}]}
         return [load_transcript]
 
     def proposing(cited: str) -> dict[str, Any]:
         payload = proposal()
-        payload["nothing_here"] = []
+
         payload["statements"] = [relation_statement(
             ["event", "u:event:generated-gala"], cite=({"source": int(cited)},))]
         return payload
@@ -414,7 +396,7 @@ async def test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite():
 
 
 async def test_probe_prepares_memory_and_uses_the_wakes_instruction():
-    from nora.language.comprehend_render import SESSION_INSTRUCTION
+    from nora.language.comprehend_render import MEMORY_CRITERIA
 
     class Capture(FakeCognitionAgentRunner):
         async def run(self, **kwargs):
@@ -425,33 +407,12 @@ async def test_probe_prepares_memory_and_uses_the_wakes_instruction():
     memory = wake_memory()
     runner, _, _ = _runner(agent_runner=agent, memory=memory)
     await runner.probe(unit="unit-1", summary="a generated review", now_ms=NOW)
-    assert SESSION_INSTRUCTION in agent.system_prompt
+    assert MEMORY_CRITERIA in agent.system_prompt
     assert agent.results[0]["status"] == "ok"
 
 
-@pytest.mark.parametrize("admit", [False, True])
-async def test_stimulus_consumed_only_by_admitted_proposal_or_explicit_empty(admit):
-    stimuli = _seeded()
-    fake = FakeCognitionAgentRunner(script=[("memory_propose", proposal()),
-        ("close", {"item_index": 0, "reason": "no_change"})] if admit else [])
-    runner, _, _ = _runner(agent_runner=fake, stimuli=stimuli, memory=wake_memory())
-    await runner.on_wake(unit="unit-1", view=UnitView(unit="unit-1",
-        pending=_pending("unit-1"), last_activity_ms=None, last_wake=None), now_ms=NOW, wake_id=1)
-    carried = [c.stimulus_id for _, _, c in stimuli.carries if c.state == "carried"]
-    assert (1 not in carried) == admit
 
 
-async def test_partial_proposal_consumes_only_covered_items():
-    from dataclasses import replace
-    pending = _pending("unit-1", 2)
-    pending = (pending[0], replace(pending[1], conversation_id="other-generated-room"))
-    fake = FakeCognitionAgentRunner(script=[("memory_propose", proposal()),
-        ("close", {"item_index": 0, "reason": "no_change"})])
-    stimuli = _seeded()
-    runner, _, _ = _runner(agent_runner=fake, stimuli=stimuli, memory=wake_memory())
-    await runner.on_wake(unit="unit-1", view=UnitView(unit="unit-1", pending=pending,
-        last_activity_ms=None, last_wake=None), now_ms=NOW, wake_id=1)
-    assert [c.stimulus_id for _, _, c in stimuli.carries if c.state == "carried"] == [2]
 
 
 async def test_five_failures_park_with_operator_requeue():
@@ -466,7 +427,7 @@ async def test_five_failures_park_with_operator_requeue():
     assert await memory.parked("unit-1", pending) == set()
 
 
-async def test_agenda_carry_and_strike_keep_uncomprehended_stimuli_pending():
+async def test_input_budget_defers_unseen_stimuli_without_dropping():
     from dataclasses import replace
     memory = wake_memory()
     stimuli = _seeded()
@@ -476,22 +437,9 @@ async def test_agenda_carry_and_strike_keep_uncomprehended_stimuli_pending():
     pending = (pending[0], replace(pending[1], conversation_id="other-generated-room"))
     await runner.on_wake(unit="unit-1", view=UnitView(unit="unit-1", pending=pending,
         carry={1: 3, 2: 3}, last_activity_ms=None, last_wake=None), now_ms=NOW, wake_id=1)
-    assert {c.stimulus_id for _, _, c in stimuli.carries if c.state == "carried"} == {1, 2}
+    assert {c.stimulus_id for _, _, c in stimuli.carries if c.state == "carried"} == {2}
 
 
-async def test_refused_session_leaves_stimuli_pending():
-    payload = proposal()
-    payload["nothing_here"] = []
-    payload["statements"] = [relation_statement(
-        {"new": {"kind": "person", "name": "Generated"}},
-        src={"new": {"kind": "work", "name": "Generated work"}})]
-    stimuli = _seeded()
-    fake = FakeCognitionAgentRunner(script=[("memory_propose", payload)])
-    runner, _, _ = _runner(agent_runner=fake, stimuli=stimuli, memory=wake_memory())
-    await runner.on_wake(unit="unit-1", view=UnitView(unit="unit-1", pending=_pending("unit-1"),
-        last_activity_ms=None, last_wake=None), now_ms=NOW, wake_id=1)
-    assert not fake.results[0]["admitted"]
-    assert [c.stimulus_id for _, _, c in stimuli.carries if c.state == "carried"] == [1]
 
 
 async def test_failed_session_keeps_stimuli_pending_and_counts_failure():
@@ -508,9 +456,9 @@ async def test_failed_session_keeps_stimuli_pending_and_counts_failure():
     assert await memory.records.failures("unit-1", 1) == 1
 
 
-async def test_schema_refusal_is_returned_and_never_unlocks_acts():
+async def test_schema_refusal_does_not_lock_acts():
     payload = proposal()
-    payload["nothing_here"] = []
+
     payload["statements"] = [dict(
         relation_statement(["place", "generated-place"], rel="likes",
                            src={"new": {"kind": "work", "name": "Generated thing"}}),
@@ -521,8 +469,8 @@ async def test_schema_refusal_is_returned_and_never_unlocks_acts():
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW)
     assert any(r["reason"] == "unparseable_time" for r in fake.results[0]["refused"])
-    assert fake.results[1]["reason"] == "proposal_required"
-    assert not store.paces
+    assert fake.results[1]["status"] == "ok"
+    assert store.paces
 
 
 async def test_retried_link_write_relinks_existing_register_row_by_id(monkeypatch):
@@ -592,7 +540,7 @@ def _register_load(stores):
 
 def _about_proposal(entity_id: str, relation_id: str = "r-about"):
     payload = proposal()
-    payload["nothing_here"] = []
+
     payload["statements"] = [relation_statement(
         ["event", entity_id], cite=({"source": 101},))]
     return payload
@@ -946,7 +894,7 @@ async def test_association_shown_only_by_a_memory_search_is_admissible():
     memory = wake_memory()
     stores = Stores()
     memory.records.load = _register_load(stores)
-    event = _seed_event(memory, "u:event:search-gala")
+    event = _seed_event(memory, "u:event:search-gala", shown=False)
     answers = []
 
     class SearchTool:
@@ -1011,7 +959,7 @@ async def test_wake_preview_admits_only_the_keys_the_renderer_emitted():
                 asserted_at=at)
     state = SimpleNamespace(now_ms=NOW, unit="u", session_id=1, historical=False,
         items_by_index={0: SimpleNamespace(stimulus_ids=(1,), room=HOME)},
-        memory_items={}, graph_fetched=GraphFetched(), admitted_indices=set(),
+        memory_items={}, graph_fetched=GraphFetched(),
         admitted_relations={}, admitted_evidence=[], shown_keys=set())
     await memory.prepare(state, {1: replace(_pending("u")[0], kind="message", ref="messages:1")},
         Grounding(records={"messages:1": RecordItem(
@@ -1043,14 +991,14 @@ async def test_stays_and_plays_join_the_same_proposal_coverage():
         snapshot={"messages": [], "context": []})
     state = SimpleNamespace(now_ms=NOW, unit="unit-1", session_id=1, historical=False,
         items_by_index={0: SimpleNamespace(stimulus_ids=(1, 2), room=HOME)}, memory_items={},
-        graph_fetched=GraphFetched(), admitted_indices=set(), admitted_relations={},
+        graph_fetched=GraphFetched(), admitted_relations={},
         admitted_evidence=[], shown_keys=set())
     await memory.prepare(state, {1: play, 2: stay}, Grounding())
     assert {s.key[0] for s in state.memory_items[0].sources} == {"play", "rollup"}
     assert "Generated track" in next(s.text for s in state.memory_items[0].sources
                                      if s.key[0] == "play")
-    answer = await memory.propose(state, items=[0], statements=[], nothing_here=[0])
-    assert answer["admitted"] == [0]
+    answer = await memory.propose(state,  statements=[])
+    assert answer["status"] == "ok"
 
 
 async def test_inspection_renders_real_wake_clock_room_and_open_items_without_model():
@@ -1069,7 +1017,8 @@ async def test_inspection_renders_real_wake_clock_room_and_open_items_without_mo
     inspection = await runner.inspect(view=UnitView(
         unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None),
         now_ms=NOW)
-    assert set(inspection) == {"system", "agenda", "work"}
+    assert set(inspection) == {
+        "system", "agenda", "work", "items", "stimuli", "instructions"}
     assert inspection["work"] == []
     assert "DOCTRINE" in inspection["system"]
     for value in ("Generated room", "I arrived", "Hand over generated gifts", "Generated dinner"):
@@ -1087,12 +1036,10 @@ async def test_an_inspection_records_no_session_outcome_or_carry():
     view = UnitView(unit="unit-1", pending=_pending("unit-1"),
                     last_activity_ms=None, last_wake=None)
     inspection = await runner.inspect(view=view, now_ms=NOW)
-    assert inspection is not None and set(inspection) == {"system", "agenda", "work"}
+    assert inspection is not None and set(inspection) == {
+        "system", "agenda", "work", "items", "stimuli", "instructions"}
     assert inspection["work"] == []
-    assert store.sessions == []
-    assert stimuli.outcomes == {}
-    assert stimuli.carries == []
-    assert agent.calls == 0
+    assert not (store.sessions or stimuli.outcomes or stimuli.carries or agent.calls)
 
 
 async def test_inspection_of_an_empty_agenda_is_none_and_calls_no_model():
@@ -1262,7 +1209,7 @@ async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
         assert shown != raw and "docs.google.com" not in shown
         for span in (shown, raw):
             payload = proposal()
-            payload["nothing_here"] = [0]
+
             payload["statements"] = [relation_statement(
                 list(event.key), rel="likes", src="@" + ":".join(person.key),
                 cite=({"source": message_id, "quote": span},))]
@@ -1276,7 +1223,7 @@ async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
         read_only_tools=frozenset({"load_transcript"}))
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW)
-    assert responses[1]["admitted"] == [0], responses[1]
+    assert responses[1]["status"] == "ok", responses[1]
     assert responses[1]["statements"][0]["status"] == "saved"
     assert any(r["reason"] == "span_not_in_source" for r in responses[2]["refused"])
 

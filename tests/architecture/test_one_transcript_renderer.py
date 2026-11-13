@@ -60,9 +60,10 @@ CONVERTED = {
         "replies",
     "nora/language/profile_verdict.py":
         "the window's Record rows the verdict judge reads",
-    "nora/language/lessons.py": "her sends and their quoted replies a Lessons session reads",
     "nora/engagement/debrief_render.py":
         "the window the fold and the grounding verdict read",
+    "nora/language/context_render.py": "shared chronological transcript via render_messages",
+    "nora/language/register_render.py": "source objects and retained events via render_elements",
     "nora/language/cognition_render.py":
         "the Cognition session's agenda: each item's messages through "
         "`render_row_window` (`n` is the message's own id, so what the model "
@@ -104,6 +105,8 @@ _NOT_A_TRANSCRIPT = {
     # THE BROWSE TASK'S BRIEF, not a transcript — the objective and the start
     # page as `part` elements for the browse agent, like the sub-agent's.
     "nora/language/browse_render.py": "renders the browse task's brief, not a transcript",
+    # THE HELD TOPIC INDEX — one element per held account, its own words, no message.
+    "nora/language/topic_render.py": "renders the topic account index, not a transcript",
 }
 
 #: The operator's surfaces: a Discord review channel, not a prompt. Exempt from

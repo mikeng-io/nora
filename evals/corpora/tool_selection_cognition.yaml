@@ -1,5 +1,5 @@
 # S2 — tool routing, the COGNITION catalogue (design/cognition-loop/
-# 30-cognition.md §2, §4: "tool_selection is measured on the cognition
+# design/cognition-loop/session.md «Reasoning and authority»: "tool_selection is measured on the cognition
 # catalogue, on the runtime model, at step 3"; migration step 3a-ii).
 #
 # THE QUESTION is the same as `tool_selection.yaml`'s — does she reach for
@@ -124,14 +124,6 @@ cases:
     metadata: {tools: [remind_move], not_tools: [remind, remind_cancel]}
     snapshot: *room_a
 
-  - name: cognition_close_vs_note_revise_settled_item
-    entry: dreamer
-    category: cognition
-    expect: reply
-    input: "room A has 1 new message confirming what note N1 already says, nothing new to add"
-    metadata: {tools: [close], not_tools: [note_revise, note_create]}
-    snapshot: *room_a
-
   - name: cognition_record_query_vs_rollup_read_history_question
     entry: dreamer
     category: cognition
@@ -243,7 +235,7 @@ cases:
     metadata: {tools: [memo_create, note_set_status], not_tools: [note_create]}
     snapshot: *room_a
 
-  # ---- `social_read` (design/cognition-loop/22 §6, the map's `social_items`):
+  # ---- `social_read` (design/cognition-loop/observation.md, the map's `social_items`):
   # a member's recorded stories, posts and reels, against the reads it is
   # confusable with. The input is the sentence a live agenda's `<social>` row
   # carries (`nora.language.cognition_render._social_row`: «<name> posted

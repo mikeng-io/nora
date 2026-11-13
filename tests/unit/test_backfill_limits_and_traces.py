@@ -16,9 +16,11 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from nora.agent import factory, telemetry
 from nora.app import cli
 from nora.app import unified_backfill as ub
-from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
+from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import AdaptorBudget
 from nora.domain.stimuli import SessionLimitError
+from nora.obs.metrics import Metrics
+from tests.fakes import dreamer_runtime_for
 from tests.unit.test_unified_backfill import _FakeEngine, _patch_sql, _run_kwargs, _Runner, _s
 
 
@@ -81,8 +83,9 @@ def model_runner(monkeypatch, actual_input=110, *, unknown=False, hang=False, st
         return 100 if not calls else 10
 
     monkeypatch.setattr(model, "count_tokens", count_tokens)
-    runner = LiveCognitionAgentRunner(models=SimpleNamespace(create=lambda: model),
-        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0))
+    runner = DreamerAgentRunner(runtime=dreamer_runtime_for(
+        models=SimpleNamespace(create=lambda: model), metrics=Metrics(),
+        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0)))
     return runner, calls, client
 
 
@@ -109,7 +112,6 @@ async def test_run_reserves_each_call_and_pins_residual(monkeypatch, actual, cap
 
     async def replay(**kwargs):
         result = await run_model(metered, 10000)
-        receipts.add(("stimuli:1", "h"))
         assert result.stop_reason == "limit_total_tokens"
         raise SessionLimitError(result.stop_reason)
 
@@ -126,8 +128,8 @@ async def test_run_reserves_each_call_and_pins_residual(monkeypatch, actual, cap
     assert result["tokens"] <= cap + residual
     assert max(0, result["tokens"] - cap) == residual
     assert result["usage_known"]
-    assert failures == []
-    assert result["units"]["u1"]["failures"] == 0
+    assert failures == [("u1", 1)]
+    assert result["units"]["u1"]["failures"] == 1
 
 
 async def test_unaffordable_first_call_is_known_zero(monkeypatch):
@@ -151,37 +153,19 @@ async def test_unknown_usage_stops_before_another_call(monkeypatch):
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("committed", [{1}, {1, 2}])
-async def test_committed_inputs_survive_session_limit(monkeypatch, committed):
-    receipts = set()
-    failures = []
-    _patch_sql(monkeypatch, stimuli=[_s(1, 100), _s(2, 200), _s(3, 300)],
-        pairs=receipts, fail_log=failures)
-    runner = _Runner()
-
-    async def replay(**kwargs):
-        receipts.update((f"input:u1:{sid}", "h") for sid in committed)
-        raise SessionLimitError("limit_total_tokens")
-
-    monkeypatch.setattr(runner, "replay", replay)
-    kw = _run_kwargs()
-    kw["bounds"] = ub.Bounds(max_batches=1, max_tokens=1000, max_seconds=30)
-    result = await ub.run_units(_FakeEngine(object()), runner=runner, batch_stimuli=2, **kw)
-    assert receipts
-    assert failures == [("u1", sid) for sid in {1, 2} - committed]
-    assert result["units"]["u1"]["stopped"] == ("unresolved" if committed == {1} else "max_batches")
 
 
 async def test_cli_root_contains_session_and_generation_spans(
         monkeypatch, exported, example_config):
     import nora.app.composition as composition
+    from nora.app import composition_social
     cfg = example_config.model_copy(update={"obs": example_config.obs.model_copy(update={
         "tracing": example_config.obs.tracing.model_copy(update={"enabled": True,
             "exporter": "otlp_http", "endpoint": "http://generated.invalid/traces"})})})
     monkeypatch.setattr(cli, "_config", lambda args: cfg)
     policy = SimpleNamespace(home_rooms=lambda: {}, rooms=lambda: [])
     monkeypatch.setattr(cli, "_policy", lambda cfg: policy)
-    monkeypatch.setattr(composition, "social_person_rooms", lambda p: {})
+    monkeypatch.setattr(composition_social, "social_person_rooms", lambda p: {})
     runner, calls, client = model_runner(monkeypatch)
     deps = SimpleNamespace(client=client, model_clients=[],
         registry=SimpleNamespace(self_aliases=lambda: ()))
@@ -242,10 +226,12 @@ async def test_cli_root_contains_session_and_generation_spans(
 
 
 @pytest.mark.parametrize("after_commit", ["limit", "graph_failure"])
-async def test_session_failure_receipts_exclude_committed_inputs(monkeypatch, after_commit):
+async def test_session_failure_leaves_all_inputs_pending_even_after_a_saved_reading(
+    monkeypatch, after_commit,
+):
     from nora.app.cognition_session import CognitionRunResult
     from tests.unit.cognition_rig import A, B, Script, session
-    from tests.unit.test_cognition_session_runner import proposal, wake_memory
+    from tests.unit.test_cognition_session_runner import wake_memory
 
     memory = wake_memory()
     original_walk = memory.graph.walk
@@ -258,7 +244,11 @@ async def test_session_failure_receipts_exclude_committed_inputs(monkeypatch, af
     monkeypatch.setattr(memory.graph, "walk", walk)
 
     async def behave(by, tools):
-        await by["memory_propose"](**proposal())
+        await by["memory_propose"](statements=[{
+            "type": "reading", "about": [], "what": "They are going",
+            "happened_at": {"source": 101, "expression": None}, "how": "stated",
+            "cite": [{"source": 101, "quote": "we are going"}],
+        }])
 
     script = Script(behave)
     original_run = script.run
@@ -272,7 +262,7 @@ async def test_session_failure_receipts_exclude_committed_inputs(monkeypatch, af
         await session(behave, rooms=(A, B), runner_kwargs={"memory": memory,
             "agent_runner": script})
     assert memory.records.claims  # the readings writer actually committed
-    assert await memory.records.failures("u", 1) == 0
+    assert await memory.records.failures("u", 1) == 1
     assert await memory.records.failures("u", 3) == 1
 
 

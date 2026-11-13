@@ -199,7 +199,7 @@ def test_a_full_restore_subject_builds_no_geocoder_even_with_the_keys_set(
     points both credentials at a name nothing sets. The control: the same
     environment composes a billed client for a snapshot subject, so the test
     can see one."""
-    from nora.app.composition import reverse_geocoder
+    from nora.app.composition_readers import reverse_geocoder
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     default = _built(tmp_path / "default", None)
@@ -218,7 +218,7 @@ def test_a_full_restore_subject_builds_no_geocoder_even_with_the_keys_set(
 def test_both_composed_geocoders_screen_the_areas_they_keep(tmp_path, monkeypatch, enabled) -> None:
     """Both backends get the real area screen, bound to the reversible flag.
     Clean areas survive in both modes; credentials are always withheld."""
-    from nora.app.composition import reverse_geocoder
+    from nora.app.composition_readers import reverse_geocoder
     from nora.app.gatherings import screened_area
     from nora.domain.ports import PlaceArea
 
@@ -311,14 +311,14 @@ _NOTE_BLOCK = (
     "</notes>"
 )
 _WINDOW = (
-    '<group_transcript window="1" description="the room">\n'
+    '<transcript window="1" description="the room">\n'
     '<m n="1" age="just now" from="Miles">where have we been lately?</m>\n'
-    "</group_transcript>"
+    "</transcript>"
 )
 
 
 def _render_her_turn(
-    blocks: str = _NOTE_BLOCK, rendered: str = "notes,group_transcript",
+    blocks: str = _NOTE_BLOCK, rendered: str = "notes,transcript",
 ) -> None:
     """What `build_prefill` leaves on the spans: its `agent.prefill` span
     naming the blocks it served, and the turn's first `chat` call carrying the
@@ -382,7 +382,7 @@ def test_the_registry_names_the_recall_corpus_and_experiment_for_threads_it(monk
 
     assert frozenset({
         "conversational_recall", "cognition_session", "standing_unit",
-        "tool_selection", "tool_selection_cognition",
+        "tool_selection", "tool_selection_cognition", "reply_delivery",
     }) == scenarios.FULL_RESTORE_CORPORA
     assert set(scenarios.CORPUS_ENTRY) >= scenarios.FULL_RESTORE_CORPORA
     assert "conversational_recall" in scenarios.JUDGED_CORPORA
@@ -430,12 +430,12 @@ async def test_a_recall_judge_is_shown_every_block_her_turn_was_shown(judged, cr
     source = graded["source"]
     assert _NOTE_BLOCK in source, "a block she was shown never reached the recall judge"
     assert source.startswith("<m>the window</m>")
-    assert source.count("<group_transcript") == 0, "the window is the source's head, once"
+    assert source.count("<transcript") == 0, "the window is the source's head, once"
     assert "THE DOCTRINE, NOT A BLOCK" not in source, "only the message carrying her window"
 
 
 _RESULTS = (("media_fetch", '{"status": "unavailable"}'), ("send_reply", "sent"))
-_BLOCKS = (("notes", _NOTE_BLOCK), ("group_transcript", _WINDOW))
+_BLOCKS = (("notes", _NOTE_BLOCK), ("transcript", _WINDOW))
 
 
 @pytest.mark.parametrize("criteria", [
@@ -467,8 +467,8 @@ async def test_a_presence_case_is_judged_on_the_window_and_captured_clock(judged
 
 @pytest.mark.parametrize(("blocks", "rendered", "fragment"), [
     (None, "", "no context blocks were captured"),
-    (_NOTE_BLOCK, "notes,events,group_transcript", "['events']"),
-    (_NOTE_BLOCK, "notes,culture,group_transcript", "['culture']"),
+    (_NOTE_BLOCK, "notes,events,transcript", "['events']"),
+    (_NOTE_BLOCK, "notes,culture,transcript", "['culture']"),
 ])
 @pytest.mark.parametrize("criterion", [
     CRITERION, "social_suitability", "personality", "contextual_identity", "public_provenance",
@@ -1085,7 +1085,7 @@ async def test_identity_judgements_receive_the_room_role_the_subject_was_shown(
             '</culture>')
 
     async def drive(_subject, _case, *, now_ms):
-        _render_her_turn(blocks=role, rendered="culture,group_transcript")
+        _render_her_turn(blocks=role, rendered="culture,transcript")
         return Outcome(admitted=True, said=("I keep this circle's reading list.",))
 
     monkeypatch.setitem(ENTRY_POINTS, "tag", EntryPoint(drive=drive, delivers_input=True))

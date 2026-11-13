@@ -30,7 +30,7 @@ from nora.testing.reminders import FakeReminderStore
 T0 = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
 LATER = T0 + timedelta(days=1)
 
-# The repo's own downstream clock is +08:00 (`nora.agent.tools._HKT`), so an
+# The repo's own downstream clock is +08:00 (`nora.agent.toolkit.clock._HKT`), so an
 # offset that is NOT UTC is the realistic input, not an exotic one.
 HKT = timezone(timedelta(hours=8), "HKT")
 

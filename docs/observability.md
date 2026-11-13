@@ -25,7 +25,7 @@ two copies drift and the one that drifts is the one you did not read
 ---
 
 Eval CLI runs also keep private durable evidence on the eval host using the same
-OTel provider, independent of remote exporter flags. See
+OTel provider. Private reproducibility and operator visibility are separate requirements. See
 [Durable run evidence](eval-sop.md#durable-run-evidence) for the lock, contents,
 permissions and incomplete-run semantics.
 
@@ -118,7 +118,7 @@ No additional Loki, Grafana or Quickwit stack is part of this decision. No promp
 management/evaluation platform or replacement for the eval runner is introduced.
 
 Related bundles keep their own responsibilities: [platform bridge operations](../design/platform-bridges/04-operations.md#short-linked-otel-operations-and-routing-amendment)
-carry queue lifetimes/links and the transitional route; [evaluation SDK compatibility](../design/evaluation/08-the-sdk-surface.md#7-observability-migration-compatibility--2026-10-30)
+carry queue lifetimes/links and the transitional route; [evaluation SDK compatibility](../design/evaluation/measurement.md)
 requires populated Sessions after any span-format change. Neither duplicates the
 backend/cutover contract here.
 
@@ -186,6 +186,89 @@ model spans. Read back classification and totals to prevent double counting;
 retain the parent as an agent span. Unknown usage stays unknown, not fabricated
 zero. Raw vision calls need their own model span and per-call usage, including
 individual video windows; an outer comprehension span is not that measurement.
+
+### Evaluation visibility
+
+Evaluation content is explicitly authorized to the configured owner-controlled
+SigNoz collector. The eval CLI reads `[obs.tracing]` from its deployment config
+before executing cases. It requires enabled `otlp_http` and the existing collector
+address: host loopback port 14318 or the `signoz-ingester:4318` Compose alias,
+with `/v1/traces`. Other endpoints (including cloud, legacy Langfuse, file and
+console exporters) are refused before model execution. No ambient exporter is
+re-enabled. Credentials use the existing resolver and never become trace content.
+No configuration switch, host installation or historical import is implied.
+
+The Cognition-loop evaluator (`python -m scripts.cognition_loop`)
+uses the same configured export.
+It resolves the sink before opening private evidence or executing its body,
+and prints the trace reference on stderr while retaining the JSON report on
+stdout. There is no private-only project/inspection exemption. Each run has a
+unique identity; each case runs its recorded wakes in order as one unit's
+session, with metadata binding wake time and the snapshot locator fingerprint.
+The completed writer records its session identity.
+
+`RunEvidence.capture` retains the SDK's in-memory evaluation processors and
+private durable recorder, adds trace identity plus this single checked OTLP
+processor, and restores the original processors afterwards. Content logs remain
+private. During the isolated run the installed Strands tracer emits native GenAI
+message/system/tool events for the evaluation SDK mapper. The exporter promotes
+the SDK payloads onto attributes on exported copies so AI Thread can render them;
+it preserves the in-memory mapper's event input. Each span carries
+run/case binding under one run root and case children; SDK agent/model/tool spans
+retain their actual parentage. The exact formatted dispatch body and private
+lifecycle records also appear as `nora.eval.*` events on their current spans.
+Case start/finish/failure rows belong to the case span; run finish/failure rows
+are recorded and validated while the run root is still live.
+These include context assembly evidence (empty/unavailable/cuts when supplied),
+admitted/deferred tools with schema availability, raw responses and served
+identity headers, retries, errors and transport latency. Missing readings remain
+unavailable, never zero. Deferred tools with no schema expose `unavailable`.
+Tool error records identify a pre-callback argument rejection only when the
+pinned SDK's validation-origin traceback proves that stage. The serialized
+`argument_validation` marker carries no traceback text or arguments beyond the
+existing private capture. Handler failures and unavailable stage evidence keep
+their error outcome; model recovery does not erase the earlier error record.
+The existing collector strips agent aggregate usage from model totals and
+normalizes cache usage; evaluation introduces no second model span or charge.
+
+A synthetic preflight span must export successfully before cases start. Export
+failure and OTel dropped event/attribute counters invalidate visibility and stop
+new model work; missing formatted-request capture invalidates evidence. The
+private terminal record remains distinct from semantic scores. An OTLP success
+means collector acknowledgement only: backend retention and UI readability still
+require readback. During isolated capture, the shared SDK event limit is
+unlimited (`SpanLimits.UNSET` / `max_events=None`, supported by the installed
+OTel `BoundedList`). The previous limit is restored on every exit, along with
+processors and native content settings. Complete canonical private chunks and
+per-call raw chunk events remain intact, including streams over 128 chunks;
+there is no extra span per chunk. A 129-case generated SDK experiment verifies
+case-local lifecycle rows and complete long-stream request/response content with
+zero dropped counters. Explicitly dropped or truncated content remains ERROR.
+Synchronous per-span export deliberately trades evaluation latency for immediate
+failure detection; runtime tracing is unchanged.
+
+The live root validates the evidence prefix before emitting its terminal; only
+its own not-yet-due terminal is deferred. Final model errors or an invalid receipt
+produce `capture.status=failed`, an error root and a `run_failed` event. Successful
+capture is `complete`, with the execution exit code recorded separately from
+semantic scores. The root's own export status is still `pending_root`: it cannot
+acknowledge its own delivery. After it ends, the private recorder records the
+export acknowledgement or failure. A final root network failure cannot be written
+to an unreachable backend; the private failure/CLI ERROR is authoritative, not a
+claimed completed backend trace. The Cognition-loop evaluator still completes its
+report on late capture/export failure: the evidence receipt is marked ERROR, the
+run verdict follows it, and the process exits nonzero. Each run writes its report
+once into its own private output directory.
+
+Acceptance before another paid evaluation: use generated inputs through the real
+SDK and deterministic local provider, including a multi-turn tool trajectory and
+judge invocation. Verify authorized export and unauthorized-sink exclusion, full
+system/messages/tool schemas/results, run/case/model/tool navigation, model-only
+usage, and negative missing-capture/export controls. Then read the generated trace
+back from the existing collector/backend and rendered AI Thread, checking exact
+content and totals. Source tests or HTTP 200 alone do not satisfy this acceptance.
+No production messages are imported. Until the installed source and operator UI
+are verified together, operator-visible acceptance remains unavailable.
 
 ### Recording, content and retention are separate
 
@@ -361,7 +444,7 @@ That is R-76; `docs/maintainers/conventions-rationale.md` has the argument and t
 Metric names are append-only. The six retired `nora_message_reading_*` counters
 stay declared at zero so saved queries remain valid; the later `nora_extraction_*`
 family left with the per-message extraction worker it measured
-(design/unified-memory/27 §2). Reading statements now persist through Cognition
+(design/unified-memory/graph.md). Reading statements now persist through Cognition
 step one; its own trace and budget instruments measure that path.
 
 **Three states on every instrument, never two** — `ok` / `nothing_found` /
@@ -583,7 +666,7 @@ other exit it always did (dream-screened replies, place lookups) — but no
 current call site uses it to pre-screen content bound for a trace: the two
 raw call sites below never send real content in the first place (see "What a
 raw call owes", above), so there is nothing left for it to screen there
-either. For anything Agent-backed, `design/13`'s lever is the only mechanism,
+either. For anything Agent-backed, `design/13-trace-content-and-redaction.md`'s lever is the only mechanism,
 and it is not yet turned on.
 
 ---
@@ -982,13 +1065,13 @@ Recorded here so they are findings rather than surprises.
   moving onto strands.telemetry (2026-09-19).** Before this, the hand-rolled
   wrapper around those calls ran `nora.agent.security.trace_safe` on the
   prompt/completion before putting either on a span — a whole-text identifier/
-  coordinate screen, independent of `design/13`'s native-lever question. Now
+  coordinate screen, independent of `design/13-trace-content-and-redaction.md`'s native-lever question. Now
   that the call runs through a real Strands `Agent`, its content reaches the
   collector however Strands' own event recording writes it, with no seam left
   to substitute pre-screened text — so this content is exactly as unredacted
   as the tag turn's own Agent-backed content already was (consistent with the
   existing precedent, not a new exposure class, but a real guarantee this
-  specific call site used to have and no longer does). `design/13`'s native
+  specific call site used to have and no longer does). `design/13-trace-content-and-redaction.md`'s native
   lever is the only mechanism left that could restore it, for every
   Agent-backed call at once, and it is off by default.
 - **The relevance gate's prompt (every room's transcript, including rooms
@@ -1001,13 +1084,13 @@ Recorded here so they are findings rather than surprises.
   never went through before. Before this change, the gate's span carried
   only its own safe verdict JSON; the comment in `nora/ingest/
   relevance_gate.py` that said the prompt was never put on the wire was true
-  until this date. `design/evaluation/08-the-sdk-surface.md` §4.2 had
+  until this date. `design/evaluation/measurement.md`  «Sampling and stability» had
   already named this exact fork — "either unscreened model text goes on the
   collector wire, or a second gate-specific mapper is written… 40 of 150
   [eval] cases wait on it" — one day before the session that resolved it.
   The operator was asked directly and chose to accept it, specifically to
   unblock that eval-suite gap; this was not verified by re-running the eval
   mapper against a live case and should be confirmed by whoever picks that
-  up next. `design/13`'s native redaction lever governs this content too
+  up next. `design/13-trace-content-and-redaction.md`'s native redaction lever governs this content too
   (`Tracer._redact` runs on both the Agent path and this raw-span path), so
   turning it on would cover both at once.

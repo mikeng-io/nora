@@ -1,15 +1,16 @@
 """The corpus port — `evals/corpora/*.yaml` as `strands_evals.Case` objects.
 
-A corpus is a set of cases and nothing else (`01-boundaries.md` §2). Every
+A corpus is a set of cases and nothing else
+(`design/evaluation/subject.md` «Obtained through production»). Every
 case names a REAL room at a REAL instant (`snapshot:`), and everything she
 knows when it starts is what that room held then — read from the deployment's
 clone and written into the case's own sandbox by `evals.backbone._drive`.
 There is no other way to state what she knows: no `knows:`, no `config:`, no
 `policy:`, no `room:`, no `now:`. Each of those was a case compensating by
-hand for a subject that was not the deployment's (`11-the-sandbox-rebuild.md`
+hand for a subject that was not the deployment's (`design/evaluation/subject.md`
 §1.2), and under one path they have nothing left to say.
 
-THREE STATES, and the middle one is the point (`11-the-sandbox-rebuild.md`
+THREE STATES, and the middle one is the point (`design/evaluation/subject.md`
 §7.1):
 
 - **active** — anchored; runs.
@@ -31,8 +32,10 @@ import yaml
 from strands_evals import Case, Experiment
 
 from evals import pseudonyms
-from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, ToolRouteGrader, nora_task
+from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, nora_task
+from evals.grading_contract import GradingContract
 from evals.recall import evidence_problems
+from evals.route_grader import ToolRouteGrader
 from nora.subject.sandbox_index import EMBEDDER_FROM_HOST
 from nora.subject.transport import TRANSPORT_STATES
 
@@ -102,7 +105,7 @@ class Census:
     #:
     #: **This count is what makes the state safe to have.** A counterfactual
     #: is a manipulation, not a reconstruction; an aggregate that averaged the
-    #: two would let `11-the-sandbox-rebuild.md`'s rule erode by ARITHMETIC
+    #: two would let `design/evaluation/subject.md`'s rule erode by ARITHMETIC
     #: rather than by anybody deciding to relax it. Example: the culture arm's
     #: `-chronicle` case, where a chronicle and an account are the same facts
     #: in two representations and no room ever held both at once.
@@ -134,7 +137,7 @@ def _rows(name: str) -> list[dict[str, Any]]:
             raise ValueError(
                 f"{name}: corpus-level {stale} is not a thing a corpus states; "
                 "the subject is the deployment's, and a corpus cannot "
-                "configure it (11-the-sandbox-rebuild.md §1.2)"
+                "configure it (design/evaluation/subject.md)"
             )
         return list(doc.get("cases") or [])
     rows = list(doc)
@@ -391,6 +394,7 @@ CORPUS_ENTRY: dict[str, str] = {
     "relevance_gate": "gate",
     "proactive_act": "proactive_act",
     "tool_selection": "tag",
+    "reply_delivery": "tag",
     # S2 over the Cognition catalogue. `entry: dreamer` with
     # `category: cognition` is driven by `evals.rebuilt.entry._cognition_probe`
     # through `CognitionSessionRunner.probe`, on the runner the subject's
@@ -439,14 +443,14 @@ CORPUS_ENTRY: dict[str, str] = {
 #: before composition; the read-only source is never migrated.
 FULL_RESTORE_CORPORA: frozenset[str] = frozenset({
     "conversational_recall", "cognition_session", "standing_unit",
-    "tool_selection", "tool_selection_cognition",
+    "tool_selection", "tool_selection_cognition", "reply_delivery",
 })
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied. One grader only:
 #: `sample_read` groups every evaluator's labels under one case, so adding
 #: `MeetsGrader` here would let a reply verdict blur a routing one.
 ROUTED_CORPORA = frozenset({
-    "tool_selection", "tool_selection_cognition", "cognition_session",
+    "tool_selection", "tool_selection_cognition", "cognition_session", "reply_delivery",
 })
 
 #: S3 (grounding)/S9 (injection) — "did she reply" is structural; "was the
@@ -563,6 +567,7 @@ def experiment_for(
     name: str, *, source_url: str, judge: Any = None, sample: int = 1,
     only: frozenset[str] | None = None, memory_index: bool = False,
     overrides: dict[str, Any] | None = None,
+    contract: GradingContract | None = None,
 ) -> tuple[Experiment, Any]:
     """A ready-to-run `(Experiment, task)` pair for one corpus.
 
@@ -588,6 +593,8 @@ def experiment_for(
     from evals.backbone import sampled
 
     cases = selected_cases(name, only=only, memory_index=memory_index)
+    if contract is not None:
+        cases = [contract.bind_case(name, case) for case in cases]
     if sample > 1:
         cases = [draw for base in cases for draw in sampled(base, sample)]
     spec = Spec(

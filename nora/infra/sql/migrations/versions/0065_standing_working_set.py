@@ -1,6 +1,6 @@
 """standing.working_set / standing_revision.working_set -- a second, small
 structured field beside `body`: things the fold found this turn and has not
-yet given the room (design/standing-compact/30-working-set.md, issue #445).
+yet given the room (design/standing-ledger/10-what-standing-holds.md, issue #445).
 
 WHAT WAS MISSING. Standing's 1200-character paragraph is rewritten whole
 every turn and ranks "found" below "concluded or committed" (10-changes §5),

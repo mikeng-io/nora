@@ -82,6 +82,7 @@ from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from datetime import datetime
 from typing import Any
 
+from nora.agent.catalog.model import turn_occasion
 from nora.agent.intent_router import route_intent
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
@@ -90,7 +91,6 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room, trigger_message_ids
-from nora.agent.tools import turn_occasion
 from nora.domain import audience as audience_names
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionLogRecorder
@@ -179,9 +179,10 @@ def _nothing_answered(handle: Any) -> bool:
     gate on this rather than on «nothing delivered»: a heads-up sent with
     `more=true` IS delivered, so gating on delivery alone would drop an answer
     she then wrote as prose, or a turn cut off mid-work, while the turn read as
-    `replied`."""
-    return (not handle.deliverer.delivered
-            or bool(getattr(handle.guard, "reply_still_owed", False)))
+    `replied`. `send_unresolved` vetoes all three: a send killed mid-wire
+    may already be in the room, and speaking again could repeat it."""
+    return (bool(handle.guard.answer_still_owed)
+            and not getattr(handle.deliverer, "send_unresolved", False))
 
 class EngagementPipeline:
     def __init__(
@@ -457,8 +458,8 @@ class EngagementPipeline:
         `{attempt, event_id, attempt_id, queue_wait_ms}` — carried as plain
         call metadata rather than on `EngagementRequest` (the domain type
         stays queue-agnostic). The generation root opens as a SEPARATE
-        empty-parent trace linked to that attempt (design 04: "linked to the
-        relevant consumer attempt … not a child of a queue trace").
+        empty-parent trace linked to that attempt
+        (design/platform-bridges/04-operations.md: not a child of a queue trace).
 
         Returns the turn's disposition for the work claim ("rejected",
         "queue_full", or the turn outcome), never None.
@@ -736,7 +737,7 @@ class EngagementPipeline:
             # `ReplyGuard` — and the R-7 unknown-tool veto message it renders —
             # must be built from the SAME set `.build()` below uses, or an
             # unauthorized conversation's guard would still disclose a
-            # `pulse_*` name it cannot call.
+            # `demo_*` name it cannot call.
             convo = self._policy.conversation(msg.platform, msg.conversation_id)
             allowed_mcp = convo.tools if convo is not None else frozenset()
             # DEC-74: the per-conversation location-disclosure trust, sourced the
@@ -885,12 +886,11 @@ class EngagementPipeline:
                     tool_hooks=surface.hooks,
                     tag_message=tag_message, limits=surface.limits(self._limits), ctx=ctx,
                     timeout_seconds=self._timeout_seconds, metrics=self._metrics,
-                    # This pipeline IS the tag path; the NAME stays at the
-                    # call site rather than becoming a default so an omitted
-                    # one cannot compile (the A8 filter is `audience="tag"`).
-                    # It is `nora.domain.audience.TAG` rather than a literal, because
-                    # `reasoning_strip_log.path` reads the same vocabulary.
+                    # This pipeline IS the tag path; the NAME stays explicit at
+                    # the call site, and as `nora.domain.audience.TAG` rather
+                    # than a literal, because `reasoning_strip_log.path` reads it.
                     audience=audience_names.TAG,
+                    force_send_reply=request.occasion == "tag",
                 )
                 # Inside the `with`, so it lands on the invoke span rather than
                 # on the turn: `ok` and `stop_reason` are what this stage

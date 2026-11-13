@@ -25,7 +25,7 @@ _FIELDS = (
 )
 
 
-def _row_to_event(r: Row[Any]) -> ComputerEvent:
+def _row_to_event(r: Row[*tuple[Any, ...]]) -> ComputerEvent:
     return normalise_computer_event(ComputerEvent(**{f: getattr(r, f) for f in _FIELDS}))
 
 

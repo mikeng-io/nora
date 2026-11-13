@@ -30,6 +30,7 @@ from pathlib import Path
 
 import pytest
 
+from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.ports import (
     DECLARED_STATUS_EXTENSIONS,
     MALFORMED_RESULT,
@@ -40,7 +41,7 @@ from nora.agent.ports import (
     adapt,
     contract_violation,
 )
-from nora.agent.tools import NATIVE_TOOLS, _spec
+from nora.agent.toolkit.spec import _spec
 
 AGENT_PACKAGE = Path(__file__).parent.parent / "nora" / "agent"
 TOOLS_PATH = AGENT_PACKAGE / "tools.py"
@@ -162,23 +163,67 @@ def _built_tools() -> dict[str, str | None]:
     absent by construction: it is `plugin=True`, so `build_tool_specs` never
     names it in a `_spec(...)` call and there is no body of ours to classify.
     """
-    tree = ast.parse(TOOLS_PATH.read_text())
-    funcs: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            funcs[node.name] = node
+    # Scanned across every module that now carries tool code (the area split
+    # moved `_spec` calls into each area's `build()`); the callable usually sits
+    # in the same file — siblings resolved by the `_make_<callable>` owner.
+    from tests.tool_view import _tool_source_paths
+
+    trees: dict[Path, ast.Module] = {}
+    funcs: dict[str, list[ast.FunctionDef | ast.AsyncFunctionDef]] = {}
+    for path in _tool_source_paths():
+        tree = ast.parse(path.read_text())
+        trees[path] = tree
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                funcs.setdefault(node.name, []).append(node)
+
+    def resolve(callable_name: str, spec_tree: ast.Module) -> ast.AST:
+        candidates = funcs[callable_name]
+        if len(candidates) == 1:
+            return candidates[0]
+        in_spec = [n for n in ast.walk(spec_tree) if n in candidates]
+        if in_spec:
+            return in_spec[0]
+        factory = f"_make_{callable_name}"
+        for t in trees.values():
+            if any(getattr(n, "name", "") == factory
+                   for n in ast.iter_child_nodes(t)):
+                owned = [n for n in ast.walk(t) if n in candidates]
+                if owned:
+                    return owned[0]
+        return candidates[0]
+
+    def factory_inner(factory_name: str, tool_name: str):
+        # `_spec("tool", _make_<tool>(deps...))` binds the inner callable the
+        # factory returns; resolve the nested def named after the tool.
+        for factory in funcs.get(factory_name, []):
+            for inner in ast.walk(factory):
+                if (
+                    isinstance(inner, ast.FunctionDef | ast.AsyncFunctionDef)
+                    and inner.name == tool_name
+                ):
+                    return inner
+        return None
 
     out: dict[str, str | None] = {}
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        if getattr(node.func, "id", "") != "_spec" or not node.args:
-            continue
-        first = node.args[0]
-        if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
-            continue  # the `def _spec(name, call)` definition itself has no literal
-        fn = funcs[first.value]
-        out[first.value] = ast.unparse(fn.returns) if fn.returns else None
+    for tree in trees.values():
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, "id", "") != "_spec" or len(node.args) < 2:
+                continue
+            first, second = node.args[0], node.args[1]
+            if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
+                continue  # `def _spec(name, call)` itself has no literal
+            if isinstance(second, ast.Name):
+                fn = resolve(second.id, tree)
+            elif isinstance(second, ast.Call) and isinstance(second.func, ast.Name):
+                fn = factory_inner(second.func.id, first.value)
+            else:
+                continue
+            if fn is None:
+                continue
+            out[first.value] = ast.unparse(fn.returns) if fn.returns else None
     return out
 
 
@@ -276,7 +321,8 @@ def test_spec_carries_the_contract_rather_than_the_default(tool: str) -> None:
 def test_no_agent_module_returns_a_status_outside_the_vocabulary() -> None:
     """ADR 0009 §5: the constant is the single source, scanned not hand-listed.
 
-    Every `{"status": "<literal>"}` in `nora.agent.**` — the tools, the relay,
+    Every `{"status": "<literal>"}` in `nora.agent.**` plus the area tool
+    sources — the tools, the relay,
     the whereis ladder, the arithmetic refusals — is a status the model can
     actually be handed, so each one has to be a value the validator will accept.
     A literal outside the vocabulary is a tool that fails closed on its own
@@ -294,8 +340,10 @@ def test_no_agent_module_returns_a_status_outside_the_vocabulary() -> None:
     grows a call site here — or the day a second value goes the same way — this
     test says which one and why.
     """
+    from tests.tool_view import _tool_source_paths
+
     found: dict[str, list[str]] = {}
-    for path in sorted(AGENT_PACKAGE.rglob("*.py")):
+    for path in sorted(set(AGENT_PACKAGE.rglob("*.py")) | set(_tool_source_paths())):
         for node in ast.walk(ast.parse(path.read_text())):
             if not isinstance(node, ast.Dict):
                 continue

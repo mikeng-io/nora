@@ -23,7 +23,7 @@ from tests.unit.test_cognition_session_lifecycle import (
     Rig,
     ScriptedAgent,
     _rig,
-    close_written,
+    ok,
 )
 
 
@@ -50,8 +50,12 @@ def test_the_three_limit_reasons_are_the_three_strands_names():
 
 
 @pytest.mark.parametrize("reason", LIMIT_STOP_REASONS)
-async def test_a_session_that_stops_at_a_limit_is_failed_infra_and_strikes_nothing(reason):
+@pytest.mark.parametrize("with_memory", [False, True])
+async def test_a_bounded_session_leaves_stimuli_pending(reason, with_memory):
     rig = _rig(agent=ScriptedAgent(script=[_stops_at(reason)]))
+    if with_memory:
+        from tests.unit.test_cognition_session_runner import wake_memory
+        rig.runner._memory = wake_memory()
     for _ in range(3):
         await rig.say()
     await _wake(rig)
@@ -60,7 +64,6 @@ async def test_a_session_that_stops_at_a_limit_is_failed_infra_and_strikes_nothi
     assert rig.ends() == ["failed"]
     assert _causes(rig) == ["infra"]
     assert reason in rig.detail()
-    assert rig.ledger.closes == []          # nothing closed, so nothing struck
     assert rig.carried() == []              # no carry row of any state
     view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert [s.id for s in view.pending] == [1, 2, 3]
@@ -96,11 +99,10 @@ async def test_a_limit_stop_backs_the_unit_off_and_repeated_ones_grow_it(reason)
     assert await rig.tick() == []
     assert rig.agent.calls == 2
     assert _causes(rig) == ["infra", "infra"]
-    assert rig.ledger.closes == []
 
 
 async def test_a_session_that_ends_normally_still_closes_and_resets_the_streak():
-    rig = _rig(agent=ScriptedAgent(script=[_stops_at("limit_turns"), close_written]))
+    rig = _rig(agent=ScriptedAgent(script=[_stops_at("limit_turns"), ok]))
     await rig.say()
     await _wake(rig)
     assert rig.ends() == ["failed"]
@@ -112,13 +114,14 @@ async def test_a_session_that_ends_normally_still_closes_and_resets_the_streak()
     assert view.failures == 0
 
 
-async def test_an_unclosed_item_of_a_normal_end_is_still_struck_as_before():
-    """The control: the SAME unclosed agenda, ended with `end_turn`, closes
-    `waiting` with a strike. The limit stop is what changed it."""
+@pytest.mark.parametrize("with_memory", [False, True])
+async def test_end_turn_consumes_stimuli_without_any_tool_call(with_memory):
     rig = _rig(agent=ScriptedAgent(script=[_stops_at("end_turn")]))
+    if with_memory:
+        from tests.unit.test_cognition_session_runner import wake_memory
+        rig.runner._memory = wake_memory()
     await rig.say()
     await _wake(rig)
-    assert rig.ends() == ["closed"]
-    assert [(c.reason, c.strike) for _, c, _ in rig.ledger.closes] == [("waiting", 1)]
-
-
+    assert rig.agent.calls == 1 and rig.ends() == ["closed"]
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
+    assert not view.pending and not view.carry

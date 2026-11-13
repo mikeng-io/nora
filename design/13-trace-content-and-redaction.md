@@ -24,6 +24,19 @@ Everything below was verified against the installed `strands-agents==1.50.2`
 source and by running its `Tracer` under each configuration, not read from
 documentation.
 
+## Authorized evaluation exception
+
+The operator authorizes full evaluation content to the configured owner-local
+SigNoz sink. [Evaluation visibility](../docs/observability.md#evaluation-visibility)
+owns its export policy, SDK-native format and readback acceptance. This exception
+includes full prompts, injected context, tool schemas, inputs and results; it
+does not authorize cloud export or change ordinary runtime redaction.
+The capture preserves full stream content with scoped SDK event limits; its live
+root terminal and the later private export acknowledgement are distinct evidence
+boundaries, specified in the same observability section. Private
+reproducibility alone does not satisfy operator visibility. No historical trace
+import is part of this change.
+
 ## 1. What reaches the exporter today
 
 Every tag emits an agent span and one `chat` span per model call. Between them
@@ -40,7 +53,7 @@ they carry:
 | `tag_id`, `conversation_id`, `doctrine_sha256` | span attributes | n/a — provenance only, no content (`nora.obs.tracing.trace_attributes`, and a test pins it) |
 
 R-18 (`nora.agent.egress`) guards what reaches the GROUP. Nothing guards what
-reaches the trace, and design/12 §3 already states the general form of this
+reaches the trace, and design/12-prompt-tool-skill-boundaries.md §3 already states the general form of this
 mistake: *scope is enforced at assembly, never at egress*. By the time a span
 exists the disclosure is already authorised.
 

@@ -11,16 +11,17 @@ from pathlib import Path
 
 import pytest
 
+import nora.documents
 from nora.agent import tool_choice
-from nora.agent.tools import GRAPH_MEMORY_TOOLS
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
+from nora.app import composition_cognition
 from nora.app.composition import (
     Dependencies,
-    StartupError,
-    _require_a_sendable_public_url,
     build_dependencies,
 )
 from nora.app.fire import FirePath
 from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
+from nora.app.startup import StartupError
 from nora.config import load
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
@@ -178,21 +179,8 @@ async def test_dependencies_exposes_the_reminders_store(cfg):
     assert isinstance(deps.reminders, SqlReminderStore)
 
 
-async def test_dependencies_games_client_is_none_without_pulse_api_token(cfg, monkeypatch):
-    """`nora.web.games`'s `PulseGamesClient` is a separate, REST credential
-    (`PULSE_API_TOKEN`) from the LLM tool-calling path's `[tools.mcp.pulse]`
-    MCP mount (`PULSE_MCP_TOKEN`) — this fixture's environment sets neither,
-    so the web layer must degrade to `None` (a 503), never a guessed client
-    pointed at nothing."""
-    monkeypatch.delenv("PULSE_API_TOKEN", raising=False)
-    deps = await build_dependencies(cfg)
-    assert deps.games_client is None
 
 
-async def test_dependencies_builds_a_games_client_when_pulse_api_token_is_set(cfg, monkeypatch):
-    monkeypatch.setenv("PULSE_API_TOKEN", "test-pulse-token")
-    deps = await build_dependencies(cfg)
-    assert deps.games_client is not None
 
 
 async def test_dependencies_speaker_is_none_when_tts_is_disabled(cfg, monkeypatch):
@@ -266,7 +254,7 @@ async def test_the_doctrine_the_root_builds_carries_no_capability_section(cfg):
     # name followed by an em-dash.
     import re
 
-    from nora.agent.tools import NATIVE_TOOLS
+    from nora.agent.catalog.entries import NATIVE_TOOLS
     names = "|".join(re.escape(n) for n in NATIVE_TOOLS)
     assert not re.search(rf"^- ({names}) — ", text, re.MULTILINE), "tool-catalogue line present"
 
@@ -568,9 +556,9 @@ async def test_the_participation_trigger_is_wired_to_the_real_fire_path(cfg):
     assert (await _participation_trigger_of(
         override_config(cfg, {"participation.enabled": True})
     )) is None, (
-        "[participation] enabled alone builds NOTHING (design 36): the trigger "
+        "[participation] enabled alone builds NOTHING: the trigger "
         "is the gate's, and a turn with no gate in front of it is the cost "
-        "design 36 exists to stop paying"
+        "design/ambient-loop/01-stages-and-seams.md exists to stop paying"
     )
 
     # `shadow_channel` is set because the shipped default is `shadow = true`
@@ -839,7 +827,7 @@ async def test_subagent_off_registers_no_backend(cfg, no_build_stamp):
     try:
         assert deps.subagent_backend is None
         # and the four model-facing tools are withheld from every turn
-        from nora.agent.tools import SUBAGENT_TOOLS
+        from nora.agent.catalog.groups import SUBAGENT_TOOLS
 
         assert deps.engagement._tool_registry._withheld >= SUBAGENT_TOOLS
     finally:
@@ -861,7 +849,7 @@ async def test_subagent_on_registers_its_backend_under_its_kind_and_the_poller_r
     try:
         assert isinstance(deps.subagent_backend, SubagentBackend)
         # the tools are offered, and their desk launches into THIS backend
-        from nora.agent.tools import SUBAGENT_TOOLS
+        from nora.agent.catalog.groups import SUBAGENT_TOOLS
 
         registry = deps.engagement._tool_registry
         assert registry._withheld.isdisjoint(SUBAGENT_TOOLS)
@@ -1642,24 +1630,6 @@ async def test_cognition_off_imports_no_model_machinery(cfg, tmp_path, monkeypat
     assert "nora.app.cognition_agent_runner" not in sys.modules
 
 
-async def test_the_evaluators_floors_ready_follows_the_one_agenda_table(
-    cfg, tmp_path, monkeypatch,
-):
-    """`nora.app.cognition_wiring.AGENDA_SKILLS` is the table the evaluator and the age gauge
-    both read. Production maps the `time` skill, so floors are ready; a table without it
-    must leave every floor inert (a root that hard-coded the answer would not follow it)."""
-    from types import MappingProxyType
-
-    import nora.app.cognition_wiring as wiring
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    shipped = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert shipped.wake_evaluator is not None and shipped.wake_evaluator._floors_ready is True
-    monkeypatch.setattr(wiring, "AGENDA_SKILLS", MappingProxyType(
-        {k: v for k, v in wiring.AGENDA_SKILLS.items() if k != "time"},
-    ))
-    patched = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert patched.wake_evaluator is not None and patched.wake_evaluator._floors_ready is False
 
 
 async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator(
@@ -1667,10 +1637,14 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
 ):
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, _SESSION_ON))
-    runner, evaluator = deps.cognition_runner, deps.wake_evaluator
-    assert runner is not None and evaluator is not None
+    # `deps.cognition_runner` is the `SubconsciousExecutor`: the Dreamer
+    # lane owns admission and cancellation, the session runner it holds
+    # (`._runner`) owns everything the session itself was composed with.
+    executor, evaluator = deps.cognition_runner, deps.wake_evaluator
+    assert executor is not None and evaluator is not None
+    runner = executor._runner
     assert evaluator.has_wake_hook
-    assert evaluator._on_wake == runner.wake_hook          # the SAME hook, not a copy
+    assert evaluator._on_wake == executor.wake_hook          # the SAME hook, not a copy
     assert deps.cognition_shutdown is not None and not deps.cognition_shutdown.done
     # A stopping process lets a running session finish for this long before it cancels it
     # (the PR-7 grace; `docker-compose.yml`'s `stop_grace_period` is sized above it).
@@ -1701,15 +1675,15 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     # R-99 admits the agenda binding independently of a read's own room destination.
     assert all({"agenda_room", "room"} <= names for names in agent._param_names.values())
     assert set(agent._param_names) <= runner._read_only_tools
-    # The session's instruction is the Dreamer's objective for it, read from
-    # the bind-mounted corpus, its own prelude first (not the shared doctrine),
-    # and the composed runner injects the Register skill for a
-    # `message` agenda and records it; `time` is mapped, so the floors wake.
+    # The session's instruction is its own objective alone, read from the
+    # bind-mounted corpus (never the shared Dreamer doctrine), and the composed
+    # runner injects the Register skill for a `message` agenda and records it;
+    # `time` is mapped, so the floors wake.
     text, sha = runner._doctrine()
-    assert text.startswith('<dreamer_doctrine name="cognition-prelude">')
-    assert '<dreamer_objective name="cognition">' in text and sha
-    assert "# Skill: cognition-register" in runner._skill_text_for(["message"])
-    assert set(runner._skill_versions_for(["message"])) == {"cognition-register"}
+    assert text.startswith("You are Nora. This is the part of you")
+    assert "<dreamer_" not in text and sha
+    assert runner._skill_text_for()
+    assert set(runner._skill_versions_for()) == {"cognition-register"}
     assert evaluator._floors_ready is True
     # Only units with a home room are woken: `wedding` names none.
     assert sorted(evaluator._units()) == ["friends"]
@@ -1726,58 +1700,31 @@ def _dreamer_tree(tmp_path: Path) -> Path:
     return root
 
 
-@pytest.mark.parametrize("how", ["prelude deleted", "prelude applies to nothing",
-                                 "prelude applies elsewhere", "skill deleted"])
-async def test_a_session_whose_prelude_or_skill_is_missing_is_a_startup_error(
+@pytest.mark.parametrize("how", ["objective deleted", "skill deleted"])
+async def test_a_session_whose_objective_or_skill_is_missing_is_a_startup_error(
     cfg, tmp_path, how,
 ):
-    """Without its prelude, `cognition` silently reads the shared Dreamer doctrine («you
-    look; you do not act»), and a mapped skill that is not installed would raise a raw
-    `LookupError` out of the composition. Both must be a named `StartupError`."""
+    """A missing `cognition` objective, or a mapped skill that is not installed, would
+    raise a raw `LookupError` out of the composition. Both must be a named
+    `StartupError`."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     root = _dreamer_tree(tmp_path)
-    prelude = root / "preludes" / "cognition-prelude.md"
-    if how == "prelude deleted":
-        prelude.unlink()
-    elif how == "skill deleted":
-        (root / "skills" / "cognition-register.md").unlink()
+    if how == "objective deleted":
+        (root / "objectives" / "cognition.md").unlink()
     else:
-        applies = "[]" if how == "prelude applies to nothing" else "[note-merge]"
-        prelude.write_text(
-            prelude.read_text(encoding="utf-8").replace(
-                "applies_to: [cognition]", f"applies_to: {applies}",
-            ),
-            encoding="utf-8",
-        )
-    expect = "cognition-register" if how == "skill deleted" else "cognition-prelude"
+        (root / "skills" / "cognition-register.md").unlink()
+    expect = "cognition-register" if how == "skill deleted" else "cognition"
     with pytest.raises(StartupError, match=expect):
         await build_dependencies(override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}))
 
 
 async def test_the_same_tree_builds_when_nothing_is_taken_out_of_it(cfg, tmp_path):
-    """The positive control of the three refusals above: an untouched copy is accepted."""
+    """The positive control of the refusals above: an untouched copy is accepted."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "dreamer.dir": _dreamer_tree(tmp_path)},
     ))
     assert deps.cognition_runner is not None
-
-
-async def test_a_prelude_deleted_after_startup_is_refused_per_session(cfg, tmp_path):
-    """Hot reload: the file goes after a good start. The next session's instruction would
-    be the shared doctrine; it is refused by name instead."""
-    from nora.app.cognition_wiring import PreludeMissingError
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    root = _dreamer_tree(tmp_path)
-    deps = await build_dependencies(override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}))
-    runner = deps.cognition_runner
-    assert runner is not None and runner._doctrine()[0].startswith(
-        '<dreamer_doctrine name="cognition-prelude">',
-    )
-    (root / "preludes" / "cognition-prelude.md").unlink()
-    with pytest.raises(PreludeMissingError, match="cognition-prelude"):
-        runner._doctrine()
 
 
 async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withholds(
@@ -1790,23 +1737,23 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     on = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "record_query.enabled": True},
     ))
-    assert "record_query" not in off.cognition_runner._read_only_tools
-    assert "record_query" in on.cognition_runner._read_only_tools
+    assert "record_query" not in off.cognition_runner._runner._read_only_tools
+    assert "record_query" in on.cognition_runner._runner._read_only_tools
     # `character_read` follows `[culture] enabled` the same way (self-growth C4).
     with_culture = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "culture.enabled": True},
     ))
-    assert "character_read" not in off.cognition_runner._read_only_tools
-    assert "character_read" in with_culture.cognition_runner._read_only_tools
-    wired = off.cognition_runner._read_only_tools
+    assert "character_read" not in off.cognition_runner._runner._read_only_tools
+    assert "character_read" in with_culture.cognition_runner._runner._read_only_tools
+    wired = off.cognition_runner._runner._read_only_tools
     assert {"note_read", "about", "where_been", "event_search"} <= wired
     assert {"rollup_read", "standing_read"} <= wired                    # DEC-246
     assert "memo_read" in wired                                         # DEC-306
     assert "social_read" in wired       # a SELECT, so no flag
     # Built for a real room they are real, read-only tools, and only wired ones.
-    built = on.cognition_runner._read_tools_for("friends", [Room("signal", "g1")])
+    built = on.cognition_runner._runner._read_tools_for("friends", [Room("signal", "g1")])
     names = {t.tool_name for t in built}
-    assert names and names <= on.cognition_runner._read_only_tools
+    assert names and names <= on.cognition_runner._runner._read_only_tools
     assert {"note_read", "record_query"} <= names
 
 
@@ -1817,25 +1764,24 @@ async def test_the_configured_model_window_reaches_the_runner_the_overflow_proof
     a configured window and fraction are what the runner proves one against."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     default = (await build_dependencies(override_config(cfg, _SESSION_ON))).cognition_runner
-    assert default is not None and default._window_tokens is None
+    assert default is not None and default._runner._window_tokens is None
     deps = await build_dependencies(override_config(cfg, {
         **_SESSION_ON, "cognition.model_window_tokens": 123_456,
         "cognition.overflow_window_fraction": 0.5,
     }))
     assert deps.cognition_runner is not None
-    assert (deps.cognition_runner._window_tokens, deps.cognition_runner._window_fraction) == (
-        123_456, 0.5)
+    assert (deps.cognition_runner._runner._window_tokens,
+            deps.cognition_runner._runner._window_fraction) == (123_456, 0.5)
 
 
 async def test_cognition_on_that_built_no_runner_refuses_to_boot(
     cfg, tmp_path, monkeypatch,
 ):
     """The boot check: a loop that wakes and runs no session must not boot."""
-    from nora.app import composition
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    monkeypatch.setattr(composition, "build_cognition_runner", lambda **kw: None)
-    with pytest.raises(composition.StartupError, match="no session runner"):
+    monkeypatch.setattr(composition_cognition, "build_cognition_runner", lambda **kw: None)
+    with pytest.raises(StartupError, match="no session runner"):
         await build_dependencies(override_config(cfg, _SESSION_ON))
 
 
@@ -1853,7 +1799,7 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert "record_query" not in deps.cognition_runner._read_only_tools   # the tool is OFF
+    assert "record_query" not in deps.cognition_runner._runner._read_only_tools  # the tool is OFF
     engine = create_sql_engine(clean_pg_url)
     now = 1_790_000_000_000
     try:
@@ -1882,23 +1828,37 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
         unit="friends", pending=pending, home_room=Room("signal", "g1"), now_ms=now,
         last_session_ms=None,
     )
-    grounding = await deps.cognition_runner._grounder("friends", situation.agenda.items, pending)
+    with pytest.raises(ValueError, match="outside the unit"):
+        await deps.cognition_runner._runner._grounder(
+            "friends", situation.agenda.items, pending)
+    valid = build_situation(unit="friends", pending=pending[:2], home_room=Room("signal", "g1"),
+                            now_ms=now, last_session_ms=None)
+    grounding = await deps.cognition_runner._runner._grounder(
+        "friends", valid.agenda.items, pending[:2])
     said = {r.message_id: r for r in grounding.records.values()}
     assert set(said) == {ids[0]}                    # the hidden one and the OTHER UNIT's are absent
     assert said[ids[0]].text == "dinner friday?" and said[ids[0]].room == Room("signal", "g1")
     assert "+852" not in repr(grounding)            # R-18: no platform id reaches the prompt
+    from datetime import UTC
+
+    from nora.language.cognition_render import render_agenda
+    prompt = render_agenda(valid.agenda.items, stimuli={s.id: s for s in pending[:2]},
+                           grounding=grounding,
+                           now_ms=now, tz=UTC)
+    assert "dinner friday?" in prompt
+    assert "+852" not in prompt
+    assert "other unit words" not in prompt and "a hidden one" not in prompt
 
 
 async def test_shadow_sessions_with_no_unit_that_can_run_them_refuse_to_boot(cfg, tmp_path):
     """Units without a home room stay in the evaluator, but a shadow week in which NO unit
     can start a session would record would-wakes and look healthy."""
-    from nora.app import composition
 
     (tmp_path / "policy.toml").write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
         'unit = "friends"\nlabel = "Friends"\n',
     )
-    with pytest.raises(composition.StartupError, match="no unit can run a session"):
+    with pytest.raises(StartupError, match="no unit can run a session"):
         await build_dependencies(override_config(cfg, _SESSION_ON))
 
 
@@ -1981,12 +1941,12 @@ def test_a_public_url_egress_would_block_refuses_to_start(origin) -> None:
     # The validator accepts these origins; egress blocks the whole link, so every reply that
     # carried it would vanish. The boot check uses egress's own scan.
     with pytest.raises(StartupError, match="egress would block the link"):
-        _require_a_sendable_public_url(origin)
+        nora.documents.wire._require_a_sendable_public_url(origin)
 
 
 @pytest.mark.parametrize("origin", ["", "https://nora.67.zone", "http://localhost:3000"])
 def test_a_sendable_public_url_or_none_starts(origin) -> None:
-    _require_a_sendable_public_url(origin)
+    nora.documents.wire._require_a_sendable_public_url(origin)
 
 
 async def test_no_wired_adaptor_holds_an_act_verb(cfg, tmp_path):
@@ -2059,21 +2019,21 @@ async def test_an_eval_subject_with_the_subagent_on_builds_the_tools_and_a_recor
     """`recording_subagent_worker` (what `obtain` wraps composition in under `[subagent]
     enabled`): the four tools are offered, the desk and the poller hold a recorder under kind
     `subagent`, and no worker is built, so nothing can start. The patch is gone afterwards."""
-    from nora.agent.tools import SUBAGENT_TOOLS
-    from nora.app import composition
+    from nora.agent.catalog.groups import SUBAGENT_TOOLS
+    from nora.app import composition_agent
     from nora.subject.recording_subagent import (
         RecordingSubagentBackend,
         recording_subagent_worker,
     )
 
-    real = composition.build_subagent_backend
+    real = composition_agent.build_subagent_backend
     on = override_config(cfg, {
         "dreamer.enabled": True, "compute.enabled": True, "subagent.enabled": True,
         "heartbeat.enabled": False,
     })
     with recording_subagent_worker():
         deps = await build_dependencies(on)
-    assert composition.build_subagent_backend is real
+    assert composition_agent.build_subagent_backend is real
     try:
         recorder = deps.subagent_backend
         assert isinstance(recorder, RecordingSubagentBackend)
@@ -2142,7 +2102,7 @@ async def test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick(c
 
 @pytest.mark.parametrize("graph", [False, True])
 async def test_the_prefetch_holds_the_tools_search_only_on_the_graph_surface(cfg, graph):
-    """`<recalled>` (design/unified-memory/00 step 3b): the tag path's
+    """`<recalled>` (design/unified-memory/README.md): the tag path's
     assembler holds the SAME `MemorySearch` the registry's `memory_search`
     does under `[memory.index] read`, and none off it, so the Honcho
     surface runs no pre-fetch."""
@@ -2178,13 +2138,13 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
     the session's memory verbs exactly as it picks every other occasion's.
     The session's `wired` set (its guard's read-only set) and what it BUILDS
     agree, and neither holds the other surface."""
-    from nora.agent.tools import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
+    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "memory.index.read": graph},
     ))
-    runner = deps.cognition_runner
+    runner = deps.cognition_runner._runner
     assert runner is not None
     unit, home = next(iter(runner._home_rooms.items()))
     built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
@@ -2225,7 +2185,7 @@ async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, t
     renamed = override_config(cfg, {**_SESSION_ON, "doctrine.dir": directory})
     deps = await build_dependencies(renamed)
     assert deps.cognition_runner is not None
-    assert deps.cognition_runner._nora_names == frozenset({"AgentAlpha"})
+    assert deps.cognition_runner._runner._nora_names == frozenset({"AgentAlpha"})
     registry = deps.engagement._tool_registry
     own = TranscriptRow(id=1, sender_id="self", sender_name="PreviousLabel", ts=1,
                         body="I checked the venue", is_nora=True,

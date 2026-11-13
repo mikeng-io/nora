@@ -130,19 +130,19 @@ Conventional Commit title, appending `(#N, DEC-M)` when it closes an issue or
 lands an indexed decision, and these headings in order:
 
 - **What**: concrete changes and supporting artifacts, one block per piece.
+- **Architecture**: the design bundle the change edits, or `none` and why.
 - **Also**: findings left outside the change; omit when empty.
 - **Gate on the merged tree**: the actual outcome and exit code.
-- **Authored by**: human or agent; for an agent, the tool and model, and who
-  reviewed it.
+- **Authored by**: human or agent; for an agent, the tool, model and reviewer.
 - **Closes**: `Closes #N` only when the PR fully resolves it; otherwise reference
   `issue #N` in the prose. Omit when there is no issue.
 
-Select local validation by impact on the final candidate, including relevant
-changes from the latest target branch. Use focused checks while iterating; the
-required hosted contracts job owns full-suite acceptance. Do not run the full
-local suite before a PR. Ordinary documentation uses its reader checks without
-application static checks. The shared selector broadens runtime/shared/unknown
-changes and selection failures to the full suite on CI.
+Select local validation by impact on the final candidate. Automatic PR and master
+checks run the fast baseline, targeting three minutes with a five-minute ceiling.
+The complete suite is on demand: dispatch **CI** at the ref being validated.
+Release PRs do not wait for a full run. Automatic green means the fast baseline
+passed, not complete backend acceptance. Do not run the full local suite before
+a PR. Timeouts fail; they never produce partial acceptance.
 
 `make gate` remains an explicit impact-based command against `origin/master`;
 for runtime changes it selects the full suite, so it is not a local PR prerequisite.

@@ -122,7 +122,6 @@ def test_shipped_and_build_inputs_qualify(repo, path):
         "nora/documents/catalog-prompt.md",
         "nora/dreamer/doctrine/dreamer.md",
         "nora/dreamer/objectives/cognition.md",
-        "nora/dreamer/preludes/cognition-prelude.md",
         "nora/dreamer/skills/cognition-register.md",
     ],
 )

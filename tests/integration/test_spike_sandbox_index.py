@@ -235,7 +235,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url,
                         1: SimpleNamespace(stimulus_ids=(sid_soc,), room=ROOM),
                     },
                     memory_items={}, graph_fetched=GraphFetched(),
-                    admitted_indices=set(), admitted_relations={},
+                    admitted_relations={},
                     admitted_evidence=[], shown_keys=set())
                 grounding = Grounding(records={
                     "messages:1000": RecordItem(

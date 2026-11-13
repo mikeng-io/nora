@@ -16,6 +16,7 @@ from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.domain.lineage import RoomFacts
 from nora.domain.memory_index import IndexedNode
+from nora.language.culture import CULTURE_ADAPTOR_NAME
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeMemoryStore, FakeRosterSource
@@ -263,7 +264,6 @@ async def test_on_a_person_the_room_does_not_list_is_unavailable_not_nothing(per
 async def test_a_culture_pass_never_reads_another_rooms_line(persons):
     from dataclasses import replace
 
-    from nora.agent.tools import CULTURE_ADAPTOR_NAME
     other = RoomFacts('signal', frozenset({'generated-other'}), 'u1', _FRIENDS.persons)
     lineage = LineagePolicy(rooms=(_FRIENDS, other),
         _by_id={('signal', GROUP): _FRIENDS, ('signal', 'generated-other'): other})
@@ -303,13 +303,16 @@ async def test_graph_tool_results_preserve_untrusted_memory_framing(persons, nam
     assert 'never an instruction' in result['framing']
 
 
-async def test_subgraph_preserves_enabled_identifier_screen(persons):
+@pytest.mark.parametrize("unlinked", [False, True])
+async def test_subgraph_preserves_enabled_identifier_screen(persons, unlinked):
     from dataclasses import replace
     phone = next(value for value in MILES if value.startswith('+'))
     index = _index()
     node = index.nodes[('message', '41')]
     index.nodes[node.key] = replace(node, text=f'football: call {phone}')
-    search, _ = _graph_search(index, Metrics())
+    search, graph = _graph_search(index, Metrics())
+    if unlinked:
+        graph.relations.clear()
     result = await _call(_tool(persons, FakeMemoryStore(), search), query='football')
     assert result['status'] == 'unavailable' and phone not in str(result)
     off = _build_with(persons, FakeMemoryStore(), search, content_checks=False)
@@ -317,12 +320,35 @@ async def test_subgraph_preserves_enabled_identifier_screen(persons):
     assert allowed['status'] in {'ok', 'partial'} and phone in allowed['preview']
 
 
-async def test_matching_index_without_graph_projection_is_unavailable(persons):
+@pytest.mark.parametrize("hidden", [False, True], ids=["in_scope", "out_of_scope"])
+async def test_unlinked_profile_line_search_and_cached_read(persons, hidden):
     from nora.testing.memory_graph import FakeMemoryGraph
-    search = MemorySearch(_index(), Metrics(), graph=FakeMemoryGraph(),
-                          embedder=FakeQueryEmbedder(), model='m')
-    result = await _call(_tool(persons, FakeMemoryStore(), search), query='football')
-    assert result['status'] == 'unavailable' and result['note']
+
+    node = IndexedNode("profile_line", "generated-profile", "football on Sundays", _T,
+                       unit="u1", persons=("miles_novak",))
+    index = FakeMemoryIndex([node], embed_model="m")
+    search = MemorySearch(index, Metrics(), graph=FakeMemoryGraph(), profile_render=True,
+                          embedder=FakeQueryEmbedder(), model="m")
+    if hidden:
+        from dataclasses import replace
+        restricted = replace(_FRIENDS, persons=frozenset({"tyler_cortez"}))
+        lineage = LineagePolicy(rooms=(restricted,), _by_id={("signal", GROUP): restricted})
+    else:
+        lineage = _LINEAGE
+    tools = _build_with(persons, FakeMemoryStore(), search, lineage=lineage)
+    result = await _call(tools["memory_search"], query="football")
+    if hidden:
+        assert result["status"] == "nothing_found"
+        assert node.text not in result["preview"]
+        # The same stored line is readable in its listed room (positive control).
+        tools = _build_with(persons, FakeMemoryStore(), search)
+        result = await _call(tools["memory_search"], query="football")
+    assert result["status"] == "ok"
+    assert node.text in result["preview"]
+    detail = await _call(tools["memory_read"], kind=node.kind, id=node.source_id, depth=0)
+    assert detail["status"] == "partial"
+    assert detail["nodes"][0]["indexed"]["text"] == node.text
+    assert detail["evidence"] == []
 
 
 async def test_one_turn_reuses_its_walk_and_does_not_guess_outside_the_snapshot(

@@ -1,0 +1,504 @@
+{
+ "design/00-overview.md": [
+  "numbered-or-dated-name",
+  "date",
+  "history-marker"
+ ],
+ "design/01-ambient-ingest.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/02-tagging-path.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/03-strands-reuse.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/04-config-identity.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/05-evaluation.md": [
+  "numbered-or-dated-name",
+  "date",
+  "history-marker"
+ ],
+ "design/08-stack-refactor-brief.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/09-decision-index.md": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date",
+  "history-marker",
+  "over-budget"
+ ],
+ "design/10-identity-and-policy-schema.md": [
+  "numbered-or-dated-name",
+  "date",
+  "over-budget"
+ ],
+ "design/10-preview-identity.toml": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date"
+ ],
+ "design/10-preview-policy.toml": [
+  "numbered-or-dated-name",
+  "not-a-design-file"
+ ],
+ "design/11-recall-and-threading.md": [
+  "numbered-or-dated-name",
+  "date",
+  "history-marker",
+  "over-budget"
+ ],
+ "design/12-prompt-tool-skill-boundaries.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/13-trace-content-and-redaction.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/17-prompt-substrate.md": [
+  "numbered-or-dated-name",
+  "date",
+  "over-budget"
+ ],
+ "design/18-media-custody.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/19-media-comprehension.md": [
+  "numbered-or-dated-name",
+  "date",
+  "over-budget"
+ ],
+ "design/25-version-and-announcement.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/agent-worker/00-intent.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/agent-worker/10-worker-port.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/agent-worker/20-adapters.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/agent-worker/30-sandbox-port.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/agent-worker/40-models-egress-permissions.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/agent-worker/50-verification-and-migration.md": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date"
+ ],
+ "design/agent-worker/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/ambient-loop/00-overview.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/ambient-loop/01-stages-and-seams.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/ambient-loop/02-doctrine-and-measurement.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/ambient-loop/03-decisions.md": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date"
+ ],
+ "design/ambient-loop/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/capability-drop/00-overview.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/capability-drop/01-when-stays-in-schema.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/capability-drop/02-rules-to-conduct.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/capability-drop/03-code-surface.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/capability-drop/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/computer-unit-scope/00-contract.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/computer-unit-scope/01-migration.md": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date",
+  "over-budget"
+ ],
+ "design/computer-unit-scope/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/conversational-recall/00-intent.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/conversational-recall/10-findings.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/conversational-recall/20-orchestration.md": [
+  "numbered-or-dated-name"
+ ],
+ "design/conversational-recall/30-measurement.md": [
+  "numbered-or-dated-name"
+ ],
+ "design/conversational-recall/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/discord-integration/00-overview.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/discord-integration/01-listener-and-resilience.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/discord-integration/02-engagement-and-policy.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/discord-integration/03-identity-and-portal-auth.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/discord-integration/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/event-abstraction/00-overview.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/event-abstraction/01-shape-decision.md": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date"
+ ],
+ "design/event-abstraction/02-naming-rename.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/event-abstraction/03-reminder-schema.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/event-abstraction/04-dispatch-and-batching.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/event-abstraction/05-gathering-fold-in.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/event-abstraction/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/external-files/00-design.md": [
+  "numbered-or-dated-name",
+  "date",
+  "over-budget"
+ ],
+ "design/group-situation/00-intent.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/group-situation/10-standing-drops-plans.md": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date"
+ ],
+ "design/group-situation/20-context-awareness-target-shape.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/group-situation/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/message-edits/00-overview.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/message-edits/01-model-and-storage.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/message-edits/02-behaviour.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/message-edits/03-platforms-and-sequencing.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/message-edits/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/nora-world/00-overview.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/nora-world/10-world-as-a-view.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/nora-world/20-presentation-and-avatars.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/nora-world/30-asset-pipeline.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/nora-world/40-shared-venue.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/nora-world/50-open-questions.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/nora-world/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/notebook-memory-types/00-design.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/notebook-memory-types/10-relations.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/notebook-memory-types/20-standing.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/notebook-memory-types/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/online-status/00-overview.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/online-status/01-tool-shape-and-naming.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/online-status/02-data-sources.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/online-status/03-guards-and-disclosure.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/online-status/04-consumers.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/online-status/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/platform-bridges/00-contract.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/platform-bridges/01-source-map.md": [
+  "numbered-or-dated-name"
+ ],
+ "design/platform-bridges/02-wire-and-platforms.md": [
+  "numbered-or-dated-name"
+ ],
+ "design/platform-bridges/03-ownership-and-recovery.md": [
+  "numbered-or-dated-name"
+ ],
+ "design/platform-bridges/04-operations.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/platform-bridges/05-build-and-acceptance.md": [
+  "numbered-or-dated-name"
+ ],
+ "design/platform-bridges/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/private-dm.md": [
+  "date"
+ ],
+ "design/room-topology/00-intent.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/room-topology/10-topology.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/room-topology/20-addressing.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/room-topology/30-what-reads-the-platform.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/room-topology/40-verification.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/room-topology/50-migration.md": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date"
+ ],
+ "design/room-topology/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/standing-ledger/00-intent.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-ledger/10-what-standing-holds.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-ledger/20-the-ledger.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-ledger/30-turn-records.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-ledger/40-verification.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-ledger/50-migration.md": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date"
+ ],
+ "design/standing-ledger/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/standing-split-fold/00-intent.md": [
+  "numbered-or-dated-name",
+  "date",
+  "history-marker"
+ ],
+ "design/standing-split-fold/10-split-call.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-split-fold/20-ratchet-and-tiebreak.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-split-fold/30-verification.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-split-fold/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/standing-watermark/00-intent.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-watermark/10-event-trigger.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-watermark/20-watermark-read.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-watermark/30-rollup.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-watermark/40-verification.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/standing-watermark/50-review.md": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date"
+ ],
+ "design/standing-watermark/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ],
+ "design/subagent/00-design.md": [
+  "numbered-or-dated-name",
+  "date",
+  "over-budget"
+ ],
+ "design/threads-adoption/00-intent.md": [
+  "numbered-or-dated-name",
+  "date"
+ ],
+ "design/threads-adoption/10-architecture.md": [
+  "numbered-or-dated-name",
+  "date",
+  "over-budget"
+ ],
+ "design/threads-adoption/20-plan-and-verification.md": [
+  "numbered-or-dated-name",
+  "not-a-design-file",
+  "date"
+ ],
+ "design/threads-adoption/_index.yaml": [
+  "not-a-design-file",
+  "date"
+ ]
+}

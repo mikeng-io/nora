@@ -1,4 +1,4 @@
-"""Shared graph contract for design/unified-memory/27; no runtime wiring.
+"""Shared graph contract for design/unified-memory/graph.md; no runtime wiring.
 
 Entity ids are store-owned strings; event_entry is a Register row, event an
 entity. Evidence snapshots are hydrated by the caller from sources actually
@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import Literal, Protocol, get_args
 
 from nora.domain.memory_index import IndexedNode, MemoryScope
+from nora.domain.prompt import contains_source_span
 
 EntityKind = Literal[
     "person", "room", "unit", "nora", "place", "event", "work", "organisation", "topic"
@@ -152,7 +153,7 @@ RELATION_RULES: Mapping[str, RelationRule] = {
     "outcome_of": _rule(("episode",), ("send", "comment_reply", "summons_answer"), "rollup"),
     "stayed_at": _rule(("person",), ("place",), "rollup"),
     "co_located_with": _rule(("person",), ("person",), "rollup"),
-    "about": _rule((*ENTRY, "reading", "web_page", "session", "play"), ENTITY_KINDS),
+    "about": _rule((*ENTRY, "character", "reading", "web_page", "session", "play"), ENTITY_KINDS),
     "records": _rule(("event_entry",), ("event",)),
     "plans": _rule(("person",), ("event",)),
     "attended": _rule(("person",), ("event",)),
@@ -162,7 +163,7 @@ RELATION_RULES: Mapping[str, RelationRule] = {
     "same_as": _rule(ENTITY_KINDS, ENTITY_KINDS),
 }
 # A subject someone keeps returning to is `interested_in` a topic; `likes` is a
-# preference for one specific thing (notebook-memory-types/10 §3).
+# preference for one specific thing (notebook-memory-types/10-relations.md §3).
 for _rel in ("likes", "dislikes"):
     RELATION_RULES = {**RELATION_RULES, _rel: _rule(("person",), ("work", "place", "event"))}
 RELATION_RULES = {**RELATION_RULES, "interested_in": _rule(("person",), ("topic",))}
@@ -352,7 +353,7 @@ def validate_relation(
             return "unseen_source"
         if source.layer == "notebook" or source.key[0] not in (*RECORD, *ROLLUP):
             return "notebook_evidence"
-        if item.span is not None and item.span not in source.text:
+        if item.span is not None and not contains_source_span(item.span, source.text):
             return "span_not_in_source"
         if source.unit != relation.unit or not set(source.persons) <= set(relation.persons):
             return "scope_wider_than_evidence"

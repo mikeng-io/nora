@@ -1,5 +1,5 @@
 """Bounded queue lifecycle telemetry for the platform-bridge handoff
-(design/platform-bridges/04 §operations).
+(design/platform-bridges/04-operations.md «Short linked OTel operations and routing amendment»).
 
 Three surfaces, all bounded and none of them load-bearing:
 
@@ -56,7 +56,7 @@ _TRACER = "nora.bridge"
 # ---------------------------------------------------------------------------
 
 #: Every per-event JSON lifecycle line carries one of these `event` names
-#: (design 04 «Per-event structured lifecycle logs»). The same vocabulary is
+#: (design/platform-bridges/04-operations.md). The same vocabulary is
 #: the `event` label of `nora_bridge_queue_events_total`.
 LifecycleEvent = Literal[
     "captured", "enqueued", "duplicate_suppressed", "claimed", "reclaimed",
@@ -75,7 +75,7 @@ WorkOutcome = Literal[
 WORK_OUTCOMES: frozenset[str] = frozenset(get_args(WorkOutcome))
 
 #: `bridge_action` outcomes — the durable result boundary, never HTTP
-#: acceptance (design 02-wire §actions).
+#: acceptance (design/platform-bridges/02-wire-and-platforms.md).
 ActionOutcome = Literal["confirmed", "rejected", "unsupported", "uncertain"]
 ACTION_OUTCOMES: frozenset[str] = frozenset(get_args(ActionOutcome))
 
@@ -122,7 +122,7 @@ AttemptWriteResult = Literal["written", "fenced", "unavailable"]
 # The lifecycle-log field allowlist. Anything not named here is DROPPED before
 # the line is written — this is the wall that keeps bodies, raw
 # platform/conversation/sender/account ids, secrets and SDK exception text out
-# of the JSON stream (design 04 «Safe fields»). Event identity is the opaque
+# of the JSON stream (design/platform-bridges/04-operations.md). Event identity is the opaque
 # `event_id`; source identity is hashed upstream and NEVER appears.
 # ---------------------------------------------------------------------------
 
@@ -155,8 +155,9 @@ def remote_context(traceparent: str | None,
 
     `None` covers every degraded input — missing, malformed, all-zero ids —
     and the caller links nothing rather than guessing. Event identity and
-    trace identity are different things (design 02): a missing context changes
-    diagnostics only, never the work.
+    trace identity are different things —
+    design/platform-bridges/02-wire-and-platforms.md: a missing context
+    changes diagnostics only, never the work.
     """
     if not traceparent or not isinstance(traceparent, str):
         return None
@@ -340,7 +341,8 @@ def attempt_span(*, platform: str, work_kind: str, event_id: str,
 
     Links: the original producer AND the previous attempt's persisted record —
     both as `Link`s, never as a parent. A linked remote context is not a
-    parent (design 04): this attempt is its own trace, and no span stays open
+    parent — design/platform-bridges/04-operations.md: this attempt is
+    its own trace, and no span stays open
     over a queue wait or a deploy.
     """
     links = _links(producer, previous_attempt)
@@ -578,7 +580,8 @@ def generation_link_fields(*, attempt: Mapping[str, Any] | None,
                            queue_wait_ms: int | None = None) -> dict[str, Any]:
     """What the model turn's SEPARATE generation root carries back to the
     queue attempt that spawned it: `links` = the attempt's context,
-    `attributes` = safe event/attempt identity and queue timing (design 04:
+    `attributes` = safe event/attempt identity and queue timing —
+    design/platform-bridges/04-operations.md:
     "linked to the relevant consumer attempt … not a child of a queue
     trace").
     """

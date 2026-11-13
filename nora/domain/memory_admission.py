@@ -23,10 +23,11 @@ from nora.domain.memory_graph import (
     validate_relation,
 )
 from nora.domain.memory_index import IndexedNode, in_scope, narrowed
+from nora.domain.prompt import contains_source_span
 
 GraphBatchOutcome = Literal["ok", "nothing_found", "unavailable"]
 GRAPH_BATCH_OUTCOMES: tuple[str, ...] = get_args(GraphBatchOutcome)
-GraphProjectionOutcome = Literal["excluded"]
+GraphProjectionOutcome = Literal["excluded", "ungrounded"]
 GRAPH_PROJECTION_OUTCOMES: tuple[str, ...] = get_args(GraphProjectionOutcome)
 
 
@@ -151,7 +152,7 @@ class AdmissionState:
                     reason = "unseen_source"
                 elif source.layer == "notebook":
                     reason = "notebook_evidence"
-                elif e.span is not None and e.span not in source.text:
+                elif e.span is not None and not contains_source_span(e.span, source.text):
                     reason = "span_not_in_source"
                 elif source.unit != target_entity.unit or source.persons:
                     reason = "scope_wider_than_evidence"

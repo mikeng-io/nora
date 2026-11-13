@@ -46,21 +46,20 @@ async def _one(call: str, runner_kwargs: Any = None, stores: Stores | None = Non
     return stores, answers[0]
 
 
-async def test_memo_create_keeps_a_memo_with_cognition_provenance_and_backs_a_written_close():
+async def test_memo_create_keeps_a_memo_with_cognition_provenance():
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
         answers.append(await by["memo_create"](title="wifi", body=KEPT))
-        answers.append(await by["close"](item_index=0, reason="written"))
 
     stores, outcome = await session(behave)
-    assert answers[0]["status"] == "ok" and answers[1]["status"] == "ok"
+    assert answers[0]["status"] == "ok"
     (memo,) = await stores.memos.kept(unit="u")
     assert memo.id == answers[0]["memo_id"] and memo.title == "wifi"
     assert memo.head.established_by == PROVENANCE and memo.head.citations == ("101",)
     assert memo.head.mode == "told"
     assert (memo.platform, memo.conversation_id) == ("signal", "room-a")
-    assert [c.reason for c in outcome.closed] == ["written"]
+    assert outcome.stop_reason == "end_turn"
 
 
 async def test_a_kept_line_holds_a_key_and_a_phone_verbatim():

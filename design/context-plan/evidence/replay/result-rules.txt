@@ -1,6 +1,0 @@
-RC=0 wall=68s sha=1320cf03
---- tool_selection: 81 total, 80 active, 1 parked, 1 unanchored [3 selected] ---
-  spend: 20 model call(s), in=371117 (cached 255422, fresh 115695), out=1935
-  turn:  17 call(s) over 3 turn(s) (5.67/turn), in/turn=116343 (fresh 35147, cached 81196), out/turn=491
-  passed=3 failed=0 errored=0
-context arm=rules draws=3 selector_errors=0 (full-context fallback)

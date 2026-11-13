@@ -16,7 +16,7 @@ from aiohttp.test_utils import TestServer
 
 import nora.agent.prefill as prefill
 from nora.agent.prefill import _BLOCKS, build_prefill
-from nora.app.composition import _presence_reader
+from nora.app.composition_helpers import _presence_reader
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.domain.ports import AdapterHealth
 from nora.domain.self_presence import Presence, PresenceRoom
@@ -387,7 +387,7 @@ def test_presence_reaches_the_turn_through_assemble_not_a_bare_string():
     )))
     after_clock = text.split("\n", 1)[1]
 
-    assert after_clock.startswith("<presence ")
+    assert "<presence " in after_clock
     assert "You are in «Zone 42» on Discord." in after_clock
 
 

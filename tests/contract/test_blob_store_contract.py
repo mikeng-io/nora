@@ -135,7 +135,7 @@ async def test_a_key_that_is_not_a_sha256_is_refused_not_resolved(store):
 
 
 async def test_delete_drops_idle_bytes_and_says_what_it_did(store, clock):
-    """A story frame's bytes go at their bound (cognition-loop/22 §5). After
+    """A story frame's bytes go at their bound (cognition-loop/observation.md §5). After
     `deleted`, `get` is None; a second `delete` answers `absent`, so a
     deletion retried after a restart is safe and says the bytes are gone."""
     key = await store.put(data=PAYLOAD)

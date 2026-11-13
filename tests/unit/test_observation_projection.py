@@ -1,5 +1,5 @@
 """The model-facing projections of folded observation heads — `head_summary`
-and `head_detail` — share ONE read model (design/platform-observations 03):
+and `head_detail` — share ONE read model (design/platform-observations/projections.md):
 
 - a poll's aggregate option counts are the SOURCE's evidence; the retained
   per-voter selections are a separate, labelled RECORDED-SUBSET tally —

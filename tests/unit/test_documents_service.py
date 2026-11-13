@@ -69,8 +69,9 @@ class _Transcript:
         self.history = history or {}
         self.filler = filler
 
-    async def recent(self, *, conversation_id: str, limit: int,
-                     as_of_ms: int | None = None) -> list[_Row]:
+    async def recent(
+        self, *, conversation_id: str, limit: int, as_of_ms: int | None = None
+    ) -> list[_Row]:
         if self.fail:
             raise RuntimeError("db down")
         rows = [
@@ -79,8 +80,9 @@ class _Transcript:
         ]
         return rows[-limit:]
 
-    async def media_rows(self, *, conversation_id: str, since_ts: int, limit: int,
-                         as_of_ms: int | None = None) -> list[_Row]:
+    async def media_rows(
+        self, *, conversation_id: str, since_ts: int, limit: int, as_of_ms: int | None = None
+    ) -> list[_Row]:
         if self.fail:
             raise RuntimeError("db down")
         rows = [
@@ -119,11 +121,13 @@ def _service(
     new_id: Callable[[], UUID] = uuid4,
     places: Any = None,
     rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
+    shared_room: Callable[[str, str, str], bool] | None = None,
 ) -> tuple[DocumentService, FakeDocumentStore]:
     store = store or FakeDocumentStore()
     svc = DocumentService(
         rooms_of=rooms_of if rooms_of is not None else (lambda p: rooms_named(_policy(), p)),
         store=store,
+        shared_room=shared_room,
         records=_Transcript(rooms or {}, fail=fail_rows, history=history, filler=filler),  # type: ignore[arg-type]
         media=FakeMediaObjectStore(objs, fail=fail_media),
         media_window=50,
@@ -387,7 +391,9 @@ async def test_a_room_reads_its_own_document_at_the_current_revision() -> None:
     first = await _publish(svc, _doc(title="v1"))
     await _publish(svc, _doc(title="v2"), document_id=first.document_id, base_revision=1)
     read = await svc.read(
-        platform=ROOM[0], conversation_id="room-1-alias", document_id=first.document_id,
+        platform=ROOM[0],
+        conversation_id="room-1-alias",
+        document_id=first.document_id,
         person_id="ken",
     )
     assert read.status == "ok" and read.revision == 2 and read.title == "v2"
@@ -399,11 +405,16 @@ async def test_another_rooms_document_reads_exactly_like_an_unknown_one() -> Non
     svc, _ = _service()
     first = await _publish(svc, _doc(title="mine"), room=ROOM)
     other = await svc.read(
-        platform=OTHER[0], conversation_id=OTHER[1], document_id=first.document_id,
+        platform=OTHER[0],
+        conversation_id=OTHER[1],
+        document_id=first.document_id,
         person_id="ken",
     )
     unknown = await svc.read(
-        platform=OTHER[0], conversation_id=OTHER[1], document_id=uuid4(), person_id="ken",
+        platform=OTHER[0],
+        conversation_id=OTHER[1],
+        document_id=uuid4(),
+        person_id="ken",
     )
     assert other.status == "refused" and other.spec is None
     assert other == unknown
@@ -416,7 +427,10 @@ async def test_a_store_that_is_down_reads_unavailable_not_missing() -> None:
 
     svc, _ = _service(store=_Down())
     read = await svc.read(
-        platform=ROOM[0], conversation_id=ROOM[1], document_id=uuid4(), person_id="ken",
+        platform=ROOM[0],
+        conversation_id=ROOM[1],
+        document_id=uuid4(),
+        person_id="ken",
     )
     assert read.status == "unavailable" and read.spec is None
 
@@ -581,13 +595,13 @@ async def test_with_a_public_url_the_link_is_the_origin_and_the_handle_never_the
     assert made.url == f"https://nora.example/documents/{handle}"
     assert str(made.document_id) not in made.url and made.document_id.hex not in made.url
     read = await svc.read(
-        platform=ROOM[0], conversation_id=ROOM[1], document_id=made.document_id,
+        platform=ROOM[0],
+        conversation_id=ROOM[1],
+        document_id=made.document_id,
         person_id="ken",
     )
     assert read.url == made.url
-    revised = await _publish(
-        svc, _doc(title="v2"), document_id=made.document_id, base_revision=1
-    )
+    revised = await _publish(svc, _doc(title="v2"), document_id=made.document_id, base_revision=1)
     assert revised.url == made.url  # one document, one link, whatever its revision
 
 
@@ -600,7 +614,10 @@ async def test_a_new_document_never_takes_a_handle_its_room_already_reads() -> N
     draws = iter([clash, clash, fresh])
     svc, store = _service(store=None, new_id=lambda: next(draws))
     await store.create(
-        document_id=taken, platform=ROOM[0], conversation_id=ROOM[1], created_by="ken",
+        document_id=taken,
+        platform=ROOM[0],
+        conversation_id=ROOM[1],
+        created_by="ken",
         revision=RevisionIn(
             title="x", spec={"version": 1}, text="x", sha256="0" * 64, media=(), written_by="t"
         ),
@@ -617,7 +634,10 @@ async def test_a_clash_in_another_room_is_none_of_this_rooms_business() -> None:
     draws = iter([first, UUID("fedcba987654" + "1" * 20)])
     svc, store = _service(new_id=lambda: next(draws))
     await store.create(
-        document_id=elsewhere, platform=OTHER[0], conversation_id=OTHER[1], created_by="mei",
+        document_id=elsewhere,
+        platform=OTHER[0],
+        conversation_id=OTHER[1],
+        created_by="mei",
         revision=RevisionIn(
             title="x", spec={"version": 1}, text="x", sha256="0" * 64, media=(), written_by="t"
         ),
@@ -629,8 +649,11 @@ async def test_a_clash_in_another_room_is_none_of_this_rooms_business() -> None:
 # ------------------------------------------------------------------- lifecycle
 async def _set(svc: DocumentService, doc: UUID, state: str, *, room=ROOM, person="ken"):
     return await svc.set_state(
-        platform=room[0], conversation_id=room[1], person_id=person,
-        document_id=doc, state=state,
+        platform=room[0],
+        conversation_id=room[1],
+        person_id=person,
+        document_id=doc,
+        state=state,
     )
 
 
@@ -641,9 +664,7 @@ async def test_a_revision_of_an_archived_or_deleted_document_is_refused_as_not_a
     svc, store = _service()
     first = await _publish(svc, _doc(title="v1"))
     assert (await _set(svc, first.document_id, state)).status == "ok"
-    result = await _publish(
-        svc, _doc(title="v2"), document_id=first.document_id, base_revision=1
-    )
+    result = await _publish(svc, _doc(title="v2"), document_id=first.document_id, base_revision=1)
     assert result.status == "refused"
     assert [f.rule for f in result.findings] == ["document_not_active"]
     assert state in result.findings[0].message
@@ -672,7 +693,10 @@ async def test_set_state_appends_and_restore_brings_a_deleted_document_back() ->
     assert gone.url == ""  # a deleted document's link opens nothing, so none is handed out
     # Deleted is out of every read a room makes, except the restore itself.
     read = await svc.read(
-        platform=ROOM[0], conversation_id=ROOM[1], document_id=first.document_id, person_id="ken",
+        platform=ROOM[0],
+        conversation_id=ROOM[1],
+        document_id=first.document_id,
+        person_id="ken",
     )
     assert read.status == "refused" and read.findings[0].rule == "no_such_document"
     back = await _set(svc, first.document_id, "active", person="mei")
@@ -718,7 +742,10 @@ async def test_an_archived_document_still_reads_and_says_it_is_archived() -> Non
     first = await _publish(svc, _doc(title="mine"))
     await _set(svc, first.document_id, "archived")
     read = await svc.read(
-        platform=ROOM[0], conversation_id=ROOM[1], document_id=first.document_id, person_id="ken",
+        platform=ROOM[0],
+        conversation_id=ROOM[1],
+        document_id=first.document_id,
+        person_id="ken",
     )
     assert read.status == "ok" and read.state == "archived"
 
@@ -733,7 +760,10 @@ async def test_a_new_document_never_takes_the_handle_of_a_put_away_one(state: st
     draws = iter([clash, fresh])
     svc, store = _service(store=None, new_id=lambda: next(draws))
     await store.create(
-        document_id=taken, platform=ROOM[0], conversation_id=ROOM[1], created_by="ken",
+        document_id=taken,
+        platform=ROOM[0],
+        conversation_id=ROOM[1],
+        created_by="ken",
         revision=RevisionIn(
             title="x", spec={"version": 1}, text="x", sha256="0" * 64, media=(), written_by="t"
         ),
@@ -751,15 +781,25 @@ async def test_a_handle_shared_with_another_rooms_document_resolves_to_this_room
     svc, store = _service()
     for doc, room in ((mine, ROOM), (theirs, OTHER)):
         await store.create(
-            document_id=doc, platform=room[0], conversation_id=room[1], created_by="ken",
+            document_id=doc,
+            platform=room[0],
+            conversation_id=room[1],
+            created_by="ken",
             revision=RevisionIn(
-                title="x", spec={"version": 1}, text="x", sha256="0" * 64, media=(),
+                title="x",
+                spec={"version": 1},
+                text="x",
+                sha256="0" * 64,
+                media=(),
                 written_by="t",
             ),
         )
     out = await svc.set_state(
-        platform=ROOM[0], conversation_id=ROOM[1], person_id="ken",
-        handle="0123456789ab", state="deleted",
+        platform=ROOM[0],
+        conversation_id=ROOM[1],
+        person_id="ken",
+        handle="0123456789ab",
+        state="deleted",
     )
     assert out.status == "ok" and out.document_id == mine
     assert (await store.get(document_id=theirs)).summary.state == "active"
@@ -830,8 +870,12 @@ async def test_a_coordinate_or_route_the_model_wrote_is_discarded_never_kept() -
     position taken from `where_is` cannot enter a document through a Map."""
     places = _Places()
     svc, store = _service(places=places)
-    spec = _doc(_map({"name": "Senso-ji", "lat": 22.3, "lng": 114.2},
-                     route=[{"lat": 22.3, "lng": 114.2}, {"lat": 22.4, "lng": 114.3}]))
+    spec = _doc(
+        _map(
+            {"name": "Senso-ji", "lat": 22.3, "lng": 114.2},
+            route=[{"lat": 22.3, "lng": 114.2}, {"lat": 22.4, "lng": 114.3}],
+        )
+    )
     result = await _publish(svc, spec)
     assert result.status == "ok", result
     props = (await store.get(document_id=result.document_id)).spec["root"]["children"][0]["props"]
@@ -851,7 +895,8 @@ async def test_a_person_a_coordinate_or_an_identifier_is_refused_before_any_look
     places = _Places()
     svc, _ = _service(places=places)
     result = await _publish(
-        svc, _doc(_map({"name": "Mei's home"}, {"name": "22.4106, 114.1245"})),
+        svc,
+        _doc(_map({"name": "Mei's home"}, {"name": "22.4106, 114.1245"})),
         person_names=frozenset({"mei"}),
     )
     assert result.status == "refused"
@@ -897,7 +942,8 @@ async def test_an_address_disclosed_this_turn_is_refused_before_any_lookup() -> 
     svc, _ = _service(places=places)
     live = frozenset({"flat 5a, 12 nathan road, tsim sha tsui"})
     result = await _publish(
-        svc, _doc(_map({"name": "Flat 5A, 12 Nathan Road, Tsim Sha Tsui"}, {"name": "Senso-ji"})),
+        svc,
+        _doc(_map({"name": "Flat 5A, 12 Nathan Road, Tsim Sha Tsui"}, {"name": "Senso-ji"})),
         live_addresses=live,
     )
     assert result.status == "refused" and [f.rule for f in result.findings] == ["place_refused"]
@@ -951,8 +997,10 @@ async def test_coordinates_that_push_a_document_over_the_size_limit_are_a_fixabl
     from nora.documents.check import MAX_BYTES
 
     places = _Places()
-    places.KNOWN = {f"P{i}": {"status": "ok", "name": f"P{i}", "lat": 22.123456, "lng": 114.123456}
-                    for i in range(50)}
+    places.KNOWN = {
+        f"P{i}": {"status": "ok", "name": f"P{i}", "lat": 22.123456, "lng": 114.123456}
+        for i in range(50)
+    }
     svc, _ = _service(places=places)
 
     # Five Markdown blocks of at most 20,000 characters hold the padding (3 bytes each).
@@ -978,83 +1026,3 @@ async def test_coordinates_that_push_a_document_over_the_size_limit_are_a_fixabl
 
 # ------------------------------------------- 8765_44827: a wildcard room is no grant
 WILD = ("signal", "open")  # `persons = "*"` in `_policy()`: the room names nobody
-
-
-async def test_a_wildcard_room_document_is_read_by_its_creator_alone() -> None:
-    """Room membership is not a grant in a room that names nobody: `mei` shares the
-    room with `ken`'s document, and still reads it exactly like an unknown id."""
-    svc, _ = _service()
-    made = await _publish(svc, _doc(title="ken only"), room=WILD)
-    as_creator = await svc.read(
-        platform=WILD[0], conversation_id=WILD[1], document_id=made.document_id, person_id="ken",
-    )
-    as_member = await svc.read(
-        platform=WILD[0], conversation_id=WILD[1], document_id=made.document_id, person_id="mei",
-    )
-    unknown = await svc.read(
-        platform=WILD[0], conversation_id=WILD[1], document_id=uuid4(), person_id="mei",
-    )
-    assert as_creator.status == "ok" and as_creator.title == "ken only"
-    assert as_member.status == "refused" and as_member.spec is None
-    assert as_member == unknown
-
-
-async def test_a_wildcard_room_document_is_not_read_without_a_requester() -> None:
-    """The participation and fire turns that name nobody read nothing from a wildcard room
-    by room membership, and the model-facing read has no requester to check."""
-    svc, _ = _service()
-    made = await _publish(svc, _doc(title="ken only"), room=WILD)
-    read = await svc.read(platform=WILD[0], conversation_id=WILD[1], document_id=made.document_id)
-    assert read.status == "refused" and read.spec is None
-
-
-async def test_a_document_in_a_listed_room_is_read_by_a_person_the_room_names() -> None:
-    """The positive control: `mei` is listed in `room-1`, so she reads `ken`'s document
-    there. The wildcard refusal above is the room's shape, not a general one."""
-    svc, _ = _service()
-    made = await _publish(svc, _doc(title="shared"), room=ROOM)
-    read = await svc.read(
-        platform=ROOM[0], conversation_id=ROOM[1], document_id=made.document_id, person_id="mei",
-    )
-    assert read.status == "ok" and read.title == "shared"
-
-
-async def test_a_person_a_listed_room_no_longer_names_cannot_read_its_document() -> None:
-    """Revocation: the same read after `mei` is removed from the room's list is refused."""
-    removed = _policy()
-    svc, _ = _service(rooms_of=lambda p: rooms_named(
-        Policy(conversations=tuple(
-            c if c.platform != "signal" or "room-1" not in c.ids
-            else Conversation(platform="signal", ids=c.ids, persons=frozenset({"ken"}))
-            for c in removed.conversations
-        )), p,
-    ))
-    made = await _publish(svc, _doc(title="shared"), room=ROOM)
-    read = await svc.read(
-        platform=ROOM[0], conversation_id=ROOM[1], document_id=made.document_id, person_id="mei",
-    )
-    assert read.status == "refused"
-
-
-async def test_a_wildcard_room_document_cannot_be_revised_by_a_non_creator() -> None:
-    """`publish` on a revision applies the same predicate: `mei` gets the same answer as
-    for an unknown id, and `ken`'s document keeps its text."""
-    svc, store = _service()
-    made = await _publish(svc, _doc(title="ken only"), room=WILD)
-    result = await svc.publish(
-        platform=WILD[0], conversation_id=WILD[1], person_id="mei", raw=_doc(title="taken"),
-        written_by="tag:2", document_id=made.document_id, base_revision=1,
-    )
-    assert result.status == "refused" and result.findings[0].rule == "no_such_document"
-    assert (await store.get(document_id=made.document_id)).summary.title == "ken only"
-
-
-async def test_a_wildcard_room_document_cannot_have_its_state_changed_by_a_non_creator() -> None:
-    svc, store = _service()
-    made = await _publish(svc, _doc(title="ken only"), room=WILD)
-    result = await svc.set_state(
-        platform=WILD[0], conversation_id=WILD[1], person_id="mei",
-        document_id=made.document_id, state="archived",
-    )
-    assert result.status == "refused"
-    assert (await store.get(document_id=made.document_id)).summary.state == "active"

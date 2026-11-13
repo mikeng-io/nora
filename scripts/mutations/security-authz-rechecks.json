@@ -15,8 +15,8 @@
   },
   {
     "name": "8765_44864 boot telling: a job whose grant is gone is still spoken into its room after a restart",
-    "file": "nora/app/composition.py",
-    "old": "        if not policy.is_allowed(\n            platform=job.platform, conversation_id=job.conversation_id,\n            person_id=job.requester_person_id,\n        ):",
+    "file": "nora/app/composition_fire.py",
+    "old": "        if not policy.is_allowed(\n            platform=job.platform,\n            conversation_id=job.conversation_id,\n            person_id=job.requester_person_id,\n        ):",
     "new": "        if False:",
     "target": "tests/unit/test_compute_poller.py::test_a_lost_job_is_not_spoken_after_restart_once_its_grant_is_gone"
   },
@@ -30,22 +30,22 @@
   {
     "name": "8765_44827 read path: the visibility clause is dropped from the one resolution read and set_state share",
     "file": "nora/app/documents_service.py",
-    "old": "            or not may_read(current.summary, person_id, named)\n        ):\n            return None\n        return current",
-    "new": "            or False\n        ):\n            return None\n        return current",
+    "old": "            or not may_read(current.summary, person_id, named)\n",
+    "new": "            or False\n",
     "target": "tests/unit/test_documents_service.py::test_a_wildcard_room_document_is_read_by_its_creator_alone"
   },
   {
     "name": "8765_44827 set_state: a non-creator in a wildcard room can archive or delete the document",
     "file": "nora/app/documents_service.py",
-    "old": "            or not may_read(current.summary, person_id, named)\n        ):\n            return None\n        return current",
-    "new": "            or False\n        ):\n            return None\n        return current",
+    "old": "            or not may_read(current.summary, person_id, named)\n",
+    "new": "            or False\n",
     "target": "tests/unit/test_documents_service.py::test_a_wildcard_room_document_cannot_have_its_state_changed_by_a_non_creator"
   },
   {
     "name": "8765_44827 publish revision: a non-creator in a wildcard room can revise the document",
     "file": "nora/app/documents_service.py",
-    "old": "                or not may_read(current.summary, person_id, self._named(person_id))\n            ):\n                return _no_such_document()",
-    "new": "                or False\n            ):\n                return _no_such_document()",
+    "old": "        # API never distinguishes them either).\n        here = self._room_ids(platform, conversation_id) | {conversation_id}\n        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or not may_read(current.summary, person_id, self._named(person_id))\n        ):\n            return _no_such_document()\n        if current.summary.state != \"active\":",
+    "new": "        # API never distinguishes them either).\n        here = self._room_ids(platform, conversation_id) | {conversation_id}\n        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or False\n        ):\n            return _no_such_document()\n        if current.summary.state != \"active\":",
     "target": "tests/unit/test_documents_service.py::test_a_wildcard_room_document_cannot_be_revised_by_a_non_creator"
   },
   {
@@ -65,8 +65,8 @@
   {
     "name": "8765_44827 <documents> reader: a member the room names is read the room's list with no grant",
     "file": "nora/engagement/documents_context.py",
-    "old": "                        person_id=person_id, rooms=named,\n                    ),\n",
-    "new": "                        person_id=person_id, rooms=frozenset(),\n                    ),\n",
+    "old": "                        rooms=named,\n                    ),\n                    self._store.list_room(",
+    "new": "                        rooms=frozenset(),\n                    ),\n                    self._store.list_room(",
     "target": "tests/unit/test_documents_block.py::test_a_member_the_room_names_reads_the_whole_list_past_their_own"
   },
   {
@@ -85,7 +85,7 @@
   },
   {
     "name": "8765_44837 execution guard: send_to on a relayed turn still relays",
-    "file": "nora/agent/tools.py",
+    "file": "nora/conversation/adapters/tools/replies.py",
     "old": "        if relay_turn:\n            # A relayed turn is never a second relay",
     "new": "        if relay_turn and False:\n            # A relayed turn is never a second relay",
     "target": "tests/test_tools.py::test_send_to_on_a_relayed_turn_is_refused_and_relays_nothing"

@@ -29,14 +29,14 @@
   },
   {
     "name": "4c: the debrief's transcript builds its own last-wins map again",
-    "file": "nora/engagement/debrief_render.py",
-    "old": "    by_ts = first_by_ts(rows)\n",
-    "new": "    by_ts = {row.ts: row for row in rows}\n",
-    "target": "tests/unit/test_step4c_edge_goldens.py::test_the_debrief_transcript_follows_the_same_rule tests/architecture/test_one_quote_resolver.py"
+    "file": "nora/language/context_render.py",
+    "old": "first_by_ts(group)",
+    "new": "{row.ts: row for row in group}",
+    "target": "tests/unit/test_cognition_shared_context.py tests/architecture/test_one_quote_resolver.py"
   },
   {
     "name": "4c: the tool-result transcript builds its own last-wins map again",
-    "file": "nora/agent/tools.py",
+    "file": "nora/agent/toolkit/transcript.py",
     "old": "    by_ts = first_by_ts(rows)\n",
     "new": "    by_ts = {r.ts: r for r in rows}\n",
     "target": "tests/unit/test_step4c_edge_goldens.py::test_a_duplicated_timestamp_now_resolves_a_reply_to_the_first_row tests/architecture/test_one_quote_resolver.py"
@@ -120,28 +120,28 @@
   },
   {
     "name": "4c review: the debrief's map is first-wins over the rows REVERSED (last-wins)",
-    "file": "nora/engagement/debrief_render.py",
-    "old": "    by_ts = first_by_ts(rows)\n",
-    "new": "    by_ts = first_by_ts(reversed(rows))\n",
-    "target": "tests/unit/test_step4c_edge_goldens.py::test_the_debrief_transcript_follows_the_same_rule tests/architecture/test_one_quote_resolver.py"
+    "file": "nora/language/context_render.py",
+    "old": "first_by_ts(group)",
+    "new": "first_by_ts(reversed(group))",
+    "target": "tests/unit/test_cognition_shared_context.py tests/architecture/test_one_quote_resolver.py"
   },
   {
     "name": "4c review: the tool-result map is first-wins over the rows REVERSED",
-    "file": "nora/agent/tools.py",
+    "file": "nora/agent/toolkit/transcript.py",
     "old": "    by_ts = first_by_ts(rows)\n",
     "new": "    by_ts = first_by_ts(reversed(rows))\n",
     "target": "tests/unit/test_step4c_edge_goldens.py::test_a_duplicated_timestamp_now_resolves_a_reply_to_the_first_row tests/architecture/test_one_quote_resolver.py"
   },
   {
     "name": "4c review: the debrief builds the map in a loop through a local key (last-wins)",
-    "file": "nora/engagement/debrief_render.py",
-    "old": "    by_ts = first_by_ts(rows)\n",
-    "new": "    by_ts = {}\n    for row in rows:\n        key = row.ts\n        by_ts[key] = row\n",
-    "target": "tests/unit/test_step4c_edge_goldens.py::test_the_debrief_transcript_follows_the_same_rule tests/architecture/test_one_quote_resolver.py"
+    "file": "nora/language/context_render.py",
+    "old": "first_by_ts(group)",
+    "new": "dict((row.ts, row) for row in group)",
+    "target": "tests/unit/test_cognition_shared_context.py tests/architecture/test_one_quote_resolver.py"
   },
   {
     "name": "4c review: the tool-result map is dict(zip(...)) (last-wins)",
-    "file": "nora/agent/tools.py",
+    "file": "nora/agent/toolkit/transcript.py",
     "old": "    by_ts = first_by_ts(rows)\n",
     "new": "    by_ts = dict(zip([r.ts for r in rows], rows))\n",
     "target": "tests/unit/test_step4c_edge_goldens.py::test_a_duplicated_timestamp_now_resolves_a_reply_to_the_first_row tests/architecture/test_one_quote_resolver.py"

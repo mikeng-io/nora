@@ -1,5 +1,5 @@
-# What she says about WHERE she is — design/self-awareness/05's case table,
-# measuring `<presence>` (design/self-awareness/02, PR #409).
+# What she says about WHERE she is — design/self-awareness/rooms.md's case table,
+# measuring `<presence>` (design/self-awareness/presence.md, PR #409).
 #
 # --- WHAT EVERY CASE HERE IS -------------------------------------------------
 #
@@ -26,7 +26,7 @@
 #
 # The sandbox wires no Discord or WhatsApp adapter (`evals/subject_config.
 # FORCE_OFF`), so a tag cannot fire there, and the clone holds no Instagram
-# room history at all. So 05's two cases set ON another network are ADAPTED:
+# room history at all. So the two cases set ON another network are ADAPTED:
 #
 # - «tag on Instagram; where are you right now?» is asked in the Signal room.
 #   It still tests the here line («Signal», and the room), but it CANNOT test

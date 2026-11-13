@@ -89,6 +89,15 @@ class DiscordReactor:
         )
         headers = {"Authorization": f"Bot {self._token}"}
         method = "DELETE" if remove else "PUT"
+        return await self._request(
+            method, url, headers=headers, channel_id=channel_id,
+            message_id=to_message_id, remove=remove)
+
+    async def _request(
+        self, method: str, url: str, *, headers: dict, channel_id: str,
+        message_id: str, remove: bool,
+    ) -> ReactionResult:
+        """One reaction call against the API — `react` keeps the refusals."""
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
@@ -117,7 +126,7 @@ class DiscordReactor:
                         "reaction DELETE 404 with code %s (channel=%s, message=%s) "
                         "— the message or channel could not be addressed, which is "
                         "not the same as the reaction already being gone",
-                        code, channel_id, to_message_id,
+                        code, channel_id, message_id,
                     )
                     return ReactionResult(ok=False, supported=True)
                 # 429 is reported as an ordinary failure, NOT retried:

@@ -1,8 +1,4 @@
-"""JSON payload builders for the read-only Gathering web surface. Plain async
-functions over typed collaborators, matching `nora.web.memory`'s shape
-(`build_memory_payload`) rather than `nora.web.games`'s remote-client-wrapper
-shape — Gathering's data is local Postgres via `GatheringService`, not a remote
-REST API."""
+"""JSON payload builders for the read-only Gathering web surface."""
 
 from __future__ import annotations
 

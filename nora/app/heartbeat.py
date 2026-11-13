@@ -65,6 +65,7 @@ from nora.domain.reminders import (
     ReminderStore,
     proactive_subject,
 )
+from nora.domain.ticks import seconds_to_boundary
 from nora.engagement.slots import ConversationSlots, Key
 from nora.obs.metrics import Metrics
 
@@ -215,7 +216,11 @@ class HeartbeatLoop:
         """
         log.info("heartbeat started: tick every %.1fs", self._tick_seconds)
         while True:
-            await asyncio.sleep(self._tick_seconds)
+            # Aligned (node 18): sleep to the next boundary of the cadence
+            # grid, not `tick_seconds` after the last pass ended — work
+            # duration never drifts the phase, and a due row whose tick just
+            # became eligible is seen at the boundary, not late.
+            await asyncio.sleep(seconds_to_boundary(self._tick_seconds))
             try:
                 await self.tick()
             except Exception:

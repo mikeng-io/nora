@@ -74,10 +74,13 @@ _EXTRA_DOORS = (
 )
 
 #: Calls that send a prompt to a model, matched on the callee's trailing name
-#: and on the name it was imported under.
+#: and on the name it was imported under. `run_agent` is
+#: `DreamerRuntime`'s one model-invocation route (node 30): the session's
+#: delegate (`DreamerAgentRunner`) and every adaptor's `_sample` reach the
+#: model through it.
 _MODEL_CALLS = {
     "create_agent", "create_dream_agent", "create_browse_agent",
-    "ask_text", "ask_structured", "invoke_async",
+    "ask_text", "ask_structured", "invoke_async", "run_agent",
 }
 #: Agent methods that send a prompt, matched on the trailing name alone.
 _MODEL_METHODS = {"stream_async", "structured_output", "structured_output_async"}
@@ -103,9 +106,9 @@ MECHANISM = {
         "it forwards a prompt a caller built, and its one caller today is the "
         "debrief client composition.py constructs"
     ),
-    "nora/app/composition.py": (
-        "constructs the raw gate client and the debrief's ask_text client; the "
-        "text each sends is built by relevance_gate and the debrief renderer"
+    "nora/app/raw_clients.py": (
+        "the raw gate client and the debrief's ask_text client; the text "
+        "each sends is built by relevance_gate and the debrief renderer"
     ),
     "nora/infra/vision/client.py": (
         "the raw vision transport; the question it sends is authored in "
@@ -281,7 +284,7 @@ def calls_assemble(tree: ast.Module) -> bool:
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and _is_blocks_module(node)
         for alias in node.names
-        if alias.name == "assemble"
+        if alias.name in {"assemble", "assemble_declared"}
     }
     return any(
         isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
@@ -374,7 +377,7 @@ def check_the_rule(modules: dict[str, ast.Module]) -> None:
     assert not found, (
         "a module builds a model prompt outside context assembly: "
         f"{found}. Declare `_BLOCKS` and walk it with `assemble(...)` "
-        "(design/context-assembly/04-every-occasion.md, «How a new occasion "
+        "(design/context-assembly/registry.md, «How a new occasion "
         "joins»), or, if it truly is not a context, add it to MECHANISM, "
         "RUNNER or EXEMPT with a reason. There is no list of exceptions to "
         "add it to."
@@ -458,7 +461,7 @@ def test_discovery_sees_the_known_call_sites_and_occasions(modules):
     must find what is known to be there before its silence means anything."""
     callers = {rel for rel, tree in modules.items() if calls_a_model(tree)}
     for known in (
-        "nora/agent/factory.py", "nora/app/composition.py",
+        "nora/agent/factory.py", "nora/app/raw_clients.py",
         "nora/ingest/relevance_gate.py", "nora/app/cognition_agent_runner.py",
         "nora/agent/reaction.py", "nora/engagement/stages/debrief.py",
         # The scanned door outside `nora/`: found first, classified second.
@@ -561,6 +564,7 @@ def test_the_net_follows_an_alias_and_a_wider_receiver(source):
     "ask_text(client, prompt)\n",
     "ask_structured(client, prompt)\n",
     "await invoke_async(agent, prompt)\n",
+    "await runtime.run_agent(system_prompt='s', prompt='p')\n",
     "agent.stream_async(prompt)\n",
     "agent.structured_output(Model, prompt)\n",
     "agent.structured_output_async(Model, prompt)\n",
@@ -571,6 +575,7 @@ def test_the_net_follows_an_alias_and_a_wider_receiver(source):
 ], ids=[
     "create_agent", "factory.create_agent", "create_dream_agent",
     "factory.create_dream_agent", "ask_text", "ask_structured", "invoke_async",
+    "run_agent",
     "stream_async", "structured_output", "structured_output_async",
     "completions.create", "messages.create", "responses.create", "complete",
 ])

@@ -2,8 +2,8 @@
   {
     "name": "a hidden message actually stops reaching a transcript read",
     "file": "nora/infra/sql/audit.py",
-    "old": "    hidden = MESSAGES.c.hidden_at.is_(None)",
-    "new": "    hidden = sa.true()",
+    "old": "hidden: sa.ColumnElement[bool] = MESSAGES.c.hidden_at.is_(None)",
+    "new": "hidden: sa.ColumnElement[bool] = sa.true()",
     "target": "tests/infra/test_withdrawal.py -k test_hide_message"
   },
   {

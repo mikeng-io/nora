@@ -173,11 +173,11 @@ now runs at once with replies routed back to the platform they came from. See
   (tags/replies/errors counters + latency histograms). See `01-ambient-ingest.md
   §Observability`.
 - **Evaluation:** `strands-agents-evals` is the framework, enforced rather than
-  merely cited (`design/evaluation/07-sdk-native.md`). Live design and current
-  task order: `design/evaluation/_index.yaml` → `GOAL-2-backbone.md`.
+  merely cited (`design/evaluation/measurement.md`). The architecture and
+  measurement contract live in that bundle and `design/evaluation/coverage.md`.
   `05-evaluation.md` is the original 2026-08-03 plan, superseded — its CI-gate
   shape and evaluator axes were never implemented and are replaced by the
-  scenario map (`design/evaluation/10-the-scenario-map.md`).
+  scenario map (`design/evaluation/coverage.md`).
 
 ## External Services (unchanged, verified)
 

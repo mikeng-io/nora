@@ -840,7 +840,7 @@ ROLLUP_OUTING = sa.Table(
 #: Daybook: one person's local (Hong Kong) day in one unit. Counts of
 #: what the Record and the rollups below it hold, never an event attended (no
 #: upward input). `items_posted` is NULL where the person's social accounts were not
-#: observed that day (design/cognition-loop/25-rollup.md §3), 0 where observed and none.
+#: observed that day (design/cognition-loop/observation.md), 0 where observed and none.
 ROLLUP_DAYBOOK = sa.Table(
     "rollup_daybook",
     METADATA,
@@ -1010,6 +1010,24 @@ REMINDERS = sa.Table(
     sa.Column("text", sa.Text, nullable=False),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("due_at", sa.DateTime(timezone=True), nullable=False),
+    # The eligibility authority (node 18, `nora.domain.ticks`): the first
+    # minute tick at or after `due_at` — `ceil(epoch_ms / 60_000)` — the ONE
+    # writable deadline the `due()` predicate reads. `due_at` stays the
+    # requested instant — provenance, and the ordering the answer returns in
+    # — never a second deadline: the CHECK binds the tick to the instant, so
+    # a writer names the tick it means and can still never let the two
+    # disagree (a derived GENERATED column would make restores unable to
+    # write it — the contract wants it stored).
+    sa.Column("due_tick", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        # `extract(epoch from timestamptz)` is STABLE; the epoch's interval
+        # arithmetic is IMMUTABLE, so the same microseconds come through
+        # `due_at - epoch` — and CHECK requires only immutability.
+        "due_tick IS NOT DISTINCT FROM "
+        "((ceil((extract(epoch from (due_at - '1970-01-01 00:00:00+00'::timestamptz)) "
+        "* 1000) / 60000))::bigint)",
+        name="ck_reminders_due_tick",
+    ),
     sa.Column("state", sa.Text, nullable=False),
     # NULL until the row fires, and NULL forever on one that is cancelled.
     sa.Column("fired_at", sa.DateTime(timezone=True), nullable=True),
@@ -1092,6 +1110,15 @@ REMINDERS = sa.Table(
 # because the CHECK constraint on the same table is.
 IDX_REMINDERS_DUE = sa.Index(
     "idx_reminders_due", REMINDERS.c.state, REMINDERS.c.due_at
+)
+
+#: The due predicate's index (node 18): `state = 'pending' AND due_tick <=
+#: current_tick` is what the heartbeat's `due()` reads every tick, so the
+#: eligible set is a prefix scan over it rather than a walk of every pending
+#: row. `idx_reminders_due` stays for the pending-ordering reads
+#: (`all_pending`, `pending_for`), whose order `due_at` still carries.
+IDX_REMINDERS_DUE_TICK = sa.Index(
+    "idx_reminders_due_tick", REMINDERS.c.state, REMINDERS.c.due_tick
 )
 
 #: ONE OPEN PROACTIVE ROW PER NOTE (migration 0064). Without it nothing below
@@ -1315,6 +1342,28 @@ TOOL_CALL_LOG = sa.Table(
 IDX_TOOL_CALL_LOG_CONV_TS = sa.Index(
     "idx_tool_call_log_conv_ts", TOOL_CALL_LOG.c.conversation_id,
     sa.text("created_at DESC"),
+)
+
+
+# `fetched_pages` — one conversation's materialized copy of one url. `web_fetch`
+# fetches a page once, seals the text into the shared `blob_store` (rustfs) and
+# writes this index row; `offset`/`about` reads then answer from the stored copy,
+# never a second provider call. The composite key IS the dedup. `provenance`
+# carries the provider-side facts the served slices keep (`provider`,
+# `saved_copy`, `truncated`, `images`). Its own namespace: a page's words are a
+# stranger's, so fetched text never indexes into memory or documents.
+FETCHED_PAGES = sa.Table(
+    "fetched_pages",
+    METADATA,
+    sa.Column("conversation_id", sa.Text, primary_key=True),
+    sa.Column("url", sa.Text, primary_key=True),
+    sa.Column("blob_key", sa.Text, nullable=False),
+    sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column(
+        "provenance", pg.JSONB, nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    ),
 )
 
 
@@ -1870,18 +1919,12 @@ EVENT_REVISION = sa.Table(
     sa.Column("venue_maps_url", sa.Text, nullable=True),
     sa.Column("venue_district", sa.Text, nullable=True),
     sa.Column("venue_city", sa.Text, nullable=True),
-    sa.Column(
-        "people", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"),
-    ),
+    sa.Column("people", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
     sa.Column("reasoning", sa.Text, nullable=True),
     sa.Column("confidence", sa.Text, nullable=True),
-    sa.Column(
-        "lineage", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
-    ),
+    sa.Column("lineage", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("as_of", sa.BigInteger, nullable=True),
-    sa.Column(
-        "field_meta", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
-    ),
+    sa.Column("field_meta", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("body", sa.Text, nullable=True),
     sa.Column("written_by", sa.Text, nullable=False, server_default=sa.text("'tag'")),
     sa.Column("written_at", sa.DateTime(timezone=True), nullable=False),
@@ -1889,6 +1932,8 @@ EVENT_REVISION = sa.Table(
         "recorded_at", sa.DateTime(timezone=True), nullable=False,
         server_default=sa.text("clock_timestamp()"),
     ),
+    # The citation fold `{part: [refs]}`; NULL on rows written before it.
+    sa.Column("citations", pg.JSONB(none_as_null=True), nullable=True),
     sa.CheckConstraint(
         "status IN (" + ", ".join(f"'{s}'" for s in _EVENT_LIFECYCLE) + ")",
         name="ck_event_revision_status",
@@ -1907,6 +1952,9 @@ EVENT_REVISION = sa.Table(
     sa.CheckConstraint(
         "jsonb_typeof(field_meta) = 'object'", name="ck_event_revision_field_meta_shape",
     ),
+    sa.CheckConstraint(
+        "citations is null or jsonb_typeof(citations) = 'object'",
+        name="ck_event_revision_citations_shape"),
 )
 
 IDX_EVENT_REVISION_EVENT = sa.Index(
@@ -2392,7 +2440,7 @@ NOTE = sa.Table(
     sa.Column("anchor_date", sa.Integer),
     sa.Column("anchor_entity_ids", pg.ARRAY(sa.Text), nullable=False,
               server_default=sa.text("'{}'")),
-    # The curated source-object pointers (design/platform-observations 03's
+    # The curated source-object pointers (design/platform-observations/projections.md's
     # retained lane): [{platform, conversation_id, thread, handle}] — the
     # objects this matter still concerns, resolved fresh at every assembly.
     sa.Column("object_refs", pg.JSONB, nullable=False,
@@ -3523,6 +3571,22 @@ STIMULUS = sa.Table(
     sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("at_ms", sa.BigInteger, nullable=False),
     sa.Column("due_ms", sa.BigInteger),
+    # The due TICK of `due_ms` (`nora.domain.ticks`): `ceil(due_ms / 60_000)`
+    # — the ONE writable deadline the pending read's due branch ranges over;
+    # `due_ms` stays the requested instant (provenance), never a second
+    # deadline: the CHECK binds them, so a writer names the tick it means
+    # and can still never let the two disagree. The ceiling is spelled
+    # `due_ms / 60000 + (mod(due_ms, 60000) > 0)`, not `(due_ms + 59999) /
+    # 60000`: Postgres integer division truncates toward zero, so the naive
+    # spelling gives the wrong tick for negative `due_ms` (a pre-epoch
+    # deadline) and can overflow for very large ones. NULL when `due_ms`
+    # is — an undated stimulus is pending once recorded.
+    sa.Column("due_tick", sa.BigInteger),
+    sa.CheckConstraint(
+        "due_tick IS NOT DISTINCT FROM (CASE WHEN due_ms IS NULL THEN NULL "
+        "ELSE (due_ms / 60000) + CASE WHEN mod(due_ms, 60000) > 0 THEN 1 ELSE 0 END END)",
+        name="ck_stimulus_due_tick",
+    ),
     # System time (`_recorded_at`). The stimulus store states it
     # from the same clock the wake arithmetic runs on; the default covers a
     # writer that does not.
@@ -3543,8 +3607,8 @@ IDX_STIMULUS_UNIT_ID = sa.Index("idx_stimulus_unit_id", STIMULUS.c.unit, STIMULU
 #: view`): a stimulus due after the watermark's time bound; an undated one
 #: recorded after it; a unit's newest person-authored item.
 IDX_STIMULUS_UNIT_DUE = sa.Index(
-    "idx_stimulus_unit_due", STIMULUS.c.unit, STIMULUS.c.due_ms,
-    postgresql_where=STIMULUS.c.due_ms.isnot(None),
+    "idx_stimulus_unit_due", STIMULUS.c.unit, STIMULUS.c.due_tick,
+    postgresql_where=STIMULUS.c.due_tick.isnot(None),
 )
 IDX_STIMULUS_UNIT_UNDATED_RECORDED = sa.Index(
     "idx_stimulus_unit_undated_recorded", STIMULUS.c.unit, STIMULUS.c.recorded_at,
@@ -3663,8 +3727,8 @@ IDX_COGNITION_SESSION_UNIT_ID = sa.Index(
     "idx_cognition_session_unit_id", COGNITION_SESSION.c.unit, COGNITION_SESSION.c.id,
 )
 
-# One row per agenda item's close: `written`,
-# `no_change`, `waiting`, `covered`, or code's own `struck` at `max_strikes`.
+# Legacy per-item close rows, retained for schema history and snapshots.
+# Session outcomes no longer write this table.
 COGNITION_SESSION_CLOSE = sa.Table(
     "cognition_session_close",
     METADATA,
@@ -3833,6 +3897,56 @@ STIMULUS_RETRACTION = sa.Table(
 
 UQ_STIMULUS_RETRACTION_STIMULUS = sa.Index(
     "uq_stimulus_retraction_stimulus", STIMULUS_RETRACTION.c.stimulus_id, unique=True,
+)
+
+# `stimulus_claim`: the stimuli a recorded wake claimed — its `claimed_ids`,
+# one row each — the append-only fact the pending read consumes by: a stimulus
+# is consumed exactly when a wake that did not fail claimed it
+# (`nora.infra.sql.stimuli.pending_query`, the ONE probe). The wake row's
+# `detail.claimed` is the same set as provenance; this table is what the read
+# can index. Append-only, like `stimulus_retraction`.
+STIMULUS_CLAIM = sa.Table(
+    "stimulus_claim",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("stimulus_id", sa.BigInteger, nullable=False),
+    sa.Column("wake_id", sa.BigInteger, nullable=False),
+    _recorded_at(),
+)
+
+IDX_STIMULUS_CLAIM_STIMULUS = sa.Index(
+    "idx_stimulus_claim_stimulus", STIMULUS_CLAIM.c.stimulus_id,
+)
+
+IDX_STIMULUS_CLAIM_WAKE = sa.Index(
+    "idx_stimulus_claim_wake", STIMULUS_CLAIM.c.wake_id,
+)
+
+# `stimulus_pending`: the materialized "not permanently consumed" set the
+# pending read walks — one row per `(unit, mode, stimulus_id)` while the
+# stimulus can still be offered. `append` writes a row for every mode the
+# unit has seeded; `view` lazily seeds a `(unit, mode)`'s set on first read
+# (the `stimulus_id = 0` sentinel marks the seed so a fully-consumed mode
+# does not re-seed every read); a `closed` outcome deletes its wake's claims
+# and a retraction deletes the stimulus — open and failed claims keep their
+# rows, and the `stimulus_claim` probe still excludes the open ones while the
+# failed ones release. Consumed history is never visited: the read's row
+# count IS the genuine backlog, bounded by itself. Derived state — rebuilt,
+# never copied, at `snapshot_at.seed`.
+STIMULUS_PENDING = sa.Table(
+    "stimulus_pending",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("mode", sa.Text, nullable=False),
+    sa.Column("stimulus_id", sa.BigInteger, nullable=False),
+    _recorded_at(),
+)
+
+UQ_STIMULUS_PENDING = sa.Index(
+    "uq_stimulus_pending", STIMULUS_PENDING.c.unit, STIMULUS_PENDING.c.mode,
+    STIMULUS_PENDING.c.stimulus_id, unique=True,
 )
 
 SOURCE_HEALTH = sa.Table(
@@ -4971,7 +5085,7 @@ IDX_SOCIAL_PERCEPTION_ITEM = sa.Index(
 IDX_SOCIAL_PERCEPTION_AT = sa.Index("idx_social_perception_at", SOCIAL_PERCEPTION.c.at)
 
 # What deleting a blob's bytes leaves behind (0109, design/cognition-loop/
-# 70-migration.md §9): the content address, the kind of thing the bytes were
+# design/cognition-loop/data.md): the content address, the kind of thing the bytes were
 # and when they went, APPEND-ONLY, one row per deletion. The same bytes can be
 # stored again later (a member posts them anew), so a tombstone says the bytes
 # were gone for the rows recorded before `deleted_at`, never for a row
@@ -5001,7 +5115,7 @@ IDX_BLOB_TOMBSTONE_SHA = sa.Index(
 )
 
 
-# `profile` / `profile_line` (migration `0117_persona`, design/unified-memory/45
+# `profile` / `profile_line` (migration `0117_persona`, design/unified-memory/profiles.md
 # §1): one account per entity, kept as typed lines. `profile` is the account
 # and changes in place (`revision`, bumped by every committed write, is the
 # compare-and-set a session writes against), so it keeps `row_history`.
@@ -5012,7 +5126,7 @@ IDX_BLOB_TOMBSTONE_SHA = sa.Index(
 # `documents` gives. The rules a CHECK can carry are here; the rest
 # (premises, instances per day, the listed-room rule, caps, precedence) are
 # `nora.domain.profile.plan_write`'s, run inside the write's transaction.
-# Nothing renders these rows before the switch (00 «Sequence» step 8), so
+# Nothing renders these rows before the switch (), so
 # they are the shadow by construction.
 PROFILE = sa.Table(
     "profile",
@@ -5336,7 +5450,7 @@ LEDGER_COMMITMENT_REVISION = _ledger_table(
 )
 LEDGER_THREAD_REVISION = _ledger_table("standing_thread_revision", "thread", history=True)
 
-# Generic memory graph stores (design/unified-memory/27). Vocabularies live in code.
+# Generic memory graph stores (design/unified-memory/graph.md). Vocabularies live in code.
 ENTITY = sa.Table(
     "entity",
     METADATA,
@@ -5514,13 +5628,17 @@ NOTEBOOK_ENTRY = sa.Table(
     sa.Column("id", sa.Text, primary_key=True),
     sa.Column("kind", sa.Text, nullable=False),
     sa.Column("unit", sa.Text, nullable=False),
-    sa.Column(
-        "recorded_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
-    ),
+    # Store-written casefolded subject and live flag; the index is the atomic rule.
+    sa.Column("subject", sa.Text, nullable=False, server_default=""),
+    sa.Column("retired", sa.Boolean, nullable=False, server_default=sa.false()),
+    sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
     sa.CheckConstraint("kind = 'topic'", name="ck_entry_kind"),
     sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_entry_unit"),
 )
 sa.Index("idx_notebook_entry_unit", NOTEBOOK_ENTRY.c.unit)
+sa.Index("uq_entry_live_subject", NOTEBOOK_ENTRY.c.unit, NOTEBOOK_ENTRY.c.subject,
+         unique=True, postgresql_where=sa.text("NOT retired"))
 NOTEBOOK_ENTRY_REVISION = sa.Table(
     "notebook_entry_revision",
     METADATA,
@@ -5529,18 +5647,14 @@ NOTEBOOK_ENTRY_REVISION = sa.Table(
     sa.Column("base_revision_id", sa.Text, sa.ForeignKey("notebook_entry_revision.id")),
     sa.Column("seq", sa.Integer, nullable=False),
     sa.Column("content", pg.JSONB, nullable=False),
-    sa.Column(
-        "recorded_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
-    ),
+    sa.Column("lineage", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
     sa.CheckConstraint("seq >= 1", name="ck_entry_revision_seq"),
     sa.CheckConstraint("(seq = 1) = (base_revision_id IS NULL)", name="ck_entry_revision_base"),
 )
-sa.Index(
-    "uq_entry_revision_seq",
-    NOTEBOOK_ENTRY_REVISION.c.entry_id,
-    NOTEBOOK_ENTRY_REVISION.c.seq,
-    unique=True,
-)
+sa.Index("uq_entry_revision_seq", NOTEBOOK_ENTRY_REVISION.c.entry_id,
+         NOTEBOOK_ENTRY_REVISION.c.seq, unique=True)
 
 # ---- platform bridges (design/platform-bridges) --------------------------
 # Durable inbound handoff: event mapping, work obligations and outbound
@@ -5666,7 +5780,7 @@ sa.Index("idx_bridge_action_owner", BRIDGE_ACTION.c.owner_kind,
          BRIDGE_ACTION.c.owner_id)
 
 
-# ---- platform observations (design/platform-observations 02) --------------
+# ---- platform observations (design/platform-observations/observations.md) --------------
 # The typed Record of what a source reported about an OBJECT — a poll, a
 # room/thread, a member set, a pin set, an artifact, a reaction's target or a
 # message's own metadata. `platform_observation` is the history: one row per

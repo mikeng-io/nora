@@ -36,9 +36,7 @@ from nora.infra.sql.character import _in_rooms
 from nora.infra.sql.mobility import SqlMobilityStore, current_build_id
 from nora.infra.sql.rollup_read import SqlRollupRead, _row
 from nora.infra.sql.rollups import SqlRollupStore
-from nora.infra.sql.schema import (
-    CONSOLIDATION_WATERMARK as W,
-)
+from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
 from nora.infra.sql.schema import (
     EVENT_REVISION,
     EVENTS,
@@ -277,6 +275,8 @@ class SqlProfileInputs:
         m = MESSAGES.c
         return sa.select(q, m.sender_id, m.sender_name, m.ts, m.body, m.is_nora,
             m.delivery_status, m.raw_json, m.quoted_ts, m.person_id,
+            sa.func.coalesce(latest.c.mention_persons_json, m.mention_persons_json).label(
+                "mention_persons_json"),
             turn_id_for_message().label('turn_id'), m.external_files_json,
             latest.c.ts.label('edit_ts'), latest.c.body.label('edit_body'),
             latest.c.raw_json.label('edit_raw_json'),

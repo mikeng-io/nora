@@ -2,7 +2,7 @@
 // she does when poked. It knows nothing about pixels; it turns what is
 // happening on the page into one Frame (types.ts) a pose can be drawn in.
 //
-// Her character is the spec (design/self-reference/05): calm, observant, a
+// Her character is the spec (design/self-reference/identity.md): calm, observant, a
 // little deadpan, never over-acted. So everything here is small. Her eyes
 // jump and hold, the way eyes do, and her head follows them slowly; she
 // glances at your pointer and then gets bored of it; left alone she listens

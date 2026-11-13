@@ -176,7 +176,7 @@ def test_a_thread_id_is_never_itself_a_room(tmp_path):
 def test_entry_fields_apply_to_every_discovered_channel(tmp_path):
     body = 'default = "deny"\n' + _entry(
         unit='unit = "friends"\n',
-        fields='tools = ["pulse"]\nlocation = true\n'
+        fields='tools = ["demo"]\nlocation = true\n'
                'description = "the server"\n',
     )
     policy = _policy(tmp_path, body, DISCOVERED)
@@ -185,7 +185,7 @@ def test_entry_fields_apply_to_every_discovered_channel(tmp_path):
 
     assert room is not None
     assert room.unit == "friends"
-    assert room.tools == {"pulse"}
+    assert room.tools == {"demo"}
     assert room.location
     assert room.description == "the server"
     # The unit scopes an existing static room sees must include it.
@@ -360,12 +360,8 @@ import dataclasses  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 
 import nora.ingest.stages.scope as scope_stage  # noqa: E402
-from nora.app.composition import (  # noqa: E402
-    _profile_room_keys,
-    character_person_keys,
-    scope_home_rooms,
-    social_unit_rooms,
-)
+from nora.app.composition_helpers import _profile_room_keys, character_person_keys  # noqa: E402
+from nora.app.composition_readers import scope_home_rooms, social_unit_rooms  # noqa: E402
 from nora.app.documents_service import room_label, rooms_named  # noqa: E402
 from nora.config_reload import LivePolicy  # noqa: E402
 from nora.domain.models import EditTarget  # noqa: E402

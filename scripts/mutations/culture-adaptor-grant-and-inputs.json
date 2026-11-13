@@ -15,8 +15,8 @@
   },
   {
     "name": "part 1: the culture grant is keyed under a name nothing reads",
-    "file": "nora/app/composition.py",
-    "old": "            CULTURE_ADAPTOR_NAME: culture_grant(),",
+    "file": "nora/app/composition_dream.py",
+    "old": "        CULTURE_ADAPTOR_NAME: culture_grant(),",
     "new": "            \"cultuer\": culture_grant(),",
     "target": "tests/test_composition.py -k culture"
   },

@@ -29,15 +29,15 @@
   },
   {
     "name": "r2-3-canonical-unit-arbitration",
-    "file": "nora/app/cognition_session.py",
-    "old": "arbitration_rooms=[tuple(r) for r in unit_rooms],",
+    "file": "nora/agenda/adapters/tools/session_remind.py",
+    "old": "            arbitration_rooms=[tuple(r) for r in unit_rooms],",
     "new": "arbitration_rooms=list(destinations),",
     "target": "tests/unit/test_cognition_live_writes.py::test_remind_refuses_when_a_same_act_is_firing_in_a_unit_room_off_agenda"
   },
   {
     "name": "r2-4-delivered-fact-dedupe",
-    "file": "nora/app/cognition_session.py",
-    "old": "                    subject_kind=subject_kind, subject_id=subject_id,",
+    "file": "nora/agenda/adapters/tools/session_remind.py",
+    "old": "        subject_kind=subject_kind, subject_id=subject_id,",
     "new": "                    subject_kind=subject_kind + '-x', subject_id=subject_id,",
     "target": "tests/unit/test_cognition_live_writes.py::test_remind_refuses_a_same_act_already_delivered"
   },
@@ -86,7 +86,7 @@
   {
     "name": "delivered-act-retains-canonical-identity",
     "file": "nora/language/shared_render.py",
-    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} · {e.action or 'remind'}\"",
+    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} \u00b7 {e.action or 'remind'}\"",
     "new": "identity = \"identity omitted\"",
     "target": "tests/unit/test_shared_state.py::test_delivery_facts_expose_action_identity_and_legacy_uncertainty"
   },

@@ -151,14 +151,14 @@ application services through the generated `deployments` Compose manifest;
 their release images are built from subtrees here (`stt/`, `voice-sidecar/`, …).
 The newest:
 
-* **`voice-sidecar/`** — the Node audio-controller (design/voice-channel/07):
+* **`voice-sidecar/`** — the Node audio-controller (design/voice-channel/audio.md):
   the SOLE holder of the Discord voice connection. Joins a channel,
   DAVE-decrypts per-user audio and forwards PCM over a local TCP seam
   toward the Python wake gate, AND drives outbound music/speech playback
   itself over an HTTP control plane (`nora/infra/voice/http_controller.py`)
   — no longer receive-only, the stage-2 name from before nora stopped
   holding its own voice connection. See
-  `design/voice-channel/07-audio-owner-controller.md` and
+  `design/voice-channel/audio.md` and
   `deploy/voice-sidecar/README.md`.
 * **`voice-wake/`** — Python wake gate (stage 3), the seam's only consumer:
   openWakeWord 「喂 Nora」 detection per user, utterance collection,

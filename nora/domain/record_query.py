@@ -33,6 +33,7 @@ class RecordQuery:
     person_id: str | None = None
     text: str | None = None
     limit: int = RECORD_QUERY_MAX
+    related_persons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

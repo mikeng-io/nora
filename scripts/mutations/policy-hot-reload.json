@@ -29,30 +29,30 @@
   },
   {
     "name": "culture unit_for reads the live policy holder",
-    "file": "nora/app/composition.py",
-    "old": "                    unit_for=LiveMapping(lambda: {\n                        conv.primary_id: conv.unit\n                        for conv in allowlist.rooms()\n                        if conv.primary_id and conv.unit\n                    }).get,",
-    "new": "                    unit_for={\n                        conv.primary_id: conv.unit\n                        for conv in allowlist.rooms()\n                        if conv.primary_id and conv.unit\n                    }.get,",
+    "file": "nora/app/composition_dream.py",
+    "old": "            unit_for=LiveMapping(\n                lambda: {\n                    conv.primary_id: conv.unit\n                    for conv in allowlist.rooms()\n                    if conv.primary_id and conv.unit\n                }\n            ).get,",
+    "new": "            unit_for={\n                    conv.primary_id: conv.unit\n                    for conv in allowlist.rooms()\n                    if conv.primary_id and conv.unit\n                }.get,",
     "target": "tests/integration/test_policy_reload.py::test_the_culture_adaptor_resolves_a_hot_added_room"
   },
   {
     "name": "culture label_for reads the live policy holder",
-    "file": "nora/app/composition.py",
-    "old": "                    label_for=LiveMapping(lambda: {\n                        conv.primary_id: conv.label\n                        for conv in allowlist.rooms()\n                        if conv.primary_id and conv.label\n                    }).get,",
-    "new": "                    label_for={\n                        conv.primary_id: conv.label\n                        for conv in allowlist.rooms()\n                        if conv.primary_id and conv.label\n                    }.get,",
+    "file": "nora/app/composition_dream.py",
+    "old": "            label_for=LiveMapping(\n                lambda: {\n                    conv.primary_id: conv.label\n                    for conv in allowlist.rooms()\n                    if conv.primary_id and conv.label\n                }\n            ).get,",
+    "new": "            label_for={\n                    conv.primary_id: conv.label\n                    for conv in allowlist.rooms()\n                    if conv.primary_id and conv.label\n                }.get,",
     "target": "tests/integration/test_policy_reload.py::test_the_culture_adaptor_resolves_a_hot_added_room"
   },
   {
     "name": "culture description_for reads the live policy holder",
-    "file": "nora/app/composition.py",
-    "old": "                    description_for=LiveMapping(lambda: {\n                        conv.primary_id: conv.description\n                        for conv in allowlist.rooms()\n                        if conv.primary_id and conv.description\n                    }).get,",
-    "new": "                    description_for={\n                        conv.primary_id: conv.description\n                        for conv in allowlist.rooms()\n                        if conv.primary_id and conv.description\n                    }.get,",
+    "file": "nora/app/composition_dream.py",
+    "old": "            description_for=LiveMapping(\n                lambda: {\n                    conv.primary_id: conv.description\n                    for conv in allowlist.rooms()\n                    if conv.primary_id and conv.description\n                }\n            ).get,",
+    "new": "            description_for={\n                    conv.primary_id: conv.description\n                    for conv in allowlist.rooms()\n                    if conv.primary_id and conv.description\n                }.get,",
     "target": "tests/integration/test_policy_reload.py::test_the_culture_adaptor_resolves_a_hot_added_room"
   },
   {
     "name": "culture platform_for reads the live policy holder",
-    "file": "nora/app/composition.py",
-    "old": "                    platform_for=LiveMapping(lambda: {\n                        conv.primary_id: conv.platform\n                        for conv in allowlist.rooms()\n                        if conv.primary_id\n                    }).get,",
-    "new": "                    platform_for={\n                        conv.primary_id: conv.platform\n                        for conv in allowlist.rooms()\n                        if conv.primary_id\n                    }.get,",
+    "file": "nora/app/composition_dream.py",
+    "old": "            platform_for=LiveMapping(\n                lambda: {\n                    conv.primary_id: conv.platform\n                    for conv in allowlist.rooms()\n                    if conv.primary_id\n                }\n            ).get,",
+    "new": "            platform_for={\n                    conv.primary_id: conv.platform\n                    for conv in allowlist.rooms()\n                    if conv.primary_id\n                }.get,",
     "target": "tests/integration/test_policy_reload.py::test_the_culture_adaptor_resolves_a_hot_added_room"
   }
 ]

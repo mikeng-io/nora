@@ -13,6 +13,7 @@ import stat
 import subprocess
 import threading
 import time
+import tomllib
 import uuid
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -21,9 +22,10 @@ from typing import Any
 from opentelemetry import baggage, context, trace
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, SynchronousMultiSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import Status, StatusCode
 
 from nora.obs.logging import SEVERITY_NUMBERS
-from nora.obs.tracing import EVAL_EVIDENCE_KEY
+from nora.obs.tracing import EVAL_EVIDENCE_KEY, TraceIdentityProcessor
 
 _CURRENT: contextvars.ContextVar[RunEvidence | None] = contextvars.ContextVar(
     "eval_evidence", default=None)
@@ -32,6 +34,17 @@ _CASE: contextvars.ContextVar[str | None] = contextvars.ContextVar("eval_case", 
 
 class EvidenceError(RuntimeError):
     """A measurement whose evidence could not be kept must not pass."""
+
+
+def evaluation_export_for(config: Path) -> Any:
+    """Resolve the eval-facing export policy before opening private evidence."""
+    from nora.agent.telemetry import evaluation_export
+    try:
+        with config.open("rb") as config_file:
+            tracing = tomllib.load(config_file).get("obs", {}).get("tracing", {})
+        return evaluation_export(tracing)
+    except (OSError, ValueError, RuntimeError, AttributeError, TypeError, KeyError) as exc:
+        raise EvidenceError("configured evaluation visibility unavailable") from exc
 
 
 def current() -> RunEvidence | None:
@@ -58,6 +71,8 @@ class RunEvidence(SpanProcessor, logging.Handler):
 
     The processor is attached to the SAME provider as the existing in-memory
     evaluator. Context propagation confines records to this run and its cases.
+    The caller owns single-run isolation: capture swaps process-global tracing
+    state and must not overlap another capture or runtime work in this process.
     """
 
     def __init__(self, *, run_id: str, metadata: Mapping[str, Any], lock_fd: int,
@@ -83,6 +98,7 @@ class RunEvidence(SpanProcessor, logging.Handler):
         self.run_id = run_id
         self.exit_code: int | None = None
         self._order = 0
+        self._export = None
 
     def check(self) -> None:
         if self.failure:
@@ -90,6 +106,9 @@ class RunEvidence(SpanProcessor, logging.Handler):
 
     def record(self, kind: str, **payload: Any) -> None:
         self.check()
+        if (self._export is not None and self._export.span_exporter.failed
+                and kind in {"case_started", "call_started", "transport_started"}):
+            raise EvidenceError("evaluation export failed; run invalid")
         row = {"kind": kind, "run_id": self.run_id, "case_id": _CASE.get(),
                "time_ns": time.time_ns(), **payload}
         span_context = trace.get_current_span().get_span_context()
@@ -111,12 +130,18 @@ class RunEvidence(SpanProcessor, logging.Handler):
                         raise OSError("short eval evidence write")
                     view = view[written:]
                 os.fsync(self._fd)
+            if self._export is not None and kind not in {"span_started", "span_finished", "log"}:
+                trace.get_current_span().add_event("nora.eval." + kind, {
+                    "nora.eval.record": json.dumps(row, ensure_ascii=False, default=_json_value)})
         except (OSError, ValueError, TypeError) as exc:
             self.failure = f"eval evidence write failed ({type(exc).__name__}); run is invalid"
             raise EvidenceError(self.failure) from exc
 
     def on_start(self, span: Any, parent_context: Any = None) -> None:
         if current() is self:
+            span.set_attribute("nora.eval.run_id", self.run_id)
+            if _CASE.get():
+                span.set_attribute("nora.eval.case_id", _CASE.get())
             self.record("span_started", **self._span(span))
 
     def on_end(self, span: ReadableSpan) -> None:
@@ -154,17 +179,19 @@ class RunEvidence(SpanProcessor, logging.Handler):
         token = _CASE.set(case_id)
         self._active.add(case_id)
         try:
-            self.record("case_started", name=name, input=input, metadata=metadata,
-                        sample_sha256=hashlib.sha256(json.dumps(
-                            [input, metadata], default=_json_value, sort_keys=True
-                        ).encode()).hexdigest())
-            with trace.get_tracer(__name__).start_as_current_span("eval.case"):
-                yield
-            self.record("case_finished")
-        except BaseException as exc:
-            if self.failure is None:
-                self.record("case_failed", error_type=type(exc).__name__)
-            raise
+            with trace.get_tracer(__name__).start_as_current_span(
+                    "eval.case", attributes={"nora.eval.case.name": name}):
+                try:
+                    self.record("case_started", name=name, input=input, metadata=metadata,
+                                sample_sha256=hashlib.sha256(json.dumps(
+                                    [input, metadata], default=_json_value, sort_keys=True
+                                ).encode()).hexdigest())
+                    yield
+                    self.record("case_finished")
+                except BaseException as exc:
+                    if self.failure is None:
+                        self.record("case_failed", error_type=type(exc).__name__)
+                    raise
         finally:
             self._active.discard(case_id)
             _CASE.reset(token)
@@ -173,13 +200,16 @@ class RunEvidence(SpanProcessor, logging.Handler):
         self.record("case_result", result=result)
 
     @contextlib.contextmanager
-    def capture(self, provider: Any) -> Iterator[RunEvidence]:
+    def capture(self, provider: Any, *, export: Any = None) -> Iterator[RunEvidence]:
+        self._export = export
         token = _CURRENT.set(self)
         capture_token = context.attach(context.set_value(
             EVAL_EVIDENCE_KEY, self.record, baggage.set_baggage("nora.eval.capture", "true")))
         root_logger = logging.getLogger()
         original_processors = provider._active_span_processor
         original_entries = original_processors._span_processors
+        original_max_events = provider._span_limits.max_events
+        failed_recorded = False
         private_processors = SynchronousMultiSpanProcessor()
         for processor in original_processors._span_processors:
             if (isinstance(getattr(processor, "span_exporter", None), InMemorySpanExporter)
@@ -187,6 +217,10 @@ class RunEvidence(SpanProcessor, logging.Handler):
                         and type(processor).__name__ == "_BaggageSpanProcessor")):
                 private_processors.add_span_processor(processor)
         original_processors._span_processors = private_processors._span_processors
+        if export is not None:
+            private_processors.add_span_processor(TraceIdentityProcessor())
+            private_processors.add_span_processor(export)
+            original_processors._span_processors = private_processors._span_processors
         provider.add_span_processor(self)
         # Content-bearing SDK logs go only to this run's private handler.
         class PrivateOnly(logging.Filter):
@@ -205,27 +239,84 @@ class RunEvidence(SpanProcessor, logging.Handler):
         root_logger.addHandler(self)
         try:
             self.record("run_started", metadata=self.metadata)
-            with trace.get_tracer(__name__).start_as_current_span("eval.run"):
-                yield self
+            if export is not None and (
+                    provider._span_limits.max_attribute_length is not None
+                    or provider._span_limits.max_span_attribute_length is not None):
+                raise EvidenceError("evaluation attribute truncation configured; run invalid")
+            # OTel's BoundedList supports None (SpanLimits.UNSET) as unlimited.
+            # Existing tracers share this limits object; do not replace it.
+            provider._span_limits.max_events = None
+            from nora.agent.telemetry import evaluation_content_format
+            with (
+                evaluation_content_format() if export is not None else contextlib.nullcontext(),
+                trace.get_tracer(__name__).start_as_current_span(
+                    "eval.run", attributes={"nora.trace_kind": "generation"}) as root,
+            ):
+                try:
+                    if export is not None:
+                        with trace.get_tracer(__name__).start_as_current_span(
+                                "eval.export.preflight"):
+                            pass
+                        export.span_exporter.check()
+                        self.record("run_metadata", metadata=self.metadata)
+                    self.record("visibility", status="exporting" if export else "private_only")
+                    yield self
+                    self.check()
+                    if export is not None:
+                        export.force_flush()
+                        export.span_exporter.check()
+                    # Validate the prefix while the root is live. Only its own
+                    # terminal is not yet due; all model/case/session guards hold.
+                    events = read_events(self.path)
+                    receipt = validate_events(events, require_terminal=False)
+                    if receipt["status"] == "ERROR":
+                        raise EvidenceError("incomplete_record")
+                    if any(e["kind"] == "call_finished" and e.get("error_type")
+                           and not e.get("retry") for e in events):
+                        raise EvidenceError("model_error")
+                    self.record("run_finished", exit_code=self.exit_code,
+                                active_cases=sorted(self._active))
+                    root.set_attribute("nora.eval.capture.status", "complete")
+                    if self.exit_code is not None:
+                        root.set_attribute("nora.eval.exit_code", self.exit_code)
+                    root.set_attribute("nora.eval.export.status",
+                                       "pending_root" if export else "private_only")
+                except BaseException as exc:
+                    root.set_attribute("nora.eval.capture.status", "failed")
+                    root.set_status(Status(StatusCode.ERROR, "evaluation evidence unavailable"))
+                    if self.failure is None:
+                        self.record("run_failed", error_type=type(exc).__name__,
+                                    exit_code=getattr(exc, "code", None),
+                                    active_cases=sorted(self._active))
+                        failed_recorded = True
+                    raise
+            if export is not None:
+                export.force_flush()
+                export.span_exporter.check()
+                self.record("export_result", status="acknowledged")
             self.check()
-            self.record("run_finished", exit_code=self.exit_code, active_cases=sorted(self._active))
-            receipt = validate_events(read_events(self.path))
-            if receipt["status"] == "ERROR":
-                raise EvidenceError("incomplete_record")
         except BaseException as exc:
-            if self.failure is None:
+            if self.failure is None and not failed_recorded:
+                # Root export may fail only AFTER it ends. An unreachable sink
+                # cannot acknowledge that fact: retain the truthful private failure.
                 self.record("run_failed", error_type=type(exc).__name__,
                             exit_code=getattr(exc, "code", None), active_cases=sorted(self._active))
+            from nora.agent.telemetry import EvaluationExportError
+            if isinstance(exc, EvaluationExportError):
+                raise EvidenceError("evaluation export unavailable; run invalid") from exc
             raise
         finally:
             for handler in handlers:
                 handler.removeFilter(privacy_filter)
             original_processors._span_processors = original_entries
+            provider._span_limits.max_events = original_max_events
             root_logger.removeHandler(self)
             context.detach(capture_token)
             _CURRENT.reset(token)
             self._open = False
             os.close(self._fd)
+            if export is not None:
+                export.shutdown()
             # MultiSpanProcessor cannot remove processors. Closed ones remain
             # inert: current() can never select them on a later run.
 
@@ -258,8 +349,9 @@ def read_events(path: Path) -> list[dict[str, Any]]:
     return events
 
 
-def validate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Public receipt: fixed codes and counts only, never captured content."""
+def validate_events(events: list[dict[str, Any]], *,
+                    require_terminal: bool = True) -> dict[str, Any]:
+    """Public receipt; the live prefix check defers only the run's own terminal."""
     causes: set[str] = set()
     pending: dict[tuple[Any, ...], int] = {}
     pairs = {"call_started": "call_finished", "tool_started": "tool_finished",
@@ -284,7 +376,7 @@ def validate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
             causes.add("capture_interrupted")
         if kind == "decision_input" and event.get("truncated"):
             causes.add("truncated")
-        if kind == "transport_response" and any(
+        if kind == "transport_response" and event.get("model_role") != "judge" and any(
             c.get("finish_reason") == "length"
             for c in event.get("response", {}).get("choices", [])
         ):
@@ -293,8 +385,13 @@ def validate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
             causes.add("judge_incomplete")
     if any(pending.values()):
         causes.add("unmatched_event")
-    if not any(e["kind"] in {"run_finished", "run_failed"} for e in events):
+    if require_terminal and not any(
+            e["kind"] in {"run_finished", "run_failed"} for e in events):
         causes.add("terminal_missing")
+    transports = sum(e["kind"] == "transport_started" for e in events)
+    requests = sum(e.get("name") == "nora.model.request" for e in events)
+    if transports != requests:
+        causes.add("request_capture_missing")
     starts = sum(e.get("name") == "nora.session.started" for e in events)
     ends = sum(e.get("name") == "nora.session.terminal" for e in events)
     if starts != ends:

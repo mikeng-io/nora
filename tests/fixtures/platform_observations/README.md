@@ -1,7 +1,7 @@
 # Platform observation fixtures — generated native protocol vectors
 
 Generated test data for the platform-observation cluster
-(`design/platform-observations/`). Each file is one **native wire event**,
+(`design/platform-observations/README.md`). Each file is one **native wire event**,
 pinned to the upstream version Nora actually runs, with the semantic fields
 the observation contract (`02-observation-contract.md`) expects a capture
 implementation to preserve. Nothing here is a production row: every id,
