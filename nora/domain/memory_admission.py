@@ -27,7 +27,7 @@ from nora.domain.prompt import contains_source_span
 
 GraphBatchOutcome = Literal["ok", "nothing_found", "unavailable"]
 GRAPH_BATCH_OUTCOMES: tuple[str, ...] = get_args(GraphBatchOutcome)
-GraphProjectionOutcome = Literal["excluded"]
+GraphProjectionOutcome = Literal["excluded", "ungrounded"]
 GRAPH_PROJECTION_OUTCOMES: tuple[str, ...] = get_args(GraphProjectionOutcome)
 
 

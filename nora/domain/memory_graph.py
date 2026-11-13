@@ -153,7 +153,7 @@ RELATION_RULES: Mapping[str, RelationRule] = {
     "outcome_of": _rule(("episode",), ("send", "comment_reply", "summons_answer"), "rollup"),
     "stayed_at": _rule(("person",), ("place",), "rollup"),
     "co_located_with": _rule(("person",), ("person",), "rollup"),
-    "about": _rule((*ENTRY, "reading", "web_page", "session", "play"), ENTITY_KINDS),
+    "about": _rule((*ENTRY, "character", "reading", "web_page", "session", "play"), ENTITY_KINDS),
     "records": _rule(("event_entry",), ("event",)),
     "plans": _rule(("person",), ("event",)),
     "attended": _rule(("person",), ("event",)),

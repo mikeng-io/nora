@@ -51,8 +51,8 @@
  {
   "name": "session reads: a graph key the session was shown must become admissible",
   "file": "nora/agent/comprehend_tools.py",
-  "old": "                    state.shown_keys.update(\n                        tuple(k) for k in answer.get(\"keys\") or ()",
-  "new": "                    state.shown_keys.update(\n                        ()",
+  "old": "                    state.shown_keys.update(keys)",
+  "new": "                    state.shown_keys.update(())",
   "target": "tests/unit/test_cognition_session_runner.py::test_association_shown_only_by_a_memory_search_is_admissible"
  },
  {

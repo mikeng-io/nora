@@ -281,6 +281,7 @@ async def project_source(conn: AsyncConnection, kind: str, sid: str) -> None:
         ).mappings()
     )
     scopes = await _scopes(conn, (kind, sid), cfg)
+    at = instant(root["at_ms"]) if root["at_ms"] is not None else root["projected_at"]
     if kind == "message":
         for unit in scopes:
             await message_arrival(conn, sid, unit, root["origin_room"])
@@ -385,7 +386,7 @@ async def project_source(conn: AsyncConnection, kind: str, sid: str) -> None:
                 rel=edge["rel"],
                 dst=(edge["dst_kind"], edge["dst_id"]),
                 persons=persons,
-                at=instant(root["at_ms"]) if root["at_ms"] is not None else root["projected_at"],
+                at=at,
             )
     # A venue's containment is written beside the row that supplied its area.
     place_edges = (
@@ -402,32 +403,26 @@ async def project_source(conn: AsyncConnection, kind: str, sid: str) -> None:
         .all()
     )
     for edge in place_edges:
-        if edge["dst_kind"] == "place":
-            target = edge["dst_id"]
-            for area in (
-                await conn.execute(
-                    sa.select(MEMORY_EDGE).where(
-                        MEMORY_EDGE.c.src_kind == "place",
-                        MEMORY_EDGE.c.src_id == target,
-                        MEMORY_EDGE.c.rel == "located_in",
-                    )
+        for area in (
+            await conn.execute(
+                sa.select(MEMORY_EDGE).where(
+                    MEMORY_EDGE.c.src_kind == "place",
+                    MEMORY_EDGE.c.src_id == edge["dst_id"],
+                    MEMORY_EDGE.c.rel == "located_in",
                 )
-            ).mappings():
-                for unit, persons in scopes.items():
-                    await write_relation(
-                        conn,
-                        owner=owner,
-                        unit=unit,
-                        src=("place", target),
-                        rel="located_in",
-                        dst=("place", area["dst_id"]),
-                        persons=persons,
-                        at=(
-                            instant(root["at_ms"])
-                            if root["at_ms"] is not None
-                            else root["projected_at"]
-                        ),
-                    )
+            )
+        ).mappings():
+            for unit, persons in scopes.items():
+                await write_relation(
+                    conn,
+                    owner=owner,
+                    unit=unit,
+                    src=("place", edge["dst_id"]),
+                    rel="located_in",
+                    dst=("place", area["dst_id"]),
+                    persons=persons,
+                    at=at,
+                )
     if kind in ("note", "memo", "event", "lesson", "profile_line", "social"):
         for unit in scopes:
             # Identity + source revision, distinct from phase 2's rendered input.
@@ -437,8 +432,13 @@ async def project_source(conn: AsyncConnection, kind: str, sid: str) -> None:
                 ("event_entry" if kind == "event" else kind, sid),
                 unit,
                 [kind, sid, revision, root["state"]],
-                instant(root["at_ms"]) if root["at_ms"] is not None else root["projected_at"],
+                at,
             )
+    from nora.infra.sql import graph_entry_about
+    await graph_entry_about.project_about(
+        conn, kind, sid, owner=owner, state=root["state"], scopes=scopes,
+        at=at, cfg=cfg,
+    )
 
 
 async def project_rollups(conn: AsyncConnection) -> None:
