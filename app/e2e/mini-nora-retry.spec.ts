@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createHash } from "node:crypto";
 
 test("retries a failed model load and a lost WebGL context", async ({ page }) => {
   await page.goto("/en/login");
@@ -27,6 +28,30 @@ test("retries a failed model load and a lost WebGL context", async ({ page }) =>
   await expect(page.locator("canvas")).toHaveCount(1);
   await expect(page.getByRole("combobox", { name: "Expression", exact: true })).toHaveValue("Neutral");
   await expect(page.getByRole("slider", { name: "Head turn", exact: true })).toHaveValue("0");
+  const renderedPose = async () => {
+    const canvas = page.locator("canvas");
+    await canvas.scrollIntoViewIfNeeded();
+    const box = (await canvas.boundingBox())!;
+    // Exclude the parent panel's rounded-edge antialiasing from pose comparison.
+    const pixels = await page.screenshot({ clip: { x: box.x + 4, y: box.y + 4, width: box.width - 8, height: box.height - 8 } });
+    return createHash("sha256").update(pixels).digest("hex");
+  };
+  const standing = await renderedPose();
+  await page.getByRole("combobox", { name: "Motion", exact: true }).selectOption("Idle");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+  await page.getByRole("combobox", { name: "Motion", exact: true }).selectOption("Stand");
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeDisabled();
   await page.getByRole("combobox", { name: "Motion", exact: true }).selectOption("Run");
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await page.evaluate(() => new Promise<void>(resolve => {
+    let frames = 0;
+    const advance = () => ++frames === 5 ? resolve() : requestAnimationFrame(advance);
+    requestAnimationFrame(advance);
+  }));
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect.poll(renderedPose).not.toBe(standing);
+  await page.getByRole("combobox", { name: "Motion", exact: true }).selectOption("Stand");
+  await expect.poll(renderedPose).toBe(standing);
 });
