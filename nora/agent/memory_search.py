@@ -981,6 +981,7 @@ class MemorySearch:
                 "keys": sorted(emitted),
                 "relations": sorted(emitted_relations),
             }
+            result = {**result, "status": "partial"} if partial else result
             if seed is not None and depth == 0:
                 result["nodes"] = [asdict(n) for n in graph.nodes]
                 result["evidence"] = [asdict(e) for e in graph.relations]
