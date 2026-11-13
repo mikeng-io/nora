@@ -136,6 +136,16 @@ through the same `_session_input` a session runs and recorded, so a dry
 run shows exactly what Nora would have read. Nothing is persisted — no
 session row, no outcome, no stimulus consumption.
 
+Inspection alone does not exercise later read tools. A private case may add
+`read_probes`, each with a zero-based `wake`, `tool` (`memory_search` or
+`memory_read`), `arguments` in that tool's normal shape, and `expected`:
+`found`, `nothing_found` or `refused`. During inspection these call the same
+room-bound read source the session uses. `found` requires returned keys and
+an `ok` or `partial` result; unavailable, malformed or mismatched results make
+the wake `ERROR`. Results are frozen under `trajectory.read_probes`. Run this
+free check before paying to measure a retrieval change; neither stored link
+counts nor a successful context assembly establishes tool readability.
+
 **No session is an outcome, never a silent pass.** A wake whose agenda is
 empty runs no session, live or inspected: the wake records `no_session`
 with the reason (the outcome row's own detail in a live run) next to
@@ -199,6 +209,9 @@ judges again over a finished run's frozen wakes, against the case's
 current expectations, rebuilding each wake's after-state from its frozen
 diff, and re-renders the report. A judge-side change is checked for a
 few judge calls, not a session's spend.
+Both paths preserve the verdict's `detail`, including missing-citation and
+judge-failure causes, in JSON and the rendered report. An error is never
+cleared merely because both answers say `met` without the required evidence.
 
 **Drafting expectations.** `python -m scripts.cognition_loop.draft`
 asks the deployment's own Cognition model — which already reads every
