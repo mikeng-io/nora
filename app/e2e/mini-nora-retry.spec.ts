@@ -45,6 +45,12 @@ test("retries a failed model load and a lost WebGL context", async ({ page }) =>
   await page.getByRole("combobox", { name: "Motion", exact: true }).selectOption("Run");
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await page.evaluate(() => new Promise<void>(resolve => {
+    let frames = 0;
+    const advance = () => ++frames === 5 ? resolve() : requestAnimationFrame(advance);
+    requestAnimationFrame(advance);
+  }));
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect.poll(renderedPose).not.toBe(standing);
   await page.getByRole("combobox", { name: "Motion", exact: true }).selectOption("Stand");
   await expect.poll(renderedPose).toBe(standing);
