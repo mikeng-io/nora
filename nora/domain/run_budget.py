@@ -203,7 +203,7 @@ class RunBudget:
         if self._spent_reason is not None:
             raise RunBudgetError(self._spent_reason)
         if self._reserved_out:
-            raise RunBudgetError(
+            raise self._fail(
                 "run budget: an attempt's output reservation was never "
                 "released — its response never settled")
 

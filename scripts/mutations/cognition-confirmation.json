@@ -9,7 +9,7 @@
   {
     "name": "finished claims the run clean over an unreleased reservation",
     "file": "nora/domain/run_budget.py",
-    "old": "        if self._reserved_out:\n            raise RunBudgetError(\n                \"run budget: an attempt's output reservation was never \"\n                \"released \u2014 its response never settled\")",
+    "old": "        if self._reserved_out:\n            raise self._fail(\n                \"run budget: an attempt's output reservation was never \"\n                \"released \u2014 its response never settled\")",
     "new": "",
     "target": "tests/unit/test_eval_run_budget.py::test_finished_refuses_over_an_unreleased_reservation"
   },

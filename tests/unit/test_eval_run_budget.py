@@ -605,10 +605,24 @@ async def test_the_sdk_default_client_refuses_a_spent_budget_before_dispatch():
 def test_finished_refuses_over_an_unreleased_reservation():
     """An admitted attempt whose response never settled leaves its
     output reservation standing; `finished` cannot report the run clean
-    over a measure that never landed."""
+    over a measure that never landed, and the latch holds — a later
+    release does not reopen admission."""
     budget = RunBudget(max_requests=10, max_output_tokens=100)
     reservation = budget.admit(input_bytes=10, declared_output_tokens=10)
     with pytest.raises(RunBudgetError):
         budget.finished()
+    assert budget.spent is not None
     budget.release(reservation)
+    with pytest.raises(RunBudgetError):     # latched, not a transient fail
+        budget.admit(input_bytes=10, declared_output_tokens=10)
+    with pytest.raises(RunBudgetError):
+        budget.finished()
+
+
+def test_finished_passes_after_a_reconciled_reservation():
+    """Positive control: release returns the reservation and the run
+    closes clean — the latch only binds what never settled."""
+    budget = RunBudget(max_requests=10, max_output_tokens=100)
+    budget.release(budget.admit(input_bytes=10, declared_output_tokens=10))
     budget.finished()
+    assert budget.spent is None
