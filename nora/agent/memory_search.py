@@ -965,8 +965,7 @@ class MemorySearch:
                                 tokens=max(0, PREFETCH_TOKENS - overhead + 100),
                                 shown_keys=emitted,
                                 shown_relations=emitted_relations)
-            partial = bool(graph.nodes) and (partial or graph.status == "partial"
-                                             or text.startswith("more=available"))
+            partial = partial or graph.status == "partial" or text.startswith("more=available")
             if partial:
                 text = text.replace("more=none", "more=available", 1)
             status = "partial" if partial else "ok" if graph.nodes else "nothing_found"
