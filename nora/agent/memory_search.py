@@ -142,7 +142,7 @@ from nora.domain.comprehend import Preview
 from nora.domain.external_files import render_file_links
 from nora.domain.lineage import PRESENCE, ROW, Lineage, LineageEntry, RenderRoom, RoomFacts
 from nora.domain.media import HANDLE_CHARS
-from nora.domain.memory_graph import MemoryGraph, Walk
+from nora.domain.memory_graph import GraphNode, MemoryGraph, Walk
 from nora.domain.memory_index import (
     EPISODE_KINDS,
     SOCIAL_KINDS,
@@ -156,6 +156,8 @@ from nora.domain.memory_index import (
     SearchStatus,
     Seed,
     exact_holds,
+    in_scope,
+    narrowed,
 )
 from nora.domain.models import PersonRef
 from nora.domain.prompt import stamp
@@ -849,7 +851,6 @@ class MemorySearch:
         """One graph surface; the index finds seeds, never supplies adjacency."""
         from dataclasses import asdict
         from datetime import UTC
-
         if self._graph is None or not 0 <= depth <= 4:
             return {"status": "unavailable", "note": "The graph could not be read."}
         try:
@@ -905,15 +906,19 @@ class MemorySearch:
                 unit, scope.listed_here, depth=depth, scope=scope,
                 layers=("record", "rollup", "notebook"),
             )
-            # Every search walks afresh: a retry with another person, span or
-            # query is a new question. A read re-reads only what some search of
-            # this turn captured, whatever that search narrowed to.
+            # Searches walk afresh; reads use this turn's scoped snapshots.
             held_all: list[Any] = cache.setdefault("_subgraphs", []) if cache is not None else []
             if seed is None or not held_all:
                 entry: list[Any] = [scope, None]
                 # Reserve before awaiting: a parallel read waits for no walk it cannot see.
                 held_all.append(entry)
                 graph = await self._graph.walk(seeds, walk_query)
+                if seed is None and graph.status != "unavailable":
+                    nodes = {n.key: n for n in graph.nodes}
+                    for node in (h.node for h in found.hits):
+                        key = ("event_entry", node.source_id) if node.kind == "event" else node.key
+                        nodes.setdefault(key, GraphNode(key, indexed=node))
+                    graph = replace(graph, nodes=tuple(nodes.values()))
                 entry[1] = graph
             else:
                 held = next((g for s, g in held_all
@@ -924,7 +929,6 @@ class MemorySearch:
                     return {"status": "unavailable",
                             "note": "This turn's graph does not cover this read."}
                 from nora.domain.memory_admission import AdmissionState
-
                 state = AdmissionState()
                 state.entities = {n.entity.id: n.entity for n in held.nodes if n.entity}
                 state.relations = {e.relation.id: e.relation for e in held.relations}
@@ -935,16 +939,16 @@ class MemorySearch:
                 graph = await state._walk(seeds, walk_query)
                 held_nodes = {n.key: n for n in held.nodes}
                 held_edges = {e.relation.id: e for e in held.relations}
-                # The captured frontier is bounded; a re-read cannot claim completeness
-                # beyond it. Preserve full fields/evidence from the original snapshot.
-                graph = replace(graph, status="partial",
-                    nodes=tuple(held_nodes[n.key] for n in graph.nodes if n.key in held_nodes),
+                # Re-reads retain scoped standalone seeds from the captured snapshot.
+                nodes = {n.key: held_nodes[n.key] for n in graph.nodes if n.key in held_nodes}
+                for n in held.nodes:
+                    if (n.key in seeds and n.indexed is not None
+                            and in_scope(n.indexed, scope) and narrowed(n.indexed, scope)):
+                        nodes.setdefault(n.key, n)
+                graph = replace(graph, status="partial", nodes=tuple(nodes.values()),
                     relations=tuple(held_edges[e.relation.id] for e in graph.relations))
             if graph.status == "unavailable":
                 return {"status": "unavailable", "note": "The graph could not be read."}
-            if seed is None and found.hits and not graph.nodes:
-                return {"status": "unavailable",
-                        "note": "Matching memory has no readable graph projection."}
             if kinds:
                 # Kind narrowing is an answer/seed filter; bridges retain every kind.
                 wanted = set(kinds) | ({"event_entry"} if "event" in kinds else set())
@@ -961,7 +965,8 @@ class MemorySearch:
                                 tokens=max(0, PREFETCH_TOKENS - overhead + 100),
                                 shown_keys=emitted,
                                 shown_relations=emitted_relations)
-            partial = partial or graph.status == "partial" or text.startswith("more=available")
+            partial = bool(graph.nodes) and (partial or graph.status == "partial"
+                                             or text.startswith("more=available"))
             if partial:
                 text = text.replace("more=none", "more=available", 1)
             status = "partial" if partial else "ok" if graph.nodes else "nothing_found"
@@ -977,11 +982,6 @@ class MemorySearch:
                 "keys": sorted(emitted),
                 "relations": sorted(emitted_relations),
             }
-            if partial:
-                result = {"status": "partial", "preview": text,
-                          "note": "More memory is available.",
-                          "keys": sorted(emitted),
-                          "relations": sorted(emitted_relations)}
             if seed is not None and depth == 0:
                 result["nodes"] = [asdict(n) for n in graph.nodes]
                 result["evidence"] = [asdict(e) for e in graph.relations]
