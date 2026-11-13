@@ -2,8 +2,8 @@
   {
     "name": "a bounded SSE answer to the SDK default client keeps the httpx1 stream",
     "file": "nora/agent/run_budget_transport.py",
-    "old": "            class _Bound(base):",
-    "new": "            class _Bound(httpx.AsyncByteStream):",
+    "old": "            base = (httpx2.AsyncByteStream\n                    if httpx2 is not None\n                    and isinstance(response, httpx2.Response)\n                    else httpx.AsyncByteStream)",
+    "new": "            base = httpx.AsyncByteStream",
     "target": "tests/unit/test_eval_run_budget.py::test_the_sdk_default_client_streams_through_the_budget"
   },
   {
