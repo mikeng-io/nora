@@ -60,7 +60,7 @@ slot just for these edits. Runtime prompts/config and executable skill helpers
 follow their actual behavior/risk. Investigate unknown impact first; do not use
 a full suite as a substitute for understanding. Keep explicit acceptance intact.
 
-Use focused local checks; required hosted contracts own full-suite PR acceptance. Recurring SQL repairs also need generated history-size scaling and aggregate background/foreground probes under the normal lease.
+Use focused local checks; automatic hosted checks own fast-baseline PR acceptance; complete backend acceptance is on demand. Recurring SQL repairs also need generated history-size scaling and aggregate background/foreground probes under the normal lease.
 For an explicitly selected local gate (not a PR prerequisite), run once per candidate:
 
 ```bash

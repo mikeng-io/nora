@@ -1,9 +1,9 @@
 """The recorded dependency map (`pytest-testmon`), shared between runs.
 
-A post-merge full run (a `master` push or the weekly) records `.testmondata`
+An on-demand complete CI run on `master` records `.testmondata`
 in both `scripts.pytest_gate` phases and uploads it as the artifact
 `testmon-data-<dep hash>-<commit sha>`. Selection — a pull request's
-contracts job, `make test` and `make gate` locally — fetches the newest
+`make test` and `make gate` locally — fetches the newest
 artifact whose dep hash matches this checkout's `uv.lock` +
 `pyproject.toml` + Python version. Anything that cannot produce a matching
 record (no artifact, no `gh`, no auth, a truncated file) leaves it absent
@@ -72,7 +72,7 @@ def _provenance_ok(run: dict, repo_name: str, artifact_name: str) -> bool:
     head or a different commit is not trusted: it would lie about coverage."""
     return (
         run.get("path") == ".github/workflows/ci.yml"
-        and run.get("event") in ("push", "schedule")
+        and run.get("event") in ("push", "schedule", "workflow_dispatch")
         and run.get("head_branch") == "master"
         and run.get("status") == "completed"
         and run.get("conclusion") == "success"
