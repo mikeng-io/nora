@@ -20,6 +20,28 @@ understanding without taking an outward act. Ordinary social events already
 recorded by code do not require a Notebook restatement. There is no per-message
 quota of saved claims and no separate agent for each step or agenda kind.
 
+## The loop over the cognitive graph
+
+The cognitive graph is the memory graph as Cognition reads and grows it: one
+store, seen from the loop that uses it. A session works it as a loop:
+
+1. **Prefetch.** Context assembly walks the graph from the agenda's anchors —
+   its people, rooms and items — and pushes that neighbourhood.
+2. **Discover.** The session reads further: memory search and reads,
+   transcripts, Rollups and Notebook entries.
+3. **Link.** It writes what the evidence supports: an entry, a relation, a
+   revision.
+4. **Rediscover.** Each link names new neighbours, and discovery continues
+   from them.
+
+The loop recurs across wakes. What one session links is in the graph the next
+session's prefetch walks, so understanding compounds instead of restarting.
+
+The session stops when discovery adds nothing new to connect, or a bound
+stops it. Code makes saturation visible instead of imposing a quota: a memory
+read marks each result this session was already shown, and states how many
+were new, so a repeated search tells the model it is going over old ground.
+
 ## What the session may write
 
 The Register holds the unit's affairs. Notes keep open matters, memos keep

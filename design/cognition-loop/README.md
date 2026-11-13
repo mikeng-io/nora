@@ -40,7 +40,7 @@ The subjects are [execution](execution.md), [observation](observation.md),
 world and Nora's acts
   -> Record and deterministic Rollup
   -> durable stimuli -> wake and admission
-  -> one Cognition session
+  -> one Cognition session: prefetch -> discover -> link, repeated
        -> revised Notebook and memory state
        -> self-wake -> later subconscious eligibility
        -> reminder -> conscious fire turn -> governed delivery or silence

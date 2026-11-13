@@ -24,6 +24,17 @@ The entity is the hub, not its profile. Citations support a claim, `about`
 indexes its subjects, and links supply typed context or premises. These are
 different promises and cannot substitute for one another.
 
+An entry's own subjects are structure, not judgement. Where an entry's owner
+already records whom or what it is about — a profile line's profile, a
+character's subject, an event's people and venue — code projects `about`
+relations from those same columns in the entry's own write, the way it projects
+Record and Rollup structure. Their evidence is the entry's own citations, and
+their scope is the entry's scope, never wider. A revision replaces them and a
+retirement or hide retires them with the entry. Every entry is therefore
+reachable from its subject. The session proposes `about` only for a subject the
+owner does not record. The index's derived edges remain search pointers; they
+are never walk adjacency.
+
 ## Evidence and admission
 
 The model points at meaning, shown endpoints and shown sources. Code allocates
