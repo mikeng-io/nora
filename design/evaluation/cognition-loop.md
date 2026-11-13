@@ -113,7 +113,8 @@ one.
 
 **Loop counts.** Each wake reports the loop over the cognitive graph as
 counts: memory keys discovered (distinct keys memory reads returned) and how
-many of those were repeats already shown; links written (graph relations
+many of those were distinct keys already shown earlier in the session,
+prefetch included; links written (graph relations
 created or revised in the diff); and links carried (how many of the previous
 wake's links the next wake's prefetch included). A count the trajectory cannot
 ground, such as a prefetch block that was not recorded, is unavailable, never

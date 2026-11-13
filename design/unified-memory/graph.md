@@ -25,15 +25,30 @@ indexes its subjects, and links supply typed context or premises. These are
 different promises and cannot substitute for one another.
 
 An entry's own subjects are structure, not judgement. Where an entry's owner
-already records whom or what it is about — a profile line's profile, a
-character's subject, an event's people and venue — code projects `about`
-relations from those same columns in the entry's own write, the way it projects
-Record and Rollup structure. Their evidence is the entry's own citations, and
-their scope is the entry's scope, never wider. A revision replaces them and a
-retirement or hide retires them with the entry. Every entry is therefore
-reachable from its subject. The session proposes `about` only for a subject the
-owner does not record. The index's derived edges remain search pointers; they
-are never walk adjacency.
+already records whom or what it is about, code projects `about` relations from
+those same columns in the entry's own write, the way it projects Record and
+Rollup structure:
+
+- a profile line is about its profile's subject, and a relationship line also
+  about the person it names;
+- a Character is about its subject; `about` accepts `character` as a source;
+- an event is about its people, the people who answered it and its venue.
+
+These relations stay in the notebook layer and pass the same admission as any
+other. Their evidence is the entry's citations resolved to the Record and
+Rollup sources beneath them, never the entry itself. Their scope is the
+narrowest the entry and that evidence both permit: the entry's person
+restrictions and exclusions plus every restriction its evidence carries, so a
+profile about one person that cites another person's message is restricted to
+both. An entry whose citations do not resolve to admissible evidence gets no
+projected relation. A revision replaces them, and a retirement or hide retires
+them with the entry. Existing rows are projected by the explicit projection
+backfill.
+
+Notes, memos, lessons and Standing record no resolved subject — a note's
+anchors are free text, and code does not guess a person from them — so their
+subjects stay session-proposed relations. The index's derived edges remain
+search pointers; they are never walk adjacency.
 
 ## Evidence and admission
 

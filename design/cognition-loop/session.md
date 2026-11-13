@@ -41,6 +41,8 @@ The session stops when discovery adds nothing new to connect, or a bound
 stops it. Code makes saturation visible instead of imposing a quota: a memory
 read marks each result this session was already shown, and states how many
 were new, so a repeated search tells the model it is going over old ground.
+The marker is metadata: a read that returns only repeats keeps its own
+status, and an unavailable read is never taken for saturation.
 
 ## What the session may write
 
