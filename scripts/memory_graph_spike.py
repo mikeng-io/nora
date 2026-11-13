@@ -667,10 +667,19 @@ async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex
     index = subject.cfg.memory.index
     if index.read and index.embed:
         await check_served_model(index.embedder_url, index.embedder_model)
+    graph = None
+    if subject.cfg.memory.graph.enabled:
+        from nora.app.graph_project import projection_context
+
+        reload = subject.deps.config_reload
+        graph = projection_context(
+            reload.policy, reload.persons,
+            nora_name=subject.cfg.doctrine.display_name, produce=False)
     return await index_sandbox(
         subject.database_url,
         source_url=source_url,
         model_id=subject.cfg.memory.index.embedder_model,
+        graph=graph,
     )
 
 

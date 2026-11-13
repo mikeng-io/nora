@@ -369,3 +369,31 @@ def test_the_cache_keeps_the_most_recent_keys():
     for k in ("a", "b", "c"):
         cache.put(k, k)  # type: ignore[arg-type]
     assert cache.get("a") is None and cache.get("c") == "c"
+
+
+async def test_a_sandbox_built_with_the_graph_context_holds_code_relations(
+    source, pg_template,
+):
+    """With production's projection context the rebuild writes the
+    code-owned relations a live write would have (here a message's
+    authorship); without it, the sandbox holds none."""
+    from nora.infra.sql.graph_projection import ProjectionContext
+    from nora.infra.sql.schema import RELATION
+
+    graph = ProjectionContext(
+        {"signal:g-synthetic": "u"}, {"u": frozenset({"member-a"})}, produce=False)
+
+    async def code_relations(engine: Any) -> int:
+        async with engine.connect() as conn:
+            return (await conn.execute(
+                sa.select(sa.func.count()).select_from(RELATION)
+                .where(RELATION.c.written_by.like("project:%"),
+                       RELATION.c.status == "current"))).scalar_one()
+
+    async with AsyncExitStack() as stack:
+        plain = await _sandbox(stack, source[0], pg_template)
+        wired = await _sandbox(stack, source[0], pg_template)
+        await index_sandbox(plain[0], source_url=source[0], model_id=MODEL_ID)
+        await index_sandbox(wired[0], source_url=source[0], model_id=MODEL_ID, graph=graph)
+        assert await code_relations(plain[1]) == 0
+        assert await code_relations(wired[1]) > 0
