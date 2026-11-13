@@ -68,20 +68,15 @@ validation by impact on the final candidate; the full suite runs hosted rather
 than as a local pre-PR gate. `make full-gate` remains an explicit serial full-suite
 command (`AGENTS.md`, *Gate commands*).
 
-Hosted CI passes the full changed-path list through the same selector and runs
-the selected backend workload in the required contracts job. Every `master`
-push and the weekly schedule run the whole suite with recording
-(`pytest_gate --testmon`) and upload the record; a pull request downloads the
-matching record and runs what the union selects. A release pull request does
-not run the suite: it waits for the full run on its base commit and passes
-only on success. After each post-merge full run an escape report in the step
-summary lists failed tests and whether the merged diff's selection included
-them. Runtime/shared/unknown changes select the full suite; ordinary docs keep
-their reader checks. The canonical
-runner separates timing tests from parallel work and accepts `--junit-dir` to keep
-one report per phase. CI publishes those reports and per-file durations from the
-acceptance run. Full-suite acceptance belongs on the hosted runner; local iteration
-uses focused checks.
+Automatic CI runs a bounded fast baseline on PRs and master pushes. Backend tests
+have a three-minute process budget; automatic jobs have a four-minute limit,
+leaving time for classification and the final join within the five-minute target.
+A timeout is a failure. The baseline covers unit/domain tests plus CI plumbing guards, except the measured
+slow modules listed in `scripts/ci_fast_tests.py`; SQL contracts, integration,
+source-wide architecture tests and the complete suite are manual validation.
+Dispatch the **CI** workflow at the desired ref to run complete acceptance,
+including timing tests and dependency recording. Release PRs use the fast checks
+and do not wait for a complete run. A green automatic run is not full acceptance.
 
 Disposable PostgreSQL reuse:
 

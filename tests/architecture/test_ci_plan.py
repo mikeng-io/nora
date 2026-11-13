@@ -777,7 +777,10 @@ def test_full_backend_replaces_the_nonblocking_measurement():
         and step["with"]["path"] == ".testmondata"
     )
     # a partial record (failed run) must never reach pull requests
-    assert record["if"] == "${{ github.event_name != 'pull_request' && success() }}"
+    assert record["if"] == (
+        "${{ github.event_name == 'workflow_dispatch' && "
+        "github.ref == 'refs/heads/master' && success() }}"
+    )
     assert record["with"]["name"].startswith("testmon-data-")
     assert record["with"]["if-no-files-found"] == "error"
 
@@ -839,3 +842,18 @@ def test_an_executable_release_file_is_not_eligible(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
     event = _release_repo_with_symlink(tmp_path / "x", mode=0o100755)
     assert not ci_plan.release_eligible(tmp_path / "x", event)
+
+
+def test_automatic_backend_is_bounded_and_full_acceptance_is_manual():
+    root = Path(__file__).resolve().parents[2]
+    workflow = yaml.safe_load((root / '.github/workflows/ci.yml').read_text())
+    assert 'schedule' not in workflow[True]
+    steps = workflow['jobs']['contracts']['steps']
+    full = next(s for s in steps if s.get('name') == 'Selected backend acceptance')
+    fast = next(s for s in steps if s.get('name') == 'Fast backend baseline')
+    assert full['if'] == "github.event_name == 'workflow_dispatch'"
+    assert fast['if'] == "github.event_name != 'workflow_dispatch'"
+    assert fast['run'] == 'uv run python -m scripts.ci_fast_tests'
+    assert not any(s.get('run') == 'uv run python -m scripts.ci_plan release' for s in steps)
+    assert workflow['jobs']['contracts']['timeout-minutes'].endswith('|| 4 }}')
+    assert not any(s.get('continue-on-error', False) for s in steps)

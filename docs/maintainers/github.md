@@ -48,26 +48,18 @@ the existing combined artifact build. Portal runs npm check/build; the Go bridge
 runs vet/test with its module toolchain. Manifest changes also require dependency
 review, blocking high/critical vulnerable dependency introductions on PRs.
 
-Hosted backend acceptance passes the complete changed-path list to
-`scripts/affected_tests.py`, the same conservative selector used locally.
-Runtime sources and Markdown, shared helpers, dependency inputs and unknown paths
-select ALL; ordinary documents retain their reader selection. The required
-contracts job executes those targets through `scripts.pytest_gate`, including its
-separate serial timing phase. Its failure, cancellation or missing result fails
-checks. Baseline scheduled/manual runs select the complete suite.
-
-Testcontainers provision Docker-backed pgvector Postgres 18, Redis and RustFS
-lazily; deterministic tests own their services and do not assume private host
-configuration or paid model endpoints. The same acceptance run publishes separate
-phase JUnit reports and per-file durations. There is no duplicate nonblocking
-whole-suite measurement on master pushes. Focused local checks remain the iteration
-loop; full-suite acceptance runs hosted. Dockerfile/unknown changes retain deploy
-asset/base-image contracts and conservative component checks; dependency review
-does not establish image vulnerability safety.
+Automatic hosted backend validation runs the bounded fast baseline in
+`scripts/ci_fast_tests.py`. It targets three minutes; automatic component jobs
+have a four-minute limit to leave room inside the five-minute overall target.
+Failure, cancellation or a missing result fails checks. Complete backend
+acceptance, including SQL, integration, source-wide architecture and timing
+checks, is on demand by dispatching CI at the desired ref. Release PRs do not
+wait for a complete run. Fast-baseline green is not full-suite acceptance.
+JUnit reports and per-file durations remain attached to the actual run.
 
 CodeQL advanced setup runs full Python, JS/TS, Go and Actions language analysis
 for selected inputs, with no changed-line/path analysis filter. Default-branch
-pushes refresh the selected language baselines; manual runs and weekly schedules
+pushes refresh the selected language baselines; manual runs
 refresh all four. Docs-only pushes retain the same selective policy as PRs. GitHub-owned
 actions are SHA pinned and allowed by the existing GitHub-owned action policy;
 only scan jobs have security-events write permission. No PR administration token

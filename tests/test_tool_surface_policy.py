@@ -24,6 +24,7 @@ and the opening cannot drift back to style-first.
 
 import ast
 import re
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,7 @@ CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
 QUOTED_RE = re.compile(r"(?:「[^「」]*」|«[^«»]*»)")
 
 
+@cache
 def _model_facing_docstrings() -> list[tuple[str, str]]:
     """(tool_name, docstring) for every tool registered via `_spec(...)`."""
     out: list[tuple[str, str]] = []

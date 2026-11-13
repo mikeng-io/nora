@@ -1,6 +1,6 @@
 # 0036 · Pull requests run the tests their diff can affect; the whole suite runs on master
 
-- **Status:** accepted (operator, 2026-11-08)
+- **Status:** superseded by ADR 0038 (operator, 2026-11-08)
 - **Date:** 2026-11-08
 - **Reverses, in part:** the test-selection rationale that every path no rule names runs the
   whole suite («a slow correct answer beats a fast wrong one», `scripts/affected_tests.py`

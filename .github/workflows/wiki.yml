@@ -2,6 +2,10 @@ name: Wiki and public site
 
 on:
   workflow_call:
+    inputs:
+      full_validation:
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -14,7 +18,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.full_validation && 15 || 4 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
