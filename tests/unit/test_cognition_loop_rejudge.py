@@ -46,3 +46,36 @@ def test_a_report_error_with_no_frozen_after_state_stays_unmeasured():
     # Positive control: a report error after the diff was frozen is judged again.
     assert not unmeasured({**no_diff, "diff": {"note": {}}}, {"step": "report"})
     assert unmeasured({"error": {"step": "advance"}, "diff": {}}, {})
+
+
+async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch, tmp_path):
+    import json
+
+    from scripts.cognition_loop import rejudge as module
+    from scripts.cognition_loop.cases import generated_case, write_case
+    from scripts.cognition_loop.verdicts import ExpectationVerdict
+
+    case = generated_case()
+    case_path = tmp_path / "case.json"
+    write_case(case, case_path)
+    wakes = [{"status": "PASS", "expectations": []} for _ in case.wakes]
+    (tmp_path / "report.json").write_text(json.dumps({
+        "cases": [{"case": case.name, "wakes": wakes}], "evidence": {"status": "PASS"}}))
+    for index, ident in enumerate(case.wakes):
+        (tmp_path / f"wake-{index}-{ident}.json").write_text(json.dumps({"diff": {}}))
+
+    async def judge(_judges, _models, expectation, *_args):
+        return ExpectationVerdict(
+            verdict="ERROR" if expectation.kind == "note" else "PASS", answers=(),
+            detail="a decidable answer needs a cited entry" if expectation.kind == "note" else "")
+
+    monkeypatch.setattr(module, "load", lambda _: None)
+    monkeypatch.setattr(module, "Judges", lambda *_: object())
+    monkeypatch.setattr(module, "judge_expectation", judge)
+    monkeypatch.setattr(module, "render", lambda _: None)
+    report = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b")
+    assert report["status"] == "ERROR"
+    exp = report["cases"][0]["wakes"][0]["expectations"][0]
+    assert exp["detail"] == "a decidable answer needs a cited entry"
+    frozen = json.loads((tmp_path / f"wake-0-{case.wakes[0]}.json").read_text())
+    assert frozen["expectations"][0]["detail"] == exp["detail"]

@@ -467,6 +467,11 @@ async def _run_wake(
                     runner, judges, engine, wake.wake_id,
                     unit=case.unit, view=view, at_ms=at_ms,
                     recorded_meta=recorded_meta)
+                if judges is None and inspection is not None:
+                    from scripts.cognition_loop.reads import preflight_reads
+
+                    inspection["read_probes"] = await preflight_reads(
+                        runner, case, index, inspection, at_ms)
                 got: dict[str, Any] = {"trajectory": {}, "expectations": []}
                 try:
                     await _observe(
@@ -528,6 +533,7 @@ async def _observe(
         # `_session_input` a session runs; only the model call is skipped.
         trajectory["blocks"] = {k: inspection.get(k) for k in (
             "system", "agenda", "items", "stimuli", "instructions")}
+        trajectory["read_probes"] = inspection.get("read_probes", [])
     got["trajectory"] = trajectory
     got["expectations"] = await _judge(
         args, case, index, judges, diff, after, trajectory)
@@ -623,6 +629,7 @@ async def _judge(
                 "text": expectation.text,
             },
             "verdict": verdict_obj.verdict,
+            "detail": verdict_obj.detail,
             "verdict_obj": verdict_obj,
             "answers": [asdict(a) for a in verdict_obj.answers],
         })
