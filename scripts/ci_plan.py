@@ -499,8 +499,8 @@ def main() -> int:
         print(f"CodeQL findings above threshold on added PR lines: {blocked}")
         return 1 if blocked else 0
     if sys.argv[1:] == ["release"]:
-        # A release PR does not run the suite: it waits for the full run on its
-        # base commit and passes only on `success` — never a skip.
+        # Legacy explicit helper, not called by automatic CI. It waits for
+        # full-suite evidence on the supplied release base.
         sha = event["pull_request"]["base"]["sha"]
         deadline = time.monotonic() + _RELEASE_WAIT_SECONDS
         while True:
@@ -522,12 +522,11 @@ def main() -> int:
             is_pr or ("before" in event and "after" in event)) else []
         plan = classify(paths, repo) if is_pr else dict.fromkeys(JOBS, True)
         docs = [p for p in paths if affected_tests._is_doc_or_data(p, repo)]
-        # The record only exists inside the contracts job; classify defers the
-        # recorded-map class (testmon=False) and flags it for the job instead.
+        # Retain selector metadata for explicit consumers. Automatic backend
+        # CI uses the fixed fast baseline rather than this dependency record.
         testmon = is_pr and any(affected_tests.needs_record(p) for p in paths)
-        # Non-PR events record: a push or schedule runs the WHOLE suite so the
-        # uploaded record covers every test, and the release check can trust a
-        # green run on the base commit as "the full suite passed".
+        # Manual dispatch needs every target. The workflow invokes complete
+        # acceptance and records dependencies only on that explicit path.
         targets = affected_tests.select(paths, repo, testmon=False) if is_pr else "ALL"
         eligible = is_pr and release_eligible(repo, event)
         error = ""

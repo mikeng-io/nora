@@ -58,14 +58,14 @@ recorded dependency map (pytest-testmon, `.testmondata`) answers for `.py`
 outside `tests/`; the reader scan answers for everything else, including a
 `.py` a test runs only as a subprocess. `nora/` non-`.py`, build and
 environment files stay ALL. A missing, corrupt or environment-mismatched
-record is ALL, never NONE. `make test` and CI fetch the newest matching
+record is ALL, never NONE. Local `make test` and `make gate` fetch the newest matching
 `testmon-data` artifact (named for the commit and a hash of `uv.lock`,
 `pyproject.toml` and the Python version) via `scripts/testmon_record.py`;
 none means ALL.
 
 Run `make test-affected` (or the tests you touched) while iterating. Select
-validation by impact on the final candidate; the full suite runs hosted rather
-than as a local pre-PR gate. `make full-gate` remains an explicit serial full-suite
+validation by impact on the final candidate; complete acceptance is hosted on
+demand, never an automatic local pre-PR gate. `make full-gate` remains an explicit serial full-suite
 command (`AGENTS.md`, *Gate commands*).
 
 Automatic CI runs a bounded fast baseline on PRs and master pushes. Backend tests

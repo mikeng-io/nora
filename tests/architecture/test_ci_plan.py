@@ -314,10 +314,10 @@ def test_timing_contracts_run_without_competing_pytest_workers(
         assert calls == expected
 
 
-def test_a_pull_request_without_a_record_runs_the_whole_suite(
+def test_acceptance_script_without_a_record_resolves_to_all(
     monkeypatch, tmp_path,
 ):
-    """TESTMON=true with no .testmondata resolves to ALL, never a subset."""
+    """The complete-acceptance helper fails broad without a record."""
     source, _ = _acceptance_source()
     calls = []
     _acceptance_env(monkeypatch, tmp_path, ["tests/test_docs.py"],
@@ -328,7 +328,7 @@ def test_a_pull_request_without_a_record_runs_the_whole_suite(
                       "--junit-dir", "backend-results"]]
 
 
-def test_a_pull_request_with_a_record_uses_the_resolved_selection(
+def test_acceptance_script_with_a_record_uses_the_resolved_selection(
     monkeypatch, tmp_path,
 ):
     """The step resolves the real selector's line with the record present."""
@@ -344,15 +344,11 @@ def test_a_pull_request_with_a_record_uses_the_resolved_selection(
                       "--junit-dir", "backend-results", "tests/test_docs.py"]]
 
 
-@pytest.mark.parametrize("event_name", ["push", "schedule", "workflow_dispatch"])
-def test_a_non_pull_request_run_records_the_whole_suite(
-    monkeypatch, tmp_path, event_name,
-):
-    """Push/schedule/dispatch run the full suite WITH recording — a partial
-    record would lie about coverage."""
+def test_manual_dispatch_records_complete_acceptance(monkeypatch, tmp_path):
+    """The manually selected acceptance step records the complete suite."""
     source, _ = _acceptance_source()
     calls = []
-    _acceptance_env(monkeypatch, tmp_path, "ALL", event_name=event_name)
+    _acceptance_env(monkeypatch, tmp_path, "ALL", event_name="workflow_dispatch")
     monkeypatch.setattr(subprocess, "run", _fake_run(calls, None))
     exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102
     assert calls == [[sys.executable, "-m", "scripts.pytest_gate",
@@ -704,9 +700,10 @@ def test_an_unrelated_branch_name_is_not_eligible(tmp_path, monkeypatch):
     {"schedule": "cron"},
     {"workflow_dispatch": {}},
 ])
-def test_non_pull_request_events_select_the_full_suite(tmp_path, monkeypatch, event):
-    """Push, schedule and dispatch record the whole suite — a subset record
-    would lie about coverage and the release check could not trust it."""
+def test_non_pr_classifier_preserves_all_targets_for_manual_acceptance(
+    tmp_path, monkeypatch, event,
+):
+    """The classifier declares ALL; only dispatch executes complete acceptance."""
     event_file = tmp_path / "event.json"
     event_file.write_text(json.dumps(event))
     output = tmp_path / "output"
@@ -744,7 +741,7 @@ def test_the_escape_report_is_unavailable_when_the_diff_cannot_be_read(
     ([{"status": "in_progress", "conclusion": None}], "pending"),
     ([{"status": "queued", "conclusion": None}], "pending"),
 ])
-def test_release_pr_waits_for_the_base_commit_full_run(runs, verdict):
+def test_base_run_verdict_reports_only_trusted_exact_source_evidence(runs, verdict):
     assert ci_plan.base_run_verdict(runs) == verdict
 
 

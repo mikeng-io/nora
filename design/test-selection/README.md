@@ -1,6 +1,6 @@
 # Test selection
 
-**Status:** building
+**Status:** built
 
 [Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Ftest-selection%2F%22)
 

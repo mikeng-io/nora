@@ -29,8 +29,8 @@ hooks:
 	@if [ -f "$${NORA_PII_KEEP_PHRASES:-$$HOME/.config/nora/pii-keep-phrases.txt}" ]; then echo "pii keep-phrases: present"; else echo "pii keep-phrases: none (optional)"; fi
 	@if [ -f "$${NORA_PII_PSEUDONYMS:-$$HOME/.config/nora/pii-pseudonyms.txt}" ]; then echo "pii pseudonyms: present"; else echo "pii pseudonyms: none (optional)"; fi
 
-# --- validation (focused local checks by impact; required hosted contracts
-# own full-suite PR acceptance; make gate/full-gate remain explicit commands) ---
+# --- validation (focused local checks; automatic CI runs the fast baseline;
+# complete acceptance is manual; make gate/full-gate remain explicit commands) ---
 
 test-all:
 	uv run python -m scripts.pytest_gate --workers 0
