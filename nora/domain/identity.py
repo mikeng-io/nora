@@ -84,13 +84,8 @@ _ID_KINDS: MappingProxyType[str, frozenset[str]] = MappingProxyType(
         # live circle read to Nora's people through this, and identity.toml
         # stays the single home for "who someone is" across every platform.
         "life360": frozenset({"member_id"}),
-        # Pulse (game-server-monitor) is a game-presence provider, same shape
-        # as life360: not a chat platform, but still "another account this
-        # person holds". `steam_id` (SteamID64), not Pulse's own `player_key`
-        # — a player_key is that ONE GAME's EOS Product User ID and does not
-        # carry over to a different title, where a SteamID64 is stable across
-        # every Steam-launched game for the account.
-        "pulse": frozenset({"steam_id"}),
+        # SteamID64 identifies one account across Steam games.
+        "steam": frozenset({"steam_id"}),
     }
 )
 

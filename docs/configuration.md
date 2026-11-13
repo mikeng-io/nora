@@ -109,7 +109,7 @@ picker; neither setting enables or chooses the agent's reaction.
 | NORA_REDIS_{PRODUCER,CONSUMER,INSPECTOR}_PASSWORD | credentials | the platform-bridge Redis ACL roles — producer enqueue/dedupe, consumer claim/ack/inspect, inspector read-only telemetry | scoped redis-cli probes per role |
 | *_BRIDGE_ACCOUNT_KEY | deployment env (opaque id, not a credential) | per-platform stream legs shared by each bridge's NORA_BRIDGE_ACCOUNT_KEY and the projection publisher's <PLATFORM>_BRIDGE_ACCOUNT_KEY | artifact account_key equals the configured leg |
 | LIFE360_* and maps refs | credentials | presence and configured Nora geocoding; scoped aliases | collector authenticated refresh/readback |
-| GOOGLE_OAUTH_*, Tavily/Exa, Steam, Giphy, Pulse, MiniMax | credentials | Nora integration constructors / explicit native env | enabled integration's read-only functional operation |
+| GOOGLE_OAUTH_*, Tavily/Exa, Steam, Giphy, MiniMax | credentials | Nora integration constructors / explicit native env | enabled integration's read-only functional operation |
 | NORA_OTP_*, MEDIA_ENCRYPTION_KEY | credentials | Nora; portal receives only OTP API bearer | OTP round trip / synthetic media round trip |
 | SENTRY_DSN, LANGFUSE_OTLP_HEADERS | credentials | configured observability readers | accepted synthetic event / authenticated trace read |
 | KIMI_CODE_API_KEY, OPENCODE_GO_API_KEY | credentials | direct media clients; existing headers retained | synthetic request transport test; authorized media readback |

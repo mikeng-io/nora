@@ -94,7 +94,7 @@ async def world_client(aiohttp_client):
         app, store=FakeRecordStore(), honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "sam": SAM}, index={}),
-        ai_peer="nora", started_at=0.0, games_client=None, presence=None,
+        ai_peer="nora", started_at=0.0, presence=None,
         presence_circles=(), skills_dir=NO_SKILLS_DIR, events=_fake_events(),
         doctrine_store=build_test_doctrine_store(),
         rooms_of=world.rooms_of, blobs=world.blobs, artifacts=world.store,

@@ -761,9 +761,9 @@ class _FakeMcpTool:
 
 def _mcp_groups() -> dict[str, McpToolGroup]:
     return {
-        "pulse": McpToolGroup(
+        "demo": McpToolGroup(
             budget=5,
-            tools=(_FakeMcpTool("pulse_server_status"), _FakeMcpTool("pulse_weekly")),
+            tools=(_FakeMcpTool("demo_server_status"), _FakeMcpTool("demo_weekly")),
         ),
     }
 
@@ -772,21 +772,21 @@ def test_budgets_excludes_mcp_tools_not_in_allowed_mcp():
     """R-7's default-deny must actually cover an unauthorized server's tool
     names: `budgets()` called with no `allowed_mcp`
     (the default, matching an unauthorized conversation) must not admit
-    `pulse_server_status`/`pulse_weekly` at all — not merely leave them
+    `demo_server_status`/`demo_weekly` at all — not merely leave them
     un-callable elsewhere."""
     registry = ToolRegistry(mcp_tools=_mcp_groups())
     budgets = registry.budgets()
-    assert "pulse_server_status" not in budgets
-    assert "pulse_weekly" not in budgets
+    assert "demo_server_status" not in budgets
+    assert "demo_weekly" not in budgets
     # native budgets are untouched
     assert budgets["now"] == 4
 
 
 def test_budgets_includes_mcp_tools_only_for_allowed_servers():
     registry = ToolRegistry(mcp_tools=_mcp_groups())
-    budgets = registry.budgets(allowed_mcp=frozenset({"pulse"}))
-    assert budgets["pulse_server_status"] == 5
-    assert budgets["pulse_weekly"] == 5
+    budgets = registry.budgets(allowed_mcp=frozenset({"demo"}))
+    assert budgets["demo_server_status"] == 5
+    assert budgets["demo_weekly"] == 5
     # native budgets are untouched
     assert budgets["now"] == 4
 
@@ -794,7 +794,7 @@ def test_budgets_includes_mcp_tools_only_for_allowed_servers():
 def test_unauthorized_conversations_veto_message_never_names_mcp_tools():
     """The R-7 unknown-tool veto message is built from `ReplyGuard`'s
     `budgets` dict (`guards.py::_list_tool_names`). A conversation not
-    authorized for `pulse` must never have that server's tool names appear in
+    authorized for `demo` must never have that server's tool names appear in
     the message the MODEL sees when it hallucinates a wrong tool name —
     a non-disclosure claim, stated concretely."""
     registry = ToolRegistry(mcp_tools=_mcp_groups())
@@ -805,8 +805,8 @@ def test_unauthorized_conversations_veto_message_never_names_mcp_tools():
     )
     message = guard.evaluate("totally_made_up_tool", {})
     assert message is not None
-    assert "pulse_server_status" not in message
-    assert "pulse_weekly" not in message
+    assert "demo_server_status" not in message
+    assert "demo_weekly" not in message
 
 
 class _SpyMcpTool:
@@ -828,15 +828,15 @@ async def test_a_servers_aggregate_budget_refuses_the_call_past_it_spread_over_i
     though its own tool is within its budget, and the refused call never runs."""
     ran: list[str] = []
     group = McpToolGroup(budget=2, tools=(
-        _SpyMcpTool("pulse_server_status", ran), _SpyMcpTool("pulse_weekly", ran),
+        _SpyMcpTool("demo_server_status", ran), _SpyMcpTool("demo_weekly", ran),
     ))
     first, second = aggregate_budgeted_tools(group)
 
     async def call(tool: Any, ref: str) -> list[Any]:
         return [e async for e in tool.stream({"toolUseId": ref, "input": {}}, {})]
 
-    assert await call(first, "r1") == [{"ok": "pulse_server_status"}]
-    assert await call(second, "r2") == [{"ok": "pulse_weekly"}]
+    assert await call(first, "r1") == [{"ok": "demo_server_status"}]
+    assert await call(second, "r2") == [{"ok": "demo_weekly"}]
     refused = await call(first, "r3")
     assert refused[0].tool_result["status"] == "error"
     assert ran == ["r1", "r2"]
@@ -846,18 +846,18 @@ async def test_the_built_surface_gates_a_servers_tools_on_its_aggregate_budget()
     """The same budget, reached the way a turn reaches it: `build` hands the model the
     server's tools, and calls through those handed-over tools are counted together."""
     ran: list[str] = []
-    registry = ToolRegistry(mcp_tools={"pulse": McpToolGroup(budget=1, tools=(
-        _SpyMcpTool("pulse_server_status", ran), _SpyMcpTool("pulse_weekly", ran),
+    registry = ToolRegistry(mcp_tools={"demo": McpToolGroup(budget=1, tools=(
+        _SpyMcpTool("demo_server_status", ran), _SpyMcpTool("demo_weekly", ran),
     ))})
     tools = {t.tool_name: t for t in registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
-        metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"pulse"}),
-    ) if t.tool_name.startswith("pulse_")}
-    assert set(tools) == {"pulse_server_status", "pulse_weekly"}
-    first = [e async for e in tools["pulse_server_status"].stream({"toolUseId": "a"}, {})]
-    second = [e async for e in tools["pulse_weekly"].stream({"toolUseId": "b"}, {})]
-    assert first == [{"ok": "pulse_server_status"}]
+        metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"demo"}),
+    ) if t.tool_name.startswith("demo_")}
+    assert set(tools) == {"demo_server_status", "demo_weekly"}
+    first = [e async for e in tools["demo_server_status"].stream({"toolUseId": "a"}, {})]
+    second = [e async for e in tools["demo_weekly"].stream({"toolUseId": "b"}, {})]
+    assert first == [{"ok": "demo_server_status"}]
     assert second[0].tool_result["status"] == "error" and ran == ["a"]
 
 
@@ -871,8 +871,8 @@ def test_registry_derivations_are_unaffected_by_mcp_tools():
 def test_build_omits_mcp_tools_when_allowed_mcp_is_empty():
     tools = _built_tools(ToolRegistry(mcp_tools=_mcp_groups()))
     names = {t.tool_name for t in tools}
-    assert "pulse_server_status" not in names
-    assert "pulse_weekly" not in names
+    assert "demo_server_status" not in names
+    assert "demo_weekly" not in names
 
 
 def test_build_includes_only_the_allowed_mcp_servers_tools():
@@ -880,10 +880,10 @@ def test_build_includes_only_the_allowed_mcp_servers_tools():
     tools = registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
-        metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"pulse"}),
+        metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"demo"}),
     )
     names = {t.tool_name for t in tools}
-    assert {"pulse_server_status", "pulse_weekly"} <= names
+    assert {"demo_server_status", "demo_weekly"} <= names
 
 
 # ---- [llm.budgets]: a per-deployment DELTA, not a second table -------------

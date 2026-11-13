@@ -536,12 +536,6 @@ provider = "hko"           # only "hko" exists
 # lang = "tc"              # HKO language: tc | en | sc
 # timeout_seconds = 8.0
 
-[tools.mcp.pulse]
-enabled = false
-base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
-token_env = "PULSE_MCP_TOKEN"
-budget = 5
-
 [compute]
 enabled = false
 # poll_tick_seconds = 10      # seconds between poller checks for a finished job; a lateness bound, not a deadline

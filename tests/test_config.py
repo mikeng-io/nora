@@ -779,34 +779,32 @@ def test_a_cluster_batch_limit_below_corridor_min_samples_is_refused():
 
 
 def test_tools_mcp_is_optional_and_defaults_to_empty(toml_path):
-    text = toml_path.read_text()
-    head, _, tail = text.partition("[tools.mcp.pulse]\n")
-    assert tail, "config.example.toml no longer declares [tools.mcp.pulse]"
-    remainder = tail.split("\n[", 1)
-    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
-
     cfg = load(toml_path)
 
     assert cfg.tools.mcp == {}
 
 
 def test_tools_mcp_parses_a_configured_server(toml_path, monkeypatch):
-    monkeypatch.setenv("PULSE_MCP_TOKEN", "test-token")
-    toml_path.write_text(toml_path.read_text().replace(
-        "[tools.mcp.pulse]\nenabled = false", "[tools.mcp.pulse]\nenabled = true"))
+    monkeypatch.setenv("DEMO_MCP_TOKEN", "test-token")
+    toml_path.write_text(toml_path.read_text() + (
+        '\n[tools.mcp.demo]\nenabled = true\n'
+        'base_url = "https://mcp.example.test/mcp"\n'
+        'token_env = "DEMO_MCP_TOKEN"\nbudget = 5\n'
+    ))
 
     cfg = load(toml_path)
 
-    assert cfg.tools.mcp["pulse"].enabled is True
-    assert cfg.tools.mcp["pulse"].base_url == "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
-    assert cfg.tools.mcp["pulse"].token_env == "PULSE_MCP_TOKEN"  # noqa: S105 — an env-var NAME
-    assert cfg.tools.mcp["pulse"].budget == 5
+    assert cfg.tools.mcp["demo"].enabled is True
+    assert cfg.tools.mcp["demo"].base_url == "https://mcp.example.test/mcp"
+    assert cfg.tools.mcp["demo"].token_env == "DEMO_MCP_TOKEN"  # noqa: S105 — an env-var NAME
+    assert cfg.tools.mcp["demo"].budget == 5
 
 
 def test_tools_mcp_rejects_unknown_keys(toml_path):
-    toml_path.write_text(toml_path.read_text().replace(
-        "[tools.mcp.pulse]\nenabled = false",
-        "[tools.mcp.pulse]\nenabled = false\ntypo_field = true"))
+    toml_path.write_text(toml_path.read_text() + (
+        '\n[tools.mcp.demo]\nenabled = false\n'
+        'base_url = "https://mcp.example.test/mcp"\ntypo_field = true\n'
+    ))
     with pytest.raises(ConfigError, match="typo_field"):
         load(toml_path)
 

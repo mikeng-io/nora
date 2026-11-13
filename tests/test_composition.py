@@ -179,21 +179,8 @@ async def test_dependencies_exposes_the_reminders_store(cfg):
     assert isinstance(deps.reminders, SqlReminderStore)
 
 
-async def test_dependencies_games_client_is_none_without_pulse_api_token(cfg, monkeypatch):
-    """`nora.web.games`'s `PulseGamesClient` is a separate, REST credential
-    (`PULSE_API_TOKEN`) from the LLM tool-calling path's `[tools.mcp.pulse]`
-    MCP mount (`PULSE_MCP_TOKEN`) — this fixture's environment sets neither,
-    so the web layer must degrade to `None` (a 503), never a guessed client
-    pointed at nothing."""
-    monkeypatch.delenv("PULSE_API_TOKEN", raising=False)
-    deps = await build_dependencies(cfg)
-    assert deps.games_client is None
 
 
-async def test_dependencies_builds_a_games_client_when_pulse_api_token_is_set(cfg, monkeypatch):
-    monkeypatch.setenv("PULSE_API_TOKEN", "test-pulse-token")
-    deps = await build_dependencies(cfg)
-    assert deps.games_client is not None
 
 
 async def test_dependencies_speaker_is_none_when_tts_is_disabled(cfg, monkeypatch):

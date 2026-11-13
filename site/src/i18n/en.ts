@@ -288,9 +288,9 @@ export const en = {
   },
   portal: {
     title: "For the group, there’s more.",
-    body: "Behind a Discord sign-in, the people she lives with can see her status, what she remembers, the map, the game servers and what’s coming up. Only people she already knows can get in.",
+    body: "Behind a Discord sign-in, the people she lives with can see her status, what she remembers, the map and what’s coming up. Only people she already knows can get in.",
     cta: "Sign in to the portal",
-    items: ["Status", "Memory", "Map", "Games", "Events"],
+    items: ["Status", "Memory", "Map", "Events"],
     imageAlt: "Nora giving a small wave.",
   },
   footer: {

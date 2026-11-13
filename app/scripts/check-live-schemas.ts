@@ -11,7 +11,6 @@
 //   resolved through /persons); else the roster's first person. The id is
 //   never printed.
 import type { z } from "zod";
-import * as games from "../src/lib/api/games";
 import * as nora from "../src/lib/api/nora";
 import * as people from "../src/lib/api/people";
 import * as presence from "../src/lib/api/presence";
@@ -20,7 +19,7 @@ import { z as zod } from "zod";
 const BASE = process.env.NORA_API_BASE ?? "http://nora:9100";
 let PERSON = process.env.CHECK_PERSON ?? "";
 
-type Check = { path: string; schema: z.ZodTypeAny; optional404?: boolean; knownGames?: string[] };
+type Check = { path: string; schema: z.ZodTypeAny; optional404?: boolean };
 
 async function get(path: string): Promise<{ status: number; body: unknown }> {
   const res = await fetch(`${BASE}/app/v1${path}`, { signal: AbortSignal.timeout(20_000) });
@@ -40,11 +39,6 @@ async function run(c: Check): Promise<string> {
     if (status !== 200) return `ERROR ${c.path} HTTP ${status}`;
     const r = c.schema.safeParse(body);
     if (r.success) return `PASS  ${c.path}`;
-    // A world the portal has no view for is shown as such, not failed.
-    const game = body && typeof body === "object" ? (body as { game?: unknown }).game : undefined;
-    if (c.knownGames && typeof game === "string" && !c.knownGames.includes(game)) {
-      return `SKIP  ${c.path} (no world view for game "${game}")`;
-    }
     const paths = [...new Set(r.error.issues.map((i) => `${i.path.join(".")}: ${i.code}`))].slice(0, 8);
     return `FAIL  ${c.path}\n        ${paths.join("\n        ")}`;
   } catch (e) {
@@ -75,7 +69,6 @@ async function main() {
     { path: "/presence", schema: zod.array(presence.PresenceEntrySchema) },
     { path: "/presence/places", schema: zod.array(presence.SavedPlaceSchema) },
     { path: "/presence/analytics/places", schema: presence.DerivedPlacesSchema },
-    { path: "/games/servers", schema: zod.array(games.ServerSchema) },
   ];
   for (const c of base) lines.push(await run(c));
 
@@ -95,30 +88,6 @@ async function main() {
   const plans = (await get(q("/events"))).body as Array<{ id: string }> | null;
   if (PERSON && plans?.[0]) {
     lines.push(await run({ path: `/events/${plans[0].id}?personId=${encodeURIComponent(PERSON)}`, schema: people.PlanDetailSchema }));
-  }
-
-  const servers = ((await get("/games/servers")).body as Array<{ id: string; current: unknown }> | null) ?? [];
-  const status = zod.union([games.ServerStatusSchema, games.LocalSaveStatusSchema]);
-  const world = zod.union([games.WorldStateSchema, games.BigWalkWorldSchema]);
-  for (const s of servers) {
-    const id = encodeURIComponent(s.id);
-    const local = s.current === null;
-    lines.push(await run({ path: `/games/servers/${id}/status`, schema: status }));
-    lines.push(await run({ path: `/games/servers/${id}/world`, schema: world, optional404: true, knownGames: ["big-walk"] }));
-    lines.push(await run({ path: `/games/servers/${id}/activity`, schema: games.ActivityPageSchema, optional404: true }));
-    if (local) {
-      lines.push(await run({ path: `/games/servers/${id}/progress`, schema: games.GameProgressSchema, optional404: true }));
-      lines.push(await run({ path: `/games/servers/${id}/save-history?hours=168`, schema: games.SaveHistorySchema, optional404: true }));
-      continue;
-    }
-    lines.push(await run({ path: `/games/servers/${id}/graph?hours=24`, schema: games.GraphSchema, optional404: true }));
-    lines.push(await run({ path: `/games/servers/${id}/weekly`, schema: games.WeeklySummarySchema, optional404: true }));
-    lines.push(await run({ path: `/games/servers/${id}/insights?days=30`, schema: games.InsightsSchema, optional404: true }));
-    lines.push(await run({ path: `/games/servers/${id}/sessions`, schema: games.SessionsPageSchema, optional404: true }));
-    const players = (await get(`/games/servers/${id}/players`)).body as { data?: Array<{ playerKey: string }> } | null;
-    lines.push(await run({ path: `/games/servers/${id}/players`, schema: games.PlayersPageSchema, optional404: true }));
-    const key = players?.data?.[0]?.playerKey;
-    if (key) lines.push(await run({ path: `/games/servers/${id}/players/${encodeURIComponent(key)}`, schema: games.PlayerDetailSchema }));
   }
 
   console.log(lines.map(shown).join("\n"));

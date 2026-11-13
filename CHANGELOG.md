@@ -1,5 +1,24 @@
 # Changelog
 
+## [7.18.11](https://github.com/mikeng-io/nora/compare/v7.18.10...v7.18.11) (2026-11-13)
+
+
+### Features
+
+* **memory:** entries are reachable from their subjects and the Cognition loop sees what it already read ([c43f8dc](https://github.com/mikeng-io/nora/commit/c43f8dc3e5a59b37a45396f3709b23fb8f7563f9))
+
+
+### Bug Fixes
+
+* **memory:** an about relation needs every citation eligible in its unit ([a4a8548](https://github.com/mikeng-io/nora/commit/a4a85481f049b81a4a2b48afb19e819eba5ed937))
+* **memory:** one projection path owns about relations, evidence scope and event cites custody ([024e8b7](https://github.com/mikeng-io/nora/commit/024e8b779e33b41902d43036506203b8b6a68152))
+* **memory:** the build's checks follow its moved lines and new column ([7d7fc98](https://github.com/mikeng-io/nora/commit/7d7fc98c709d5cc3a04120eabb8a77c461df361b))
+
+
+### Changes
+
+* **integrations:** remove Pulse from Nora ([ea5352d](https://github.com/mikeng-io/nora/commit/ea5352d60d0cbf815879d60282153331fd8fdec8))
+
 ## [7.18.10](https://github.com/mikeng-io/nora/compare/v7.18.9...v7.18.10) (2026-11-13)
 
 

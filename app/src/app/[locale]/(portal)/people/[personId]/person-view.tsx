@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowRight, CalendarDays, ChevronRight, Gamepad2, MapPin } from "lucide-react";
+import { ArrowRight, CalendarDays, ChevronRight, MapPin } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { PageFrame } from "@/components/shell/app-shell";
 import { useViewer } from "@/components/shell/viewer";
@@ -41,7 +41,7 @@ const TABS = ["overview", "places", "rhythm", "routes", "memory"] as const;
 type Tab = (typeof TABS)[number];
 
 // One person, whole: where they are, where they tend to be, when and how
-// they move, which games know them, what you have planned together, and,
+// they move, what you have planned together, and,
 // on your own page only, what Nora remembers about you.
 export function PersonView({ personId }: { personId: string }) {
   const t = useTranslations("people");
@@ -135,7 +135,7 @@ export function PersonView({ personId }: { personId: string }) {
           items={available.map((v) => ({ value: v, label: v === "overview" ? t("overview") : v === "memory" ? t("memory") : tp(`tabs.${v}`) }))}
         />
         <TabPanel value="overview">
-          <Overview personId={personId} name={name} entry={entry} self={self} gameProfiles={person.data.gameProfiles} />
+          <Overview personId={personId} name={name} entry={entry} self={self} />
         </TabPanel>
         {inCircle ? (
           <>
@@ -182,13 +182,11 @@ function Overview({
   name,
   entry,
   self,
-  gameProfiles,
 }: {
   personId: string;
   name: string;
   entry: PresenceEntry | null;
   self: boolean;
-  gameProfiles: Array<{ serverId: string; displayName: string; game: string | null }>;
 }) {
   const t = useTranslations("people");
   return (
@@ -199,31 +197,6 @@ function Overview({
       </div>
       <div className="grid gap-4 lg:gap-6">
         {entry ? <PlacesSummary personId={personId} name={name} /> : null}
-        <Panel aria-labelledby="games-title">
-          <PanelHeader id="games-title" title={t("games")} />
-          {gameProfiles.length ? (
-            <Rows className="border-t border-hairline">
-              {gameProfiles.map((g) => (
-                <li key={g.serverId}>
-                  <Link
-                    href={`/games/${g.serverId}`}
-                    className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-hoodie/60 sm:px-5"
-                  >
-                    <span className="grid size-9 place-items-center rounded-control bg-hoodie text-ink-soft">
-                      <Gamepad2 className="size-4" aria-hidden="true" />
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[0.9375rem] font-semibold text-ink">{g.displayName}</span>
-                    <ChevronRight className="size-4 text-ink-muted" aria-hidden="true" />
-                  </Link>
-                </li>
-              ))}
-            </Rows>
-          ) : (
-            <PanelBody>
-              <p className="text-body text-ink-soft">{t("noGames", { name })}</p>
-            </PanelBody>
-          )}
-        </Panel>
         {self ? (
           <Link
             href="/nora/memory"
