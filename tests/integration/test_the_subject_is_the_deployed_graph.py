@@ -32,7 +32,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 81, (
+    assert len(dataclasses.fields(Dependencies)) == 80, (
         "82 -> 81 on 2026-11-08: `extraction`, the retired per-message extraction "
         "worker, removed (design/unified-memory/graph.md). "
         "81 -> 82: `computer_lifecycle`, the shared computer startup/drain owner "
