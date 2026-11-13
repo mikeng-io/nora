@@ -67,7 +67,7 @@ def test_the_sections_appear_in_order(tmp_path):
     html = render(out).read_text(encoding="utf-8")
     heads = [html.index(s) for s in (
         "a. What arrived", "b. What Nora read", "c. What Nora did",
-        "d. What changed", "e. Judgement")]
+        "d. The loop", "e. What changed", "f. Judgement")]
     assert heads == sorted(heads)
     # The table of contents links the case and its wake, each with status.
     assert 'href="#case-0"' in html and 'href="#case-0-wake-0"' in html

@@ -62,11 +62,11 @@ it was written from one room's messages, and a unit scope would
 show it in every room of the unit.
 
 **`cites` comes only from a stored citations column**: notes, memos,
-lessons and Character revisions. A message id becomes an edge to its
-message node; a `rollup(outing|stay|trip|...)` key an edge to that episode's
-key, as cited. A key of a kind with no node (a co-location, daybook,
-tie or response) and a `response:<n>` episode are skipped. Events store no
-citations column, so they have none.
+lessons, Character revisions and an event's revision fold. A message id
+becomes an edge to its message node; a `rollup(outing|stay|trip|...)` key
+an edge to that episode's key, as cited. A key of a kind with no node (a
+co-location, daybook, tie or response) and a `response:<n>` episode are
+skipped.
 
 **What a Rollup episode is.** An outing, a stay or a trip of the
 CURRENT build, keyed by its citation `(subject, interval)`
@@ -785,24 +785,18 @@ def _cites(kind: str, source_id: str, citations: Iterable[str], prov: str) -> li
 async def _entry_edges(
     conn: AsyncConnection, kind: str, source_id: str, edges: list[Edge],
 ) -> None:
-    """Replace an entry's edges with `edges`, upserting the hubs they reach.
+    """Replace an entry's edges with `edges`, upserting their hubs.
 
-    A `supersedes` edge belongs to the entry it points AT, because the
-    superseded entry's own column (`note.replaced_by`) is what records it: an
-    entry re-projecting drops its outgoing edges except `supersedes`, and the
-    `supersedes` edges into it, and writes both afresh from its row."""
+    `supersedes` edges are re-derived from the entry they point AT, so they
+    survive the rewrite."""
     for _, _, _, dk, di, _ in edges:
         if dk in ("person", "room", "unit", "nora"):
             await _hub(conn, dk, di, origin_room=di if dk == "room" else None)
     ends = await _delete_edges(conn, sa.or_(
-        sa.and_(
-            MEMORY_EDGE.c.src_kind == kind, MEMORY_EDGE.c.src_id == source_id,
-            MEMORY_EDGE.c.rel != "supersedes",
-        ),
-        sa.and_(
-            MEMORY_EDGE.c.dst_kind == kind, MEMORY_EDGE.c.dst_id == source_id,
-            MEMORY_EDGE.c.rel == "supersedes",
-        ),
+        sa.and_(MEMORY_EDGE.c.src_kind == kind, MEMORY_EDGE.c.src_id == source_id,
+                MEMORY_EDGE.c.rel != "supersedes"),
+        sa.and_(MEMORY_EDGE.c.dst_kind == kind, MEMORY_EDGE.c.dst_id == source_id,
+                MEMORY_EDGE.c.rel == "supersedes"),
     ))
     await _insert_edges(conn, edges)
     # An `about` target the entry no longer names may have no edge left.
@@ -908,7 +902,7 @@ async def _project_event(conn: AsyncConnection, source_id: str) -> None:
             EVENTS.c.created_at, EVENTS.c.status, EVENTS.c.people,
             EVENTS.c.exclude_persons, EVENTS.c.venue_text, EVENTS.c.venue_name,
             EVENTS.c.venue_place_id, EVENTS.c.venue_district, EVENTS.c.venue_city,
-            EVENT_REVISION.c.body,
+            EVENT_REVISION.c.body, EVENT_REVISION.c.citations,
         )
         .select_from(EVENTS.outerjoin(
             EVENT_REVISION, EVENT_REVISION.c.id == EVENTS.c.head_revision_id,
@@ -942,7 +936,6 @@ async def _project_event(conn: AsyncConnection, source_id: str) -> None:
     # keeps the bare id, which matches no room key and so no read.
     unit = row.unit_id or None
     origin_room = None if unit else (room or row.conversation_id)
-    at = row.when or row.created_at
     # The venue by name: the resolved `venue_name`, else the group's own
     # free-text `venue_text`, which is what was said in the room and takes the
     # event's scope like that message. Never the resolved address, map link or
@@ -951,12 +944,16 @@ async def _project_event(conn: AsyncConnection, source_id: str) -> None:
     await _upsert_node(
         conn, kind="event", source_id=source_id, unit=unit, origin_room=origin_room,
         exclude_persons=row.exclude_persons, text=_text(row.title, row.body, venue),
-        at_ms=int(at.timestamp() * 1000),
+        at_ms=int((row.when or row.created_at).timestamp() * 1000),
         state="retired" if row.status in _EVENT_RETIRED else "live",
     )
-    edges: list[Edge] = []
-    if room is not None:
-        edges.append(("event", source_id, "in_room", "room", room, "events.conversation_id"))
+    edges: list[Edge] = [
+        ("event", source_id, "in_room", "room", room, "events.conversation_id")
+    ] if room is not None else []
+    edges += [
+        e for part, refs in (row.citations or {}).items()
+        for e in _cites("event", source_id, refs, f"event_citations.{part}")
+    ]
     rsvps = (await conn.execute(
         sa.select(EVENT_RSVPS.c.person_id).distinct()
         .where(EVENT_RSVPS.c.event_id == source_id)

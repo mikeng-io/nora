@@ -20,7 +20,7 @@ suite both pass.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace as _replace
 from typing import Any
 from uuid import UUID, uuid4
@@ -39,6 +39,7 @@ from nora.domain.gatherings import (
     GatheringStatus,
     RSVPResponse,
     StaleEventRevisionError,
+    event_citations,
     field_meta_from_json,
     field_meta_to_json,
     normalise_gathering,
@@ -118,6 +119,10 @@ def _row_to_revision(r: Row[*tuple[Any, ...]]) -> EventRevision:
         field_meta=field_meta_from_json(r.field_meta),
         venue_district=r.venue_district,
         venue_city=r.venue_city,
+        citations=(
+            None if r.citations is None
+            else {p: tuple(v) for p, v in r.citations.items()}
+        ),
     )
 
 
@@ -191,12 +196,21 @@ def _revision_values(revision: EventRevision) -> dict[str, Any]:
         "written_by": revision.written_by,
         "written_at": revision.written_at,
         "field_meta": field_meta_to_json(revision.field_meta),
+        "citations": (
+            None if revision.citations is None
+            else {p: list(v) for p, v in revision.citations.items()}
+        ),
     }
 
 
-def _revision_of(event: Gathering, *, parent_revision_id: UUID | None) -> EventRevision:
+def _revision_of(
+    event: Gathering, *, parent_revision_id: UUID | None,
+    citations: Mapping[str, tuple[str, ...]] | None = None,
+) -> EventRevision:
     """The revision a write of `event` produces — the head's own columns,
-    snapshotted, chained onto `parent_revision_id`."""
+    snapshotted, chained onto `parent_revision_id`. `citations` is the fold
+    the head's fields rest on after this write (`event_citations`): `None`
+    when the chain has never recorded one."""
     return EventRevision(
         id=uuid4(), event_id=event.id, parent_revision_id=parent_revision_id,
         status=event.status, title=event.title, when=event.when, end=event.end,
@@ -208,6 +222,7 @@ def _revision_of(event: Gathering, *, parent_revision_id: UUID | None) -> EventR
         lineage=event.lineage, as_of=event.as_of, body=None,
         written_by="tag", written_at=event.created_at, field_meta=event.field_meta,
         venue_district=event.venue_district, venue_city=event.venue_city,
+        citations=citations,
     )
 
 
@@ -229,7 +244,13 @@ class SqlGatheringStore:
                         conn, event=row, held=row.lineage, evidence=evidence,
                     )
                     row = _replace(row, lineage=lineage, as_of=as_of)
-                revision = _revision_of(row, parent_revision_id=None)
+                revision = _revision_of(
+                    row, parent_revision_id=None,
+                    citations=(
+                        event_citations({}, evidence)
+                        if evidence is not None else None
+                    ),
+                )
                 row_with_head = _replace(row, head_revision_id=revision.id)
                 await conn.execute(
                     sa.insert(EVENTS).values(**_event_values(row_with_head)),
@@ -340,7 +361,21 @@ class SqlGatheringStore:
                     evidence=evidence,
                 )
                 row = _replace(row, lineage=lineage, as_of=as_of)
-            revision = _revision_of(row, parent_revision_id=current.head_revision_id)
+            # The fold under the same lock: a restated part takes its own
+            # citations, every other part keeps the parent's — `None` when the
+            # chain never recorded one.
+            held = (await conn.execute(
+                sa.select(EVENT_REVISION.c.citations).where(
+                    EVENT_REVISION.c.id == current.head_revision_id,
+                )
+            )).scalar_one_or_none()
+            revision = _revision_of(
+                row, parent_revision_id=current.head_revision_id,
+                citations=(
+                    event_citations(held or {}, evidence)
+                    if evidence is not None else held
+                ),
+            )
             await conn.execute(
                 sa.insert(EVENT_REVISION).values(**_revision_values(revision)),
             )
