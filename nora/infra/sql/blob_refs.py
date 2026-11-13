@@ -76,6 +76,9 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("notebook_entry_revision", "content"): (
         "entry prose and evidence keys; source rows own blob custody"
     ),
+    ("event_revision", "citations"): (
+        "per-field evidence keys an event rests on; source rows own blob custody"
+    ),
     ("comprehend_result", "payload"): _TRACE,
     ("comprehend_web_page", "tool_call"): "web_fetch URL arguments and call id; no blob custody",
     ("entity", "attributes"): "semantic attributes; evidence source stores own blob custody",
