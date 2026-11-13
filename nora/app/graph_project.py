@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.live import LiveMapping
 from nora.domain.memory_graph import Key
-from nora.infra.sql import memory_index
+from nora.infra.sql import graph_entry_about, memory_index
 from nora.infra.sql.graph_projection import CODE_RELATIONS, ProjectionContext, project_rollups
 from nora.infra.sql.schema import (
     LEDGER_COMMITMENT,
@@ -113,7 +113,7 @@ async def graph_project(
             if apply:
                 for sid in ids:
                     async with engine.begin() as conn:
-                        await memory_index.project(conn, kind, sid)
+                        await graph_entry_about.project(conn, kind, sid)
                     await asyncio.sleep(1 / rows_per_second)
             last = ids[-1]
     async with engine.begin() as conn:
@@ -123,13 +123,14 @@ async def graph_project(
         unprojected = (
             await conn.execute(sa.select(sa.func.count()).select_from(MEMORY_PROJECTION_QUEUE))
         ).scalar_one()
+        verified = (*CODE_RELATIONS, "about")
         graph = {
             r[0]: r[1]
             for r in (
                 (
                     await conn.execute(
                         sa.select(RELATION.c.rel, sa.func.count())
-                        .where(RELATION.c.rel.in_(CODE_RELATIONS), RELATION.c.status == "current")
+                        .where(RELATION.c.rel.in_(verified), RELATION.c.status == "current")
                         .group_by(RELATION.c.rel)
                     )
                 ).all()
@@ -141,7 +142,7 @@ async def graph_project(
                 (
                     await conn.execute(
                         sa.select(MEMORY_EDGE.c.rel, sa.func.count())
-                        .where(MEMORY_EDGE.c.rel.in_(CODE_RELATIONS))
+                        .where(MEMORY_EDGE.c.rel.in_(verified))
                         .group_by(MEMORY_EDGE.c.rel)
                     )
                 ).all()
@@ -160,6 +161,6 @@ async def graph_project(
                 "memory_edge": index.get(r, 0),
                 "difference": graph.get(r, 0) - index.get(r, 0),
             }
-            for r in CODE_RELATIONS
+            for r in (*CODE_RELATIONS, "about")
         },
     }

@@ -49,7 +49,7 @@ from nora.domain.profile import (
     match_disputed_line,
     plan_write,
 )
-from nora.infra.sql import memory_index
+from nora.infra.sql import graph_entry_about
 from nora.infra.sql.schema import PROFILE, PROFILE_DISPUTE, PROFILE_LINE
 
 __all__ = ["SqlProfileStore", "chain_heads", "row_to_line"]
@@ -262,8 +262,8 @@ class SqlProfileStore:
                         if self._index:
                             # 25 §7, in the write's own begin(): the new row,
                             # and the row it supersedes (hidden drops both).
-                            await memory_index.project(conn, "profile_line", new_line.id)
-                            await memory_index.project(conn, "profile_line", matched.id)
+                            await graph_entry_about.project(conn, "profile_line", new_line.id)
+                            await graph_entry_about.project(conn, "profile_line", matched.id)
                         await conn.execute(
                             sa.update(PROFILE).where(PROFILE.c.key == account.key)
                             .values(revision=head_row.revision + 1, updated_at=now_ms))
@@ -383,8 +383,8 @@ class SqlProfileStore:
                 if self._index:
                     # 25 §7, in the write's own begin(): the new row, and the
                     # chain head it supersedes.
-                    await memory_index.project(conn, "profile_line", new_line.id)
-                    await memory_index.project(conn, "profile_line", head.id)
+                    await graph_entry_about.project(conn, "profile_line", new_line.id)
+                    await graph_entry_about.project(conn, "profile_line", head.id)
                 await conn.execute(
                     sa.update(PROFILE).where(PROFILE.c.key == key)
                     .values(revision=head_row.revision + 1, updated_at=now_ms))
@@ -468,9 +468,9 @@ class SqlProfileStore:
                     # 25 §7, in the write's own begin(): each inserted row, and
                     # each row one supersedes (its node turns `superseded`).
                     for line in plan.inserts:
-                        await memory_index.project(conn, "profile_line", line.id)
+                        await graph_entry_about.project(conn, "profile_line", line.id)
                         if line.supersedes is not None:
-                            await memory_index.project(conn, "profile_line", line.supersedes)
+                            await graph_entry_about.project(conn, "profile_line", line.supersedes)
                 revision += 1
                 changed = {"revision": revision, "updated_at": now_ms}
             if apply_decay:

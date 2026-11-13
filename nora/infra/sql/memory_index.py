@@ -785,12 +785,10 @@ def _cites(kind: str, source_id: str, citations: Iterable[str], prov: str) -> li
 async def _entry_edges(
     conn: AsyncConnection, kind: str, source_id: str, edges: list[Edge],
 ) -> None:
-    """Replace an entry's edges with `edges`, upserting the hubs they reach.
+    """Replace an entry's edges with `edges`, upserting their hubs.
 
-    A `supersedes` edge belongs to the entry it points AT, because the
-    superseded entry's own column (`note.replaced_by`) is what records it: an
-    entry re-projecting drops its outgoing edges except `supersedes`, and the
-    `supersedes` edges into it, and writes both afresh from its row."""
+    `supersedes` edges are re-derived from the entry they point AT; an
+    `event`'s `cites` are write-owned, so both kinds survive the rewrite."""
     for _, _, _, dk, di, _ in edges:
         if dk in ("person", "room", "unit", "nora"):
             await _hub(conn, dk, di, origin_room=di if dk == "room" else None)
@@ -798,6 +796,7 @@ async def _entry_edges(
         sa.and_(
             MEMORY_EDGE.c.src_kind == kind, MEMORY_EDGE.c.src_id == source_id,
             MEMORY_EDGE.c.rel != "supersedes",
+            sa.or_(MEMORY_EDGE.c.src_kind != "event", MEMORY_EDGE.c.rel != "cites"),
         ),
         sa.and_(
             MEMORY_EDGE.c.dst_kind == kind, MEMORY_EDGE.c.dst_id == source_id,

@@ -44,7 +44,7 @@ from nora.domain.gatherings import (
     normalise_gathering,
 )
 from nora.domain.lineage import Lineage
-from nora.infra.sql import memory_index
+from nora.infra.sql import graph_entry_about
 from nora.infra.sql.event_evidence import apply_evidence
 from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
 
@@ -229,6 +229,8 @@ class SqlGatheringStore:
                         conn, event=row, held=row.lineage, evidence=evidence,
                     )
                     row = _replace(row, lineage=lineage, as_of=as_of)
+                    await graph_entry_about.record_event_cites(
+                        conn, str(row.id), ((c.part, c.ref) for c in evidence.citations))
                 revision = _revision_of(row, parent_revision_id=None)
                 row_with_head = _replace(row, head_revision_id=revision.id)
                 await conn.execute(
@@ -237,7 +239,7 @@ class SqlGatheringStore:
                 await conn.execute(
                     sa.insert(EVENT_REVISION).values(**_revision_values(revision)),
                 )
-                await memory_index.project(conn, "event", str(row.id))
+                await graph_entry_about.project(conn, "event", str(row.id))
                 # Called with (conn, row) inside this write's transaction: the
                 # Cognition session binds its idempotency receipt to the commit.
                 if receipt is not None:
@@ -340,6 +342,8 @@ class SqlGatheringStore:
                     evidence=evidence,
                 )
                 row = _replace(row, lineage=lineage, as_of=as_of)
+                await graph_entry_about.record_event_cites(
+                    conn, str(row.id), ((c.part, c.ref) for c in evidence.citations))
             revision = _revision_of(row, parent_revision_id=current.head_revision_id)
             await conn.execute(
                 sa.insert(EVENT_REVISION).values(**_revision_values(revision)),
@@ -351,7 +355,7 @@ class SqlGatheringStore:
             await conn.execute(
                 sa.update(EVENTS).where(EVENTS.c.id == row.id).values(**values),
             )
-            await memory_index.project(conn, "event", str(row.id))
+            await graph_entry_about.project(conn, "event", str(row.id))
             row_with_head = _replace(row, head_revision_id=revision.id)
             if receipt is not None:
                 await receipt(conn, row_with_head)
@@ -379,7 +383,7 @@ class SqlGatheringStore:
             )
             await conn.execute(stmt)
             # The person who answered is someone the event is about.
-            await memory_index.project(conn, "event", str(rsvp.event_id))
+            await graph_entry_about.project(conn, "event", str(rsvp.event_id))
 
     async def rsvps_for(self, event_id: UUID) -> Sequence[RSVP]:
         # DISTINCT ON the newest row per person (Postgres extension; both

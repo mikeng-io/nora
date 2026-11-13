@@ -170,12 +170,24 @@ class ComprehendRead(AgentTool):
                 # `relations` is the same authority one axis over: the edge
                 # ids the read actually emitted, which a correction may name.
                 if isinstance(answer, dict) and answer.get("status") in ("ok", "partial"):
-                    state.shown_keys.update(
+                    # Saturation metadata only — which returned keys the
+                    # session already saw; an `unavailable` read carries none.
+                    keys = [
                         tuple(k) for k in answer.get("keys") or ()
-                        if isinstance(k, (list, tuple)) and len(k) == 2)
+                        if isinstance(k, (list, tuple)) and len(k) == 2]
+                    repeated = sorted(
+                        k for k in dict.fromkeys(keys) if k in state.shown_keys)
+                    answer = {
+                        **answer,
+                        "new": len(dict.fromkeys(keys)) - len(repeated),
+                        "repeated": [list(k) for k in repeated],
+                    }
+                    state.shown_keys.update(keys)
                     state.shown_relations.update(
                         r for r in answer.get("relations") or ()
                         if isinstance(r, str))
+                    yield self._event(tool_use, answer)
+                    continue
                 yield event
                 continue
             if isinstance(answer, dict) and answer.get("status") == "ok":

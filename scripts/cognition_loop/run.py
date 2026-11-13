@@ -39,7 +39,11 @@ from scripts.cognition_loop.availability import availability
 from scripts.cognition_loop.egress import assert_no_egress
 from scripts.cognition_loop.judges import judge_expectation
 from scripts.cognition_loop.rosters import FrozenRoster
-from scripts.cognition_loop.trajectory import session_events, wake_trajectory
+from scripts.cognition_loop.trajectory import (
+    loop_counts,
+    session_events,
+    wake_trajectory,
+)
 from scripts.cognition_loop.verdicts import (
     ERROR,
     WAKE_ERRED,
@@ -303,6 +307,7 @@ async def _wakes(
     wakes_report: list[dict[str, Any]],
 ) -> None:
     """The recorded sequence in the sandbox, each step naming itself."""
+    prior_links: set[str] = set()
     first = datetime.fromtimestamp(instants[0] / 1000, UTC)
     with TemporaryDirectory(prefix="nora-cognition-loop-") as workdir:
         args.workdir = workdir
@@ -367,8 +372,11 @@ async def _wakes(
                                 evidence, output, room, workspace,
                                 advance=advance,
                                 recorded_meta=recorded[i],
+                                prior_links=prior_links,
                             )
                         wakes_report.append(report_row)
+                        loop = report_row.get("loop") or {}
+                        prior_links = set(loop.get("link_ids") or ())
                     except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
                         roll.error(
                             f"wake {i} (recorded {wake_id}): {exc!r}")
@@ -391,6 +399,7 @@ async def _run_wake(
     reason: str, judges: Any | None, evidence: Any, output: Path,
     room: Any, workspace: str, advance: Any = None,
     recorded_meta: dict[str, Any] | None = None,
+    prior_links: set[str] | None = None,
 ) -> dict[str, Any]:
     """One wake: compose, assert inert, record, run live, diff, judge."""
     subject = None
@@ -479,6 +488,7 @@ async def _run_wake(
                     batch=_batch(recorded_meta, offered, offered_self),
                     no_session=no_session,
                     step_error=step_error,
+                    prior_links=prior_links,
                 )
             finally:
                 await engine.dispose()
@@ -669,6 +679,7 @@ def _wake_error(
         "session_id": None, "egress": None, "model_calls": None,
         "no_session": no_session, "batch": batch,
         "diff_counts": None, "trajectory": None, "expectations": [],
+        "loop": None,
         "advance": advance.written if advance is not None else None,
     }
 
@@ -702,9 +713,12 @@ def _freeze_wake(
     batch: dict[str, Any] | None = None,
     no_session: str | None = None,
     step_error: tuple[str, str] | None = None,
+    prior_links: set[str] | None = None,
 ) -> dict[str, Any]:
     """The wake's private evidence file and its report row."""
+    loop = loop_counts(trajectory, diff, prior_links or set())
     freeze(output / f"wake-{index}-{wake_id}.json", {
+        "loop": loop,
         "error": (
             {"step": step_error[0], "message": step_error[1]}
             if step_error is not None else None),
@@ -740,6 +754,7 @@ def _freeze_wake(
         },
         "trajectory": trajectory,
         "expectations": expectations,
+        "loop": loop,
         "advance": advance.written if advance is not None else None,
         "_state_before": state_after,
     }

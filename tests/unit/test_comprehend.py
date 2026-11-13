@@ -268,3 +268,66 @@ def test_preview_text_never_reports_a_row_the_budget_omitted():
     assert ("place", "0") in shown
     assert ("place", "99") not in shown
     assert len(shown) < 100
+
+
+async def test_a_memory_read_marks_repeats_and_counts_what_is_new():
+    from nora.agent.comprehend_tools import ComprehendRead, LookupState
+    from nora.agent.fetch_watch import GraphFetched, _result_of
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.obs.metrics import Metrics
+    from nora.testing.comprehend import InMemoryComprehendRecords
+
+    async def read():
+        return {
+            "status": "ok",
+            "keys": [["person", "generated-person"], ["note", "generated-note"]],
+            "relations": [],
+        }
+
+    state = LookupState(
+        GraphFetched(), UNIT, 1, InMemoryComprehendRecords(), Metrics(), ())
+    tool = ComprehendRead(
+        adapt(ToolSpec(name="memory_search", description="", schema={}, call=read)),
+        state,
+    )
+
+    async def call(use_id):
+        events = [
+            event async for event in tool.stream(
+                {"toolUseId": use_id, "name": "memory_search", "input": {}}, {})
+        ]
+        return _result_of(events[-1])
+
+    first = await call("first")
+    assert first["status"] == "ok"
+    assert first["new"] == 2 and first["repeated"] == []
+    second = await call("second")
+    assert second["status"] == "ok"      # repeats-only keeps its own status
+    assert second["new"] == 0
+    assert second["repeated"] == [
+        ["note", "generated-note"], ["person", "generated-person"]]
+
+
+async def test_an_unavailable_read_carries_no_saturation_claim():
+    from nora.agent.comprehend_tools import ComprehendRead, LookupState
+    from nora.agent.fetch_watch import GraphFetched, _result_of
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.obs.metrics import Metrics
+    from nora.testing.comprehend import InMemoryComprehendRecords
+
+    async def read():
+        return {"status": "unavailable", "reason": "database unreachable"}
+
+    state = LookupState(
+        GraphFetched(), UNIT, 1, InMemoryComprehendRecords(), Metrics(), ())
+    tool = ComprehendRead(
+        adapt(ToolSpec(name="memory_read", description="", schema={}, call=read)),
+        state,
+    )
+    events = [
+        event async for event in tool.stream(
+            {"toolUseId": "u1", "name": "memory_read", "input": {}}, {})
+    ]
+    answer = _result_of(events[-1])
+    assert answer["status"] == "unavailable"
+    assert "new" not in answer and "repeated" not in answer

@@ -250,6 +250,19 @@ def _did(wake: dict[str, Any]) -> str:
     return "".join(out)
 
 
+def _loop(wake: dict[str, Any], frozen: dict[str, Any]) -> str:
+    """Loop counts; `None` renders `unavailable`, never zero."""
+    loop = wake.get("loop") or frozen.get("loop")
+    if loop is None:
+        return ('<h4>d. The loop</h4><p class="not-recorded">not recorded</p>')
+    return "<h4>d. The loop</h4>" + _kv([
+        ("keys discovered", loop.get("discovered")),
+        ("repeats of keys shown earlier", loop.get("repeats")),
+        ("graph links written", loop.get("links_written")),
+        ("previous wake's links carried into prefetch", loop.get("links_carried")),
+    ])
+
+
 def _field_diff(before: Any, after: Any) -> str:
     """The changed fields of a revised entry, before → after."""
     if not isinstance(before, dict) or not isinstance(after, dict):
@@ -264,7 +277,7 @@ def _field_diff(before: Any, after: Any) -> str:
 
 
 def _changed(diff: dict[str, Any] | None) -> str:
-    out = ["<h4>d. What changed</h4>"]
+    out = ["<h4>e. What changed</h4>"]
     if diff is None:
         out.append('<p class="not-recorded">not recorded</p>')
         return "".join(out)
@@ -303,7 +316,7 @@ def _changed(diff: dict[str, Any] | None) -> str:
 
 
 def _judgement(expectations: list[dict[str, Any]] | None) -> str:
-    out = ["<h4>e. Judgement</h4>"]
+    out = ["<h4>f. Judgement</h4>"]
     if not expectations:
         out.append('<p class="not-recorded">not recorded</p>')
         return "".join(out)
@@ -425,6 +438,7 @@ def _wake(case_index: int, index: int, wake: dict[str, Any],
                             wake.get("trajectory") or frozen.get("trajectory")}))
     parts.append(_did({**wake, "trajectory":
                            wake.get("trajectory") or frozen.get("trajectory")}))
+    parts.append(_loop(wake, frozen))
     parts.append(_changed(frozen.get("diff")))
     parts.append(_judgement(
         wake.get("expectations") or frozen.get("expectations")))
