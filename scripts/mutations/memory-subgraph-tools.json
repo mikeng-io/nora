@@ -70,11 +70,11 @@
   "target": "tests/contract/test_memory_graph_contract.py::test_hidden_intermediate_never_enters_recursive_sql_paths[sql]"
  },
  {
-  "name": "missing graph projection is not an authoritative empty search",
+  "name": "unlinked scoped hits remain readable",
   "file": "nora/agent/memory_search.py",
-  "old": "if seed is None and found.hits and not graph.nodes:",
+  "old": "if seed is None and graph.status != \"unavailable\":",
   "new": "if False:",
-  "target": "tests/unit/test_memory_search_tool.py::test_matching_index_without_graph_projection_is_unavailable"
+  "target": "tests/unit/test_memory_search_tool.py::test_unlinked_profile_line_search_and_cached_read[in_scope]"
  },
  {
   "name": "full SQL fields remain JSON data rather than a repr string",

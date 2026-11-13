@@ -59,7 +59,8 @@ def test_ambient_generated_messages_do_not_emit_broad_scenario_noise():
 def test_corpus_uses_existing_trajectory_grader_fail_closed():
     from strands_evals.types.evaluation import EnvironmentState, EvaluationData
 
-    from evals.backbone import NORA_ERROR, NORA_TOOLS, ToolRouteGrader
+    from evals.backbone import NORA_ERROR, NORA_TOOLS
+    from evals.route_grader import ToolRouteGrader
     from evals.scenarios import load_all
 
     for case in load_all("cognition_session"):
