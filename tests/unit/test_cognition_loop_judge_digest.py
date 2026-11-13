@@ -139,15 +139,20 @@ async def test_a_judge_failure_names_its_error_type_and_message():
     assert "the generated upstream refused the call" in answer.reason
 
 
-def test_a_repeated_lineage_is_sent_once_and_named_by_key():
-    from scripts.cognition_loop.judges import _shared_lineage
-
+def test_a_repeated_lineage_is_sent_once_across_the_whole_digest():
     shared = "Lineage(audiences=('generated-room',))"
-    out = _shared_lineage({
-        "a": {"body": "x", "lineage": shared},
-        "b": {"body": "y", "lineage": shared},
-        "c": {"body": "z"},
-    })
-    assert out["lineages"] == {"lineage-1": shared}
-    assert [e.get("lineage") for e in out["state_after"].values()] == [
+    diff = StateDiff(kinds={"note": KindDiff("note", created=tuple(
+        Entry("created", i, after={"body": i, "lineage": shared})
+        for i in ("a", "b")))})
+    state = UnitState(kinds={"note": {
+        "a": {"body": "a", "lineage": shared},
+        "b": {"body": "b", "lineage": shared},
+        "c": {"body": "c"},
+    }})
+    payload = judge_payload(_expectation(), diff, state, {})
+    assert json.dumps(payload, default=str).count(shared) == 1
+    assert payload["lineages"] == {"lineage-1": shared}
+    assert [e["after"]["lineage"] for e in payload["diff"]["note"]["created"]] == [
+        "lineage-1", "lineage-1"]
+    assert [e.get("lineage") for e in payload["state_after"].values()] == [
         "lineage-1", "lineage-1", None]

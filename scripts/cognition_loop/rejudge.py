@@ -42,6 +42,15 @@ def frozen_diff(frozen: dict[str, Any]) -> tuple[StateDiff, UnitState]:
     return StateDiff(kinds), UnitState(kinds=after)
 
 
+def unmeasured(frozen: dict[str, Any], recorded: dict[str, Any]) -> bool:
+    """A wake judging again cannot clear: a step failed before the session
+    settled, or no after-state was frozen to judge against."""
+    step = (frozen.get("error") or {}).get("step") or recorded.get("step")
+    return "diff" not in frozen or step not in (None, "report") or (
+        step is None and recorded.get("status") == ERROR
+        and not recorded.get("expectations"))
+
+
 def case_status(row: dict[str, Any], statuses: list[str]) -> str:
     """Judging again never clears a step that failed: case errors roll up."""
     if not statuses:
@@ -95,11 +104,8 @@ async def rejudge(output: Path, case_path: Path, config: Path,
                         encoding="utf-8")
         wakes = row.get("wakes") or []
         recorded = wakes[index] if index < len(wakes) else {}
-        step = (frozen.get("error") or {}).get("step") or recorded.get("step")
-        failed = step not in (None, "report") or (
-            step is None and recorded.get("status") == ERROR
-            and not recorded.get("expectations"))
-        status = rollup(ERROR if failed else "PASS", *(j["verdict"] for j in judged))
+        status = rollup(ERROR if unmeasured(frozen, recorded) else "PASS",
+                        *(j["verdict"] for j in judged))
         if index < len(row.get("wakes") or []):
             row["wakes"][index]["status"] = status
             row["wakes"][index]["expectations"] = judged

@@ -136,6 +136,33 @@ def test_a_model_error_still_writes_report_json_and_html(
     assert "model_error" in html_text and "ERROR" in html_text
 
 
+def test_a_report_html_failure_turns_a_passing_run_to_error(
+    monkeypatch, tmp_path,
+):
+    """report.json stands when the HTML render raises, and the run is ERROR
+    naming the step, never a PASS with no report."""
+    import json as _json
+
+    cli, case_file, config_file = _offline_run_setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "run_case", _async_result({"status": "PASS"}))
+    ok = tmp_path / "ok"
+    ok.mkdir()
+    assert asyncio.run(cli.run(_offline_args(case_file, config_file, ok)))[
+        "status"] == "PASS"
+
+    def _raise(output):
+        raise RuntimeError("generated render failure")
+
+    monkeypatch.setattr(cli.report_html, "render", _raise)
+    failed = tmp_path / "failed"
+    failed.mkdir()
+    report = asyncio.run(cli.run(_offline_args(case_file, config_file, failed)))
+    assert report["status"] == "ERROR"
+    written = _json.loads((failed / "report.json").read_text())
+    assert written["status"] == "ERROR"
+    assert any(e.get("step") == "report_html" for e in written["errors"])
+
+
 def test_the_stated_budget_counts_judges_and_is_printed_first(
     monkeypatch, tmp_path, capsys,
 ):

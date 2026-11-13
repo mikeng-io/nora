@@ -36,3 +36,13 @@ def test_rejudging_recomputes_the_derived_wake_error():
 
     assert case_status({"errors": [WAKE_ERRED]}, ["PASS"]) == "PASS"
     assert case_status({"errors": [WAKE_ERRED, "advance failed"]}, ["PASS"]) == "ERROR"
+
+
+def test_a_report_error_with_no_frozen_after_state_stays_unmeasured():
+    from scripts.cognition_loop.rejudge import unmeasured
+
+    no_diff = {"error": {"step": "report", "message": "snapshot failed"}}
+    assert unmeasured(no_diff, {"step": "report", "status": "ERROR"})
+    # Positive control: a report error after the diff was frozen is judged again.
+    assert not unmeasured({**no_diff, "diff": {"note": {}}}, {"step": "report"})
+    assert unmeasured({"error": {"step": "advance"}, "diff": {}}, {})
