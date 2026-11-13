@@ -42,6 +42,7 @@ from scripts.cognition_loop.rosters import FrozenRoster
 from scripts.cognition_loop.trajectory import session_events, wake_trajectory
 from scripts.cognition_loop.verdicts import (
     ERROR,
+    WAKE_ERRED,
     ExpectationVerdict,
     Rollup,
     rollup,
@@ -290,7 +291,7 @@ async def run_case(
     if roll.verdict != ERROR and any(
         w.get("status") == ERROR for w in wakes_report
     ):
-        roll.error("a wake ended in ERROR")
+        roll.error(WAKE_ERRED)
     return _report(case, roll, wakes_report)
 
 
@@ -372,7 +373,7 @@ async def _wakes(
                         roll.error(
                             f"wake {i} (recorded {wake_id}): {exc!r}")
                         break
-                    if report_row.get("status") == ERROR:
+                    if stops_chain(report_row):
                         roll.error(
                             f"wake {i} (recorded {wake_id}) failed "
                             f"at {report_row.get('step', 'wake')}: "
@@ -457,40 +458,24 @@ async def _run_wake(
                     runner, judges, engine, wake.wake_id,
                     unit=case.unit, view=view, at_ms=at_ms,
                     recorded_meta=recorded_meta)
-                tokens = (subject.deps.metrics.get(
-                    "nora_cognition_unit_tokens_total") - tokens_before)
-                after = await state_mod.snapshot(
-                    engine, unit=case.unit, rooms=rooms,
-                    profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
-                    metrics=subject.deps.metrics,
-                )
-                diff = state_mod.diff(before, after)
-                events = session_events(
-                    read_events(evidence.path), session_id=session_id,
-                    wake_id=wake.wake_id,
-                )
-                trajectory = wake_trajectory(
-                    events, wake_id=wake.wake_id, session_id=session_id,
-                    tokens=tokens or None,
-                )
-                trajectory["availability"] = availability(getattr(subject, "cfg", None), trajectory)
-                if inspection is not None:
-                    # The inspection assembled the wake's context through the
-                    # same `_session_input` a session runs; only the model
-                    # call is skipped, so the blocks are real, never None.
-                    trajectory["blocks"] = {
-                        "system": inspection.get("system"),
-                        "agenda": inspection.get("agenda"),
-                        "items": inspection.get("items"),
-                        "stimuli": inspection.get("stimuli"),
-                        "instructions": inspection.get("instructions"),
-                    }
-                expectations = await _judge(
-                    args, case, index, judges, diff, after, trajectory)
+                got: dict[str, Any] = {"trajectory": {}, "expectations": []}
+                try:
+                    await _observe(
+                        got, args, case, index, judges, engine, subject, rooms,
+                        before, tokens_before, evidence, session_id, wake,
+                        inspection, at_ms)
+                except Exception as exc:  # noqa: BLE001 — the session settled; only its report failed
+                    step_error = step_error or ("report", f"{exc!r}")
+                    if got.get("diff") is None:
+                        return _wake_error(
+                            output, index, wake_id, at_ms, reason, advance,
+                            step=step_error[0], message=step_error[1],
+                            batch=_batch(recorded_meta, offered, offered_self),
+                            no_session=no_session)
                 return _freeze_wake(
                     output, index, wake_id, wake, at_ms, reason, session_id,
-                    egress, judges is not None, diff, trajectory, expectations,
-                    after, advance,
+                    egress, judges is not None, got["diff"], got["trajectory"],
+                    got["expectations"], got.get("after"), advance,
                     batch=_batch(recorded_meta, offered, offered_self),
                     no_session=no_session,
                     step_error=step_error,
@@ -505,6 +490,37 @@ async def _run_wake(
     finally:
         if subject is not None:
             await _close_subject(subject)
+
+
+async def _observe(
+    got: dict[str, Any], args: Any, case: Any, index: int, judges: Any,
+    engine: Any, subject: Any, rooms: Any, before: Any, tokens_before: float,
+    evidence: Any, session_id: Any, wake: Any, inspection: Any, at_ms: int,
+) -> None:
+    """Fill `got` step by step, so a later failure keeps what was built."""
+    tokens = (subject.deps.metrics.get(
+        "nora_cognition_unit_tokens_total") - tokens_before)
+    got["after"] = after = await state_mod.snapshot(
+        engine, unit=case.unit, rooms=rooms,
+        profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
+        metrics=subject.deps.metrics,
+    )
+    got["diff"] = diff = state_mod.diff(before, after)
+    events = session_events(
+        read_events(evidence.path), session_id=session_id, wake_id=wake.wake_id)
+    trajectory = wake_trajectory(
+        events, wake_id=wake.wake_id, session_id=session_id,
+        tokens=tokens or None)
+    trajectory["availability"] = availability(
+        getattr(subject, "cfg", None), trajectory)
+    if inspection is not None:
+        # The inspection assembled the wake's context through the same
+        # `_session_input` a session runs; only the model call is skipped.
+        trajectory["blocks"] = {k: inspection.get(k) for k in (
+            "system", "agenda", "items", "stimuli", "instructions")}
+    got["trajectory"] = trajectory
+    got["expectations"] = await _judge(
+        args, case, index, judges, diff, after, trajectory)
 
 
 async def _stimuli_by_id(
@@ -617,6 +633,12 @@ def _batch(
         "production_session": (
             meta["had_session"] if meta is not None else None),
     }
+
+
+def stops_chain(row: dict[str, Any]) -> bool:
+    """A failed step before the session settled stops the later wakes; a
+    report-side or judge ERROR leaves the sandbox fit and still rolls up."""
+    return row.get("step") not in (None, "report")
 
 
 def _wake_status(

@@ -50,7 +50,8 @@ You are given, as JSON:
 (before and after) and retired entries keyed by entry id; `unchanged` is \
 a count only
 - `state_after`: the unit's state of the expectation's kind after the \
-wake, same entry ids
+wake, same entry ids; an entry's `lineage` names a key in `lineages`, \
+which holds each distinct lineage (who may see the entry) once
 - `tool_calls`: the session's tool calls in order, each with arguments, \
 result status and refusal
 - `final_output`: the session's last assistant output
@@ -70,18 +71,27 @@ Return strict JSON: {"verdict": "met"|"not_met"|"cannot_tell", \
 "reason": str, "entry_ids": [str]}."""
 
 
-def _entry(e: Any) -> dict[str, Any]:
-    return {k: v for k, v in (("id", e.entry_id), ("before", e.before),
-                              ("after", e.after)) if v is not None}
+def _named(value: Any, keys: dict[str, str]) -> Any:
+    """`value` with its lineage replaced by the key it is sent once under."""
+    lineage = value.get("lineage") if isinstance(value, dict) else None
+    if not isinstance(lineage, str):
+        return value
+    return {**value, "lineage": keys.setdefault(lineage, f"lineage-{len(keys) + 1}")}
 
 
-def _full_diff(diff: Any) -> dict[str, Any]:
+def _entry(e: Any, keys: dict[str, str]) -> dict[str, Any]:
+    return {k: _named(v, keys) for k, v in (
+        ("id", e.entry_id), ("before", e.before), ("after", e.after))
+        if v is not None}
+
+
+def _full_diff(diff: Any, keys: dict[str, str]) -> dict[str, Any]:
     """Every kind's diff; unchanged collapses to a count."""
     return {
         kind: {
-            "created": [_entry(e) for e in d.created],
-            "revised": [_entry(e) for e in d.revised],
-            "retired": [_entry(e) for e in d.retired],
+            "created": [_entry(e, keys) for e in d.created],
+            "revised": [_entry(e, keys) for e in d.revised],
+            "retired": [_entry(e, keys) for e in d.retired],
             "unchanged": len(d.unchanged),
         }
         for kind, d in sorted(diff.kinds.items())
@@ -127,15 +137,18 @@ def _final_output(trajectory: dict[str, Any]) -> str | None:
 def judge_payload(
     expectation: Any, diff: Any, state_after: Any, trajectory: dict[str, Any],
 ) -> dict[str, Any]:
-    """The bounded digest one judge answers against."""
+    """The bounded digest one judge answers against; each lineage once."""
+    keys: dict[str, str] = {}
     return {
         "expectation": {
             "polarity": expectation.polarity,
             "kind": expectation.kind,
             "text": expectation.text,
         },
-        "diff": _full_diff(diff),
-        "state_after": dict(state_after.entries(expectation.kind)),
+        "diff": _full_diff(diff, keys),
+        "state_after": {i: _named(e, keys) for i, e in
+                        state_after.entries(expectation.kind).items()},
+        "lineages": {k: v for v, k in keys.items()},
         "tool_calls": _tool_calls(trajectory),
         "final_output": _final_output(trajectory),
         "stop_reason": trajectory.get("stop_reason"),

@@ -9,6 +9,8 @@ anything the run cannot ground never reads as a pass.
 
 from __future__ import annotations
 
+import re
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
@@ -16,6 +18,9 @@ PASS = "PASS"  # noqa: S105 — a verdict word, not a credential
 FAIL = "FAIL"
 REVIEW = "REVIEW"
 ERROR = "ERROR"
+_UUID_TAIL = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+# Derived from the wakes' statuses, so judging again recomputes it.
+WAKE_ERRED = "a wake ended in ERROR"
 
 #: A single judge's answer to one expectation.
 JUDGE_VERDICTS = ("met", "not_met", "cannot_tell")
@@ -49,10 +54,13 @@ def validate_citations(
     """A cited entry must exist in the wake's diff or state. Returns the
     bogus id, or None."""
     known = set(known_ids)
-    # A judge may cite an entry with or without its `kind:` prefix.
+    uuids = Counter(m.group() for k in known if (m := _UUID_TAIL.search(k)))
+    # A judge may cite an entry with or without its `kind:` prefix, or by
+    # the uuid that ends exactly one known id.
     known |= {k.split(":", 1)[1] for k in known if ":" in k}
     for entry_id in answer.entry_ids:
-        if entry_id not in known:
+        tail = _UUID_TAIL.search(entry_id)
+        if entry_id not in known and not (tail and uuids[tail.group()] == 1):
             return entry_id
     return None
 

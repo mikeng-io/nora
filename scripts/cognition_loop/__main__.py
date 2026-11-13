@@ -233,11 +233,21 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             args, cases, judges, export, budget, output, cfg,
             generated, report)
     finally:
-        (output / "report.json").write_text(
-            json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n"
-        )
-        report_html.render(output)
+        _write_report(output, report)
+        try:
+            report_html.render(output)
+        except Exception as exc:  # noqa: BLE001 — report.json stands; the run's own error is not masked
+            print(f"report.html not rendered: {exc!r}", file=sys.stderr)
+            report.setdefault("errors", []).append(
+                {"step": "report_html", "message": repr(exc)})
+            report["status"] = ERROR
+            _write_report(output, report)
     return report
+
+
+def _write_report(output: Path, report: dict[str, Any]) -> None:
+    (output / "report.json").write_text(
+        json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n")
 
 
 async def _run_cases(
