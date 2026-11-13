@@ -60,7 +60,40 @@ async def test_replay_embedder_check_uses_effective_subject_config(
         checked.assert_not_awaited()
     indexed.assert_awaited_once_with(
         "generated-sandbox", source_url="generated-source",
-        model_id="generated-subject.gguf@0000feedbeef")
+        model_id="generated-subject.gguf@0000feedbeef", graph=None)
+
+
+async def test_replay_sandbox_projects_with_the_subjects_graph_context(
+    tmp_path, monkeypatch,
+):
+    """With `[memory.graph]` on, the sandbox index is built with the
+    projection context production composes from the subject's own policy
+    and persons, producing no model work."""
+    import nora.app.graph_project as graph_project
+    from nora.subject.obtain import build_config
+    from tests.unit.test_subject_obtain import _spec
+
+    cfg = build_config(_spec(tmp_path / "subject", overrides={
+        "memory.graph.enabled": True,
+        "memory.index.read": False, "memory.index.embed": False,
+        "memory.index.embedder_model": "generated-subject.gguf@0000feedbeef",
+    }))
+    made, indexed = object(), AsyncMock()
+    calls = []
+    monkeypatch.setattr(graph_project, "projection_context",
+                        lambda *a, **k: calls.append((a, k)) or made)
+    monkeypatch.setattr(spike, "index_sandbox", indexed)
+    reload = SimpleNamespace(policy="generated-policy", persons="generated-persons")
+    await spike.index_replay_sandbox(
+        SimpleNamespace(database_url="generated-sandbox", cfg=cfg,
+                        deps=SimpleNamespace(config_reload=reload)),
+        source_url="generated-source",
+    )
+    assert calls == [(("generated-policy", "generated-persons"),
+                      {"nora_name": cfg.doctrine.display_name, "produce": False})]
+    indexed.assert_awaited_once_with(
+        "generated-sandbox", source_url="generated-source",
+        model_id="generated-subject.gguf@0000feedbeef", graph=made)
 
 
 async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, monkeypatch):
