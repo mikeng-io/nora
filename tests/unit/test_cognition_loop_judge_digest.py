@@ -245,3 +245,128 @@ async def test_a_judge_cites_only_the_ids_the_digest_shows():
     assert via_state.verdict == "PASS"
     unshown = await judge_expectation(Judges("memo:m-x"), ("a", "b"), *args)
     assert unshown.verdict == "ERROR"
+
+
+def _expanded(payload: dict[str, Any]) -> dict[str, Any]:
+    """Each `state_after` entry rebuilt the way the instruction describes."""
+    defaults = payload["state_after_defaults"]
+    return {i: {**defaults, **b} for i, b in payload["state_after"].items()}
+
+
+def _roundtrips(payload: dict[str, Any], original: dict[str, Any]) -> None:
+    """Expansion restores the original bodies, serialized type included —
+    `{"flag": true}` and `{"flag": 1}` are different bytes, so `==` is not
+    enough."""
+    expanded = _expanded(payload)
+    assert expanded.keys() == original.keys()
+    for i, body in expanded.items():
+        assert json.dumps(body, sort_keys=True, ensure_ascii=False, default=str) == \
+            json.dumps(original[i], sort_keys=True, ensure_ascii=False, default=str)
+
+
+def test_fields_every_state_after_entry_repeats_ride_once_under_defaults():
+    entries = {
+        i: {"unit": "generated-unit", "tags": ["a", "b"],
+            "head": {"rev": 7, "seen": None}, "own": i}
+        for i in ("e-1", "e-2", "e-3")
+    }
+    payload = judge_payload(
+        _expectation(), _diff(), UnitState(kinds={"note": entries}), {})
+    assert payload["state_after_defaults"] == {
+        "unit": "generated-unit", "tags": ["a", "b"],
+        "head": {"rev": 7, "seen": None}}
+    assert [set(b) for b in payload["state_after"].values()] == [{"own"}] * 3
+    _roundtrips(payload, entries)
+
+
+def test_defaults_preserve_absent_against_null_and_bool_against_int():
+    entries = {
+        "a": {"shared": "x", "gap": None, "flag": True},
+        "b": {"shared": "x", "flag": 1},
+    }
+    payload = judge_payload(
+        _expectation(), _diff(), UnitState(kinds={"note": entries}), {})
+    # `gap` is absent from b — never hoisted, never materialized as null;
+    # `flag` serializes differently (`true` vs `1`) — stays in each body.
+    assert payload["state_after_defaults"] == {"shared": "x"}
+    assert payload["state_after"]["a"] == {"gap": None, "flag": True}
+    assert payload["state_after"]["b"] == {"flag": 1}
+    _roundtrips(payload, entries)
+    assert "gap" not in _expanded(payload)["b"]
+
+
+def test_a_lineage_every_entry_shares_is_named_once_then_hoisted():
+    shared = "Lineage(audiences=('generated-room',))"
+    entries = {i: {"lineage": shared, "own": i} for i in ("a", "b")}
+    payload = judge_payload(
+        _expectation(), _diff(), UnitState(kinds={"note": entries}), {})
+    assert payload["lineages"] == {"lineage-1": shared}
+    assert payload["state_after_defaults"] == {"lineage": "lineage-1"}
+    _roundtrips(payload, {
+        i: {"lineage": "lineage-1", "own": i} for i in ("a", "b")})
+
+
+def test_state_after_defaults_stays_empty_for_one_entry_or_none():
+    state = UnitState(kinds={"note": {"only": {"a": 1}}})
+    payload = judge_payload(_expectation(), _diff(), state, {})
+    assert payload["state_after_defaults"] == {}
+    assert payload["state_after"] == {"only": {"a": 1}}
+    empty = judge_payload(_expectation(), _diff(), UnitState(kinds={}), {})
+    assert empty["state_after_defaults"] == {}
+    assert empty["state_after"] == {}
+
+
+def _sized(payload: dict[str, Any]) -> int:
+    return len(json.dumps(payload, ensure_ascii=False, default=str).encode())
+
+
+async def test_repeated_fields_bring_an_over_budget_state_back_under_the_ceiling():
+    big = "the field every profile repeats " * 4_000
+    entries = {f"e-{i}": {"blob": big, "own": i} for i in range(30)}
+    state = UnitState(kinds={"note": entries})
+    payload = judge_payload(_expectation(), _diff(), state, {})
+    assert _sized(payload) < JUDGE_INPUT_MAX_BYTES
+    # Without defaults the same evidence is over the ceiling — the hoist is
+    # what lets it through.
+    uncompressed = {**payload, "state_after": _expanded(payload),
+                    "state_after_defaults": {}}
+    assert _sized(uncompressed) > JUDGE_INPUT_MAX_BYTES
+    judges = _RecordingJudges()
+    judges.served["alias"] = [{"x-omniroute-model": "served-model"}]
+    answer = await judge_one(judges, "alias", payload)
+    assert answer.verdict == "met"
+    assert judges.calls == [payload]
+
+
+async def test_a_digest_still_over_budget_after_defaults_is_error_unseen():
+    entries = {
+        f"e-{i}": {"blob": f"distinct field {i} " * 2_000} for i in range(40)
+    }
+    state = UnitState(kinds={"note": entries})
+    payload = judge_payload(_expectation(), _diff(), state, {})
+    assert payload["state_after_defaults"] == {}
+    assert _sized(payload) > JUDGE_INPUT_MAX_BYTES
+    judges = _RecordingJudges()
+    answer = await judge_one(judges, "alias", payload)
+    assert answer.verdict == "error"
+    assert "over budget" in answer.reason
+    assert judges.calls == []
+
+
+async def test_a_citation_still_names_a_state_after_entry_under_defaults():
+    from scripts.cognition_loop.judges import judge_expectation
+
+    class Judges:
+        def __init__(self):
+            self.served = {}
+
+        async def call(self, model, instruction, payload):
+            self.served[model] = [{"x-omniroute-model": model}]
+            return json.dumps({"verdict": "met", "reason": "generated",
+                               "entry_ids": ["note:e-2"]})
+
+    entries = {f"e-{i}": {"shared": "v", "own": i} for i in (1, 2, 3)}
+    state = UnitState(kinds={"note": entries})
+    verdict = await judge_expectation(
+        Judges(), ("a", "b"), _expectation(), StateDiff(kinds={}), state, {}, ())
+    assert verdict.verdict == "PASS"

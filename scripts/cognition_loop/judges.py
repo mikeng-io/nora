@@ -10,7 +10,8 @@ belongs); the recorded agenda, items and stimuli the
 subject was shown (`source`; null means unavailable, never empty); the
 wake's typed diff for every kind (created, revised and retired entries
 in full; unchanged as counts only); the state-after of the kind the
-expectation names; every tool call in order with its arguments, result
+expectation names, the fields every entry repeats verbatim lifted once
+into `state_after_defaults`; every tool call in order with its arguments, result
 and refusal; the session's last assistant output; its stop reason and
 tokens; and the same digest for every earlier measured wake in the
 case, in case order. It is assembled through the declared occasion
@@ -60,6 +61,10 @@ a count only
 - `state_after`: the unit's state of the expectation's kind after the \
 wake, same entry ids; an entry's `lineage` names a key in `lineages`, \
 which holds each distinct lineage (who may see the entry) once
+- `state_after_defaults`: the fields every `state_after` entry repeats \
+verbatim, sent once — reconstruct each entry by merging \
+`state_after_defaults` then its `state_after` body; a field absent \
+from both is absent, never null
 - `tool_calls`: the session's tool calls in order, each with arguments, \
 result status and refusal
 - `final_output`: the session's last assistant output
@@ -176,12 +181,42 @@ def _wake_evidence(
     }
 
 
+def _state_after(entries: Any, keys: dict[str, str]) -> tuple[Any, dict[str, Any]]:
+    """The named entries with the fields every body repeats verbatim lifted out.
+
+    A field rides once under `state_after_defaults` only when EVERY entry
+    carries it with a byte-identical serialized value — a field one entry
+    lacks, or carries under a different serialization (`true` is not `1`),
+    stays in its own body.
+    """
+    named = {i: _named(e, keys) for i, e in entries.items()}
+    bodies = list(named.values())
+    if len(bodies) < 2 or not all(isinstance(b, dict) for b in bodies):
+        return named, {}
+    shared = set(bodies[0])
+    for b in bodies[1:]:
+        shared &= set(b)
+    defaults = {
+        k: bodies[0][k] for k in bodies[0]
+        if k in shared and len(
+            {json.dumps(b[k], ensure_ascii=False, default=str)
+             for b in bodies}) == 1
+    }
+    return {
+        i: {k: v for k, v in b.items() if k not in defaults}
+        for i, b in named.items()
+    }, defaults
+
+
 def judge_payload(
     expectation: Any, diff: Any, state_after: Any, trajectory: dict[str, Any],
     earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = (),
 ) -> dict[str, Any]:
     """The bounded digest one judge answers against; each lineage once."""
     keys: dict[str, str] = {}
+    evidence = _wake_evidence(diff, trajectory, keys)
+    state, defaults = _state_after(
+        state_after.entries(expectation.kind), keys)
     return {
         "expectation": {
             "wake_index": expectation.wake,
@@ -189,9 +224,9 @@ def judge_payload(
             "kind": expectation.kind,
             "text": expectation.text,
         },
-        **_wake_evidence(diff, trajectory, keys),
-        "state_after": {i: _named(e, keys) for i, e in
-                        state_after.entries(expectation.kind).items()},
+        **evidence,
+        "state_after": state,
+        "state_after_defaults": defaults,
         "earlier_wakes": [_wake_evidence(d, t, keys) for d, t in earlier_wakes],
         "lineages": {k: v for v, k in keys.items()},
     }
