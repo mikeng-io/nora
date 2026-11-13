@@ -13,6 +13,11 @@ import yaml
 from scripts import ci_plan
 
 
+@pytest.fixture(autouse=True)
+def _explicit_event_environment(monkeypatch):
+    monkeypatch.delenv("GITHUB_EVENT_NAME", raising=False)
+
+
 @pytest.mark.parametrize(
     ("paths", "selected", "absent"),
     [
@@ -145,7 +150,9 @@ def test_selection_error_broadens_work_but_exits_nonzero(tmp_path, monkeypatch):
     monkeypatch.setattr("sys.argv", ["ci_plan"])
     assert ci_plan.main() == 1
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
-    assert all(json.loads(values["plan"]).values())
+    assert {job for job, enabled in json.loads(values["plan"]).items() if enabled} == (
+        set(ci_plan.JOBS) - {"codeql-python"}
+    )
     assert json.loads(values["readers"]) == "ALL"
     assert json.loads(values["selection_error"])
 
@@ -173,10 +180,12 @@ def test_document_readers_come_from_the_existing_selector(tmp_path, monkeypatch,
         assert json.loads(values["readers"]) == ["tests/test_docs.py"]
         assert not json.loads(values["plan"])["python"]
     else:
-        # non-PR events record: the whole suite runs, never a subset
+        # Baseline classification stays broad except the manual-only Python scan.
         assert calls == []
         assert json.loads(values["readers"]) == "ALL"
-        assert all(json.loads(values["plan"]).values())
+        assert {job for job, enabled in json.loads(values["plan"]).items() if enabled} == (
+            set(ci_plan.JOBS) - {"codeql-python"}
+        )
     assert values["docs_only"] == "true"
     assert values["testmon"] == "false"
 
@@ -206,7 +215,7 @@ def test_agent_skill_link_ci_uses_the_same_document_classification(
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert values["docs_only"] == str(canonical).lower()
     selected = {job for job, chosen in json.loads(values["plan"]).items() if chosen}
-    assert selected == ({"contracts"} if canonical else set(ci_plan.JOBS))
+    assert selected == ({"contracts"} if canonical else set(ci_plan.JOBS) - {"codeql-python"})
     if canonical:
         assert "tests/architecture/test_agent_skills.py" in json.loads(values["readers"])
 
@@ -305,10 +314,10 @@ def test_timing_contracts_run_without_competing_pytest_workers(
         assert calls == expected
 
 
-def test_a_pull_request_without_a_record_runs_the_whole_suite(
+def test_acceptance_script_without_a_record_resolves_to_all(
     monkeypatch, tmp_path,
 ):
-    """TESTMON=true with no .testmondata resolves to ALL, never a subset."""
+    """The complete-acceptance helper fails broad without a record."""
     source, _ = _acceptance_source()
     calls = []
     _acceptance_env(monkeypatch, tmp_path, ["tests/test_docs.py"],
@@ -319,7 +328,7 @@ def test_a_pull_request_without_a_record_runs_the_whole_suite(
                       "--junit-dir", "backend-results"]]
 
 
-def test_a_pull_request_with_a_record_uses_the_resolved_selection(
+def test_acceptance_script_with_a_record_uses_the_resolved_selection(
     monkeypatch, tmp_path,
 ):
     """The step resolves the real selector's line with the record present."""
@@ -335,15 +344,11 @@ def test_a_pull_request_with_a_record_uses_the_resolved_selection(
                       "--junit-dir", "backend-results", "tests/test_docs.py"]]
 
 
-@pytest.mark.parametrize("event_name", ["push", "schedule", "workflow_dispatch"])
-def test_a_non_pull_request_run_records_the_whole_suite(
-    monkeypatch, tmp_path, event_name,
-):
-    """Push/schedule/dispatch run the full suite WITH recording — a partial
-    record would lie about coverage."""
+def test_manual_dispatch_records_complete_acceptance(monkeypatch, tmp_path):
+    """The manually selected acceptance step records the complete suite."""
     source, _ = _acceptance_source()
     calls = []
-    _acceptance_env(monkeypatch, tmp_path, "ALL", event_name=event_name)
+    _acceptance_env(monkeypatch, tmp_path, "ALL", event_name="workflow_dispatch")
     monkeypatch.setattr(subprocess, "run", _fake_run(calls, None))
     exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102
     assert calls == [[sys.executable, "-m", "scripts.pytest_gate",
@@ -495,7 +500,9 @@ def test_baseline_events_select_the_full_backend(tmp_path, monkeypatch, event_da
     assert ci_plan.main() == 0
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert json.loads(values["readers"]) == "ALL"
-    assert all(json.loads(values["plan"]).values())
+    assert {job for job, enabled in json.loads(values["plan"]).items() if enabled} == (
+        set(ci_plan.JOBS) - {"codeql-python"}
+    )
 
 
 def _release_repo(
@@ -693,9 +700,10 @@ def test_an_unrelated_branch_name_is_not_eligible(tmp_path, monkeypatch):
     {"schedule": "cron"},
     {"workflow_dispatch": {}},
 ])
-def test_non_pull_request_events_select_the_full_suite(tmp_path, monkeypatch, event):
-    """Push, schedule and dispatch record the whole suite — a subset record
-    would lie about coverage and the release check could not trust it."""
+def test_non_pr_classifier_preserves_all_targets_for_manual_acceptance(
+    tmp_path, monkeypatch, event,
+):
+    """The classifier declares ALL; only dispatch executes complete acceptance."""
     event_file = tmp_path / "event.json"
     event_file.write_text(json.dumps(event))
     output = tmp_path / "output"
@@ -733,7 +741,7 @@ def test_the_escape_report_is_unavailable_when_the_diff_cannot_be_read(
     ([{"status": "in_progress", "conclusion": None}], "pending"),
     ([{"status": "queued", "conclusion": None}], "pending"),
 ])
-def test_release_pr_waits_for_the_base_commit_full_run(runs, verdict):
+def test_base_run_verdict_reports_only_trusted_exact_source_evidence(runs, verdict):
     assert ci_plan.base_run_verdict(runs) == verdict
 
 
@@ -777,7 +785,10 @@ def test_full_backend_replaces_the_nonblocking_measurement():
         and step["with"]["path"] == ".testmondata"
     )
     # a partial record (failed run) must never reach pull requests
-    assert record["if"] == "${{ github.event_name != 'pull_request' && success() }}"
+    assert record["if"] == (
+        "${{ github.event_name == 'workflow_dispatch' && "
+        "github.ref == 'refs/heads/master' && success() }}"
+    )
     assert record["with"]["name"].startswith("testmon-data-")
     assert record["with"]["if-no-files-found"] == "error"
 
@@ -839,3 +850,43 @@ def test_an_executable_release_file_is_not_eligible(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
     event = _release_repo_with_symlink(tmp_path / "x", mode=0o100755)
     assert not ci_plan.release_eligible(tmp_path / "x", event)
+
+
+def test_automatic_backend_is_bounded_and_full_acceptance_is_manual():
+    root = Path(__file__).resolve().parents[2]
+    workflow = yaml.safe_load((root / '.github/workflows/ci.yml').read_text())
+    assert 'schedule' not in workflow[True]
+    steps = workflow['jobs']['contracts']['steps']
+    full = next(s for s in steps if s.get('name') == 'Selected backend acceptance')
+    fast = next(s for s in steps if s.get('name') == 'Fast backend baseline')
+    assert full['if'] == "github.event_name == 'workflow_dispatch'"
+    assert fast['if'] == "github.event_name != 'workflow_dispatch'"
+    assert fast['run'] == 'uv run python -m scripts.ci_fast_tests'
+    assert not any(s.get('run') == 'uv run python -m scripts.ci_plan release' for s in steps)
+    assert workflow['jobs']['contracts']['timeout-minutes'].endswith('|| 4 }}')
+    assert not any(s.get('continue-on-error', False) for s in steps)
+
+
+@pytest.mark.parametrize("event_name", ["pull_request", "push", "workflow_dispatch"])
+def test_python_codeql_is_on_demand_but_other_scans_stay_automatic(
+    tmp_path, monkeypatch, event_name,
+):
+    event = tmp_path / "event.json"
+    event.write_text("{}")
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", event_name)
+    monkeypatch.setattr("sys.argv", ["ci_plan"])
+    assert ci_plan.main() == 0
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    plan = json.loads(values["plan"])
+    assert plan["codeql-python"] == (event_name == "workflow_dispatch")
+    assert all(plan[job] for job in ("codeql-javascript", "codeql-go", "codeql-actions"))
+    needs = {job: {"result": "success" if chosen else "skipped"}
+             for job, chosen in plan.items()}
+    needs["classify"] = {"result": "success"}
+    assert ci_plan.verify(plan, needs)
+    if event_name == "workflow_dispatch":
+        needs["codeql-python"]["result"] = "cancelled"
+        assert not ci_plan.verify(plan, needs)

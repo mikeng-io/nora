@@ -226,6 +226,17 @@ here and its link in the same commit.
 | adding or changing one of Nora's runtime skills in `nora/skills/` | `nora-runtime-skill` |
 | creating or editing digital 3D assets with Meshy | `meshy-3d-generation` |
 
+## Validation budget
+
+Automatic PR and master checks target three minutes with a five-minute ceiling.
+The complete backend suite is on demand through manual CI dispatch; release PRs
+do not wait for it. A timeout fails. Report fast-baseline and complete acceptance
+as separate outcomes. Use focused local checks, never a full local pre-PR suite.
+
+Python CodeQL is on demand through manual CI dispatch; its hosted analysis exceeded
+the automatic budget. Other selected security scans remain automatic. A skipped
+Python scan is no claim that Python security analysis passed.
+
 ## Reading order
 
 `README.md` → `ARCHITECTURE.md` → the area's design bundle → `CONTRIBUTING.md`
