@@ -738,3 +738,12 @@ def test_args_last_errors_when_the_final_input_is_unreadable():
         ],
     )
     assert _label(data) == ERROR
+
+
+def test_args_last_grades_a_call_recorded_with_empty_arguments():
+    """A captured `arguments: {}` is decidable evidence, never 'not captured':
+    a missing flag is falsy, so `more: false` must PASS and `more: true` FAIL."""
+    data = _reply_data([("send_reply", {})], FLAGS)
+    assert _label(data) == PASS
+    data = _reply_data([("send_reply", {})], {"send_reply": {"more": True}})
+    assert _label(data) == FAIL

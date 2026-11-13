@@ -52,7 +52,7 @@ def _last_call_args(raw: str) -> dict[str, Any] | None:
             obj = json.loads(chunk)
         except (ValueError, TypeError):
             continue
-        if found := next(_arguments_in(obj), None):
+        if (found := next(_arguments_in(obj), None)) is not None:
             return found
     return None
 
