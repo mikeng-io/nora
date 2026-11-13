@@ -64,7 +64,7 @@ export function MiniNoraShowcase() {
         {(!active || failed) && <Button variant="primary" onClick={load}>{t(failed ? "retry" : "load")}</Button>}
         <fieldset key={attempt} disabled={!ready || failed} className="space-y-5 disabled:opacity-45">
           <legend className="sr-only">{t("controls")}</legend>
-          <label className="block text-sm">{t("motion")}<select className="mt-2 block h-11 w-full rounded-control border border-seam bg-surface px-3" value={motion} onChange={e => choose(e.target.value as Motion)}>{(["Stand", "Walk", "Run"] as const).map(m => <option key={m} value={m}>{t(m)}</option>)}</select></label>
+          <label className="block text-sm">{t("motion")}<select className="mt-2 block h-11 w-full rounded-control border border-seam bg-surface px-3" value={motion} onChange={e => choose(e.target.value as Motion)}>{(["Stand", "Idle", "Walk", "Run"] as const).map(m => <option key={m} value={m}>{t(m)}</option>)}</select></label>
           <Button variant="outline" disabled={motion === "Stand"} onClick={() => { setPlaying(!playing); stage.current?.setPlaying(!playing); }}>{playing ? t("pause") : t("play")}</Button>
           <label className="block text-sm">{t("head")}<input className="mt-3 block w-full accent-denim" type="range" min="-0.35" max="0.35" step="0.01" value={head} disabled={motion !== "Stand"} onChange={e => { setHead(+e.target.value); stage.current?.setHead(+e.target.value); }} /></label>
           <label className="block text-sm">{t("arm")}<input className="mt-3 block w-full accent-denim" type="range" min="0" max="1" step="0.01" value={arm} disabled={motion !== "Stand"} onChange={e => { setArm(+e.target.value); stage.current?.setArm(+e.target.value); }} /></label>

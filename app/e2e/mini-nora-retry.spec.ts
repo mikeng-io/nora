@@ -27,6 +27,11 @@ test("retries a failed model load and a lost WebGL context", async ({ page }) =>
   await expect(page.locator("canvas")).toHaveCount(1);
   await expect(page.getByRole("combobox", { name: "Expression", exact: true })).toHaveValue("Neutral");
   await expect(page.getByRole("slider", { name: "Head turn", exact: true })).toHaveValue("0");
+  await page.getByRole("combobox", { name: "Motion", exact: true }).selectOption("Idle");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+  await page.getByRole("combobox", { name: "Motion", exact: true }).selectOption("Stand");
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeDisabled();
   await page.getByRole("combobox", { name: "Motion", exact: true }).selectOption("Run");
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeEnabled();
 });

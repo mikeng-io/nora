@@ -3,7 +3,7 @@
 Public asset for the shared `/nora/showcase` page, still a partial candidate for
 issue #245. Mini Nora keeps her approved Bauhinia appearance and original eyes.
 
-`character.glb`: 74,713,100 bytes, about 316,622 rendered character triangles,
+`character.glb`: 78,155,156 bytes, about 316,622 rendered character triangles,
 55 unique joints, three facial morphs, embedded PNG textures, and `Walk`, `Run`
 and `IdlePilotCalibrated` clips. Meshopt compression requires the decoder in
 `stage.ts`. Download remains opt-in.
@@ -31,13 +31,13 @@ map dimensions. Real-device loading and memory acceptance remain outstanding.
 - Both reconstructed hands retain ten individual digit controls, three joints
   per digit, thumb opposition, and open/fist/point presets. Maximum-curl creases
   remain.
-- Smile/Happy/Puzzled remain restrained mouth/cheek/brow morphs. Puzzled also
-  moves fringe vertices and still needs a localized mask repair.
+- Smile/Happy/Puzzled remain restrained mouth/cheek/brow morphs. Puzzled uses a localized asymmetric mouth/cheek deformation; its
+  upper-face/fringe movement is removed.
 - Head/arm controls and the existing side-lock hair movement remain. No new
   whole-body rig or remesh.
 - `IdlePilotCalibrated` carries a four-second idle calibrated against the target
-  Stand pose. The showcase currently exposes Stand/Walk/Run; exposing the new
-  idle and checking transitions is a separate remaining task.
+  Stand pose. The showcase exposes Stand/Idle/Walk/Run with a 250 ms pose blend
+  when switching. Playback still starts only on request.
 - Broad key/fill lights, rim light, balanced environment and the existing shadow
   setup remain unchanged.
 
@@ -51,9 +51,10 @@ Texture-transfer review passed in matched fresh-import stills from front, back
 and both sides. Eight idle poses were visually inspected; all 97 clip frames were
 evaluated for finite mesh coordinates. This is not continuous collision proof.
 
-Generic asset QA reports unchanged baseline issues: four zero-area UV faces,
-hand helper surfaces without UV maps, and a missing material on an Icosphere
-helper. Its collision checks skip the full model above the default triangle cap.
+Generic asset QA reports unchanged baseline issues: hand helper surfaces without UV maps (flat materials need no image UVs).
+The Icosphere warning comes from Blender's generated bone-display shape and
+is not an exported GLB object. Collapsed UV faces were repaired with shifts
+below 0.009 source pixel, preserving geometry and image resolution. Its collision checks skip the full model above the default triangle cap.
 Full character acceptance, browser acceptance of this high-resolution package,
 and real-phone GPU/memory/thermal acceptance remain unmet. Keep issue #245 open.
 

@@ -9,7 +9,7 @@ export type Expression = "Neutral" | "Smile" | "Happy" | "Puzzled";
 export type Hand = "Left" | "Right";
 export const fingers = ["Thumb", "Index", "Middle", "Ring", "Pinky"] as const;
 export type Finger = typeof fingers[number];
-export type Motion = "Stand" | "Walk" | "Run";
+export type Motion = "Stand" | "Idle" | "Walk" | "Run";
 export async function createStage(host: HTMLElement, onContextLost: () => void) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -53,6 +53,7 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
   const curls = { Left: [0, 0, 0, 0, 0], Right: [0, 0, 0, 0, 0] };
   const fingerAxes = new Map<string, { flex: THREE.Vector3; oppose: THREE.Vector3 }>();
   let disposed = false, visible = true, last = 0;
+  let transition: { elapsed: number; from: Map<THREE.Object3D, { rotation: THREE.Quaternion; position: THREE.Vector3 }>; to: Map<THREE.Object3D, { rotation: THREE.Quaternion; position: THREE.Vector3 }> } | undefined;
   const rest = new Map<THREE.Object3D, THREE.Quaternion>();
   const actions = new Map<string, THREE.AnimationAction>();
   const disposeModel = (root: THREE.Object3D) => root.traverse((o) => {
@@ -125,8 +126,22 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
   host.appendChild(renderer.domElement);
   renderer.setAnimationLoop((time) => {
     const delta = last ? Math.min((time - last) / 1000, 0.05) : 0; last = time;
-    if (!visible || !playing) return;
-    mixer?.update(delta); characterPose(); render();
+    if (!visible || (!playing && !transition)) return;
+    // The mixer may skip unchanged tracks; restore the unblended target first.
+    if (transition) for (const [bone, target] of transition.to) { bone.quaternion.copy(target.rotation); bone.position.copy(target.position); }
+    mixer?.update(playing ? delta : 0); pose(); characterPose();
+    if (transition) {
+      transition.elapsed += delta;
+      const weight = THREE.MathUtils.smoothstep(transition.elapsed, 0, 0.25);
+      for (const [bone, from] of transition.from) {
+        const target = transition.to.get(bone)!;
+        target.rotation.copy(bone.quaternion); target.position.copy(bone.position);
+        bone.quaternion.slerpQuaternions(from.rotation, bone.quaternion, weight);
+        bone.position.lerpVectors(from.position, bone.position, weight);
+      }
+      if (weight === 1) transition = undefined;
+    }
+    render();
   });
   const ready = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync("/models/mini-nora/character.glb").then((gltf) => {
     if (disposed) { disposeModel(gltf.scene); return; }
@@ -146,7 +161,7 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
       });
     }
     scene.add(model); mixer = new THREE.AnimationMixer(model);
-    for (const clip of gltf.animations) actions.set(clip.name, mixer.clipAction(clip));
+    for (const clip of gltf.animations) actions.set(clip.name === "IdlePilotCalibrated" ? "Idle" : clip.name, mixer.clipAction(clip));
     pose(); characterPose(); render();
   });
   return {
@@ -155,10 +170,15 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
     orbit(angle: number) { camera.position.sub(controls.target).applyAxisAngle(new THREE.Vector3(0, 1, 0), angle).add(controls.target); controls.update(); render(); },
     zoom(factor: number) { const offset = camera.position.clone().sub(controls.target); offset.setLength(THREE.MathUtils.clamp(offset.length() * factor, controls.minDistance, controls.maxDistance)); camera.position.copy(controls.target).add(offset); controls.update(); render(); },
     setMotion(value: Motion) {
+      const from = new Map([...rest.keys()].map(bone => [bone, { rotation: bone.quaternion.clone(), position: bone.position.clone() }]));
       motion = value; mixer?.stopAllAction();
       for (const [bone, q] of rest) bone.quaternion.copy(q);
       if (value === "Stand") pose(); else { actions.get(value)?.reset().play(); mixer?.update(0); }
-      characterPose(); render();
+      characterPose();
+      const to = new Map([...rest.keys()].map(bone => [bone, { rotation: bone.quaternion.clone(), position: bone.position.clone() }]));
+      transition = { elapsed: 0, from, to }; last = 0;
+      for (const [bone, start] of from) { bone.quaternion.copy(start.rotation); bone.position.copy(start.position); }
+      render();
     },
     setExpression(value: Expression) { expression = value; characterPose(); render(); },
     setFinger(side: Hand, finger: Finger, value: number) { curls[side][fingers.indexOf(finger)] = THREE.MathUtils.clamp(value, 0, 1); characterPose(); render(); },
