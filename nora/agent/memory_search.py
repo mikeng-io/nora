@@ -914,11 +914,11 @@ class MemorySearch:
                 held_all.append(entry)
                 graph = await self._graph.walk(seeds, walk_query)
                 if seed is None and graph.status != "unavailable":
-                    nodes = {n.key: n for n in graph.nodes}
+                    by_key = {n.key: n for n in graph.nodes}
                     for node in (h.node for h in found.hits):
                         key = ("event_entry", node.source_id) if node.kind == "event" else node.key
-                        nodes.setdefault(key, GraphNode(key, indexed=node))
-                    graph = replace(graph, nodes=tuple(nodes.values()))
+                        by_key.setdefault(key, GraphNode(key, indexed=node))
+                    graph = replace(graph, nodes=tuple(by_key.values()))
                 entry[1] = graph
             else:
                 held = next((g for s, g in held_all
@@ -940,12 +940,12 @@ class MemorySearch:
                 held_nodes = {n.key: n for n in held.nodes}
                 held_edges = {e.relation.id: e for e in held.relations}
                 # Re-reads retain scoped standalone seeds from the captured snapshot.
-                nodes = {n.key: held_nodes[n.key] for n in graph.nodes if n.key in held_nodes}
+                kept = {n.key: held_nodes[n.key] for n in graph.nodes if n.key in held_nodes}
                 for n in held.nodes:
                     if (n.key in seeds and n.indexed is not None
                             and in_scope(n.indexed, scope) and narrowed(n.indexed, scope)):
-                        nodes.setdefault(n.key, n)
-                graph = replace(graph, status="partial", nodes=tuple(nodes.values()),
+                        kept.setdefault(n.key, n)
+                graph = replace(graph, status="partial", nodes=tuple(kept.values()),
                     relations=tuple(held_edges[e.relation.id] for e in graph.relations))
             if graph.status == "unavailable":
                 return {"status": "unavailable", "note": "The graph could not be read."}
