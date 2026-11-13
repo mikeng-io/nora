@@ -32,9 +32,10 @@ import yaml
 from strands_evals import Case, Experiment
 
 from evals import pseudonyms
-from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, ToolRouteGrader, nora_task
+from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, nora_task
 from evals.grading_contract import GradingContract
 from evals.recall import evidence_problems
+from evals.route_grader import ToolRouteGrader
 from nora.subject.sandbox_index import EMBEDDER_FROM_HOST
 from nora.subject.transport import TRANSPORT_STATES
 

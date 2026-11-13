@@ -58,8 +58,8 @@
   "internal_docstrings": 8
  },
  "evals/backbone.py": {
-  "comment_blocks": 45,
-  "file_lines": 3005,
+  "comment_blocks": 44,
+  "file_lines": 2766,
   "functions": {
    "_drive_draw": 508
   },
@@ -193,8 +193,8 @@
   "comment_blocks": 49,
   "file_lines": 1535,
   "functions": {
-   "Deliverer.deliver": 300,
-   "ReplyGuard.evaluate": 226
+   "Deliverer.deliver": 298,
+   "ReplyGuard.evaluate": 223
   },
   "internal_docstrings": 10
  },
@@ -369,9 +369,9 @@
   "internal_docstrings": 1
  },
  "nora/app/agent_runner.py": {
-  "comment_blocks": 10,
+  "comment_blocks": 9,
   "functions": {
-   "LiveAgentRunner.invoke": 155
+   "LiveAgentRunner.invoke": 154
   }
  },
  "nora/app/assembler.py": {
@@ -401,11 +401,11 @@
   "internal_docstrings": 1
  },
  "nora/app/cognition_grounding.py": {
-  "comment_blocks": 7,
+  "comment_blocks": 5,
   "file_lines": 904,
   "functions": {
-   "build_grounder": 292,
-   "build_grounder.ground": 250
+   "build_grounder": 291,
+   "build_grounder.ground": 248
   },
   "internal_docstrings": 6
  },
@@ -418,13 +418,13 @@
   "internal_docstrings": 3
  },
  "nora/app/cognition_session.py": {
-  "comment_blocks": 28,
+  "comment_blocks": 26,
   "file_lines": 2052,
   "functions": {
    "CognitionSessionRunner.__init__": 124,
-   "CognitionSessionRunner._build_tools": 351,
+   "CognitionSessionRunner._build_tools": 350,
    "CognitionSessionRunner._run_session": 160,
-   "CognitionSessionRunner.on_wake": 190
+   "CognitionSessionRunner.on_wake": 168
   },
   "internal_docstrings": 18
  },
@@ -883,11 +883,11 @@
   "internal_docstrings": 1
  },
  "nora/engagement/pipeline.py": {
-  "comment_blocks": 59,
+  "comment_blocks": 58,
   "file_lines": 1426,
   "functions": {
    "EngagementPipeline.__init__": 145,
-   "EngagementPipeline._run_turn": 777
+   "EngagementPipeline._run_turn": 776
   },
   "internal_docstrings": 8
  },
@@ -1559,7 +1559,7 @@
  },
  "nora/language/cognition_render.py": {
   "comment_blocks": 5,
-  "file_lines": 1042,
+  "file_lines": 1036,
   "internal_docstrings": 16
  },
  "nora/language/computer_render.py": {
@@ -2143,7 +2143,7 @@
   "internal_docstrings": 5
  },
  "tests/architecture/test_doc_references_resolve.py": {
-  "comment_blocks": 8,
+  "comment_blocks": 7,
   "internal_docstrings": 1
  },
  "tests/architecture/test_doctrine_is_classified.py": {
@@ -2732,7 +2732,7 @@
  },
  "tests/test_acceptance_rules.py": {
   "comment_blocks": 50,
-  "file_lines": 1053,
+  "file_lines": 1051,
   "internal_docstrings": 1
  },
  "tests/test_affected_tests.py": {
@@ -3099,8 +3099,8 @@
   "internal_docstrings": 4
  },
  "tests/unit/test_cognition_session_runner.py": {
-  "file_lines": 1356,
-  "internal_docstrings": 3
+  "file_lines": 1353,
+  "internal_docstrings": 2
  },
  "tests/unit/test_cognition_source_rows.py": {
   "internal_docstrings": 1

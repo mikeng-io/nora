@@ -12,7 +12,8 @@ import json
 import pytest
 from strands_evals.types.evaluation import EnvironmentState, EvaluationData
 
-from evals.backbone import ERROR, FAIL, NORA_ERROR, NORA_TOOLS, PASS, ToolRouteGrader, _tools_called
+from evals.backbone import ERROR, FAIL, NORA_ERROR, NORA_TOOLS, PASS, _tools_called
+from evals.route_grader import ToolRouteGrader
 from nora.testing.context_blocks import compose_fixture
 
 
@@ -332,8 +333,8 @@ def test_a_failure_quotes_what_the_call_carried():
                        args_include={"generate_image": [_SELF]})
     styled = _carried((("generate_image", '{"prompt": "a stylized 3D mascot pet"}'),),
                       args_exclude={"generate_image": ["mascot"]})
-    for data, quoted in ((wrong_week, "dinner, 3 october"), (missing, "an empty room"),
-                         (styled, "a stylized 3d mascot pet")):
+    for data, quoted in ((wrong_week, "Dinner, 3 October"), (missing, "an empty room"),
+                         (styled, "a stylized 3D mascot pet")):
         reason = ToolRouteGrader().evaluate(data)[0].reason
         assert quoted in reason, reason
 
@@ -675,3 +676,74 @@ def test_indirect_upgrade_corpus_requires_discovery_and_notes(called, expected):
 def test_expected_tools_remain_any_when_no_required_tools_are_stated():
     assert _label(_data(("version_list",), tools=("version_list", "version_read"))) == PASS
     assert _label(_data(("version_read",), tools=("version_list", "version_read"))) == PASS
+
+
+def _reply_data(calls, args_last):
+    """`calls`: (tool, arguments) in start order, shaped like a real span input."""
+    from evals.backbone import NORA_TOOL_INPUTS
+
+    return EvaluationData(
+        input="x",
+        metadata={"tools": ["send_reply"], "args_last": args_last},
+        actual_environment_state=[
+            EnvironmentState(name=NORA_TOOLS, state=[name for name, _ in calls]),
+            EnvironmentState(name=NORA_TOOL_INPUTS, state=[
+                (name, json.dumps([{"role": "tool", "parts": [
+                    {"type": "tool_call", "name": name, "arguments": args}]}]))
+                for name, args in calls
+            ]),
+        ],
+    )
+
+
+FLAGS = {"send_reply": {"more": False, "heads_up": False}}
+
+
+def test_args_last_passes_on_an_unflagged_final_send():
+    data = _reply_data([("send_reply", {"text": "the answer"})], FLAGS)
+    assert _label(data) == PASS
+
+
+@pytest.mark.parametrize("flag", ["more", "heads_up"])
+def test_args_last_fails_when_the_final_send_promised_more(flag):
+    data = _reply_data([("send_reply", {"text": "tbc", flag: True})], FLAGS)
+    assert _label(data) == FAIL
+
+
+def test_args_last_allows_an_earlier_heads_up_before_the_final_send():
+    data = _reply_data([
+        ("send_reply", {"text": "等我查下", "heads_up": True}),
+        ("web_search", {"query": "x"}),
+        ("send_reply", {"text": "the answer"}),
+    ], FLAGS)
+    assert _label(data) == PASS
+
+
+def test_args_last_fails_when_its_tool_never_ran():
+    data = _reply_data([("reaction_send", {"emoji": "👍"})],
+                       {"send_reply": {"more": False}})
+    data.metadata["tools"] = ["reaction_send"]
+    assert _label(data) == FAIL
+
+
+def test_args_last_errors_when_the_final_input_is_unreadable():
+    from evals.backbone import NORA_TOOL_INPUTS
+
+    data = EvaluationData(
+        input="x",
+        metadata={"tools": ["send_reply"], "args_last": FLAGS},
+        actual_environment_state=[
+            EnvironmentState(name=NORA_TOOLS, state=["send_reply"]),
+            EnvironmentState(name=NORA_TOOL_INPUTS, state=[("send_reply", "not json")]),
+        ],
+    )
+    assert _label(data) == ERROR
+
+
+def test_args_last_grades_a_call_recorded_with_empty_arguments():
+    """A captured `arguments: {}` is decidable evidence, never 'not captured':
+    a missing flag is falsy, so `more: false` must PASS and `more: true` FAIL."""
+    data = _reply_data([("send_reply", {})], FLAGS)
+    assert _label(data) == PASS
+    data = _reply_data([("send_reply", {})], {"send_reply": {"more": True}})
+    assert _label(data) == FAIL
