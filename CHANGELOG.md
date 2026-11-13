@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.18.9](https://github.com/mikeng-io/nora/compare/v7.18.8...v7.18.9) (2026-11-13)
+
+
+### Bug Fixes
+
+* **eval:** a citation by its entry's uuid is grounded ([e8d46d4](https://github.com/mikeng-io/nora/commit/e8d46d40d20cf1133a070f37f0b1e88772b47583))
+* **eval:** a judge error no longer stops the later wakes ([2e73415](https://github.com/mikeng-io/nora/commit/2e73415b49b10f3092e6aa15181a8682c7043405))
+* **eval:** a report failure never rejudges or exits as PASS ([462a5a4](https://github.com/mikeng-io/nora/commit/462a5a44fd7489ace603b89c8cb871079d11532c))
+* **eval:** a report-side failure keeps the wake and the chain ([7f830df](https://github.com/mikeng-io/nora/commit/7f830df5ff3d77d823ded0e89b95b8904e7dcc46))
+* **eval:** advance a row edited twice between two wakes ([4bcf73d](https://github.com/mikeng-io/nora/commit/4bcf73d9938df85ffc0f8c42383cd14f75f91505))
+* **eval:** the judge digest sends each lineage once ([e07f1cc](https://github.com/mikeng-io/nora/commit/e07f1ccec6aefb1e41e9a85f65eba9fde3f8c1a0))
+
 ## [7.18.8](https://github.com/mikeng-io/nora/compare/v7.18.7...v7.18.8) (2026-11-13)
 
 
