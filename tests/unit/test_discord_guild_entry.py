@@ -176,7 +176,7 @@ def test_a_thread_id_is_never_itself_a_room(tmp_path):
 def test_entry_fields_apply_to_every_discovered_channel(tmp_path):
     body = 'default = "deny"\n' + _entry(
         unit='unit = "friends"\n',
-        fields='tools = ["pulse"]\nlocation = true\n'
+        fields='tools = ["demo"]\nlocation = true\n'
                'description = "the server"\n',
     )
     policy = _policy(tmp_path, body, DISCOVERED)
@@ -185,7 +185,7 @@ def test_entry_fields_apply_to_every_discovered_channel(tmp_path):
 
     assert room is not None
     assert room.unit == "friends"
-    assert room.tools == {"pulse"}
+    assert room.tools == {"demo"}
     assert room.location
     assert room.description == "the server"
     # The unit scopes an existing static room sees must include it.

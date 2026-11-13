@@ -142,7 +142,6 @@ from nora.platform.registry import AdapterRegistry
 from nora.platform.signal.adapter import SignalAdapter
 from nora.policy import Policy
 from nora.tag import Debounce
-from nora.web.games import PulseGamesClient
 
 from .dispatch import Dispatcher
 from .fire import (
@@ -310,14 +309,6 @@ class Dependencies:
     # `reminders = SqlReminderStore(engine)` below) — exposed here so
     # `nora/web/status.py` can read pending rows without a second store.
     reminders: ReminderStore
-    # `nora.web.games` reads Pulse's own REST API directly (Bearer-authed
-    # with `PULSE_API_TOKEN`) — a separate credential and connection from
-    # the LLM tool-calling path's `[tools.mcp.pulse]` MCP mount
-    # (`PULSE_MCP_TOKEN`, folded into `ToolRegistry(mcp_tools=...)` below).
-    # `None` when `PULSE_API_TOKEN` is unset, matching `giphy_client`'s own
-    # optional-integration pattern just below — the web route degrades to
-    # 503, never a guessed 200.
-    games_client: PulseGamesClient | None
     # The SAME `presence_store`/`presence_circles` `Whereis` already reads
     # (below) — exposed here so `nora.web.presence` can serve a map without a
     # second `PresenceStore` over a second engine. `presence` is `None` when
@@ -901,8 +892,6 @@ async def build_dependencies(
     )
     giphy_client = _conversation_reactions.giphy_client
     reaction_picker = _conversation_reactions.reaction_picker
-    _people_games = _people_wire.games(cfg=cfg)
-    games_client = _people_games.games_client
     _conversation_relay = await _conversation_wire.relay(
         allowlist=allowlist,
         content_checks=content_checks,
@@ -1404,7 +1393,6 @@ async def build_dependencies(
         client=client,
         model_clients=extra_model_clients,
         reminders=reminders,
-        games_client=games_client,
         presence=presence_store,
         presence_circles=presence_circles,
         mobility=mobility,

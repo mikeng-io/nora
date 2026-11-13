@@ -690,8 +690,8 @@ class ToolRegistry:
         `.build()`. `ReplyGuard.evaluate` renders the WHOLE dict's keys into
         the model-facing R-7 unknown-tool veto message
         (`guards.py::_list_tool_names`), so an unconditional fold would tell a
-        conversation with no `pulse` allowlist entry that
-        `pulse_server_status` exists the moment the model named any wrong
+        conversation with no `demo` allowlist entry that
+        `demo_server_status` exists the moment the model named any wrong
         tool, and R-7's default-deny would not cover those names for an
         unauthorized conversation. The default (`frozenset()`) is the safe
         one: a caller with no conversation context (`nora.app.composition`'s

@@ -55,7 +55,7 @@ label     = "Family"          # Operator-written address; unique in this unit
                              # of the platform's mutable group name.
 persons  = ["miles", "ada"]   # Only these may trigger Nora here. A new group
                              # member is ignored until added.
-tools    = []                # MCP servers this room may use, e.g. ["pulse"].
+tools    = []                # MCP servers this room may use, by configured server name.
                              # Empty means none.
 # location = true            # (default false) Relax where_is's disclosure gate
                              # for this room. Normally Nora will not say where

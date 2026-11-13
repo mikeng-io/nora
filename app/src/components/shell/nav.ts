@@ -4,7 +4,6 @@ import {
   Download,
   FileText,
   FolderOpen,
-  Gamepad2,
   Map as MapIcon,
   NotebookPen,
   Sun,
@@ -13,7 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-// The portal's map of itself. Eight places for the circle, four for Nora.
+// The portal's map of itself. Seven places for the circle, four for Nora.
 // On a phone the bottom bar holds five cells (DESIGN.md §7: no raised centre
 // button): four places plus More, which opens a sheet listing everything else
 // — the rest of the circle and the four pages about her. Five cells is the
@@ -28,7 +27,6 @@ export interface NavItem {
     | "documents"
     | "artifacts"
     | "downloads"
-    | "games"
     | "nora"
     | "memory"
     | "doctrine"
@@ -65,7 +63,6 @@ export const MAIN_NAV: NavItem[] = [
   { key: "artifacts", href: "/artifacts", icon: FolderOpen },
   // Media the circle asked yt-dlp to fetch. Rail, palette and the More sheet.
   { key: "downloads", href: "/downloads", icon: Download },
-  { key: "games", href: "/games", icon: Gamepad2 },
 ];
 
 export const NORA_NAV: NavItem[] = [

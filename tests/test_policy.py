@@ -247,11 +247,11 @@ platform = "signal"
 id = "g1"
 label = "g1"
 persons = ["miles"]
-tools = ["pulse"]
+tools = ["demo"]
 """)
     policy = load_policy(policy_file)
     convo = policy.conversation("signal", "g1")
-    assert convo.tools == frozenset({"pulse"})
+    assert convo.tools == frozenset({"demo"})
 
 
 def test_location_flag_defaults_false_and_parses_true(policy, tmp_path):

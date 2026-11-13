@@ -194,7 +194,7 @@ RULE_TESTS = {
     # resolved and enforced at ASSEMBLY (`EngagementPipeline._run_admitted`
     # calling `ToolRegistry.build(..., allowed_mcp=...)`), never at egress
     # (DEC-71).
-    "R-40": "test_unauthorized_conversation_never_receives_pulse_tools",
+    "R-40": "test_unauthorized_conversation_never_receives_demo_tools",
     # R-41: matching an unlabeled entry in something looked up (a handle, an
     # id) to the person Nora is talking to requires an actual link — never
     # inferred from rank or list order (DEC-75). Behavioural, same shape as

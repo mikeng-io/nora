@@ -7,7 +7,6 @@ from nora.app.assembler import lineage_policy
 from nora.domain.live import LiveMapping
 from nora.domain.ports import SteamPresenceProvider
 from nora.people.adapters.tools import build as _build
-from nora.web.games import PULSE_API_BASE, PulseGamesClient
 
 """Compose this area's tool adapters from shared dependencies."""
 
@@ -131,23 +130,6 @@ def steam(cfg) -> SteamWiring:
                 "online_now's Steam arms stay unavailable",
             )
     return SteamWiring(steam_client=steam_client)
-
-
-@dataclass(frozen=True)
-class GamesWiring:
-    games_client: Any
-
-
-def games(cfg) -> GamesWiring:
-    games_client = None
-    if pulse_api_token := cfg.credentials.get("PULSE_API_TOKEN"):
-        # The base URL names a private tailnet host, so the deployment states it
-        # in `.env` (`PULSE_API_BASE`); the source holds only a placeholder.
-        games_client = PulseGamesClient(
-            token=pulse_api_token,
-            base_url=cfg.credentials.get("PULSE_API_BASE") or PULSE_API_BASE,
-        )
-    return GamesWiring(games_client=games_client)
 
 
 @dataclass(frozen=True)

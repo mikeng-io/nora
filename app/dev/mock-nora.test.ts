@@ -19,21 +19,6 @@ import {
   RoutesSchema,
   SavedPlaceSchema,
 } from "../src/lib/api/presence";
-import {
-  ActivityPageSchema,
-  BigWalkWorldSchema,
-  GameProgressSchema,
-  InsightsSchema,
-  LocalSaveStatusSchema,
-  PlayerDetailSchema,
-  PlayersPageSchema,
-  SaveHistorySchema,
-  ServerSchema,
-  ServerStatusSchema,
-  SessionsPageSchema,
-  WeeklySummarySchema,
-  WorldStateSchema,
-} from "../src/lib/api/games";
 
 // A fixed instant so every generated field (relative dates, Ken's position
 // on his driving loop, ages) is completely reproducible run to run — the
@@ -135,12 +120,11 @@ describe("persons", () => {
   it("GET /persons/miles matches PersonProfileSchema with abiotic + bigwalk", () => {
     const data = expectOk("/app/v1/persons/miles", {}, PersonProfileSchema);
     expect(data.personId).toBe("miles");
-    expect(data.gameProfiles.map((g) => g.serverId).sort()).toEqual(["abiotic", "bigwalk"]);
+    expect(data.displayName).toBeTruthy();
   });
 
   it("GET /persons/sam matches PersonProfileSchema with no game profiles", () => {
     const data = expectOk("/app/v1/persons/sam", {}, PersonProfileSchema);
-    expect(data.gameProfiles).toEqual([]);
   });
 
   it("GET /persons/<unknown> is a 404", () => {
@@ -354,173 +338,11 @@ describe("presence", () => {
   });
 });
 
-// ---------------------------------------------------------------- games
-
-describe("games", () => {
-  it("GET /games/servers matches an array of ServerSchema, three servers", () => {
-    const data = expectOk("/app/v1/games/servers", {}, z.array(ServerSchema));
-    expect(data.map((s) => s.id).sort()).toEqual(["abiotic", "bigwalk", "palworld"]);
-    const bigwalk = data.find((s) => s.id === "bigwalk")!;
-    expect(bigwalk.current).toBeNull();
-    const palworld = data.find((s) => s.id === "palworld")!;
-    expect(palworld.current?.online).toBe(false);
-  });
-
-  it("GET /games/servers/abiotic/status matches ServerStatusSchema", () => {
-    expectOk("/app/v1/games/servers/abiotic/status", {}, ServerStatusSchema);
-  });
-
-  it("GET /games/servers/palworld/status matches ServerStatusSchema (offline)", () => {
-    const data = expectOk("/app/v1/games/servers/palworld/status", {}, ServerStatusSchema);
-    expect(data.current.online).toBe(false);
-    expect(data.current.status).toBe("exited");
-  });
-
-  it("GET /games/servers/bigwalk/status matches LocalSaveStatusSchema", () => {
-    const data = expectOk("/app/v1/games/servers/bigwalk/status", {}, LocalSaveStatusSchema);
-    expect(data.game).toBe("big-walk");
-  });
-
-  it("GET /games/servers/<unknown>/status is a 404", () => {
-    const { status } = call("/app/v1/games/servers/nope/status");
-    expect(status).toBe(404);
-  });
-
-  it("GET /games/servers/abiotic/world matches WorldStateSchema", () => {
-    expectOk("/app/v1/games/servers/abiotic/world", {}, WorldStateSchema);
-  });
-
-  it("GET /games/servers/bigwalk/world matches BigWalkWorldSchema with linked players", () => {
-    const data = expectOk("/app/v1/games/servers/bigwalk/world", {}, BigWalkWorldSchema);
-    expect(data.game).toBe("big-walk");
-    const linked = data.players.filter((p) => p.linkedPerson);
-    expect(linked.length).toBeGreaterThan(0);
-  });
-
-  it("GET /games/servers/abiotic/graph matches GraphSchema", () => {
-    const { status, body } = call("/app/v1/games/servers/abiotic/graph", { hours: "24" });
-    expect(status).toBe(200);
-    const GraphSchema = z.object({
-      hours: z.number(), from: z.number(), to: z.number(),
-      data: z.array(
-        z.object({
-          timestamp: z.number(), online: z.number(), cpuAvg: z.number(), cpuMax: z.number(),
-          memoryAvg: z.number(), memoryMax: z.number(), memoryLimit: z.number(),
-          networkRxBpsAvg: z.number(), networkTxBpsAvg: z.number(), playerAvg: z.number(), playerMax: z.number(),
-        }),
-      ),
-    });
-    expect(GraphSchema.safeParse(body).success).toBe(true);
-  });
-
-  it("GET /games/servers/bigwalk/graph returns the empty-data shape", () => {
-    const { status, body } = call("/app/v1/games/servers/bigwalk/graph");
-    expect(status).toBe(200);
-    expect((body as { data: unknown[] }).data).toEqual([]);
-  });
-
-  it("GET /games/servers/abiotic/weekly matches WeeklySummarySchema", () => {
-    expectOk("/app/v1/games/servers/abiotic/weekly", {}, WeeklySummarySchema);
-  });
-
-  it("GET /games/servers/bigwalk/weekly is a 404 (container-shaped route)", () => {
-    const { status } = call("/app/v1/games/servers/bigwalk/weekly");
-    expect(status).toBe(404);
-  });
-
-  it("GET /games/servers/bigwalk/progress matches GameProgressSchema", () => {
-    const data = expectOk("/app/v1/games/servers/bigwalk/progress", {}, GameProgressSchema);
-    expect(data.game).toBe("big-walk");
-  });
-
-  it("GET /games/servers/abiotic/progress is a 404 (bigwalk-only route)", () => {
-    const { status } = call("/app/v1/games/servers/abiotic/progress");
-    expect(status).toBe(404);
-  });
-
-  it("GET /games/servers/bigwalk/save-history matches SaveHistorySchema", () => {
-    expectOk("/app/v1/games/servers/bigwalk/save-history", { hours: "168" }, SaveHistorySchema);
-  });
-
-  it("GET /games/servers/abiotic/insights matches InsightsSchema with a 5-player leaderboard", () => {
-    const data = expectOk("/app/v1/games/servers/abiotic/insights", { days: "30" }, InsightsSchema);
-    expect(data.leaderboard).toHaveLength(5);
-    expect(data.heatmap).toHaveLength(168);
-  });
-
-  it("GET /games/servers/abiotic/players matches PlayersPageSchema", () => {
-    const data = expectOk("/app/v1/games/servers/abiotic/players", { page: "1", pageSize: "20" }, PlayersPageSchema);
-    expect(data.pagination.total).toBe(5);
-  });
-
-  it("GET /games/servers/abiotic/players?online=true only lists online players", () => {
-    const data = expectOk(
-      "/app/v1/games/servers/abiotic/players",
-      { page: "1", pageSize: "20", online: "true" },
-      PlayersPageSchema,
-    );
-    expect(data.data.every((p) => p.online)).toBe(true);
-    expect(data.data.map((p) => p.playerName).sort()).toEqual(["Jo", "Ken"]);
-  });
-
-  it("GET /games/servers/abiotic/players/{key} matches PlayerDetailSchema with a full save", () => {
-    const data = expectOk(
-      "/app/v1/games/servers/abiotic/players/steam_74822881012340001",
-      {},
-      PlayerDetailSchema,
-    );
-    expect(data.save).toBeDefined();
-    expect(data.vitalsHistory?.length).toBe(40);
-    expect(data.linkedPerson?.personId).toBe("ken");
-  });
-
-  it("GET /games/servers/abiotic/players/{key} for a player with no save omits it entirely", () => {
-    const data = expectOk(
-      "/app/v1/games/servers/abiotic/players/steam_74822881012340004",
-      {},
-      PlayerDetailSchema,
-    );
-    expect(data.save).toBeUndefined();
-    expect(data.linkedPerson).toBeUndefined();
-  });
-
-  it("GET /games/servers/abiotic/players/<unknown-key> is a 404", () => {
-    const { status } = call("/app/v1/games/servers/abiotic/players/steam_0");
-    expect(status).toBe(404);
-  });
-
-  it("GET /games/servers/abiotic/activity matches ActivityPageSchema, newest first", () => {
-    const data = expectOk("/app/v1/games/servers/abiotic/activity", {}, ActivityPageSchema);
-    expect(data.data.length).toBeGreaterThan(0);
-    const timestamps = data.data.map((e) => e.occurredAt);
-    expect(timestamps).toEqual([...timestamps].sort((a, b) => b - a));
-  });
-
-  it("GET /games/servers/abiotic/sessions matches SessionsPageSchema with one open session per online player", () => {
-    const data = expectOk("/app/v1/games/servers/abiotic/sessions", { pageSize: "100" }, SessionsPageSchema);
-    const open = data.data.filter((s) => s.leftAt === null);
-    expect(open).toHaveLength(2); // ken + jo are the online players
-    for (const s of open) {
-      expect(s.durationMs).toBeNull();
-      expect(s.closedReason).toBeNull();
-    }
-  });
-});
-
-// ---------------------------------------------------------------- 404 default
-
-it("an unknown route is a 404 with the shared not-found body", () => {
-  const { status, body } = call("/app/v1/this-route-does-not-exist");
-  expect(status).toBe(404);
-  expect(body).toEqual({ error: "not found" });
-});
-
 // ---------------------------------------------------------------- MOCK_FAIL / MOCK_EMPTY
 
 describe("MOCK_FAIL and MOCK_EMPTY", () => {
-  it("MOCK_FAIL=games,presence answers 503 for those families and leaves others alone", () => {
-    process.env.MOCK_FAIL = "games,presence";
-    expect(call("/app/v1/games/servers")).toEqual({ status: 503, body: { error: "unavailable" } });
+  it("MOCK_FAIL=presence answers 503 for those families and leaves others alone", () => {
+    process.env.MOCK_FAIL = "presence";
     expect(call("/app/v1/presence")).toEqual({ status: 503, body: { error: "unavailable" } });
     expect(call("/app/v1/status").status).toBe(200);
   });

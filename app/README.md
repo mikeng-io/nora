@@ -21,21 +21,19 @@ own files sit under paths the site does not claim (`/sw.js`,
 |---|---|
 | `/today` | the front page: Nora's state, who is around, who is playing, what is coming up, a line from her notes about you, the circle |
 | `/map` | everyone on a live map; a person's detail and route window; `?person=` and `?trail=` in the URL |
-| `/people`, `/people/<id>` | the roster; a person with their last day, plans you share, game profiles, and three pattern tabs: places, a usual week, routes. Your own page adds her memory of you |
+| `/people`, `/people/<id>` | the roster; a person with their last day, plans you share, and three pattern tabs: places, a usual week, routes. Your own page adds her memory of you |
 | `/plans`, `/plans/<id>` | plans by week and by month; a plan's venue, who is coming, add to calendar, open in maps, share |
 | `/documents`, `/documents/<id>` | what Nora has written up for the rooms you are in, newest first; one document drawn from its stored spec in the portal theme. Pictures come through `/api/v1/documents/<id>/media/<sha>` (raster only) |
-| `/games`, `/games/<id>`, `/games/<id>/players/<key>` | servers; a server's overview, players, activity, insights and world; a player's character, body, combat and playtime |
 | `/downloads` | the circle's media shelf: paste URLs (one per line), the server runs yt-dlp on them, finished files play or download from the list. One shared library — a job says who asked for it |
 | `/nora`, `/nora/memory`, `/nora/doctrine`, `/nora/abilities` | about her and her status; her memory of you; her doctrine as a reader; her tools and skills |
 | `/login` | Discord sign-in, the code sign-in when `NORA_OTP_API_TOKEN` is set, and the refusal when an account is not on the list |
 
 On a phone the bottom bar holds Today, Map, Plans and Documents, plus a More
-cell that opens a sheet with everywhere else — Games, People, Artifacts,
+cell that opens a sheet with everywhere else — People, Artifacts,
 Downloads and the four pages about her (DESIGN.md §7: five cells, no raised
 centre button). ⌘K or `/` opens a search over everything;
-`g` then `t`, `m`, `p`, `l`, `g` or `n` jumps to a page. The first portal's
-URLs (`/status`, `/memory`, `/doctrine`, `/tools`, `/events`, the old game
-sub-pages) redirect to where their content lives now (`next.config.ts`).
+`g` then `t`, `m`, `p`, `l` or `n` jumps to a page. The first portal's
+URLs (`/status`, `/memory`, `/doctrine`, `/tools`, `/events`) redirect to where their content lives now (`next.config.ts`).
 
 ## How it reaches Nora
 
@@ -117,7 +115,7 @@ npm run dev:all              # mock API on :9199 and the portal on :3400
 
 `dev/mock-nora.mjs` serves every read the portal makes from generated data
 (invented people, invented places), moving in time: one person drives a loop,
-one is stale, one has sharing off. `MOCK_LATENCY_MS`, `MOCK_FAIL=games,presence`
+one is stale, one has sharing off. `MOCK_LATENCY_MS`, `MOCK_FAIL=presence`
 and `MOCK_EMPTY=events` exercise loading, unavailable and empty states. With
 `NORA_DEV_LOGIN=1` the login page offers the people in
 `dev/identity.dev.toml`; a production build has no such sign-in whatever the
@@ -129,7 +127,7 @@ the code sign-in takes the invented numbers in `dev/identity.dev.toml`
 
 ```bash
 npm run typecheck
-npm test            # vitest: the proxy table, formatting, presence, plans, games, the mock against the schemas
+npm test            # vitest: the proxy table, formatting, presence, plans, the mock against the schemas
 npm run e2e         # Playwright + axe: every page on a phone and a desktop
 npm run build       # the standalone server the image runs
 ```

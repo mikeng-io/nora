@@ -608,22 +608,6 @@ services:
       # verifying B-2; first fix landed on the web portal by mistake and the
       # daemon still lacked it, caught by `docker compose config`).
       - MINIMAX_CN_API_KEY=${MINIMAX_CN_API_KEY:-}
-      #   PULSE_MCP_TOKEN       — bearer token for the `pulse` MCP server
-      #   ([tools.mcp.pulse], spec: docs/superpowers/specs/2026-08-08-mcp-tool-provider-design.md).
-      #   Unset means `build_mcp_tools`'s `${env:PULSE_MCP_TOKEN}` interpolation
-      #   fails to resolve and the mount is silently skipped (R-5-shaped: absent,
-      #   never a crash) — never load-bearing for anything else Nora does.
-      - PULSE_MCP_TOKEN=${PULSE_MCP_TOKEN:-}
-      #   PULSE_API_TOKEN       — bearer token for Pulse's REST API
-      #   (nora/web/games.py's PulseGamesClient), the Games Hub web
-      #   feature's OWN credential — separate from PULSE_MCP_TOKEN above,
-      #   which is only for the LLM tool-calling path. Unset means
-      #   composition.py builds no games_client and the games routes answer
-      #   503 (R-5-shaped: absent, never a crash or a guessed 200).
-      - PULSE_API_TOKEN=${PULSE_API_TOKEN:-}
-      # The Pulse REST base (a private tailnet host), read with the token
-      # above (`nora.app.composition`); unset keeps the source's placeholder.
-      - PULSE_API_BASE=${PULSE_API_BASE:-}
       # The group is in Hong Kong. Without this the container runs UTC, and
       # `nora.agent.prefill._now_line` — which calls `datetime.now().astimezone()`
       # — tells her it is 07:05 when the group's clock says 15:05.
@@ -706,11 +690,6 @@ services:
       nora:
         condition: service_healthy
     environment:
-      # The games-hub routes reach Pulse THROUGH this too now (nora/web/games.py,
-      # over Nora's already-working [tools.mcp.pulse] MCP connection) — the
-      # old separate GAMES_API_BASE direct-to-Pulse tailnet path is gone: that
-      # port is host-loopback-only by design and was never actually reachable
-      # from this container's separate compose project.
       - NORA_API_BASE=http://nora:9100
       - AUTH_DISCORD_ID=${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID in the host environment first}
       - AUTH_DISCORD_SECRET=${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET in the host environment first}

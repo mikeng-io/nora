@@ -31,7 +31,7 @@ def test_config_example_exists_and_parses():
         "doctrine", "dreamer", "cognition", "subagent", "assess", "lineage", "record_query",
         "documents", "external_files", "google",
         "identity_file", "policy_file",
-        "obs", "evals", "tools",
+        "obs", "evals",
     }
     assert data["content_checks"] == {"enabled": False}
 
@@ -234,7 +234,7 @@ _MAY_DIFFER = {
     "heartbeat.enabled",
     "platforms.discord.enabled", "presence.enabled", "preview.enabled",
     "route.enabled", "search.enabled",
-    "tools.mcp.pulse.enabled", "weather.enabled", "speech.stt.enabled",
+    "weather.enabled", "speech.stt.enabled",
     # `notes.enabled` joins them: the template ships the tier inert so a copied config
     # never silently starts writing a notebook, and this deployment has opted in. NOT
     # `max_rendered_notes`: there is no such key, and there must not be, because a capped

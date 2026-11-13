@@ -33,7 +33,7 @@ _PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 # The platform sub-table names `_PersonEntry` accepts, in the order the reverse
 # index is built — every platform with a declared kind vocabulary.
 PLATFORM_FIELDS: tuple[str, ...] = (
-    "signal", "telegram", "discord", "whatsapp", "instagram", "life360", "pulse",
+    "signal", "telegram", "discord", "whatsapp", "instagram", "life360", "steam",
 )
 
 
@@ -130,11 +130,7 @@ class _PersonEntry(BaseModel):
     # which is what lets the presence collector name a live
     # circle member as one of Nora's people.
     life360: list[dict[str, str | int]] | None = None
-    # A game-presence account, same shape as life360: one block per account,
-    # matched on `steam_id` (SteamID64) — stable across every Steam-launched
-    # game, unlike Pulse's own per-game `player_key` — so the web portal's
-    # Games Hub can resolve a Pulse player back to this person.
-    pulse: list[dict[str, str | int]] | None = None
+    steam: list[dict[str, str | int]] | None = None
     # Accepted here ONLY so the retired `[persons.<id>.platforms]` shorthand
     # gets a specific, readable error naming its replacement (a hard break,
     # deliberately: identity.toml is gitignored and

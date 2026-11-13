@@ -47,7 +47,7 @@ Nora is a self-hosted, single-operator social AI agent. Platform adapters receiv
 1. Location: live Life360 fixes and derived location history (`presence`, `analytics`).
 2. Chat records, memory and derived profiles of people (Postgres record store, Honcho, documents, artifacts).
 3. Platform sessions and keys: Signal device registration (`state/signal-cli`), WhatsApp/Instagram sessions, Discord bot token: lets an attacker read and send as Nora.
-4. Secrets: model provider/OmniRoute keys, `AUTH_SECRET`, `NORA_OTP_API_TOKEN`, `NORA_BRIDGE_TOKEN`, `NORA_COMPUTER_TOKEN`, Life360, Google, Tavily, Pulse tokens; vault-held browser credentials.
+4. Secrets: model provider/OmniRoute keys, `AUTH_SECRET`, `NORA_OTP_API_TOKEN`, `NORA_BRIDGE_TOKEN`, `NORA_COMPUTER_TOKEN`, Life360, Google, Tavily tokens; vault-held browser credentials.
 5. Portal access and the `identity.toml` roster (who is allowed, which accounts map to which person).
 6. Host integrity and the sandbox VM (`/workspace`).
 

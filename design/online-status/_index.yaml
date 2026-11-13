@@ -38,5 +38,5 @@ scope:
     - "Cross-source dedup / identity merge beyond steam_id presence"
     - "Steam inventory reads"
 open_questions:
-  - "Steam Web API key: obtain one (free) or use an existing key from Pulse stack?"
+  - "Steam Web API key: obtain one (free)."
   - "Naming confirmed only after a DEC-39/DEC-58-style identifier run"

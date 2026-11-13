@@ -11,9 +11,6 @@ const ok = (segments: string[], search = "", viewer = "miles") => {
 describe("resolveUpstream", () => {
   it("forwards a plain read unchanged", () => {
     expect(ok(["status"])).toBe("/app/v1/status");
-    expect(ok(["games", "servers", "abiotic", "status"])).toBe(
-      "/app/v1/games/servers/abiotic/status",
-    );
   });
 
   it("scopes memory and events to the session's person, ignoring the browser's", () => {
@@ -75,9 +72,6 @@ describe("resolveUpstream", () => {
     expect(ok(["presence", "ken", "history"], "hours=24&personId=x&evil=1", "jo")).toBe(
       "/app/v1/presence/ken/history?hours=24&personId=jo",
     );
-    expect(ok(["games", "servers", "a", "players"], "page=2&online=true&x=1")).toBe(
-      "/app/v1/games/servers/a/players?page=2&online=true",
-    );
   });
 
   it("prefers literal segments over parameters", () => {
@@ -92,6 +86,7 @@ describe("resolveUpstream", () => {
       ["health"],
       ["memory", "ken"],
       ["presence", "ken"],
+      ["games", "servers"],
       ["games", "servers", "a", "players", "b", "c"],
       ["voice", "utterance"],
     ]) {
