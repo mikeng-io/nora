@@ -1,0 +1,30 @@
+[
+  {
+    "name": "a bounded SSE answer to the SDK default client keeps the httpx1 stream",
+    "file": "nora/agent/run_budget_transport.py",
+    "old": "            class _Bound(base):",
+    "new": "            class _Bound(httpx.AsyncByteStream):",
+    "target": "tests/unit/test_eval_run_budget.py::test_the_sdk_default_client_streams_through_the_budget"
+  },
+  {
+    "name": "finished claims the run clean over an unreleased reservation",
+    "file": "nora/domain/run_budget.py",
+    "old": "        if self._reserved_out:\n            raise RunBudgetError(\n                \"run budget: an attempt's output reservation was never \"\n                \"released \u2014 its response never settled\")",
+    "new": "",
+    "target": "tests/unit/test_eval_run_budget.py::test_finished_refuses_over_an_unreleased_reservation"
+  },
+  {
+    "name": "a wake that never settled is judged anyway in the live run",
+    "file": "scripts/cognition_loop/run.py",
+    "old": "    got[\"expectations\"] = (\n        [] if step_error is not None\n        else await _judge(\n            args, case, index, judges, diff, after, trajectory,\n            earlier_wakes))",
+    "new": "    got[\"expectations\"] = await _judge(\n        args, case, index, judges, diff, after, trajectory,\n        earlier_wakes)",
+    "target": "tests/unit/test_cognition_loop_run.py::test_a_live_wake_that_never_settled_spends_no_judge_call"
+  },
+  {
+    "name": "rejudge spends judge calls on a wake it cannot measure",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "        if not unmeasured(frozen, recorded):\n            for expectation in case.expectations:",
+    "new": "        if True:\n            for expectation in case.expectations:",
+    "target": "tests/unit/test_cognition_loop_rejudge.py::test_an_unmeasured_wake_spends_no_judge_call"
+  }
+]
