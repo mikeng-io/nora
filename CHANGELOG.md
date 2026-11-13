@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.18.10](https://github.com/mikeng-io/nora/compare/v7.18.9...v7.18.10) (2026-11-13)
+
+
+### Bug Fixes
+
+* **mini-nora:** finish idle controls and isolate lower-face expressions ([dd2f794](https://github.com/mikeng-io/nora/commit/dd2f794ebdf1033e14283598eb07944d5286bf59))
+* **mini-nora:** preserve texture gutters and restore complete standing poses ([5fc5d38](https://github.com/mikeng-io/nora/commit/5fc5d38ccd91a5db6c6c90f104a4dfb08bcbd444))
+
+
+### Changes
+
+* **mini-nora:** retain the accepted full-resolution texture master ([195e763](https://github.com/mikeng-io/nora/commit/195e763fbffd50e8a5abe8ae0631193cac3c520b))
+
 ## [7.18.9](https://github.com/mikeng-io/nora/compare/v7.18.8...v7.18.9) (2026-11-13)
 
 
