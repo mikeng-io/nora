@@ -58,13 +58,20 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch,
     case = generated_case()
     case_path = tmp_path / "case.json"
     write_case(case, case_path)
-    wakes = [{"status": "PASS", "expectations": []} for _ in case.wakes]
+    wakes = [{"status": "PASS", "expectations": [], "at_ms": 1000 + i}
+             for i, _ in enumerate(case.wakes)]
     (tmp_path / "report.json").write_text(json.dumps({
         "cases": [{"case": case.name, "wakes": wakes}], "evidence": {"status": "PASS"}}))
     for index, ident in enumerate(case.wakes):
-        (tmp_path / f"wake-{index}-{ident}.json").write_text(json.dumps({"diff": {}}))
+        (tmp_path / f"wake-{index}-{ident}.json").write_text(json.dumps({
+            "diff": {}, "trajectory": {"blocks": {"agenda": f"generated source {index}"}}}))
 
-    async def judge(_judges, _models, expectation, *_args):
+    # Assertions inside the fake would be swallowed by rejudge's fail-closed
+    # except; the evidence is recorded and checked after the call instead.
+    seen = {}
+
+    async def judge(_judges, _models, expectation, diff, after, trajectory, earlier):
+        seen[expectation.wake] = (trajectory, tuple(earlier))
         return ExpectationVerdict(
             verdict="ERROR" if expectation.kind == "note" else "PASS", answers=(),
             detail="a decidable answer needs a cited entry" if expectation.kind == "note" else "")
@@ -79,3 +86,19 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch,
     assert exp["detail"] == "a decidable answer needs a cited entry"
     frozen = json.loads((tmp_path / f"wake-0-{case.wakes[0]}.json").read_text())
     assert frozen["expectations"][0]["detail"] == exp["detail"]
+    # The judge saw each clock from the report metadata and the case's unit;
+    # old freezes never captured the room scope: null, never inferred.
+    wake0, wake1 = seen[0], seen[1]
+    assert wake0[0]["at_ms"] == 1000
+    assert wake1[0]["at_ms"] == 1001
+    assert wake1[0].get("unit") == case.unit
+    assert wake1[0].get("unit_rooms") is None
+    # History is only the earlier frozen wakes — never this wake or a later one.
+    assert wake0[1] == ()
+    assert len(wake1[1]) == 1
+    prior_diff, prior_traj = wake1[1][0]
+    assert prior_traj["at_ms"] == 1000
+    assert prior_traj["blocks"]["agenda"] == "generated source 0"
+    assert prior_traj.get("unit") == case.unit
+    assert prior_traj.get("unit_rooms") is None
+    assert isinstance(prior_diff.kinds, dict)

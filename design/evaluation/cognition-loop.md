@@ -186,29 +186,46 @@ host, never in the repository.
 **Judges.** `nora-judge` and `nora-judge-2`, the OmniRoute aliases. Every
 judge call must report the model the alias routed to, and two judges
 served by the same model are not independent: the expectation is `ERROR`. Each judge reads one expectation against a
-bounded, deterministic digest of the wake — never the trajectory itself,
-whose model requests repeat the whole session context and overflow any
-context window. The digest carries the expectation; the wake's typed diff
-for every kind (created, revised and retired entries in full, unchanged
-as counts only); the sandbox state of the kind the expectation names;
-every tool call in order with its arguments, result status and refusal;
-the session's last assistant output; and its stop reason and tokens. It
-is assembled through the same declared occasion as every model call. A
-digest over the judge's input budget makes the expectation `ERROR` with
-reason `judge input over budget` naming the size — never a silent
-truncation. The judge answers `met`, `not_met` or `cannot_tell` with its
+bounded, deterministic digest of the wake and the wakes before it —
+never the trajectory itself, whose model requests repeat the whole
+session context and overflow any context window. The digest carries the
+expectation with its wake index; the wake's id and recorded clock; the
+case's unit and every room that belongs to it (a missing room scope is
+unknown, never an empty unit); the recorded agenda, items and stimuli
+the subject was shown (absent means unavailable, never empty); the
+wake's typed diff for every kind
+(created, revised and retired entries in full, unchanged as counts
+only); the sandbox state of the kind the expectation names; every tool
+call in order with its arguments, result status and refusal; the
+session's last assistant output; and its stop reason and tokens. Each
+earlier measured wake in the case contributes the same evidence — its
+clock, its recorded source, its changes and its tool results, in case
+order — so an expectation about what the subject was told, or about a
+change that spans wakes, is judged against the wakes that carry the
+evidence rather than the current wake alone. It is assembled through
+the same declared occasion as every model call. A digest over the
+judge's input budget makes the expectation `ERROR` with reason `judge
+input over budget` naming the size — never a silent truncation. The judge answers `met`, `not_met` or `cannot_tell` with its
 reason and the entry ids it rests on, as `kind:id` or the bare id. Two
 judges that disagree make the expectation `REVIEW`. A cited entry must
-exist in the diff or state, or the verdict is `ERROR`. When the kind
-holds any entry, a decidable answer cites at least one — for a
-`must_not`, the closest candidates it checked; an answer cites nothing
-only about a kind that holds nothing.
+exist in the wake's diff or state, or be a change an earlier wake's
+digest emitted — a prior unchanged entry is never shown and never
+citable — or the verdict is `ERROR`. When the kind holds any entry the
+digest shows, a decidable answer cites at least one — for a `must_not`,
+the closest candidates it checked; an answer cites nothing only about a
+kind that holds nothing.
 
 **Re-judging.** `python -m scripts.cognition_loop.rejudge` runs only the
 judges again over a finished run's frozen wakes, against the case's
 current expectations, rebuilding each wake's after-state from its frozen
-diff, and re-renders the report. A judge-side change is checked for a
-few judge calls, not a session's spend.
+diff, taking each wake's unit from the case and its clock from the
+report's recorded metadata (a freeze older than the room-scope capture
+leaves `unit_rooms` unknown — it is never inferred from the agenda or
+the current policy), and
+handing each expectation the same earlier-wake history the live judge
+saw — rebuilt from the frozen wakes alone, so no re-judged wake ever
+sees a later one's evidence — and re-renders the report. A judge-side
+change is checked for a few judge calls, not a session's spend.
 Both paths preserve the verdict's `detail`, including missing-citation and
 judge-failure causes, in JSON and the rendered report. An error is never
 cleared merely because both answers say `met` without the required evidence.

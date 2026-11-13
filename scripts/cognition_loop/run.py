@@ -308,6 +308,7 @@ async def _wakes(
 ) -> None:
     """The recorded sequence in the sandbox, each step naming itself."""
     prior_links: set[str] = set()
+    earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = ()
     first = datetime.fromtimestamp(instants[0] / 1000, UTC)
     with TemporaryDirectory(prefix="nora-cognition-loop-") as workdir:
         args.workdir = workdir
@@ -373,10 +374,13 @@ async def _wakes(
                                 advance=advance,
                                 recorded_meta=recorded[i],
                                 prior_links=prior_links,
+                                earlier_wakes=earlier_wakes,
                             )
                         wakes_report.append(report_row)
                         loop = report_row.get("loop") or {}
                         prior_links = set(loop.get("link_ids") or ())
+                        if "_diff" in report_row:
+                            earlier_wakes += ((report_row["_diff"], report_row["trajectory"]),)
                     except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
                         roll.error(
                             f"wake {i} (recorded {wake_id}): {exc!r}")
@@ -400,6 +404,7 @@ async def _run_wake(
     room: Any, workspace: str, advance: Any = None,
     recorded_meta: dict[str, Any] | None = None,
     prior_links: set[str] | None = None,
+    earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = (),
 ) -> dict[str, Any]:
     """One wake: compose, assert inert, record, run live, diff, judge."""
     subject = None
@@ -477,7 +482,7 @@ async def _run_wake(
                     await _observe(
                         got, args, case, index, judges, engine, subject, rooms,
                         before, tokens_before, evidence, session_id, wake,
-                        inspection, at_ms)
+                        inspection, at_ms, earlier_wakes)
                 except Exception as exc:  # noqa: BLE001 — the session settled; only its report failed
                     step_error = step_error or ("report", f"{exc!r}")
                     if got.get("diff") is None:
@@ -511,6 +516,7 @@ async def _observe(
     got: dict[str, Any], args: Any, case: Any, index: int, judges: Any,
     engine: Any, subject: Any, rooms: Any, before: Any, tokens_before: float,
     evidence: Any, session_id: Any, wake: Any, inspection: Any, at_ms: int,
+    earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = (),
 ) -> None:
     """Fill `got` step by step, so a later failure keeps what was built."""
     tokens = (subject.deps.metrics.get(
@@ -526,6 +532,9 @@ async def _observe(
     trajectory = wake_trajectory(
         events, wake_id=wake.wake_id, session_id=session_id,
         tokens=tokens or None)
+    trajectory["at_ms"] = at_ms
+    trajectory["unit"] = case.unit
+    trajectory["unit_rooms"] = rooms
     trajectory["availability"] = availability(
         getattr(subject, "cfg", None), trajectory)
     if inspection is not None:
@@ -536,7 +545,7 @@ async def _observe(
         trajectory["read_probes"] = inspection.get("read_probes", [])
     got["trajectory"] = trajectory
     got["expectations"] = await _judge(
-        args, case, index, judges, diff, after, trajectory)
+        args, case, index, judges, diff, after, trajectory, earlier_wakes)
 
 
 async def _stimuli_by_id(
@@ -607,6 +616,7 @@ async def _settle(
 async def _judge(
     args: Any, case: Any, index: int, judges: Any | None, diff: Any,
     after: Any, trajectory: dict[str, Any],
+    earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = (),
 ) -> list[dict[str, Any]]:
     expectations = []
     if judges is None:
@@ -617,7 +627,7 @@ async def _judge(
         try:
             verdict_obj = await judge_expectation(
                 judges, (args.judge_a, args.judge_b),
-                expectation, diff, after, trajectory,
+                expectation, diff, after, trajectory, earlier_wakes,
             )
         except Exception as exc:  # noqa: BLE001 — a judge failure is ERROR, not a crash
             verdict_obj = ExpectationVerdict(
@@ -764,6 +774,7 @@ def _freeze_wake(
         "loop": loop,
         "advance": advance.written if advance is not None else None,
         "_state_before": state_after,
+        "_diff": diff,
     }
 
 
