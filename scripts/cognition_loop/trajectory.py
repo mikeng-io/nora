@@ -19,27 +19,48 @@ from typing import Any
 from scripts.memory_graph_spike import evidence_exchanges
 
 _MEMORY_READS = ("memory_search", "memory_read")
-#: The prefetch block's own row shapes (`preview_text`): `@kind:id` node rows
-#: and `rid: src ─rel─▶ dst` relation rows inside the prompt's `<graph>` block.
+#: The prefetch block's row shapes (`preview_text`): `@kind:id` node rows and
+#: `rid: src ─rel─▶ dst` relation rows — a relation row shows BOTH endpoints,
+#: so a node row the budget omitted is still a shown key.
 _GRAPH_BLOCK = re.compile(r"<graph\b[^>]*>\n(.*?)\n</graph>", re.DOTALL)
 _PREFETCH_KEY = re.compile(r"^@(\w+):(\S+)", re.MULTILINE)
-_PREFETCH_REL = re.compile(r"^(\S+): \w+:\S+ ─\w+─▶", re.MULTILINE)
+_PREFETCH_REL = re.compile(r"^(\S+): (\w+):(\S+) ─\w+─▶ (\w+):(\S+)", re.MULTILINE)
 
 
 def prefetch_refs(agenda: Any) -> tuple[set[tuple[str, str]], set[str]] | None:
     """The keys and relation ids the wake's recorded prefetch emitted —
-    the `<graph>` block's emitted rows. `None` when the trajectory recorded
-    no prefetch block: a count that reads it is unavailable, never zero."""
+    the `<graph>` block's emitted rows, relation rows contributing both
+    endpoints. `None` when the trajectory recorded no prefetch block: a
+    count that reads it is unavailable, never zero."""
     if not isinstance(agenda, str):
         return None
     block = _GRAPH_BLOCK.search(agenda)
     if block is None:
         return None
     text = block.group(1)
-    return (
-        {(m.group(1), m.group(2)) for m in _PREFETCH_KEY.finditer(text)},
-        {m.group(1) for m in _PREFETCH_REL.finditer(text)},
-    )
+    keys = {(m.group(1), m.group(2)) for m in _PREFETCH_KEY.finditer(text)}
+    relations: set[str] = set()
+    for m in _PREFETCH_REL.finditer(text):
+        relations.add(m.group(1))
+        keys |= {(m.group(2), m.group(3)), (m.group(4), m.group(5))}
+    return keys, relations
+
+
+def _prefetch(
+    trajectory: dict[str, Any],
+) -> tuple[set[tuple[str, str]], set[str]] | None:
+    """The session's recorded `prefetch` provenance, else the block's rows."""
+    recorded = trajectory.get("prefetch")
+    if isinstance(recorded, dict):
+        keys = {
+            tuple(k) for k in recorded.get("keys") or ()
+            if isinstance(k, (list, tuple)) and len(k) == 2
+        }
+        relations = {
+            r for r in recorded.get("relations") or () if isinstance(r, str)
+        }
+        return keys, relations
+    return prefetch_refs((trajectory.get("blocks") or {}).get("agenda"))
 
 
 def loop_counts(
@@ -55,7 +76,7 @@ def loop_counts(
         c for c in trajectory.get("tool_calls") or ()
         if c.get("tool") in _MEMORY_READS and c.get("status") in ("ok", "partial")
     ]
-    prefetch = prefetch_refs((trajectory.get("blocks") or {}).get("agenda"))
+    prefetch = _prefetch(trajectory)
     discovered: set[tuple[str, str]] = set()
     repeated: set[tuple[str, str]] = set()
     earlier = set(prefetch[0]) if prefetch is not None else set()
@@ -184,6 +205,10 @@ def wake_trajectory(
                 "error_type": entry.get("error_type"),
                 "refusal": entry.get("argument_validation"),
             })
+    prefetch = (
+        {"keys": started["graph_keys"], "relations": started["graph_relations"]}
+        if "graph_keys" in started or "graph_relations" in started else None
+    )
     return {
         "wake_id": wake_id,
         "session_id": session_id,
@@ -194,6 +219,7 @@ def wake_trajectory(
             "stimuli": started.get("stimuli"),
             "instructions": instructions or None,
         },
+        "prefetch": prefetch,
         "model_calls": model,
         "exchanges": evidence_exchanges(events),
         "tool_calls": tools,

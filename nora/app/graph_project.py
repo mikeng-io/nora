@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.live import LiveMapping
 from nora.domain.memory_graph import Key
-from nora.infra.sql import graph_entry_about, memory_index
+from nora.infra.sql import memory_index
 from nora.infra.sql.graph_projection import CODE_RELATIONS, ProjectionContext, project_rollups
 from nora.infra.sql.schema import (
     LEDGER_COMMITMENT,
@@ -113,7 +113,7 @@ async def graph_project(
             if apply:
                 for sid in ids:
                     async with engine.begin() as conn:
-                        await graph_entry_about.project(conn, kind, sid)
+                        await memory_index.project(conn, kind, sid)
                     await asyncio.sleep(1 / rows_per_second)
             last = ids[-1]
     async with engine.begin() as conn:

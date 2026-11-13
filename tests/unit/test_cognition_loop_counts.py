@@ -95,3 +95,37 @@ def test_an_unavailable_read_counts_nothing():
     assert loop["repeats"] == 0
     assert loop["links_written"] == 0
     assert loop["links_carried"] == 0
+
+
+def test_a_relation_endpoint_shown_in_the_prefetch_counts_as_a_repeat():
+    """An emitted `rid: src ─rel─▶ dst` row shows BOTH endpoints, even when
+    the endpoint's own node row never fit the budget (`l-1` has no
+    `@profile_line` row in `_AGENDA`): a later read of one is a repeat."""
+    trajectory = {
+        "blocks": {"agenda": _AGENDA},
+        "tool_calls": [_read([["profile_line", "l-1"], ["note", "n-1"]])],
+    }
+    loop = loop_counts(trajectory, _diff(), set())
+    assert loop["repeats"] == 1
+    assert loop["discovered"] == 2
+
+
+def test_the_recorded_prefetch_provenance_counts_a_later_read():
+    """`prefetch` is the renderer's canonical provenance the session recorded
+    (`nora.session.started`'s `graph_keys`/`graph_relations`), preferred over
+    re-parsing the block: it grounds repeats and carried links where the
+    trajectory holds no `<graph>` text at all."""
+    trajectory = {
+        "blocks": {"agenda": "no graph block"},
+        "prefetch": {
+            "keys": [["profile_line", "l-1"]],
+            "relations": ["r-aaa"],
+        },
+        "tool_calls": [
+            _read([["profile_line", "l-1"]]),
+            _read([["note", "n-1"]]),
+        ],
+    }
+    loop = loop_counts(trajectory, _diff(), {"r-aaa"})
+    assert loop["repeats"] == 1
+    assert loop["links_carried"] == 1

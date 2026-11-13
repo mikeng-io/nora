@@ -8,19 +8,22 @@ resolve to nothing projects nothing. Persons are the union the entry and its
 evidence both permit; an `authored_by`/`mentions` edge carries a message's
 person scope because its node names none.
 
-`record_event_cites` persists an event write's `(part, ref)` citations as
-`cites` edges — the event row keeps only the lineage they resolve to — and the
-index's `_entry_edges` keeps them across rewrites because no row can
-re-derive them. A revision replaces only the parts it restates, matching the
-lineage rule.
+`project_about` runs inside `project_source`, after the owner's previous
+relations are retired, so every caller of the one projection path — a live
+write, a rebuild, a queued retry, the backfill — retires and recreates in the
+same savepoint; nothing can bypass the pair.
 
-`project` wraps `memory_index.project` for the same callers so the relation
-step rides the write's own transaction and the backfill takes the same path.
+Evidence eligibility is resolved the way the graph resolves a node's scope:
+a Record node by its unit or origin room, a person-scoped Rollup (a stay, a
+trip) into the member units of the persons it names. A citation that
+establishes no eligibility — its node is gone, excluded, or scoped nowhere —
+refuses the whole relation fail-closed; the evidence is never dropped to
+keep it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from datetime import datetime
 
 import sqlalchemy as sa
@@ -36,13 +39,10 @@ from nora.domain.memory_graph import (
     Source,
     validate_relation,
 )
-from nora.infra.sql import memory_index
 from nora.infra.sql.graph_projection import (
     ProjectionContext,
     _endpoint,
     _scopes,
-    context,
-    instant,
     stable_id,
 )
 from nora.infra.sql.memory_graph import relation_values
@@ -56,40 +56,16 @@ from nora.infra.sql.schema import (
 _ENTRY_ABOUT = ("event", "character", "profile_line")
 
 
-async def project(
-    conn: AsyncConnection, kind: str, sid: str, *, metrics: object = None
-) -> None:
-    """The index projection, then the entry's `about` relations on top of it:
-    the index's edge rewrite has run and the node's state is final, so a
-    superseded or retired entry keeps none."""
-    await memory_index.project(conn, kind, sid, metrics=metrics)
-    if kind not in _ENTRY_ABOUT:
-        return
-    cfg = context(conn)
-    if cfg is None:
-        return
-    root = (
-        await conn.execute(
-            sa.select(MEMORY_NODE).where(
-                MEMORY_NODE.c.kind == kind, MEMORY_NODE.c.source_id == sid
-            )
-        )
-    ).mappings().first()
-    if root is None or root["state"] != "live":
-        return
-    await _about(
-        conn, kind, sid, f"project:{kind}:{sid}",
-        await _scopes(conn, (kind, sid), cfg),
-        instant(root["at_ms"]) if root["at_ms"] is not None else root["projected_at"],
-        cfg,
-    )
-
-
-async def _about(
-    conn: AsyncConnection, kind: str, sid: str, owner: str,
+async def project_about(
+    conn: AsyncConnection, kind: str, sid: str, *, owner: str, state: str,
     scopes: Mapping[str, tuple[str, ...]], at: datetime, cfg: ProjectionContext,
 ) -> None:
-    """The entry's code-owned `about` relations per unit evidence scopes to."""
+    """The entry's code-owned `about` relations, one per unit its evidence is
+    eligible for. Called by `project_source` with the owner's scopes already
+    resolved; a hidden or retired entry keeps nothing (its relations were
+    retired upstream)."""
+    if kind not in _ENTRY_ABOUT or state != "live" or not scopes:
+        return
     about = (
         await conn.execute(
             sa.select(MEMORY_EDGE.c.dst_kind, MEMORY_EDGE.c.dst_id).where(
@@ -110,7 +86,8 @@ async def _about(
             )
         )
     ).all()
-    sources: dict[Key, Source] = {}
+    resolved: dict[Key, dict[str, Source]] = {}
+    refused: str | None = None
     for key in {(r.dst_kind, r.dst_id) for r in cites}:
         if key[0] not in (*RECORD, *ROLLUP):
             continue
@@ -121,8 +98,9 @@ async def _about(
                 )
             )
         ).mappings().first()
-        if node is None:
-            continue
+        if node is None or node["exclude_persons"]:
+            refused = "ungrounded" if node is None else "excluded"
+            break
         audience = set(node["persons"] or ())
         audience |= {
             r.dst_id for r in (
@@ -136,17 +114,27 @@ async def _about(
                 )
             )
         }
-        sources[key] = Source(
-            key, "rollup" if key[0] in ROLLUP else "record",
-            node["unit"] or cfg.rooms.get(node["origin_room"], ""),
-            tuple(sorted(audience)), node["text"] or "",
-        )
-    if not sources:
+        node_scopes = await _scopes(conn, key, cfg)
+        if not node_scopes:
+            refused = "ungrounded"
+            break
+        resolved[key] = {
+            unit: Source(
+                key, "rollup" if key[0] in ROLLUP else "record", unit,
+                tuple(sorted(audience | set(persons))), node["text"] or "",
+            )
+            for unit, persons in node_scopes.items()
+        }
+    if refused is not None or not resolved:
         if cfg.metrics is not None:
-            cfg.metrics.inc("nora_memory_graph_projection_total", outcome="ungrounded")
+            cfg.metrics.inc(
+                "nora_memory_graph_projection_total", outcome=refused or "ungrounded"
+            )
         return
     for unit, persons in scopes.items():
-        unit_sources = {k: s for k, s in sources.items() if s.unit == unit}
+        unit_sources = {
+            key: per[unit] for key, per in resolved.items() if unit in per
+        }
         if not unit_sources:
             continue
         restricted = tuple(sorted(
@@ -201,35 +189,3 @@ async def _about_relation(
         ])
     )
     return r.id
-
-
-async def record_event_cites(
-    conn: AsyncConnection, source_id: str, citations: Iterable[tuple[str, str]],
-) -> None:
-    """An event write's `(part, ref)` citations as `cites` edges, written by
-    the store in the write's own transaction because nothing else keeps them:
-    the row carries only the lineage they resolve to. A revision replaces
-    only the parts it restates — the lineage rule — so edges carry the part
-    in their provenance and a re-stated part drops its old edges first."""
-    cited = list(citations)
-    if cited:
-        await conn.execute(
-            sa.delete(MEMORY_EDGE).where(
-                MEMORY_EDGE.c.src_kind == "event",
-                MEMORY_EDGE.c.src_id == source_id,
-                MEMORY_EDGE.c.rel == "cites",
-                MEMORY_EDGE.c.provenance.in_(
-                    [f"event_citations.{part}" for part, _ in cited]
-                ),
-            )
-        )
-    await memory_index._insert_edges(
-        conn,
-        [
-            edge
-            for part, ref in cited
-            for edge in memory_index._cites(
-                "event", source_id, (ref,), f"event_citations.{part}"
-            )
-        ],
-    )
