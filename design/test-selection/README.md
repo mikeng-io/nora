@@ -21,6 +21,10 @@ final join are short overhead. Hosted elapsed time must be read back before
 claiming the five-minute overall target is met. If a component cannot fit, move
 that expensive validation to the manual path rather than increasing the budget.
 
+Python CodeQL is on demand through manual CI dispatch; its hosted analysis exceeded
+the automatic budget. Other selected security scans remain automatic. A skipped
+Python scan is no claim that Python security analysis passed.
+
 Local affected-test selection remains the union of the static import graph,
 recorded dependency map and reader scan. Missing evidence still selects ALL;
 this no longer launches the full backend suite automatically in hosted CI.

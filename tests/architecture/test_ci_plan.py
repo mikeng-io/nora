@@ -13,6 +13,11 @@ import yaml
 from scripts import ci_plan
 
 
+@pytest.fixture(autouse=True)
+def _explicit_event_environment(monkeypatch):
+    monkeypatch.delenv("GITHUB_EVENT_NAME", raising=False)
+
+
 @pytest.mark.parametrize(
     ("paths", "selected", "absent"),
     [
@@ -145,7 +150,9 @@ def test_selection_error_broadens_work_but_exits_nonzero(tmp_path, monkeypatch):
     monkeypatch.setattr("sys.argv", ["ci_plan"])
     assert ci_plan.main() == 1
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
-    assert all(json.loads(values["plan"]).values())
+    assert {job for job, enabled in json.loads(values["plan"]).items() if enabled} == (
+        set(ci_plan.JOBS) - {"codeql-python"}
+    )
     assert json.loads(values["readers"]) == "ALL"
     assert json.loads(values["selection_error"])
 
@@ -173,10 +180,12 @@ def test_document_readers_come_from_the_existing_selector(tmp_path, monkeypatch,
         assert json.loads(values["readers"]) == ["tests/test_docs.py"]
         assert not json.loads(values["plan"])["python"]
     else:
-        # non-PR events record: the whole suite runs, never a subset
+        # Baseline classification stays broad except the manual-only Python scan.
         assert calls == []
         assert json.loads(values["readers"]) == "ALL"
-        assert all(json.loads(values["plan"]).values())
+        assert {job for job, enabled in json.loads(values["plan"]).items() if enabled} == (
+            set(ci_plan.JOBS) - {"codeql-python"}
+        )
     assert values["docs_only"] == "true"
     assert values["testmon"] == "false"
 
@@ -206,7 +215,7 @@ def test_agent_skill_link_ci_uses_the_same_document_classification(
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert values["docs_only"] == str(canonical).lower()
     selected = {job for job, chosen in json.loads(values["plan"]).items() if chosen}
-    assert selected == ({"contracts"} if canonical else set(ci_plan.JOBS))
+    assert selected == ({"contracts"} if canonical else set(ci_plan.JOBS) - {"codeql-python"})
     if canonical:
         assert "tests/architecture/test_agent_skills.py" in json.loads(values["readers"])
 
@@ -495,7 +504,9 @@ def test_baseline_events_select_the_full_backend(tmp_path, monkeypatch, event_da
     assert ci_plan.main() == 0
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert json.loads(values["readers"]) == "ALL"
-    assert all(json.loads(values["plan"]).values())
+    assert {job for job, enabled in json.loads(values["plan"]).items() if enabled} == (
+        set(ci_plan.JOBS) - {"codeql-python"}
+    )
 
 
 def _release_repo(
@@ -857,3 +868,28 @@ def test_automatic_backend_is_bounded_and_full_acceptance_is_manual():
     assert not any(s.get('run') == 'uv run python -m scripts.ci_plan release' for s in steps)
     assert workflow['jobs']['contracts']['timeout-minutes'].endswith('|| 4 }}')
     assert not any(s.get('continue-on-error', False) for s in steps)
+
+
+@pytest.mark.parametrize("event_name", ["pull_request", "push", "workflow_dispatch"])
+def test_python_codeql_is_on_demand_but_other_scans_stay_automatic(
+    tmp_path, monkeypatch, event_name,
+):
+    event = tmp_path / "event.json"
+    event.write_text("{}")
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", event_name)
+    monkeypatch.setattr("sys.argv", ["ci_plan"])
+    assert ci_plan.main() == 0
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    plan = json.loads(values["plan"])
+    assert plan["codeql-python"] == (event_name == "workflow_dispatch")
+    assert all(plan[job] for job in ("codeql-javascript", "codeql-go", "codeql-actions"))
+    needs = {job: {"result": "success" if chosen else "skipped"}
+             for job, chosen in plan.items()}
+    needs["classify"] = {"result": "success"}
+    assert ci_plan.verify(plan, needs)
+    if event_name == "workflow_dispatch":
+        needs["codeql-python"]["result"] = "cancelled"
+        assert not ci_plan.verify(plan, needs)

@@ -57,8 +57,9 @@ checks, is on demand by dispatching CI at the desired ref. Release PRs do not
 wait for a complete run. Fast-baseline green is not full-suite acceptance.
 JUnit reports and per-file durations remain attached to the actual run.
 
-CodeQL advanced setup runs full Python, JS/TS, Go and Actions language analysis
-for selected inputs, with no changed-line/path analysis filter. Default-branch
+CodeQL advanced setup runs JS/TS, Go and Actions analysis automatically for selected
+inputs. Python analysis is on demand through manual CI dispatch because its hosted
+run exceeded the automatic budget. All scans retain full-language analysis. Default-branch
 pushes refresh the selected language baselines; manual runs
 refresh all four. Docs-only pushes retain the same selective policy as PRs. GitHub-owned
 actions are SHA pinned and allowed by the existing GitHub-owned action policy;

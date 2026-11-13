@@ -233,6 +233,10 @@ The complete backend suite is on demand through manual CI dispatch; release PRs
 do not wait for it. A timeout fails. Report fast-baseline and complete acceptance
 as separate outcomes. Use focused local checks, never a full local pre-PR suite.
 
+Python CodeQL is on demand through manual CI dispatch; its hosted analysis exceeded
+the automatic budget. Other selected security scans remain automatic. A skipped
+Python scan is no claim that Python security analysis passed.
+
 ## Reading order
 
 `README.md` → `ARCHITECTURE.md` → the area's design bundle → `CONTRIBUTING.md`

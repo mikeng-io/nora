@@ -533,6 +533,10 @@ def main() -> int:
         error = ""
     except Exception as exc:  # noqa: BLE001 -- every selector failure broadens and fails CI
         plan, targets, testmon, error = dict.fromkeys(JOBS, True), "ALL", True, str(exc)
+    # Python CodeQL exceeded the automatic feedback budget in hosted CI.
+    # Keep complete analysis available through explicit manual validation.
+    if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
+        plan["codeql-python"] = False
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         print("plan=" + json.dumps(plan), file=output)
         print("readers=" + json.dumps(targets), file=output)

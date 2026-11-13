@@ -18,7 +18,8 @@ The operator requires a three-minute target and five-minute upper bound.
 
 Automatic PR and master validation runs a bounded fast baseline. Backend testing
 is interrupted at 170 seconds and killed after ten more seconds if teardown stalls;
-automatic component jobs have a four-minute limit. Timeouts fail. The complete
+automatic component jobs have a four-minute limit. Python CodeQL is manual-only
+after its hosted run exhausted that budget; other selected scans stay automatic. Timeouts fail. The complete
 backend suite is manual CI dispatch at an explicitly chosen ref, preserving SQL,
 integration, architecture and timing tests. Release PRs use the same automatic
 checks and do not wait for a full-suite run. Full dependency records are uploaded

@@ -78,6 +78,10 @@ Dispatch the **CI** workflow at the desired ref to run complete acceptance,
 including timing tests and dependency recording. Release PRs use the fast checks
 and do not wait for a complete run. A green automatic run is not full acceptance.
 
+Python CodeQL is on demand through manual CI dispatch; its hosted analysis exceeded
+the automatic budget. Other selected security scans remain automatic. A skipped
+Python scan is no claim that Python security analysis passed.
+
 Disposable PostgreSQL reuse:
 
 - `pg_url` remains a fresh migrated database per test, with `DATABASE_URL`
