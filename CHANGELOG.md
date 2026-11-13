@@ -1,5 +1,16 @@
 # Changelog
 
+## [7.18.8](https://github.com/mikeng-io/nora/compare/v7.18.7...v7.18.8) (2026-11-13)
+
+
+### Bug Fixes
+
+* **evals:** grade a call recorded with empty arguments ([fb24f80](https://github.com/mikeng-io/nora/commit/fb24f80d6c20f3b153711889af881c5192a7f847))
+* **memory:** give the standalone-node maps their own names ([0102125](https://github.com/mikeng-io/nora/commit/0102125e461539836afef26c300224128052ca63))
+* **memory:** keep partial when the index is still catching up ([409faa4](https://github.com/mikeng-io/nora/commit/409faa4d9db2a8f4876685b00e339585855f679f))
+* **memory:** keep the partial status literal the vocabulary scan reads ([3a8c181](https://github.com/mikeng-io/nora/commit/3a8c181a01a68132789bda7ddc7780590071d407))
+* **memory:** return scoped index matches without graph relations ([652e295](https://github.com/mikeng-io/nora/commit/652e2957c2759a3a49b494b16a06bfa72a371a35))
+
 ## [7.18.7](https://github.com/mikeng-io/nora/compare/v7.18.6...v7.18.7) (2026-11-12)
 
 
