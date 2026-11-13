@@ -482,7 +482,7 @@ async def _run_wake(
                     await _observe(
                         got, args, case, index, judges, engine, subject, rooms,
                         before, tokens_before, evidence, session_id, wake,
-                        inspection, at_ms, earlier_wakes)
+                        inspection, at_ms, earlier_wakes, step_error)
                 except Exception as exc:  # noqa: BLE001 — the session settled; only its report failed
                     step_error = step_error or ("report", f"{exc!r}")
                     if got.get("diff") is None:
@@ -517,6 +517,7 @@ async def _observe(
     engine: Any, subject: Any, rooms: Any, before: Any, tokens_before: float,
     evidence: Any, session_id: Any, wake: Any, inspection: Any, at_ms: int,
     earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = (),
+    step_error: tuple[str, str] | None = None,
 ) -> None:
     """Fill `got` step by step, so a later failure keeps what was built."""
     tokens = (subject.deps.metrics.get(
@@ -544,8 +545,13 @@ async def _observe(
             "system", "agenda", "items", "stimuli", "instructions")}
         trajectory["read_probes"] = inspection.get("read_probes", [])
     got["trajectory"] = trajectory
-    got["expectations"] = await _judge(
-        args, case, index, judges, diff, after, trajectory, earlier_wakes)
+    # A wake whose step failed before it settled produced nothing to
+    # measure: partial evidence is frozen above; no judge call is spent.
+    got["expectations"] = (
+        [] if step_error is not None
+        else await _judge(
+            args, case, index, judges, diff, after, trajectory,
+            earlier_wakes))
 
 
 async def _stimuli_by_id(

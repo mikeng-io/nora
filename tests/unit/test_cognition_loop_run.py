@@ -565,6 +565,56 @@ async def test_a_live_no_session_names_the_outcome_rows_detail(
     assert wake["status"] == "PASS"
 
 
+async def test_a_live_wake_that_never_settled_spends_no_judge_call(
+    monkeypatch, tmp_path,
+):
+    """A session that ended without closing is a wake-step ERROR: the
+    diff and trajectory still freeze, but no judge call is spent on a
+    wake that produced nothing to measure. A settled wake still judges —
+    positive control in the same run."""
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop.verdicts import ExpectationVerdict
+
+    run_mod = _wake_seam(monkeypatch, tmp_path,
+                         _runner_subject(outcome=SimpleNamespace(status="ok")))
+    monkeypatch.setattr(run_mod, "_wake_outcome", _async_result({
+        "session_id": None, "outcome": "failed",
+        "detail": "capture interrupted", "cause": "model_error"}))
+    judged = []
+
+    async def _judge_call(*a, **k):
+        judged.append(1)
+        return ExpectationVerdict(verdict="PASS", answers=())
+
+    monkeypatch.setattr(run_mod, "judge_expectation", _judge_call)
+    args, evidence = _wake_args(tmp_path)
+    case = SimpleNamespace(unit="u", expectations=(
+        SimpleNamespace(wake=0, polarity="must", kind="note",
+                        text="generated expectation"),
+        SimpleNamespace(wake=1, polarity="must", kind="note",
+                        text="generated expectation"),))
+    room = SimpleNamespace(platform="signal", primary_id="r")
+    wake = await run_mod._run_wake(
+        args, case, 0, 11, NOW, "postgresql+asyncpg://x", "time", object(),
+        evidence, tmp_path, room, "nora-eval-run-x",
+        recorded_meta=_recorded_meta((1,), had_session=True))
+    assert wake["status"] == "ERROR" and wake["step"] == "wake"
+    assert wake["expectations"] == []
+    assert judged == []
+
+    # Positive control: the next wake, settled closed, reaches the judge.
+    monkeypatch.setattr(run_mod, "_wake_outcome", _async_result({
+        "session_id": 9, "outcome": "closed",
+        "detail": "", "cause": "none"}))
+    wake = await run_mod._run_wake(
+        args, case, 1, 22, NOW, "postgresql+asyncpg://x", "time", object(),
+        evidence, tmp_path, room, "nora-eval-run-x",
+        recorded_meta=_recorded_meta((1,), had_session=True))
+    assert judged == [1]
+    assert wake["status"] == "PASS"
+
+
 def test_a_wakes_status_is_derived_fail_closed():
     from scripts.cognition_loop.run import _wake_status
 

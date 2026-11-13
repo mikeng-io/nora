@@ -48,6 +48,51 @@ def test_a_report_error_with_no_frozen_after_state_stays_unmeasured():
     assert unmeasured({"error": {"step": "advance"}, "diff": {}}, {})
 
 
+async def test_an_unmeasured_wake_spends_no_judge_call(monkeypatch, tmp_path):
+    """A wake whose step failed before it settled stays ERROR on rejudge
+    and its expectations are never judged; a settled wake still is."""
+    import json
+
+    from scripts.cognition_loop import rejudge as module
+    from scripts.cognition_loop.cases import generated_case, write_case
+    from scripts.cognition_loop.verdicts import ExpectationVerdict
+
+    case = generated_case()
+    case_path = tmp_path / "case.json"
+    write_case(case, case_path)
+    wakes = [{"status": "PASS", "expectations": [], "at_ms": 1000 + i}
+             for i, _ in enumerate(case.wakes)]
+    wakes[1]["status"] = "ERROR"
+    wakes[1]["step"] = "wake"
+    (tmp_path / "report.json").write_text(json.dumps({
+        "cases": [{"case": case.name, "wakes": wakes,
+                   "errors": ["a wake ended in ERROR"]}],
+        "evidence": {"status": "PASS"}}))
+    (tmp_path / f"wake-0-{case.wakes[0]}.json").write_text(json.dumps({
+        "diff": {},
+        "trajectory": {"blocks": {"agenda": "generated source 0"}}}))
+    (tmp_path / f"wake-1-{case.wakes[1]}.json").write_text(json.dumps({
+        "error": {"step": "wake",
+                  "message": "the session ended failed: capture interrupted"},
+        "trajectory": {}}))
+
+    judged = []
+
+    async def judge(*a, **k):
+        judged.append(1)
+        return ExpectationVerdict(verdict="PASS", answers=())
+
+    monkeypatch.setattr(module, "load", lambda _: None)
+    monkeypatch.setattr(module, "Judges", lambda *_: object())
+    monkeypatch.setattr(module, "judge_expectation", judge)
+    monkeypatch.setattr(module, "render", lambda _: None)
+    report = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b")
+    assert judged == [1]                    # only the settled wake was judged
+    assert report["cases"][0]["wakes"][1]["status"] == "ERROR"
+    assert report["cases"][0]["wakes"][1]["expectations"] == []
+    assert report["status"] == "ERROR"
+
+
 async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch, tmp_path):
     import json
 

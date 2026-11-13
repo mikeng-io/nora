@@ -89,24 +89,27 @@ async def rejudge(output: Path, case_path: Path, config: Path,
         trajectory = {**(frozen.get("trajectory") or {}),
                       "at_ms": recorded.get("at_ms"), "unit": case.unit}
         judged = []
-        for expectation in case.expectations:
-            if expectation.wake != index:
-                continue
-            try:
-                verdict = await judge_expectation(
-                    judges, (judge_a, judge_b), expectation, diff, after,
-                    trajectory, earlier_wakes)
-            except Exception as exc:  # noqa: BLE001 — a judge failure is ERROR
-                verdict = ExpectationVerdict(
-                    verdict=ERROR, answers=(), detail=f"judge: {exc!r}")
-            judged.append({
-                "expectation": {"polarity": expectation.polarity,
-                                "kind": expectation.kind,
-                                "text": expectation.text},
-                "verdict": verdict.verdict,
-                "detail": verdict.detail,
-                "answers": [asdict(a) for a in verdict.answers],
-            })
+        # A wake a step failure or a missing after-state cannot judge:
+        # it stays ERROR and no judge call is spent on it.
+        if not unmeasured(frozen, recorded):
+            for expectation in case.expectations:
+                if expectation.wake != index:
+                    continue
+                try:
+                    verdict = await judge_expectation(
+                        judges, (judge_a, judge_b), expectation, diff, after,
+                        trajectory, earlier_wakes)
+                except Exception as exc:  # noqa: BLE001 — a judge failure is ERROR
+                    verdict = ExpectationVerdict(
+                        verdict=ERROR, answers=(), detail=f"judge: {exc!r}")
+                judged.append({
+                    "expectation": {"polarity": expectation.polarity,
+                                    "kind": expectation.kind,
+                                    "text": expectation.text},
+                    "verdict": verdict.verdict,
+                    "detail": verdict.detail,
+                    "answers": [asdict(a) for a in verdict.answers],
+                })
         frozen["expectations"] = judged
         path.write_text(json.dumps(frozen, ensure_ascii=False, default=str),
                         encoding="utf-8")
