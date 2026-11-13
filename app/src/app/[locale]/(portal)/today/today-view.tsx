@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowRight, BellRing, ChevronRight, Gamepad2, MapPin } from "lucide-react";
+import { ArrowRight, BellRing, ChevronRight, MapPin } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { PageFrame } from "@/components/shell/app-shell";
 import { useRegisterTitle } from "@/components/shell/page-title";
@@ -22,7 +22,6 @@ import {
   usePlans,
   useRoster,
   useSavedPlaces,
-  useServers,
   useStatus,
 } from "@/lib/queries";
 import type { PresenceEntry } from "@/lib/api/presence";
@@ -36,7 +35,7 @@ import { usePresenceNow } from "@/hooks/use-presence";
 import { useNow } from "@/hooks/use-now";
 
 // Today: the portal's front page, and the one new thing the first portal
-// never had. A single glance at the circle: who is where, who is playing,
+// never had. A single glance at the circle: who is where,
 // what is coming, and whether Nora is listening. Every panel links to the
 // page that holds the whole of it.
 export function TodayView() {
@@ -70,7 +69,6 @@ export function TodayView() {
           <ComingUp />
         </div>
         <div className="stagger grid gap-5 lg:gap-6">
-          <PlayingNow />
           <FromHerNotes />
           <Circle />
         </div>
@@ -314,86 +312,6 @@ function ComingUp() {
           <ChevronRight className="size-4 text-ink-muted" aria-hidden="true" />
         </Link>
       ) : null}
-    </Panel>
-  );
-}
-
-// ------------------------------------------------------------ playing now
-
-function PlayingNow() {
-  const t = useTranslations("today.playing");
-  const servers = useServers();
-  const list = servers.data ?? [];
-  const busy = list.filter((s) => s.current?.online && s.current.playerCount > 0);
-  const quiet = list.filter((s) => !(s.current?.online && s.current.playerCount > 0));
-
-  return (
-    <Panel aria-labelledby="playing-title">
-      <PanelHeader
-        id="playing-title"
-        title={t("title")}
-        action={
-          <Link
-            href="/games"
-            className="inline-flex h-9 items-center gap-1.5 rounded-control px-2.5 text-meta font-semibold text-denim transition-colors hover:bg-hoodie"
-          >
-            <Gamepad2 className="size-4" aria-hidden="true" />
-            {t("allGames")}
-          </Link>
-        }
-      />
-      {servers.isPending ? (
-        <div className="grid gap-3 px-4 pb-4 sm:px-5">
-          <Skeleton className="h-12 w-full" />
-        </div>
-      ) : servers.isError && !servers.data ? (
-        <UnavailableState compact onRetry={() => servers.refetch()} />
-      ) : list.length === 0 ? (
-        <EmptyState compact>{t("noServers")}</EmptyState>
-      ) : (
-        <>
-          {busy.length === 0 ? (
-            <p className="px-4 pb-3 text-body text-ink-soft sm:px-5">{t("nobody")}</p>
-          ) : null}
-          <Rows className="border-t border-hairline">
-            {[...busy, ...quiet].map((s) => {
-              const online = Boolean(s.current?.online);
-              const local = s.current === null;
-              const players = s.current?.playerCount ?? 0;
-              return (
-                <li key={s.id}>
-                  <Link
-                    href={`/games/${s.id}`}
-                    className="flex items-center gap-3 px-4 py-3 transition-colors duration-100 hover:bg-hoodie/60 sm:px-5"
-                  >
-                    <span
-                      className="grid size-9 shrink-0 place-items-center rounded-control text-surface"
-                      style={{ background: s.color }}
-                      aria-hidden="true"
-                    >
-                      <Gamepad2 className="size-4.5" />
-                    </span>
-                    <span className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="truncate text-[0.9375rem] font-semibold text-ink">{s.displayName}</span>
-                      <span className="flex items-center gap-1.5 text-meta text-ink-muted">
-                        {local ? (
-                          t("localSave")
-                        ) : (
-                          <>
-                            <Dot tone={online ? "success" : "muted"} live={online && players > 0} />
-                            {online ? t("players", { count: players }) : t("offline")}
-                          </>
-                        )}
-                      </span>
-                    </span>
-                    <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
-                  </Link>
-                </li>
-              );
-            })}
-          </Rows>
-        </>
-      )}
     </Panel>
   );
 }

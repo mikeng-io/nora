@@ -88,6 +88,5 @@ convention; master receives only an approved merge.
 
 ## Open questions
 
-- Steam Web API key: obtain a free key, or reuse an existing key in the
-  Pulse stack?
+- Steam Web API key: obtain a free key.
 - Naming: confirmed only after a DEC-39/DEC-58-style identifier run.

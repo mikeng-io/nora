@@ -1,5 +1,5 @@
 """Registers GET /app/v1/status, GET /app/v1/memory, GET /app/v1/doctrine, the
-GET /app/v1/games/servers* trio, GET /app/v1/presence*, the read-only
+GET /app/v1/presence*, the read-only
 GET /app/v1/events(/{id}) pair, the documents routes and the Artifacts routes
 (`nora.web.artifacts`) onto an existing aiohttp Application — same
 process/container as Nora.
@@ -40,22 +40,6 @@ from nora.web.documents import (
     build_documents_payload,
     change_document_state,
 )
-from nora.web.games import (
-    GamesUnavailableError,
-    PulseGamesClient,
-    build_game_server_activity_payload,
-    build_game_server_graph_payload,
-    build_game_server_insights_payload,
-    build_game_server_player_payload,
-    build_game_server_players_payload,
-    build_game_server_progress_payload,
-    build_game_server_save_history_payload,
-    build_game_server_sessions_payload,
-    build_game_server_status_payload,
-    build_game_server_weekly_payload,
-    build_game_server_world_payload,
-    build_games_servers_payload,
-)
 from nora.web.gatherings import build_gathering_payload, build_gatherings_payload
 from nora.web.memory import CitedMessages, ProfilePortal, build_memory_payload
 from nora.web.persons import build_person_profile_payload, build_persons_roster_payload
@@ -70,30 +54,9 @@ from nora.web.tools import build_tools_payload
 
 log = logging.getLogger("nora.web.api")
 
-# A fixed, generic body for every GamesUnavailableError — the real exception
-# (which legitimately carries diagnostic detail: tailnet hostnames, raw MCP
-# payloads, Pulse's own error text — see games.py's docstring) is logged
-# server-side instead. An authenticated portal user learns "games backend
-# unavailable"; an operator reading nora.log gets the real `str(exc)`.
-_GAMES_UNAVAILABLE_BODY = {"error": "games backend unavailable"}
-
-# Default `?hours=24`; the portal forwards `hours` as given
-# (app/src/server/upstream.ts), so this applies only when the query param is
-# absent. The endpoint itself is unavailable today (nora/web/games.py's module
-# docstring).
-_DEFAULT_GRAPH_HOURS = 24
-
-# The map's default history window when `?hours=` is absent — a full day's
-# route, matching the games graph's own default in spirit (both answer "the
-# last day" unless told otherwise).
-_DEFAULT_HISTORY_HOURS = 24
-
-# Pulse's own defaults (game-server-monitor's web app never sends an
-# explicit pageSize for its default views) — kept here so an absent query
-# param behaves the same as Pulse's own first-party client.
 _DEFAULT_PAGE = 1
 _DEFAULT_PAGE_SIZE = 20
-_DEFAULT_INSIGHTS_DAYS = 30
+_DEFAULT_HISTORY_HOURS = 24
 _DEFAULT_ANALYTICS_DAYS = 30
 _MAX_ANALYTICS_DAYS = 90
 _DAY_MS = 24 * 60 * 60 * 1000
@@ -228,7 +191,6 @@ def _corridor_payload(corridor: dict[str, Any]) -> dict[str, Any]:
 def register_web_routes(
     app: web.Application, *, store: RecordStore, honcho: MemoryStore,
     reminders: ReminderStore, persons: Persons, ai_peer: str, started_at: float,
-    games_client: PulseGamesClient | None,
     presence: PresenceReader | None, presence_circles: tuple[Circle, ...],
     skills_dir: Path, events: GatheringService, doctrine_store: DoctrineStore,
     mobility: SqlMobilityStore | None = None,
@@ -259,7 +221,6 @@ def register_web_routes(
     app["web_persons"] = persons
     app["web_ai_peer"] = ai_peer
     app["web_started_at"] = started_at
-    app["web_games_client"] = games_client
     app["web_presence"] = presence
     app["web_presence_circles"] = presence_circles
     app["web_mobility"] = mobility
@@ -301,173 +262,11 @@ def register_web_routes(
     async def person_profile(request: web.Request) -> web.Response:
         a = request.app
         body = await build_person_profile_payload(
-            persons=a["web_persons"], games_client=a["web_games_client"],
+            persons=a["web_persons"],
             person_id=request.match_info["personId"],
         )
         if body is None:
             return web.json_response({"error": "not_found"}, status=404)
-        return web.json_response(body)
-
-    async def games_servers(request: web.Request) -> web.Response:
-        try:
-            body = await build_games_servers_payload(client=request.app["web_games_client"])
-        except GamesUnavailableError as exc:
-            log.warning("games servers unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_status(request: web.Request) -> web.Response:
-        try:
-            body = await build_game_server_status_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"],
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server status unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_graph(request: web.Request) -> web.Response:
-        raw_hours = request.query.get("hours")
-        try:
-            hours = int(raw_hours) if raw_hours is not None else _DEFAULT_GRAPH_HOURS
-        except ValueError:
-            return web.json_response({"error": "invalid hours"}, status=400)
-        try:
-            body = await build_game_server_graph_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"], hours=hours,
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server graph unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_weekly(request: web.Request) -> web.Response:
-        try:
-            body = await build_game_server_weekly_payload(
-                client=request.app["web_games_client"], server_id=request.match_info["id"],
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server weekly unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_world(request: web.Request) -> web.Response:
-        try:
-            body = await build_game_server_world_payload(
-                client=request.app["web_games_client"], server_id=request.match_info["id"],
-                persons=request.app["web_persons"],
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server world unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_progress(request: web.Request) -> web.Response:
-        try:
-            body = await build_game_server_progress_payload(
-                client=request.app["web_games_client"], server_id=request.match_info["id"],
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server progress unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_save_history(request: web.Request) -> web.Response:
-        try:
-            hours = _int_query(request, "hours", _DEFAULT_GRAPH_HOURS)
-        except _BadQueryError:
-            return web.json_response({"error": "invalid hours"}, status=400)
-        try:
-            body = await build_game_server_save_history_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"], hours=hours,
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server save-history unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_insights(request: web.Request) -> web.Response:
-        try:
-            days = _int_query(request, "days", _DEFAULT_INSIGHTS_DAYS)
-        except _BadQueryError:
-            return web.json_response({"error": "invalid days"}, status=400)
-        try:
-            body = await build_game_server_insights_payload(
-                client=request.app["web_games_client"],
-                server_id=request.match_info["id"], days=days,
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server insights unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_players(request: web.Request) -> web.Response:
-        try:
-            page = _int_query(request, "page", _DEFAULT_PAGE)
-            page_size = _int_query(request, "pageSize", _DEFAULT_PAGE_SIZE)
-            online = _optional_bool_query(request, "online")
-        except _BadQueryError as exc:
-            return web.json_response({"error": f"invalid {exc}"}, status=400)
-        try:
-            body = await build_game_server_players_payload(
-                client=request.app["web_games_client"], server_id=request.match_info["id"],
-                page=page, page_size=page_size, online=online,
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server players unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_player(request: web.Request) -> web.Response:
-        try:
-            body = await build_game_server_player_payload(
-                client=request.app["web_games_client"], server_id=request.match_info["id"],
-                player_key=request.match_info["playerKey"], persons=request.app["web_persons"],
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server player unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_activity(request: web.Request) -> web.Response:
-        try:
-            page = _int_query(request, "page", _DEFAULT_PAGE)
-            page_size = _int_query(request, "pageSize", _DEFAULT_PAGE_SIZE)
-            since_ms = _optional_int_query(request, "from")
-            until_ms = _optional_int_query(request, "to")
-        except _BadQueryError as exc:
-            return web.json_response({"error": f"invalid {exc}"}, status=400)
-        try:
-            body = await build_game_server_activity_payload(
-                client=request.app["web_games_client"], server_id=request.match_info["id"],
-                page=page, page_size=page_size, since_ms=since_ms, until_ms=until_ms,
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server activity unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
-        return web.json_response(body)
-
-    async def games_server_sessions(request: web.Request) -> web.Response:
-        try:
-            page = _int_query(request, "page", _DEFAULT_PAGE)
-            page_size = _int_query(request, "pageSize", _DEFAULT_PAGE_SIZE)
-            since_ms = _optional_int_query(request, "from")
-            until_ms = _optional_int_query(request, "to")
-        except _BadQueryError as exc:
-            return web.json_response({"error": f"invalid {exc}"}, status=400)
-        try:
-            body = await build_game_server_sessions_payload(
-                client=request.app["web_games_client"], server_id=request.match_info["id"],
-                page=page, page_size=page_size,
-                player_key=request.query.get("playerKey"),
-                since_ms=since_ms, until_ms=until_ms,
-            )
-        except GamesUnavailableError as exc:
-            log.warning("game server sessions unavailable: %s", exc)
-            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
         return web.json_response(body)
 
     async def presence_positions(request: web.Request) -> web.Response:
@@ -821,20 +620,6 @@ def register_web_routes(
     app.router.add_get("/app/v1/memory", memory)
     app.router.add_get("/app/v1/persons", persons_roster)
     app.router.add_get("/app/v1/persons/{personId}", person_profile)
-    app.router.add_get("/app/v1/games/servers", games_servers)
-    app.router.add_get("/app/v1/games/servers/{id}/status", games_server_status)
-    app.router.add_get("/app/v1/games/servers/{id}/graph", games_server_graph)
-    app.router.add_get("/app/v1/games/servers/{id}/weekly", games_server_weekly)
-    app.router.add_get("/app/v1/games/servers/{id}/world", games_server_world)
-    app.router.add_get("/app/v1/games/servers/{id}/progress", games_server_progress)
-    app.router.add_get("/app/v1/games/servers/{id}/save-history", games_server_save_history)
-    app.router.add_get("/app/v1/games/servers/{id}/insights", games_server_insights)
-    app.router.add_get("/app/v1/games/servers/{id}/players", games_server_players)
-    app.router.add_get(
-        "/app/v1/games/servers/{id}/players/{playerKey}", games_server_player,
-    )
-    app.router.add_get("/app/v1/games/servers/{id}/activity", games_server_activity)
-    app.router.add_get("/app/v1/games/servers/{id}/sessions", games_server_sessions)
     app.router.add_get("/app/v1/presence", presence_positions)
     app.router.add_get("/app/v1/presence/places", presence_places)
     app.router.add_get(

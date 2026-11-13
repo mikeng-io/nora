@@ -50,7 +50,6 @@ test("Documents is one tap away on a desktop's rail and on a phone's bottom bar"
     // More opens a sheet that lists the places the bar does not hold.
     await bar.getByRole("button", { name: "More" }).click();
     const sheet = page.getByRole("dialog");
-    await expect(sheet.getByRole("link", { name: "Games" })).toBeVisible();
     await expect(sheet.getByRole("link", { name: "People" })).toBeVisible();
     await page.keyboard.press("Escape");
   }

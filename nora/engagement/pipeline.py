@@ -737,7 +737,7 @@ class EngagementPipeline:
             # `ReplyGuard` — and the R-7 unknown-tool veto message it renders —
             # must be built from the SAME set `.build()` below uses, or an
             # unauthorized conversation's guard would still disclose a
-            # `pulse_*` name it cannot call.
+            # `demo_*` name it cannot call.
             convo = self._policy.conversation(msg.platform, msg.conversation_id)
             allowed_mcp = convo.tools if convo is not None else frozenset()
             # DEC-74: the per-conversation location-disclosure trust, sourced the

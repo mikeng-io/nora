@@ -42,9 +42,6 @@ const MOVED: Array<[string, string]> = [
   ["/:locale(zh-Hant|en)/tools", "/:locale/nora/abilities"],
   ["/:locale(zh-Hant|en)/events", "/:locale/plans"],
   ["/:locale(zh-Hant|en)/events/:id", "/:locale/plans/:id"],
-  ["/:locale(zh-Hant|en)/games/:id/players", "/:locale/games/:id?tab=players"],
-  ["/:locale(zh-Hant|en)/games/:id/activity", "/:locale/games/:id?tab=activity"],
-  ["/:locale(zh-Hant|en)/games/:id/sessions", "/:locale/games/:id?tab=activity"],
 ];
 
 const nextConfig: NextConfig = {

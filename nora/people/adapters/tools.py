@@ -456,7 +456,7 @@ async def _online_now__check_what(c):
 
 async def _online_now__fetch_states(c):
     c.steam_ids_by_person = {
-        ref.person_id: c.persons.platform_ids("pulse", ref.person_id) for ref in c.refs
+        ref.person_id: c.persons.platform_ids("steam", ref.person_id) for ref in c.refs
     }
     c.discord_ids_by_person = {
         ref.person_id: c.persons.platform_ids("discord", ref.person_id) for ref in c.refs

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { apiGet } from "./client";
 
 // nora/web/persons.py: identity.toml's roster, and one person's profile
-// (their cross-platform identity plus the game servers that know them).
+// (their cross-platform identity).
 export const PersonSummarySchema = z.object({
   personId: z.string(),
   displayName: z.string(),
@@ -10,17 +10,9 @@ export const PersonSummarySchema = z.object({
 export type PersonSummary = z.infer<typeof PersonSummarySchema>;
 export const RosterSchema = z.array(PersonSummarySchema);
 
-export const GameProfileSchema = z.object({
-  serverId: z.string(),
-  displayName: z.string(),
-  game: z.string().nullable(),
-});
-export type GameProfile = z.infer<typeof GameProfileSchema>;
-
 export const PersonProfileSchema = z.object({
   personId: z.string(),
   displayName: z.string(),
-  gameProfiles: z.array(GameProfileSchema),
 });
 export type PersonProfile = z.infer<typeof PersonProfileSchema>;
 

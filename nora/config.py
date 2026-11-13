@@ -4034,7 +4034,7 @@ class Config(BaseModel):
         return {**values, **os.environ}
 
     def redaction_values(self) -> list[str]:
-        names = {"NORA_BRIDGE_TOKEN", "GIPHY_API_KEY", "PULSE_API_TOKEN", "PULSE_MCP_TOKEN"}
+        names = {"NORA_BRIDGE_TOKEN", "GIPHY_API_KEY"}
 
         def collect(data: dict[str, object]) -> None:
             for key, value in data.items():

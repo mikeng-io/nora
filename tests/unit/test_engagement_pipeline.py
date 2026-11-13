@@ -400,9 +400,9 @@ def _policy_allowing(*, conversation_id: str = "g1", tools: frozenset[str] = fro
     return Policy(conversations=(convo,), _by_id={("signal", conversation_id): convo})
 
 
-def _registry_with_pulse() -> ToolRegistry:
+def _registry_with_demo() -> ToolRegistry:
     groups = {
-        "pulse": McpToolGroup(budget=5, tools=(_FakeMcpTool("pulse_server_status"),)),
+        "demo": McpToolGroup(budget=5, tools=(_FakeMcpTool("demo_server_status"),)),
     }
     return ToolRegistry(mcp_tools=groups)
 
@@ -412,26 +412,26 @@ class _FakeMcpTool:
         self.tool_name = tool_name
 
 
-async def test_unauthorized_conversation_never_receives_pulse_tools():
+async def test_unauthorized_conversation_never_receives_demo_tools():
     pipeline, _metrics, _audit, _memory, background = _build_pipeline(
-        tool_registry=_registry_with_pulse(),
-        policy=_policy_allowing(tools=frozenset()),  # not authorized for pulse
+        tool_registry=_registry_with_demo(),
+        policy=_policy_allowing(tools=frozenset()),  # not authorized for demo
     )
     await pipeline.run(_request())
     await _drain(background)
     delivered_tools = pipeline._runner.calls[-1]["tools"]
-    assert not any(t.tool_name == "pulse_server_status" for t in delivered_tools)
+    assert not any(t.tool_name == "demo_server_status" for t in delivered_tools)
 
 
-async def test_authorized_conversation_receives_pulse_tools():
+async def test_authorized_conversation_receives_demo_tools():
     pipeline, _metrics, _audit, _memory, background = _build_pipeline(
-        tool_registry=_registry_with_pulse(),
-        policy=_policy_allowing(tools=frozenset({"pulse"})),
+        tool_registry=_registry_with_demo(),
+        policy=_policy_allowing(tools=frozenset({"demo"})),
     )
     await pipeline.run(_request())
     await _drain(background)
     delivered_tools = pipeline._runner.calls[-1]["tools"]
-    assert any(t.tool_name == "pulse_server_status" for t in delivered_tools)
+    assert any(t.tool_name == "demo_server_status" for t in delivered_tools)
 
 
 # ---------------------------------------------------------------------------

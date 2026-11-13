@@ -32,7 +32,7 @@ class _FakeMcpServer:
     ``broken_discovery=True`` replaces the server's ``tools/list`` handler
     itself (registered on the low-level ``mcp.server.lowlevel.Server`` that
     MCPServer wraps at ``app._lowlevel_server``) with one that raises. That is
-    the MCP protocol's tool-*listing* call, distinct from ``pulse_broken_tool``
+    the MCP protocol's tool-*listing* call, distinct from ``demo_broken_tool``
     above which fails only when *invoked*. In the installed `mcp`
     (2.3.0), `Server._handle_request` catches a plain
     `Exception` raised from a request handler and turns it into a JSON-RPC
@@ -44,15 +44,15 @@ class _FakeMcpServer:
 
     def __init__(self, *, broken_discovery: bool = False) -> None:
         self.port = _free_port()
-        app = MCPServer("fake-pulse")
+        app = MCPServer("fake-demo")
 
         @app.tool()
-        def pulse_server_status() -> dict:
+        def demo_server_status() -> dict:
             """Who is online."""
             return {"players_online": 2, "uptime_seconds": 3600}
 
         @app.tool()
-        def pulse_broken_tool() -> dict:
+        def demo_broken_tool() -> dict:
             """Always fails, for the malformed/error-path test."""
             raise RuntimeError("upstream exploded")
 
@@ -117,7 +117,7 @@ def test_discovers_tools_from_a_real_server(fake_mcp_server, monkeypatch):
     assert set(groups) == {"fake"}
     assert groups["fake"].budget == 3
     tool_names = {t.tool_name for t in groups["fake"].tools}
-    assert tool_names == {"pulse_server_status", "pulse_broken_tool"}
+    assert tool_names == {"demo_server_status", "demo_broken_tool"}
 
 
 def test_connection_failure_yields_absent_not_raised(monkeypatch):
@@ -154,7 +154,7 @@ class _NamedToolsMcpServer:
     """A real MCP server (background thread, like `_FakeMcpServer` above)
     whose tools are named by the caller — the collision tests need to
     control what name a discovered tool arrives under, which the fixed
-    `pulse_server_status`/`pulse_broken_tool` pair above cannot give them."""
+    `demo_server_status`/`demo_broken_tool` pair above cannot give them."""
 
     def __init__(self, tool_names: tuple[str, ...]) -> None:
         self.port = _free_port()
@@ -213,7 +213,7 @@ def test_collision_with_a_native_tool_name_is_dropped_and_logged(
     tool is unaffected."""
     assert "send_reply" in NATIVE_TOOL_BUDGETS  # the premise this test needs
     monkeypatch.setenv("FAKE_TOKEN", "irrelevant-but-present")
-    url = named_mcp_server(("send_reply", "pulse_ok"))
+    url = named_mcp_server(("send_reply", "demo_ok"))
     mounts = {
         "fake": McpMount(
             name="fake", base_url=url,
@@ -224,7 +224,7 @@ def test_collision_with_a_native_tool_name_is_dropped_and_logged(
     with caplog.at_level(logging.WARNING, logger="nora.agent.mcp"):
         groups = build_mcp_tools(mounts)
     names = {t.tool_name for t in groups["fake"].tools}
-    assert names == {"pulse_ok"}
+    assert names == {"demo_ok"}
     assert any(
         "send_reply" in record.getMessage() and "fake" in record.getMessage()
         for record in caplog.records

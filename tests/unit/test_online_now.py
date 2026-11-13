@@ -41,7 +41,7 @@ last_name  = "Novak"
 aliases = ["Miles"]
 [[persons.miles_novak.signal]]
 phone = "+85290000101"
-[[persons.miles_novak.pulse]]
+[[persons.miles_novak.steam]]
 steam_id = "111"
 [[persons.miles_novak.discord]]
 user_id = "1001"
@@ -52,7 +52,7 @@ last_name  = "Lindqvist"
 aliases = ["Blake"]
 [[persons.blake_lindqvist.signal]]
 phone = "+85260000001"
-[[persons.blake_lindqvist.pulse]]
+[[persons.blake_lindqvist.steam]]
 steam_id = "222"
 [[persons.blake_lindqvist.discord]]
 user_id = "1002"
@@ -68,7 +68,7 @@ first_name = "Sam"
 last_name  = "Outsider"
 [[persons.outsider.signal]]
 phone = "+85260000000"
-[[persons.outsider.pulse]]
+[[persons.outsider.steam]]
 steam_id = "333"
 """
 
@@ -262,8 +262,8 @@ async def test_playing_reports_the_title_and_the_absent_one_honestly(persons):
     assert "111" not in str(out) and "1001" not in str(out)
 
 
-async def test_no_pulse_block_is_nothing_found_for_that_person(persons):
-    """A person with no `pulse` block has no steam_id: alone they are
+async def test_no_steam_block_is_nothing_found_for_that_person(persons):
+    """A person with no `steam` block has no steam_id: alone they are
     the arm's `nothing_found`; beside a readable person they are an honest
     `unknown`, never "offline"."""
     steam = FakeSteamPresenceProvider(players={"111": MILES_ONLINE})

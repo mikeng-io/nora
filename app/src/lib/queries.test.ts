@@ -25,6 +25,5 @@ describe("keepFor", () => {
   it("never shows one person's answer while another's loads", () => {
     const keep = keepFor("miles");
     expect(keep("ken's route", { queryKey: qk.history("ken", 24) })).toBeUndefined();
-    expect(keepFor("abiotic")("palworld players", { queryKey: qk.players("palworld", 1) })).toBeUndefined();
   });
 });
