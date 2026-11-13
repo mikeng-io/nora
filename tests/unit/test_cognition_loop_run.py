@@ -219,7 +219,7 @@ async def test_inspect_only_records_the_assembled_blocks(
     run_mod = _wake_seam(monkeypatch, tmp_path,
                          _runner_subject(inspection=inspection))
     args, evidence = _wake_args(tmp_path)
-    case = SimpleNamespace(unit="u", expectations=())
+    case = SimpleNamespace(unit="u", expectations=(), read_probes=())
     wake = await run_mod._run_wake(
         args, case, 0, 11, NOW, "postgresql+asyncpg://x", "time", None,
         evidence, tmp_path, SimpleNamespace(platform="signal",
@@ -231,6 +231,31 @@ async def test_inspect_only_records_the_assembled_blocks(
     assert wake["trajectory"]["blocks"]["instructions"]["doctrine_sha256"] == "d"
     frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
     assert frozen["trajectory"]["blocks"]["agenda"] == {"agenda": True}
+
+
+async def test_an_unavailable_read_preflight_cannot_pass_inspection(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from nora.subject.eval_evidence import EvidenceError
+    from scripts.cognition_loop import reads
+
+    subject = _runner_subject(inspection={"items": []})
+    run_mod = _wake_seam(monkeypatch, tmp_path, subject)
+    args, evidence = _wake_args(tmp_path)
+    called = []
+
+    async def unavailable(runner, case, index, inspection, at_ms):
+        called.append(index)
+        raise EvidenceError("read preflight: unavailable")
+
+    monkeypatch.setattr(reads, "preflight_reads", unavailable)
+    wake = await run_mod._run_wake(
+        args, SimpleNamespace(unit="u", expectations=()), 0, 11, NOW,
+        "postgresql+asyncpg://x", "time", None, evidence, tmp_path,
+        SimpleNamespace(platform="signal", primary_id="r"), "nora-eval-run-x")
+    assert called == [0]
+    assert wake["status"] == "ERROR"
+    assert "read preflight" in wake["error"]
 
 
 async def test_a_compose_failure_names_compose(monkeypatch, tmp_path):

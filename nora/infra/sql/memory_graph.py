@@ -633,6 +633,8 @@ class SqlMemoryGraph:
                 await conn.execute(
                     sa.text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                 )
+                # Compiling the scoped endpoint/evidence probes can exhaust this short read.
+                await conn.execute(sa.text("SET LOCAL jit = off"))
                 await conn.execute(
                     sa.text(f"SET LOCAL statement_timeout = {int(self.statement_timeout_ms)}"),
                 )

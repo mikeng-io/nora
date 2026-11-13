@@ -184,6 +184,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url,
                     database_url=url,
                     cfg=SimpleNamespace(
                         memory=SimpleNamespace(
+                            graph=SimpleNamespace(enabled=False),
                             index=SimpleNamespace(
                                 read=False, embed=False, embedder_model=MODEL_ID))),
                 )

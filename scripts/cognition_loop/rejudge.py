@@ -97,6 +97,7 @@ async def rejudge(output: Path, case_path: Path, config: Path,
                                 "kind": expectation.kind,
                                 "text": expectation.text},
                 "verdict": verdict.verdict,
+                "detail": verdict.detail,
                 "answers": [asdict(a) for a in verdict.answers],
             })
         frozen["expectations"] = judged

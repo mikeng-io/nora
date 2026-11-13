@@ -331,6 +331,8 @@ def _judgement(expectations: list[dict[str, Any]] | None) -> str:
             f"<details open><summary><b>{esc(label)}</b> — verdict: "
             f'<span class="status-{esc(exp.get("verdict"))}">'
             f'{esc(exp.get("verdict"))}</span></summary>')
+        if exp.get("detail"):
+            out.append(f"<p>{esc(exp['detail'])}</p>")
         rows = "".join(
             "<tr>"
             f"<td>{esc(a.get('model') or None)}</td>"

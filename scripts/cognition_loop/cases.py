@@ -9,7 +9,7 @@ rows, never production ones.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from nora.subject.eval_evidence import EvidenceError
@@ -47,16 +47,33 @@ class Expectation:
 
 
 @dataclass(frozen=True, slots=True)
+class ReadProbe:
+    """A model-free memory read through the session's actual room-bound tools."""
+
+    wake: int
+    tool: str
+    arguments: dict
+    expected: str = "found"
+
+    def __post_init__(self) -> None:
+        if self.tool not in ("memory_search", "memory_read"):
+            raise EvidenceError("a read probe can only call memory_search or memory_read")
+        if self.expected not in ("found", "nothing_found", "refused"):
+            raise EvidenceError("a read probe expects found, nothing_found or refused")
+
+
+@dataclass(frozen=True, slots=True)
 class Case:
     name: str
     unit: str
     wakes: tuple[int, ...]
     expectations: tuple[Expectation, ...] = field(default_factory=tuple)
+    read_probes: tuple[ReadProbe, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.wakes:
             raise EvidenceError("a case holds at least one recorded wake")
-        for e in self.expectations:
+        for e in (*self.expectations, *self.read_probes):
             if not 0 <= e.wake < len(self.wakes):
                 raise EvidenceError(
                     f"expectation anchors at wake index {e.wake}; the case holds "
@@ -79,6 +96,7 @@ def load_case(path: Path) -> Case:
         name=str(raw["name"]), unit=str(raw["unit"]),
         wakes=tuple(int(w) for w in raw["wakes"]),
         expectations=expectations,
+        read_probes=tuple(ReadProbe(**p) for p in raw.get("read_probes", [])),
     )
 
 
@@ -91,6 +109,7 @@ def write_case(case: Case, path: Path) -> None:
             {"wake": e.wake, "polarity": e.polarity, "kind": e.kind, "text": e.text}
             for e in case.expectations
         ],
+        "read_probes": [asdict(p) for p in case.read_probes],
     }, indent=2, ensure_ascii=False) + "\n")
 
 
