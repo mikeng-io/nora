@@ -40,7 +40,7 @@ BUILDS = {
 REUSE_RECIPES = {
     'http-egress': '499549752b60398d6125992db29990b2d7a2e7171fd1b69da8187c41ffc9209a',
     'app': '37698828ca05554c0a5454a05193e2e235eb6d5480fc5d81b7c8eb66f89ed6eb',
-    'site': '3a8f159aaaf3b076a9e3c742480b39c236d81a7698886865081a1fb02bddd80d',
+    'site': '00add3ddfdc0bb24920936aa532182fd4aa77a4f255b0f3beeae69dc05681489',
     'stt': '0f909a02fd4c8d484501ecf6f5ce85dd2b5ffed5481065fcec75dbb638c53ad0',
     'voice-sidecar': '69f0ecc9a3efc00732f6c4c364c6441014dba5355667f8b57fe60f39a71f8ba5',
     'voice-wake': 'fd5ee73065eab7b09c4bf08805c21573bce5296cc1bbdf7b7bf5b1218fe9449b',
