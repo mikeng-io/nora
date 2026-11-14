@@ -1,17 +1,17 @@
 """The corpus port — `evals/corpora/*.yaml` as `strands_evals.Case` objects.
 
 A corpus is a set of cases and nothing else
-(`design/evaluation/subject.md` «Obtained through production»). Every
+(`design/evaluation/subject.md` «Production owns the subject»). Every
 case names a REAL room at a REAL instant (`snapshot:`), and everything she
 knows when it starts is what that room held then — read from the deployment's
 clone and written into the case's own sandbox by `evals.backbone._drive`.
 There is no other way to state what she knows: no `knows:`, no `config:`, no
 `policy:`, no `room:`, no `now:`. Each of those was a case compensating by
 hand for a subject that was not the deployment's (`design/evaluation/subject.md`
-§1.2), and under one path they have nothing left to say.
+«Production owns the subject»), and under one path they have nothing left to say.
 
 THREE STATES, and the middle one is the point (`design/evaluation/subject.md`
-§7.1):
+«Input and causal scope»):
 
 - **active** — anchored; runs.
 - **unanchored** — no `snapshot:` and not parked; is loaded, is driven, and

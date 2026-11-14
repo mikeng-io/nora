@@ -8,8 +8,9 @@ user *journey*, measure the *trajectory* she produces, serialize a *verdict*.
 
 ## Before a paid run
 
-Apply this order to every entrypoint. The [horizontal measurement contract](../design/evaluation/horizontal-measurement-contract.md)
-defines the axes, five-C checks and current delivery limits. Reuse the existing
+Apply this order to every entrypoint. The [measurement contract](../design/evaluation/measurement.md) and
+[scenario coverage](../design/evaluation/coverage.md) define evidence, judging
+and the limits of each execution mode. Reuse the existing
 runner, corpus fields, private evidence and trace hierarchy.
 
 1. **Comprehend the objective and scenario.** Name the capability and whether
@@ -250,7 +251,7 @@ held at that instant, and drives one entry point. Declared stimuli and
 counterfactuals may be authored; they must not be presented as recorded history.
 The subject uses the corpus's canonical assembly rather than a bespoke
 per-case dependency graph (`design/evaluation/subject.md`
-«Obtained through production»–«Counterfactuals»).
+«Production owns the subject» and «Input and causal scope»).
 
 ```bash
 # on the deploy host, in a checkout of the branch under test (NOT the deploy checkout)
