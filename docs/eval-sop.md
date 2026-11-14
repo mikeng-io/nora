@@ -251,7 +251,7 @@ held at that instant, and drives one entry point. Declared stimuli and
 counterfactuals may be authored; they must not be presented as recorded history.
 The subject uses the corpus's canonical assembly rather than a bespoke
 per-case dependency graph (`design/evaluation/subject.md`
-«Obtained through production»–«Counterfactuals»).
+«Production owns the subject» and «Input and causal scope»).
 
 ```bash
 # on the deploy host, in a checkout of the branch under test (NOT the deploy checkout)
