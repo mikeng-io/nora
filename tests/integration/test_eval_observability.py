@@ -558,3 +558,48 @@ async def test_cancelled_model_pass_has_its_own_complete_lifecycle(
     assert len(attempts) == len(requests) + 1
 
 
+
+
+@pytest.mark.parametrize("nested", [True, False], ids=["nested", "reuse"])
+async def test_sdk_invocation_attribution_and_windows(evidence_root, nested):
+    from nora.subject.eval_evidence import validate_events
+    from scripts.cognition_loop.trajectory import terminal_response
+    from tests.integration.eval_observability_env import nested_or_reused
+
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with evidence.capture(trace.get_tracer_provider()):
+            requests = await nested_or_reused(nested)
+    events = rows(evidence)
+    assert validate_events(events)["status"] == "PASS", validate_events(events)
+    starts = [e for e in events if e["kind"] == "invocation_started"]
+    assert len(starts) == 2 and len({e["invocation_id"] for e in starts}) == 2
+    first, second = (e["invocation_id"] for e in starts)
+    assert starts[0]["parent_invocation_id"] is None
+    assert starts[1]["parent_invocation_id"] == (first if nested else None)
+    if nested:
+        assert len(requests) == 4
+        tools = [e for e in events if e["kind"] in ("tool_started", "tool_finished")]
+        assert [e["kind"] for e in tools] == ["tool_started", "tool_finished"]
+        assert all(e["invocation_id"] == first for e in tools)
+        assert tools[0]["attempt_id"] == tools[1]["attempt_id"]
+        first_call = next(e for e in events if e["kind"] == "call_started")
+        assert tools[0]["attempt_id"] == first_call["attempt_id"]
+        child_call = next(e for e in events if e["kind"] == "call_started" and e["invocation_id"] == second)
+        assert child_call["attempt_id"].startswith(second + ":")
+        raw = next(e for e in events if e["kind"] == "transport_response"
+                   and e["response"]["choices"][0]["message"].get("content") == "tool raw answer")
+        assert raw["invocation_id"] == first and raw["attempt_id"] == first_call["attempt_id"]
+        terminal = terminal_response(events)
+        assert terminal["status"] == "observed" and terminal["text"] == "parent answer"
+        assert terminal["invocation_id"] == first and terminal["attempt_id"] != first_call["attempt_id"]
+    else:
+        assert len(requests) == 2
+        windows = [events[starts[i]["order"] - 1:starts[i + 1]["order"] - 1] if i == 0
+                   else events[starts[i]["order"] - 1:] for i in range(2)]
+        for i, window in enumerate(windows):
+            terminal = terminal_response(window)
+            assert terminal["status"] == "observed" and terminal["text"] == f"answer {i + 1}"
+            assert terminal["invocation_id"] == (first, second)[i]
+            assert all(e["invocation_id"] == (first, second)[i] for e in window
+                       if e["kind"] in ("call_started", "call_finished", "transport_response"))
