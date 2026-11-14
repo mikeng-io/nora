@@ -3,6 +3,28 @@
 from scripts.cognition_loop.rejudge import frozen_diff
 
 
+async def test_missing_frozen_wake_stops_before_judge_setup(monkeypatch, tmp_path):
+    import json
+    from scripts.cognition_loop import rejudge as module
+    from scripts.cognition_loop.cases import generated_case, write_case
+
+    case = generated_case()
+    case_path = tmp_path / "case.json"
+    write_case(case, case_path)
+    (tmp_path / "report.json").write_text(json.dumps({
+        "status": "PASS", "cases": [{"case": case.name, "wakes": []}]}))
+    (tmp_path / f"wake-0-{case.wakes[0]}.json").write_text('{}')
+    def forbidden(*args):
+        raise AssertionError("judge setup must not run")
+    monkeypatch.setattr(module, "load", forbidden)
+    monkeypatch.setattr(module, "render", lambda _: None)
+    report = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b")
+    assert report["status"] == "ERROR"
+    assert report["original_status"] == "PASS"
+    assert report["cases"][0]["errors"] == [f"missing frozen wake: wake-1-{case.wakes[1]}.json"]
+    assert json.loads((tmp_path / "report.json").read_text())["status"] == "ERROR"
+
+
 def test_the_after_state_is_created_revised_and_unchanged_never_retired():
     frozen = {"diff": {"note": {
         "created": [{"status": "created", "entry_id": "n1", "after": {"t": "a"}}],
