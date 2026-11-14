@@ -267,3 +267,12 @@ def test_local_audio_transport_does_not_use_environment_proxies(monkeypatch):
     monkeypatch.setenv('HTTP_PROXY', 'http://example.invalid:1234')
     worker = qwen.QwenWorker(device='cpu', timeout=1, vad_loader=None)
     assert not any(getattr(handler, 'proxies', {}) for handler in worker.http.handlers)
+
+
+def test_long_partition_prefers_complete_pause_over_later_brief_silence():
+    rate = 1000
+    audio = [0.5] * 43000
+    audio[21000:22000] = [0.] * 1000
+    audio[28000:28100] = [0.] * 100
+    windows = qwen.speech_windows([[0, 43000]], len(audio), rate, audio=audio)
+    assert windows == [(0, 21500), (21500, 43000)]

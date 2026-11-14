@@ -86,9 +86,18 @@ def speech_windows(spans: list, samples: int, rate: int, audio=None) -> list[tup
             # frame; this chooses a cut only, never a speech/no-speech verdict.
             frames = range(max(lo + rate, bound - 15 * rate), bound - hop + 1, hop)
             energies = [(sum(float(x) ** 2 for x in audio[start:start + hop:max(1, rate // 1000)]),
-                         -(start + hop // 2)) for start in frames]
+                         start) for start in frames]
             if energies:
-                cut = -min(energies)[1]
+                quietest = min(energy for energy, _ in energies)
+                runs = []
+                for energy, start in energies:
+                    if energy == quietest:
+                        if runs and runs[-1][1] == start:
+                            runs[-1] = (runs[-1][0], start + hop)
+                        else:
+                            runs.append((start, start + hop))
+                start, stop = max(runs, key=lambda run: (run[1] - run[0], run[1]))
+                cut = (start + stop) // 2
         windows.append((lo, cut))
         lo = cut
     windows.append((lo, end))

@@ -5,25 +5,27 @@ Traditional output behind mandatory standalone FSMN speech detection.
 Config controls preload and Qwen device; model failures never select another engine.
 """
 import argparse
-import threading
-from contextlib import asynccontextmanager, suppress
 import asyncio
 import os
 import re
 import subprocess
 import tempfile
+import threading
 import time
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, Optional
 
 import uvicorn
+from config_toml import (
+    preload_model,
+    qwen_settings,
+)
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from opencc import OpenCC
-
-from qwen import MODEL as QWEN_MODEL, QwenWorker
-from config_toml import qwen_settings
-from config_toml import preload_model  # noqa: E402  (sibling module, stdlib only)
+from qwen import MODEL as QWEN_MODEL
+from qwen import QwenWorker
 
 
 @asynccontextmanager
