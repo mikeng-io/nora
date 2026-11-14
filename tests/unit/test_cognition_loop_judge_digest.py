@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from scripts.cognition_loop.cases import Expectation
 from scripts.cognition_loop.judges import (
     JUDGE_INPUT_MAX_BYTES,
@@ -21,6 +23,7 @@ from scripts.cognition_loop.state import (
     StateDiff,
     UnitState,
 )
+from scripts.cognition_loop.trajectory import terminal_response
 
 
 def _expectation() -> Expectation:
@@ -75,6 +78,7 @@ def _trajectory() -> dict[str, Any]:
                 ["note_create", "note_revise", "memo_create", "wake_at"])
         ],
         "stop_reason": "end_turn",
+        "final_response": terminal_response(_responses()),
         "usage": {"tokens": 750_671},
     }
 
@@ -94,9 +98,70 @@ def test_the_digest_lists_every_tool_call_and_every_diff_entry():
     assert [e["id"] for e in payload["diff"]["note"]["retired"]] == ["n-3"]
     # Unchanged is a count only — never the entries themselves.
     assert payload["diff"]["note"]["unchanged"] == 36
-    assert payload["final_output"] == "the final reasoning"
+    assert payload["final_output"] == "actual terminal answer"
     assert payload["stop_reason"] == "end_turn"
     assert payload["usage"] == {"tokens": 750_671}
+
+
+def _responses(*, stream=False, text="actual terminal answer"):
+    identity = {"invocation_id": "primary", "attempt_id": "primary:0:1"}
+    chunks = ([{"delta": {"role": "assistant", "content": text[:4]},
+                "finish_reason": None},
+               {"delta": {"content": text[4:]}, "finish_reason": "stop"}]
+              if stream else [{"message": {"role": "assistant", "content": text},
+                               "finish_reason": "stop"}])
+    return [
+        {**identity, "kind": "invocation_started", "parent_invocation_id": None},
+        {**identity, "kind": "call_started"},
+        {**identity, "kind": "transport_started"},
+        *[{**identity, "kind": "transport_response", "response": {"choices": [c]}}
+          for c in chunks],
+        {**identity, "kind": "transport_finished"},
+        {**identity, "kind": "call_finished", "retry": False},
+        {**identity, "kind": "invocation_finished"},
+    ]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("text", ["actual terminal answer", ""])
+def test_terminal_response_is_canonical_including_empty_and_streamed_output(stream, text):
+    response = terminal_response(_responses(stream=stream, text=text))
+    assert response["status"] == "observed" and response["text"] == text
+    trajectory = {**_trajectory(), "final_response": response}
+    payload = judge_payload(_expectation(), _diff(), _state(), trajectory)
+    assert payload["final_output"] == text
+    assert payload["final_response"]["attempt_id"] == "primary:0:1"
+
+
+def test_request_history_never_supplies_missing_or_interrupted_final_response():
+    trajectory = _trajectory()
+    trajectory.pop("final_response")
+    assert judge_payload(_expectation(), _diff(), _state(), trajectory)["final_output"] is None
+    for missing in ("transport_finished", "call_finished", "invocation_finished"):
+        events = [e for e in _responses(stream=True) if e["kind"] != missing]
+        response = terminal_response(events)
+        assert response["status"] == "unavailable" and response["text"] is None
+
+
+def test_nested_invocation_does_not_replace_primary_terminal_response():
+    events = _responses()
+    nested = [{**e, "invocation_id": "child", "attempt_id": "child:0:1"}
+              for e in _responses(text="child answer")]
+    nested[0]["parent_invocation_id"] = "primary"
+    events[3:3] = nested
+    assert terminal_response(events)["text"] == "actual terminal answer"
+    # A later root that never settles must not fall back to an earlier success.
+    events.append({"kind": "invocation_started", "invocation_id": "another"})
+    assert terminal_response(events)["status"] == "unavailable"
+
+
+def test_judge_distinguishes_domain_unavailability_from_transport_success():
+    trajectory = _trajectory()
+    trajectory["tool_calls"][0]["result"] = {
+        "status": "success", "content": [{"json": {"status": "unavailable"}}]}
+    result = judge_payload(_expectation(), _diff(), _state(), trajectory)["tool_calls"][0]["result"]
+    assert result["status"] == "unavailable"
+    assert result["transport_status"] == "success"
 
 
 class _RecordingJudges:

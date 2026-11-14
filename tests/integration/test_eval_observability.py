@@ -58,6 +58,12 @@ def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_ro
             evidence.exit_code = 0
     data = rows(evidence)
     assert len(requests) == 2  # actual SDK formatting and tool execution ran
+    from scripts.cognition_loop.trajectory import terminal_response
+
+    terminal = terminal_response(data)
+    assert terminal["status"] == "observed", terminal
+    assert terminal["text"].strip() == "6"
+    assert terminal["attempt_id"] and terminal["invocation_id"]
     dispatched = [r for r in data if r["kind"] == "event" and r["name"] == "nora.model.request"]
     assert [json.loads(r["attributes"]["nora.model.request.body"]) for r in dispatched] == requests
     saved = [e for r in data if r["kind"] == "span_finished" for e in r["events"]

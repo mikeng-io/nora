@@ -74,6 +74,19 @@ def test_the_sections_appear_in_order(tmp_path):
     assert "SYSTEM" in html and "messages" in html
 
 
+def test_report_renders_the_canonical_response_and_its_availability(tmp_path):
+    wake = _wake_report()
+    wake["trajectory"]["final_response"] = {
+        "status": "observed", "text": "Generated terminal <reply>",
+        "invocation_id": "primary", "attempt_id": "attempt"}
+    out = _run_dir(tmp_path, cases=[{
+        "case": "generated", "status": "PASS", "wakes": [wake]}])
+    html = render(out).read_text()
+    assert "terminal model response" in html
+    assert "Generated terminal &lt;reply&gt;" in html
+    assert "observed" in html and "attempt" in html
+
+
 def test_unchanged_entries_are_counted_never_listed(tmp_path):
     out = _run_dir(tmp_path, cases=[{
         "case": "c", "unit": "u", "status": "PASS", "errors": [],

@@ -214,8 +214,11 @@ def _read(wake: dict[str, Any]) -> str:
 def _did(wake: dict[str, Any]) -> str:
     trajectory = wake.get("trajectory") or {}
     out = ["<h4>c. What Nora did</h4>"]
+    out.append("<h5>terminal model response</h5><pre>" + _json(
+        trajectory.get("final_response") or {
+            "status": "unavailable", "cause": "response_not_captured"}) + "</pre>")
     calls = trajectory.get("model_calls")
-    out.append("<h5>model exchanges</h5>")
+    out.append("<h5>model requests</h5>")
     if not calls:
         out.append('<p class="not-recorded">not recorded</p>')
     for i, call in enumerate(calls or []):

@@ -1,28 +1,41 @@
 """A frozen wake's diff rebuilds the after-state the judges read."""
 
+from pathlib import Path
+
+import pytest
+
 from scripts.cognition_loop.rejudge import frozen_diff
 
 
-async def test_missing_frozen_wake_stops_before_judge_setup(monkeypatch, tmp_path):
+@pytest.mark.parametrize("missing", [0, 1, 2])
+async def test_missing_frozen_wake_stops_before_judge_setup(monkeypatch, tmp_path, missing):
     import json
+    from dataclasses import replace
+
     from scripts.cognition_loop import rejudge as module
     from scripts.cognition_loop.cases import generated_case, write_case
 
-    case = generated_case()
+    case = replace(generated_case(), wakes=(101, 102, 103))
     case_path = tmp_path / "case.json"
     write_case(case, case_path)
     (tmp_path / "report.json").write_text(json.dumps({
-        "status": "PASS", "cases": [{"case": case.name, "wakes": []}]}))
-    (tmp_path / f"wake-0-{case.wakes[0]}.json").write_text('{}')
+        "status": "PASS", "cases": [{"case": case.name, "wakes": [
+            {"recorded_wake_id": ident} for ident in case.wakes]}]}))
+    for index, ident in enumerate(case.wakes):
+        if index != missing:
+            (tmp_path / f"wake-{index}-{ident}.json").write_text('{}')
+    original = (tmp_path / "report.json").read_bytes()
     def forbidden(*args):
         raise AssertionError("judge setup must not run")
     monkeypatch.setattr(module, "load", forbidden)
     monkeypatch.setattr(module, "render", lambda _: None)
     report = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b")
     assert report["status"] == "ERROR"
-    assert report["original_status"] == "PASS"
-    assert report["cases"][0]["errors"] == [f"missing frozen wake: wake-1-{case.wakes[1]}.json"]
-    assert json.loads((tmp_path / "report.json").read_text())["status"] == "ERROR"
+    assert report["cases"][0]["errors"] == [
+        f"missing frozen wake: wake-{missing}-{case.wakes[missing]}.json"]
+    assert (tmp_path / "report.json").read_bytes() == original
+    version = Path(report["rejudged"]["output"])
+    assert json.loads((version / "report.json").read_text())["status"] == "ERROR"
 
 
 def test_the_after_state_is_created_revised_and_unchanged_never_retired():
@@ -38,6 +51,54 @@ def test_the_after_state_is_created_revised_and_unchanged_never_retired():
     assert set(after.entries("note")) == {"n1", "n2", "n4"}
     assert after.entries("note")["n2"] == {"t": "y"}
     assert "note:n3" in diff.entry_ids()
+
+
+@pytest.mark.parametrize("damage", [None, "row", "identity", "json", "criteria"])
+async def test_preflight_reconciles_rows_and_json_without_changing_originals(
+    monkeypatch, tmp_path, damage,
+):
+    import json
+    from dataclasses import replace
+
+    from scripts.cognition_loop import rejudge as module
+    from scripts.cognition_loop.cases import generated_case, write_case
+    from scripts.cognition_loop.verdicts import ExpectationVerdict
+
+    case = generated_case()
+    if damage == "criteria":
+        case = replace(case, expectations=())
+    case_path = tmp_path / "case.json"
+    write_case(case, case_path)
+    wakes = [{"recorded_wake_id": ident, "status": "PASS", "at_ms": i}
+             for i, ident in enumerate(case.wakes)]
+    if damage == "row":
+        wakes.pop()
+    if damage == "identity":
+        wakes[0]["recorded_wake_id"] = -1
+    (tmp_path / "report.json").write_text(json.dumps({
+        "status": "PASS", "cases": [{"case": case.name, "wakes": wakes}],
+        "evidence": {"status": "PASS"}}))
+    for i, ident in enumerate(case.wakes):
+        (tmp_path / f"wake-{i}-{ident}.json").write_text(
+            "{" if damage == "json" and i == 0 else json.dumps({"diff": {}}))
+    originals = {p.name: p.read_bytes() for p in tmp_path.glob("*.json")}
+    calls = []
+
+    def setup(*args):
+        assert damage is None, "judge setup before complete evidence"
+
+    async def judge(_judges, _models, expectation, diff, after, trajectory, earlier):
+        calls.append((expectation.kind, expectation.wake))
+        return ExpectationVerdict(verdict="PASS", answers=())
+
+    monkeypatch.setattr(module, "load", setup)
+    monkeypatch.setattr(module, "Judges", lambda *_: object())
+    monkeypatch.setattr(module, "judge_expectation", judge)
+    monkeypatch.setattr(module, "render", lambda _: None)
+    result = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b")
+    assert result["status"] == ("PASS" if damage is None else "ERROR")
+    assert calls == ([(e.kind, e.wake) for e in case.expectations] if damage is None else [])
+    assert {name: (tmp_path / name).read_bytes() for name in originals} == originals
 
 
 def test_rejudging_keeps_a_case_error_and_a_failed_evidence_receipt():
@@ -82,8 +143,8 @@ async def test_an_unmeasured_wake_spends_no_judge_call(monkeypatch, tmp_path):
     case = generated_case()
     case_path = tmp_path / "case.json"
     write_case(case, case_path)
-    wakes = [{"status": "PASS", "expectations": [], "at_ms": 1000 + i}
-             for i, _ in enumerate(case.wakes)]
+    wakes = [{"status": "PASS", "expectations": [], "at_ms": 1000 + i,
+              "recorded_wake_id": ident} for i, ident in enumerate(case.wakes)]
     wakes[1]["status"] = "ERROR"
     wakes[1]["step"] = "wake"
     (tmp_path / "report.json").write_text(json.dumps({
@@ -125,8 +186,8 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch,
     case = generated_case()
     case_path = tmp_path / "case.json"
     write_case(case, case_path)
-    wakes = [{"status": "PASS", "expectations": [], "at_ms": 1000 + i}
-             for i, _ in enumerate(case.wakes)]
+    wakes = [{"status": "PASS", "expectations": [], "at_ms": 1000 + i,
+              "recorded_wake_id": ident} for i, ident in enumerate(case.wakes)]
     (tmp_path / "report.json").write_text(json.dumps({
         "cases": [{"case": case.name, "wakes": wakes}], "evidence": {"status": "PASS"}}))
     for index, ident in enumerate(case.wakes):
@@ -151,8 +212,11 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch,
     assert report["status"] == "ERROR"
     exp = report["cases"][0]["wakes"][0]["expectations"][0]
     assert exp["detail"] == "a decidable answer needs a cited entry"
-    frozen = json.loads((tmp_path / f"wake-0-{case.wakes[0]}.json").read_text())
+    frozen = json.loads((Path(report["rejudged"]["output"]) /
+                         f"wake-0-{case.wakes[0]}.json").read_text())
     assert frozen["expectations"][0]["detail"] == exp["detail"]
+    original = json.loads((tmp_path / f"wake-0-{case.wakes[0]}.json").read_text())
+    assert "expectations" not in original
     # The judge saw each clock from the report metadata and the case's unit;
     # old freezes never captured the room scope: null, never inferred.
     wake0, wake1 = seen[0], seen[1]

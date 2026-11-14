@@ -1,19 +1,19 @@
 """`python -m scripts.cognition_loop.rejudge` — judge a finished run again.
 
-Re-runs only the two judges over the frozen wake files of an output
-directory, against the case's current expectations, and re-renders
-report.html. No session runs and no sandbox is restored: a judge-side fix
-is checked for a handful of judge calls, not a whole wake's spend. The
-wake's after-state is rebuilt from its frozen diff (created, revised and
-unchanged entries at their after values).
+Each invocation creates a private version under `rejudgements/`, retaining
+the source report and frozen wakes unchanged. Only the two judges run;
+no session or sandbox is restored. The after-state comes from the frozen diff.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
+import shutil
 import sys
+import uuid
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,52 @@ from scripts.cognition_loop.verdicts import ERROR, WAKE_ERRED, ExpectationVerdic
 from scripts.memory_graph_spike import Judges
 
 _STATUSES = ("created", "revised", "retired", "unchanged")
+
+
+def _measurement(output: Path, case_path: Path) -> tuple[Path, dict[str, Any]]:
+    """Create a private measurement version without changing source artifacts."""
+    target = output / "rejudgements" / uuid.uuid4().hex
+    target.mkdir(mode=0o700, parents=True)
+    for path in [output / "report.json", output / "run_budget.json",
+                 *output.glob("wake-*.json")]:
+        if path.is_file():
+            copied = target / path.name
+            shutil.copyfile(path, copied)
+            copied.chmod(0o600)
+    shutil.copyfile(case_path, target / "case.json")
+    (target / "case.json").chmod(0o600)
+    report = json.loads((target / "report.json").read_text(encoding="utf-8"))
+    report["rejudged"] = {
+        "source": str(output.resolve()), "output": str(target.resolve()),
+        "source_status": report.get("status"),
+        "case_sha256": hashlib.sha256((target / "case.json").read_bytes()).hexdigest(),
+        "source_report_sha256": hashlib.sha256((target / "report.json").read_bytes()).hexdigest(),
+    }
+    return target, report
+
+
+def _preflight(case: Any, row: dict[str, Any], output: Path) -> list[str]:
+    """Reconcile every expected wake before any judge dispatch."""
+    errors = []
+    if not case.expectations:
+        errors.append("no judging criteria")
+    wakes = row.get("wakes") or []
+    if len(wakes) != len(case.wakes):
+        errors.append("incomplete wake report rows")
+    for index, wake_id in enumerate(case.wakes):
+        path = output / f"wake-{index}-{wake_id}.json"
+        if not path.is_file():
+            errors.append("missing frozen wake: " + path.name)
+        else:
+            try:
+                frozen = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(frozen, dict):
+                    raise ValueError("wake must be an object")
+            except (ValueError, OSError):
+                errors.append("invalid frozen wake: " + path.name)
+        if index < len(wakes) and wakes[index].get("recorded_wake_id") != wake_id:
+            errors.append(f"wake report identity mismatch: {index}")
+    return errors
 
 
 def frozen_diff(frozen: dict[str, Any]) -> tuple[StateDiff, UnitState]:
@@ -69,29 +115,29 @@ def run_status_after(report: dict[str, Any]) -> str:
 
 async def rejudge(output: Path, case_path: Path, config: Path,
                   judge_a: str, judge_b: str) -> dict[str, Any]:
-    case = load_case(case_path)
+    output, report = _measurement(output, case_path)
+    case = load_case(output / "case.json")
     report_path = output / "report.json"
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    row = next(c for c in report["cases"] if c.get("case") == case.name)
-    missing = [f"wake-{index}-{wake_id}.json"
-               for index, wake_id in enumerate(case.wakes)
-               if not (output / f"wake-{index}-{wake_id}.json").is_file()]
-    if missing:
-        report.setdefault("original_status", report.get("status"))
-        row["status"] = ERROR
-        row.setdefault("errors", []).append("missing frozen wake: " + ", ".join(missing))
+    report["rejudged"]["judges"] = [judge_a, judge_b]
+    rows = [c for c in report["cases"] if c.get("case") == case.name]
+    errors = (_preflight(case, rows[0], output) if len(rows) == 1 else
+              ["case report identity mismatch"])
+    if errors:
+        for row in rows:
+            row["status"] = ERROR
+            row.setdefault("errors", []).extend(errors)
+        report.setdefault("errors", []).extend(errors)
         report["status"] = ERROR
         report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False,
                                           default=str) + "\n", encoding="utf-8")
         render(output)
         return report
+    row = rows[0]
     judges = Judges(load(config), [judge_a, judge_b], config)
     statuses = []
     earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = ()
     for index, wake_id in enumerate(case.wakes):
         path = output / f"wake-{index}-{wake_id}.json"
-        if not path.is_file():
-            continue
         frozen = json.loads(path.read_text(encoding="utf-8"))
         diff, after = frozen_diff(frozen)
         wakes = row.get("wakes") or []
@@ -135,7 +181,6 @@ async def rejudge(output: Path, case_path: Path, config: Path,
             earlier_wakes += ((diff, trajectory),)
     row["status"] = case_status(row, statuses)
     report["status"] = run_status_after(report)
-    report["rejudged"] = {"judges": [judge_a, judge_b], "case": str(case_path)}
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False,
                                       default=str) + "\n", encoding="utf-8")
     render(output)
@@ -153,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     report = asyncio.run(rejudge(args.output, args.case, args.config,
                                  args.judge_a, args.judge_b))
     print(report["status"])
+    print(report["rejudged"]["output"])
     return 0 if report["status"] == "PASS" else 1
 
 

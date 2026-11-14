@@ -135,6 +135,68 @@ def tool_outcome(result: Any) -> dict[str, Any]:
     return {}
 
 
+def terminal_response(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Select a settled terminal attempt; never infer output from a request."""
+    starts = [(i, e) for i, e in enumerate(events)
+              if e.get("kind") == "invocation_started"]
+    ids = {e.get("invocation_id") for _, e in starts}
+    roots = [(i, e) for i, e in starts if e.get("parent_invocation_id") not in ids]
+    selected: dict[str, Any] = (
+        {"invocation_id": roots[0][1].get("invocation_id"), "index": roots[0][0]}
+        if len(roots) == 1 else {})
+    identity = selected.get("invocation_id")
+    result = {"status": "unavailable", "text": None,
+              "invocation_id": identity, "attempt_id": None}
+    if not identity:
+        return {**result, "cause": "invocation_missing"}
+    invocation = [e for e in events[selected["index"]:]
+                  if e.get("invocation_id") == identity]
+    if not invocation or invocation[-1].get("kind") != "invocation_finished":
+        return {**result, "cause": "invocation_unsettled"}
+    calls = [e for e in invocation if e.get("kind") == "call_started"]
+    attempt = calls[-1].get("attempt_id") if calls else None
+    result["attempt_id"] = attempt
+    if not attempt:
+        return {**result, "cause": "attempt_missing"}
+    records = [e for e in invocation if e.get("attempt_id") == attempt]
+    finished = [e for e in records if e.get("kind") == "call_finished"]
+    if (not finished or finished[-1].get("retry") or finished[-1].get("error_type")
+            or calls[-1].get("cancelled")):
+        return {**result, "cause": "attempt_unsettled"}
+    transports = [i for i, e in enumerate(records) if e.get("kind") == "transport_started"]
+    if not transports:
+        return {**result, "cause": "response_missing"}
+    transport = records[transports[-1]:]
+    ends = [e for e in transport if e.get("kind") == "transport_finished"]
+    if not ends or ends[-1].get("error_type"):
+        return {**result, "cause": "transport_unsettled"}
+    text: list[str] = []
+    stop = None
+    observed = False
+    for event in transport:
+        if event.get("kind") != "transport_response":
+            continue
+        for choice in (event.get("response") or {}).get("choices") or []:
+            if choice.get("index", 0) != 0:
+                continue
+            message = choice.get("message") if "message" in choice else choice.get("delta")
+            if not isinstance(message, dict):
+                return {**result, "cause": "response_invalid"}
+            content = message.get("content")
+            if content is not None and not isinstance(content, str):
+                return {**result, "cause": "response_invalid"}
+            if message.get("role") not in (None, "assistant"):
+                return {**result, "cause": "response_invalid"}
+            observed = True
+            if content is not None:
+                text.append(content)
+            stop = choice.get("finish_reason") or stop
+    if not observed or stop not in ("stop", "tool_calls", "function_call"):
+        return {**result, "cause": "response_incomplete"}
+    return {**result, "status": "observed", "text": "".join(text),
+            "finish_reason": stop, "cause": None}
+
+
 def _body(event: dict[str, Any]) -> dict[str, Any]:
     attrs = event.get("attributes") or {}
     raw = attrs.get("body") or attrs.get("nora.model.request.body")
@@ -221,6 +283,7 @@ def wake_trajectory(
         },
         "prefetch": prefetch,
         "model_calls": model,
+        "final_response": terminal_response(events),
         "exchanges": evidence_exchanges(events),
         "tool_calls": tools,
         "stop_reason": terminal.get("outcome") or terminal.get("stop_reason"),

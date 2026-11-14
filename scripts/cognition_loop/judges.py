@@ -33,7 +33,7 @@ from dataclasses import replace
 from typing import Any
 
 from nora.subject.eval_evidence import EvidenceError
-from scripts.cognition_loop.trajectory import result_values
+from scripts.cognition_loop.trajectory import result_values, tool_outcome
 from scripts.cognition_loop.verdicts import (
     JudgeAnswer,
     expectation_verdict,
@@ -68,6 +68,8 @@ from both is absent, never null
 - `tool_calls`: the session's tool calls in order, each with arguments, \
 result status and refusal
 - `final_output`: the session's last assistant output
+- `final_response`: canonical response availability and invocation/attempt identity;
+  unavailable is missing evidence, while observed empty text is a captured empty response
 - `stop_reason` and `usage`: how the session ended and what it spent
 - `source`: the recorded agenda, items and stimuli shown to the subject,
   once each; null means unavailable, not empty
@@ -137,7 +139,8 @@ def _tool_calls(trajectory: dict[str, Any]) -> list[dict[str, Any]]:
             "tool": call.get("tool"),
             "arguments": call.get("arguments"),
             "result": {
-                "status": result.get("status") if isinstance(result, dict) else None,
+                "status": tool_outcome(result).get("status"),
+                "transport_status": result.get("status") if isinstance(result, dict) else None,
                 "content": result_values(result),
             },
             "refusal": call.get("refusal"),
@@ -147,20 +150,9 @@ def _tool_calls(trajectory: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _final_output(trajectory: dict[str, Any]) -> str | None:
-    """The last exchange's assistant output, never every request's input."""
-    for request in reversed(trajectory.get("model_calls") or []):
-        messages = request.get("messages") if isinstance(request, dict) else None
-        for message in reversed(messages or []):
-            if not isinstance(message, dict) or message.get("role") != "assistant":
-                continue
-            text = "".join(
-                part.get("text", "")
-                for part in message.get("content") or []
-                if isinstance(part, dict)
-            )
-            if text.strip():
-                return text
-    return None
+    """The canonical terminal response; absent evidence remains unavailable."""
+    response = trajectory.get("final_response") or {}
+    return response.get("text") if response.get("status") == "observed" else None
 
 
 def _wake_evidence(
@@ -176,6 +168,8 @@ def _wake_evidence(
         "diff": _full_diff(diff, keys),
         "tool_calls": _tool_calls(trajectory),
         "final_output": _final_output(trajectory),
+        "final_response": trajectory.get("final_response") or {
+            "status": "unavailable", "cause": "response_not_captured"},
         "stop_reason": trajectory.get("stop_reason"),
         "usage": trajectory.get("usage"),
     }
