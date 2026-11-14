@@ -74,7 +74,23 @@ def test_run_materialises_the_config_and_folds_the_status(
     monkeypatch.setattr(cli, "RunEvidence", _Evidence)
     monkeypatch.setattr(cli, "measured_run_budget",
                         lambda *a, **k: _noop_ctx())
-    monkeypatch.setattr(cli, "run_case", _async_result({"status": "FAIL"}))
+    async def failed_case(args, case, source, judges, policy, evidence, output):
+        import json
+        from dataclasses import asdict
+
+        wakes = []
+        for index, ident in enumerate(case.wakes):
+            expectations = [{
+                "expectation": {k: v for k, v in asdict(e).items() if k != "wake"},
+                "verdict": "FAIL", "answers": [{"model": "a"}, {"model": "b"}],
+            } for e in case.expectations if e.wake == index]
+            wakes.append({"recorded_wake_id": ident, "status": "FAIL",
+                          "expectations": expectations})
+            (output / f"wake-{index}-{ident}.json").write_text(
+                json.dumps({"diff": {}, "expectations": expectations}))
+        return {"case": case.name, "unit": case.unit, "status": "FAIL", "wakes": wakes}
+
+    monkeypatch.setattr(cli, "run_case", failed_case)
 
     args = SimpleNamespace(
         case=case_file, case_dir=None, smoke=False,

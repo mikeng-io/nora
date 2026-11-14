@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 
 from nora.config import load
+from scripts.cognition_loop.accounting import manifest, reconcile
+from scripts.cognition_loop.accounting import write_report as _write_report
 from scripts.cognition_loop.cases import load_case
 from scripts.cognition_loop.html import render
 from scripts.cognition_loop.judges import judge_expectation
@@ -49,30 +51,6 @@ def _measurement(output: Path, case_path: Path) -> tuple[Path, dict[str, Any]]:
         "source_report_sha256": hashlib.sha256((target / "report.json").read_bytes()).hexdigest(),
     }
     return target, report
-
-
-def _preflight(case: Any, row: dict[str, Any], output: Path) -> list[str]:
-    """Reconcile every expected wake before any judge dispatch."""
-    errors = []
-    if not case.expectations:
-        errors.append("no judging criteria")
-    wakes = row.get("wakes") or []
-    if len(wakes) != len(case.wakes):
-        errors.append("incomplete wake report rows")
-    for index, wake_id in enumerate(case.wakes):
-        path = output / f"wake-{index}-{wake_id}.json"
-        if not path.is_file():
-            errors.append("missing frozen wake: " + path.name)
-        else:
-            try:
-                frozen = json.loads(path.read_text(encoding="utf-8"))
-                if not isinstance(frozen, dict):
-                    raise ValueError("wake must be an object")
-            except (ValueError, OSError):
-                errors.append("invalid frozen wake: " + path.name)
-        if index < len(wakes) and wakes[index].get("recorded_wake_id") != wake_id:
-            errors.append(f"wake report identity mismatch: {index}")
-    return errors
 
 
 def frozen_diff(frozen: dict[str, Any]) -> tuple[StateDiff, UnitState]:
@@ -117,19 +95,27 @@ async def rejudge(output: Path, case_path: Path, config: Path,
                   judge_a: str, judge_b: str) -> dict[str, Any]:
     output, report = _measurement(output, case_path)
     case = load_case(output / "case.json")
-    report_path = output / "report.json"
     report["rejudged"]["judges"] = [judge_a, judge_b]
-    rows = [c for c in report["cases"] if c.get("case") == case.name]
-    errors = (_preflight(case, rows[0], output) if len(rows) == 1 else
-              ["case report identity mismatch"])
+    recorded = report.get("cases")
+    rows = [c for c in recorded if isinstance(c, dict) and c.get("case") == case.name] if (
+        isinstance(recorded, list)) else []
+    errors = reconcile(report, output, judgments=False)["errors"]
+    if len(rows) != 1:
+        errors.append("case report identity mismatch")
+    if not case.expectations:
+        errors.append("no judging criteria")
+    expected = report.get("expected_cases")
+    planned = [c for c in expected if isinstance(c, dict) and c.get("name") == case.name] if (
+        isinstance(expected, list)) else []
+    if planned != manifest([case]):
+        errors.append("case differs from expected manifest")
     if errors:
         for row in rows:
             row["status"] = ERROR
             row.setdefault("errors", []).extend(errors)
         report.setdefault("errors", []).extend(errors)
         report["status"] = ERROR
-        report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False,
-                                          default=str) + "\n", encoding="utf-8")
+        _write_report(output, report)
         render(output)
         return report
     row = rows[0]
@@ -181,8 +167,7 @@ async def rejudge(output: Path, case_path: Path, config: Path,
             earlier_wakes += ((diff, trajectory),)
     row["status"] = case_status(row, statuses)
     report["status"] = run_status_after(report)
-    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False,
-                                      default=str) + "\n", encoding="utf-8")
+    _write_report(output, report)
     render(output)
     return report
 

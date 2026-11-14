@@ -129,6 +129,7 @@ def _run(report: dict[str, Any], budget: dict[str, Any] | None) -> str:
             ("causes", ", ".join(ev.get("causes") or []) or None),
             ("events file", ev.get("ref")),
         ]),
+        "<h3>Expected coverage</h3>" + _block("coverage", report.get("coverage")),
     ]
     errors = report.get("errors") or []
     if errors:

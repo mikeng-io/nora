@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from scripts.cognition_loop.accounting import manifest
 from scripts.cognition_loop.rejudge import frozen_diff
+from scripts.cognition_loop.verdicts import JudgeAnswer
 
 
 @pytest.mark.parametrize("missing", [0, 1, 2])
@@ -19,7 +21,8 @@ async def test_missing_frozen_wake_stops_before_judge_setup(monkeypatch, tmp_pat
     case_path = tmp_path / "case.json"
     write_case(case, case_path)
     (tmp_path / "report.json").write_text(json.dumps({
-        "status": "PASS", "cases": [{"case": case.name, "wakes": [
+        "expected_cases": manifest([case]),
+        "status": "PASS", "cases": [{"case": case.name, "unit": case.unit, "wakes": [
             {"recorded_wake_id": ident} for ident in case.wakes]}]}))
     for index, ident in enumerate(case.wakes):
         if index != missing:
@@ -31,8 +34,8 @@ async def test_missing_frozen_wake_stops_before_judge_setup(monkeypatch, tmp_pat
     monkeypatch.setattr(module, "render", lambda _: None)
     report = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b")
     assert report["status"] == "ERROR"
-    assert report["cases"][0]["errors"] == [
-        f"missing frozen wake: wake-{missing}-{case.wakes[missing]}.json"]
+    assert (f"missing or invalid frozen wake: wake-{missing}-{case.wakes[missing]}.json"
+            in report["cases"][0]["errors"])
     assert (tmp_path / "report.json").read_bytes() == original
     version = Path(report["rejudged"]["output"])
     assert json.loads((version / "report.json").read_text())["status"] == "ERROR"
@@ -53,7 +56,8 @@ def test_the_after_state_is_created_revised_and_unchanged_never_retired():
     assert "note:n3" in diff.entry_ids()
 
 
-@pytest.mark.parametrize("damage", [None, "row", "identity", "json", "criteria"])
+@pytest.mark.parametrize("damage", [None, "row", "identity", "json", "criteria",
+                                    "case_manifest", "missing_case", "malformed_manifest"])
 async def test_preflight_reconciles_rows_and_json_without_changing_originals(
     monkeypatch, tmp_path, damage,
 ):
@@ -76,11 +80,26 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
     if damage == "identity":
         wakes[0]["recorded_wake_id"] = -1
     (tmp_path / "report.json").write_text(json.dumps({
-        "status": "PASS", "cases": [{"case": case.name, "wakes": wakes}],
+        "expected_cases": manifest([case]),
+        "status": "PASS", "cases": [{"case": case.name, "unit": case.unit, "wakes": wakes}],
         "evidence": {"status": "PASS"}}))
     for i, ident in enumerate(case.wakes):
         (tmp_path / f"wake-{i}-{ident}.json").write_text(
             "{" if damage == "json" and i == 0 else json.dumps({"diff": {}}))
+    if damage == "case_manifest":
+        write_case(replace(case, expectations=(replace(case.expectations[0], text="changed"),)),
+                   case_path)
+    if damage == "missing_case":
+        path = tmp_path / "report.json"
+        report = json.loads(path.read_text())
+        report["expected_cases"] += manifest([
+            replace(case, name="missing-case", wakes=(101, 202))])
+        path.write_text(json.dumps(report))
+    if damage == "malformed_manifest":
+        path = tmp_path / "report.json"
+        report = json.loads(path.read_text())
+        report["expected_cases"] = [None]
+        path.write_text(json.dumps(report))
     originals = {p.name: p.read_bytes() for p in tmp_path.glob("*.json")}
     calls = []
 
@@ -89,7 +108,8 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
 
     async def judge(_judges, _models, expectation, diff, after, trajectory, earlier):
         calls.append((expectation.kind, expectation.wake))
-        return ExpectationVerdict(verdict="PASS", answers=())
+        return ExpectationVerdict(verdict="PASS", answers=(
+            JudgeAnswer("met", model="a"), JudgeAnswer("met", model="b")))
 
     monkeypatch.setattr(module, "load", setup)
     monkeypatch.setattr(module, "Judges", lambda *_: object())
@@ -148,7 +168,8 @@ async def test_an_unmeasured_wake_spends_no_judge_call(monkeypatch, tmp_path):
     wakes[1]["status"] = "ERROR"
     wakes[1]["step"] = "wake"
     (tmp_path / "report.json").write_text(json.dumps({
-        "cases": [{"case": case.name, "wakes": wakes,
+        "expected_cases": manifest([case]),
+        "cases": [{"case": case.name, "unit": case.unit, "wakes": wakes,
                    "errors": ["a wake ended in ERROR"]}],
         "evidence": {"status": "PASS"}}))
     (tmp_path / f"wake-0-{case.wakes[0]}.json").write_text(json.dumps({
@@ -163,7 +184,8 @@ async def test_an_unmeasured_wake_spends_no_judge_call(monkeypatch, tmp_path):
 
     async def judge(*a, **k):
         judged.append(1)
-        return ExpectationVerdict(verdict="PASS", answers=())
+        return ExpectationVerdict(verdict="PASS", answers=(
+            JudgeAnswer("met", model="a"), JudgeAnswer("met", model="b")))
 
     monkeypatch.setattr(module, "load", lambda _: None)
     monkeypatch.setattr(module, "Judges", lambda *_: object())
@@ -189,7 +211,9 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch,
     wakes = [{"status": "PASS", "expectations": [], "at_ms": 1000 + i,
               "recorded_wake_id": ident} for i, ident in enumerate(case.wakes)]
     (tmp_path / "report.json").write_text(json.dumps({
-        "cases": [{"case": case.name, "wakes": wakes}], "evidence": {"status": "PASS"}}))
+        "expected_cases": manifest([case]),
+        "cases": [{"case": case.name, "unit": case.unit, "wakes": wakes}],
+        "evidence": {"status": "PASS"}}))
     for index, ident in enumerate(case.wakes):
         (tmp_path / f"wake-{index}-{ident}.json").write_text(json.dumps({
             "diff": {}, "trajectory": {"blocks": {"agenda": f"generated source {index}"}}}))

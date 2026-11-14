@@ -35,6 +35,8 @@ from nora.subject.eval_evidence import (
     validate_events,
 )
 from scripts.cognition_loop import html as report_html
+from scripts.cognition_loop.accounting import manifest
+from scripts.cognition_loop.accounting import write_report as _write_report
 from scripts.cognition_loop.cases import Case, load_case
 from scripts.cognition_loop.judges import JUDGE_TOKENS_PER_CALL
 from scripts.cognition_loop.rosters import frozen_rosters
@@ -224,7 +226,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     args.run_id = f"cl-{uuid.uuid4().hex[:8]}"
     export = evaluation_export_for(args.config)
     _prefill_capture()
-    report: dict[str, Any] = {"status": "ERROR", "errors": []}
+    report: dict[str, Any] = {
+        "status": "ERROR", "errors": [], "expected_cases": manifest(cases)}
     # report.json and report.html are written in EVERY outcome — a failed
     # run (a model error the evidence capture raises on, a crashed case)
     # still leaves its report, its cause named at the top.
@@ -243,11 +246,6 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             report["status"] = ERROR
             _write_report(output, report)
     return report
-
-
-def _write_report(output: Path, report: dict[str, Any]) -> None:
-    (output / "report.json").write_text(
-        json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n")
 
 
 async def _run_cases(

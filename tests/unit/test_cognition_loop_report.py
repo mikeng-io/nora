@@ -144,7 +144,15 @@ def test_a_report_html_failure_turns_a_passing_run_to_error(
     import json as _json
 
     cli, case_file, config_file = _offline_run_setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(cli, "run_case", _async_result({"status": "PASS"}))
+    async def passed_case(args, case, source, judges, policy, evidence, output):
+        wakes = []
+        for index, ident in enumerate(case.wakes):
+            wakes.append({"recorded_wake_id": ident, "status": "PASS", "expectations": []})
+            (output / f"wake-{index}-{ident}.json").write_text('{"diff": {}, "expectations": []}')
+        return {"case": case.name, "unit": case.unit, "status": "PASS", "wakes": wakes}
+
+    monkeypatch.setattr(cli, "run_case", passed_case)
+
     ok = tmp_path / "ok"
     ok.mkdir()
     assert asyncio.run(cli.run(_offline_args(case_file, config_file, ok)))[
