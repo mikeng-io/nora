@@ -14,7 +14,7 @@ transport, timeout, non-200, an empty transcript — returns an unavailable
 `SttResult`, and the caller records the voice note with a bare handle. A voice note that fails to
 transcribe is still a voice note; a message is never dropped over STT.
 
-The endpoint already applies OpenCC s2t (Simplified → Traditional), so the
+The endpoint delivers Traditional text using backend-aware cleanup, so the
 text this returns is yue-Hant-HK-ready. `language` is one of the engines'
 own short LID codes (`auto`/`zh`/`en`/`yue`/`ja`/`ko`/`nospeech`) — NOT a
 BCP-47 tag; the model silently treats anything it does not recognize as

@@ -11,7 +11,15 @@ The wake gate listens for Nora's wake phrase on the onset of speech. It does
 not need to recognise the following command as part of the phrase. Once woken,
 it collects one bounded utterance, detects its end and sends that audio to the
 local transcription service. Transcription selects the configured local engine
-and any latency-oriented fallback without sending the audio to a cloud vendor.
+without sending the audio to a cloud vendor. Voice notes and wake utterances
+choose their engines independently; an explicit failed engine is unavailable.
+
+The transcription service owns the resident Qwen worker and standalone speech
+detector. One serialized slot owns load and inference, and shutdown reaps both
+children. Valid no-speech skips decoding; detector failure cannot become silence.
+Long speech is partitioned into bounded contiguous windows, and native
+Traditional text is preserved without inventing word timestamps. GPU grants
+are derived from validated deployment configuration, separately from credentials.
 
 The resulting text enters the ordinary voice-utterance ingest endpoint and
 continues through identity, admission, context assembly and response as user
