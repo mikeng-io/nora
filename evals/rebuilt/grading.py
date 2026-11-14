@@ -47,8 +47,8 @@ from .judge import (
 from .rubric import OPTIONAL_CRITERIA, Criterion
 
 if TYPE_CHECKING:
-    from nora.config import Config
     from nora.subject.environment import IsolatedServices
+    from nora.subject.obtain import Config
 
 #: The judge alias the DEPLOYMENT uses: `[evals] judge_model = "nora-judge"`.
 #:

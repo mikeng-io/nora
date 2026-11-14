@@ -60,7 +60,7 @@
     "file": "evals/backbone.py",
     "old": "person=str(md.get(\"person\") or pseudonyms.resolve(\"miles_novak\")),",
     "new": "person=str(md.get(\"person\") or \"miles_novak\"),",
-    "target": "tests/unit/test_eval_pseudonyms.py::test_the_eval_path_constants_resolve_through_the_same_map"
+    "target": "tests/unit/test_eval_pseudonyms.py::test_the_default_case_speaker_resolves_through_the_same_map"
   },
   {
     "name": "obtain._conversation_for: the unnamed room is a plain ValueError again",

@@ -301,7 +301,7 @@ uv run python -m evals injections identity_grounding --judge \
   `make eval-source` drops every sandbox, so it kills a run in flight.
 - A case reads PASS or FAIL only when every draw agrees, otherwise UNSTABLE.
   Report the draw count with the verdict; n=3 is not a rate. Each draw gets a
-  private external services, closed with the subject's production dependencies.
+  set of private external services, closed with the subject's production dependencies.
   Rehearsal verdicts do not establish model behavior or a population error rate.
 - Every run prints its own spend; put it in the PR with the command.
 
