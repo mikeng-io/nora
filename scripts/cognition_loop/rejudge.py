@@ -70,10 +70,22 @@ def run_status_after(report: dict[str, Any]) -> str:
 async def rejudge(output: Path, case_path: Path, config: Path,
                   judge_a: str, judge_b: str) -> dict[str, Any]:
     case = load_case(case_path)
-    judges = Judges(load(config), [judge_a, judge_b], config)
     report_path = output / "report.json"
     report = json.loads(report_path.read_text(encoding="utf-8"))
     row = next(c for c in report["cases"] if c.get("case") == case.name)
+    missing = [f"wake-{index}-{wake_id}.json"
+               for index, wake_id in enumerate(case.wakes)
+               if not (output / f"wake-{index}-{wake_id}.json").is_file()]
+    if missing:
+        report.setdefault("original_status", report.get("status"))
+        row["status"] = ERROR
+        row.setdefault("errors", []).append("missing frozen wake: " + ", ".join(missing))
+        report["status"] = ERROR
+        report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False,
+                                          default=str) + "\n", encoding="utf-8")
+        render(output)
+        return report
+    judges = Judges(load(config), [judge_a, judge_b], config)
     statuses = []
     earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = ()
     for index, wake_id in enumerate(case.wakes):
