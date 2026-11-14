@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import AsyncIterator
@@ -51,7 +52,7 @@ def _validate(data: Any) -> None:
                 raise ValueError("invalid recorded path")
             response = _object(row["response"], {"status"}, {"status", "headers", "json", "chunks"})
             status = response["status"]
-            if type(status) is not int or not 100 <= status <= 599:
+            if type(status) is not int or not 200 <= status <= 599:
                 raise ValueError("invalid recorded status")
             if "json" in response and "chunks" in response:
                 raise ValueError("ambiguous recorded response")
@@ -62,6 +63,7 @@ def _validate(data: Any) -> None:
                 or not isinstance(v, str)
                 or "\n" in v
                 or "\r" in v
+                or k.lower() in {"content-length", "transfer-encoding", "content-encoding"}
                 for k, v in headers.items()
             ):
                 raise ValueError("invalid recorded headers")
@@ -96,7 +98,8 @@ class RecordedServices:
     """A validated snapshot, reusable for independent isolated cases."""
 
     def __init__(self, data: dict[str, Any]) -> None:
-        self._data = data
+        _validate(data)
+        self._data = json.loads(json.dumps(data, allow_nan=False))
 
     @classmethod
     def load(cls, path: str | Path) -> RecordedServices:
@@ -104,12 +107,12 @@ class RecordedServices:
             Path(path).read_text(),
             parse_constant=lambda _: (_ for _ in ()).throw(ValueError("invalid JSON constant")),
         )
-        _validate(data)
         return cls(data)
 
     @asynccontextmanager
     async def open(self, database_url: str, redis: bool = False) -> AsyncIterator[IsolatedServices]:
         positions = dict.fromkeys(self._data["services"], 0)
+        locks = {name: asyncio.Lock() for name in positions}
         applications = {}
         environment: IsolatedServices
         for name, rows in self._data["services"].items():
@@ -118,45 +121,48 @@ class RecordedServices:
             async def handle(
                 request: web.Request, name: str = name, rows: list[Any] = rows
             ) -> web.StreamResponse:
-                position = positions[name]
-                row = rows[position] if position < len(rows) else None
-                matches = (
-                    row is not None
-                    and request.method == row["method"]
-                    and request.raw_path == row["path"]
-                )
-                if matches and "request_json" in row:
-                    try:
-                        matches = _same(await request.json(), row["request_json"])
-                    except (ValueError, UnicodeDecodeError):
-                        matches = False
-                if not matches:
-                    environment.denied.append(
-                        {
-                            "operation": "unrecorded_response",
-                            "cause": "external_response_not_recorded",
-                        }
+                async with locks[name]:
+                    position = positions[name]
+                    row = rows[position] if position < len(rows) else None
+                    matches = (
+                        row is not None
+                        and request.method == row["method"]
+                        and request.raw_path == row["path"]
                     )
-                    return web.Response(status=500, text="external response not recorded")
-                positions[name] += 1
-                response = row["response"]
-                headers = response.get("headers", {})
-                if "chunks" in response:
-                    stream = web.StreamResponse(status=response["status"], headers=headers)
-                    stream.content_type = "text/event-stream"
-                    await stream.prepare(request)
-                    for chunk in response["chunks"]:
-                        await stream.write(
-                            f"data: {json.dumps(chunk, separators=(',', ':'))}\n\n".encode()
+                    if row is not None and matches and "request_json" in row:
+                        try:
+                            matches = _same(await request.json(), row["request_json"])
+                        except (ValueError, UnicodeDecodeError):
+                            matches = False
+                    if row is None or not matches:
+                        environment.denied.append(
+                            {
+                                "operation": "unrecorded_response",
+                                "cause": "external_response_not_recorded",
+                            }
                         )
-                    await stream.write(b"data: [DONE]\n\n")
-                    return stream
-                if "json" in response:
-                    return web.json_response(
-                        response["json"], status=response["status"], headers=headers
-                    )
-                return web.Response(status=response["status"], headers=headers)
-
+                        return web.Response(status=500, text="external response not recorded")
+                    positions[name] += 1
+                    response = row["response"]
+                    headers = response.get("headers", {})
+                    if "chunks" in response:
+                        stream = web.StreamResponse(status=response["status"], headers=headers)
+                        stream.headers.setdefault("Content-Type", "text/event-stream")
+                        await stream.prepare(request)
+                        for chunk in response["chunks"]:
+                            await stream.write(
+                                f"data: {json.dumps(chunk, separators=(',', ':'))}\n\n".encode()
+                            )
+                        await stream.write(b"data: [DONE]\n\n")
+                        return stream
+                    if "json" in response:
+                        result = web.Response(
+                            body=json.dumps(response["json"]).encode(),
+                            status=response["status"], headers=headers,
+                        )
+                        result.headers.setdefault("Content-Type", "application/json")
+                        return result
+                    return web.Response(status=response["status"], headers=headers)
             app.router.add_route("*", "/{tail:.*}", handle)
             applications[name] = app
         environment = IsolatedServices(
@@ -168,5 +174,6 @@ class RecordedServices:
         )
         async with environment:
             yield environment
+            environment.check()
             if any(positions[name] != len(rows) for name, rows in self._data["services"].items()):
                 raise EvidenceError("external_response_not_consumed")
