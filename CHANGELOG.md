@@ -1,5 +1,19 @@
 # Changelog
 
+## [7.19.0](https://github.com/mikeng-io/nora/compare/v7.18.12...v7.19.0) (2026-11-14)
+
+
+### Features
+
+* **speech:** add configurable local Qwen HK transcription ([4e5a8fb](https://github.com/mikeng-io/nora/commit/4e5a8fbf9cb9a22fd70f1b04f1366ddee738e128))
+
+
+### Bug Fixes
+
+* **cognition:** validate replay reads and explain lesson evidence refusals ([118aeab](https://github.com/mikeng-io/nora/commit/118aeab7868ef9759b4268983db55fb3f72aad44))
+* **memory:** keep graph walks within their budget without JIT compilation ([a7370fa](https://github.com/mikeng-io/nora/commit/a7370fa8a4bf2f21c1b8f1ded78aadd4eab48c3d))
+* **speech:** preserve readout context at long audio partitions ([d08be14](https://github.com/mikeng-io/nora/commit/d08be140fb2a7657cec8ddde0fe722032ee3f0e3))
+
 ## [7.18.12](https://github.com/mikeng-io/nora/compare/v7.18.11...v7.18.12) (2026-11-13)
 
 
