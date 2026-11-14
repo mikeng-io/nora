@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.19.1](https://github.com/mikeng-io/nora/compare/v7.19.0...v7.19.1) (2026-11-14)
+
+
+### Maintenance
+
+* **eval:** align section citations with the consolidated subject contract ([521a31e](https://github.com/mikeng-io/nora/commit/521a31e238a6c50ce6f28d1a190331130a795e8d))
+
 ## [7.19.0](https://github.com/mikeng-io/nora/compare/v7.18.12...v7.19.0) (2026-11-14)
 
 
