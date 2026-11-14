@@ -156,3 +156,217 @@ def test_a_repeated_lineage_is_sent_once_across_the_whole_digest():
         "lineage-1", "lineage-1"]
     assert [e.get("lineage") for e in payload["state_after"].values()] == [
         "lineage-1", "lineage-1", None]
+
+
+def test_judges_receive_the_recorded_sources_and_clock_once_per_wake():
+    trajectory = {**_trajectory(), "wake_id": 22, "at_ms": 1_800_000_000_000,
+                  "unit": "generated-unit",
+                  "unit_rooms": [["signal", "r1"], ["signal", "r2"]],
+                  "blocks": {"agenda": "generated closing fact", "items": [],
+                             "stimuli": [{"id": 5}], "system": "not a source"}}
+    prior = {"wake_id": 11, "at_ms": 1_799_999_000_000,
+             "blocks": {"agenda": "generated opening fact"}}
+    payload = judge_payload(_expectation(), _diff(), _state(), trajectory,
+                            ((_diff(), prior),))
+    assert payload["expectation"]["wake_index"] == 0
+    assert payload["at_ms"] == 1_800_000_000_000
+    assert payload["wake_id"] == 22
+    assert payload["unit"] == "generated-unit"
+    assert payload["unit_rooms"] == [["signal", "r1"], ["signal", "r2"]]
+    assert payload["source"] == {"agenda": "generated closing fact", "items": [],
+                                 "stimuli": [{"id": 5}]}
+    assert payload["earlier_wakes"][0]["at_ms"] == 1_799_999_000_000
+    assert payload["earlier_wakes"][0]["source"]["agenda"] == "generated opening fact"
+    # A wake that never captured its rooms shows null — unknown, never empty.
+    assert payload["earlier_wakes"][0]["unit_rooms"] is None
+    assert json.dumps(payload).count("generated closing fact") == 1
+    assert "model_calls" not in payload
+    assert "system" not in payload["source"]
+    empty = judge_payload(_expectation(), _diff(), _state(), {})
+    assert empty["source"] == {"agenda": None, "items": None, "stimuli": None}
+    assert empty["unit_rooms"] is None
+
+
+async def test_a_judge_can_cite_an_emitted_prior_change_but_not_an_unshown_entry():
+    from scripts.cognition_loop.judges import judge_expectation
+
+    class Judges:
+        def __init__(self, cited):
+            self.cited = cited
+            self.served = {}
+
+        async def call(self, model, instruction, payload):
+            assert payload["earlier_wakes"][0]["diff"]["note"]["created"][0]["id"] == "old"
+            self.served[model] = [{"x-omniroute-model": model}]
+            return json.dumps({"verdict": "met", "reason": "generated evidence",
+                               "entry_ids": [self.cited] if self.cited else []})
+
+    prior = StateDiff(kinds={"note": KindDiff("note", created=(
+        Entry("created", "old", after={"body": "generated"}),), unchanged=(
+        Entry("unchanged", "unshown", after={"body": "not emitted"}),))})
+    args = (_expectation(), StateDiff(kinds={}), UnitState(kinds={}), {}, ((prior, {}),))
+    good = await judge_expectation(Judges("note:old"), ("a", "b"), *args)
+    assert good.verdict == "PASS"
+    bad = await judge_expectation(Judges("note:unshown"), ("a", "b"), *args)
+    assert bad.verdict == "ERROR"
+    uncited = await judge_expectation(Judges(None), ("a", "b"), *args)
+    assert uncited.verdict == "ERROR"
+
+
+async def test_a_judge_cites_only_the_ids_the_digest_shows():
+    """A changed entry cites freely; an unchanged entry of the expected
+    kind cites through `state_after`; another kind's unchanged entry is
+    emitted as a count only, so citing it is ERROR."""
+    from scripts.cognition_loop.judges import judge_expectation
+
+    class Judges:
+        def __init__(self, cited):
+            self.cited = cited
+            self.served = {}
+
+        async def call(self, model, instruction, payload):
+            self.served[model] = [{"x-omniroute-model": model}]
+            return json.dumps({"verdict": "met", "reason": "generated evidence",
+                               "entry_ids": [self.cited]})
+
+    diff = StateDiff(kinds={
+        "note": KindDiff("note", created=(
+            Entry("created", "n-1", after={"body": "generated"}),), unchanged=(
+            Entry("unchanged", "n-old", after={"body": "kept"}),)),
+        "memo": KindDiff("memo", unchanged=(
+            Entry("unchanged", "m-x", after={"body": "counted only"}),)),
+    })
+    state = UnitState(kinds={"note": {"n-1": {}, "n-old": {"body": "kept"}},
+                             "memo": {"m-x": {"body": "counted only"}}})
+    args = (_expectation(), diff, state, {}, ())
+    created = await judge_expectation(Judges("note:n-1"), ("a", "b"), *args)
+    assert created.verdict == "PASS"
+    via_state = await judge_expectation(Judges("note:n-old"), ("a", "b"), *args)
+    assert via_state.verdict == "PASS"
+    unshown = await judge_expectation(Judges("memo:m-x"), ("a", "b"), *args)
+    assert unshown.verdict == "ERROR"
+
+
+def _expanded(payload: dict[str, Any]) -> dict[str, Any]:
+    """Each `state_after` entry rebuilt the way the instruction describes."""
+    defaults = payload["state_after_defaults"]
+    return {i: {**defaults, **b} for i, b in payload["state_after"].items()}
+
+
+def _roundtrips(payload: dict[str, Any], original: dict[str, Any]) -> None:
+    """Expansion restores the original bodies, serialized type included —
+    `{"flag": true}` and `{"flag": 1}` are different bytes, so `==` is not
+    enough."""
+    expanded = _expanded(payload)
+    assert expanded.keys() == original.keys()
+    for i, body in expanded.items():
+        assert json.dumps(body, sort_keys=True, ensure_ascii=False, default=str) == \
+            json.dumps(original[i], sort_keys=True, ensure_ascii=False, default=str)
+
+
+def test_fields_every_state_after_entry_repeats_ride_once_under_defaults():
+    entries = {
+        i: {"unit": "generated-unit", "tags": ["a", "b"],
+            "head": {"rev": 7, "seen": None}, "own": i}
+        for i in ("e-1", "e-2", "e-3")
+    }
+    payload = judge_payload(
+        _expectation(), _diff(), UnitState(kinds={"note": entries}), {})
+    assert payload["state_after_defaults"] == {
+        "unit": "generated-unit", "tags": ["a", "b"],
+        "head": {"rev": 7, "seen": None}}
+    assert [set(b) for b in payload["state_after"].values()] == [{"own"}] * 3
+    _roundtrips(payload, entries)
+
+
+def test_defaults_preserve_absent_against_null_and_bool_against_int():
+    entries = {
+        "a": {"shared": "x", "gap": None, "flag": True},
+        "b": {"shared": "x", "flag": 1},
+    }
+    payload = judge_payload(
+        _expectation(), _diff(), UnitState(kinds={"note": entries}), {})
+    # `gap` is absent from b — never hoisted, never materialized as null;
+    # `flag` serializes differently (`true` vs `1`) — stays in each body.
+    assert payload["state_after_defaults"] == {"shared": "x"}
+    assert payload["state_after"]["a"] == {"gap": None, "flag": True}
+    assert payload["state_after"]["b"] == {"flag": 1}
+    _roundtrips(payload, entries)
+    assert "gap" not in _expanded(payload)["b"]
+
+
+def test_a_lineage_every_entry_shares_is_named_once_then_hoisted():
+    shared = "Lineage(audiences=('generated-room',))"
+    entries = {i: {"lineage": shared, "own": i} for i in ("a", "b")}
+    payload = judge_payload(
+        _expectation(), _diff(), UnitState(kinds={"note": entries}), {})
+    assert payload["lineages"] == {"lineage-1": shared}
+    assert payload["state_after_defaults"] == {"lineage": "lineage-1"}
+    _roundtrips(payload, {
+        i: {"lineage": "lineage-1", "own": i} for i in ("a", "b")})
+
+
+def test_state_after_defaults_stays_empty_for_one_entry_or_none():
+    state = UnitState(kinds={"note": {"only": {"a": 1}}})
+    payload = judge_payload(_expectation(), _diff(), state, {})
+    assert payload["state_after_defaults"] == {}
+    assert payload["state_after"] == {"only": {"a": 1}}
+    empty = judge_payload(_expectation(), _diff(), UnitState(kinds={}), {})
+    assert empty["state_after_defaults"] == {}
+    assert empty["state_after"] == {}
+
+
+def _sized(payload: dict[str, Any]) -> int:
+    return len(json.dumps(payload, ensure_ascii=False, default=str).encode())
+
+
+async def test_repeated_fields_bring_an_over_budget_state_back_under_the_ceiling():
+    big = "the field every profile repeats " * 4_000
+    entries = {f"e-{i}": {"blob": big, "own": i} for i in range(30)}
+    state = UnitState(kinds={"note": entries})
+    payload = judge_payload(_expectation(), _diff(), state, {})
+    assert _sized(payload) < JUDGE_INPUT_MAX_BYTES
+    # Without defaults the same evidence is over the ceiling — the hoist is
+    # what lets it through.
+    uncompressed = {**payload, "state_after": _expanded(payload),
+                    "state_after_defaults": {}}
+    assert _sized(uncompressed) > JUDGE_INPUT_MAX_BYTES
+    judges = _RecordingJudges()
+    judges.served["alias"] = [{"x-omniroute-model": "served-model"}]
+    answer = await judge_one(judges, "alias", payload)
+    assert answer.verdict == "met"
+    assert judges.calls == [payload]
+
+
+async def test_a_digest_still_over_budget_after_defaults_is_error_unseen():
+    entries = {
+        f"e-{i}": {"blob": f"distinct field {i} " * 2_000} for i in range(40)
+    }
+    state = UnitState(kinds={"note": entries})
+    payload = judge_payload(_expectation(), _diff(), state, {})
+    assert payload["state_after_defaults"] == {}
+    assert _sized(payload) > JUDGE_INPUT_MAX_BYTES
+    judges = _RecordingJudges()
+    answer = await judge_one(judges, "alias", payload)
+    assert answer.verdict == "error"
+    assert "over budget" in answer.reason
+    assert judges.calls == []
+
+
+async def test_a_citation_still_names_a_state_after_entry_under_defaults():
+    from scripts.cognition_loop.judges import judge_expectation
+
+    class Judges:
+        def __init__(self):
+            self.served = {}
+
+        async def call(self, model, instruction, payload):
+            self.served[model] = [{"x-omniroute-model": model}]
+            return json.dumps({"verdict": "met", "reason": "generated",
+                               "entry_ids": ["note:e-2"]})
+
+    entries = {f"e-{i}": {"shared": "v", "own": i} for i in (1, 2, 3)}
+    state = UnitState(kinds={"note": entries})
+    verdict = await judge_expectation(
+        Judges(), ("a", "b"), _expectation(), StateDiff(kinds={}), state, {}, ())
+    assert verdict.verdict == "PASS"

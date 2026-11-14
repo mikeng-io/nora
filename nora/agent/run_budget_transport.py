@@ -278,25 +278,40 @@ class _BoundedTransport(httpx.AsyncBaseTransport):
                 budget.invalidate("run budget: stream without a body")
                 raise RunBudgetError("run budget: stream without a body")
             import httpx
+            try:
+                import httpx2
+            except ImportError:  # an SDK pinned before the httpx2 rename
+                httpx2 = None  # type: ignore[assignment]
 
-            class _Bound(httpx.AsyncByteStream):
-                _wrap = _BoundedStream(stream, budget, reservation)
+            # The client over this transport asserts its own protocol's
+            # stream type — the SDK's default client is httpx2, an
+            # injected client httpx — so the bound stream subclasses
+            # whichever the inner transport answered with (built by
+            # `type`, a variable base is not a static one), on a response
+            # of the same class.
+            wrap = _BoundedStream(stream, budget, reservation)
 
-                async def __aiter__(self) -> AsyncIterator[bytes]:
-                    async for chunk in self._wrap:
-                        yield chunk
+            async def _aiter(_self: Any) -> AsyncIterator[bytes]:
+                async for chunk in wrap:
+                    yield chunk
 
-                async def aclose(self) -> None:
-                    await self._wrap.aclose()
+            async def _aclose(_self: Any) -> None:
+                await wrap.aclose()
 
+            base = (httpx2.AsyncByteStream
+                    if httpx2 is not None
+                    and isinstance(response, httpx2.Response)
+                    else httpx.AsyncByteStream)
+            bound = type("_Bound", (base,),
+                         {"__aiter__": _aiter, "aclose": _aclose})
             try:
                 # A fresh response carrying only the bounded stream: a
                 # buffered `._content` would let `aiter_bytes` skip the
                 # stream — and the reconcile — entirely.
-                return httpx.Response(
+                return type(response)(
                     status_code=response.status_code,
                     headers=response.headers,
-                    stream=_Bound(),
+                    stream=bound(),
                     request=request)
             except (AttributeError, TypeError) as exc:
                 budget.release(reservation)

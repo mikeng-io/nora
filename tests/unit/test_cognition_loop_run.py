@@ -409,6 +409,121 @@ async def test_a_live_wake_reads_its_settlement_back(monkeypatch, tmp_path):
     assert wake["no_session"] is None
 
 
+async def test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge(
+    monkeypatch, tmp_path,
+):
+    """The judge's digest gets this wake's recorded clock and the earlier
+    (diff, trajectory) pairs it was handed — in a live run, not only on
+    re-judging."""
+    import json
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop.verdicts import ExpectationVerdict
+
+    run_mod = _wake_seam(monkeypatch, tmp_path,
+                         _runner_subject(outcome=SimpleNamespace(status="ok")))
+    monkeypatch.setattr(run_mod, "_wake_outcome", _async_result({
+        "session_id": 9, "outcome": "closed",
+        "detail": "", "cause": "none"}))
+    seen = {}
+
+    async def _judge_call(judges, models, expectation, diff, after,
+                          trajectory, earlier_wakes):
+        seen["trajectory"] = trajectory
+        seen["earlier_wakes"] = earlier_wakes
+        return ExpectationVerdict(verdict="PASS", answers=())
+
+    monkeypatch.setattr(run_mod, "judge_expectation", _judge_call)
+    rooms = [("signal", "r1"), ("signal", "r2")]
+    monkeypatch.setattr(run_mod, "_rooms", lambda *a, **k: rooms)
+    prior = (SimpleNamespace(kinds={}), {"at_ms": NOW - 60_000, "blocks": {}})
+    args, evidence = _wake_args(tmp_path)
+    expectation = SimpleNamespace(
+        wake=0, polarity="must", kind="note", text="generated expectation")
+    case = SimpleNamespace(unit="u", expectations=(expectation,))
+    wake = await run_mod._run_wake(
+        args, case, 0, 11, NOW, "postgresql+asyncpg://x", "time", object(),
+        evidence, tmp_path,
+        SimpleNamespace(platform="signal", primary_id="r"), "nora-eval-run-x",
+        recorded_meta=_recorded_meta((1,), had_session=True),
+        earlier_wakes=(prior,))
+    assert seen["earlier_wakes"] == (prior,)
+    assert seen["trajectory"].get("at_ms") == NOW
+    assert seen["trajectory"].get("unit") == "u"
+    assert seen["trajectory"].get("unit_rooms") == rooms
+    assert wake["trajectory"].get("at_ms") == NOW
+    frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
+    assert frozen["trajectory"].get("at_ms") == NOW
+    assert frozen["trajectory"].get("unit_rooms") == [
+        ["signal", "r1"], ["signal", "r2"]]
+
+
+async def test_the_run_hands_each_wake_only_the_earlier_wakes_evidence(
+    monkeypatch, tmp_path,
+):
+    """`_wakes` accumulates each settled wake's (diff, trajectory) pair
+    and hands only the earlier ones on — the first wake sees none, and no
+    wake sees itself or a later one."""
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop import run as run_mod
+    from scripts.cognition_loop.verdicts import Rollup
+
+    class _Sandbox:
+        async def __aenter__(self):
+            return "postgresql+asyncpg://sandbox", None
+
+        async def __aexit__(self, *a):
+            return None
+
+    async def _noop(*a, **k):
+        return None
+
+    monkeypatch.setattr(run_mod, "sandbox_as_of", lambda *a, **k: _Sandbox())
+    monkeypatch.setattr(run_mod, "create_async_engine",
+                        lambda url: SimpleNamespace(dispose=_noop))
+    monkeypatch.setattr(run_mod, "bump_sequences", _noop)
+    monkeypatch.setattr(
+        run_mod, "advance_record",
+        _async_result(SimpleNamespace(
+            written=[], wrote_only_record=lambda: True)))
+    received = []
+    sentinels = {}
+
+    async def _wake(_args, _case, index, _wake_id, at_ms, _url, _reason,
+                    _judges, _evidence, _output, _room, _workspace, **kwargs):
+        received.append(kwargs.get("earlier_wakes", ()))
+        sentinels[index] = (
+            SimpleNamespace(marker=index),
+            {"at_ms": at_ms, "unit": "u", "unit_rooms": [["signal", "r1"]],
+             "blocks": {"agenda": f"generated {index}"}},
+        )
+        diff, trajectory = sentinels[index]
+        return {
+            "_diff": diff, "trajectory": trajectory,
+            "loop": {"link_ids": []}, "step": None, "status": "PASS",
+            "expectations": [],
+        }
+
+    monkeypatch.setattr(run_mod, "_run_wake", _wake)
+
+    @contextmanager
+    def _case_ctx(*a, **k):
+        yield
+
+    await run_mod._wakes(
+        SimpleNamespace(database_url="postgresql+asyncpg://x"),
+        SimpleNamespace(unit="u", wakes=(11, 22)),
+        {0: 1000, 1: 2000}, {0: "time", 1: "time"}, {0: {}, 1: {}},
+        object(), SimpleNamespace(case=_case_ctx), tmp_path,
+        SimpleNamespace(), "nora-eval-run-x", Rollup(), [])
+    assert received[0] == ()
+    assert received[1] == (sentinels[0],)
+    assert received[1][0][1]["at_ms"] == 1000
+    assert received[1][0][1]["unit_rooms"] == [["signal", "r1"]]
+
+
 async def test_a_live_wake_without_an_outcome_row_is_error(
     monkeypatch, tmp_path,
 ):
@@ -447,6 +562,56 @@ async def test_a_live_no_session_names_the_outcome_rows_detail(
         "nora-eval-run-x",
         recorded_meta=_recorded_meta((1,), had_session=True))
     assert wake["no_session"] == "empty agenda"
+    assert wake["status"] == "PASS"
+
+
+async def test_a_live_wake_that_never_settled_spends_no_judge_call(
+    monkeypatch, tmp_path,
+):
+    """A session that ended without closing is a wake-step ERROR: the
+    diff and trajectory still freeze, but no judge call is spent on a
+    wake that produced nothing to measure. A settled wake still judges —
+    positive control in the same run."""
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop.verdicts import ExpectationVerdict
+
+    run_mod = _wake_seam(monkeypatch, tmp_path,
+                         _runner_subject(outcome=SimpleNamespace(status="ok")))
+    monkeypatch.setattr(run_mod, "_wake_outcome", _async_result({
+        "session_id": None, "outcome": "failed",
+        "detail": "capture interrupted", "cause": "model_error"}))
+    judged = []
+
+    async def _judge_call(*a, **k):
+        judged.append(1)
+        return ExpectationVerdict(verdict="PASS", answers=())
+
+    monkeypatch.setattr(run_mod, "judge_expectation", _judge_call)
+    args, evidence = _wake_args(tmp_path)
+    case = SimpleNamespace(unit="u", expectations=(
+        SimpleNamespace(wake=0, polarity="must", kind="note",
+                        text="generated expectation"),
+        SimpleNamespace(wake=1, polarity="must", kind="note",
+                        text="generated expectation"),))
+    room = SimpleNamespace(platform="signal", primary_id="r")
+    wake = await run_mod._run_wake(
+        args, case, 0, 11, NOW, "postgresql+asyncpg://x", "time", object(),
+        evidence, tmp_path, room, "nora-eval-run-x",
+        recorded_meta=_recorded_meta((1,), had_session=True))
+    assert wake["status"] == "ERROR" and wake["step"] == "wake"
+    assert wake["expectations"] == []
+    assert judged == []
+
+    # Positive control: the next wake, settled closed, reaches the judge.
+    monkeypatch.setattr(run_mod, "_wake_outcome", _async_result({
+        "session_id": 9, "outcome": "closed",
+        "detail": "", "cause": "none"}))
+    wake = await run_mod._run_wake(
+        args, case, 1, 22, NOW, "postgresql+asyncpg://x", "time", object(),
+        evidence, tmp_path, room, "nora-eval-run-x",
+        recorded_meta=_recorded_meta((1,), had_session=True))
+    assert judged == [1]
     assert wake["status"] == "PASS"
 
 

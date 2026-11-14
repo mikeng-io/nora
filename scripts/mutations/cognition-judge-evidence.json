@@ -1,0 +1,100 @@
+[
+  {
+    "name": "the digest names the expectation's wake index",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "            \"wake_index\": expectation.wake,\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_judges_receive_the_recorded_sources_and_clock_once_per_wake"
+  },
+  {
+    "name": "the digest carries the unit and its rooms",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "        \"unit\": trajectory.get(\"unit\"),\n        \"unit_rooms\": trajectory.get(\"unit_rooms\"),\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_judges_receive_the_recorded_sources_and_clock_once_per_wake"
+  },
+  {
+    "name": "the digest carries the recorded source",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "        \"source\": {k: blocks.get(k) for k in (\"agenda\", \"items\", \"stimuli\")},\n",
+    "new": "        \"source\": dict.fromkeys((\"agenda\", \"items\", \"stimuli\")),\n",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_judges_receive_the_recorded_sources_and_clock_once_per_wake"
+  },
+  {
+    "name": "the digest carries the earlier wakes",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "        \"earlier_wakes\": [_wake_evidence(d, t, keys) for d, t in earlier_wakes],\n",
+    "new": "        \"earlier_wakes\": [],\n",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_judges_receive_the_recorded_sources_and_clock_once_per_wake"
+  },
+  {
+    "name": "an earlier wake's emitted changes are citable",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "    for prior_diff, _ in earlier_wakes:\n        known |= _emitted_ids(prior_diff)\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_a_judge_can_cite_an_emitted_prior_change_but_not_an_unshown_entry"
+  },
+  {
+    "name": "an unchanged entry the digest only counts is not citable",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "    known = _emitted_ids(diff) | {\n",
+    "new": "    known = diff.entry_ids() | {\n",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_a_judge_cites_only_the_ids_the_digest_shows"
+  },
+  {
+    "name": "a nonempty shown kind forbids an uncited decidable answer",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "    nothing_to_cite = not any(\n        e.startswith(f\"{expectation.kind}:\") for e in known\n    )\n",
+    "new": "    nothing_to_cite = not any(\n        e.startswith(f\"{expectation.kind}:\") for e in diff.entry_ids()\n    ) and not state_after.entries(expectation.kind)\n",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_a_judge_can_cite_an_emitted_prior_change_but_not_an_unshown_entry"
+  },
+  {
+    "name": "a live wake hands the judge call the earlier wakes",
+    "file": "scripts/cognition_loop/run.py",
+    "old": "                                earlier_wakes=earlier_wakes,\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_loop_run.py::test_the_run_hands_each_wake_only_the_earlier_wakes_evidence"
+  },
+  {
+    "name": "a settled wake's diff and trajectory join the earlier history",
+    "file": "scripts/cognition_loop/run.py",
+    "old": "                        if \"_diff\" in report_row:\n                            earlier_wakes += ((report_row[\"_diff\"], report_row[\"trajectory\"]),)\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_loop_run.py::test_the_run_hands_each_wake_only_the_earlier_wakes_evidence"
+  },
+  {
+    "name": "the live trajectory carries the recorded clock",
+    "file": "scripts/cognition_loop/run.py",
+    "old": "    trajectory[\"at_ms\"] = at_ms\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_loop_run.py::test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge"
+  },
+  {
+    "name": "the live trajectory carries the unit and its rooms",
+    "file": "scripts/cognition_loop/run.py",
+    "old": "    trajectory[\"unit\"] = case.unit\n    trajectory[\"unit_rooms\"] = rooms\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_loop_run.py::test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge"
+  },
+  {
+    "name": "rejudging takes each clock from the report metadata",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "        trajectory = {**(frozen.get(\"trajectory\") or {}),\n                      \"at_ms\": recorded.get(\"at_ms\"), \"unit\": case.unit}\n",
+    "new": "        trajectory = {**(frozen.get(\"trajectory\") or {}),\n                      \"unit\": case.unit}\n",
+    "target": "tests/unit/test_cognition_loop_rejudge.py::test_rejudging_preserves_the_reason_an_answer_cannot_pass"
+  },
+  {
+    "name": "rejudging names the case's unit on every wake",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "        trajectory = {**(frozen.get(\"trajectory\") or {}),\n                      \"at_ms\": recorded.get(\"at_ms\"), \"unit\": case.unit}\n",
+    "new": "        trajectory = {**(frozen.get(\"trajectory\") or {}),\n                      \"at_ms\": recorded.get(\"at_ms\")}\n",
+    "target": "tests/unit/test_cognition_loop_rejudge.py::test_rejudging_preserves_the_reason_an_answer_cannot_pass"
+  },
+  {
+    "name": "rejudging rebuilds the earlier-wake history from frozen wakes",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "        if not unmeasured(frozen, recorded):\n            earlier_wakes += ((diff, trajectory),)\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_loop_rejudge.py::test_rejudging_preserves_the_reason_an_answer_cannot_pass"
+  }
+]

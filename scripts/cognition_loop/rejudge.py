@@ -75,42 +75,52 @@ async def rejudge(output: Path, case_path: Path, config: Path,
     report = json.loads(report_path.read_text(encoding="utf-8"))
     row = next(c for c in report["cases"] if c.get("case") == case.name)
     statuses = []
+    earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = ()
     for index, wake_id in enumerate(case.wakes):
         path = output / f"wake-{index}-{wake_id}.json"
         if not path.is_file():
             continue
         frozen = json.loads(path.read_text(encoding="utf-8"))
         diff, after = frozen_diff(frozen)
+        wakes = row.get("wakes") or []
+        recorded = wakes[index] if index < len(wakes) else {}
+        # The case names the unit; an old freeze never captured the rooms
+        # that belong to it, and null there means unknown, never empty.
+        trajectory = {**(frozen.get("trajectory") or {}),
+                      "at_ms": recorded.get("at_ms"), "unit": case.unit}
         judged = []
-        for expectation in case.expectations:
-            if expectation.wake != index:
-                continue
-            try:
-                verdict = await judge_expectation(
-                    judges, (judge_a, judge_b), expectation, diff, after,
-                    frozen.get("trajectory") or {})
-            except Exception as exc:  # noqa: BLE001 — a judge failure is ERROR
-                verdict = ExpectationVerdict(
-                    verdict=ERROR, answers=(), detail=f"judge: {exc!r}")
-            judged.append({
-                "expectation": {"polarity": expectation.polarity,
-                                "kind": expectation.kind,
-                                "text": expectation.text},
-                "verdict": verdict.verdict,
-                "detail": verdict.detail,
-                "answers": [asdict(a) for a in verdict.answers],
-            })
+        # A wake a step failure or a missing after-state cannot judge:
+        # it stays ERROR and no judge call is spent on it.
+        if not unmeasured(frozen, recorded):
+            for expectation in case.expectations:
+                if expectation.wake != index:
+                    continue
+                try:
+                    verdict = await judge_expectation(
+                        judges, (judge_a, judge_b), expectation, diff, after,
+                        trajectory, earlier_wakes)
+                except Exception as exc:  # noqa: BLE001 — a judge failure is ERROR
+                    verdict = ExpectationVerdict(
+                        verdict=ERROR, answers=(), detail=f"judge: {exc!r}")
+                judged.append({
+                    "expectation": {"polarity": expectation.polarity,
+                                    "kind": expectation.kind,
+                                    "text": expectation.text},
+                    "verdict": verdict.verdict,
+                    "detail": verdict.detail,
+                    "answers": [asdict(a) for a in verdict.answers],
+                })
         frozen["expectations"] = judged
         path.write_text(json.dumps(frozen, ensure_ascii=False, default=str),
                         encoding="utf-8")
-        wakes = row.get("wakes") or []
-        recorded = wakes[index] if index < len(wakes) else {}
         status = rollup(ERROR if unmeasured(frozen, recorded) else "PASS",
                         *(j["verdict"] for j in judged))
         if index < len(row.get("wakes") or []):
             row["wakes"][index]["status"] = status
             row["wakes"][index]["expectations"] = judged
         statuses.append(status)
+        if not unmeasured(frozen, recorded):
+            earlier_wakes += ((diff, trajectory),)
     row["status"] = case_status(row, statuses)
     report["status"] = run_status_after(report)
     report["rejudged"] = {"judges": [judge_a, judge_b], "case": str(case_path)}

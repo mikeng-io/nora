@@ -48,6 +48,51 @@ def test_a_report_error_with_no_frozen_after_state_stays_unmeasured():
     assert unmeasured({"error": {"step": "advance"}, "diff": {}}, {})
 
 
+async def test_an_unmeasured_wake_spends_no_judge_call(monkeypatch, tmp_path):
+    """A wake whose step failed before it settled stays ERROR on rejudge
+    and its expectations are never judged; a settled wake still is."""
+    import json
+
+    from scripts.cognition_loop import rejudge as module
+    from scripts.cognition_loop.cases import generated_case, write_case
+    from scripts.cognition_loop.verdicts import ExpectationVerdict
+
+    case = generated_case()
+    case_path = tmp_path / "case.json"
+    write_case(case, case_path)
+    wakes = [{"status": "PASS", "expectations": [], "at_ms": 1000 + i}
+             for i, _ in enumerate(case.wakes)]
+    wakes[1]["status"] = "ERROR"
+    wakes[1]["step"] = "wake"
+    (tmp_path / "report.json").write_text(json.dumps({
+        "cases": [{"case": case.name, "wakes": wakes,
+                   "errors": ["a wake ended in ERROR"]}],
+        "evidence": {"status": "PASS"}}))
+    (tmp_path / f"wake-0-{case.wakes[0]}.json").write_text(json.dumps({
+        "diff": {},
+        "trajectory": {"blocks": {"agenda": "generated source 0"}}}))
+    (tmp_path / f"wake-1-{case.wakes[1]}.json").write_text(json.dumps({
+        "error": {"step": "wake",
+                  "message": "the session ended failed: capture interrupted"},
+        "trajectory": {}}))
+
+    judged = []
+
+    async def judge(*a, **k):
+        judged.append(1)
+        return ExpectationVerdict(verdict="PASS", answers=())
+
+    monkeypatch.setattr(module, "load", lambda _: None)
+    monkeypatch.setattr(module, "Judges", lambda *_: object())
+    monkeypatch.setattr(module, "judge_expectation", judge)
+    monkeypatch.setattr(module, "render", lambda _: None)
+    report = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b")
+    assert judged == [1]                    # only the settled wake was judged
+    assert report["cases"][0]["wakes"][1]["status"] == "ERROR"
+    assert report["cases"][0]["wakes"][1]["expectations"] == []
+    assert report["status"] == "ERROR"
+
+
 async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch, tmp_path):
     import json
 
@@ -58,13 +103,20 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch,
     case = generated_case()
     case_path = tmp_path / "case.json"
     write_case(case, case_path)
-    wakes = [{"status": "PASS", "expectations": []} for _ in case.wakes]
+    wakes = [{"status": "PASS", "expectations": [], "at_ms": 1000 + i}
+             for i, _ in enumerate(case.wakes)]
     (tmp_path / "report.json").write_text(json.dumps({
         "cases": [{"case": case.name, "wakes": wakes}], "evidence": {"status": "PASS"}}))
     for index, ident in enumerate(case.wakes):
-        (tmp_path / f"wake-{index}-{ident}.json").write_text(json.dumps({"diff": {}}))
+        (tmp_path / f"wake-{index}-{ident}.json").write_text(json.dumps({
+            "diff": {}, "trajectory": {"blocks": {"agenda": f"generated source {index}"}}}))
 
-    async def judge(_judges, _models, expectation, *_args):
+    # Assertions inside the fake would be swallowed by rejudge's fail-closed
+    # except; the evidence is recorded and checked after the call instead.
+    seen = {}
+
+    async def judge(_judges, _models, expectation, diff, after, trajectory, earlier):
+        seen[expectation.wake] = (trajectory, tuple(earlier))
         return ExpectationVerdict(
             verdict="ERROR" if expectation.kind == "note" else "PASS", answers=(),
             detail="a decidable answer needs a cited entry" if expectation.kind == "note" else "")
@@ -79,3 +131,19 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch,
     assert exp["detail"] == "a decidable answer needs a cited entry"
     frozen = json.loads((tmp_path / f"wake-0-{case.wakes[0]}.json").read_text())
     assert frozen["expectations"][0]["detail"] == exp["detail"]
+    # The judge saw each clock from the report metadata and the case's unit;
+    # old freezes never captured the room scope: null, never inferred.
+    wake0, wake1 = seen[0], seen[1]
+    assert wake0[0]["at_ms"] == 1000
+    assert wake1[0]["at_ms"] == 1001
+    assert wake1[0].get("unit") == case.unit
+    assert wake1[0].get("unit_rooms") is None
+    # History is only the earlier frozen wakes — never this wake or a later one.
+    assert wake0[1] == ()
+    assert len(wake1[1]) == 1
+    prior_diff, prior_traj = wake1[1][0]
+    assert prior_traj["at_ms"] == 1000
+    assert prior_traj["blocks"]["agenda"] == "generated source 0"
+    assert prior_traj.get("unit") == case.unit
+    assert prior_traj.get("unit_rooms") is None
+    assert isinstance(prior_diff.kinds, dict)
