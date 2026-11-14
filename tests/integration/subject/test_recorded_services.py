@@ -7,6 +7,7 @@ from aiohttp import web
 
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError
+from nora.subject.obtain import SubjectSpec, build_config
 from nora.subject.recorded_services import RecordedServices
 
 
@@ -31,6 +32,41 @@ def row(method="POST", path="/v1?q=1", **response):
         "request_json": {"id": "generated"},
         "response": response,
     }
+
+
+@pytest.mark.asyncio
+async def test_bind_generated_config_endpoints_and_reject_non_endpoints(
+    tmp_path, evaluation_config, monkeypatch,
+):
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated")
+    cfg = build_config(SubjectSpec(
+        database_url="sqlite://", workdir=tmp_path,
+        overrides={"memory.index.embedder_url": "https://embedder.example/v1/embed?q=1",
+                   "documents.public_url": "https://example.invalid"},
+    ))
+    bindings = {"memory.index.embedder_url": "shared", "llm.base_url": "shared"}
+    bindings.update({f"providers.{name}.base_url": "shared" for name in cfg.providers})
+    data = {"version": 1, "bindings": bindings, "services": {"shared": [
+        {"method": "GET", "path": "/v1/embed?q=1", "response": {"status": 200}}
+    ]}}
+    async with RecordedServices(data).open("sqlite://") as env:
+        bound = env.bind_config(cfg)
+        assert bound.memory.index.embedder_url == env.urls["llm.base_url"] + "/v1/embed?q=1"
+        assert bound.documents.public_url == cfg.documents.public_url
+        async with (aiohttp.ClientSession() as client,
+                    client.get(bound.memory.index.embedder_url) as response):
+            assert response.status == 200
+
+    for path in ("documents.public_url", "llm.model", "memory.index.missing_url"):
+        async with RecordedServices({"version": 1, "bindings": {path: "shared"},
+                                     "services": {"shared": []}}).open("sqlite://") as env:
+            with pytest.raises(ValueError, match="must name an HTTP endpoint"):
+                env.bind_config(cfg)
+    async with RecordedServices({"version": 1, "bindings": {
+        "memory.index.embedder_url": "shared"}, "services": {"shared": []}}).open(
+            "sqlite://") as env:
+        with pytest.raises(ValueError, match="model dispatch"):
+            env.bind_config(cfg)
 
 
 @pytest.mark.asyncio

@@ -73,7 +73,6 @@ def _validate(data: Any) -> None:
         if (
             not isinstance(binding, str)
             or not re.fullmatch(r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+", binding)
-            or not binding.endswith((".base_url", ".endpoint", ".bridge_url", ".refresh_url"))
             or not isinstance(service, str)
             or service not in services
         ):
