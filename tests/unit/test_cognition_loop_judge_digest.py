@@ -155,6 +155,13 @@ def test_nested_invocation_does_not_replace_primary_terminal_response():
     assert terminal_response(events)["status"] == "unavailable"
 
 
+def test_tool_side_model_transport_cannot_replace_the_completed_sdk_response():
+    events = _responses()
+    helper = _responses(text="tool-side helper answer")[2:-2]
+    events[-1:-1] = helper
+    assert terminal_response(events)["text"] == "actual terminal answer"
+
+
 def test_judge_distinguishes_domain_unavailability_from_transport_success():
     trajectory = _trajectory()
     trajectory["tool_calls"][0]["result"] = {

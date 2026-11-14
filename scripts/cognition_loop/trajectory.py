@@ -159,10 +159,11 @@ def terminal_response(events: list[dict[str, Any]]) -> dict[str, Any]:
     if not attempt:
         return {**result, "cause": "attempt_missing"}
     records = [e for e in invocation if e.get("attempt_id") == attempt]
-    finished = [e for e in records if e.get("kind") == "call_finished"]
-    if (not finished or finished[-1].get("retry") or finished[-1].get("error_type")
+    finished = [(i, e) for i, e in enumerate(records) if e.get("kind") == "call_finished"]
+    if (not finished or finished[-1][1].get("retry") or finished[-1][1].get("error_type")
             or calls[-1].get("cancelled")):
         return {**result, "cause": "attempt_unsettled"}
+    records = records[:finished[-1][0] + 1]
     transports = [i for i, e in enumerate(records) if e.get("kind") == "transport_started"]
     if not transports:
         return {**result, "cause": "response_missing"}

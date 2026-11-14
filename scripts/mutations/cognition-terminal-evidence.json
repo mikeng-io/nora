@@ -33,5 +33,12 @@
     "old": "    report_path = output / \"report.json\"",
     "new": "    report_path = Path(report[\"rejudged\"][\"source\"]) / \"report.json\"",
     "target": "tests/unit/test_cognition_loop_rejudge.py::test_preflight_reconciles_rows_and_json_without_changing_originals"
+  },
+  {
+    "name": "tool-side transport replaces the completed SDK response",
+    "file": "scripts/cognition_loop/trajectory.py",
+    "old": "    records = records[:finished[-1][0] + 1]",
+    "new": "",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_tool_side_model_transport_cannot_replace_the_completed_sdk_response"
   }
 ]
