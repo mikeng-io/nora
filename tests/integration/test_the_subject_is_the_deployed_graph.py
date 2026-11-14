@@ -82,6 +82,31 @@ async def test_real_bridge_identity_bound_sends_and_refusals_stay_in_owned_servi
 
 
 @pytest.mark.asyncio
+async def test_database_alias_uses_only_addresses_resolved_before_isolation(monkeypatch):
+    original = socket.getaddrinfo
+    lookups = []
+
+    def resolver(host, port, *args, **kwargs):
+        if host == "generated-db.invalid":
+            lookups.append(host)
+            return original("127.0.0.1", port, *args, **kwargs)
+        return original(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolver)
+    async with IsolatedServices(
+        database_url="postgresql://generated-db.invalid:5432/generated", applications={}
+    ) as environment:
+        addresses = socket.getaddrinfo("generated-db.invalid", 5432, type=socket.SOCK_STREAM)
+        assert {row[4][0] for row in addresses} == {"127.0.0.1"}
+        assert lookups == ["generated-db.invalid"]
+        with pytest.raises(PermissionError):
+            socket.getaddrinfo("generated-db.invalid", 5433)
+        with pytest.raises(PermissionError):
+            socket.getaddrinfo("other.invalid", 5432)
+        assert len(environment.denied) == 2
+
+
+@pytest.mark.asyncio
 async def test_unknown_tcp_and_dns_are_refused_and_cannot_be_a_valid_zero():
     original = socket.socket.connect
     async with IsolatedServices(database_url="sqlite:///generated", applications={}) as environment:

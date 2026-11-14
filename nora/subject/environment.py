@@ -50,6 +50,8 @@ class IsolatedServices:
         self._patches = contextlib.ExitStack()
         self._active = False
         self._addresses: set[tuple[str, int]] = set()
+        self._database_alias: tuple[str, int] | None = None
+        self._database_addresses: set[str] = set()
         self._unix: set[str] = set()
         self._subjects: list[Any] = []
         self._before_tasks: set[asyncio.Task[Any]] = set()
@@ -148,9 +150,12 @@ class IsolatedServices:
                                        f".s.PGSQL.{database.port or 5432}"))
                 else:
                     port = database.port or 5432
+                    self._database_alias = (database.host, port)
                     for item in socket.getaddrinfo(database.host, port,
                                                    type=socket.SOCK_STREAM):
-                        self._addresses.add((str(item[4][0]), port))
+                        address = str(item[4][0])
+                        self._database_addresses.add(address)
+                        self._addresses.add((address, port))
             self._guard_network()
             self._before_tasks = asyncio.all_tasks()
             self._active = True
@@ -201,6 +206,16 @@ class IsolatedServices:
         original_lookup = socket.getaddrinfo
 
         def lookup(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
+            if self._database_alias == (host, port):
+                result = []
+                for address in sorted(self._database_addresses):
+                    try:
+                        result.extend(original_lookup(address, port, *args, **kwargs))
+                    except socket.gaierror:
+                        continue
+                if not result:
+                    raise socket.gaierror(socket.EAI_NONAME, "no owned address for database")
+                return result
             addresses = {h for h, _ in self._addresses}
             if host not in addresses and host not in (None, "localhost"):
                 refuse("resolve")
