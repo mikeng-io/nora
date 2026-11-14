@@ -10,7 +10,6 @@ it. Failures at any step are `ERROR`, never `PASS`.
 
 from __future__ import annotations
 
-import contextlib
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -121,37 +120,7 @@ OPEN_LOOP: dict[str, Any] = {
 #: configurable (`llm.*`, doctrine, tools); the delivery surface does not.
 def reserved_overrides(workspace: str) -> dict[str, Any]:
     """Every override the run owns outright."""
-    return {
-        # What is measured.
-        "cognition.enabled": True,
-        "memory.graph.enabled": True,
-        "memory.graph.comprehend.enabled": True,
-        # Nothing that can reach the world is composed: no fire path
-        # (heartbeat, compute, participation, relevance), no social
-        # poller or Instagram surface, no preflight or lifecycle loop.
-        "computer.enabled": False,
-        "computer.scoped.enabled": False,
-        "heartbeat.enabled": False,
-        "compute.enabled": False,
-        "participation.enabled": False,
-        "relevance_gate.enabled": False,
-        "presence.enabled": False,
-        "social.instagram.enabled": False,
-        "social.instagram.summons.enabled": False,
-        "social.poll.enabled": False,
-        # A Discord or WhatsApp adapter resolves its own identity with a
-        # live call at composition; off is the only inert shape.
-        "platforms.discord.enabled": False,
-        "platforms.whatsapp.enabled": False,
-        # Every enabled adapter is direct: bridge mode is a delivery
-        # path the landed transports cannot land.
-        "platforms.signal.mode": "direct",
-        "platforms.discord.mode": "direct",
-        "platforms.whatsapp.mode": "direct",
-        "platforms.instagram.mode": "direct",
-        # The case's own Honcho draw, never the deployment's workspace.
-        "honcho.workspace_id": workspace,
-    }
+    return {"honcho.workspace_id": workspace}
 
 
 async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
@@ -167,7 +136,8 @@ async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
         database_url=url, workdir=Path(spec_args.workdir),
         room=(room.platform, room.primary_id), now=_dt(at_ms),
         identity=identity_text, policy=policy_text,
-        overrides={**OPEN_LOOP, **arm, **reserved},
+        overrides={**arm, **reserved},
+        environment=getattr(spec_args, "environment", None),
     )
     directory = getattr(spec_args, "channel_directory", None)
     if directory is None:
@@ -520,6 +490,7 @@ async def _observe(
     step_error: tuple[str, str] | None = None,
 ) -> None:
     """Fill `got` step by step, so a later failure keeps what was built."""
+    subject.environment.check()
     tokens = (subject.deps.metrics.get(
         "nora_cognition_unit_tokens_total") - tokens_before)
     got["after"] = after = await state_mod.snapshot(
@@ -708,24 +679,8 @@ def _wake_error(
 
 
 async def _close_subject(subject: Any) -> None:
-    """The composed subject's teardown, the app's own order. Never raises."""
-    deps = subject.deps
-    lifecycle = getattr(deps, "computer_lifecycle", None)
-    if lifecycle is not None:
-        with contextlib.suppress(Exception):
-            await lifecycle.close()
-    shuts = []
-    for name in ("background", "audit", "client"):
-        part = getattr(deps, name, None)
-        if part is not None:
-            shuts.append(
-                part.cancel_all() if name == "background"
-                else part.aclose() if name == "audit"
-                else part.close())
-    shuts.extend(c.close() for c in getattr(deps, "model_clients", ()) or ())
-    for shut in shuts:
-        with contextlib.suppress(Exception):
-            await shut
+    """Close through the subject's production shutdown owner."""
+    await subject.aclose()
 
 
 def _freeze_wake(

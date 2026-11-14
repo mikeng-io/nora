@@ -1522,3 +1522,41 @@ async def dream_loop(
         for task in pending:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
+
+async def close_dependencies(deps: Any, *, health_runner: Any = None) -> None:
+    """Production shutdown order shared by the daemon and isolated subjects."""
+    # The shadow Cognition sessions first: they hold the model client and
+    # the database this method closes below, and a session cancelled here
+    # records itself `cancelled` (its stimuli stay pending) instead of
+    # vanishing with its wake reading «in flight». The evaluator's loop was
+    # already cancelled by `run`; `CognitionShutdown` is idempotent.
+    if deps.cognition_shutdown is not None:
+        await deps.cognition_shutdown()
+    # Sub-agent jobs in flight: cancelled before the client and the database close. Their
+    # rows are failed by the next boot's recovery and the room is told.
+    if deps.subagent_backend is not None:
+        await deps.subagent_backend.shutdown()
+    if health_runner is not None:
+        await health_runner.cleanup()
+    # Bridge-mode collaborators: stop the runtime (readers + lanes +
+    # inspector loop share its _stop), then close its Redis client and
+    # every adapter's bridge control/session clients. `close()` is
+    # present on the bridge adapters and absent on direct-mode ones, so
+    # getattr-guarded rather than asserted.
+    if deps.bridge_runtime is not None:
+        deps.bridge_runtime.stop()
+        await deps.bridge_runtime.redis.aclose()
+    for adapter in deps.registry.adapters.values():
+        close = getattr(adapter, "close", None)
+        if close is not None:
+            await close()
+    # The scoped computer's own close: admission stops, shielded
+    # executors unwind, and the dedicated Redis client and journal
+    # lock release — BEFORE the SQL client and audit store close.
+    if deps.computer_lifecycle is not None:
+        await deps.computer_lifecycle.close()
+    await deps.client.close()
+    for client in deps.model_clients:
+        await client.close()
+    await deps.audit.aclose()

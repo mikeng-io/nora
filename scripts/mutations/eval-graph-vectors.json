@@ -63,11 +63,11 @@
   "target": "tests/unit/test_eval_main_shared_db_guard.py::test_a_graph_surface_run_refuses_before_any_draw"
  },
  {
-  "name": "a subject never holds the embedding worker",
+  "name": "the isolated subject retains the production embedding worker",
   "file": "nora/subject/obtain.py",
-  "old": "    deps = dataclasses.replace(deps, memory_embed=None)",
-  "new": "    deps = deps",
-  "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_a_subject_never_holds_the_embedding_worker"
+  "old": "    deps = await build_dependencies(cfg, clock=clock, operational_clock=wall_clock)",
+  "new": "    deps = await build_dependencies(cfg, clock=clock, operational_clock=wall_clock)\n    deps = __import__(\"dataclasses\").replace(deps, memory_embed=None)",
+  "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_actual_production_composition_retains_fire_bridge_and_cognition"
  },
  {
   "name": "the graph arm queries the embedder at its loopback publish",

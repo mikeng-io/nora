@@ -12,10 +12,8 @@ rather than added because a caller needed it.
 
 from __future__ import annotations
 
-import contextlib
-import dataclasses
+import hashlib
 import shutil
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -32,14 +30,13 @@ from nora.config import load as _load_config
 from nora.persons import load_persons
 from nora.policy import Conversation, load_policy
 
-from .circle import CircleMemory, CircleOverlay, external_boundaries
+from .circle import CircleMemory, CircleOverlay
+from .environment import IsolatedServices
 from .memory_workspace import (
     NotADrawWorkspaceError,
     refuse_unless_draw_workspace,
     shared_eval_workspace,
 )
-from .recording_subagent import recording_subagent_worker
-from .sandbox_platforms import landed_platform_transports
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -62,37 +59,6 @@ DEFAULT_ROOM = ("signal", "g1")
 #: The rule "nothing reaches the model that the deployment would not send"
 #: constrains the PROMPT; this constrains the READER.
 _TEMPLATE = _REPO_ROOT / "config.evaluation.toml"
-
-#: `miles_novak`, matching the old driver's `_EVAL_PERSON_ID`, and it matters.
-#:
-#: A conclusion is keyed by the Honcho PEER id, which IS the person id, and the
-#: two participation corpora spell `miles_novak`. Keyed under any other id the
-#: conclusion is written and cannot be read — `representation` looks up
-#: `target or peer_id` and an unknown peer answers reachable-and-knowing-
-#: nothing — so the `-known` half of a twin pair would come back identical to
-#: its `-unknown` half and the pair would report that the knowledge cut works
-#: having cut nothing.
-#:
-#: A SYNTHETIC account, and deliberately not the real one.
-#:
-#: Any E.164-shaped string short-circuits the startup resolution; the value is
-#: never dialled and never reaches a network. It is not Nora's real Signal
-#: number, which `scrub/README.md` names as a scrub-map target and which
-#: `Dockerfile`'s `COPY nora/ ./nora/` and `pyproject.toml`'s
-#: `include = ["nora*"]` would put in the image and the wheel.
-_PLACEHOLDER_ACCOUNT = "+85200000000"
-#: An env var this process owns, so an enabled Discord adapter authenticates
-#: against nothing instead of the deployment's real bot. The value is the
-#: variable's NAME, not a credential — hence the S105 suppression.
-_PLACEHOLDER_TOKEN_ENV = "NORA_EVAL_SUBJECT_DISCORD_TOKEN"  # noqa: S105
-
-#: Credentials an ENABLED feature demands before composition will start, or
-#: whose absence downgrades a tool the deployment's Nora holds. Filled with
-#: `setdefault`, so the deploy host's real values always win.
-_CREDENTIALS_ENABLED_FEATURES_DEMAND = (
-    "GOOGLE_MAPS_API_KEY",      # [route]
-    "OMNIROUTE_API_KEY",        # the model key Nora herself runs on
-)
 
 #: One person, one room, `default = "deny"`. A caller that does not care about
 #: identity gets something VALID and CLOSED rather than an accident — the same
@@ -297,6 +263,8 @@ class SubjectSpec:
     #: overlay endpoint — composition is untouched.
     signal_rpc_url: str = ""
 
+    environment: IsolatedServices | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class Subject:
@@ -345,15 +313,20 @@ class Subject:
     #: source for the persons production would render and no others.
     listed_persons: frozenset[str] | None = None
     circle_memory: CircleMemory | None = None
+    environment: IsolatedServices | None = None
+
+    async def aclose(self) -> None:
+        if self.environment is not None:
+            await self.environment.close_subject(self)
 
 
 def _with(obj: Any, path: str, value: Any) -> Any:
     head, _, rest = path.partition(".")
     if rest:
-        value = _with(getattr(obj, head), rest, value)
-    if isinstance(value, dict):
+        value = _with(obj[head] if isinstance(obj, dict) else getattr(obj, head), rest, value)
+    if isinstance(value, dict) and not isinstance(obj, dict):
         value = TypeAdapter(type(obj).model_fields[head].annotation).validate_python(value)
-    return obj.model_copy(update={head: value})
+    return {**obj, head: value} if isinstance(obj, dict) else obj.model_copy(update={head: value})
 
 
 #: What EVERY non-production caller needs, applied before the caller's own
@@ -368,35 +341,6 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # Each composed subject owns its journal lock, just like its database
     # and media. The deployment's computer state cannot be shared by draws.
     cfg = _with(cfg, "computer.state_dir", str(workdir / "state"))
-    # `platforms.signal.account` — the template's default is empty, meaning
-    # "derive from the daemon", and `build_dependencies` then makes a REAL HTTP
-    # call to signal-cli at startup and raises `StartupError` when nothing
-    # answers. An override returns immediately with no network. Composing Nora
-    # reaches the world unless told otherwise. It does not cover a
-    # send or react: `landed_platform_transports` below does.
-    cfg = _with(cfg, "platforms.signal.account", _PLACEHOLDER_ACCOUNT)
-    # `platforms.*.mode` — a deployment on `mode = "bridge"` needs Redis and
-    # live bridges; a sandbox has neither, so composition would refuse to boot.
-    # The direct adapter stays PRESENT (the registry's `self_aliases()` still
-    # feeds `self_ids`) with its network neutralised by the placeholder
-    # account/token above — the same seam `mode` itself names, taken the other
-    # way.
-    for platform in ("signal", "discord", "whatsapp", "instagram"):
-        cfg = _with(cfg, f"platforms.{platform}.mode", "direct")
-    # `platforms.discord.token_env` — the SAME neutralisation, for the reason
-    # above. The adapters stay ENABLED as the deployment has them, because the
-    # registry's `self_aliases()` feeds `self_ids` and `self_ids` is what
-    # `MentionPolicy`/`ReplyToNoraPolicy` match on — with the deployment's text
-    # trigger off, mention-and-reply IS the engagement path, so a disabled
-    # adapter would delete it. What must not reach the world is the CREDENTIAL,
-    # and Discord's lives in an env var rather than the config
-    # (`nora/platform/registry.py` refuses to start without it), so the
-    # variable is pointed at one this process owns.
-    cfg._credentials = {**cfg.credentials, _PLACEHOLDER_TOKEN_ENV: "eval-subject-not-a-real-token"}
-    cfg = _with(cfg, "platforms.discord.token_env", _PLACEHOLDER_TOKEN_ENV)
-    # Synthetic fallbacks stay scoped to this subject; real configured credentials win.
-    for name in _CREDENTIALS_ENABLED_FEATURES_DEMAND:
-        cfg._credentials = {name: "eval-subject-placeholder", **cfg.credentials}
     # `honcho.workspace_id` — Honcho is the ONE store the sandbox database
     # does not isolate: it is an external service keyed by workspace, and the
     # deployment's workspace is where every real peer card lives. An eval
@@ -498,9 +442,8 @@ def build_config(spec: SubjectSpec) -> Config:
                 section_type.model_validate(
                     getattr(cfg, name).model_dump(mode="python"),
                     context={"base": spec.workdir})
-    # Rewrite after overrides, including deployment routes, so host-only callers
-    # cannot restore container addresses over the sandbox configuration.
-    if not _resolves(_DOCKER_HOST):
+    # A case-owned environment binds origins itself without DNS discovery.
+    if spec.environment is None and not _resolves(_DOCKER_HOST):
         cfg = _with(cfg, "llm.base_url", _from_host(cfg.llm.base_url))
         cfg = _with(cfg, "honcho.base_url", _from_host(cfg.honcho.base_url))
         # Named model endpoints carry their own URL; a route through one would
@@ -517,43 +460,14 @@ def build_config(spec: SubjectSpec) -> Config:
 
 
 def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment: str) -> None:
-    """Every Honcho workspace this subject can route to is `workspace` — the
-    eval namespace's — and that is measured, not assumed (DEC-214).
-
-    Rewriting `honcho.workspace_id` alone is not the guarantee: a policy with
-    `[units]`
-    routes each unit to the Honcho workspace its Nora workspace is BOUND to
-    in `identity.toml`, and the eval suite composes against the deployment's
-    own policy and identity by default — whose bindings name production's
-    live workspaces. Composed as written, a subject would feed eval speech
-    into `nora` itself with nothing raising.
-
-    So the copies in `workdir` are rewritten to ONE workspace. A policy that
-    declares `[units]` keeps it — the subject stays strict and scoped, the
-    way production reads — but every unit is put in one workspace, `eval`,
-    and `identity.toml`'s `[workspaces]` becomes that one binding, to
-    `honcho.workspace_id` (already the eval namespace's). A policy without
-    `[units]` loses any `[workspaces]` table and stays implicit. Every room,
-    unit and scope survives; the divergence from production is that two Nora
-    workspaces' people share this ONE throwaway workspace's peers. Then the
-    router production itself builds from these files is asked where it can
-    reach, and anything outside the eval namespace refuses the subject. That
-    check is the guarantee; the rewrite is only what makes it pass.
-    """
+    """Isolate workspace bindings without merging previously separate stores."""
     policy_path, identity_path = workdir / "policy.toml", workdir / "identity.toml"
-    policy_doc = tomlkit.parse(policy_path.read_text(encoding="utf-8"))
     identity_doc = tomlkit.parse(identity_path.read_text(encoding="utf-8"))
-    strict = "units" in policy_doc
-    if strict:
-        for unit in policy_doc["units"].values():
-            unit["workspace"] = _EVAL_WORKSPACE
-        policy_path.write_text(tomlkit.dumps(policy_doc), encoding="utf-8")
-    if "workspaces" in identity_doc:
-        del identity_doc["workspaces"]
-    if strict:
-        binding = tomlkit.table()
-        binding.add(_EVAL_WORKSPACE, {"honcho_workspace": workspace})
-        identity_doc["workspaces"] = binding
+    for binding in identity_doc.get("workspaces", {}).values():
+        original = str(binding["honcho_workspace"])
+        suffix = hashlib.sha256(original.encode()).hexdigest()[:16]
+        binding["honcho_workspace"] = (
+            workspace if original == deployment else f"{workspace}-{suffix}")
     identity_path.write_text(tomlkit.dumps(identity_doc), encoding="utf-8")
     router = build_workspace_router(
         policy=load_policy(policy_path),
@@ -562,10 +476,6 @@ def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment:
     )
     for reachable in router.workspaces():
         _refuse_a_workspace_outside_the_eval_namespace(reachable, deployment)
-
-
-#: The one Nora workspace an eval subject's units are put in.
-_EVAL_WORKSPACE = "eval"
 
 
 class RoomNotInPolicyError(ValueError):
@@ -610,7 +520,16 @@ def _conversation_for(spec: SubjectSpec) -> Conversation:
 
 async def obtain(spec: SubjectSpec) -> Subject:
     """Compose an isolated subject with scoped credentials and database mapping."""
-    cfg = build_config(spec)
+    environment = spec.environment
+    if environment is None or not environment.active:
+        raise ValueError("obtain requires active case-owned external services")
+    if environment.database_url != spec.database_url:
+        raise ValueError("subject database differs from its isolated environment")
+    if spec.signal_rpc_url or (spec.circle and any((
+            spec.circle.memory, spec.circle.reaction, spec.circle.gif))):
+        raise ValueError("scenario responses require case-owned service bindings; "
+                         "composition substitutions are not production equivalence")
+    cfg = environment.bind_config(build_config(spec))
     if spec.now is None:
         clock: Callable[[], datetime] = wall_clock
     else:
@@ -618,34 +537,8 @@ async def obtain(spec: SubjectSpec) -> Subject:
 
         def clock() -> datetime:
             return _at
-    var = f"NORA_SUBJECT_DATABASE_URL_{uuid.uuid4().hex}"
-    cfg = _with(cfg, "store.database_url_env", var)
-    cfg._credentials = {**cfg.credentials, var: spec.database_url}
-    circle_memory = (CircleMemory(unavailable=spec.circle.memory == 'unavailable')
-                     if spec.circle and spec.circle.memory else None)
-    with (
-        recording_subagent_worker() if cfg.subagent.enabled else contextlib.nullcontext(),
-        landed_platform_transports(),
-        external_boundaries(spec.circle, signal_url=spec.signal_rpc_url, memory=circle_memory),
-    ):
-        deps = await build_dependencies(
-            cfg, clock=clock,
-            # The frozen `spec.now` is the SEMANTIC clock only — what the
-            # block renders and the turn sees. Queue deadlines, lease and
-            # idle arithmetic are operational: they run on the wall clock
-            # or the scoped computer's tasks would never time out and its
-            # tabs never idle inside a draw.
-            operational_clock=wall_clock)
-    # NO EMBEDDING WORKER, whatever `[memory.index] embed` says. The flag also
-    # switches the graph surface's query embedding on (`composition.py`), so
-    # it stays as deployed; the worker is the write half, which only
-    # `nora/__main__.py`'s drain loop runs, and a subject must never hold one:
-    # with the embedder reachable from the host
-    # (`sandbox_index.EMBEDDER_FROM_HOST`) it would write vectors into the
-    # sandbox from the live embedder and compete with production's backfill
-    # for it. A sandbox's vectors are adopted from the source instead
-    # (`nora.subject.sandbox_index`).
-    deps = dataclasses.replace(deps, memory_embed=None)
+    # Semantic time is controlled; operational leases and deadlines advance.
+    deps = await build_dependencies(cfg, clock=clock, operational_clock=wall_clock)
     # The scoped computer's maintenance IS part of the composed graph:
     # the same `ComputerLifecycle` `__main__` starts — a subject with
     # `[computer.scoped]` enabled ticks its queue and sweeps its tabs,
@@ -653,17 +546,16 @@ async def obtain(spec: SubjectSpec) -> Subject:
     # shutdown does.
     if deps.computer_lifecycle is not None:
         deps.computer_lifecycle.start(deps.background)
-    # The variable is GONE, so the config must not go on naming it: anything
-    # that re-read `os.environ[cfg.store.database_url_env]` would get a
-    # KeyError. `Subject.database_url` is the field to read, and this makes the
-    # dead name unreadable rather than merely unused.
-    cfg = _with(cfg, "store.database_url_env", "")
     convo = _conversation_for(spec)
-    return Subject(
+    subject = Subject(
         deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
         unit=convo.unit, culture_key=convo.primary_id,
-        listed_persons=convo.persons, circle_memory=circle_memory,
+        listed_persons=convo.persons,
+        environment=environment,
     )
+    environment.register_subject(subject)
+    environment.check()
+    return subject
 
 
 def validate_subject_overrides(overrides: dict[str, Any],

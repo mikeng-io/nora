@@ -127,9 +127,9 @@
   },
   {
     "name": "main: shutdown stops the cognition sessions first",
-    "file": "nora/__main__.py",
-    "old": "        if self.deps.cognition_shutdown is not None:\n            await self.deps.cognition_shutdown()",
-    "new": "        if self.deps.cognition_shutdown is not None:\n            pass",
+    "file": "nora/app/runtime.py",
+    "old": "    if deps.cognition_shutdown is not None:\n        await deps.cognition_shutdown()",
+    "new": "    if deps.cognition_shutdown is not None:\n        pass",
     "target": "tests/unit/test_cognition_wiring.py -k app_stops"
   },
   {
