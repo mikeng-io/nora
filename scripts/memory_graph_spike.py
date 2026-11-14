@@ -246,10 +246,7 @@ class Judges:
         self.effective_models = [self._endpoint(m)[2] for m in models]
 
     def _endpoint(self, model_id: str) -> tuple[str, str, str]:
-        # The measurer dials the route the deployment configured, rewritten for
-        # where it runs — `cfg.endpoint` names a container-only host on the host
-        # OS, which reads as an NXDOMAIN, never as a judge verdict.
-        return model_endpoint(self.config, "eval_judge", model_id)
+        return model_endpoint(self.cfg, "eval_judge", model_id)
 
     async def call(self, model_id: str, instruction: str, payload: Any,
                    *, response_format: dict | None = None) -> str:

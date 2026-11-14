@@ -440,14 +440,9 @@ async def test_judges_dial_the_eval_route_where_the_measurer_runs(
         "ask_text",
         AsyncMock(return_value=SimpleNamespace(finish_reason="stop", content="[]")),
     )
-    cfg = SimpleNamespace(
-        llm=SimpleNamespace(model="generated-session", timeout_seconds=1),
-        endpoint=lambda purpose, model: (
-            "http://host.docker.internal:20128/v1",
-            "generated-key",
-            model,
-        ),
-    )
+    from nora.config import load
+
+    cfg = load(example_config_path)
     judges = spike.Judges(cfg, ["cx/gpt-6.1-sol", "kmc/k3-256k"], example_config_path)
     assert judges.effective_models == ["cx/gpt-6.1-sol", "kmc/k3-256k"]
     for model_id in ("cx/gpt-6.1-sol", "kmc/k3-256k", "generated-session"):

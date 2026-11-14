@@ -23,8 +23,8 @@
   {
     "name": "a blocked external dependency is accepted as a valid measurement",
     "file": "nora/subject/environment.py",
-    "old": "        if not self.guarded or self.denied:",
-    "new": "        if not self.guarded:",
+    "old": "        if self.denied:",
+    "new": "        if False:",
     "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_unknown_tcp_and_dns_are_refused_and_cannot_be_a_valid_zero"
   },
   {
@@ -33,5 +33,19 @@
     "old": "                if not self.owns(str(request.url)):\n                    refuse(\"http\")\n                return await _original(client, request)",
     "new": "                return await _original(client, request)",
     "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_http_dispatch_and_redirects_cannot_bypass_owned_services"
+  },
+  {
+    "name": "unknown fixture routes are treated as known absence",
+    "file": "nora/subject/environment.py",
+    "old": "            if request.match_info.http_exception is not None:",
+    "new": "            if False:",
+    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_real_bridge_identity_bound_sends_and_refusals_stay_in_owned_service"
+  },
+  {
+    "name": "one shared service is composed more than once",
+    "file": "nora/subject/environment.py",
+    "old": "                if id(application) in bound:",
+    "new": "                if False:",
+    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_real_bridge_identity_bound_sends_and_refusals_stay_in_owned_service"
   }
 ]

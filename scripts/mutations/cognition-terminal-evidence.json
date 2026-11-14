@@ -40,5 +40,12 @@
     "old": "    records = records[:finished[-1][0] + 1]",
     "new": "",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_tool_side_model_transport_cannot_replace_the_completed_sdk_response"
+  },
+  {
+    "name": "after-state failure discards the captured trajectory",
+    "file": "scripts/cognition_loop/run.py",
+    "old": "                            no_session=no_session, trajectory=got[\"trajectory\"])",
+    "new": "                            no_session=no_session)",
+    "target": "tests/unit/test_cognition_loop_run.py::test_after_state_failure_preserves_captured_trajectory"
   }
 ]

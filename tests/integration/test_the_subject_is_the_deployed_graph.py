@@ -42,18 +42,26 @@ def _bridge_app(received: list[dict]) -> web.Application:
     async def groups(request: web.Request) -> web.Response:
         return web.json_response({"groups": [{"id": "g1", "members": []}]})
 
+    async def absent(request: web.Request) -> web.Response:
+        return web.json_response({"error": "known_missing"}, status=404)
+
     app.router.add_get("/v1/self", identity)
     app.router.add_post("/v1/actions", action)
     app.router.add_get("/v1/groups", groups)
+    app.router.add_get("/known-absent", absent)
     return app
 
 
 @pytest.mark.asyncio
 async def test_real_bridge_identity_bound_sends_and_refusals_stay_in_owned_service():
     received: list[dict] = []
+    application = _bridge_app(received)
     environment = IsolatedServices(database_url="sqlite:///generated",
-        applications={"platforms.signal.base_url": _bridge_app(received)})
+        applications={"platforms.signal.base_url": application,
+                      "platforms.discord.base_url": application})
     async with environment:
+        assert (environment.urls["platforms.signal.base_url"]
+                == environment.urls["platforms.discord.base_url"])
         adapter = BridgeAdapter("signal", BridgeEndpoint(
             environment.urls["platforms.signal.base_url"], "generated-token"))
         try:
@@ -75,7 +83,12 @@ async def test_real_bridge_identity_bound_sends_and_refusals_stay_in_owned_servi
             assert assert_no_egress(subject)["workers"]["fire_path"]
             assert not environment.denied
             with pytest.raises(BridgeUnavailableError, match="404"):
+                await adapter._get("/known-absent")
+            environment.check()
+            with pytest.raises(BridgeUnavailableError, match="404"):
                 await adapter._get("/unrecorded-read")
+            with pytest.raises(EvidenceError, match="external_response_not_recorded"):
+                environment.check()
         finally:
             await adapter.close()
     assert not environment.active

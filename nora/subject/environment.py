@@ -68,8 +68,10 @@ class IsolatedServices:
     def check(self) -> None:
         from nora.subject.eval_evidence import EvidenceError
 
-        if not self.guarded or self.denied:
+        if not self.guarded:
             raise EvidenceError("external_dependency_not_isolated")
+        if self.denied:
+            raise EvidenceError("; ".join(sorted({row["cause"] for row in self.denied})))
 
     def register_subject(self, subject: Any) -> None:
         self._subjects.append(subject)
@@ -126,7 +128,12 @@ class IsolatedServices:
             # macOS may run uname/file for that read; resolve host metadata
             # before the effect boundary, without exempting later subprocesses.
             platform.platform()
+            bound: dict[int, str] = {}
             for key, application in self._applications.items():
+                if id(application) in bound:
+                    self.urls[key] = bound[id(application)]
+                    continue
+                application.middlewares.append(self._coverage(key))
                 runner = web.AppRunner(application, access_log=None)
                 self._runners.append(runner)
                 await runner.setup()
@@ -140,6 +147,7 @@ class IsolatedServices:
                     listener.close()
                     raise
                 self.urls[key] = f"http://127.0.0.1:{port}"
+                bound[id(application)] = self.urls[key]
                 self._addresses.add(("127.0.0.1", port))
             if self._redis:
                 await self._start_redis()
@@ -163,6 +171,17 @@ class IsolatedServices:
         except BaseException:
             await self.__aexit__(None, None, None)
             raise
+
+    def _coverage(self, service: str) -> Any:
+        @web.middleware
+        async def coverage(request: web.Request, handler: Any) -> web.StreamResponse:
+            if request.match_info.http_exception is not None:
+                self.denied.append({"operation": "unrecorded_response",
+                                    "cause": "external_response_not_recorded",
+                                    "service": service, "method": request.method})
+            return await handler(request)
+
+        return coverage
 
     async def _start_redis(self) -> None:
         executable = shutil.which("redis-server")

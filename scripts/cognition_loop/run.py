@@ -460,7 +460,7 @@ async def _run_wake(
                             output, index, wake_id, at_ms, reason, advance,
                             step=step_error[0], message=step_error[1],
                             batch=_batch(recorded_meta, offered, offered_self),
-                            no_session=no_session)
+                            no_session=no_session, trajectory=got["trajectory"])
                 return _freeze_wake(
                     output, index, wake_id, wake, at_ms, reason, session_id,
                     egress, judges is not None, got["diff"], got["trajectory"],
@@ -490,15 +490,8 @@ async def _observe(
     step_error: tuple[str, str] | None = None,
 ) -> None:
     """Fill `got` step by step, so a later failure keeps what was built."""
-    subject.environment.check()
     tokens = (subject.deps.metrics.get(
         "nora_cognition_unit_tokens_total") - tokens_before)
-    got["after"] = after = await state_mod.snapshot(
-        engine, unit=case.unit, rooms=rooms,
-        profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
-        metrics=subject.deps.metrics,
-    )
-    got["diff"] = diff = state_mod.diff(before, after)
     events = session_events(
         read_events(evidence.path), session_id=session_id, wake_id=wake.wake_id)
     trajectory = wake_trajectory(
@@ -516,6 +509,15 @@ async def _observe(
             "system", "agenda", "items", "stimuli", "instructions")}
         trajectory["read_probes"] = inspection.get("read_probes", [])
     got["trajectory"] = trajectory
+    if not subject.environment.guarded:
+        subject.environment.check()
+    got["after"] = after = await state_mod.snapshot(
+        engine, unit=case.unit, rooms=rooms,
+        profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
+        metrics=subject.deps.metrics,
+    )
+    got["diff"] = diff = state_mod.diff(before, after)
+    subject.environment.check()
     # A wake whose step failed before it settled produced nothing to
     # measure: partial evidence is frozen above; no judge call is spent.
     got["expectations"] = (
@@ -595,7 +597,7 @@ async def _judge(
     after: Any, trajectory: dict[str, Any],
     earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = (),
 ) -> list[dict[str, Any]]:
-    expectations = []
+    expectations: list[dict[str, Any]] = []
     if judges is None:
         return expectations
     for expectation in case.expectations:
@@ -659,12 +661,14 @@ def _wake_error(
     output: Path, index: int, wake_id: int, at_ms: int, reason: str,
     advance: Any, *, step: str, message: str,
     batch: dict[str, Any] | None = None, no_session: str | None = None,
+    trajectory: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """An ERROR wake entry: the step is named, never folded into another's."""
     freeze(output / f"wake-{index}-{wake_id}.json", {
         "error": {"step": step, "message": message},
         "advance": advance.written if advance is not None else None,
         "batch": batch, "no_session": no_session,
+        "trajectory": trajectory,
     })
     return {
         "recorded_wake_id": wake_id, "wake_id": None,
@@ -672,7 +676,7 @@ def _wake_error(
         "status": ERROR, "step": step, "error": message,
         "session_id": None, "egress": None, "model_calls": None,
         "no_session": no_session, "batch": batch,
-        "diff_counts": None, "trajectory": None, "expectations": [],
+        "diff_counts": None, "trajectory": trajectory, "expectations": [],
         "loop": None,
         "advance": advance.written if advance is not None else None,
     }

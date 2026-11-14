@@ -111,11 +111,15 @@ def resolve_credentials(path: Path) -> dict[str, str]:
     return resolve(path)
 
 
-def model_endpoint(path: Path, purpose: str, model: str = "") -> tuple[str, str, str]:
+def model_endpoint(path: Path | Config, purpose: str, model: str = "") -> tuple[str, str, str]:
     """Resolve a measurement route through the application's configuration,
     reachable from where the measurer runs (the subject's own rewrite)."""
-    url, key, name = _load_config(path, require_secrets=False).endpoint(purpose, model)
-    return (url if _resolves(_DOCKER_HOST) else _from_host(url)), key, name
+    cfg = path if isinstance(path, Config) else _load_config(path, require_secrets=False)
+    url, key, name = cfg.endpoint(purpose, model)
+    if any(f"//{host}:" in url or f"//{host}/" in url
+           for host in (_DOCKER_HOST, _HONCHO_ALIAS)) and not _resolves(_DOCKER_HOST):
+        url = _from_host(url)
+    return url, key, name
 
 
 def config_default(key: str) -> object:

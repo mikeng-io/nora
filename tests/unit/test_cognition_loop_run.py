@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import pytest
+
 from scripts.cognition_loop.cases import generated_case, write_case
 
 NOW = 1_800_000_000_000
@@ -137,7 +139,8 @@ def _runner_subject(inspection=None, outcome=None):
         def wake_hook(self):
             return self.on_wake
 
-    return SimpleNamespace(deps=SimpleNamespace(
+    return SimpleNamespace(environment=SimpleNamespace(guarded=True, check=lambda: None),
+        deps=SimpleNamespace(
         cognition_runner=_Runner(),
         wake_evaluator=SimpleNamespace(_policy=SimpleNamespace(
             batch_max=5, session_timeout_seconds=10)),
@@ -231,6 +234,38 @@ async def test_inspect_only_records_the_assembled_blocks(
     assert wake["trajectory"]["blocks"]["instructions"]["doctrine_sha256"] == "d"
     frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
     assert frozen["trajectory"]["blocks"]["agenda"] == {"agenda": True}
+
+
+@pytest.mark.parametrize("report_read_failure", [False, True])
+async def test_after_state_failure_preserves_captured_trajectory(
+    monkeypatch, tmp_path, report_read_failure,
+):
+    import json
+    from types import SimpleNamespace
+
+    inspection = {"system": "Generated assembled input", "agenda": "Generated agenda"}
+    run_mod = _wake_seam(monkeypatch, tmp_path, _runner_subject(inspection=inspection))
+    reads = []
+
+    async def snapshot(*args, **kwargs):
+        reads.append(1)
+        if len(reads) == 2 and report_read_failure:
+            raise RuntimeError("generated after-state failure")
+
+    monkeypatch.setattr(run_mod.state_mod, "snapshot", snapshot)
+    args, evidence = _wake_args(tmp_path)
+    result = await run_mod._run_wake(
+        args, SimpleNamespace(unit="u", expectations=(), read_probes=()),
+        0, 11, NOW, "postgresql+asyncpg://x", "time", None, evidence, tmp_path,
+        SimpleNamespace(platform="signal", primary_id="r"), "nora-eval-run-x")
+    assert len(reads) == 2
+    assert result["status"] == ("ERROR" if report_read_failure else "PASS")
+    frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
+    assert frozen["trajectory"]["blocks"]["system"] == "Generated assembled input"
+    assert result["trajectory"]["at_ms"] == NOW
+    if report_read_failure:
+        assert result["step"] == "report"
+        assert "after-state failure" in frozen["error"]["message"]
 
 
 async def test_an_unavailable_read_preflight_cannot_pass_inspection(monkeypatch, tmp_path):

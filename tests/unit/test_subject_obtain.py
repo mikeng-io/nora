@@ -43,6 +43,30 @@ def test_default_policy_names_the_given_unit() -> None:
     assert 'unit = "friends"' in policy
 
 
+def test_judges_keep_the_bound_config_instead_of_reloading_deployment_routes(
+    example_config, monkeypatch, tmp_path,
+):
+    import importlib
+
+    from nora.subject.obtain import _with
+    from scripts.memory_graph_spike import Judges
+
+    module = importlib.import_module("nora.subject.obtain")
+    endpoint = "http://127.0.0.1:13421/v1"
+    cfg = _with(example_config, "llm.base_url", endpoint)
+    for name in cfg.providers:
+        cfg = _with(cfg, f"providers.{name}.base_url", endpoint)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("bound model routing must not reload files or resolve DNS")
+
+    monkeypatch.setattr(module, "_load_config", forbidden)
+    monkeypatch.setattr(module, "_resolves", forbidden)
+    judges = Judges(cfg, ["generated-judge"], tmp_path / "unbound-config.toml")
+    assert judges._endpoint("generated-judge")[0] == endpoint
+    assert judges._endpoint("generated-judge")[2] == "generated-judge"
+
+
 def test_default_policy_defaults_to_the_shipped_unit_default() -> None:
     policy = default_policy(("signal", "g1"))
     assert 'unit = "nora"' in policy
