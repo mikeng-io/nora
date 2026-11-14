@@ -1,22 +1,22 @@
 {
-  "version": "v7.18.12",
-  "commit": "2c85dbf5234157a1f98975b3d7b12e18dc1bcbe8",
+  "version": "v7.19.0",
+  "commit": "016c2455b626aa8e6ada98731e61588559e4d82b",
   "channel": "release",
   "services": {
     "http-egress": "ghcr.io/mikeng-io/nora-http-egress@sha256:b6cbd990a7a30f40bd613e70a07fc53a294df216084c75acac26d14ff152516d",
-    "nora": "ghcr.io/mikeng-io/nora-nora@sha256:695bcf4a7f533b8dfd6a9eea7e1dc833a46a221c35b7152f1e460f0ce2a30c66",
+    "nora": "ghcr.io/mikeng-io/nora-nora@sha256:31346c2fcfee53496f83164463a8477db54466be4d758748661d74015a1dafaa",
     "app": "ghcr.io/mikeng-io/nora-app@sha256:aa426dab9f13ad0e3af8df6ff4048a417e571200d2e2e3a55281f9a6d14d7e04",
-    "site": "ghcr.io/mikeng-io/nora-site@sha256:20c28d59747b96059aa8ebc16d5a059d0b6d2081a0df3266ad21f7acb7475744",
-    "stt": "ghcr.io/mikeng-io/nora-stt@sha256:f4495585033dd5d4ff174817e41fcdc3a54c3171639a0f40cd483c1b464e3a8a",
+    "site": "ghcr.io/mikeng-io/nora-site@sha256:c2fa0c2095e0cd7dd13305698b9f71374dd0b6922e3dc888e325b89b7f920e57",
+    "stt": "ghcr.io/mikeng-io/nora-stt@sha256:fb56378799cbbf6ebdad33cdd35d61802a0318b345ec44cf71e184ffba305ed0",
     "voice-sidecar": "ghcr.io/mikeng-io/nora-voice-sidecar@sha256:984b84ea11b036029e1f7c3c2b0c806daf9b54f7199209cf36ea171a1d9acce4",
     "voice-wake": "ghcr.io/mikeng-io/nora-voice-wake@sha256:353183e8aad06ac780830ff657a1afb5505fdb2eb13ceca82279a8f2579a7db4",
-    "signal-bridge": "ghcr.io/mikeng-io/nora-signal-bridge@sha256:55ed5a5329bc60ebcfbb9c8f4951bc7e562131a76e5d595cd4d12bc570f8bc37",
-    "discord-bridge": "ghcr.io/mikeng-io/nora-discord-bridge@sha256:f4eaeec4a96988b3cc2841b0f4e52464aa31896e1c5de28e5735ce68e6e8e01f",
+    "signal-bridge": "ghcr.io/mikeng-io/nora-signal-bridge@sha256:dd6bfe09b6637e815400eea263f9fe64ae0236972566124ad3976096caf2db20",
+    "discord-bridge": "ghcr.io/mikeng-io/nora-discord-bridge@sha256:422dc8dccb6087ebecefde4954f161709a4ede4e0910a2afd1d6ec7aaee9e7df",
     "whatsapp-bridge": "ghcr.io/mikeng-io/nora-whatsapp-bridge@sha256:f23a3e46cf0aab2211f787754f838f22d55993cf28eed991aaa235df13126c69",
     "instagram-bridge": "ghcr.io/mikeng-io/nora-instagram-bridge@sha256:d99c460ba0437da8f8b9494eb49a5c1b358f433a4cf1f17c0e948579ccbc307e",
-    "bridge-projection": "ghcr.io/mikeng-io/nora-bridge-projection@sha256:7be2ff4d4cb84e91c496f4fc8ccd7f4f0babb42c491cd466300bd5a24e6a6095",
-    "presence": "ghcr.io/mikeng-io/nora-nora@sha256:695bcf4a7f533b8dfd6a9eea7e1dc833a46a221c35b7152f1e460f0ce2a30c66",
-    "analytics": "ghcr.io/mikeng-io/nora-nora@sha256:695bcf4a7f533b8dfd6a9eea7e1dc833a46a221c35b7152f1e460f0ce2a30c66"
+    "bridge-projection": "ghcr.io/mikeng-io/nora-bridge-projection@sha256:72d16d5ce2affe332c485f9cdc2c1a0a70f1a7f9b1fea8958ff6b6c1910c822d",
+    "presence": "ghcr.io/mikeng-io/nora-nora@sha256:31346c2fcfee53496f83164463a8477db54466be4d758748661d74015a1dafaa",
+    "analytics": "ghcr.io/mikeng-io/nora-nora@sha256:31346c2fcfee53496f83164463a8477db54466be4d758748661d74015a1dafaa"
   },
   "artifacts": {
     "http-egress": {
@@ -37,12 +37,12 @@
     },
     "nora": {
       "name": "nora",
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:695bcf4a7f533b8dfd6a9eea7e1dc833a46a221c35b7152f1e460f0ce2a30c66",
-      "commit": "2c85dbf5234157a1f98975b3d7b12e18dc1bcbe8",
-      "version": "v7.18.12",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:31346c2fcfee53496f83164463a8477db54466be4d758748661d74015a1dafaa",
+      "commit": "016c2455b626aa8e6ada98731e61588559e4d82b",
+      "version": "v7.19.0",
       "channel": "release",
       "inputs": {
-        "context": "76055ed9893c731a820369a0f3c1670caf3b8f79",
+        "context": "da833e81f551ac158151ecf7c629c4750cc06d9f",
         "dockerfile": "191017e26e7ee14c6038aebc048f59e8ed3e5935de284b2107274028301ac134",
         "publisher": "4db25e4875eb9d4ab0c5b4ca6f13c724dc608046c880dd58aa3d7a5a91dae146",
         "workflow": "6ef24ac3c862aaa2347c84d15e000e3f2f7e2a58",
@@ -69,12 +69,12 @@
     },
     "site": {
       "name": "site",
-      "image": "ghcr.io/mikeng-io/nora-site@sha256:20c28d59747b96059aa8ebc16d5a059d0b6d2081a0df3266ad21f7acb7475744",
-      "commit": "2c85dbf5234157a1f98975b3d7b12e18dc1bcbe8",
-      "version": "v7.18.12",
+      "image": "ghcr.io/mikeng-io/nora-site@sha256:c2fa0c2095e0cd7dd13305698b9f71374dd0b6922e3dc888e325b89b7f920e57",
+      "commit": "016c2455b626aa8e6ada98731e61588559e4d82b",
+      "version": "v7.19.0",
       "channel": "release",
       "inputs": {
-        "context": "76055ed9893c731a820369a0f3c1670caf3b8f79",
+        "context": "da833e81f551ac158151ecf7c629c4750cc06d9f",
         "dockerfile": "3a8f159aaaf3b076a9e3c742480b39c236d81a7698886865081a1fb02bddd80d",
         "publisher": "4db25e4875eb9d4ab0c5b4ca6f13c724dc608046c880dd58aa3d7a5a91dae146",
         "workflow": "6ef24ac3c862aaa2347c84d15e000e3f2f7e2a58",
@@ -85,18 +85,18 @@
     },
     "stt": {
       "name": "stt",
-      "image": "ghcr.io/mikeng-io/nora-stt@sha256:f4495585033dd5d4ff174817e41fcdc3a54c3171639a0f40cd483c1b464e3a8a",
-      "commit": "7fb76f2d1b6388b76efead282d9c6f3c8094e433",
-      "version": "v7.18.1",
+      "image": "ghcr.io/mikeng-io/nora-stt@sha256:fb56378799cbbf6ebdad33cdd35d61802a0318b345ec44cf71e184ffba305ed0",
+      "commit": "016c2455b626aa8e6ada98731e61588559e4d82b",
+      "version": "v7.19.0",
       "channel": "release",
       "inputs": {
-        "context": "2203456c4f8f7449cbf362a4a2bf092a8650f6aa",
-        "dockerfile": "0f909a02fd4c8d484501ecf6f5ce85dd2b5ffed5481065fcec75dbb638c53ad0",
+        "context": "c242c011cca85628191f7526df69a956f36049e2",
+        "dockerfile": "348f2ba5ed262fa5d2ba8120fedffdb251c9ed0c1be71e598555dc27b2b2d39d",
         "publisher": "4db25e4875eb9d4ab0c5b4ca6f13c724dc608046c880dd58aa3d7a5a91dae146",
         "workflow": "6ef24ac3c862aaa2347c84d15e000e3f2f7e2a58",
         "platform": "linux/amd64",
         "external": {},
-        "reusable": true
+        "reusable": false
       }
     },
     "voice-sidecar": {
@@ -133,12 +133,12 @@
     },
     "signal-bridge": {
       "name": "signal-bridge",
-      "image": "ghcr.io/mikeng-io/nora-signal-bridge@sha256:55ed5a5329bc60ebcfbb9c8f4951bc7e562131a76e5d595cd4d12bc570f8bc37",
-      "commit": "8d56cefec3da1205db887b24f49cdb8efbb77630",
-      "version": "v7.18.11",
+      "image": "ghcr.io/mikeng-io/nora-signal-bridge@sha256:dd6bfe09b6637e815400eea263f9fe64ae0236972566124ad3976096caf2db20",
+      "commit": "016c2455b626aa8e6ada98731e61588559e4d82b",
+      "version": "v7.19.0",
       "channel": "release",
       "inputs": {
-        "context": "closure:36357ebf9ccfdd9f2dbfaa833a725a976aee938523e4d1bec63809a62f5cbf64",
+        "context": "closure:b369fc801b968ff9153980a9168d6792f9eeebb9711ec3a6cf850817d369c8b7",
         "dockerfile": "b5431893d60b9a2a732b7027358bb93724e7312b62904941b13c71587020a4e2",
         "publisher": "4db25e4875eb9d4ab0c5b4ca6f13c724dc608046c880dd58aa3d7a5a91dae146",
         "workflow": "6ef24ac3c862aaa2347c84d15e000e3f2f7e2a58",
@@ -152,12 +152,12 @@
     },
     "discord-bridge": {
       "name": "discord-bridge",
-      "image": "ghcr.io/mikeng-io/nora-discord-bridge@sha256:f4eaeec4a96988b3cc2841b0f4e52464aa31896e1c5de28e5735ce68e6e8e01f",
-      "commit": "8d56cefec3da1205db887b24f49cdb8efbb77630",
-      "version": "v7.18.11",
+      "image": "ghcr.io/mikeng-io/nora-discord-bridge@sha256:422dc8dccb6087ebecefde4954f161709a4ede4e0910a2afd1d6ec7aaee9e7df",
+      "commit": "016c2455b626aa8e6ada98731e61588559e4d82b",
+      "version": "v7.19.0",
       "channel": "release",
       "inputs": {
-        "context": "closure:f002718aecec8628ccb0792eb6d9c204ef5b684d690db40cc438b4e4945ef5a5",
+        "context": "closure:876ca5cb499600c765c5a0ec9ada10bb66226713150cadc54a31b906c5310bd6",
         "dockerfile": "3cc65dcaa72c4aed758f0feb217cac20dff60c7f23e09a7cf62ae2486bd9f787",
         "publisher": "4db25e4875eb9d4ab0c5b4ca6f13c724dc608046c880dd58aa3d7a5a91dae146",
         "workflow": "6ef24ac3c862aaa2347c84d15e000e3f2f7e2a58",
@@ -200,12 +200,12 @@
     },
     "bridge-projection": {
       "name": "bridge-projection",
-      "image": "ghcr.io/mikeng-io/nora-bridge-projection@sha256:7be2ff4d4cb84e91c496f4fc8ccd7f4f0babb42c491cd466300bd5a24e6a6095",
-      "commit": "8d56cefec3da1205db887b24f49cdb8efbb77630",
-      "version": "v7.18.11",
+      "image": "ghcr.io/mikeng-io/nora-bridge-projection@sha256:72d16d5ce2affe332c485f9cdc2c1a0a70f1a7f9b1fea8958ff6b6c1910c822d",
+      "commit": "016c2455b626aa8e6ada98731e61588559e4d82b",
+      "version": "v7.19.0",
       "channel": "release",
       "inputs": {
-        "context": "closure:9bc76c3385e8f970a2c8f2dc5cb741718cf6edf2b901ab2da8d8ce1492491086",
+        "context": "closure:953476546b3a919ae444f0359e06b0cba46ad5a70d13c23832867a2a2ee25a8c",
         "dockerfile": "a462cc260c45ee373a39d1af772daa24da76b030463a79217dba5bada41a2c85",
         "publisher": "4db25e4875eb9d4ab0c5b4ca6f13c724dc608046c880dd58aa3d7a5a91dae146",
         "workflow": "6ef24ac3c862aaa2347c84d15e000e3f2f7e2a58",
