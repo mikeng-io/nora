@@ -23,6 +23,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 import httpx2
 from aiohttp import web
+from pydantic import BaseModel
 from sqlalchemy.engine import make_url
 
 
@@ -100,12 +101,30 @@ class IsolatedServices:
 
         self.check()
         for path, url in self.urls.items():
-            if not path.endswith((".base_url", ".endpoint", ".bridge_url", ".refresh_url")):
-                raise ValueError(f"{path}: an isolated binding must name an endpoint")
             node = cfg
-            for part in path.split("."):
-                node = node[part] if isinstance(node, dict) else getattr(node, part)
-            original, replacement = urlsplit(node), urlsplit(url)
+            parts = path.split(".")
+            try:
+                for part in parts[:-1]:
+                    if isinstance(node, dict):
+                        node = node[part]
+                    elif isinstance(node, BaseModel) and part in type(node).model_fields:
+                        node = getattr(node, part)
+                    else:
+                        raise ValueError
+                field = parts[-1]
+                if (not isinstance(node, BaseModel) or field not in type(node).model_fields
+                        or not (field == "url" or field.endswith("_url") or field == "endpoint")
+                        or field.startswith("public_")):
+                    raise ValueError
+                node = getattr(node, field)
+                original = urlsplit(node)
+                if original.scheme not in ("http", "https") or not original.hostname:
+                    raise ValueError
+            except (KeyError, AttributeError, TypeError, ValueError):
+                raise ValueError(
+                    f"{path}: an isolated binding must name an HTTP endpoint"
+                ) from None
+            replacement = urlsplit(url)
             cfg = _with(cfg, path, urlunsplit((replacement.scheme, replacement.netloc,
                                               original.path, original.query, "")))
         model_urls = [cfg.llm.base_url, *(provider.base_url for provider in cfg.providers.values())]
