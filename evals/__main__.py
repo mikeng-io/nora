@@ -39,6 +39,7 @@ from evals.backbone import (
     drain_spend,
     nora_task,
     read,
+    retain_report,
     sample_read,
 )
 from evals.cli import BUDGET_MINUTES, eval_parser
@@ -54,11 +55,11 @@ from evals.scenarios import (
     load_corpus,
     selected_cases,
 )
+from evals.services import load_services
 from evals.subject_config import materialise
 from evals.terminal import safe_print as print
 from nora.subject import (
     EMBEDDER_FROM_HOST,
-    GraphIndexRefusedError,
     SharedDatabaseMutatedError,
     SourceRevisionMismatchError,
     assert_shared_databases_unchanged,
@@ -79,6 +80,7 @@ from nora.subject.eval_evidence import (
     fingerprint,
     revision,
 )
+from nora.subject.recorded_services import RecordedServices
 from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
 
 #: Coarse S-class grouping for `--class`. Approximate on purpose where a
@@ -409,18 +411,21 @@ def _run_one(
     memory_index: bool = False,
     subject_overrides: dict[str, Any] | None = None,
     contract: GradingContract | None = None,
+    services: dict[str, RecordedServices] | None = None,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
         memory_index=memory_index, overrides=subject_overrides,
         contract=contract,
+        services=services,
     )
     report = experiment.run_evaluations(task=task)
     from nora.subject.eval_evidence import current
 
     if evidence := current():
+        retained = retain_report(evidence, name, report)
         evidence.check()
-        evidence.record("corpus_report", corpus=name, report=report.model_dump())
+        evidence.record("corpus_report", **retained)
     context_complete = True
     if context_receipts is not None:
         missing = {c["name"] for c in report.cases} - {
@@ -431,6 +436,7 @@ def _run_one(
             context_complete = False
     scope = f" [{len(experiment.cases)} selected]" if only else ""
     print(f"--- {name}: {census(name)}{scope} ---")
+    print("mode: protocol rehearsal; model behavior: UNMEASURED")
     _print_spend()
     _print_memory_overhead()
     if positions:
@@ -473,18 +479,11 @@ def _run_one(
     return reading.failed == 0 and reading.errored == 0 and context_complete
 
 
-def _print_input(name: str, case_name: str, *, source_url: str) -> int:
-    """Render one case's model input and print it; no model is called.
+def _print_input(name: str, case_name: str, *, source_url: str,
+                 services: dict[str, RecordedServices] | None = None) -> int:
+    """Print the declared entry's rendered input under its case-owned services.
 
-    Before any model call, each arm's rendered input for one case is printed
-    and diffed: a suite that cannot see the change measures noise. Run it once
-    on each arm's checkout and `diff` the two outputs; the corpus header
-    (`evals/corpora/standing.yaml`) states the whole recipe.
-
-    The case runs the ONE path — sandbox, snapshot, frozen clock — with the
-    fold's model client swapped for a recorder, so what prints is exactly what
-    the deployed fold would have sent. It is always an ERROR as a verdict; the
-    exit code says only whether the input was rendered.
+    This rendering probe has no behavioral verdict and does not run a journey.
     """
     if CORPUS_ENTRY[name] not in _PRINTS_INPUT:
         print(
@@ -501,7 +500,7 @@ def _print_input(name: str, case_name: str, *, source_url: str) -> int:
     case = case.model_copy(update={"metadata": {**(case.metadata or {}), "print_input": True}})
     result = nora_task(Spec(
         source_url=source_url, entry=CORPUS_ENTRY[name],
-        full_restore=name in FULL_RESTORE_CORPORA,
+        full_restore=name in FULL_RESTORE_CORPORA, services=services,
     ))(case)
     state = {e.name: e.state for e in result.get("environment_state") or ()}
     shown = state.get(NORA_SHOWN) or ""
@@ -620,6 +619,11 @@ def _main(*, lock_fd: int = -1) -> int:
     if args.print_input and len(names) != 1:
         print("--print-input names a case OF ONE corpus", file=sys.stderr)
         return 2
+    try:
+        args.service_inputs = load_services(args.services) if args.services else None
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"refusing to run: {exc}", file=sys.stderr)
+        return 2
     needs_judge = sorted(set(names) & JUDGE_REQUIRED)
     if needs_judge and not args.judge and not args.print_input:
         # Refused BEFORE anything is spent: every case would pay for its
@@ -640,11 +644,8 @@ def _main(*, lock_fd: int = -1) -> int:
     from opentelemetry import trace
 
     from nora.subject.sandbox import EVAL_HOST_LOCK
-
-    _prefill_capture()  # establish the existing SDK provider before attaching durable capture
-    # The declared subject seam, validated and hashed BEFORE any case composes:
-    # a bad file refuses the run with nothing spent, and its exact content is
-    # what `run_started` carries.
+    _prefill_capture()
+    # Validate and fingerprint the declared candidate before composition.
     subject_overrides: dict[str, Any] | None = None
     overrides_sha: str | None = None
     if args.subject_overrides is not None:
@@ -662,8 +663,7 @@ def _main(*, lock_fd: int = -1) -> int:
         except (OSError, ValueError, TypeError) as exc:
             print(f"refusing to run: {exc}", file=sys.stderr)
             return 2
-    # The hard dispatch bound: installed before the first case composes, so
-    # even composition's own model reads are counted.
+    # Bound dispatches, including model reads during composition.
     budget = None
     if args.run_budget is not None:
         from nora.domain.run_budget import RunBudget
@@ -685,9 +685,8 @@ def _main(*, lock_fd: int = -1) -> int:
             except ValueError:
                 bad = True
         if bad or any(v is not None and v <= 0 for v in vals):
-            print("refusing to run: --run-budget fields must be positive "
-                  "integers (empty or `none` IN = measured, not capped)",
-                  file=sys.stderr)
+            print("refusing to run: --run-budget fields must be positive integers "
+                  "(empty or `none` IN = measured, not capped)", file=sys.stderr)
             return 2
         vals += defaults[len(vals):]
         budget = RunBudget(
@@ -746,7 +745,9 @@ def _coverage_execute(args: argparse.Namespace, names: list[str],
         doc = load_input(gold=not bool(args.print_input))
         print("coverage plan:", json.dumps(plan(doc), sort_keys=True))
         if args.print_input:
-            return _print_input(names[0], args.print_input, source_url="")
+            return _print_input(names[0], args.print_input, source_url="",
+                                services=(args.service_inputs.corpora.get(names[0])
+                                          if args.service_inputs else None))
         if not args.judge:
             raise ValueError("coverage requires --judge")
         contract = getattr(args, "bound_contract", None)
@@ -755,7 +756,8 @@ def _coverage_execute(args: argparse.Namespace, names: list[str],
                       samples=1, timeout_seconds=args.coverage_timeout)
         ok = _run_one(names[0], source_url="", judge=judge, sample=1,
                       only=only, all_reasons=args.reasons, positions=args.positions,
-                      contract=contract)
+                      contract=contract, services=(args.service_inputs.corpora.get(names[0])
+                                          if args.service_inputs else None))
         return 0 if ok else 1
     except (ValueError, KeyError, OSError) as exc:
         print(f"coverage ERROR: {exc}", file=sys.stderr)
@@ -764,6 +766,11 @@ def _coverage_execute(args: argparse.Namespace, names: list[str],
 
 def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | None,
              *, subject_overrides: dict[str, Any] | None = None) -> int:
+    from nora.subject.eval_evidence import current
+
+    args.service_inputs = getattr(args, "service_inputs", None)
+    if args.service_inputs and (evidence := current()):
+        args.service_inputs.record(evidence)
     if "profile_coverage" in names:
         if contract := getattr(args, "bound_contract", None):
             contract.verify_cases({f"{n}:{c.name}": c for n in names
@@ -849,9 +856,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             if evidence := current():
                 evidence.record("subject_config", sha256=fingerprint(Path(generated)))
             print(f"subject config rebuilt from {args.deployment_config} -> {generated}")
-            # AFTER the rebuild: the sweep reads Honcho's address and the
-            # deployment's workspace off the config every subject composes.
-            print(f"run {RUN_ID}: every draw gets its own Honcho workspace")
+            print(f"run {RUN_ID}: protocol rehearsal with case-owned external services")
             # THE MEMORY SURFACE, RESOLVED, not assumed (DEC-316): the
             # generated config's own flag, or `--memory-index`. Cases are
             # selected for it and every subject is checked against it, so a
@@ -866,10 +871,11 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             graph = deployed or args.memory_index
             print(f"memory surface: {memory_surface_line(deployed, args.memory_index)}")
             print(pseudonyms.status())
-            _sweep_stale_workspaces()
 
             if args.print_input:
-                return _print_input(names[0], args.print_input, source_url=source_url)
+                return _print_input(names[0], args.print_input, source_url=source_url,
+                                    services=(args.service_inputs.corpora.get(names[0])
+                                          if args.service_inputs else None))
             # THE BUDGET, before any draw (and before the graph surface's
             # checks): the size of what this run would draw, and a refusal over
             # `BUDGET_MINUTES` unless the operator asked for it.
@@ -889,15 +895,6 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             if contract := getattr(args, "bound_contract", None):
                 contract.verify_cases({f"{n}:{c.name}": c for n in names
                     for c in selected_cases(n, only=only, memory_index=graph)})
-            if graph:
-                try:
-                    for line in graph_surface_lines(
-                        source_url, embedder_model_of(written.read_text(encoding="utf-8")),
-                    ):
-                        print(line)
-                except GraphIndexRefusedError as exc:
-                    print(f"refusing to run: {exc}", file=sys.stderr)
-                    return 2
 
             judge = None if not args.judge else Judge(
                 base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,
@@ -916,6 +913,8 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                         context_receipts=(receipts if args.context_arm != "full"
                                           or args.context_report else None),
                         contract=getattr(args, "bound_contract", None),
+                        services=(args.service_inputs.corpora.get(name)
+                                  if args.service_inputs else None),
                     ) and ok
                 # Successful Nora replies under fallback cannot pass the selector experiment.
                 ok = ok and not any("selector_error" in r for r in receipts)

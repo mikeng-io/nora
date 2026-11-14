@@ -59,14 +59,12 @@ from strands_evals.types.evaluation import (
 from evals import pseudonyms
 from evals.recall import recall_facts
 from evals.situation import (
-    LIVE_HANDLE_STANDINS,
     deployment_handles,
     deployment_networks,
     facts,
     shown_where,
     varied_transport,
 )
-from evals.subject_config import FULL_RESTORE_OVERRIDES, NO_GEOCODER_ENV
 from evals.terminal import safe_print as print
 from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.note_body import (
@@ -82,7 +80,6 @@ from nora.subject import (
     DrawWorkspace,
     IndexCache,
     SubjectSpec,
-    draw_workspace,
     index_sandbox,
     new_run_id,
     obtain,
@@ -93,9 +90,10 @@ from nora.subject import (
     seed_documents,
     seed_lessons,
 )
+from nora.subject.eval_evidence import EvidenceError
 from nora.subject.obtain import RoomNotInPolicyError
-from nora.subject.sandbox_roster import recorded_rosters
-from nora.subject.transport import held_states, hold_transports
+from nora.subject.recorded_services import RecordedServices
+from nora.subject.transport import held_states
 
 #: Names carried on `environment_state`. A reader must key on these, never on
 #: `test_pass`, which is a `bool` and cannot hold the third answer.
@@ -177,6 +175,8 @@ NORA_SHOWN_WHERE = "nora.shown_where"
 #: `{network: state}`, or `None` on a build with no `<presence>` reader —
 #: where there is nothing to hold and the prompt carries no transport state.
 NORA_TRANSPORT = "nora.transport_held"
+NORA_MODE = "nora.mode"
+NORA_BEHAVIOR = "nora.behavior"
 #: `Outcome.written`/`len(.changed)`/`len(.staged)` off the FIRST drive —
 #: the idempotence grader's input.
 #: `dream()`'s own `written`/`changed` are already PER-CALL DELTAS (it
@@ -281,23 +281,8 @@ def scrub(text: str, secret: str) -> str:
 
 
 async def _close(subject: Any) -> None:
-    """Best-effort teardown. Never raises: a case's RESULT must not depend on
-    whether its cleanup worked, and a teardown error is not a reading."""
-    lifecycle = getattr(subject.deps, "computer_lifecycle", None)
-    if lifecycle is not None:
-        # Failure leaves the journal and stores alive for retry/recovery.
-        await lifecycle.close()
-    for shut in (
-        subject.deps.background.cancel_all(),
-        # The scoped computer's own close before the stores it writes
-        # through: admission stops, executors unwind, its Redis client
-        # and journal lock release — the same order `App.shutdown` uses.
-        subject.deps.audit.aclose(),
-        subject.deps.client.close(),
-        *(client.close() for client in getattr(subject.deps, "model_clients", ())),
-    ):
-        with contextlib.suppress(Exception):
-            await shut
+    """Release dependencies through the subject's production shutdown owner."""
+    await subject.aclose()
 
 
 _prefill_exporter: InMemorySpanExporter | None = None
@@ -1078,18 +1063,14 @@ class Spec:
     source_url: str
     entry: str = "participation"
     overrides: dict[str, Any] | None = None
+    services: Mapping[str, RecordedServices] | None = None
     #: Idempotence: drive the SAME subject
     #: through the SAME case `repeat` times, at the SAME `now_ms`, and carry
     #: the LAST run's `written`/`changed`/`staged` separately from the
     #: first's — no re-`obtain()` between runs, unlike every other case,
     #: because idempotence needs run 2 to see what run 1 actually left.
     repeat: int = 1
-    #: Judging: "did she reply" is structural;
-    #: "was the reply right" needs a model that did not produce it —
-    #: `evals.rebuilt.grading.Judge`, built ONCE per experiment batch (its
-    #: own docstring), not per case. `None` skips judging. Typed `Any` to
-    #: avoid importing `evals.rebuilt.grading` (and its `openai` dependency)
-    #: at module load for every caller that never judges.
+    #: The measurement's judge settings, bound to isolated routes per case.
     judge: Any = None
     #: The roster and the room set every subject composes with — the
     #: DEPLOYMENT'S OWN `identity.toml` and `policy.toml`, verbatim, read
@@ -1100,22 +1081,9 @@ class Spec:
     #: An already-migrated blank database beside the source to clone each
     #: sandbox from (`sandbox_database`'s own). `None` builds one per source.
     template: str | None = None
-    #: The DEPLOYMENT's `config.toml` text — read for the networks it runs and
-    #: the handles it declares, which is what the sandbox's transport tier is
-    #: held to and what a presence judge grades against. `None` reads it from
-    #: `$NORA_DEPLOYMENT_DIR` beside the policy and roster. NOT the subject's
-    #: config: the sandbox turns Discord and WhatsApp off, the deployment
-    #: does not.
+    #: Deployment facts for presence criteria; None reads the deployment directory.
     deployment_config: str | None = None
-    #: How the sandbox is seeded. `False` (every corpus but the ones
-    #: `evals.scenarios.FULL_RESTORE_CORPORA` names) is the snapshot path:
-    #: `sandbox_database`, then `sandbox_from_snapshot`'s four tiers written
-    #: through the stores. `True` is the FULL RESTORE: `sandbox_as_of` copies
-    #: every restorable store as of the instant, ids and all (messages with
-    #: their `media_json`, `media_objects`, events, memos, presence, the
-    #: Rollup), and the subject is composed against that database with
-    #: `evals.subject_config.FULL_RESTORE_OVERRIDES` on. Per corpus, never
-    #: per case: a corpus is a suite about one assembly.
+    #: Full SQL restoration or snapshot seeding, retaining the same functional config.
     full_restore: bool = False
     #: The memory surface this run's cases were selected for (DEC-316,
     #: `evals.scenarios.MEMORY_SURFACES`): `graph` or `honcho`, or None for a
@@ -1168,35 +1136,6 @@ def _deployment_identity() -> str:
 @lru_cache(maxsize=1)
 def _deployment_config() -> str:
     return _read_deployment("config.toml")
-
-
-def _hold_the_transport_tier(subject: Any, spec: Spec, md: Mapping[str, Any]) -> Any:
-    """Hold `<presence>`'s live inputs at what production renders
-    (`nora.subject.transport`). Only when the
-    graph HAS a reader: a build without `<presence>` has nothing to hold,
-    and reading the deployment's config for it would be a failure about
-    nothing."""
-    if getattr(subject.deps, "self_presence", None) is None:
-        return None
-    if spec.deployment_config is not None:
-        networks = deployment_networks(tomllib.loads(spec.deployment_config))
-    elif spec.policy is not None:
-        # A caller that states its OWN room set (a test reconstructing a room
-        # of its own) composed its own world: the networks it runs are the
-        # ones its subject enabled. Reading the deployment's config here would
-        # fail every integration test off the deploy host.
-        networks = tuple(sorted(
-            name for name in ("signal", "discord", "whatsapp", "instagram")
-            if getattr(getattr(subject.cfg.platforms, name, None), "enabled", False)
-        ))
-    else:
-        networks = deployment_networks(tomllib.loads(_deployment_config()))
-    return hold_transports(
-        subject,
-        networks=networks,
-        varied=varied_transport(md),
-        live_handles=pseudonyms.resolve(dict(LIVE_HANDLE_STANDINS)),
-    )
 
 
 def varied_lessons(md: Mapping[str, Any]) -> tuple[str, ...]:
@@ -1614,39 +1553,49 @@ async def _sandbox_for(spec: Spec, now: datetime) -> AsyncIterator[str]:
             yield url
 
 
+def _protocol_result(result: dict[str, Any]) -> dict[str, Any]:
+    return {**result, "environment_state": [
+        *result.get("environment_state", []),
+        EnvironmentState(name=NORA_MODE, state="protocol-rehearsal"),
+        EnvironmentState(name=NORA_BEHAVIOR, state="UNMEASURED"),
+    ]}
+
+
+def retain_report(evidence: Any, corpus: str, report: Any) -> dict[str, Any]:
+    payload = {"corpus": corpus, "report": report.model_dump(mode="json"),
+               "mode": "protocol-rehearsal", "behavior": "UNMEASURED"}
+    retained = {**payload, "evidence": {
+        "status": "ERROR" if evidence.failure else "UNVALIDATED", "cause": evidence.failure}}
+    evidence.retain(f"corpus-{corpus}.json", json.dumps(retained, ensure_ascii=False).encode())
+    return payload
+
+
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     from nora.subject.eval_evidence import current
 
     evidence = current()
     if evidence is None:
-        return await _drive_uncaptured(case, spec)
+        return _protocol_result(await _drive_uncaptured(case, spec))
     with evidence.case(
             case.name or "unnamed", input=case.input,
             metadata={"case": case.model_dump(mode="json"), "entry": spec.entry}):
-        result = await _drive_uncaptured(case, spec)
+        result = _protocol_result(await _drive_uncaptured(case, spec))
         evidence.result(result)
         return result
 
 
 async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
-    """One DRAW, in a Honcho workspace of its own. Raises; `nora_task` catches.
-
-    The sandbox database isolates what she knows in Postgres; Honcho is an
-    external service and needs its own isolation. A shared
-    `<deployment>-eval` workspace would be fed by every draw and read back by
-    the tag path, so draw 3 would read draws 1 and 2 as the tagger card.
-
-    The workspace is the OUTERMOST scope: created before the subject is
-    composed, and deleted only after `_drive_draw` has returned, by which
-    point its own `finally` has closed the subject and cancelled its
-    background work. A feed still running would otherwise write into a
-    workspace being deleted.
-    """
+    """One isolated protocol draw, retaining the production subject assembly."""
     from evals.rebuilt.entry import ENTRY_POINTS
     spec = dataclasses.replace(spec, entry=(case.metadata or {}).get("entry", spec.entry))
     port = ENTRY_POINTS[spec.entry]
+    recording = (spec.services or {}).get(case.name or "unnamed")
+    if recording is None:
+        raise EvidenceError("external_responses_missing: " + (case.name or "unnamed"))
     if port.frozen_input:
-        outcome = await port.drive(spec.judge, case, now_ms=0)
+        async with recording.open("sqlite://") as environment:
+            judge = spec.judge.bind_services(environment) if spec.judge is not None else None
+            outcome = await port.drive(judge, case, now_ms=0)
         return {
             "output": "",
             "environment_state": [
@@ -1662,18 +1611,10 @@ async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
                 EnvironmentState(name=NORA_SHOWN, state=outcome.shown),
             ],
         }
-    async with draw_workspace(case.name or "unnamed", run_id=RUN_ID) as memory:
-        # Held BEFORE the drive, so a draw that raises is still counted; its
-        # delete time is filled in when the context exits.
-        _DRAWS.append(memory)
-        result = await _drive_draw(case, spec, memory_workspace=memory.id)
-    result["environment_state"].append(
-        EnvironmentState(name=NORA_MEMORY_WORKSPACE, state=memory.id),
-    )
-    return result
+    return await _drive_draw(case, spec, recording=recording)
 
 
-async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[str, Any]:
+async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) -> dict[str, Any]:
     """Obtain, sandbox, seed, drive, tear down. Raises; `nora_task` catches.
 
     ONE PATH. Every case names a real room at a real instant (`snapshot:`),
@@ -1741,69 +1682,21 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
         if clock_ms < before_ms:
             raise ValueError("synthetic writer clock cannot precede the restored anchor")
     now = datetime.fromtimestamp(clock_ms / 1000, tz=UTC)
-    if spec.full_restore and os.environ.get(NO_GEOCODER_ENV):
-        # The geocoder credentials are pointed at this name BECAUSE nothing
-        # sets it; set, the full-restore subject would build a billed client.
-        raise ValueError(
-            f"${NO_GEOCODER_ENV} is set, and a full-restore subject reads its "
-            "geocoder credential from it (`FULL_RESTORE_OVERRIDES`); unset it"
-        )
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     subject = None
-    from nora.subject.circle import CircleOverlay, reaction_wire, seed_job
+    from nora.subject.circle import CircleOverlay, seed_job
     overlay = CircleOverlay(**md['circle_overlay']) if md.get('circle_overlay') else None
     try:
-        async with _sandbox_for(spec, now) as database_url, reaction_wire(overlay) as signal_url:
-            # A full restore holds the real speakers, so each room's members
-            # are read from them while the graph composes; without it every
-            # lineage tool answers `unavailable` (`nora.subject.sandbox_roster`).
-            with (
-                recorded_rosters(database_url=database_url, now=now)
-                if spec.full_restore else contextlib.nullcontext()
-            ):
-                subject = await obtain(
-                    SubjectSpec(
-                        database_url=database_url,
-                        workdir=workdir,
-                        circle=overlay, signal_rpc_url=signal_url,
-                        room=room,
-                        # LAST, so nothing a spec states can redirect it: THIS
-                        # DRAW'S Honcho workspace, created empty.
-                        overrides={
-                            **port.config,
-                            # A full restore turns the presence READER back on
-                            # (`FULL_RESTORE_OVERRIDES` says why nothing polls).
-                            # Before the spec's own, so a caller can still state
-                            # otherwise; empty on every other corpus.
-                            **(FULL_RESTORE_OVERRIDES if spec.full_restore else {}),
-                            **(spec.overrides or {}),
-                            **(overlay.overrides if overlay else {}),
-                            "honcho.workspace_id": memory_workspace,
-                        },
-                        # The deployment's OWN roster and room set, verbatim.
-                        # `_DEFAULT_IDENTITY` knows ONE person; a real room has
-                        # many, and a snapshot copies each row's real `person_id`
-                        # — so most speakers would resolve to "the
-                        # identity does not know them" and render nameless,
-                        # while message BODIES name roster members
-                        # outright. A real policy entry also carries
-                        # `description` (which REACHES THE MODEL), the
-                        # `relevance_gate`/`home_room`/`voice` opt-ins and the
-                        # room's tool grant; a minimal invented one measures a
-                        # different room.
-                        identity=(
-                            spec.identity if spec.identity is not None
-                            else _deployment_identity()
-                        ),
-                        policy=spec.policy if spec.policy is not None else _deployment_policy(),
-                        # FROZEN AT THE MOMENT. The seeded rows keep their real
-                        # timestamps, so the clock she reads them against must be
-                        # the instant they were written up to.
-                        now=now,
-                    )
-                )
-            # SPEAKING NEEDS AN ADAPTER, and the sandbox disables Discord's
-            # (a declared divergence — it authenticates for real at startup).
+        async with (_sandbox_for(spec, now) as database_url,
+                    recording.open(database_url, redis=True) as environment):
+            subject = await obtain(SubjectSpec(
+                database_url=database_url, workdir=workdir, room=room,
+                environment=environment, overrides=spec.overrides,
+                identity=spec.identity if spec.identity is not None else _deployment_identity(),
+                policy=spec.policy if spec.policy is not None else _deployment_policy(), now=now,
+            ))
+            if spec.judge is not None:
+                spec = dataclasses.replace(spec, judge=spec.judge.bind(subject.cfg))
             from nora.subject.eval_evidence import current, fingerprint
 
             if evidence := current():
@@ -1813,11 +1706,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 }, computer_enabled=subject.cfg.computer.enabled,
                     browse_enabled=subject.cfg.computer.browse.enabled,
                     defer_tools=subject.cfg.llm.defer_tools)
-            # `FirePath._turn` resolves the room's own adapter before it says
-            # anything, so a turn case anchored where no adapter is wired dies
-            # deep in `fire.py` with a `KeyError`. Refused here, by name,
-            # against the COMPOSED config rather than a list kept in step by
-            # hand.
+            # A turn needs its actual platform adapter in the declared subject.
             if port.drives_a_turn:
                 platform = room[0]
                 enabled = getattr(
@@ -1826,18 +1715,14 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 if not enabled:
                     raise ValueError(
                         f"case {case.name!r} drives a turn (entry={spec.entry!r}) "
-                        f"in a {platform} room, and the sandbox composes no "
-                        f"{platform} adapter — `FirePath._turn` resolves the "
-                        "room's adapter before speaking, so the turn cannot "
-                        "run. Anchor a turn case where an adapter is wired "
-                        "(design/evaluation/subject.md 's "
-                        "declared Discord divergence)."
+                        f"in a {platform} room, but the declared subject composes no "
+                        f"{platform} adapter"
                     )
             if spec.memory_surface is not None and not (overlay and overlay.memory):
                 refuse_a_memory_surface_mismatch(
                     spec.memory_surface, subject.cfg.memory.index.read,
                 )
-            transport = _hold_the_transport_tier(subject, spec, md)
+            transport = None
             if spec.full_restore:
                 # Already seeded, every store, before `obtain()`: this reads
                 # back what the drive needs and VERIFIES the row map is the
@@ -1889,9 +1774,6 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             nora_case = dataclasses.replace(
                 nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
             )
-            if overlay and overlay.memory:
-                await subject.circle_memory.populate(
-                    subject, person=nora_case.person, now_ms=clock_ms)
             job = None
             if overlay and overlay.job:
                 job_id = await seed_job(subject, overlay, person=nora_case.person, now_ms=clock_ms)
@@ -1968,6 +1850,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             if (overlay or port.public_audience) and outcome.responded and spec.judge is None:
                 outcome = dataclasses.replace(
                     outcome, error='controlled reply requires semantic judge')
+            environment.check()
             judged_why = ""
             judgement = None
             # The standing fold: the judged thing is the POSITION a fold wrote, against the
@@ -2088,6 +1971,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     )
                     judged_why = str(getattr(judgement, "why", "") or "")
 
+            environment.check()
             _dump_judgement(judgement, case.name)
 
             repeat_state = []
@@ -2227,7 +2111,7 @@ def nora_task(spec: Spec):
         try:
             return asyncio.run(_drive(case, spec))
         except Exception as exc:                      # noqa: BLE001 — see module docstring
-            return {
+            return _protocol_result({
                 "output": "",
                 "environment_state": [
                     EnvironmentState(
@@ -2264,7 +2148,7 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_SHOWN_WHERE, state=None),
                     EnvironmentState(name=NORA_TRANSPORT, state=None),
                 ],
-            }
+            })
 
     return task
 

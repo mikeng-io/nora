@@ -25,6 +25,8 @@ def eval_parser() -> argparse.ArgumentParser:
                      help="run every corpus in this S-class (e.g. S7); repeatable")
     ap.add_argument("--all", action="store_true", help="run every corpus")
     ap.add_argument("--list", action="store_true", help="list corpora and exit")
+    ap.add_argument("--services", type=Path,
+                    help="private per-corpus/draw HTTP recordings for protocol rehearsal")
     ap.add_argument(
         "--case", action="append", dest="cases", metavar="NAME",
         help="run only these cases of the named corpus; repeatable. A "

@@ -12,7 +12,6 @@ rather than added because a caller needed it.
 
 from __future__ import annotations
 
-import hashlib
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,23 +19,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import tomlkit
 from pydantic import BaseModel, TypeAdapter
 
 from nora.app.composition import Dependencies, build_dependencies, wall_clock
-from nora.app.memory_routing import build_workspace_router
 from nora.config import Config
 from nora.config import load as _load_config
-from nora.persons import load_persons
 from nora.policy import Conversation, load_policy
 
 from .circle import CircleMemory, CircleOverlay
 from .environment import IsolatedServices
-from .memory_workspace import (
-    NotADrawWorkspaceError,
-    refuse_unless_draw_workspace,
-    shared_eval_workspace,
-)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -345,21 +336,6 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # Each composed subject owns its journal lock, just like its database
     # and media. The deployment's computer state cannot be shared by draws.
     cfg = _with(cfg, "computer.state_dir", str(workdir / "state"))
-    # `honcho.workspace_id` — Honcho is the ONE store the sandbox database
-    # does not isolate: it is an external service keyed by workspace, and the
-    # deployment's workspace is where every real peer card lives. An eval
-    # turn's ingest FEEDS Honcho (`nora/ingest/stages/memory_feed.py`), so a
-    # subject composed with the deployment's workspace writes eval speech
-    # into production's peer representations.
-    #
-    # The fixed `-eval` sibling is the DEFAULT only. An eval draw overrides it
-    # with a workspace of its own (`honcho.workspace_id`, from
-    # `memory_workspace.draw_workspace`), because the shared sibling made
-    # draws correlated: the tag path read earlier draws' conclusions back.
-    # Configuration, not a new seam: which workspace is a value
-    # one deployment differs from another by, which is what `overrides` is
-    # for, and `build_config` refuses any value outside the eval namespace.
-    cfg = _with(cfg, "honcho.workspace_id", shared_eval_workspace(cfg.honcho.workspace_id))
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a
@@ -370,34 +346,8 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     return cfg
 
 
-def _refuse_a_workspace_outside_the_eval_namespace(workspace: str, deployment: str) -> None:
-    """A subject's Honcho workspace is the shared `<deployment>-eval` sibling
-    or a draw's `<deployment>-eval-...`, and nothing else.
-
-    Held on the COMPOSED config, after every override, because an eval draw
-    names its workspace through `spec.overrides`, and an override of `nora`
-    would feed eval speech into production's peer cards with nothing raising.
-    """
-    if workspace == shared_eval_workspace(deployment):
-        return
-    try:
-        refuse_unless_draw_workspace(workspace, deployment)
-    except NotADrawWorkspaceError as exc:
-        raise ValueError(
-            f"a subject's Honcho workspace must be {shared_eval_workspace(deployment)!r} "
-            f"or a draw's ({exc})"
-        ) from exc
-
-
 def memory_endpoint() -> tuple[str, str]:
-    """`(base_url, deployment_workspace)` for Honcho, as a subject reaches it.
-
-    Read from the same template `build_config` copies, with the same
-    host-from-the-host rewrite `_baseline` applies, so the workspace a draw
-    creates is on the server its subject will talk to. The second value is
-    the DEPLOYMENT's workspace, before `_baseline` suffixes it: the prefix
-    every draw workspace is derived from and guarded by.
-    """
+    """The template's external-memory origin and default workspace."""
     cfg = _load_config(_TEMPLATE, require_secrets=False)
     base_url = cfg.honcho.base_url
     if not _resolves(_DOCKER_HOST):
@@ -431,7 +381,6 @@ def build_config(spec: SubjectSpec) -> Config:
     shutil.copy(_TEMPLATE, cfg_path)
     loaded = _load_config(cfg_path, require_secrets=False)
     loaded._secret_path = _TEMPLATE.parent / "secret.toml"
-    deployment = loaded.honcho.workspace_id
     cfg = _baseline(loaded, spec.workdir)
     for path, value in (spec.overrides or {}).items():
         cfg = _with(cfg, path, value)
@@ -455,31 +404,10 @@ def build_config(spec: SubjectSpec) -> Config:
         cfg = cfg.model_copy(update={"providers": {
             name: p.model_copy(update={"base_url": _from_host(p.base_url)})
             for name, p in cfg.providers.items()}})
-    _refuse_a_workspace_outside_the_eval_namespace(cfg.honcho.workspace_id, deployment)
     policy = spec.policy or default_policy(spec.room)
     (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")
-    _pin_memory_to_the_eval_workspace(spec.workdir, cfg.honcho.workspace_id, deployment)
     _conversation_for(spec)
     return cfg
-
-
-def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment: str) -> None:
-    """Isolate workspace bindings without merging previously separate stores."""
-    policy_path, identity_path = workdir / "policy.toml", workdir / "identity.toml"
-    identity_doc = tomlkit.parse(identity_path.read_text(encoding="utf-8"))
-    for binding in identity_doc.get("workspaces", {}).values():
-        original = str(binding["honcho_workspace"])
-        suffix = hashlib.sha256(original.encode()).hexdigest()[:16]
-        binding["honcho_workspace"] = (
-            workspace if original == deployment else f"{workspace}-{suffix}")
-    identity_path.write_text(tomlkit.dumps(identity_doc), encoding="utf-8")
-    router = build_workspace_router(
-        policy=load_policy(policy_path),
-        bindings=load_persons(identity_path).honcho_workspaces,
-        default_workspace=workspace,
-    )
-    for reachable in router.workspaces():
-        _refuse_a_workspace_outside_the_eval_namespace(reachable, deployment)
 
 
 class RoomNotInPolicyError(ValueError):

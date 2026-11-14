@@ -91,6 +91,27 @@ def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_ro
     assert "generated-private-auth-value" not in (evidence.path / "events.jsonl").read_text()
 
 
+def test_diagnostic_artifacts_stay_private_and_cannot_replace_files(evidence_root, tmp_path):
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(b"unchanged")
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with evidence.capture(trace.get_tracer_provider()):
+            evidence.retain("generated.json", b"generated input")
+            assert (evidence.path / "generated.json").read_bytes() == b"generated input"
+            assert stat.S_IMODE((evidence.path / "generated.json").stat().st_mode) == 0o600
+            with pytest.raises(FileExistsError):
+                evidence.retain("generated.json", b"replacement")
+            (evidence.path / "link.json").symlink_to(outside)
+            with pytest.raises(FileExistsError):
+                evidence.retain("link.json", b"replacement")
+            for name in ("../outside.json", str(outside), "", ".", ".."):
+                with pytest.raises(ValueError, match="filename"):
+                    evidence.retain(name, b"replacement")
+            assert outside.read_bytes() == b"unchanged"
+            assert (evidence.path / "generated.json").read_bytes() == b"generated input"
+
+
 def test_started_case_and_failure_survive_interrupt_and_lock_releases(evidence_root):
     with pytest.raises(SystemExit), eval_host_lock() as fd:
         evidence = capture(fd)
@@ -585,14 +606,16 @@ async def test_sdk_invocation_attribution_and_windows(evidence_root, nested):
         assert tools[0]["attempt_id"] == tools[1]["attempt_id"]
         first_call = next(e for e in events if e["kind"] == "call_started")
         assert tools[0]["attempt_id"] == first_call["attempt_id"]
-        child_call = next(e for e in events if e["kind"] == "call_started" and e["invocation_id"] == second)
+        child_call = next(e for e in events if e["kind"] == "call_started"
+                          and e["invocation_id"] == second)
         assert child_call["attempt_id"].startswith(second + ":")
         raw = next(e for e in events if e["kind"] == "transport_response"
                    and e["response"]["choices"][0]["message"].get("content") == "tool raw answer")
         assert raw["invocation_id"] == first and raw["attempt_id"] == first_call["attempt_id"]
         terminal = terminal_response(events)
         assert terminal["status"] == "observed" and terminal["text"] == "parent answer"
-        assert terminal["invocation_id"] == first and terminal["attempt_id"] != first_call["attempt_id"]
+        assert terminal["invocation_id"] == first
+        assert terminal["attempt_id"] != first_call["attempt_id"]
     else:
         assert len(requests) == 2
         windows = [events[starts[i]["order"] - 1:starts[i + 1]["order"] - 1] if i == 0

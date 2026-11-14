@@ -27,7 +27,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from openai import AsyncOpenAI
 
@@ -45,6 +45,10 @@ from .judge import (
     majority_verdict,
 )
 from .rubric import OPTIONAL_CRITERIA, Criterion
+
+if TYPE_CHECKING:
+    from nora.config import Config
+    from nora.subject.environment import IsolatedServices
 
 #: The judge alias the DEPLOYMENT uses: `[evals] judge_model = "nora-judge"`.
 #:
@@ -102,7 +106,7 @@ class Judgement:
 
 @dataclass(frozen=True, slots=True)
 class Judge:
-    """A model that grades. Built once per run, not per case."""
+    """A model that grades using the case's bound routes and credentials."""
 
     base_url: str
     api_key_env: str = "OMNIROUTE_API_KEY"
@@ -112,8 +116,25 @@ class Judge:
     config_path: Path | None = None
     contract: GradingContract | None = None
     max_tokens: int = JUDGE_MAX_TOKENS
+    config: Config | None = None
+
+    def bind(self, config: Config) -> Judge:
+        return replace(self, config=config)
+
+    def bind_services(self, environment: IsolatedServices) -> Judge:
+        from nora.subject.obtain import _load_config
+
+        cfg = self.config
+        if cfg is None:
+            if self.config_path is None:
+                raise ValueError("judge configuration is required for isolated routing")
+            cfg = _load_config(self.config_path, require_secrets=False)
+        return self.bind(environment.bind_config(cfg))
 
     def _endpoint(self) -> tuple[str, str, str]:
+        if self.config is not None:
+            from nora.subject.obtain import model_endpoint
+            return model_endpoint(self.config, "eval_judge", self.model)
         if self.config_path is not None:
             from nora.subject.obtain import model_endpoint
             return model_endpoint(self.config_path, "eval_judge", self.model)

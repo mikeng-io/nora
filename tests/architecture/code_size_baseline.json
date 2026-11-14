@@ -50,20 +50,20 @@
  },
  "evals/__main__.py": {
   "comment_blocks": 11,
-  "file_lines": 968,
+  "file_lines": 967,
   "functions": {
-   "_execute": 183,
+   "_execute": 180,
    "_main": 173
   },
   "internal_docstrings": 8
  },
  "evals/backbone.py": {
-  "comment_blocks": 44,
-  "file_lines": 2766,
+  "comment_blocks": 37,
+  "file_lines": 2650,
   "functions": {
-   "_drive_draw": 508
+   "_drive_draw": 451
   },
-  "internal_docstrings": 31
+  "internal_docstrings": 28
  },
  "evals/corpora_assess.py": {
   "comment_blocks": 1
@@ -129,17 +129,17 @@
   "internal_docstrings": 4
  },
  "evals/scenarios.py": {
-  "comment_blocks": 10,
+  "comment_blocks": 9,
   "internal_docstrings": 1
  },
  "evals/situation.py": {
   "comment_blocks": 1
  },
  "evals/subject_config.py": {
-  "comment_blocks": 7
+  "comment_blocks": 1
  },
  "nora/__main__.py": {
-  "comment_blocks": 19,
+  "comment_blocks": 17,
   "functions": {
    "App.run": 283
   },
@@ -224,7 +224,7 @@
   "comment_blocks": 15,
   "file_lines": 1259,
   "functions": {
-   "MemorySearch.read": 171,
+   "MemorySearch.read": 169,
    "walk": 159
   },
   "internal_docstrings": 6
@@ -1199,7 +1199,7 @@
  },
  "nora/infra/sql/memory_index.py": {
   "comment_blocks": 8,
-  "file_lines": 2767,
+  "file_lines": 2764,
   "internal_docstrings": 42
  },
  "nora/infra/sql/memory_read.py": {
@@ -1387,7 +1387,7 @@
  },
  "nora/infra/sql/schema.py": {
   "comment_blocks": 190,
-  "file_lines": 5927,
+  "file_lines": 5926,
   "internal_docstrings": 4
  },
  "nora/infra/sql/snapshot.py": {
@@ -1911,8 +1911,8 @@
   "comment_blocks": 2
  },
  "nora/subject/obtain.py": {
-  "comment_blocks": 24,
-  "internal_docstrings": 4
+  "comment_blocks": 16,
+  "internal_docstrings": 2
  },
  "nora/subject/proactive.py": {
   "comment_blocks": 3
@@ -2685,9 +2685,6 @@
  "tests/integration/test_the_rebuilt_suite_runs.py": {
   "internal_docstrings": 1
  },
- "tests/integration/test_the_subject_is_the_deployed_graph.py": {
-  "comment_blocks": 1
- },
  "tests/integration/test_turn_budget_is_legible.py": {
   "comment_blocks": 1,
   "internal_docstrings": 2
@@ -3200,10 +3197,10 @@
  "tests/unit/test_eval_backbone.py": {
   "comment_blocks": 3,
   "file_lines": 1365,
-  "internal_docstrings": 3
+  "internal_docstrings": 2
  },
  "tests/unit/test_eval_full_restore.py": {
-  "file_lines": 1115,
+  "file_lines": 1109,
   "internal_docstrings": 1
  },
  "tests/unit/test_eval_host_lock.py": {

@@ -18,6 +18,41 @@ from tests.integration.test_spike_visibility import configured_sink
 from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
 
 
+def test_sdk_report_survives_a_failed_real_evidence_recorder(monkeypatch, tmp_path):
+    import json
+    from tempfile import TemporaryFile
+    from types import SimpleNamespace
+
+    from opentelemetry import trace
+    from strands_evals import Case, Experiment
+
+    from evals.backbone import MeetsGrader, Spec, _prefill_capture, nora_task
+    from nora.subject.eval_evidence import EvidenceError, RunEvidence
+
+    _prefill_capture()
+    case = Case(name="missing-recording", input="Generated", metadata={"expect": "go"})
+    experiment = Experiment(cases=[case], evaluators=[MeetsGrader()])
+    task = nora_task(Spec(source_url="unused", entry="gate"))
+    with TemporaryFile() as lock:
+        evidence = RunEvidence(run_id="generated", metadata={}, lock_fd=lock.fileno(),
+                               private_root=tmp_path)
+
+        def evaluate(*, task):
+            report = experiment.run_evaluations(task=task)
+            evidence.failure = "generated instrument failure"
+            return report
+
+        monkeypatch.setattr(m, "experiment_for", lambda *a, **k: (
+            SimpleNamespace(run_evaluations=evaluate), task))
+        with (pytest.raises(EvidenceError, match="generated instrument failure"),
+              evidence.capture(trace.get_tracer_provider())):
+            m._run_one("generated", source_url="unused", judge=None, sample=1)
+    saved = json.loads((evidence.path / "corpus-generated.json").read_text())
+    assert saved["mode"] == "protocol-rehearsal" and saved["behavior"] == "UNMEASURED"
+    assert saved["evidence"] == {"status": "ERROR", "cause": "generated instrument failure"}
+    assert saved["report"]["detailed_results"][0][0]["label"] == "ERROR"
+
+
 @pytest.fixture
 def configured_main(monkeypatch, tmp_path, example_config_path, otlp_wire, generated_cli_contract):
     from nora.subject import sandbox
@@ -115,6 +150,40 @@ def _stub(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, runs: list[str]) -> N
     monkeypatch.setattr(m, "assert_shared_databases_unchanged", lambda url, before: None)
 
 
+def test_cli_retains_the_loaded_service_bytes_in_private_evidence(
+    monkeypatch, tmp_path, capsys, configured_main,
+):
+    import hashlib
+    import json
+    import re
+
+    runs = []
+    _stub(monkeypatch, tmp_path, runs)
+    case = selected_cases("tool_selection")[0].name
+    path = tmp_path / "input-services.json"
+    original = json.dumps({"version": 1, "corpora": {"tool_selection": {case: {
+        "version": 1, "bindings": {"llm.base_url": "model"}, "services": {"model": []},
+    }}}}, indent=2).encode()
+    path.write_bytes(original)
+
+    def draw(*args, **kwargs):
+        path.write_text("changed after loading")
+        return True
+
+    monkeypatch.setattr(m, "_run_one", draw)
+    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection", "--case", case,
+                                    "--services", str(path)])
+    assert m.main() == 0
+    output = capsys.readouterr().out
+    event_path = Path(re.search(r"private eval evidence: (.+)", output).group(1))
+    stored = event_path / "external-services.json"
+    assert stored.read_bytes() == original
+    assert stored.stat().st_mode & 0o777 == 0o600
+    events = (event_path / "events.jsonl").read_text()
+    assert "external_service_inputs" in events
+    assert hashlib.sha256(original).hexdigest() in events
+
+
 def test_a_run_over_the_budget_is_refused_before_any_draw(
         monkeypatch, tmp_path, capsys, configured_main):
     runs: list[str] = []
@@ -137,7 +206,7 @@ def test_allow_long_lets_the_same_run_start(monkeypatch, tmp_path, capsys, confi
         "python -m evals", "tool_selection", "--memory-index", "--sample", "3", "--allow-long",
     ])
     assert m.main() == 0
-    assert runs == ["graph", "run"]
+    assert runs == ["run"]
     assert "estimate: " in capsys.readouterr().out
 
 
@@ -150,5 +219,5 @@ def test_a_narrow_run_starts_without_allow_long(monkeypatch, tmp_path, capsys, c
         "--case", first, "--case", second,
     ])
     assert m.main() == 0
-    assert runs == ["graph", "run"]
+    assert runs == ["run"]
     assert "estimate: 2 cases x 3 samples x 1 arm = 6 draws, ~5 min" in capsys.readouterr().out

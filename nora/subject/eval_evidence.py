@@ -104,6 +104,16 @@ class RunEvidence(SpanProcessor, logging.Handler):
         if self.failure:
             raise EvidenceError(self.failure)
 
+    def retain(self, name: str, data: bytes) -> None:
+        """Preserve diagnostic bytes without clearing a failed instrument."""
+        if Path(name).name != name or name in {"", ".", ".."}:
+            raise ValueError("evidence artifact requires a filename")
+        fd = os.open(self.path / name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as file:
+            file.write(data)
+            file.flush()
+            os.fsync(file.fileno())
+
     def record(self, kind: str, **payload: Any) -> None:
         self.check()
         if (self._export is not None and self._export.span_exporter.failed

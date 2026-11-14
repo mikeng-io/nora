@@ -132,13 +132,7 @@ def test_the_longest_pseudonym_wins(mapped):
     assert pseudonyms.resolve("Avery Stone and Avery") == "Quill Marsh and Quill"
 
 
-def test_the_eval_path_constants_resolve_through_the_same_map(mapped, monkeypatch):
-    seen: dict[str, Any] = {}
-    monkeypatch.setattr(backbone, "hold_transports", lambda _s, **kw: seen.update(kw))
-    subject = SimpleNamespace(deps=SimpleNamespace(self_presence=object()))
-    spec = SimpleNamespace(deployment_config="", policy=None)
-    backbone._hold_the_transport_tier(subject, spec, {})
-    assert seen["live_handles"]["instagram"] == "@synth.handle"
+def test_the_default_case_speaker_resolves_through_the_same_map(mapped):
     bare = Case(name="c", input="x", metadata={"snapshot": {}})
     spec = backbone.Spec(source_url="x", entry="tag")
     nora_case = backbone._as_nora_case(bare, spec, trigger="t")
@@ -179,7 +173,7 @@ async def _refusal(monkeypatch, refuse: Any = None) -> str:
     })
     spec = backbone.Spec(source_url="x", entry="tag", identity="", policy=_POLICY)
     with pytest.raises(RoomNotInPolicyError) as exc:
-        await backbone._drive_draw(case, spec, memory_workspace="w")
+        await backbone._drive_draw(case, spec, recording=SimpleNamespace(open=_Sandbox))
     return str(exc.value)
 
 

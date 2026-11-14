@@ -65,6 +65,15 @@ def test_judges_keep_the_bound_config_instead_of_reloading_deployment_routes(
     judges = Judges(cfg, ["generated-judge"], tmp_path / "unbound-config.toml")
     assert judges._endpoint("generated-judge")[0] == endpoint
     assert judges._endpoint("generated-judge")[2] == "generated-judge"
+    from evals.rebuilt.grading import Judge
+
+    original = Judge("unused", model="generated-judge", config_path=tmp_path / "missing.toml",
+                     samples=1, max_tokens=99, timeout_seconds=7)
+    bound = original.bind(cfg)
+    assert bound._endpoint()[0] == endpoint
+    assert bound._endpoint()[2] == "generated-judge"
+    assert (bound.samples, bound.max_tokens, bound.timeout_seconds) == (1, 99, 7)
+    assert original.config is None
 
 
 def test_default_policy_defaults_to_the_shipped_unit_default() -> None:
@@ -186,14 +195,19 @@ def test_conversation_for_resolves_the_rooms_own_entry_among_several(tmp_path, m
     assert (convo.primary_id, convo.unit) == ("ridgeline-sig", "ridgeline")
 
 
-def test_the_honcho_workspace_is_a_fixed_sibling_of_the_deployments(tmp_path, monkeypatch) -> None:
-    """Honcho is the one store the sandbox database does not isolate. The
-    subject's workspace is the deployment's with `-eval` — stable, so a
-    replay into it can be shared; never per case, never the real one."""
+def test_the_honcho_workspace_name_is_preserved(evaluation_config, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     cfg = build_config(_spec(tmp_path))
-    assert cfg.honcho.workspace_id.endswith("-eval")
-    assert cfg.honcho.workspace_id != "-eval"
+    assert cfg.honcho.workspace_id == tomllib.loads(evaluation_config.read_text())["honcho"][
+        "workspace_id"]
+
+
+def test_subject_identity_workspace_bindings_are_preserved(tmp_path, monkeypatch):
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    identity = ('[workspaces.home]\nhoncho_workspace="generated-home"\n'
+                '[workspaces.work]\nhoncho_workspace="generated-work"\n')
+    build_config(_spec(tmp_path, identity=identity))
+    assert (tmp_path / "identity.toml").read_text() == identity
 
 
 def test_a_draw_names_its_own_workspace(tmp_path, monkeypatch) -> None:
@@ -206,15 +220,12 @@ def test_a_draw_names_its_own_workspace(tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("workspace", ["nora", "probe", "nora-eval-", "nora-48b00d52c0ff"])
-def test_no_spelling_of_the_workspace_reaches_outside_the_eval_namespace(
+def test_workspace_names_are_values_not_the_external_isolation_boundary(
     tmp_path, monkeypatch, workspace,
 ) -> None:
-    """No override can point a subject at production's workspace (or
-    anything else outside `nora-eval[-...]`): an eval turn FEEDS Honcho, so
-    that would write eval speech into real peer cards with nothing raising."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    with pytest.raises(ValueError, match="draw workspace"):
-        build_config(_spec(tmp_path, overrides={"honcho.workspace_id": workspace}))
+    cfg = build_config(_spec(tmp_path, overrides={"honcho.workspace_id": workspace}))
+    assert cfg.honcho.workspace_id == workspace
 
 
 def test_a_policy_naming_the_rooms_id_on_a_different_entry_is_refused(

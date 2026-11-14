@@ -24,6 +24,7 @@ THREE STATES, and the middle one is the point (`design/evaluation/subject.md`
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,7 +37,7 @@ from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, nora_task
 from evals.grading_contract import GradingContract
 from evals.recall import evidence_problems
 from evals.route_grader import ToolRouteGrader
-from nora.subject.sandbox_index import EMBEDDER_FROM_HOST
+from nora.subject.recorded_services import RecordedServices
 from nora.subject.transport import TRANSPORT_STATES
 
 _CORPORA = Path(__file__).parent / "corpora"
@@ -495,25 +496,9 @@ JUDGE_REQUIRED = frozenset({"standing", "standing_unit", "conversational_recall"
 #: construction: a verb that is not offered cannot be routed to.
 MEMORY_SURFACES = frozenset({"graph", "honcho"})
 
-#: `python -m evals --memory-index`: the subject composed with the memory
-#: GRAPH's tool surface (DEC-316: `memory_search`, and none of the Honcho
-#: memory verbs), the after arm of a routing measurement whose deployment
-#: still runs the Honcho surface. Applied as a subject override
-#: (`Spec.overrides`), never written into the generated config, so the drift
-#: gate still compares that config with the deployment's own. Applied on the
-#: graph arm whatever the deployment's flag, so a deployment that turned the
-#: surface on is composed the same way.
-#:
-#: `embedder_url`: the query embedder, reached from the host where the suite
-#: runs (`nora.subject.EMBEDDER_FROM_HOST`); the deployment's `embedder:8080`
-#: resolves only on the compose network. Never on the honcho arm, which builds
-#: no `memory_search`. The worker is not the subject's (`nora.subject.obtain`
-#: composes none), so nothing writes through it, and every graph-surface
-#: sandbox gets its index and the source's vectors before the drive
-#: (`nora.subject.index_sandbox`).
+#: An explicit memory-surface experiment; dependency origins remain deployment-owned.
 MEMORY_INDEX_OVERRIDES: dict[str, object] = {
     "memory.index.read": True,
-    "memory.index.embedder_url": EMBEDDER_FROM_HOST,
 }
 
 #: The subject overrides every `cognition_session` draw composes with: the
@@ -568,6 +553,7 @@ def experiment_for(
     only: frozenset[str] | None = None, memory_index: bool = False,
     overrides: dict[str, Any] | None = None,
     contract: GradingContract | None = None,
+    services: Mapping[str, RecordedServices] | None = None,
 ) -> tuple[Experiment, Any]:
     """A ready-to-run `(Experiment, task)` pair for one corpus.
 
@@ -599,12 +585,11 @@ def experiment_for(
         cases = [draw for base in cases for draw in sampled(base, sample)]
     spec = Spec(
         source_url=source_url,
+        services=services,
         entry=CORPUS_ENTRY[name],
         judge=judge if name in JUDGED_CORPORA else None,
         full_restore=name in FULL_RESTORE_CORPORA,
         overrides=({**(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
-                   **(dict(COGNITION_SESSION_OVERRIDES)
-                      if name == "cognition_session" else {}),
                    **(dict(overrides) if overrides else {})} or None),
         memory_surface="graph" if memory_index else "honcho",
     )

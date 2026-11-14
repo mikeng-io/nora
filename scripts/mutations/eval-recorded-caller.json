@@ -1,0 +1,58 @@
+[
+  {
+    "name": "actual SDK obtains only inside its active environment",
+    "file": "evals/backbone.py",
+    "old": "                environment=environment, overrides=spec.overrides,",
+    "new": "                overrides=spec.overrides,",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_sdk_cases_use_real_subjects_in_distinct_owned_services"
+  },
+  {
+    "name": "frozen SDK judging binds the recorded service routes",
+    "file": "evals/backbone.py",
+    "old": "            judge = spec.judge.bind_services(environment) if spec.judge is not None else None",
+    "new": "            judge = spec.judge",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording"
+  },
+  {
+    "name": "bound judge config wins over the original file",
+    "file": "evals/rebuilt/grading.py",
+    "old": "        if self.config is not None:\n",
+    "new": "        if False:\n",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording"
+  },
+  {
+    "name": "SDK protocol outcomes cannot claim model behavior",
+    "file": "evals/backbone.py",
+    "old": "        EnvironmentState(name=NORA_BEHAVIOR, state=\"UNMEASURED\"),",
+    "new": "        EnvironmentState(name=NORA_BEHAVIOR, state=\"PASS\"),",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording"
+  },
+  {
+    "name": "loaded service input bytes survive source changes",
+    "file": "evals/services.py",
+    "old": "        evidence.retain(\"external-services.json\", self.raw)",
+    "new": "        evidence.retain(\"external-services.json\", b\"{}\")",
+    "target": "tests/unit/test_eval_main_budget.py::test_cli_retains_the_loaded_service_bytes_in_private_evidence"
+  },
+  {
+    "name": "SDK report remains available when event instrument fails",
+    "file": "evals/backbone.py",
+    "old": "    evidence.retain(f\"corpus-{corpus}.json\", json.dumps(retained, ensure_ascii=False).encode())",
+    "new": "    pass  # discard SDK diagnostic report",
+    "target": "tests/unit/test_eval_main_budget.py::test_sdk_report_survives_a_failed_real_evidence_recorder"
+  },
+  {
+    "name": "diagnostic artifacts cannot overwrite existing files",
+    "file": "nora/subject/eval_evidence.py",
+    "old": "        fd = os.open(self.path / name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)",
+    "new": "        fd = os.open(self.path / name, os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)",
+    "target": "tests/integration/test_eval_observability.py::test_diagnostic_artifacts_stay_private_and_cannot_replace_files"
+  },
+  {
+    "name": "workspace identity remains exactly as declared",
+    "file": "nora/subject/obtain.py",
+    "old": "    (spec.workdir / \"identity.toml\").write_text(spec.identity, encoding=\"utf-8\")",
+    "new": "    (spec.workdir / \"identity.toml\").write_text(spec.identity.replace('honcho_workspace = \"', 'honcho_workspace = \"eval-'), encoding=\"utf-8\")",
+    "target": "tests/unit/test_eval_subject_parity.py::test_workspace_isolation_preserves_separation_and_intentional_shared_units"
+  }
+]
