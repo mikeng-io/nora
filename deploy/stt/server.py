@@ -1,42 +1,12 @@
-"""OpenAI-Compatible STT API Server — Cantonese-first, multi-model.
+"""Local multipart STT with independent per-request model selection.
 
-Drop-in replacement for OpenAI's `/v1/audio/transcriptions` endpoint. Works with
-any agent framework that supports OpenAI audio API (Nora's [speech.stt] path is
-wired to hit this via an OpenAI-compatible client).
-
-Two engines behind one endpoint, selected per-request with the `model` form
-field:
-
-- `noise-detection` (DEFAULT) — JackyHoCL
-  `whisper-large-v3-turbo-cantonese-noise-detection` on the plain transformers
-  runtime (fp32 CPU). Keeps both `RV` and `discord` intact on real Discord
-  voice audio, emits Traditional Chinese with punctuation out of the box, RTF
-  ~0.49. Trained for streaming noise: silence/background comes back tagged
-  `%nz`, which post-processing strips.
-- `sensevoice` (BACKUP) — `iic/SenseVoiceSmall` via FunASR. The latency floor
-  (RTF ~0.04) and the failover when the primary is unavailable. Natively
-  understands Cantonese (`yue`) — verified on this host (voice-lab) that it
-  preserves 口語 particles like 唔/嘅/喺/哋 that faster-whisper mangles — but emits
-  Simplified Chinese and no punctuation.
-
-Post-processing runs OpenCC `s2t` for BOTH backends so Nora always receives
-yue-Hant-HK text (her doctrine is 繁體) regardless of which engine answered.
-`language` is the engines' own short code (`yue`/`zh`/`en`/`auto`/...), NOT a
-BCP-47 tag; SenseVoice does LID itself on `auto`, the whisper backend defaults
-to `yue` (the model is Cantonese-tuned — see its model card).
-
-Also returns the raw text + detected language + duration for the caller.
-
-Env knobs (all optional):
-  STT_DEVICE — default cpu (this host has no CUDA; Radeon 680M iGPU not used).
-
-Which model is PRE-LOADED at startup (and answers a request that names none)
-comes from Nora's config.toml — `[speech.wake].stt_model`, the latency-bound
-wake path's engine — bind-mounted read-only at /app/config.toml by compose
-(`config_toml.py`; falls back to sensevoice without the file). There is no
-`STT_MODEL` env var: a second source would disagree with the config file.
+Legacy SenseVoice/Whisper cleanup uses OpenCC. Qwen preserves native
+Traditional output behind mandatory standalone FSMN speech detection.
+Config controls preload and Qwen device; model failures never select another engine.
 """
 import argparse
+import threading
+from contextlib import asynccontextmanager, suppress
 import asyncio
 import os
 import re
@@ -51,9 +21,19 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from opencc import OpenCC
 
-app = FastAPI(title="Nora STT", version="0.2.0")
-
+from qwen import MODEL as QWEN_MODEL, QwenWorker
+from config_toml import qwen_settings
 from config_toml import preload_model  # noqa: E402  (sibling module, stdlib only)
+
+
+@asynccontextmanager
+async def lifespan(app):
+    yield
+    await asyncio.to_thread(QWEN.close)
+
+
+app = FastAPI(title="Nora STT", version="0.3.0", lifespan=lifespan)
+
 
 DEFAULT_MODEL = preload_model()
 
@@ -86,7 +66,9 @@ MODEL_CONFIGS: dict[str, dict[str, Any]] = {
     },
 }
 
+MODEL_CONFIGS[QWEN_MODEL] = {"backend": "qwen"}
 MODEL_REGISTRY: dict = {}
+_MODEL_LOCK = threading.Lock()
 _cc = OpenCC("s2t")
 
 
@@ -134,7 +116,7 @@ def _load_transformers(cfg: dict[str, Any]):
 _LOADERS = {"funasr": _load_funasr, "transformers": _load_transformers}
 
 
-def load_model(model_name: str):
+def _load_model(model_name: str):
     """Load a model into the process-global registry (one per model, lazy)."""
     if model_name in MODEL_REGISTRY:
         return MODEL_REGISTRY[model_name]
@@ -144,6 +126,29 @@ def load_model(model_name: str):
     model = _LOADERS[cfg["backend"]](cfg)
     MODEL_REGISTRY[model_name] = model
     return model
+
+
+def load_model(model_name: str):
+    with _MODEL_LOCK:
+        if model_name == QWEN_MODEL:
+            QWEN.warm()
+            return QWEN
+        return _load_model(model_name)
+
+
+def _load_vad():
+    from funasr import AutoModel
+
+    return AutoModel(model=_modelscope_dir("iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"),
+                     device="cpu", disable_update=True)
+
+
+_QWEN_DEVICE, REQUEST_TIMEOUT, QWEN_SELECTED = qwen_settings()
+QWEN = QwenWorker(device=_QWEN_DEVICE, timeout=REQUEST_TIMEOUT, vad_loader=_load_vad)
+
+
+def model_ready(name):
+    return QWEN.ready if name == QWEN_MODEL else name in MODEL_REGISTRY
 
 
 def clean_text(text: str) -> str:
@@ -181,6 +186,7 @@ def _generate_transformers(model_name: str, wav_path: str, language: str | None)
 
 def _run_stt_blocking(
     *, tmp_path: str, wav_path: str, model: str, language: str | None,
+    deadline: float, cancel: threading.Event,
 ) -> tuple[list, float]:
     """ffmpeg normalize + model.generate — the CPU-bound half of one
     transcription. Run via `asyncio.to_thread` so the event loop keeps
@@ -188,10 +194,12 @@ def _run_stt_blocking(
     transcription is seconds, not milliseconds, on this host's CPU)."""
     subprocess.run(
         ["ffmpeg", "-y", "-i", tmp_path, "-ar", "16000", "-ac", "1", wav_path],
-        check=True, capture_output=True,
+        check=True, capture_output=True, timeout=max(.001, deadline - time.monotonic()),
     )
     t0 = time.time()
-    if MODEL_CONFIGS[model]["backend"] == "transformers":
+    if model == QWEN_MODEL:
+        result = QWEN.transcribe(wav_path, deadline, cancel)
+    elif MODEL_CONFIGS[model]["backend"] == "transformers":
         result = _generate_transformers(model, wav_path, language)
     else:
         result = _generate_funasr(model, wav_path, language)
@@ -230,13 +238,24 @@ async def transcribe(
         # Both ffmpeg and `generate` are blocking calls on this CPU-only host —
         # run them in a worker thread so `/health` and any concurrent request
         # aren't frozen behind this one for the whole transcription.
-        result, elapsed = await asyncio.to_thread(
+        cancel = threading.Event()
+        task = asyncio.create_task(asyncio.to_thread(
             _run_stt_blocking, tmp_path=tmp_path, wav_path=wav_path,
             model=model, language=language,
-        )
+            deadline=time.monotonic() + REQUEST_TIMEOUT, cancel=cancel,
+        ))
+        try:
+            result, elapsed = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancel.set()
+            # Keep upload files alive until native work relinquishes ownership.
+            while not task.done():
+                with suppress(Exception, asyncio.CancelledError):
+                    await asyncio.shield(task)
+            raise
 
         raw = result[0]["text"] if result else ""
-        text = _cc.convert(clean_text(raw))  # s2t → 繁体 (yue-Hant-HK)
+        text = raw if model == QWEN_MODEL else _cc.convert(clean_text(raw))
 
         if response_format == "verbose_json":
             segments = []
@@ -275,7 +294,7 @@ async def list_models():
                 "object": "model",
                 "created": 1700000000,
                 "owned_by": "nora-stt",
-                "ready": name in MODEL_REGISTRY,
+                "ready": model_ready(name),
             }
             for name in MODEL_CONFIGS
         ],
@@ -287,7 +306,8 @@ async def health():
     return {
         "status": "ok",
         "device": DEVICE,
-        "models_loaded": list(MODEL_REGISTRY.keys()),
+        "qwen_device": QWEN.device,
+        "models_loaded": [name for name in MODEL_CONFIGS if model_ready(name)],
         "models_available": list(MODEL_CONFIGS.keys()),
     }
 
@@ -308,4 +328,6 @@ if __name__ == "__main__":
     DEVICE = args.device
     # Pre-load so the first transcription isn't a cold model download.
     load_model(args.model)
+    if QWEN_SELECTED and args.model != QWEN_MODEL:
+        load_model(QWEN_MODEL)
     uvicorn.run(app, host=args.host, port=args.port)

@@ -261,3 +261,35 @@ only affected readers through native Stack. Keep current OAuth state unless a
 separate coordinated state recovery is required: restoring old rotating state
 can replay a spent token. Backup scope includes state; restoring it is not an
 automatic part of config rollback. Preserve native DB/object-store data paths.
+
+## Local Qwen Cantonese transcription
+
+Voice notes select `speech.stt.model`; wake utterances independently select
+`speech.wake.stt_model`. Either accepts `qwen3-asr-hk-0.6b`; existing defaults
+remain Whisper noise detection and SenseVoice respectively. The shared
+`[speech.stt.qwen] device = "cpu"` defaults to CPU; `"vulkan"` explicitly
+requires the physical Radeon render device. It never silently falls back.
+The STT service warms the wake engine and Qwen when either role selects it.
+An explicit CLI `--model` retains its legacy preload override.
+
+The existing STT image contains same-ABI CPU and Vulkan llama.cpp builds at
+`78ffbaa18533c2ed51eab2ef5ae0702330efc3e9`. It verifies the pinned Q8 decoder
+and audio projector before loading, using the persistent Hugging Face cache.
+Qwen uses mandatory standalone FSMN VAD: valid no-speech returns empty text;
+a failed detector, worker or incomplete response fails transcription. Native
+Traditional Chinese bypasses OpenCC. VAD-padded speech is partitioned into
+contiguous windows of at most thirty seconds. Cuts prefer detected pauses,
+then quiet audio frames when VAD spans a pause; no synthetic word timestamps
+are returned. `speech.stt.timeout_seconds` bounds queued Qwen work and inference.
+Cold model downloads use a separate bounded startup warmup. Audio stays local.
+
+Before GPU activation, refresh the **installed** `komodo_deploy.py` helper
+beside the installed verifier using the host migration procedure above; compare
+its bytes with the reviewed release source. A repository update alone does not
+refresh that helper. Under the existing deployment lock, validate the candidate
+private config before changing either selector. The helper derives a non-secret
+render-node overlay and numeric supplementary group after image/config validation,
+then resolves and validates effective Compose again before recreation. Credential
+projection stays credential-only. CPU/legacy selections require no GPU device.
+The STT memory limit remains eight GiB with no swap. Activation/config edits and
+owned-service recreation are separate operator-authorized deployment actions.

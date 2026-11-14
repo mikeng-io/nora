@@ -401,8 +401,11 @@ timeout_seconds = 45.0
 [speech.stt]
 enabled = false
 endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
-model = "noise-detection"      # STT engine: "noise-detection" (Cantonese whisper)
+model = "noise-detection"      # "noise-detection", "sensevoice", or "qwen3-asr-hk-0.6b"
 language = "yue"               # the engine's own language code, not BCP-47
+
+[speech.stt.qwen]
+device = "cpu"                # "cpu" or explicit Radeon "vulkan"; applies to either Qwen role
 
 [speech.tts]
 enabled = false

@@ -3441,7 +3441,7 @@
  },
  "tests/unit/test_release_deployment.py": {
   "comment_blocks": 2,
-  "file_lines": 1375
+  "file_lines": 1373
  },
  "tests/unit/test_relevance_gate.py": {
   "comment_blocks": 11,

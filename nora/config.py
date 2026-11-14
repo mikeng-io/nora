@@ -1788,9 +1788,15 @@ class WeatherConfig(BaseModel):
     timeout_seconds: float = Field(default=8.0, gt=0)
 
 
+class SpeechQwenConfig(BaseModel):
+    """Local Qwen runtime device, independent of either role's model choice."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    device: Literal["cpu", "vulkan"] = "cpu"
+
+
 class SpeechSttConfig(BaseModel):
-    """Local speech-to-text: which endpoint, which model, which language, and a
-    timeout.
+    """Local speech-to-text endpoint, model, language and timeout.
 
     `[speech.stt]` is a first-class `[speech]` child, not a reuse of
     `[media.describe.audio]`: a voice note is conversation content, not an
@@ -1801,14 +1807,10 @@ class SpeechSttConfig(BaseModel):
     ingest path calls `endpoint` with the OpenAI-compatible
     `/v1/audio/transcriptions` contract.
 
-    `model` is one of the ids the STT service advertises on `/v1/models`
-    (`deploy/stt/server.py`'s `MODEL_CONFIGS`): `noise-detection` (the default, the
-    JackyHoCL Cantonese whisper) or `sensevoice`, the FunASR backup. The default is
-    the engine the service itself defaults to. `language` hints the model's LID: NOT
-    a BCP-47 tag, but one of the engines' own short codes (`auto`/`zh`/`en`/`yue`/
-    `ja`/`ko`/`nospeech`); any other string is silently treated as `auto` by the
-    model itself. `timeout_seconds` bounds ONE call (the whole ingest path waits for
-    it; see the stage docstring).
+    `model` selects `noise-detection`, `sensevoice`, or `qwen3-asr-hk-0.6b`.
+    Voice notes and wake utterances choose independently. Qwen's device applies
+    to either role. `language` is an engine short code, not BCP-47.
+    `timeout_seconds` bounds one transcription request.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1816,6 +1818,7 @@ class SpeechSttConfig(BaseModel):
     enabled: bool = False
     endpoint: str = "http://stt:8000"
     model: str = "noise-detection"
+    qwen: SpeechQwenConfig = SpeechQwenConfig()
     language: str = "yue"
     timeout_seconds: float = Field(default=30.0, gt=0)
 
@@ -2071,11 +2074,8 @@ class SpeechWakeConfig(BaseModel):
     lifetime identity.toml and policy.toml have, so a change here needs a
     `voice-wake` restart.
 
-    `stt_model` is the wake path's OWN engine choice, deliberately separate from
-    `[speech.stt].model`: a voice note is transcribed off-line and takes the
-    accurate `noise-detection` whisper, while a live 「喂 Nora」 utterance is
-    latency-bound and takes `sensevoice`. The STT service pre-loads THIS model at
-    boot.
+    `stt_model` selects the wake engine independently of voice-note STT.
+    The service warms it at boot, plus Qwen when either role selects Qwen.
 
     Ships INERT like its siblings: the container starts healthy-but-idle without
     `VOICE_GUILD_ID`/`VOICE_CHANNEL_ID` (which stay in .env: they are deployment
