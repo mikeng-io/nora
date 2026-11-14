@@ -1,54 +1,52 @@
 # Evaluation
 
-Different suites exercise different inputs through one Nora. A case is typed
-input and expectation; the subject is obtained through production composition,
-never reassembled for evaluation. Verdicts are measured against real execution
-and remain re-derivable from their evidence.
+Evaluation measures Nora through her production entry points. It supplies a
+scenario and an isolated environment, observes execution, and judges the
+result. Production owns composition, context, tools and control flow; a suite
+adds cases and measurements without constructing another Nora.
 
-**Status:** built
+**Status:** building
 
 [Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Fevaluation%2F%22)
 
-## Parts
+## Parts and flow
 
-- **Corpora** are data: an entry point, a real room and instant, an arriving
-  message and the property it must produce. Adding a scenario adds no driver.
-- **The subject layer** obtains Nora with the deployment's own configuration,
-  policy, model and features, inside isolated storage and external workspaces.
-- **The SDK harness** drives cases, captures the SDK-native `Session` and grades
-  content and tool trajectories. Nora does not implement another runner, report
-  or trajectory format.
-- **Absence and outcome grading** distinguish intended silence, a wrong answer
-  and a run that never happened. Entry-point-specific fail-closed signals make
-  that distinction where an empty output alone cannot.
-- **Anchored sandboxes** reconstruct what production held at an instant, or
-  declare a bounded counterfactual that no real moment could contain.
-- **Evidence capture** preserves actual requests, responses, tools, state,
-  outcomes, source identity and cost. Judges read the same bounded evidence
-  the subject saw, with private content kept private.
+```text
+scenario + restored state + isolated dependencies
+  -> production entry point -> Nora's runtime and tools
+  -> canonical execution evidence + persisted outcomes
+  -> deterministic checks and independent semantic judges
+  -> report: execution, measurement validity, behaviour
+```
 
-The subjects are [the subject and sandbox](subject.md), [measurement and
-verdicts](measurement.md), [scenario coverage](coverage.md), [the
-horizontal measurement contract](horizontal-measurement-contract.md), and
-[the Cognition loop eval](cognition-loop.md).
+- [Subject and sandbox](subject.md) owns production equivalence, dependency
+  isolation and the boundary between replay and a complete journey.
+- [Measurement and verdicts](measurement.md) owns evidence, judge visibility,
+  criterion authority, comparison and reporting. SDK execution records feed
+  the existing evidence recorder; judge and report views derive from it.
+- [Scenario coverage](coverage.md) owns the claims different cases and
+  execution modes can establish, including rehearsal without quality scoring.
+- [Cognition journeys](cognition-loop.md) owns the causal sequence across wakes
+  and conscious turns. It applies the common contracts rather than defining
+  another harness.
 
 ## Invariants
 
-- The eval layer composes nothing. Production owns the graph; evaluation owns
-  only the case, isolation, drive and measurement. Evaluation depends on Nora,
-  never the reverse.
-- The deployment's own model, configuration and feature flags are the baseline.
-  An example configuration or a reduced prompt is a different subject.
-- ERROR is not FAIL and is never PASS. Missing, truncated, unmatched or
-  ungradable evidence is an instrument error, not a behavioural success.
-- A populated SDK `Session` comes from the SDK mapper. No hand-built trajectory
-  or second record shape replaces it.
-- An expected absence is not an empty string. It needs a positive execution
-  signal showing the intended path completed without producing the thing.
-- One stochastic draw is a smoke check, not a rate. Disagreement across draws is
-  UNSTABLE, not a majority verdict.
-- A judge may remove a pass, never grant one against the case's structural
-  expectation, and never grade its own writer.
-- Shared source and template databases are never migrated or mutated by a run.
-  Schema or source divergence refuses early rather than becoming a subtle wrong
-  answer later.
+- The baseline is the deployment's configuration, policy, model and enabled
+  features. A candidate changes only the declared subject of the experiment.
+- Isolation replaces external dependencies at their boundaries. It does not
+  remove tools, context blocks, admission or completion work from Nora.
+- The same occasion uses the same declared assembly in production and
+  evaluation. Different occasions retain their different purposes and context.
+- Shared code is necessary but insufficient for equivalence: actual model
+  requests, tool schemas, available reads and execution paths must agree with
+  the subject under test. An unfulfilled dependency makes the claim unavailable.
+- A captured run is not proof of complete execution; complete execution is not
+  proof of a valid measurement or correct behaviour. Each is reported separately.
+- Missing evidence and instrument errors never become successful absence.
+  Every attempted case, retry, exclusion and failure remains attributable.
+- Production storage and person-visible services receive no evaluation effects.
+  Private evidence remains private, including when a run fails.
+
+The [eval SOP](../../docs/eval-sop.md) owns operating order and commands.
+Implementation gaps do not relax these contracts or license a smaller subject.

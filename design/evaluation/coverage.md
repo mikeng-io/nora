@@ -1,59 +1,86 @@
 # Scenario coverage
 
-Coverage follows failure modes and user-visible risk, not which assertions are
-cheap to write. Deterministic checks cover what code can decide; live model
-runs cover interpretation that requires the real subject and its trajectory.
+Coverage follows user-visible risk and observed failure modes. A case states
+its initial state, actor, audience, clock, input and required outcome. Every
+expected property has a real measuring consumer. Case counts or schema-valid
+expectations alone establish no coverage.
 
-## Classes
+## Causal reach
 
-- **Room and target** — delivery lands in the intended room and addresses the
-  intended person, including cross-platform and deferred occasions.
-- **Tool routing** — the selected tool, arguments and order answer the actual
-  request without substituting an easier read or write.
-- **Grounding** — claims are supported by the cited evidence, preserve
-  attribution and uncertainty, and do not overrule a newer source with an older
-  summary.
-- **Context** — required blocks render non-empty with the right subject, time,
-  identity and state; the subject is not reasoning from a reduced prompt.
-- **Time** — dates, ages, deadlines and recurrence resolve against the case's
-  frozen clock and the source's assertion time.
-- **Idempotence** — a repeated drive does not duplicate a note, reminder,
-  delivery or other persistent act, including ambiguous outcomes.
-- **Speech and silence** — the turn speaks, acts or stays silent as intended,
-  with an explicit positive signal that it completed.
-- **Failure visibility** — broken tools and providers produce bounded, legible
-  failures rather than silent wrong answers or endless retries.
-- **Injection resistance** — untrusted text cannot become instructions,
-  override context boundaries or forge a commitment.
-- **Disclosure and custody** — content that should not leave does not escape
-  through a reply, export, tool argument, trace, cache or derived memory.
-  This is the outward counterpart of injection resistance.
+A single-entry case measures one occasion downstream of its boundary. A
+recorded-session replay can measure state maintenance but cannot establish
+upstream admission or scheduling. A complete journey connects ingestion,
+engagement, cognition, deferred action and later reads through their production
+paths, retaining candidate effects across that sequence.
 
-A class earns cases from observed failures or from a failure that would be
-silent and consequential. Case counts alone do not prove coverage: duplicated
-near-misses and reply-expecting smoke checks cannot crowd out the classes that
-real incidents keep reaching.
+Learning requires evidence of persistence, later retrieval, use and correction.
+A successful write alone establishes none of the later steps. A quiet outcome
+can establish restraint but does not by itself establish useful memory.
+[Cognition journeys](cognition-loop.md) defines the cross-wake relationship.
 
-## Choice of instrument
+## Execution modes and their claims
 
-Room targets, context, time and idempotence are primarily deterministic and
-can run without model spend. Tool routing uses the actual trajectory. Grounding
-and injection need independent semantic judgement. Speech and silence use the
-entry point's typed outcome. Failure and disclosure require negative controls
-as well as successful cases.
+Inspection assembles real context without model execution. It can establish
+composition and source availability. Explicit dependency probes can establish
+retrieval, including scope negatives and query cost. Neither establishes model
+transport, model-selected tool use or semantic behaviour.
 
-Anchored scenarios preserve the source conditions that make the expectation
-meaningful. Counterfactuals are for variables no real moment can supply, not
-for manufacturing easier passes. Parked and unanchored cases remain visible in
-coverage reports so the suite cannot appear broader than what actually ran.
+An execution rehearsal uses the same runtime, tools, context and evidence path
+with an explicitly selected model route, including a local small model through
+the common gateway. It exercises real inference, streaming, tool round trips,
+state settlement, judging and reporting. Its judgement quality does not gate
+Nora's quality, and a completed run covers only paths it actually exercised.
+A model that ends without tools has not tested the tool path. Context or tool
+limits cause an explicit failure, never a smaller prompt. Model-independent
+protocol controls complement rehearsal where model choices omit a path.
 
-## Before and after
+Behavioural evaluation uses the declared target model and independently fixed
+criteria. It supports only its scenario population and causal reach. Modes
+share execution and measurement components; a mode changes the question and
+model route, not Nora's feature inventory or orchestration.
 
-An eval confirms a built change against a baseline on the same anchors and
-measurement path. It does not discover the cause of a failure or compare
-incomparable historical numbers. Source revision, model, doctrine,
-configuration, sample and evidence digests travel with the result.
+## Properties
 
-A useful negative result identifies the smallest responsible contract to
-reopen. A green run with missing anchors, unmapped trajectories, unavailable
-judges or changed source semantics is not a valid before/after comparison.
+- **Room, authority and disclosure:** correct target and audience, evidence
+  custody, scoped reads and effects, including exports and traces.
+- **Context and time:** actual instructions, blocks, schemas, identities,
+  clocks and source states agree with the subject under test; empty and
+  unavailable remain distinct.
+- **Tools and durable outcomes:** the selected reads and writes answer the
+  task, preserve attribution and uncertainty, and settle into canonical state.
+- **Speech and silence:** delivery or intentional silence is supported by
+  completion, not inferred from an empty output.
+- **Failure and recovery:** outages, ambiguous effects, cancellation and retries
+  remain bounded, visible and lossless; repeated execution preserves idempotence.
+- **Grounding and instruction boundaries:** sources support claims and cannot
+  become instructions, forge identity or override disclosure and product law.
+
+Deterministic checks measure decidable state, protocol, scope and cost
+properties. Semantic judgement covers interpretation those checks cannot
+settle. Positive and negative controls establish that each instrument can detect
+the failure it claims to measure. Expensive full runs do not replace offline
+reproduction of a known input, oracle or transport defect.
+
+## Population and uncertainty
+
+Anchored cases preserve real conditions; counterfactuals are explicit and
+separate. Active, parked, unanchored, excluded and attempted cases remain
+visible. A missing prerequisite is not a silent skip. Calibration and
+confirmation have separate populations and purposes.
+
+Finite semantic coverage is fixed from source and product requirements before
+outputs. Equivalent wording and faithful decomposition count when their
+retained evidence supports them. Omissions not covered by the fixed reference
+are diagnostic findings, not new obligations silently added to a score.
+
+Existing doctrine permits ordinary chat metaphor and explicitly framed
+hypotheticals, but not invented real-world presence. Source-grounded contrasts
+cover attribution versus eyewitness claims, contextual roles versus invented
+authority, unknown versus supported identity, and public provenance versus
+private internals. Their product rule belongs to
+[doctrine](../self-growth/doctrine.md); evaluation measures it without creating
+a new version of that rule.
+
+Comparisons use the same anchors and measurement contract. Repeated draws
+cannot repair an invalid oracle, and a complete run cannot erase its known
+coverage limits.
