@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import errno
 import os
+import platform
 import shutil
 import socket
 import ssl
@@ -119,6 +120,10 @@ class IsolatedServices:
         if getattr(socket.socket.connect, "_nora_eval_guard", False):
             raise RuntimeError("evaluation cases must not share a network context")
         try:
+            # OpenAI's SDK lazily reads platform.platform() for its user-agent.
+            # macOS may run uname/file for that read; resolve host metadata
+            # before the effect boundary, without exempting later subprocesses.
+            platform.platform()
             for key, application in self._applications.items():
                 runner = web.AppRunner(application, access_log=None)
                 self._runners.append(runner)
