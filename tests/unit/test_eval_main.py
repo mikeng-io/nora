@@ -354,3 +354,74 @@ def test_an_ordinary_selection_binds_no_cohort(tmp_path):
     args = _journey_inputs(tmp_path)
     args.journey_cohort = None
     assert bound_selection(args, ["standing"], None) is None
+
+
+# --------------------------------------------------------------------------
+# --run-input-bytes: the existing wire-input bound, exposed on the CLI.
+# --------------------------------------------------------------------------
+
+
+def _parsed_budget(*argv: str):
+    """The real flag path: argv -> parser -> run_budget_for -> RunBudget."""
+    from evals.cli import eval_parser, run_budget_for
+
+    args = eval_parser().parse_args(list(argv))
+    return run_budget_for(args.run_budget, input_bytes=args.run_input_bytes)
+
+
+def test_run_input_bytes_reaches_the_run_budget():
+    """The parsed `--run-input-bytes` value must land on the budget's real
+    `max_input_bytes` field — a flag that parses but binds nothing gates
+    nothing, which is exactly the silent-ignore this surface exists to
+    refuse."""
+    budget = _parsed_budget(
+        "tool_selection", "--run-budget", "10", "--run-input-bytes", "9000")
+    assert budget is not None
+    assert budget.max_input_bytes == 9000
+    assert budget.max_requests == 10
+
+
+def test_run_input_bytes_without_run_budget_is_refused_before_dispatch():
+    """`--run-input-bytes` alone would install no bound at all, so
+    `run_budget_for` refuses (the caller turns it into `refusing to run`,
+    before `active_run_budget` is ever set) rather than silently ignore it."""
+    with pytest.raises(ValueError, match="requires --run-budget"):
+        _parsed_budget("tool_selection", "--run-input-bytes", "9000")
+
+
+def test_run_input_bytes_admission_is_cumulative_with_a_permitted_control():
+    """The bound is on CUMULATIVE serialized request bytes: a first request
+    under the cap admits (the positive control — only a budget that actually
+    ran can admit), and the request that would carry the cumulative size over
+    it refuses before dispatch."""
+    from nora.domain.run_budget import RunBudgetError
+
+    budget = _parsed_budget(
+        "tool_selection", "--run-budget", "10", "--run-input-bytes", "9000")
+    reservation = budget.admit(input_bytes=7000, declared_output_tokens=10)
+    assert budget.requests == 1 and budget.input_bytes == 7000
+    with pytest.raises(RunBudgetError, match="input size"):
+        budget.admit(input_bytes=3000, declared_output_tokens=10)
+    assert budget.requests == 1          # the over-cap request never counted
+    budget.release(reservation)
+
+
+@pytest.mark.parametrize("bad", ["0", "-5", "1.5", "many"])
+def test_run_input_bytes_must_be_a_positive_integer(bad):
+    """A zero, negative or non-integer byte bound is an argparse refusal
+    (exit 2), never a bound that admits nothing for an unreadable reason."""
+    from evals.cli import eval_parser
+
+    with pytest.raises(SystemExit) as exc_info:
+        eval_parser().parse_args(
+            ["tool_selection", "--run-budget", "10",
+             "--run-input-bytes", bad])
+    assert exc_info.value.code == 2
+
+
+def test_no_run_input_bytes_leaves_the_wire_bound_unset():
+    """No flag, existing behaviour: `--run-budget` alone still parses and the
+    byte bound stays uninstalled — and no flag at all still builds no budget."""
+    assert _parsed_budget("tool_selection", "--run-budget", "10") \
+        .max_input_bytes is None
+    assert _parsed_budget("tool_selection") is None

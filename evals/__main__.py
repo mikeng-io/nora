@@ -679,7 +679,8 @@ def _main(*, lock_fd: int = -1) -> int:
             return 2
     # Bound dispatches, including model reads during composition.
     try:
-        budget = run_budget_for(args.run_budget)
+        budget = run_budget_for(args.run_budget,
+                                input_bytes=args.run_input_bytes)
     except ValueError as exc:
         print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
