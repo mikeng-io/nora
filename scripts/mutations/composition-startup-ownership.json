@@ -1,0 +1,72 @@
+[
+ {
+  "name": "a signal bridge adapter is owned before its identity await",
+  "file": "nora/platform/registry.py",
+  "old": "                dm_recipients=dms.get(\"signal\", frozenset()))\n            _register(adapter)\n            try:\n                identity = await _resolve_bridge_identity(",
+  "new": "                dm_recipients=dms.get(\"signal\", frozenset()))\n            try:\n                identity = await _resolve_bridge_identity(",
+  "target": "tests/integration/test_composition_unwind.py::test_a_later_bridge_failure_closes_the_adapters_already_built"
+ },
+ {
+  "name": "a discord bridge adapter is owned before its identity await",
+  "file": "nora/platform/registry.py",
+  "old": "                speaker=discord_speaker)\n            _register(discord_adapter)\n            try:\n                discord_identity = await _resolve_bridge_identity(",
+  "new": "                speaker=discord_speaker)\n            try:\n                discord_identity = await _resolve_bridge_identity(",
+  "target": "tests/integration/test_composition_unwind.py::test_a_later_bridge_failure_closes_the_adapters_already_built"
+ },
+ {
+  "name": "a failed build unwinds what it acquired",
+  "file": "nora/app/composition.py",
+  "old": "    except BaseException:\n        try:\n            await owner.aclose()\n        except Exception:\n            log.exception(\"startup unwind failed alongside the build failure\")\n        raise",
+  "new": "    except BaseException:\n        raise",
+  "target": "tests/integration/test_composition_unwind.py::test_a_mid_build_failure_unwinds_everything_acquired"
+ },
+ {
+  "name": "the audit store is owned when it is built",
+  "file": "nora/app/composition.py",
+  "old": "    audit = _stores_audit.audit\n    owner.own_audit(audit)",
+  "new": "    audit = _stores_audit.audit",
+  "target": "tests/integration/test_composition_unwind.py::test_a_mid_build_failure_unwinds_everything_acquired"
+ },
+ {
+  "name": "the model clients are owned when the lane builds them",
+  "file": "nora/app/composition.py",
+  "old": "    owner.own_client(client)\n    owner.own_model_clients(extra_model_clients)",
+  "new": "",
+  "target": "tests/integration/test_composition_unwind.py::test_a_late_build_failure_unwinds_bridge_and_model_resources"
+ },
+ {
+  "name": "the honcho client is owned before ensure_workspace",
+  "file": "nora/memory/wire.py",
+  "old": "    if owner is not None:\n        # Owned before `ensure_workspace` and the foreign-workspaces refusal\n        # below can strand it — the client exists from here on.\n        owner.own_memory(memory)",
+  "new": "",
+  "target": "tests/integration/test_composition_unwind.py::test_a_mid_build_failure_unwinds_everything_acquired"
+ },
+ {
+  "name": "background tasks are owned before the first spawn",
+  "file": "nora/app/composition_runtime.py",
+  "old": "    if owner is not None:\n        # Owned before the first spawn — a failing `hydrate` below must\n        # still cancel what is already running.\n        owner.own_background(background)",
+  "new": "",
+  "target": "tests/integration/test_composition_unwind.py::test_a_mid_build_failure_unwinds_everything_acquired"
+ },
+ {
+  "name": "the bridge redis is owned at creation, before the runtime awaits",
+  "file": "nora/app/composition_bridge.py",
+  "old": "        bridge_redis = aioredis.from_url(redis_url)\n        if owner is not None:\n            # Owned before the runtime pieces below can fail — the client\n            # exists from here on.\n            owner.own_bridge(redis=bridge_redis)",
+  "new": "        bridge_redis = aioredis.from_url(redis_url)",
+  "target": "tests/integration/test_composition_unwind.py::test_a_failure_inside_bridge_wiring_still_closes_its_redis"
+ },
+ {
+  "name": "the scoped computer is wired to the owner at composition",
+  "file": "nora/app/composition.py",
+  "old": "        op_clock=op_clock,\n        owner=owner,\n    )",
+  "new": "        op_clock=op_clock,\n    )",
+  "target": "tests/integration/test_composition_unwind.py::test_a_scoped_computer_acquisition_unwinds_redis_and_journal"
+ },
+ {
+  "name": "the memory handle closes on normal shutdown too",
+  "file": "nora/app/lifecycle.py",
+  "old": "            audit=deps.audit,\n            memory=deps.memory,\n            model_clients=deps.model_clients,",
+  "new": "            audit=deps.audit,\n            model_clients=deps.model_clients,",
+  "target": "tests/integration/test_composition_unwind.py::test_a_successful_build_transfers_each_resource_once"
+ }
+]

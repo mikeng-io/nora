@@ -84,6 +84,7 @@ from nora.app.composition_stores import (
 from nora.app.computer_sweeper import ComputerSessionSweeper
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.graph_batches import GraphBatchProducer
+from nora.app.lifecycle import StartupOwner
 from nora.app.memory_routing import (
     profile_scopes_of_person,
     workspaces_of_person,
@@ -492,7 +493,34 @@ async def build_dependencies(
     `operational_clock`, which defaults to `clock`; the eval subject passes
     the wall clock so maintenance keeps moving while the block's time stands
     still.
+
+    **Startup failure closes what it built.** Every resource a step
+    acquires is registered with a `StartupOwner` before the next `await`
+    that could strand it; a raise or a cancellation anywhere below unwinds
+    those resources in normal shutdown order, and the ORIGINAL exception
+    propagates even if a close itself fails. A returned `Dependencies`
+    is the transfer of ownership — `close_dependencies` closes it through
+    the same order, and nothing registered was closed early.
     """
+    owner = StartupOwner()
+    try:
+        return await _compose_dependencies(
+            cfg, clock=clock, operational_clock=operational_clock, owner=owner)
+    except BaseException:
+        try:
+            await owner.aclose()
+        except Exception:
+            log.exception("startup unwind failed alongside the build failure")
+        raise
+
+
+async def _compose_dependencies(
+    cfg: Config,
+    *,
+    clock: Callable[[], datetime],
+    operational_clock: Callable[[], datetime] | None,
+    owner: StartupOwner,
+) -> Dependencies:
     op_clock = operational_clock or clock
     content_checks = cfg.content_checks.enabled
     metrics = Metrics()
@@ -512,6 +540,7 @@ async def build_dependencies(
     channel_directory = _platforms_channels.channel_directory
     discord_box = _platforms_channels.discord_box
     discord_control = _platforms_channels.discord_control
+    owner.own_discord_control(discord_control)
     _stores_identity = identity(cfg=cfg, channel_directory=channel_directory, metrics=metrics)
     allowlist = _stores_identity.allowlist
     persons = _stores_identity.persons
@@ -520,6 +549,7 @@ async def build_dependencies(
     engine = _stores_database.engine
     _stores_audit = build_audit(cfg=cfg, engine=engine, metrics=metrics)
     audit = _stores_audit.audit
+    owner.own_audit(audit)
     _location_stores = _location_wire.stores(engine=engine)
     mobility = _location_stores.mobility
     _agenda_reminders = _agenda_wire.reminders(engine=engine)
@@ -559,6 +589,7 @@ async def build_dependencies(
         computer_token=computer_token,
         engine=engine, metrics=metrics,
         op_clock=op_clock,
+        owner=owner,
     )
     browser_manager = _computer_scoped.browser_manager
     browser_tabs = _computer_scoped.browser_tabs
@@ -680,16 +711,19 @@ async def build_dependencies(
         summons_inbox=summons_inbox,
         voice_guild_ids=voice_guild_ids,
         voice_hub=voice_hub,
+        owner=owner,
     )
     account = _platforms_adapters.account
     adapter = _platforms_adapters.adapter
     registry = _platforms_adapters.registry
     _stores_instructions = instructions(cfg=cfg, metrics=metrics)
     dreamer_instructions = _stores_instructions.dreamer_instructions
-    _memory_honcho = await _memory_wire.honcho(allowlist=allowlist, cfg=cfg, persons=persons)
+    _memory_honcho = await _memory_wire.honcho(
+        allowlist=allowlist, cfg=cfg, persons=persons, owner=owner)
     memory = _memory_honcho.memory
     _runtime_tasks = await tasks(
-        cfg=cfg, channel_directory=channel_directory, engine=engine, reload_files=reload_files
+        cfg=cfg, channel_directory=channel_directory, engine=engine,
+        reload_files=reload_files, owner=owner,
     )
     background = _runtime_tasks.background
     debounce = _runtime_tasks.debounce
@@ -756,6 +790,8 @@ async def build_dependencies(
     _models_lane = lane(cfg=cfg)
     client = _models_lane.client
     extra_model_clients = _models_lane.extra_model_clients
+    owner.own_client(client)
+    owner.own_model_clients(extra_model_clients)
     model_client_for = _models_lane.model_client_for
     route_model = _models_lane.route_model
     tier = _models_lane.tier
@@ -811,6 +847,7 @@ async def build_dependencies(
         cfg=cfg,
         content_checks=content_checks,
         engine=engine,
+        extra_model_clients=extra_model_clients,
         media_objects=media_objects,
         memory=memory,
         metrics=metrics,
@@ -1004,6 +1041,7 @@ async def build_dependencies(
         tool_registry=tool_registry,
     )
     subagent_backend = _agent_subagent_backend.subagent_backend
+    owner.own_subagent(subagent_backend)
     _computer_dispatch = _computer_wire.dispatch(
         allowlist=allowlist,
         audit=audit,
@@ -1222,6 +1260,7 @@ async def build_dependencies(
         registry=registry,
         slots=slots,
         stimulus_wiring=stimulus_wiring,
+        owner=owner,
     )
     bridge_runtime = _bridge_runtime.bridge_runtime
     _dreamer_preamble = preamble(engine=engine)
@@ -1322,6 +1361,7 @@ async def build_dependencies(
         stimulus_store=stimulus_store,
     )
     cognition_shutdown = _dreamer_wake.cognition_shutdown
+    owner.own_cognition(cognition_shutdown)
     wake_evaluator = _dreamer_wake.wake_evaluator
     _stores_otp = build_otp(
         audit=audit,
