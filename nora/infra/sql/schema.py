@@ -5924,3 +5924,24 @@ IDX_PLATFORM_OBJECT_STATE_ROOM = sa.Index(
     PLATFORM_OBJECT_STATE.c.platform, PLATFORM_OBJECT_STATE.c.account_key,
     PLATFORM_OBJECT_STATE.c.conversation_id, PLATFORM_OBJECT_STATE.c.kind,
 )
+
+# Pending bilateral consent is separate from published account ownership.
+MANAGED_LINK_REQUEST = sa.Table(
+    "managed_link_request", METADATA,
+    sa.Column("request_id", sa.Text, primary_key=True),
+    sa.Column("snapshot", pg.JSONB, nullable=False),
+)
+
+MANAGED_LINK_DECISION = sa.Table(
+    "managed_link_decision", METADATA,
+    sa.Column("operation_id", sa.Text, primary_key=True),
+    sa.Column("request_id", sa.Text,
+              sa.ForeignKey("managed_link_request.request_id", ondelete="RESTRICT"),
+              nullable=False),
+    sa.Column("effect_id", sa.Text, nullable=False),
+    sa.Column("evidence", pg.JSONB, nullable=False),
+)
+
+IDX_MANAGED_LINK_DECISION_REQUEST = sa.Index(
+    "idx_managed_link_decision_request", MANAGED_LINK_DECISION.c.request_id,
+)
