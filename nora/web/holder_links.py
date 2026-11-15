@@ -62,8 +62,7 @@ def _ident_json(account: Identifier) -> dict[str, str]:
 
 
 def _view_json(view: HolderLinkView) -> dict[str, object]:
-    """The caller's own side — including their private challenge, which a
-    Signal-side holder needs verbatim to answer `!!!link <verb>`."""
+    """Serialize only the caller's side and its private consent challenge."""
     return {
         "request_id": view.request_id,
         "side": view.side.value,

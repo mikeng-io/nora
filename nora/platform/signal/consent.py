@@ -95,11 +95,8 @@ def parse_link_decision(
     )
 
 
-#: The consent service's decision entry point — the transport supplies the
-#: daemon-proven sender aliases, its own account id as the proof issuer and
-#: the envelope's timestamp; the service decides whether that proves the
-#: holder's decision. `Outcome`-typed so a transport failure and a refusal
-#: stay distinct all the way to the private reply.
+#: Supply daemon-proven aliases, proof issuer and envelope time to the service.
+#: Its typed outcome preserves refusal versus transport failure through the reply.
 ConsentDecider = Callable[..., Awaitable[Outcome]]
 
 
@@ -130,8 +127,7 @@ class SignalLinkDelivery:
 
 
 def _reply_address(sender: frozenset[Identifier]) -> Identifier | None:
-    """The private address a consent reply goes back to — the ACI first
-    (signal-cli's canonical private identity), then the number."""
+    """Use the daemon-proven ACI as the private reply address, then the number."""
     for kind in ("uuid", "phone"):
         for ident in sender:
             if ident.kind == kind:
@@ -179,8 +175,7 @@ class SignalLinkConsent:
 
 
 def _reply_text(decision: SignalLinkDecision, outcome: Outcome) -> str:
-    """The private answer — the decision's own request id and the honest
-    state, never the nonce and never another request's state."""
+    """Reply with this decision's request id and state, never a nonce or foreign state."""
     verb = "Approval" if decision.approve else "Decision"
     if outcome.status is OutcomeStatus.COMPLETE:
         return f"{verb} recorded for link request {decision.request_id}."

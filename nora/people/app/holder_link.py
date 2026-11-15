@@ -67,19 +67,15 @@ log = logging.getLogger(__name__)
 
 LIFETIME = timedelta(minutes=15)
 
-#: The provider re-authentication methods a private HTTP decision accepts —
-#: keyed by the authentication method the trusted issuer asserted. An
-#: assertion minted from any other method (including every code-login path)
-#: is login proof only and can never become a `ConsentProof`.
+#: Only trusted provider re-authentication can supply HTTP consent.
+#: Every code-login method remains authentication without consent authority.
 _REAUTH_SURFACE: Mapping[str, ConsentSurface] = {
     "discord_oauth": ConsentSurface.DISCORD_REAUTH,
     "telegram_oidc": ConsentSurface.TELEGRAM_REAUTH,
 }
 
-#: Platforms whose only consent surface is their private transport — a
-#: `signal_code`/`whatsapp_code` authentication is login proof, never
-#: approval capability, so a private HTTP decision for these accounts is
-#: refused before the proof is even constructed.
+#: These platforms cannot approve through HTTP; code-login proof is insufficient.
+#: Supported private transports own their approval surface (account-linking.md).
 _TRANSPORT_ONLY: frozenset[str] = frozenset({"signal", "whatsapp"})
 
 #: Platforms a link request may name at all — each side needs a consent
@@ -357,8 +353,7 @@ class HolderLinkService:
     async def _principal(
         self, authentication: AccountAuthentication
     ) -> AuthenticatedPrincipal | Outcome:
-        """Revalidate the retained binding — session proof authenticates
-        the account, never supplies consent."""
+        """Revalidate the retained exact-account binding; session proof is never consent."""
         result = await self._sessions.check(authentication)
         if result.verdict is Verdict.UNAVAILABLE:
             return unavailable("authentication-unavailable")
@@ -407,8 +402,7 @@ class HolderLinkService:
         person_id: str,
         proof: ConsentProof,
     ) -> LinkActionResult:
-        """Persist one side's decision through the store, then hand a
-        fully-approved request to the central publication executor."""
+        """Persist one side's decision and centrally publish a fully approved request."""
         payload: object = (
             LinkApproval(request_id=link.request_id, side=side, pair=link.pair,
                          surviving_person=link.surviving_person)
@@ -442,9 +436,7 @@ class HolderLinkService:
     async def _sender_account(
         self, sender: frozenset[Identifier]
     ) -> ManagedAccount | Outcome:
-        """Resolve every sender alias the transport asserted to ONE bound
-        account — conflicting bindings fail closed, so a number/uuid pair
-        owned by different accounts can never consent for either."""
+        """Resolve all transport sender aliases to one exact account; conflicts refuse."""
         records = []
         try:
             for ident in sender:
@@ -458,9 +450,7 @@ class HolderLinkService:
         return records[0]
 
     async def _deliver_signal_challenges(self, link: PendingLink) -> None:
-        """Push each Signal-side challenge to the exact bound identifier —
-        best-effort: a failed push never blocks the request, because the
-        holder's authenticated view carries the same challenge."""
+        """Deliver exact-account challenges; failed pushes leave private-view retrieval."""
         if self._signal_delivery is None:
             return
         for side in LinkSide:
@@ -480,8 +470,7 @@ class HolderLinkService:
 
 
 def _challenge_text(link: PendingLink, side: LinkSide, nonce: str) -> str:
-    """The private challenge — exact pair, survivor, request id and the
-    reply syntax the consent parser accepts."""
+    """Render the exact pair, survivor, request id and private reply syntax."""
     account = link.pair.account(side)
     other = link.pair.account(
         LinkSide.RECEIVING if side is LinkSide.INITIATING else LinkSide.INITIATING)
@@ -500,9 +489,7 @@ def _ident_text(account: Identifier) -> str:
 
 
 def _decision_kind(action: str, side: LinkSide) -> str | None:
-    """Map the API verb to the operation kind the side is allowed to
-    carry — only the initiating side can cancel, and a refused/cancelled
-    decision is a `LinkRefusal` payload either way."""
+    """Map a side's verb; only the initiating side can cancel."""
     if action == "approve":
         return "approve_link"
     if action == "cancel" and side is LinkSide.INITIATING:
