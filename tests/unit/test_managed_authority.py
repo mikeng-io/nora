@@ -148,6 +148,24 @@ async def _grant_operator(
         )
 
 
+async def test_retired_subject_checks_the_survivors_permissions_and_blocks():
+    store, backend, svc = _service()
+    await _person(store, PERSON)
+    former = "generated-retired-person"
+    assert (await store.add_alias(former_id=former, person_id=PERSON)
+            ).status is OutcomeStatus.COMPLETE
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=PERSON)
+    assert (await svc.check(scope=ROOM, person_id=former,
+                            permit="view")).verdict is Verdict.ALLOWED
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=former)
+    await backend.put_relation(scope=ROOM, relation="deny_view", person_id=PERSON)
+    assert (await svc.check(scope=ROOM, person_id=former,
+                            permit="view")).verdict is Verdict.DENIED
+    store.blocks[(PERSON, ROOM)] = AuthorityBlock(PERSON, ROOM, "generated hold", "generated-op")
+    assert (await svc.check(scope=ROOM, person_id=former,
+                            permit="view")).verdict is Verdict.UNAVAILABLE
+
+
 async def test_member_check_allows_room_speak_and_view():
     store, backend, svc = _service()
     await _person(store, PERSON)

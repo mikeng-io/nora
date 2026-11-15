@@ -111,18 +111,21 @@ class AuthorityService:
     async def _check(
         self, *, scope: Scope, person_id: str, permit: str
     ) -> CheckResult:
+        canonical = await self._bindings.canonical_person(person_id)
         for block in await self._bindings.authority_blocks():
-            if block.person_id == person_id and block.scope == scope:
+            if block.person_id in {person_id, canonical} and block.scope == scope:
                 return check_unavailable("authority-blocked")
         if not await self._topology.scope_exists(scope):
             return unknown_scope("scope-not-in-topology")
-        lifecycle = await self._bindings.person_lifecycle(person_id)
+        if canonical is None:
+            return check_denied("unknown-person")
+        lifecycle = await self._bindings.person_lifecycle(canonical)
         if lifecycle is None:
             return check_denied("unknown-person")
         if lifecycle is PersonLifecycle.SUSPENDED:
             return check_denied("person-suspended")
         return await self._backend.check(
-            scope=scope, person_id=person_id, permit=permit
+            scope=scope, person_id=canonical, permit=permit
         )
 
     async def apply(self, op: Operation) -> Outcome:
