@@ -161,7 +161,7 @@ def terminal_response(events: list[dict[str, Any]]) -> dict[str, Any]:
                if e.get("attempt_id") == call.get("attempt_id")):
             last = call
             break
-        if not call.get("cancelled"):
+        if call.get("cancelled") != "Reply already sent — the turn is finished.":
             break
     last = last or (calls[-1] if calls else None)
     attempt = last.get("attempt_id") if last else None

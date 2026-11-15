@@ -225,9 +225,8 @@ def test_downstream_work_in_the_turns_trace_keeps_its_own_terminal_response():
     fold = [{**e, "invocation_id": "fold", "attempt_id": "fold:0:1"}
             for e in _responses(text="the room fold's position")]
     # The requests sit inside their invocation windows, as emitted.
-    events = (primary[:2] + [_request("primary", ["send_reply", "now"])]
-              + primary[2:]
-              + fold[:2] + [_request("fold", [])] + fold[2:])
+    events = [*primary[:2], _request("primary", ["send_reply", "now"]),
+              *primary[2:], *fold[:2], _request("fold", []), *fold[2:]]
     # The fold finishes after the turn; neither order nor "the last root"
     # may borrow it.
     assert terminal_response(events)["text"] == "actual terminal answer"
@@ -277,6 +276,22 @@ def test_a_cycle_cancelled_after_the_send_keeps_the_settled_attempt():
     assert response["status"] == "observed"
     assert response["attempt_id"] == "primary:0:1"
     assert response["finish_reason"] == "tool_calls"
+
+
+@pytest.mark.parametrize("reason", [True, "budget exhausted", "operator cancelled"])
+def test_an_unrelated_pre_dispatch_cancellation_stays_unsettled(reason):
+    events = _responses()
+    events[-1:-1] = [
+        {"kind": "call_started", "invocation_id": "primary",
+         "attempt_id": "primary:1:1", "cancelled": reason},
+        {"kind": "call_cancelled", "invocation_id": "primary",
+         "attempt_id": "primary:1:1", "reason": reason},
+        {"kind": "call_finished", "invocation_id": "primary",
+         "attempt_id": "primary:1:1", "retry": False},
+    ]
+    response = terminal_response(events)
+    assert response["status"] == "unavailable"
+    assert response["cause"] == "attempt_unsettled"
 
 
 def test_an_interrupted_trailing_attempt_stays_unsettled():
