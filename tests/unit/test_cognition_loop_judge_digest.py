@@ -291,7 +291,7 @@ def test_judges_receive_the_recorded_sources_and_clock_once_per_wake():
     assert payload["unit_rooms"] == [["signal", "r1"], ["signal", "r2"]]
     assert payload["source"] == {"agenda": "generated closing fact", "items": [],
                                  "stimuli": [{"id": 5}]}
-    assert payload["earlier_wakes"][0]["at_ms"] == 1_799_999_000_000
+    assert [w["at_ms"] for w in payload["earlier_wakes"]] == [1_799_999_000_000]
     assert payload["earlier_wakes"][0]["source"]["agenda"] == "generated opening fact"
     # A wake that never captured its rooms shows null — unknown, never empty.
     assert payload["earlier_wakes"][0]["unit_rooms"] is None
