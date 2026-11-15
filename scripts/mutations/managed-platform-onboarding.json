@@ -16,7 +16,7 @@
   {
     "name": "an empty guild read is unavailable, never a mass departure",
     "file": "nora/platform/discord/discovery.py",
-    "old": "        if not rows:\n            # A guild can never enumerate to zero members — the application\n            # itself is one. An empty answer is a broken read, not proof\n            # everyone left, so it cannot stand in as a complete roster.\n            return CollectionSnapshot(\n                available=False, detail=\"empty-roster\")",
+    "old": "        if not result.rows:\n            # A guild can never enumerate to zero members — the application\n            # itself is one. An empty answer is a broken read, not proof\n            # everyone left, so it cannot stand in as a complete roster.\n            return CollectionSnapshot(\n                available=False, detail=\"empty-roster\")",
     "new": "        if False:\n            return CollectionSnapshot(\n                available=False, detail=\"empty-roster\")",
     "target": "tests/unit/test_platform_onboarding.py::TestDiscoveryAdapters::test_discord_unavailable_and_empty_never_read_as_empty_roster"
   },
