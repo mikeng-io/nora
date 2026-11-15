@@ -116,10 +116,10 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
         report["expected_cases"] = [None]
         path.write_text(json.dumps(report))
     originals = {p.name: p.read_bytes() for p in tmp_path.glob("*.json")}
-    calls = []
+    calls, setups = [], []
 
     def setup(*args, **kwargs):
-        assert damage is None, "judge setup before complete evidence"
+        setups.append(True)
         return example_config
 
     async def judge(_judges, _models, expectation, diff, after, trajectory, earlier):
@@ -135,6 +135,7 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
                                   services=rejudge_services)
     assert result["status"] == ("PASS" if damage is None else "ERROR")
     assert calls == ([(e.kind, e.wake) for e in case.expectations] if damage is None else [])
+    assert setups == ([True] if damage is None else [])
     assert {name: (tmp_path / name).read_bytes() for name in originals} == originals
 
 
