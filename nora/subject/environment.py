@@ -81,12 +81,9 @@ class IsolatedServices:
         if not any(owned is subject for owned in self._subjects):
             return
         self._subjects = [owned for owned in self._subjects if owned is not subject]
-        from nora.app.runtime import close_dependencies
+        from nora.app.lifecycle import close_dependencies
 
-        try:
-            await subject.deps.background.cancel_all()
-        finally:
-            await close_dependencies(subject.deps)
+        await close_dependencies(subject.deps)
 
     def owns(self, url: str) -> bool:
         origin = urlsplit(url)

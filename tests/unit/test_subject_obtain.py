@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from nora.policy import load_policy
 from nora.subject.obtain import SubjectSpec, _conversation_for, build_config, default_policy
 
 _DEPLOYMENT_SHAPED = (
@@ -135,7 +136,7 @@ def test_evaluation_config_ignores_ambient_deployments(
 def test_build_config_writes_a_policy_naming_the_room(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     build_config(_spec(tmp_path))
-    convo = _conversation_for(_spec(tmp_path))
+    convo = _conversation_for(_spec(tmp_path), load_policy(tmp_path / "policy.toml"))
     assert (convo.primary_id, convo.unit) == ("g1", "nora")
 
 
@@ -181,7 +182,7 @@ def test_a_deployment_shaped_policy_whose_unit_is_not_the_workspace_is_accepted(
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     spec = _spec(tmp_path, room=("signal", "friends-sig"), policy=_DEPLOYMENT_SHAPED)
     cfg = build_config(spec)
-    convo = _conversation_for(spec)
+    convo = _conversation_for(spec, load_policy(tmp_path / "policy.toml"))
     assert convo.unit == "friends"
     assert convo.primary_id == "friends-sig"
     assert cfg.honcho.workspace_id != "friends", "the unit is the room's, not Honcho's"
@@ -191,7 +192,7 @@ def test_conversation_for_resolves_the_rooms_own_entry_among_several(tmp_path, m
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     spec = _spec(tmp_path, room=("signal", "ridgeline-sig"), policy=_DEPLOYMENT_SHAPED)
     build_config(spec)
-    convo = _conversation_for(spec)
+    convo = _conversation_for(spec, load_policy(tmp_path / "policy.toml"))
     assert (convo.primary_id, convo.unit) == ("ridgeline-sig", "ridgeline")
 
 
@@ -245,8 +246,10 @@ def test_a_policy_naming_the_rooms_id_on_a_different_entry_is_refused(
         '[[conversations]]\nplatform = "discord"\nid = "g-case3"\n'
         'label = "g-case3"\npersons = "*"\nunit = "friends"\n'
     )
+    spec = _spec(tmp_path, room=("signal", "g-case3"), policy=stated)
+    build_config(spec)
     with pytest.raises(ValueError, match="resolves to primary_id"):
-        build_config(_spec(tmp_path, room=("signal", "g-case3"), policy=stated))
+        _conversation_for(spec, load_policy(tmp_path / "policy.toml"))
 
 
 def test_a_policy_naming_the_id_on_the_wrong_platform_is_refused(
@@ -261,8 +264,10 @@ def test_a_policy_naming_the_id_on_the_wrong_platform_is_refused(
         'default = "deny"\n[[conversations]]\nplatform = "discord"\n'
         'id = "g-case4"\nlabel = "g-case4"\npersons = "*"\nunit = "nora"\n'
     )
+    spec = _spec(tmp_path, room=("signal", "g-case4"), policy=stated)
+    build_config(spec)
     with pytest.raises(ValueError, match="names no conversation"):
-        build_config(_spec(tmp_path, room=("signal", "g-case4"), policy=stated))
+        _conversation_for(spec, load_policy(tmp_path / "policy.toml"))
 
 
 def test_a_named_provider_is_dialled_on_loopback_from_the_host(

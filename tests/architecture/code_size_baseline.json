@@ -435,7 +435,7 @@
   }
  },
  "nora/app/composition.py": {
-  "comment_blocks": 23,
+  "comment_blocks": 22,
   "file_lines": 1484,
   "functions": {
    "build_dependencies": 1003
@@ -1911,8 +1911,8 @@
   "comment_blocks": 2
  },
  "nora/subject/obtain.py": {
-  "comment_blocks": 16,
-  "internal_docstrings": 2
+  "comment_blocks": 15,
+  "internal_docstrings": 1
  },
  "nora/subject/proactive.py": {
   "comment_blocks": 3

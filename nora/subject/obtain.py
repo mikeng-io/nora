@@ -24,7 +24,7 @@ from pydantic import BaseModel, TypeAdapter
 from nora.app.composition import Dependencies, build_dependencies, wall_clock
 from nora.config import Config
 from nora.config import load as _load_config
-from nora.policy import Conversation, load_policy
+from nora.policy import Conversation, Policy
 
 from .circle import CircleMemory, CircleOverlay
 from .environment import IsolatedServices
@@ -406,7 +406,6 @@ def build_config(spec: SubjectSpec) -> Config:
             for name, p in cfg.providers.items()}})
     policy = spec.policy or default_policy(spec.room)
     (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")
-    _conversation_for(spec)
     return cfg
 
 
@@ -416,23 +415,9 @@ class RoomNotInPolicyError(ValueError):
     can say so without matching on this message."""
 
 
-def _conversation_for(spec: SubjectSpec) -> Conversation:
-    """The policy entry `spec.room` composes with — RESOLVED, not grepped.
-
-    A substring test over the raw TOML text only proves `spec.room[1]`
-    appears as SOME conversation's `id` somewhere in the file — a hand-written
-    multi-entry policy can satisfy that while the subject's OWN room resolves
-    to a different entry, with a different `primary_id` and a different
-    `unit` — so a policy whose OTHER entry carries the room's id string would
-    compose cleanly and silently key culture/notes/the Dreamer's scope under a
-    real room's identifiers instead of the subject's own.
-
-    A policy that does NOT name the room is REFUSED, because it is the
-    quietest failure available: ingest refuses admission, no turn runs,
-    nothing raises, and every tag case scores a `no_reply` PASS while the
-    report reads OK.
-    """
-    convo = load_policy(spec.workdir / "policy.toml").conversation(*spec.room)
+def _conversation_for(spec: SubjectSpec, policy: Policy) -> Conversation:
+    """Resolve the room through the production graph's current policy."""
+    convo = policy.conversation(*spec.room)
     if convo is None:
         raise RoomNotInPolicyError(
             f"policy names no conversation for the subject's room "
@@ -471,23 +456,27 @@ async def obtain(spec: SubjectSpec) -> Subject:
             return _at
     # Semantic time is controlled; operational leases and deadlines advance.
     deps = await build_dependencies(cfg, clock=clock, operational_clock=wall_clock)
-    # The scoped computer's maintenance IS part of the composed graph:
-    # the same `ComputerLifecycle` `__main__` starts — a subject with
-    # `[computer.scoped]` enabled ticks its queue and sweeps its tabs,
-    # and `backbone._close` closes it in the same order the app's
-    # shutdown does.
-    if deps.computer_lifecycle is not None:
-        deps.computer_lifecycle.start(deps.background)
-    convo = _conversation_for(spec)
-    subject = Subject(
-        deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
-        unit=convo.unit, culture_key=convo.primary_id,
-        listed_persons=convo.persons,
-        environment=environment,
-    )
-    environment.register_subject(subject)
-    environment.check()
-    return subject
+    subject = None
+    try:
+        convo = _conversation_for(spec, deps.config_reload.policy)
+        subject = Subject(
+            deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
+            unit=convo.unit, culture_key=convo.primary_id,
+            listed_persons=convo.persons, environment=environment,
+        )
+        environment.register_subject(subject)
+        if deps.computer_lifecycle is not None:
+            deps.computer_lifecycle.start(deps.background)
+        environment.check()
+        return subject
+    except BaseException:
+        if subject is None:
+            from nora.app.lifecycle import close_dependencies
+
+            await close_dependencies(deps)
+        else:
+            await subject.aclose()
+        raise
 
 
 def validate_subject_overrides(overrides: dict[str, Any],

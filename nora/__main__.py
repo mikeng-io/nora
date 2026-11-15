@@ -23,7 +23,7 @@ from typing import Protocol
 
 from . import config
 from .agent.telemetry import setup_agent_tracing
-from .app import adoption, cli, runtime, wake
+from .app import adoption, cli, lifecycle, runtime, wake
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .app.revisions import RevisionRecorder
 from .config import ConfigError
@@ -480,7 +480,7 @@ class App:
         await recorder.watch()
 
     async def shutdown(self) -> None:
-        await runtime.close_dependencies(self.deps, health_runner=self._health_runner)
+        await lifecycle.close_dependencies(self.deps, health_runner=self._health_runner)
 
 
 def build_parser() -> argparse.ArgumentParser:

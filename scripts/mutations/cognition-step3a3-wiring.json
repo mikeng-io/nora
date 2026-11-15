@@ -127,10 +127,10 @@
   },
   {
     "name": "main: shutdown stops the cognition sessions first",
-    "file": "nora/app/runtime.py",
-    "old": "    if deps.cognition_shutdown is not None:\n        await deps.cognition_shutdown()",
-    "new": "    if deps.cognition_shutdown is not None:\n        pass",
-    "target": "tests/unit/test_cognition_wiring.py -k app_stops"
+    "file": "nora/app/lifecycle.py",
+    "old": "            closing.push_async_callback(deps.cognition_shutdown)",
+    "new": "            pass",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_and_the_audit"
   },
   {
     "name": "evals: a subject with no session runner is an ERROR",

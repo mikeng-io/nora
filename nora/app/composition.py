@@ -138,6 +138,7 @@ from nora.persons import Persons
 from nora.platform.bridge.client import (
     BridgeAdapter,
 )
+from nora.platform.discord.bridge_control import BridgeControlClient
 from nora.platform.registry import AdapterRegistry
 from nora.platform.signal.adapter import SignalAdapter
 from nora.policy import Policy
@@ -447,11 +448,10 @@ class Dependencies:
     # Its perception pass: `None` whenever the poller is. `nora/__main__.py`
     # starts it beside the poller.
     social_perception: SocialPerception | None = None
-    # A story frame's bytes deleted at their bound: `None` unless `[social]
-    # story_expiry_enabled` and media custody is on; built whether or not the
-    # poller runs, so bytes it kept still go once it is switched off.
-    # `nora/__main__.py` starts it.
+    # None unless story expiry and media custody are enabled. App.run
+    # starts expiry even with the poller disabled.
     story_expiry: StoryMediaExpiry | None = None
+    discord_control: BridgeControlClient | None = None
 
 
 def wall_clock() -> datetime:
@@ -1345,7 +1345,7 @@ async def build_dependencies(
     computer_sweeper = _computer_sweeper.computer_sweeper
 
     return Dependencies(
-        config_reload=reload_files,
+        config_reload=reload_files, discord_control=discord_control,
         audit=audit,
         memory=memory,
         persons=persons,

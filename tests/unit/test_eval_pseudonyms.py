@@ -16,7 +16,8 @@ from strands_evals import Case
 
 from evals import backbone, pseudonyms
 from evals.scenarios import load_corpus
-from nora.subject.obtain import RoomNotInPolicyError, SubjectSpec, build_config
+from nora.policy import load_policy
+from nora.subject.obtain import RoomNotInPolicyError, SubjectSpec, _conversation_for, build_config
 
 _MAP = (
     "grp-pseudo==>grp-synthreal\n"
@@ -73,10 +74,12 @@ def _room(case: Case) -> tuple[str, str]:
 
 def _compose(tmp_path: Path, monkeypatch, room: tuple[str, str]) -> None:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    build_config(SubjectSpec(
+    spec = SubjectSpec(
         database_url="postgresql+asyncpg://x/x", workdir=tmp_path / "subject",
         room=room, policy=_POLICY,
-    ))
+    )
+    build_config(spec)
+    _conversation_for(spec, load_policy(spec.workdir / "policy.toml"))
 
 
 def test_a_pseudonymised_anchor_resolves_with_the_map(corpus, mapped, tmp_path, monkeypatch):
