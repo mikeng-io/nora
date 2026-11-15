@@ -9,12 +9,14 @@ from aiohttp import web
 
 from nora.domain.managed import OutcomeStatus
 from nora.infra.ory.kratos import KratosClient
+from nora.people.adapters.kratos_registry import KratosIdentityRegistry
 
 
 @pytest.fixture
 async def api(aiohttp_server):
     state = {"external": "generated-person", "identity": str(uuid4()),
-             "body": None, "paths": [], "session_delete": 204, "sessions": []}
+             "body": None, "paths": [], "session_delete": 204, "sessions": [],
+             "identity_get": 200}
 
     async def handler(request):
         state["paths"].append(request.raw_path)
@@ -38,6 +40,8 @@ async def api(aiohttp_server):
                 return web.json_response(state["sessions"])
         if request.path == "/admin/identities/" + state["identity"]:
             if request.method == "GET":
+                if state["identity_get"] != 200:
+                    return web.Response(status=state["identity_get"])
                 return web.json_response(body if state["body"] is None else state["body"])
             if request.method == "PATCH":
                 patch = await request.json()
@@ -126,3 +130,14 @@ async def test_empty_sessions_cannot_hide_a_mismatched_identity_readback(api):
                      "state": "active", "traits": {}}
     assert (await client.drop_sessions(identity_id=state["identity"])
             ).status is OutcomeStatus.UNAVAILABLE
+
+
+async def test_registry_never_reports_a_missing_identity_readback_as_revocation_success(api):
+    client, state = api
+    registry = KratosIdentityRegistry(client)
+    assert (await registry.drop_sessions(external_id=state["external"])
+            ).status is OutcomeStatus.COMPLETE
+    state["session_delete"] = 404
+    state["identity_get"] = 404
+    assert (await registry.drop_sessions(external_id=state["external"])
+            ).status is OutcomeStatus.DENIED

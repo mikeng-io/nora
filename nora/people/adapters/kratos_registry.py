@@ -54,9 +54,7 @@ class KratosIdentityRegistry(IdentityRegistry):
         outcome, identity = await self._client.get_by_external_id(external_id)
         if identity is None:
             return outcome
-        result = await self._client.drop_sessions(identity_id=identity.identity_id)
-        # 404 on DELETE sessions = no sessions to end: the desired state.
-        return complete() if result.detail == "absent" else result
+        return await self._client.drop_sessions(identity_id=identity.identity_id)
 
     async def aclose(self) -> None:
         """The client shares the caller's session — nothing to close."""
