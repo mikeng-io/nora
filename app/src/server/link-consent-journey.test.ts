@@ -387,14 +387,22 @@ const applyCookies = (response: Response) => {
 
 /** Drive the real provider redirect, authorization grant and `handlers.GET`
  * callback — exactly the HTTP a browser would carry, minus the network. */
-async function completeProviderRedirect(authorizeUrl: string) {
+async function completeProviderRedirect(authorizeUrl: string, prependState?: string) {
   const local = await shared.start();
   expect([local.discord, local.oidc]).toContain(new URL(authorizeUrl).origin);
   const granted = await fetch(authorizeUrl, { redirect: "manual" });
   expect(granted.status).toBe(302);
   const callback = granted.headers.get("Location") ?? "";
   expect(callback).toMatch(/^http:\/\/localhost\/api\/auth\/callback\//);
-  const response = await handlers.GET(new Request(callback, {
+  const callbackUrl = new URL(callback);
+  if (prependState !== undefined) {
+    const validatedState = callbackUrl.searchParams.get("state");
+    expect(validatedState).toBeTruthy();
+    callbackUrl.searchParams.delete("state");
+    callbackUrl.searchParams.append("state", prependState);
+    callbackUrl.searchParams.append("state", validatedState!);
+  }
+  const response = await handlers.GET(new Request(callbackUrl, {
     headers: { cookie: cookieHeader(), host: "localhost", "x-forwarded-proto": "http" },
   }) as never);
   applyCookies(response);
@@ -490,6 +498,39 @@ describe("a holder consenting through a fresh provider callback", () => {
     expect(decisions()).toHaveLength(1);
     expect(JSON.parse(decisions()[0].body).action).toBe("refuse");
   });
+
+  it.each(["ordinary login", "older consent"])(
+    "refuses duplicate-state correlation from %s", async (flow) => {
+      await signInOrdinarily("discord");
+      let older = "";
+      let olderCookies = new Map<string, string>();
+      if (flow === "older consent") {
+        older = await consentEntry("approve");
+        olderCookies = new Map(jar);
+      }
+      const intent = await consentEntry("refuse");
+      const intentState = new URL(intent).searchParams.get("state");
+      expect(intentState).toBeTruthy();
+      if (flow === "ordinary login") {
+        current.headers = appHeaders();
+        older = await signIn("discord", { redirect: false, redirectTo: "/zh-Hant/today" });
+      } else {
+        for (const [name, value] of olderCookies) {
+          if (name.startsWith("authjs.") && !name.includes("session-token")) jar.set(name, value);
+        }
+      }
+      const exchanges = shared.control.calls.filter((c) => c.path.endsWith("/exchange")).length;
+      await completeProviderRedirect(older, intentState!);
+      // Auth.js accepted the older/ordinary flow; Nora must not use the
+      // first parameter to spend the newer intent validated by neither flow.
+      expect(shared.control.calls.filter((c) => c.path.endsWith("/exchange")))
+        .toHaveLength(exchanges + 1);
+      expect(decisions()).toHaveLength(0);
+      const matching = await consentEntry("refuse");
+      await completeProviderRedirect(matching);
+      expect(decisions()).toHaveLength(1);
+      expect(JSON.parse(decisions()[0].body).action).toBe("refuse");
+    });
 
   it("refuses when the fresh Discord callback proves a different account", async () => {
     await signInOrdinarily("discord");

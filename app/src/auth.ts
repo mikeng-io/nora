@@ -115,8 +115,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth((request) => ({
           // Only this genuine fresh provider callback may spend a consent
           // intent; the fresh event — never a retained session — signs it.
           const callback = request ? new URL(request.url) : undefined;
+          const states = callback?.searchParams.getAll("state") ?? [];
           const callbackState = callback?.pathname === `/api/auth/callback/${platform}`
-            ? callback.searchParams.get("state") ?? undefined : undefined;
+            && states.length === 1 ? states[0] : undefined;
           const consent = await applyConsentIntent(authentication, callbackState);
           if (consent !== undefined) token.linkConsent = consent;
           return token;
