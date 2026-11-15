@@ -217,28 +217,27 @@ def turn_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(events)
 
 
-#: The bridge queue spans that name the canonical event they ran.
-_WORK_SPANS = ("queue.attempt", "queue.claim")
-
-
 def bound_turn_events(
     events: list[dict[str, Any]], *, event_id: str | None,
     session_id: Any,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """The subset of a turn's window its own declared input caused, plus
-    the work-attempt trace ids it was bound by.
+    the trace ids it was bound by.
 
-    Every `queue.attempt`/`queue.claim` span naming this event's canonical
-    id owns the work the bridge ran for it — ingest, the durable turn's
-    model calls and its sends — so every event on those traces belongs to
-    this occasion. The session its own stimulus settled to joins by the
-    session's own identity. Everything else in the window — a reminder's
-    fire, a background pass, a foreign occasion — stays provenance, never
-    this turn's acts.
+    The occasion's own causal marker is the span attribute
+    `nora.bridge.event_id`: the queue journal spans (`queue.claim`,
+    `queue.attempt`, `queue.ack`) carry it, and so does the separate
+    generation root the durable turn's model calls, tool acts and sends
+    record under. A span naming the canonical event id belongs to this
+    occasion wherever it sits — a `queue.attempt` root is never the
+    model call's trace. The session its own stimulus settled to joins by
+    the session's own identity. Everything else in the window — a
+    reminder's fire, a background pass, a foreign occasion — stays
+    provenance, never this turn's acts.
     """
     traces = sorted({
         event["trace_id"] for event in events
-        if event.get("name") in _WORK_SPANS
+        if event_id is not None
         and (event.get("attributes") or {}).get("nora.bridge.event_id")
         == event_id
         and isinstance(event.get("trace_id"), str)

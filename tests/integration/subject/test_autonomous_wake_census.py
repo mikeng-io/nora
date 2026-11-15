@@ -105,8 +105,17 @@ class _Driver(JourneyDriver):
             await self._produce(self.engine, count)
         return await super().wait_closed_wakes(count, seconds=seconds)
 
-    async def ingress(self, body: str, *, event_id: str) -> Any:
-        return SimpleNamespace(body=body, event_id=event_id)
+    async def ingress(self, body: str, *, event_id: str,
+                      tagged: bool = False) -> Any:
+        """The send's own settled admission: `done`, declined engagement
+        — the generated turn records rather than fabricating a reply."""
+        incoming = SimpleNamespace(body=body, event_id=event_id,
+                                   sent_ms=1234)
+        event = {"id": event_id, "state": "done",
+                 "admission": {"engage": False, "reason": "generated",
+                               "relevance_gate": None}}
+        work = [{"id": 1, "kind": "ingest", "state": "done"}]
+        return incoming, event, work
 
 
 class _Judges:
