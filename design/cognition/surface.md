@@ -21,7 +21,7 @@ verb per basis the model may propose.
 |---|---|---|
 | read tools: search, rows, neighbourhoods, transcripts, media, permitted outside reads | orient, decide | nothing |
 | **propose** | orient, study's learn and grade | entities, claims, edges (inferred); lessons are claims about Nora's practice; a grade is a claim about the graded row, citing its later evidence |
-| **commit** | decide | intentions (committed): open, revise, drop, and close — a close names the successful outcome item, and code writes the closed-by edge |
+| **commit** | decide | intentions (committed): open, revise, drop, and close — a close names the successful outcome item, and observe's compute writes the closed-by edge |
 | **send_reply** | act | nothing; delivery is recorded by observe |
 
 ## Surface per pass

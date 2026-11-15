@@ -138,8 +138,9 @@ before the room's slot is released.
   `commit`'s admission. Every citation is an item of this pass; a stale base is
   refused; deliveries pass the delivery arbitration.
 - **Proposes, never performs, a close.** A `close` names the successful outcome
-  item; code writes the closed-by edge at admission, and study's verify writes
-  the verdict. Attempted is never closed.
+  item; admission routes it through observe's compute, the one writer of
+  closed-by, which accepts it only if that item meets the intention's
+  condition. Study's verify writes the verdict. Attempted is never closed.
 - **Carries findings as findings.** A result the pass found but did not give —
   the third restaurant a search returned — becomes a child intention, "offer it
   when it comes up", citing its result item and serving the decision it bears
