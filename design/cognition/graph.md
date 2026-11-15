@@ -124,8 +124,8 @@ admitted, evidenced edge.
 An intention names its **owner** (Nora, or the person whose request she holds)
 and who it is **owed to**, and has one of two **forms**:
 
-- **achieve** — closes when its **done-when** condition is met by a recorded
-  item;
+- **achieve** — closes when its **done-when** condition is met by the recorded
+  witness its form requires (the conditions table below);
 - **maintain** — holds while its **holds-while** condition stays true, is
   reviewed at its **review time**, and advances through child achieve
   intentions that serve it.
@@ -169,8 +169,10 @@ true, false or unknown. The form decides the witness and who writes the ending:
 
 **A deadline never achieves.** Time passing is not the promised thing done: a
 deadline may be a drop-when or the end of an intention's window, never its
-done-when. When it passes with the done-when unmet, the verdict is leaked —
-or unknown, if a source it depended on was unhealthy.
+done-when. When a **drop-when** deadline passes, the intention is dropped. When
+the **window** of a typed achieve intention ends with neither its done-when nor
+its drop-when met, it is leaked — or unknown, if a source it depended on was
+unhealthy. Untyped and maintain intentions keep their own endings below.
 
 A condition in none of these forms is **untyped** and cannot close
 mechanically. An untyped achieve intention must carry a deadline; when it
