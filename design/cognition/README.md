@@ -1,4 +1,4 @@
-# The Cognitive Graph
+# Cognition
 
 Nora's cognition is one open loop over one graph. The **Cognitive Graph** is
 her state: what happened, what code derived from it, what she believes and
@@ -9,7 +9,7 @@ from a feature's own code, store, prompt or loop.
 
 **Status:** designed
 
-[Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Fcognitive-graph%2F%22)
+[Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Fcognition%2F%22)
 
 ## Parts
 
@@ -66,7 +66,8 @@ the [memory graph](../unified-memory/graph.md), the Notebook and Register,
 Standing, live threads, lessons and [personalisation](../personalisation/README.md)
 are expressions of. Where another bundle names a separate store, engine or
 classifying axis for one of them, this bundle's kinds, stages and presentations
-are the design.
+are the design. Those bundles describe the code that runs today; nothing new is
+built to them, and they leave with that code when this design is implemented.
 
 ## Why this shape
 
