@@ -27,7 +27,11 @@ from evals.services import load_services
 from nora.config import load
 from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events, validate_events
 from nora.subject.sandbox import eval_host_lock
-from scripts.cognition_loop.accounting import manifest, reconcile
+from scripts.cognition_loop.accounting import (
+    frozen_wake_identity,
+    manifest,
+    reconcile,
+)
 from scripts.cognition_loop.accounting import write_report as _write_report
 from scripts.cognition_loop.cases import load_case
 from scripts.cognition_loop.html import render
@@ -128,6 +132,12 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
         diff, after = frozen_diff(frozen)
         wakes = row.get("wakes") or []
         recorded = wakes[index] if index < len(wakes) else {}
+        identity = frozen_wake_identity(
+            frozen, unit=case.unit, at_ms=recorded.get("at_ms"),
+            step=recorded.get("step"))
+        if identity is not None:
+            row.setdefault("errors", []).append(
+                f"wake {index} (recorded {wake_id}): {identity}")
         # The case names the unit; an old freeze never captured the rooms
         # that belong to it, and null there means unknown, never empty.
         trajectory = {**(frozen.get("trajectory") or {}),
@@ -135,7 +145,8 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
         judged = []
         # A wake a step failure or a missing after-state cannot judge:
         # it stays ERROR and no judge call is spent on it.
-        if not unmeasured(frozen, recorded):
+        judgeable = identity is None and not unmeasured(frozen, recorded)
+        if judgeable:
             for expectation in case.expectations:
                 if expectation.wake != index:
                     continue
@@ -157,13 +168,13 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
         frozen["expectations"] = judged
         path.write_text(json.dumps(frozen, ensure_ascii=False, default=str),
                         encoding="utf-8")
-        status = rollup(ERROR if unmeasured(frozen, recorded) else "PASS",
+        status = rollup(ERROR if not judgeable else "PASS",
                         *(j["verdict"] for j in judged))
         if index < len(row.get("wakes") or []):
             row["wakes"][index]["status"] = status
             row["wakes"][index]["expectations"] = judged
         statuses.append(status)
-        if not unmeasured(frozen, recorded):
+        if judgeable:
             earlier_wakes += ((diff, trajectory),)
     row["status"] = case_status(row, statuses)
 

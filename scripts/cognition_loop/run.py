@@ -600,6 +600,7 @@ def _wake_error(
     """An ERROR wake entry: the step is named, never folded into another's."""
     freeze(output / f"wake-{index}-{wake_id}.json", {
         "error": {"step": step, "message": message},
+        "at_ms": at_ms,
         "advance": advance.written if advance is not None else None,
         "batch": batch, "no_session": no_session,
         "trajectory": trajectory,

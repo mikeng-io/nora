@@ -52,7 +52,6 @@ def _offline_run_setup(monkeypatch, tmp_path, *, capture=None):
     monkeypatch.setattr(cli, "snapshot_only", lambda *a, **k: None)
     monkeypatch.setattr(cli, "private_directory", lambda p: p)
     monkeypatch.setattr(cli, "Judges", lambda *a, **k: SimpleNamespace())
-    monkeypatch.setattr(cli, "evaluation_export_for", lambda p: None)
     monkeypatch.setattr(cli, "load_policy", lambda p, **k: SimpleNamespace())
     monkeypatch.setattr(cli, "read_events", lambda p: [])
     monkeypatch.setattr(cli, "validate_events", lambda e: {"status": "PASS"})
@@ -76,6 +75,9 @@ def _offline_run_setup(monkeypatch, tmp_path, *, capture=None):
         def __init__(self, **kwargs):
             self.path = tmp_path / "events.jsonl"
             self.path.write_text("")
+
+        def record(self, *args, **kwargs):
+            pass
 
         capture = staticmethod(capture_fn)
 
@@ -144,11 +146,15 @@ def test_a_report_html_failure_turns_a_passing_run_to_error(
     import json as _json
 
     cli, case_file, config_file = _offline_run_setup(monkeypatch, tmp_path)
+    import json
+
     async def passed_case(args, case, source, judges, policy, evidence, output):
         wakes = []
         for index, ident in enumerate(case.wakes):
             wakes.append({"recorded_wake_id": ident, "status": "PASS", "expectations": []})
-            (output / f"wake-{index}-{ident}.json").write_text('{"diff": {}, "expectations": []}')
+            (output / f"wake-{index}-{ident}.json").write_text(
+                json.dumps({"diff": {}, "expectations": [],
+                            "trajectory": {"unit": case.unit}}))
         return {"case": case.name, "unit": case.unit, "status": "PASS", "wakes": wakes}
 
     monkeypatch.setattr(cli, "run_case", passed_case)
