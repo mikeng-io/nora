@@ -4,7 +4,7 @@ import pytest
 import sqlalchemy as sa
 
 from nora.domain.identity import Identifier
-from nora.domain.managed import OutcomeStatus
+from nora.domain.managed import ObservedMember, OutcomeStatus
 from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
 from nora.infra.sql.account_links import SqlLinkRequests
 from nora.infra.sql.engine import create_sql_engine
@@ -51,7 +51,8 @@ async def test_fresh_engine_resumes_bulk_registration_without_duplicate_or_regis
     graph, application = services(engine, registry, backend)
     account = Identifier("discord", "user_id", "generated-account")
     request = {"operation_id": "generated-snapshot", "actor": ACTOR, "scope": UNIT,
-               "collection": "generated-guild", "members": {account}, "complete_roster": True}
+               "collection": "generated-guild",
+               "members": (ObservedMember(frozenset({account})),), "complete_roster": True}
     registry.down = True
     assert (await application.apply(**request)).status is OutcomeStatus.INCOMPLETE
     before = await graph.bindings.record_for(account=account)
