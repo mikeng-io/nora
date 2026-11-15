@@ -96,10 +96,18 @@ from typing import Any
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PROOFS = pathlib.Path.home() / ".local/share/nora/mutation-proofs"
 
-# pytest's summary counts, e.g. "3 passed", "1 failed, 2 passed", "1 error".
+# pytest's summary counts — "3 passed", "1 failed, 2 passed", "1 error" — read
+# only from its own summary line (bare or =-bordered): failure output echoes
+# test source, which can quote a fake count verbatim.
 _PASSED = re.compile(r"(\d+) passed")
 _FAILED = re.compile(r"(\d+) failed")
 _ERRORS = re.compile(r"(\d+) errors?")
+_SUMMARY_LINE = re.compile(
+    r"^\s*=*\s*"
+    r"(?:(?:\d+ (?:passed|failed|errors?|skipped|deselected|xfailed|xpassed|"
+    r"warnings?|reruns)),* +)*"
+    r"in \d+(?:\.\d+)?s"
+    r"\s*=*\s*$", re.MULTILINE)
 
 # `go test -v`'s per-test start line, e.g. "=== RUN   TestX".
 _GO_RAN = re.compile(r"^=== RUN\s", re.MULTILINE)
@@ -147,7 +155,10 @@ class Phase:
 
 
 def _count(pattern: re.Pattern[str], out: str) -> int:
-    return sum(int(m.group(1)) for m in pattern.finditer(out))
+    return sum(
+        int(m.group(1))
+        for line in _SUMMARY_LINE.findall(out)
+        for m in pattern.finditer(line))
 
 
 def pytest_verdict(returncode: int, output: str) -> str:
@@ -164,10 +175,10 @@ def pytest_verdict(returncode: int, output: str) -> str:
         return "green"
     if returncode == 5:
         return "empty"
-    if _ERRORS.search(output):
+    if _count(_ERRORS, output):
         return "errored"
     if returncode == 1:
-        return "red" if _FAILED.search(output) else "error"
+        return "red" if _count(_FAILED, output) else "error"
     return "error"
 
 

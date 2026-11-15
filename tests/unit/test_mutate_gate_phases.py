@@ -97,6 +97,15 @@ def test_a_collection_exit_two_is_an_error_run_not_contention():
     assert mutate.pytest_verdict(2, "Interrupted: no summary") == "error"
 
 
+def test_an_echoed_fake_count_is_not_the_summary():
+    """Failure output echoes test source quoting a count; only the real
+    summary line counts, or this runner could never prove itself."""
+    out = ('        out = "ERROR collecting tests/x.py\\n1 error in 0.01s"\n'
+           '>       assert pytest_verdict(1, "1 failed, 1 error in 0.5s")\n'
+           "1 failed in 0.40s\n")
+    assert mutate.pytest_verdict(1, out) == "red"
+
+
 def test_a_held_lease_is_waited_out_then_counted(monkeypatch):
     monkeypatch.setattr(mutate, "LEASE_WAIT_S", 0)
     calls = [_proc([], 2, err=_BUSY), _proc([], 2, err=_BUSY),
@@ -223,7 +232,7 @@ def test_proof_receipts_are_private(tmp_path, monkeypatch):
     table.write_text(json.dumps([entry]))
     monkeypatch.setattr(mutate, "ROOT", tmp_path)
     monkeypatch.setattr(subprocess, "run", _fake_run([
-        _proc([], 0, out=_GREEN), _proc([], 1, out="1 failed\n"),
+        _proc([], 0, out=_GREEN), _proc([], 1, out="1 failed in 0.1s\n"),
         _proc([], 0, out=_GREEN)]))
     proofs = tmp_path / "proofs"
     rc = mutate.main(["mutate.py", str(table), "--proof-dir", str(proofs)])
@@ -243,7 +252,7 @@ def test_the_caught_wording_is_observation_not_proof(tmp_path, monkeypatch,
     table.write_text(json.dumps([entry]))
     monkeypatch.setattr(mutate, "ROOT", tmp_path)
     monkeypatch.setattr(subprocess, "run", _fake_run([
-        _proc([], 0, out=_GREEN), _proc([], 1, out="1 failed\n"),
+        _proc([], 0, out=_GREEN), _proc([], 1, out="1 failed in 0.1s\n"),
         _proc([], 0, out=_GREEN)]))
     rc = mutate.main(["mutate.py", str(table), "--proof-dir",
                       str(tmp_path / "proofs")])
@@ -284,7 +293,7 @@ def test_the_red_and_restored_banner_needs_every_entry_caught(
         [entry, {**entry, "name": "a second clause"}]))
     monkeypatch.setattr(mutate, "ROOT", tmp_path)
     monkeypatch.setattr(subprocess, "run", _fake_run([
-        _proc([], 0, out=_GREEN), _proc([], 1, out="1 failed\n"),
+        _proc([], 0, out=_GREEN), _proc([], 1, out="1 failed in 0.1s\n"),
         _proc([], 0, out=_GREEN),
         _proc([], 0, out=_GREEN), _proc([], 0, out=_GREEN),
         _proc([], 0, out=_GREEN)]))
