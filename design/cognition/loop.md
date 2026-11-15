@@ -47,7 +47,7 @@ poller. Every other stage runs inside a pass.
 | act | **compose** | model | drafts the act from the situation at that moment |
 | | **guard** | code | runs disclosure and send guards against the current room |
 | | **perform** | code | delivers what the model's `send_reply` call carries, or records silence |
-| study | **verify** | code | writes each intention's verdict from closed-by, the clock and source health |
+| study | **verify** | code | writes each achieve intention's verdict, and each maintain intention's end, from closed-by, the clock and source health |
 | | **grade** | judge | an independent model grades claims and lessons against later evidence |
 | | **learn** | model → code | proposes lessons from verdicts or a correction; code admits them |
 | | **report** | code | writes operator-exposure counts and tensions |

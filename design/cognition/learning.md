@@ -39,7 +39,8 @@ alone does not prove the revision caused it.
 
 A decision resting on a lesson makes its verdict evidence about that lesson.
 Code keeps each lesson's **support and contradiction** from the verdicts of the
-intentions resting on it. A lesson whose contradiction outruns its support is
+achieve intentions resting on it, and for a maintain intention, of its
+children. A lesson whose contradiction outruns its support is
 put before the next subconscious pass to revise or retire. A lesson the
 operator retired is not relearned from evidence no newer than that retirement.
 
@@ -64,7 +65,7 @@ understanding.
 
 ## Evidence of learning
 
-- **verdict coverage**: the share of intentions that close with a known
+- **verdict coverage**: the share of achieve intentions that close with a known
   verdict;
 - **declared dependence**: the share of decisions resting on a lesson or
   track record;

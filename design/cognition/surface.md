@@ -20,7 +20,7 @@ verb per basis the model may propose.
 | tool | stage | writes |
 |---|---|---|
 | read tools: search, rows, neighbourhoods, transcripts, media, permitted outside reads | orient, decide | nothing |
-| **propose** | orient, study's learn | entities, claims, edges (inferred); lessons are claims about Nora's practice |
+| **propose** | orient, study's learn and grade | entities, claims, edges (inferred); lessons are claims about Nora's practice; a grade is a claim about the graded row, citing its later evidence |
 | **commit** | decide | intentions (committed): open, revise, drop |
 | **send_reply** | act | nothing; delivery is recorded by observe |
 
