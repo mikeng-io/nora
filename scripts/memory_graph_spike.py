@@ -245,6 +245,9 @@ class Judges:
         self.served: dict[str, list[dict[str, Any]]] = {}
         self.effective_models = [self._endpoint(m)[2] for m in models]
 
+    def bind(self, cfg: Any) -> Judges:
+        return type(self)(cfg, self.models, self.config, max_tokens=self.max_tokens)
+
     def _endpoint(self, model_id: str) -> tuple[str, str, str]:
         return model_endpoint(self.cfg, "eval_judge", model_id)
 

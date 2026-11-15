@@ -20,7 +20,7 @@ def _run_dir(tmp_path, *, cases: list[dict[str, Any]],
         "status": status,
         "run": {
             "run_id": "cl-test", "evidence_run_id": "cognition-loop-x",
-            "commit": "abc123", "mode": "inspect-only",
+            "commit": "abc123", "mode": "inspect-only", "behavior": "UNMEASURED",
             "token_budget": 400_000, "per_wake_tokens": 200_000,
             "config_sha256": "cf", "subject_config_sha256": "sf",
         },
@@ -72,6 +72,7 @@ def test_the_sections_appear_in_order(tmp_path):
     # The table of contents links the case and its wake, each with status.
     assert 'href="#case-0"' in html and 'href="#case-0-wake-0"' in html
     assert "SYSTEM" in html and "messages" in html
+    assert "model behavior" in html and "UNMEASURED" in html
 
 
 def test_report_renders_the_canonical_response_and_its_availability(tmp_path):

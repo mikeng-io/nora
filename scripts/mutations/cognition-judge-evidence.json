@@ -58,7 +58,7 @@
   {
     "name": "a settled wake's diff and trajectory join the earlier history",
     "file": "scripts/cognition_loop/run.py",
-    "old": "                        if \"_diff\" in report_row:\n                            earlier_wakes += ((report_row[\"_diff\"], report_row[\"trajectory\"]),)\n",
+    "old": "                            if \"_diff\" in report_row:\n                                earlier_wakes += ((report_row[\"_diff\"], report_row[\"trajectory\"]),)\n",
     "new": "",
     "target": "tests/unit/test_cognition_loop_run.py::test_the_run_hands_each_wake_only_the_earlier_wakes_evidence"
   },

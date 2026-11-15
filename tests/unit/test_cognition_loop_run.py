@@ -1,12 +1,9 @@
-"""`scripts.cognition_loop.__main__.run` — the run-level seams: the
-config under test is materialised from the deployment's `--config`, and
-the final status folds the cases' own verdicts, never a collapsed
-"done". Offline: every collaborator is monkeypatched.
-"""
+"""Offline caller seams: deployment config and fail-closed report status."""
 
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
@@ -14,6 +11,18 @@ import pytest
 from scripts.cognition_loop.cases import generated_case, write_case
 
 NOW = 1_800_000_000_000
+
+
+class _JudgeMarker:
+    def bind(self, cfg):
+        return self
+
+
+@pytest.fixture(autouse=True)
+def private_lock(tmp_path, monkeypatch):
+    from nora.subject import sandbox
+
+    monkeypatch.setattr(sandbox, "EVAL_HOST_LOCK", tmp_path / "eval.lock")
 
 
 def test_run_materialises_the_config_and_folds_the_status(
@@ -44,9 +53,9 @@ def test_run_materialises_the_config_and_folds_the_status(
         honcho=SimpleNamespace(workspace_id="deploy-ws"),
     ))
     monkeypatch.setattr(cli, "snapshot_only", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "close_private_blank_templates", _async_noop())
     monkeypatch.setattr(cli, "private_directory", lambda p: p)
     monkeypatch.setattr(cli, "Judges", lambda *a, **k: SimpleNamespace())
-    monkeypatch.setattr(cli, "evaluation_export_for", lambda p: None)
     monkeypatch.setattr(cli, "load_policy", lambda p, **k: SimpleNamespace())
     monkeypatch.setattr(cli, "read_events", lambda p: [])
     monkeypatch.setattr(cli, "validate_events", lambda e: {"status": "PASS"})
@@ -70,6 +79,9 @@ def test_run_materialises_the_config_and_folds_the_status(
             self.path.write_text("")
 
         capture = staticmethod(_noop_ctx)
+
+        def record(self, *args, **kwargs):
+            pass
 
     monkeypatch.setattr(cli, "RunEvidence", _Evidence)
     monkeypatch.setattr(cli, "measured_run_budget",
@@ -101,12 +113,12 @@ def test_run_materialises_the_config_and_folds_the_status(
         inspect_only=False, overrides={},
     )
     report = asyncio.run(cli.run(args))
-    # A different --config is a different subject: it is what gets
-    # materialised into the config every case composes.
     assert materialised["deployment"] == config_file
     assert materialised["target"].name == "config.evaluation.toml"
-    # The case's own verdict reaches the report unchanged — never "done".
     assert report["status"] == "FAIL"
+    assert report["run"]["mode"] == "recorded-wake-protocol"
+    assert report["run"]["behavior"] == "UNMEASURED"
+    assert report["run"]["claim"] == "recorded-wake-replay"
 
 
 def _async_noop():
@@ -121,9 +133,7 @@ def _async_result(value):
     return _call
 
 
-# --------------------------------------------------------------------------
 # the wake's steps name themselves on ERROR
-# --------------------------------------------------------------------------
 
 
 def _wake_args(tmp_path):
@@ -155,13 +165,16 @@ def _runner_subject(inspection=None, outcome=None):
         def wake_hook(self):
             return self.on_wake
 
-    return SimpleNamespace(environment=SimpleNamespace(guarded=True, check=lambda: None),
+    return SimpleNamespace(unit="u", cfg=SimpleNamespace(),
+        environment=SimpleNamespace(guarded=True, check=lambda: None),
         deps=SimpleNamespace(
         cognition_runner=_Runner(),
         wake_evaluator=SimpleNamespace(_policy=SimpleNamespace(
             batch_max=5, session_timeout_seconds=10)),
         metrics=SimpleNamespace(get=lambda *a, **k: 0),
-        config_reload=SimpleNamespace(policy=SimpleNamespace(rooms=lambda: [])),
+        config_reload=SimpleNamespace(policy=SimpleNamespace(rooms=lambda: [
+            SimpleNamespace(unit="u", platform="signal", primary_id="r",
+                            ids=frozenset({"r"}), persons=frozenset())])),
         persons=SimpleNamespace(by_person={}),
     ))
 
@@ -242,8 +255,7 @@ async def test_inspect_only_records_the_assembled_blocks(
     wake = await run_mod._run_wake(
         args, case, 0, 11, NOW, "postgresql+asyncpg://x", "time", None,
         evidence, tmp_path, SimpleNamespace(platform="signal",
-                                            primary_id="r"),
-        "nora-eval-run-x")
+                                            primary_id="r"))
     assert wake["trajectory"]["blocks"]["system"] == "SYSTEM PROMPT"
     assert wake["trajectory"]["blocks"]["items"] == [{"id": "i1"}]
     assert wake["trajectory"]["blocks"]["stimuli"] == [{"id": 3}]
@@ -273,7 +285,7 @@ async def test_after_state_failure_preserves_captured_trajectory(
     result = await run_mod._run_wake(
         args, SimpleNamespace(unit="u", expectations=(), read_probes=()),
         0, 11, NOW, "postgresql+asyncpg://x", "time", None, evidence, tmp_path,
-        SimpleNamespace(platform="signal", primary_id="r"), "nora-eval-run-x")
+        SimpleNamespace(platform="signal", primary_id="r"))
     assert len(reads) == 2
     assert result["status"] == ("ERROR" if report_read_failure else "PASS")
     frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
@@ -303,7 +315,7 @@ async def test_an_unavailable_read_preflight_cannot_pass_inspection(monkeypatch,
     wake = await run_mod._run_wake(
         args, SimpleNamespace(unit="u", expectations=()), 0, 11, NOW,
         "postgresql+asyncpg://x", "time", None, evidence, tmp_path,
-        SimpleNamespace(platform="signal", primary_id="r"), "nora-eval-run-x")
+        SimpleNamespace(platform="signal", primary_id="r"))
     assert called == [0]
     assert wake["status"] == "ERROR"
     assert "read preflight" in wake["error"]
@@ -324,8 +336,7 @@ async def test_a_compose_failure_names_compose(monkeypatch, tmp_path):
     wake = await run_mod._run_wake(
         args, SimpleNamespace(unit="u", expectations=()), 1, 7, NOW,
         "postgresql+asyncpg://x", "time", None, evidence, tmp_path,
-        SimpleNamespace(platform="signal", primary_id="r"),
-        "nora-eval-run-x")
+        SimpleNamespace(platform="signal", primary_id="r"))
     assert wake["status"] == "ERROR" and wake["step"] == "compose"
     assert "agenda room" in wake["error"]
     frozen = json.loads((tmp_path / "wake-1-7.json").read_text())
@@ -347,8 +358,7 @@ async def test_a_wake_failure_names_wake_not_compose(monkeypatch, tmp_path):
     wake = await run_mod._run_wake(
         args, SimpleNamespace(unit="u", expectations=()), 0, 9, NOW,
         "postgresql+asyncpg://x", "time", None, evidence, tmp_path,
-        SimpleNamespace(platform="signal", primary_id="r"),
-        "nora-eval-run-x")
+        SimpleNamespace(platform="signal", primary_id="r"))
     assert wake["status"] == "ERROR" and wake["step"] == "wake"
 
 
@@ -358,9 +368,6 @@ def _async_result_fn():
     return _noop
 
 
-# --------------------------------------------------------------------------
-# no session is said; the batch shows beside production's; status is derived
-# --------------------------------------------------------------------------
 
 
 def _recorded_meta(stimulus_ids=(), had_session=False, self_ids=()):
@@ -382,7 +389,6 @@ async def test_an_inspect_wake_with_no_session_is_error_when_production_ran(
         args, SimpleNamespace(unit="u", expectations=()), 1, 22, NOW,
         "postgresql+asyncpg://x", "time", None, evidence, tmp_path,
         SimpleNamespace(platform="signal", primary_id="r"),
-        "nora-eval-run-x",
         recorded_meta=_recorded_meta((3, 5, 7), had_session=True))
     assert wake["status"] == "ERROR" and wake["step"] == "wake"
     assert wake["no_session"] == "empty agenda"
@@ -410,7 +416,6 @@ async def test_a_batch_stimulus_absent_from_the_sandbox_is_an_advance_error(
         args, SimpleNamespace(unit="u", expectations=()), 2, 31, NOW,
         "postgresql+asyncpg://x", "time", None, evidence, tmp_path,
         SimpleNamespace(platform="signal", primary_id="r"),
-        "nora-eval-run-x",
         recorded_meta=_recorded_meta((3, 5, 7), had_session=True))
     assert wake["status"] == "ERROR" and wake["step"] == "advance"
     assert "[3, 5, 7]" in wake["error"]
@@ -431,7 +436,6 @@ async def test_a_no_session_wake_is_named_not_silently_passed(
         args, SimpleNamespace(unit="u", expectations=()), 0, 11, NOW,
         "postgresql+asyncpg://x", "time", None, evidence, tmp_path,
         SimpleNamespace(platform="signal", primary_id="r"),
-        "nora-eval-run-x",
         recorded_meta=_recorded_meta((), had_session=False))
     assert wake["status"] == "PASS"
     assert wake["no_session"] == "empty agenda"
@@ -451,9 +455,8 @@ async def test_a_live_wake_reads_its_settlement_back(monkeypatch, tmp_path):
     args, evidence = _wake_args(tmp_path)
     wake = await run_mod._run_wake(
         args, SimpleNamespace(unit="u", expectations=()), 0, 11, NOW,
-        "postgresql+asyncpg://x", "time", object(), evidence, tmp_path,
+        "postgresql+asyncpg://x", "time", _JudgeMarker(), evidence, tmp_path,
         SimpleNamespace(platform="signal", primary_id="r"),
-        "nora-eval-run-x",
         recorded_meta=_recorded_meta((1,), had_session=True))
     assert wake["status"] == "PASS"
     assert wake["session_id"] == 9
@@ -463,9 +466,7 @@ async def test_a_live_wake_reads_its_settlement_back(monkeypatch, tmp_path):
 async def test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge(
     monkeypatch, tmp_path,
 ):
-    """The judge's digest gets this wake's recorded clock and the earlier
-    (diff, trajectory) pairs it was handed — in a live run, not only on
-    re-judging."""
+    """The live digest carries its recorded clock and only earlier wake evidence."""
     import json
     from types import SimpleNamespace
 
@@ -477,9 +478,16 @@ async def test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge(
         "session_id": 9, "outcome": "closed",
         "detail": "", "cause": "none"}))
     seen = {}
+    bound = object()
+
+    class Judge:
+        def bind(self, cfg):
+            seen["cfg"] = cfg
+            return bound
 
     async def _judge_call(judges, models, expectation, diff, after,
                           trajectory, earlier_wakes):
+        seen["judge"] = judges
         seen["trajectory"] = trajectory
         seen["earlier_wakes"] = earlier_wakes
         return ExpectationVerdict(verdict="PASS", answers=())
@@ -493,11 +501,12 @@ async def test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge(
         wake=0, polarity="must", kind="note", text="generated expectation")
     case = SimpleNamespace(unit="u", expectations=(expectation,))
     wake = await run_mod._run_wake(
-        args, case, 0, 11, NOW, "postgresql+asyncpg://x", "time", object(),
+        args, case, 0, 11, NOW, "postgresql+asyncpg://x", "time", Judge(),
         evidence, tmp_path,
-        SimpleNamespace(platform="signal", primary_id="r"), "nora-eval-run-x",
+        SimpleNamespace(platform="signal", primary_id="r"),
         recorded_meta=_recorded_meta((1,), had_session=True),
         earlier_wakes=(prior,))
+    assert seen["judge"] is bound and "cfg" in seen
     assert seen["earlier_wakes"] == (prior,)
     assert seen["trajectory"].get("at_ms") == NOW
     assert seen["trajectory"].get("unit") == "u"
@@ -512,9 +521,7 @@ async def test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge(
 async def test_the_run_hands_each_wake_only_the_earlier_wakes_evidence(
     monkeypatch, tmp_path,
 ):
-    """`_wakes` accumulates each settled wake's (diff, trajectory) pair
-    and hands only the earlier ones on — the first wake sees none, and no
-    wake sees itself or a later one."""
+    """The chain exposes settled evidence without exposing later wakes."""
     from contextlib import contextmanager
     from types import SimpleNamespace
 
@@ -543,7 +550,7 @@ async def test_the_run_hands_each_wake_only_the_earlier_wakes_evidence(
     sentinels = {}
 
     async def _wake(_args, _case, index, _wake_id, at_ms, _url, _reason,
-                    _judges, _evidence, _output, _room, _workspace, **kwargs):
+                    _judges, _evidence, _output, _room, **kwargs):
         received.append(kwargs.get("earlier_wakes", ()))
         sentinels[index] = (
             SimpleNamespace(marker=index),
@@ -563,12 +570,16 @@ async def test_the_run_hands_each_wake_only_the_earlier_wakes_evidence(
     def _case_ctx(*a, **k):
         yield
 
+    @asynccontextmanager
+    async def _recording(*args, **kwargs):
+        yield SimpleNamespace(check=lambda: None)
+
     await run_mod._wakes(
         SimpleNamespace(database_url="postgresql+asyncpg://x"),
         SimpleNamespace(unit="u", wakes=(11, 22)),
         {0: 1000, 1: 2000}, {0: "time", 1: "time"}, {0: {}, 1: {}},
-        object(), SimpleNamespace(case=_case_ctx), tmp_path,
-        SimpleNamespace(), "nora-eval-run-x", Rollup(), [])
+        _JudgeMarker(), SimpleNamespace(case=_case_ctx), tmp_path,
+        ("signal", "r"), SimpleNamespace(open=_recording), Rollup(), [])
     assert received[0] == ()
     assert received[1] == (sentinels[0],)
     assert received[1][0][1]["at_ms"] == 1000
@@ -588,9 +599,8 @@ async def test_a_live_wake_without_an_outcome_row_is_error(
     args, evidence = _wake_args(tmp_path)
     wake = await run_mod._run_wake(
         args, SimpleNamespace(unit="u", expectations=()), 0, 11, NOW,
-        "postgresql+asyncpg://x", "time", object(), evidence, tmp_path,
+        "postgresql+asyncpg://x", "time", _JudgeMarker(), evidence, tmp_path,
         SimpleNamespace(platform="signal", primary_id="r"),
-        "nora-eval-run-x",
         recorded_meta=_recorded_meta((1,), had_session=True))
     assert wake["status"] == "ERROR" and wake["step"] == "wake"
 
@@ -608,9 +618,8 @@ async def test_a_live_no_session_names_the_outcome_rows_detail(
     args, evidence = _wake_args(tmp_path)
     wake = await run_mod._run_wake(
         args, SimpleNamespace(unit="u", expectations=()), 0, 11, NOW,
-        "postgresql+asyncpg://x", "time", object(), evidence, tmp_path,
+        "postgresql+asyncpg://x", "time", _JudgeMarker(), evidence, tmp_path,
         SimpleNamespace(platform="signal", primary_id="r"),
-        "nora-eval-run-x",
         recorded_meta=_recorded_meta((1,), had_session=True))
     assert wake["no_session"] == "empty agenda"
     assert wake["status"] == "PASS"
@@ -647,8 +656,8 @@ async def test_a_live_wake_that_never_settled_spends_no_judge_call(
                         text="generated expectation"),))
     room = SimpleNamespace(platform="signal", primary_id="r")
     wake = await run_mod._run_wake(
-        args, case, 0, 11, NOW, "postgresql+asyncpg://x", "time", object(),
-        evidence, tmp_path, room, "nora-eval-run-x",
+        args, case, 0, 11, NOW, "postgresql+asyncpg://x", "time", _JudgeMarker(),
+        evidence, tmp_path, room,
         recorded_meta=_recorded_meta((1,), had_session=True))
     assert wake["status"] == "ERROR" and wake["step"] == "wake"
     assert wake["expectations"] == []
@@ -659,8 +668,8 @@ async def test_a_live_wake_that_never_settled_spends_no_judge_call(
         "session_id": 9, "outcome": "closed",
         "detail": "", "cause": "none"}))
     wake = await run_mod._run_wake(
-        args, case, 1, 22, NOW, "postgresql+asyncpg://x", "time", object(),
-        evidence, tmp_path, room, "nora-eval-run-x",
+        args, case, 1, 22, NOW, "postgresql+asyncpg://x", "time", _JudgeMarker(),
+        evidence, tmp_path, room,
         recorded_meta=_recorded_meta((1,), had_session=True))
     assert judged == [1]
     assert wake["status"] == "PASS"
@@ -677,46 +686,7 @@ def test_a_wakes_status_is_derived_fail_closed():
     assert _wake_status(None, []) == "PASS"
 
 
-# --------------------------------------------------------------------------
 # the frozen room directory
-# --------------------------------------------------------------------------
-
-
-async def test_the_frozen_directory_stands_in_for_the_live_reader(
-    monkeypatch, tmp_path,
-):
-    import sys
-    from types import SimpleNamespace
-
-    from nora.app import composition_platforms
-    from nora.platform.discord.channels import StaticChannelDirectory
-    from scripts.cognition_loop import run as run_mod
-
-    obtain_module = sys.modules["nora.subject.obtain"]
-    directory = StaticChannelDirectory(
-        channels={"g1": {"c1": "hall"}}, threads={})
-    seen = {}
-    real_directory_cls = composition_platforms.ClientChannelDirectory
-    real_load_policy = obtain_module.load_policy
-
-    async def _obtain(spec):
-        seen["directory"] = composition_platforms.ClientChannelDirectory(
-            object())
-        seen["load_policy"] = obtain_module.load_policy
-        return SimpleNamespace(spec=spec)
-
-    monkeypatch.setattr(run_mod, "obtain", _obtain)
-    args = SimpleNamespace(workdir=str(tmp_path), overrides={},
-                           channel_directory=directory)
-    room = SimpleNamespace(platform="discord", primary_id="g1/c1")
-    await run_mod._compose(
-        args, "postgresql+asyncpg://x", NOW, room, "policy", "identity",
-        workspace="nora-eval-run-x")
-    assert seen["directory"] is directory
-    assert seen["load_policy"] is not real_load_policy
-    # And the patch is gone after compose — never a process-wide swap.
-    assert composition_platforms.ClientChannelDirectory is real_directory_cls
-    assert obtain_module.load_policy is real_load_policy
 
 
 async def test_an_unread_guild_is_an_error_naming_the_directory(
@@ -743,7 +713,8 @@ async def test_an_unread_guild_is_an_error_naming_the_directory(
     policy = SimpleNamespace(
         conversations=[SimpleNamespace(unit="u", guild="g1")],
         rooms=lambda: [])
-    args = SimpleNamespace(run_id="r", channel_directory=None)
+    args = SimpleNamespace(run_id="r", channel_directory=None,
+                           service_inputs=SimpleNamespace(corpora={"cognition-loop": {"c": True}}))
     case = SimpleNamespace(name="c", unit="u", wakes=(1,), expectations=())
     report = await run_mod.run_case(
         args, case, SimpleNamespace(), None, policy,
@@ -752,74 +723,10 @@ async def test_an_unread_guild_is_an_error_naming_the_directory(
     assert any("room directory" in e for e in report["errors"])
 
 
-async def test_the_frozen_file_loads_and_freezes_into_evidence(tmp_path):
-    """`--room-directory PATH` replays a frozen copy — no live read."""
-    import json
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop import __main__ as cli
-
-    frozen_file = tmp_path / "frozen.json"
-    frozen_file.write_text(json.dumps({
-        "channels": {"g1": {"c1": "hall"}},
-        "threads": {"t1": "c1"},
-    }))
-    output = tmp_path / "out"
-    output.mkdir()
-    args = SimpleNamespace(
-        room_directory=frozen_file, channel_reads_url=None)
-    directory = await cli._room_directory(args, SimpleNamespace(),
-                                          SimpleNamespace(), output)
-    assert directory.guild_channels(guild_id="g1") == {"c1": "hall"}
-    assert directory.guild_channels(guild_id="g2") is None
-    assert directory.parent_channel(channel_id="t1") == "c1"
-    frozen = json.loads((output / "room-directory.json").read_text())
-    assert frozen["channels"]["g1"] == {"c1": "hall"}
-    assert frozen["source"] == str(frozen_file)
-
-
-async def test_a_failed_guild_read_is_recorded_and_absent(
+def test_a_corrupt_service_recording_still_freezes_the_report(
     monkeypatch, tmp_path,
 ):
-    """The bridge answering `available: false` leaves the guild out of the
-    frozen map — the per-case check, not the read, names the ERROR."""
-    import json
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop import __main__ as cli
-
-    class _Client:
-        def __init__(self, endpoint):
-            pass
-
-        async def read(self, op, params):
-            return {"available": False, "value": None}
-
-        async def close(self):
-            pass
-
-    cfg = SimpleNamespace(
-        platforms=SimpleNamespace(
-            discord=SimpleNamespace(base_url="http://bridge")),
-        bridges=SimpleNamespace(token_env="T"),  # noqa: S106 — env var name
-        credentials={"T": "tok"})
-    monkeypatch.setattr(cli, "BridgeControlClient", _Client)
-    output = tmp_path / "out"
-    output.mkdir()
-    args = SimpleNamespace(room_directory=None, channel_reads_url=None)
-    policy = SimpleNamespace(
-        conversations=[SimpleNamespace(guild="g1")])
-    directory = await cli._room_directory(args, cfg, policy, output)
-    assert directory.guild_channels(guild_id="g1") is None
-    frozen = json.loads((output / "room-directory.json").read_text())
-    assert frozen["unread_guilds"] == ["g1"]
-
-
-def test_a_corrupt_room_directory_still_freezes_the_report(
-    monkeypatch, tmp_path,
-):
-    """A failure inside `_room_directory` is the `room_directory` step's
-    ERROR — and `report.json`/`report.html` are still written."""
+    """A bad external recording leaves a named ERROR and both reports."""
     import sys
     import types
     from contextlib import contextmanager
@@ -841,9 +748,9 @@ def test_a_corrupt_room_directory_still_freezes_the_report(
         honcho=SimpleNamespace(workspace_id="deploy-ws"),
     ))
     monkeypatch.setattr(cli, "snapshot_only", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "close_private_blank_templates", _async_noop())
     monkeypatch.setattr(cli, "private_directory", lambda p: p)
     monkeypatch.setattr(cli, "Judges", lambda *a, **k: SimpleNamespace())
-    monkeypatch.setattr(cli, "evaluation_export_for", lambda p: None)
     monkeypatch.setattr(cli, "load_policy", lambda p, **k: SimpleNamespace())
     monkeypatch.setattr(cli, "read_events", lambda p: [])
     monkeypatch.setattr(cli, "validate_events", lambda e: {"status": "PASS"})
@@ -868,6 +775,9 @@ def test_a_corrupt_room_directory_still_freezes_the_report(
 
         capture = staticmethod(_noop_ctx)
 
+        def record(self, *args, **kwargs):
+            pass
+
     monkeypatch.setattr(cli, "RunEvidence", _Evidence)
 
     args = SimpleNamespace(
@@ -877,14 +787,14 @@ def test_a_corrupt_room_directory_still_freezes_the_report(
         database_url="postgresql+asyncpg://x", snapshot=True,
         output=tmp_path, judge_a="a", judge_b="b",
         inspect_only=True, overrides={},
-        room_directory=corrupt, channel_reads_url=None,
+        services=corrupt,
     )
     report = asyncio.run(cli.run(args))
     assert report["status"] == "ERROR"
-    assert report["errors"] and report["errors"][0]["step"] == "room_directory"
-    assert report["cases"] == []
+    assert report["errors"] and report["errors"][0]["step"] == "external_services"
+    assert not report.get("cases")
     report_json = (tmp_path / "report.json")
     assert report_json.is_file()
     html_text = (tmp_path / "report.html").read_text(encoding="utf-8")
-    assert "room_directory" in html_text
+    assert "external_services" in html_text
     assert "ERROR" in html_text

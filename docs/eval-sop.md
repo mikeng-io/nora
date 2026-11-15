@@ -257,6 +257,10 @@ SDK execution uses private `--services FILE` HTTP recordings keyed by corpus
 and exact draw name. It reports protocol rehearsal with model behavior
 unmeasured. Each draw owns its services and preserves workspace identities;
 an unrecorded response is an instrument error, never known empty history.
+Recorded cognition replay uses `cognition-loop` keyed by case name; one service
+scope encloses every wake and candidate SQL state survives Record advances. It
+reports recorded-wake protocol evidence, not autonomous scheduling. Historical
+channel and roster responses use the real bridge adapters.
 Frozen cognition rejudge uses the same file format under `cognition-rejudge`,
 keyed by case name. It retains the source receipt and a separate rejudge capture
 and budget in its private measurement version; scripted verdicts remain protocol evidence.

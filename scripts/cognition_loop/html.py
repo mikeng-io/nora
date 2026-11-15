@@ -102,6 +102,7 @@ def _run(report: dict[str, Any], budget: dict[str, Any] | None) -> str:
             ("diff sha256", run.get("diff_sha256")),
             ("lockfile sha256", run.get("lockfile_sha256")),
             ("mode", run.get("mode")),
+            ("model behavior", run.get("behavior")),
             ("config sha256", run.get("config_sha256")),
             ("subject config sha256", run.get("subject_config_sha256")),
         ]),

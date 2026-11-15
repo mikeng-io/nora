@@ -31,13 +31,12 @@ from nora.infra.sql.schema import (
 from nora.infra.sql.stimuli import SqlStimulusStore, _stimulus
 from nora.subject import SubjectSpec, obtain, sandbox_as_of
 from nora.subject.eval_evidence import read_events
-from nora.subject.memory_workspace import draw_workspace
+from nora.subject.recorded_services import RecordedServices
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.advance import advance_record, bump_sequences
 from scripts.cognition_loop.availability import availability
 from scripts.cognition_loop.egress import assert_no_egress
 from scripts.cognition_loop.judges import judge_expectation
-from scripts.cognition_loop.rosters import FrozenRoster
 from scripts.cognition_loop.trajectory import (
     loop_counts,
     session_events,
@@ -115,62 +114,14 @@ OPEN_LOOP: dict[str, Any] = {
 }
 
 
-#: Overrides the run reserves: arm overrides cannot set these at all —
-#: a clash refuses before composition. The measured surface stays
-#: configurable (`llm.*`, doctrine, tools); the delivery surface does not.
-def reserved_overrides(workspace: str) -> dict[str, Any]:
-    """Every override the run owns outright."""
-    return {"honcho.workspace_id": workspace}
-
-
-async def _compose(spec_args: Any, url: str, at_ms: int, room: Any,
-                   policy_text: str, identity_text: str,
-                   workspace: str) -> Any:
-    reserved = reserved_overrides(workspace)
-    arm = getattr(spec_args, "overrides", {}) or {}
-    clash = sorted(set(arm) & set(reserved))
-    if clash:
-        raise ValueError(
-            f"arm overrides cannot set the run's reserved keys: {clash}")
-    spec = SubjectSpec(
-        database_url=url, workdir=Path(spec_args.workdir),
-        room=(room.platform, room.primary_id), now=_dt(at_ms),
+async def _compose(spec_args: Any, url: str, at_ms: int, room: tuple[str, str],
+                   policy_text: str, identity_text: str) -> Any:
+    return await obtain(SubjectSpec(
+        database_url=url, workdir=Path(spec_args.workdir), room=room, now=_dt(at_ms),
         identity=identity_text, policy=policy_text,
-        overrides={**arm, **reserved},
+        overrides=getattr(spec_args, "overrides", {}) or None,
         environment=getattr(spec_args, "environment", None),
-    )
-    directory = getattr(spec_args, "channel_directory", None)
-    if directory is None:
-        return await obtain(spec)
-    # The frozen directory stands in for the live reader everywhere a
-    # composed subject or the spec's own room check asks for guild
-    # channels — the same overlay shape `external_boundaries` uses.
-    import sys
-    from unittest.mock import patch
-
-    from nora.app import composition, composition_platforms
-    from nora.policy import load_policy
-    # `nora.subject.obtain` the name is the function; the module it lives in
-    # is where `load_policy` is looked up.
-    obtain_module = sys.modules["nora.subject.obtain"]
-    rosters = getattr(spec_args, "frozen_rosters", None) or {}
-    with (patch.object(composition_platforms, "ClientChannelDirectory",
-                       lambda *_a, **_k: directory),
-          patch.object(composition, "policies",
-                       _with_frozen_rosters(composition.policies, rosters)),
-          patch.object(obtain_module, "load_policy",
-                       lambda path, **_k: load_policy(
-                           path, channels=directory))):
-        return await obtain(spec)
-
-
-def _with_frozen_rosters(policies: Any, rosters: dict[str, Any]) -> Any:
-    # The sandbox composes no Discord connection, so no roster reader exists.
-    def wrapped(*args: Any, **kwargs: Any) -> Any:
-        wiring = policies(*args, **kwargs)
-        wiring.rosters["discord"] = FrozenRoster("discord", rosters)
-        return wiring
-    return wrapped
+    ))
 
 
 def validate_recorded_wakes(
@@ -202,6 +153,11 @@ async def run_case(
     """One case end to end. `judges` is None under `--inspect-only`."""
     roll = Rollup()
     wakes_report: list[dict[str, Any]] = []
+    inputs = getattr(args, "service_inputs", None)
+    recording = inputs.corpora.get("cognition-loop", {}).get(case.name) if inputs else None
+    if recording is None:
+        roll.error("external_responses_missing: " + case.name)
+        return _report(case, roll, wakes_report)
     records: list[tuple[int, str, int]] = []
     recorded_reasons: dict[int, str] = {}
     #: Per wake index: the production batch the recorded wake covered
@@ -223,42 +179,21 @@ async def run_case(
         roll.error(problem)
         return _report(case, roll, wakes_report)
     instants = {i: at_ms for i, (_, _, at_ms) in enumerate(records)}
-    # A guild the unit expands through but the frozen directory cannot
-    # answer for is the directory read's ERROR — never a silent deny
-    # rendered as "no policy room".
-    directory = getattr(args, "channel_directory", None)
-    unread = sorted({
-        c.guild for c in getattr(policy, "conversations", ())
-        if c.unit == case.unit and c.guild
-        and (directory is None
-             or directory.guild_channels(guild_id=c.guild) is None)
-    })
-    if unread:
-        roll.error(
-            "the room directory could not be read for guild(s) "
-            f"{unread}, which the case's unit {case.unit!r} expands")
-        return _report(case, roll, wakes_report)
-    room = next((c for c in policy.rooms() if c.unit == case.unit), None)
+    selected = next((c for c in policy.rooms() if c.unit == case.unit), None)
+    room = (selected.platform, selected.primary_id) if selected is not None else None
     if room is None:
-        roll.error(f"case unit {case.unit!r} names no policy room")
-        return _report(case, roll, wakes_report)
-
-    # The whole case lives inside ONE Honcho draw — created with its
-    # draw marker before any subject composes, deleted when the case
-    # exits, whichever way that is.
-    draw_ctx = draw_workspace(
-        case.name, run_id=getattr(args, "run_id", "run"))
-    try:
-        draw = await draw_ctx.__aenter__()
-    except Exception as exc:  # noqa: BLE001 — the draw's own failure is a case ERROR
-        roll.error(f"the case's Honcho draw could not be made: {exc!r}")
+        _, first_view = await recorded_wake(source, case.wakes[0])
+        room = next(((s.platform, s.conversation_id) for s in first_view.pending
+                     if s.platform and s.conversation_id), None)
+    if room is None:
+        roll.error("historical room directory or source unavailable for unit " + case.unit)
         return _report(case, roll, wakes_report)
     try:
         await _wakes(
             args, case, instants, recorded_reasons, recorded, judges,
-            evidence, output, room, draw.id, roll, wakes_report)
-    finally:
-        await draw_ctx.__aexit__(None, None, None)
+            evidence, output, room, recording, roll, wakes_report)
+    except Exception as exc:  # noqa: BLE001 -- dependency failure invalidates the case
+        roll.error(f"case services: {type(exc).__name__}: {exc}")
     for wake in wakes_report:
         for verdict in wake.get("expectations", []):
             roll.add(verdict["verdict_obj"])
@@ -273,7 +208,7 @@ async def _wakes(
     args: Any, case: Any, instants: dict[int, int],
     recorded_reasons: dict[int, str],
     recorded: dict[int, dict[str, Any]], judges: Any | None,
-    evidence: Any, output: Path, room: Any, workspace: str, roll: Rollup,
+    evidence: Any, output: Path, room: tuple[str, str], recording: RecordedServices, roll: Rollup,
     wakes_report: list[dict[str, Any]],
 ) -> None:
     """The recorded sequence in the sandbox, each step naming itself."""
@@ -290,100 +225,107 @@ async def _wakes(
                 f"the sandbox restore at wake 0 could not be made: {exc!r}")
             return
         try:
-            source_engine = create_async_engine(args.database_url)
-            sandbox = create_async_engine(url)
-            try:
+            async with recording.open(url, redis=True) as environment:
+                args.environment = environment
+                source_engine = create_async_engine(args.database_url)
+                sandbox = create_async_engine(url)
                 try:
-                    await bump_sequences(source_engine, sandbox)
-                except Exception as exc:  # noqa: BLE001 — ERROR, not a crash
-                    roll.error(
-                        "the Record sequences could not be bumped "
-                        f"past the source: {exc!r}")
-                    return
-                for i, wake_id in enumerate(case.wakes):
-                    at_ms = instants[i]
-                    advance = None
-                    if i:
-                        try:
-                            advance = await advance_record(
-                                source_engine, sandbox,
-                                after_ms=instants[i - 1], at_ms=at_ms,
-                            )
-                        except Exception as exc:  # noqa: BLE001 — ERROR
-                            wakes_report.append(_wake_error(
-                                output, i, wake_id, at_ms,
-                                recorded_reasons[i], None,
-                                step="advance", message=f"{exc!r}",
-                                batch=_batch(recorded[i], None)))
-                            roll.error(
-                                f"advance before wake {i} "
-                                f"(recorded {wake_id}) failed: {exc!r}")
-                            break
-                        if not advance.wrote_only_record():
-                            why = (
-                                f"advance before wake {i} wrote a "
-                                f"derived store: {advance.written}")
-                            wakes_report.append(_wake_error(
-                                output, i, wake_id, at_ms,
-                                recorded_reasons[i], advance,
-                                step="advance", message=why,
-                                batch=_batch(recorded[i], None)))
-                            roll.error(why)
-                            break
                     try:
-                        with evidence.case(
-                            f"wake:{case.unit}:{wake_id}",
-                            input={"recorded_wake_id": wake_id},
-                            metadata={"wake_id": wake_id, "unit": case.unit,
-                                      "at_ms": at_ms},
-                        ):
-                            report_row = await _run_wake(
-                                args, case, i, wake_id, at_ms, url,
-                                recorded_reasons[i], judges,
-                                evidence, output, room, workspace,
-                                advance=advance,
-                                recorded_meta=recorded[i],
-                                prior_links=prior_links,
-                                earlier_wakes=earlier_wakes,
-                            )
-                        wakes_report.append(report_row)
-                        loop = report_row.get("loop") or {}
-                        prior_links = set(loop.get("link_ids") or ())
-                        if "_diff" in report_row:
-                            earlier_wakes += ((report_row["_diff"], report_row["trajectory"]),)
-                    except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
+                        await bump_sequences(source_engine, sandbox)
+                    except Exception as exc:  # noqa: BLE001 — ERROR, not a crash
                         roll.error(
-                            f"wake {i} (recorded {wake_id}): {exc!r}")
-                        break
-                    if stops_chain(report_row):
-                        roll.error(
-                            f"wake {i} (recorded {wake_id}) failed "
-                            f"at {report_row.get('step', 'wake')}: "
-                            f"{report_row.get('error')}")
-                        break
-            finally:
-                await sandbox.dispose()
-                await source_engine.dispose()
+                            "the Record sequences could not be bumped "
+                            f"past the source: {exc!r}")
+                        return
+                    for i, wake_id in enumerate(case.wakes):
+                        at_ms = instants[i]
+                        advance = None
+                        if i:
+                            try:
+                                advance = await advance_record(
+                                    source_engine, sandbox,
+                                    after_ms=instants[i - 1], at_ms=at_ms,
+                                )
+                            except Exception as exc:  # noqa: BLE001 — ERROR
+                                wakes_report.append(_wake_error(
+                                    output, i, wake_id, at_ms,
+                                    recorded_reasons[i], None,
+                                    step="advance", message=f"{exc!r}",
+                                    batch=_batch(recorded[i], None)))
+                                roll.error(
+                                    f"advance before wake {i} "
+                                    f"(recorded {wake_id}) failed: {exc!r}")
+                                break
+                            if not advance.wrote_only_record():
+                                why = (
+                                    f"advance before wake {i} wrote a "
+                                    f"derived store: {advance.written}")
+                                wakes_report.append(_wake_error(
+                                    output, i, wake_id, at_ms,
+                                    recorded_reasons[i], advance,
+                                    step="advance", message=why,
+                                    batch=_batch(recorded[i], None)))
+                                roll.error(why)
+                                break
+                        try:
+                            with evidence.case(
+                                f"wake:{case.unit}:{wake_id}",
+                                input={"recorded_wake_id": wake_id},
+                                metadata={"wake_id": wake_id, "unit": case.unit,
+                                          "at_ms": at_ms},
+                            ):
+                                report_row = await _run_wake(
+                                    args, case, i, wake_id, at_ms, url,
+                                    recorded_reasons[i], judges,
+                                    evidence, output, room,
+                                    advance=advance,
+                                    recorded_meta=recorded[i],
+                                    prior_links=prior_links,
+                                    earlier_wakes=earlier_wakes,
+                                )
+                            wakes_report.append(report_row)
+                            loop = report_row.get("loop") or {}
+                            prior_links = set(loop.get("link_ids") or ())
+                            if "_diff" in report_row:
+                                earlier_wakes += ((report_row["_diff"], report_row["trajectory"]),)
+                        except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
+                            roll.error(
+                                f"wake {i} (recorded {wake_id}): {exc!r}")
+                            break
+                        if stops_chain(report_row):
+                            roll.error(
+                                f"wake {i} (recorded {wake_id}) failed "
+                                f"at {report_row.get('step', 'wake')}: "
+                                f"{report_row.get('error')}")
+                            break
+                finally:
+                    await sandbox.dispose()
+                    await source_engine.dispose()
         finally:
+            args.environment = None
             await sandbox_ctx.__aexit__(None, None, None)
 
 
 async def _run_wake(
     args: Any, case: Any, index: int, wake_id: int, at_ms: int, url: str,
     reason: str, judges: Any | None, evidence: Any, output: Path,
-    room: Any, workspace: str, advance: Any = None,
+    room: tuple[str, str], advance: Any = None,
     recorded_meta: dict[str, Any] | None = None,
     prior_links: set[str] | None = None,
     earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = (),
 ) -> dict[str, Any]:
-    """One wake: compose, assert inert, record, run live, diff, judge."""
+    """Compose, verify isolation, replay a recorded wake, diff and judge."""
     subject = None
     try:
         try:
             subject = await _compose(
                 args, url, at_ms, room, args.policy.read_text(),
-                args.identity.read_text(), workspace=workspace,
+                args.identity.read_text(),
             )
+            if subject.unit != case.unit:
+                raise ValueError("the composed policy assigns the source room to another unit")
+            if judges is not None:
+                judges = judges.bind(subject.cfg)
             egress = assert_no_egress(subject)
             await index_replay_sandbox(subject, source_url=args.database_url)
             runner = subject.deps.cognition_runner
@@ -754,7 +696,7 @@ def _report(case: Any, roll: Rollup, wakes: list[dict[str, Any]]) -> dict[str, A
         for expectation in wake.get("expectations", []):
             expectation.pop("verdict_obj", None)
     return {
-        "status": roll.verdict,
+        "status": roll.verdict, "mode": "recorded-wake-protocol", "behavior": "UNMEASURED",
         "case": case.name, "unit": case.unit,
         "errors": roll.errors,
         "wakes": [
