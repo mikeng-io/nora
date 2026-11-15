@@ -49,6 +49,7 @@ const link = {
     refuse: "generated-refuse" },
 };
 
+let standing: "ok" | "denied" | "unavailable";
 let server: Server;
 let calls: { path: string; body: string }[];
 
@@ -72,6 +73,7 @@ function claims(request: { url?: string; method?: string; headers: unknown },
 
 beforeEach(async () => {
   calls = [];
+  standing = "ok";
   jar.clear();
   startSignIn.mockClear();
   login.current = { user: { managedIdentity: identity } };
@@ -89,6 +91,12 @@ beforeEach(async () => {
       return response.end(JSON.stringify({ status: "denied" }));
     }
     calls.push({ path: url, body });
+    if (request.method === "POST" && url === "/app/v1/management/auth/check") {
+      response.writeHead(standing === "ok" ? 200 : standing === "denied" ? 403 : 503,
+        { "Content-Type": "application/json" });
+      return response.end(JSON.stringify(standing === "ok"
+        ? { status: "ok", binding, display_name: "Generated holder" } : { status: standing }));
+    }
     if (request.method === "GET" && url.startsWith("/app/v1/holder/link-requests/")) {
       response.writeHead(200, { "Content-Type": "application/json" });
       return response.end(JSON.stringify({ status: "ok", request: link }));
@@ -343,6 +351,16 @@ describe("the account-bound single display result", () => {
     expect(await (await display()).json()).toEqual({ status: "ok", result: null });
     expect(await (await display()).json()).toEqual({ status: "ok", result: null });
   });
+
+  it.each(["denied", "unavailable"] as const)(
+    "refuses a prior result when current backend standing is %s", async (state) => {
+      await recorded();
+      standing = state;
+      const response = await display();
+      expect(response.status).toBe(state === "denied" ? 403 : 503);
+      expect(await response.json()).toEqual({ status: state });
+      expect(jar.has("nora-link-result")).toBe(false);
+    });
 
   it("refuses a signed-out result read without serializing the outcome", async () => {
     await recorded();

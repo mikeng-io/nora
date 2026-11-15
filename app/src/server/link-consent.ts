@@ -7,7 +7,7 @@ import { auth, signIn, TELEGRAM_LOGIN_ENABLED } from "@/auth";
 import { DEFAULT_LOCALE, LOCALES, type Locale } from "@/i18n/locales";
 import { linkConsentOutcomeSchema, linkRequestView,
   type LinkConsentOutcome } from "@/lib/api/holder";
-import { authenticationAssertion, identityBackend, managedSessionSchema,
+import { authenticationAssertion, checkManagedSession, identityBackend, managedSessionSchema,
   managementURL, type AuthenticationEvent } from "./management-session";
 import { privateApiFetch } from "./private-api-fetch";
 
@@ -330,6 +330,10 @@ export async function consumeLinkResult(request: Request): Promise<Response> {
       const current = retained.data.authentication.account;
       if (result.account.platform !== current.platform || result.account.kind !== current.kind
         || result.account.value !== current.value) return reply("denied", 403);
+    }
+    const standing = await checkManagedSession(retained.data);
+    if (standing.status !== "ok") {
+      return reply(standing.status, standing.status === "unavailable" ? 503 : 403);
     }
     return Response.json({ status: "ok", result:
       result?.outcome.requestId === ids[0] ? result.outcome : null },
