@@ -23,8 +23,8 @@
   {
     "name": "rejudge spends judge calls on a wake it cannot measure",
     "file": "scripts/cognition_loop/rejudge.py",
-    "old": "        if not unmeasured(frozen, recorded):\n            for expectation in case.expectations:",
-    "new": "        if True:\n            for expectation in case.expectations:",
+    "old": "        judgeable = identity is None and not unmeasured(frozen, recorded)",
+    "new": "        judgeable = identity is None",
     "target": "tests/unit/test_cognition_loop_rejudge.py::test_an_unmeasured_wake_spends_no_judge_call"
   }
 ]

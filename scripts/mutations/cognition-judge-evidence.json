@@ -93,7 +93,7 @@
   {
     "name": "rejudging rebuilds the earlier-wake history from frozen wakes",
     "file": "scripts/cognition_loop/rejudge.py",
-    "old": "        if not unmeasured(frozen, recorded):\n            earlier_wakes += ((diff, trajectory),)\n",
+    "old": "        if judgeable:\n            earlier_wakes += ((diff, trajectory),)\n",
     "new": "",
     "target": "tests/unit/test_cognition_loop_rejudge.py::test_rejudging_preserves_the_reason_an_answer_cannot_pass"
   }

@@ -28,6 +28,13 @@
     "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_unknown_tcp_and_dns_are_refused_and_cannot_be_a_valid_zero"
   },
   {
+    "name": "asyncio subprocess doors bypass the process refusal",
+    "file": "nora/subject/environment.py",
+    "old": "        self._patches.enter_context(patch.object(subprocess.Popen, \"__init__\", subprocess_refused))",
+    "new": "",
+    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_the_same_real_child_process_cannot_spawn_inside_the_boundary"
+  },
+  {
     "name": "native HTTP and redirects bypass the dispatch boundary",
     "file": "nora/subject/environment.py",
     "old": "                if not self.owns(str(request.url)):\n                    refuse(\"http\")\n                return await _original(client, request)",

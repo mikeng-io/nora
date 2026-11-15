@@ -30,7 +30,7 @@
   {
     "name": "coverage errors invalidate the saved status",
     "file": "scripts/cognition_loop/accounting.py",
-    "old": "    if report[\"coverage\"][\"status\"] != \"PASS\":",
+    "old": "    if report[\"coverage\"][\"status\"] != \"PASS\" \\\n            or report[\"outcome\"].get(\"cause\") == \"outcome projection failed\" \\\n            or report[\"outcome\"][\"execution\"][\"status\"] != \"PASS\" \\\n            or report[\"outcome\"][\"validity\"][\"status\"] != \"PASS\":",
     "new": "    if False:",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_json_and_html_use_the_same_failed_coverage"
   },
