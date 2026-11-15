@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import time
 from dataclasses import replace
 from typing import Any
@@ -32,6 +33,8 @@ from nora.platform.bridge.queue import StreamProducer
 from nora.platform.bridge.rehydrate import message_to_dict
 from nora.subject.effects import prepare_effect_reads
 from nora.subject.eval_evidence import EvidenceError
+
+log = logging.getLogger(__name__)
 
 
 def envelope(
@@ -166,19 +169,59 @@ class JourneyDriver:
                 await asyncio.sleep(0.05)
 
     async def stop(self) -> None:
+        """The one teardown: end the app task, shut the app down, release the
+        engine — a task that already failed still gets its shutdown."""
         try:
             if self.task is not None:
                 task, self.task = self.task, None
                 task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
+                # The app task's own failure is the drive's named error
+                # (`_require_running`); awaiting it here retrieves it so it
+                # can neither skip the shutdown nor report as unretrieved.
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
                 await self.app.shutdown()
         finally:
             await self.engine.dispose()
 
     async def __aenter__(self) -> JourneyDriver:
-        await self.start()
+        try:
+            await self.start()
+        except BaseException:
+            # A failed or cancelled start still owns the app task it created
+            # and the engine; unwind through the same stop a clean exit
+            # takes, then let the original failure surface.
+            try:
+                await self.stop()
+            except BaseException:
+                # The start failure leads; a cleanup failure is logged, never
+                # substituted for it.
+                log.exception("journey start cleanup failed")
+            raise
         return self
 
-    async def __aexit__(self, *exc: Any) -> None:
-        await self.stop()
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        # The `IsolatedServices` pattern: a body cancelled mid-drive still
+        # finishes its own teardown before the cancellation continues.
+        # `asyncio.wait` never cancels the cleanup task, so cancelling the
+        # caller — again and again — delays only the propagation.
+        cleanup = asyncio.create_task(self.stop())
+        cancelled: asyncio.CancelledError | None = None
+        while not cleanup.done():
+            try:
+                await asyncio.wait({cleanup})
+            except asyncio.CancelledError as caught:
+                cancelled = caught
+        teardown = (asyncio.CancelledError() if cleanup.cancelled()
+                    else cleanup.exception())
+        if cancelled is not None:
+            if teardown is not None:
+                log.error("journey teardown failed during cancellation: %r",
+                          teardown)
+            raise cancelled
+        if teardown is not None:
+            # The drive's own failure is the one to surface; a teardown
+            # failure beside it is reported, never substituted for it.
+            if exc is None:
+                raise teardown
+            log.exception("journey teardown failed beside the drive failure")

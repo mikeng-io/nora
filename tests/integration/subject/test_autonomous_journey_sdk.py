@@ -118,6 +118,22 @@ async def test_sdk_autonomous_journey_through_real_app_to_judges_and_reports(
         report, experiment, evidence=evidence_outcome(sdk_evidence))
     assert accepted(coverage, outcome), (coverage, outcome)
     assert outcome["behavior"]["status"] == "UNMEASURED"
+    # The same retention seam `python -m evals` uses: the SDK's own
+    # report rows plus the three axes, durable in the case's evidence
+    # directory before the sandbox goes away — the memory copy is not
+    # the artifact.
+    payload = backbone.retain_report(
+        sdk_evidence, draw.name, report, experiment=experiment,
+        coverage=coverage)
+    native = json.loads(
+        (sdk_evidence.path / f"corpus-{draw.name}.json").read_text())
+    assert native["corpus"] == draw.name
+    assert native["report"] == report.model_dump(mode="json")
+    assert native["coverage"] == coverage
+    assert native["outcome"]["execution"]["status"] == "PASS"
+    assert native["outcome"]["validity"]["status"] == "PASS"
+    assert native["outcome"]["behavior"]["status"] == "UNMEASURED"
+    assert payload["outcome"]["behavior"]["status"] == "UNMEASURED"
     outputs = sdk_evidence.path / f"journey-{draw.name}"
     retained = json.loads((outputs / "report.json").read_text())
     assert retained["status"] == "PASS"
@@ -127,6 +143,33 @@ async def test_sdk_autonomous_journey_through_real_app_to_judges_and_reports(
     assert retained["outcome"]["behavior"]["status"] == "UNMEASURED"
     rendered = (outputs / "report.html").read_text()
     assert draw.name in rendered and "autonomous-live-journey" in rendered
+    # The retained HTML renders the SAME report the JSON holds — its own
+    # status, every axis, the coverage census and each wake's observed
+    # lifecycle — never a page that merely names the case and mode.
+    axes = retained["outcome"]
+    assert (f'<span class="status-PASS">{retained["status"]}</span>'
+            in rendered)
+    for key, label in (("execution", "execution"),
+                       ("validity", "measurement validity"),
+                       ("behavior", "behaviour")):
+        assert f"<th>{label}</th><td>{axes[key]['status']}</td>" in rendered
+    census = retained["coverage"]["expected"]
+    for name, count in census.items():
+        assert f'&quot;{name}&quot;: {count}' in rendered
+    first = retained["cases"][0]["wakes"][0]["trajectory"]
+    assert (first["effects"]["status"] == "observed"
+            and any(item["kind"] == "delivery"
+                    for item in first["effects"]["items"]))
+    assert "&quot;cognition_wake_outcome&quot;" in rendered
+    assert "&quot;bridge_action&quot;" in rendered
+    second = retained["cases"][0]["wakes"][1]["trajectory"]
+    # The correction's own window opens at its send — after the delivery
+    # the first wake's shared cut already captured — so the earlier wake
+    # (with its delivery) is exactly the context its judges receive.
+    assert second["effects"]["status"] == "observed"
+    delivered_at = next(item["at"] for item in first["effects"]["items"]
+                        if item["kind"] == "delivery")
+    assert second["effects"]["since"] > delivered_at
 
     protocol, judge = plan.protocol, plan.judge
     assert protocol.phase == 9 and not protocol.errors

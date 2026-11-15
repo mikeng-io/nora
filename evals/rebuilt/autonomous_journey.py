@@ -31,14 +31,19 @@ from nora.infra.sql.schema import (
     REMINDERS,
 )
 from nora.infra.sql.stimuli import SqlStimulusStore
-from nora.subject.effects import effect_boundary, effect_scope, read_effects
+from nora.subject.effects import (
+    effect_boundary,
+    effect_scope,
+    observed_effects,
+    read_effects,
+)
 from nora.subject.eval_evidence import current, read_events, validate_events
 from nora.subject.journey import JourneyDriver
 from scripts.cognition_loop import html as report_html
 from scripts.cognition_loop import state as state_mod
-from scripts.cognition_loop.accounting import write_report
+from scripts.cognition_loop.accounting import _canonical_outcome, write_report
 from scripts.cognition_loop.availability import availability
-from scripts.cognition_loop.cases import Expectation
+from scripts.cognition_loop.cases import STATE_KINDS, Expectation
 from scripts.cognition_loop.egress import assert_no_egress
 from scripts.cognition_loop.judges import judge_expectation
 from scripts.cognition_loop.trajectory import session_events, wake_trajectory
@@ -65,6 +70,85 @@ def _expectations(plan: dict[str, Any]) -> list[Expectation]:
     return [Expectation(wake=int(raw["wake"]), polarity=str(raw["polarity"]),
                         kind=str(raw["kind"]), text=str(raw["text"]))
             for raw in plan.get("expectations") or ()]
+
+
+def _plan_error(plan: dict[str, Any]) -> str | None:
+    """Why this plan cannot bind a denominator, else None — checked before
+    the App, a model call or a judge ever runs. `expected_wakes` is the
+    declared census: a positive int whose slots every `until_wakes` step
+    reaches in order and every expectation anchors inside. A malformed
+    plan refuses the case outright; the declared slots and criteria then
+    stay in the denominator whether or not the runtime produces them."""
+    expected = plan.get("expected_wakes")
+    if type(expected) is not int or expected <= 0:
+        return "the journey plan declares no positive expected_wakes"
+    steps = plan.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return "the journey plan declares no steps"
+    reached = sent = 0
+    for step in steps:
+        if not isinstance(step, dict):
+            return f"a journey step is not an object: {step!r}"
+        if "send" in step:
+            if not isinstance(step["send"], str):
+                return f"a journey send is not text: {step!r}"
+            sent += 1
+            continue
+        if "until_delivery" in step:
+            continue
+        if "until_wakes" in step:
+            wanted = step["until_wakes"]
+            if type(wanted) is not int or wanted <= reached or wanted > expected:
+                return (f"journey step until_wakes={wanted!r} does not reach "
+                        f"a declared slot of expected_wakes={expected}")
+            reached = wanted
+            continue
+        return f"unknown journey step {step!r}"
+    if not sent:
+        return "the journey plan sends nothing through real ingress"
+    if reached != expected:
+        return (f"journey steps reach {reached} wakes; expected_wakes "
+                f"declares {expected}")
+    for position, raw in enumerate(plan.get("expectations") or []):
+        if not isinstance(raw, dict):
+            return f"journey expectation {position} is not an object"
+        wake = raw.get("wake")
+        if type(wake) is not int or not 0 <= wake < expected:
+            return (f"journey expectation {position} anchors wake {wake!r} "
+                    f"outside the {expected} declared slots")
+        if raw.get("polarity") not in ("must", "must_not"):
+            return (f"journey expectation {position} polarity "
+                    f"{raw.get('polarity')!r} is not must|must_not")
+        if raw.get("kind") not in STATE_KINDS:
+            return (f"journey expectation {position} kind {raw.get('kind')!r} "
+                    "is not a state kind")
+        if not str(raw.get("text") or "").strip():
+            return f"journey expectation {position} text is empty"
+    models = plan.get("judges")
+    if (not isinstance(models, (list, tuple)) or len(models) != 2
+            or not all(isinstance(m, str) and m for m in models)
+            or len(set(models)) != 2):
+        return "the journey plan declares not exactly two distinct judge models"
+    return None
+
+
+def _bind_declared_wakes(declared: Any, produced: list[Any],
+                         roll: Rollup) -> list[Any]:
+    """The expected manifest's wake slots: each produced wake binds to the
+    declared slot at its position and slots never reached stay `None`, so
+    missing, extra or duplicated wakes are denominator errors, never a
+    silently smaller census."""
+    if not (type(declared) is int and declared > 0):
+        return produced
+    if len(produced) != len(set(produced)):
+        roll.error("a produced wake occupied two declared slots")
+    if len(produced) < declared:
+        roll.error(f"the runtime produced only {len(produced)} of the "
+                   f"{declared} declared wake slots")
+    elif len(produced) > declared:
+        roll.error(f"the runtime produced {len(produced) - declared} "
+                   f"wakes beyond the {declared} declared slots")
+    return produced[:declared] + [None] * (declared - len(produced))
 
 
 def _batch(offered: list[int], offered_self: list[int],
@@ -139,13 +223,52 @@ async def _judge(judges: Any, models: tuple[str, str],
     return rows
 
 
+def _evidence_causes(ctx: dict[str, Any], subset: list[dict[str, Any]],
+                     trajectory: dict[str, Any], *, scope: Any,
+                     session_id: Any) -> list[str]:
+    """Named invalidations for one wake's canonical evidence, computed
+    before any judge request: its own typed closed wake/unit/session, the
+    captured event window's custody, the observed complete effects and
+    lifecycle settlement. Any cause freezes the wake ERROR with zero
+    judge traffic — torn or foreign evidence never reaches a judge."""
+    causes: list[str] = []
+    wake, outcome = ctx["wake"], ctx["outcome"]
+    if (not isinstance(wake, dict) or type(wake.get("id")) is not int
+            or type(wake.get("at_ms")) is not int
+            or not isinstance(wake.get("reason"), str)):
+        causes.append("wake_identity_invalid")
+    elif wake.get("unit") != scope.unit:
+        causes.append("foreign_wake_unit")
+    if not isinstance(outcome, dict) or outcome.get("outcome") != "closed":
+        causes.append("wake_outcome_not_closed")
+    receipt = validate_events(subset, require_terminal=False)
+    if receipt["status"] != "PASS":
+        causes.extend(f"capture_{cause}" for cause in receipt["causes"])
+    if not observed_effects(trajectory.get("effects")):
+        causes.append("effects_unobserved")
+    else:
+        state, _ref = _canonical_outcome(
+            trajectory, unit=scope.unit,
+            wake_id=wake.get("id") if isinstance(wake, dict) else None,
+            session_id=session_id)
+        if state != "closed":
+            causes.append(f"settlement_{state}")
+    if session_id is not None:
+        for name in ("settlement", "final_response"):
+            if (trajectory.get(name) or {}).get("status") != "observed":
+                causes.append(f"{name}_unobserved")
+    return causes
+
+
 async def _finalize(index: int, ctx: dict[str, Any], *, subject: Any,
                     scope: Any, output: Path, judges: Any, models: tuple[str, str],
                     expectations: list[Expectation], earlier_wakes: tuple,
                     prior_links: set[str], egress: dict[str, Any],
                     evidence_path: Path, before: Any) -> dict[str, Any]:
     """Canonical finalization for one production wake: events → trajectory →
-    effects → snapshot → diff → both judges → frozen file → report row."""
+    effects → state cut → diff — all at THIS instant, so fire/delivery
+    between the wake's close and finalization lands inside the window —
+    then validity, and only then both judges and the frozen file."""
     wake, outcome = ctx["wake"], ctx["outcome"]
     session_id = outcome["session_id"]
     no_session = (outcome["detail"] or "empty agenda") if session_id is None else None
@@ -162,17 +285,28 @@ async def _finalize(index: int, ctx: dict[str, Any], *, subject: Any,
     trajectory["unit"] = scope.unit
     trajectory["unit_rooms"] = list(scope.rooms)
     trajectory["availability"] = availability(subject.cfg, trajectory)
+    # One cut for all three projections: the effects read, the state
+    # snapshot and the diff all measure the same "now" — delivery rows
+    # that landed since `until_wakes` are inside, never dropped between
+    # two windows.
     trajectory["effects"] = await read_effects(
         ctx["engine"], since=ctx["boundary"], unit=scope.unit,
         rooms=scope.rooms, profile_keys=scope.profile_keys, events=subset)
-    after = ctx["after"]
+    after = await state_mod.snapshot(
+        ctx["engine"], unit=scope.unit, rooms=scope.rooms,
+        profile_keys=scope.profile_keys, now_ms=_now_ms(),
+        metrics=subject.deps.metrics)
     diff = state_mod.diff(before, after)
-    rows = await _judge(judges, models, expectations, index, diff, after,
-                        trajectory, earlier_wakes)
+    causes = _evidence_causes(
+        ctx, subset, trajectory, scope=scope, session_id=session_id)
+    step_error = ("evidence", "; ".join(causes)) if causes else None
+    rows = ([] if step_error is not None else await _judge(
+        judges, models, expectations, index, diff, after,
+        trajectory, earlier_wakes))
     return _freeze_wake(
         output, index, wake, session_id, egress, diff, trajectory, rows,
         after, unit=scope.unit, batch=ctx["batch"], no_session=no_session,
-        step_error=None, prior_links=prior_links)
+        step_error=step_error, prior_links=prior_links)
 
 
 async def _offered(engine: Any, unit: str, at_ms: int) -> tuple[list[int], list[int]]:
@@ -204,11 +338,12 @@ async def _run(subject: Any, case: Case, plan: dict[str, Any],
     bound to the SAME canonical evidence the frozen files carry."""
     roll = Rollup()
     wakes_report: list[dict[str, Any]] = []
-    expectations = _expectations(plan)
-    models = tuple(str(m) for m in plan.get("judges") or ())
-    if len(models) != 2 or not all(models):
-        roll.error("the journey plan declares not exactly two judge models")
+    manifest_error = _plan_error(plan)
+    if manifest_error is not None:
+        roll.error(manifest_error)
         return roll, wakes_report
+    expectations = _expectations(plan)
+    models = (str(plan["judges"][0]), str(plan["judges"][1]))
     judges = Judges(subject.cfg, list(models), Path(output))
     scope = effect_scope(subject)
     if subject.unit != scope.unit:
@@ -245,7 +380,7 @@ async def _run(subject: Any, case: Case, plan: dict[str, Any],
         wakes_report.append(row)
         earlier_wakes += ((row["_diff"], row["trajectory"]),)
         prior_links = set((row.get("loop") or {}).get("link_ids") or ())
-        return ctx["after"]
+        return row["_state_before"]
 
     async def _drive() -> None:
         nonlocal index, seen_wakes, step_error
@@ -305,10 +440,6 @@ async def _run(subject: Any, case: Case, plan: dict[str, Any],
                         engine, scope.unit, int(latest["at_ms"]))
                     ctx.update({
                         "wake": latest, "outcome": outcome,
-                        "after": await state_mod.snapshot(
-                            engine, unit=scope.unit, rooms=scope.rooms,
-                            profile_keys=scope.profile_keys, now_ms=_now_ms(),
-                            metrics=subject.deps.metrics),
                         "batch": _batch(offered, offered_self,
                                         outcome["session_id"] is not None),
                     })
@@ -373,17 +504,14 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
             roll.add(verdict["verdict_obj"])
     if roll.verdict != ERROR and any(w.get("status") == ERROR for w in wakes_report):
         roll.error(WAKE_ERRED)
-    declared_wakes = plan.get("expected_wakes")
-    if declared_wakes is not None and len(wakes_report) != int(declared_wakes):
-        roll.error(
-            f"the case declared {declared_wakes} wakes and produced "
-            f"{len(wakes_report)}")
+    produced = [w.get("recorded_wake_id") for w in wakes_report]
+    bound = _bind_declared_wakes(plan.get("expected_wakes"), produced, roll)
     case_report = _report(case, subject.unit, roll, wakes_report)
     expected = {
         "name": case.name or "unnamed",
         "unit": subject.unit,
-        "wakes": [w.get("recorded_wake_id") for w in wakes_report],
-        "expectations": [asdict(e) for e in _expectations(plan)],
+        "wakes": bound,
+        "expectations": list(plan.get("expectations") or []),
         "read_probes": [],
     }
     report = {
