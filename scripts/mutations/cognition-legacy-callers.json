@@ -1,0 +1,107 @@
+[
+  {
+    "name": "the wake's subject is composed inside its recorded environment",
+    "file": "scripts/confirm_cognition_anchors.py",
+    "old": "            policy=(config_dir / \"policy.toml\").read_text(),\n            environment=environment))",
+    "new": "            policy=(config_dir / \"policy.toml\").read_text()))",
+    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_wake_input_composes_the_production_spec"
+  },
+  {
+    "name": "the wake's subject binds the run's own rebuilt config",
+    "file": "scripts/confirm_cognition_anchors.py",
+    "old": "            config=subject_config,\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_wake_input_composes_the_production_spec"
+  },
+  {
+    "name": "the confirmer's rebuilt config lands in the run's own directory",
+    "file": "scripts/confirm_cognition_anchors.py",
+    "old": "        generated = Path(private) / \"config.evaluation.toml\"",
+    "new": "        generated = ROOT / \"config.evaluation.toml\"",
+    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_confirm_restores_once_per_wake"
+  },
+  {
+    "name": "a wake without a recording still reaches the restore",
+    "file": "scripts/confirm_cognition_anchors.py",
+    "old": "                                if recording is None:",
+    "new": "                                if recording is not None:",
+    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_confirm_restores_once_per_wake"
+  },
+  {
+    "name": "the recorded environment opens with redis for bridge workers",
+    "file": "scripts/confirm_cognition_anchors.py",
+    "old": "                                        sandbox_url, redis=True) as environment,",
+    "new": "                                        sandbox_url) as environment,",
+    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_confirm_restores_once_per_wake"
+  },
+  {
+    "name": "a per-item error is unavailable, never a negative verdict",
+    "file": "scripts/confirm_cognition_anchors.py",
+    "old": "                                        except Exception:  # noqa: BLE001 -- private errors stay local\n                                            status = \"unavailable\"",
+    "new": "                                        except Exception:  # noqa: BLE001 -- private errors stay local\n                                            status = \"no_match\"",
+    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_per_item_errors_are_unavailable_never_negative"
+  },
+  {
+    "name": "a violated boundary invalidates items already judged on the wake",
+    "file": "scripts/confirm_cognition_anchors.py",
+    "old": "                                verdicts = [{**item, \"result\": \"unavailable\"}\n                                            for item in items]",
+    "new": "                                verdicts.extend({**item, \"result\": \"unavailable\"}\n                                                for item in items[len(verdicts):])",
+    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_a_violated_boundary_makes_judged_items_unavailable"
+  },
+  {
+    "name": "a false model answer is no_match, not unavailable",
+    "file": "scripts/confirm_cognition_anchors.py",
+    "old": "    return \"match\" if parsed[\"match\"] else \"no_match\"",
+    "new": "    return \"match\" if parsed[\"match\"] else \"unavailable\"",
+    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_boolean_model_contract"
+  },
+  {
+    "name": "the verdict request is deterministic",
+    "file": "scripts/confirm_cognition_anchors.py",
+    "old": "            \"temperature\": 0,",
+    "new": "            \"temperature\": 1,",
+    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_boolean_model_contract"
+  },
+  {
+    "name": "manifest keys are canonical wake ids, not any int-parsable text",
+    "file": "scripts/confirm_cognition_anchors.py",
+    "old": "        if (not isinstance(key, str)\n                or not re.fullmatch(r\"[1-9][0-9]*\", key)):",
+    "new": "        if not isinstance(key, str):",
+    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_load_recordings_validates_the_whole_manifest"
+  },
+  {
+    "name": "a required historical load is never template-fallen-back",
+    "file": "scripts/snapshot_block_equivalence.py",
+    "old": "    required_absent = sorted(set(REQUIRED_LOADS) & missing)",
+    "new": "    required_absent = []",
+    "target": "tests/unit/test_snapshot_block_equivalence.py::test_a_missing_required_load_refuses_before_any_recording"
+  },
+  {
+    "name": "execution and evidence errors exit 2, not a traceback",
+    "file": "scripts/snapshot_block_equivalence.py",
+    "old": "    except Exception:  # noqa: BLE001 -- execution/evidence errors are exit 2",
+    "new": "    except KeyError:  # noqa: BLE001 -- execution/evidence errors are exit 2",
+    "target": "tests/unit/test_snapshot_block_equivalence.py::test_an_execution_error_exits_2_not_a_traceback"
+  },
+  {
+    "name": "the snapshot subject composes the recorded config, not the template",
+    "file": "scripts/snapshot_block_equivalence.py",
+    "old": "                        config=in_force / \"config.toml\",\n",
+    "new": "",
+    "target": "tests/integration/test_snapshot_block_equivalence.py::test_the_block_gate_runs_the_migrated_path_end_to_end"
+  },
+  {
+    "name": "the spec binds its declared config file, not the module template",
+    "file": "nora/subject/obtain.py",
+    "old": "    shutil.copy(spec.config or _TEMPLATE, cfg_path)",
+    "new": "    shutil.copy(_TEMPLATE, cfg_path)",
+    "target": "tests/unit/test_subject_obtain.py::test_each_spec_composes_its_own_declared_config"
+  },
+  {
+    "name": "the bound judge's own complete door is discovered",
+    "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
+    "old": "        if tail == \"_complete\" and len(chain) >= 2:\n            return True",
+    "new": "        if tail == \"_completely_other\" and len(chain) >= 2:\n            return True",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_discovery_sees_the_known_call_sites_and_occasions"
+  }
+]

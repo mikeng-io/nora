@@ -376,7 +376,8 @@ uv run python -m scripts.find_cognition_anchors \
   --source-url "$EVAL_SOURCE_URL" > /tmp/cognition-candidates.jsonl
 uv run python -m scripts.confirm_cognition_anchors \
   --source-url "$EVAL_SOURCE_URL" --config ~/workspace/nora/config.toml \
-  --candidates /tmp/cognition-candidates.jsonl > /tmp/cognition-confirmed.jsonl
+  --candidates /tmp/cognition-candidates.jsonl \
+  --services "$CONFIRM_SERVICE_RECORDINGS" > /tmp/cognition-confirmed.jsonl
 uv run python -m scripts.write_cognition_anchors \
   --source-url "$EVAL_SOURCE_URL" --confirmed /tmp/cognition-confirmed.jsonl
 uv run python -m evals cognition_session --sample 3 --services "$SERVICE_RECORDINGS" \
@@ -387,7 +388,9 @@ echo "RC=$?" > /tmp/cognition-eval.rc
 
 `--config` is the deployment's own `config.toml`, verbatim: the confirmer
 rebuilds `config.evaluation.toml` against it (the same drift-checked
-`materialise` `python -m evals` runs) and resolves the `eval_judge` route
+`materialise` `python -m evals` runs) into its own private run directory —
+never the checkout's shared file — and binds it to each subject through
+`SubjectSpec.config`. It resolves the `eval_judge` route
 through `nora.subject.obtain.model_endpoint`, so a `host.docker.internal` or
 `honcho` name is rewritten to loopback exactly as a subject's own endpoints
 are. The production route gets one plain POST at temperature zero, without
@@ -413,8 +416,12 @@ see, plus open notes (including their then-current bodies), open events/plans
 (staged, proposed and confirmed) and current/disputed profile lines
 from the restored unit, with the wake time and room explicit. Today's state
 is never substituted. `match` confirms the input situation, not a successful
-session trajectory. Errors, missing state, refusals and truncated/wrong-shape
-answers are `unavailable`, never `no_match`.
+session trajectory. `--services` is a JSON object mapping each candidate wake
+id to its recorded-services document (the same finite `RecordedServices`
+schema the eval harness uses); every external call the composed subject and
+the bound judge make must be a recorded response, and a wake without a
+recording confirms nothing. Errors, missing state, refusals and
+truncated/wrong-shape answers are `unavailable`, never `no_match`.
 
 The writer refuses outside the Linux deploy-host layout, revalidates each
 confirmed wake/room, then replaces `parked` with top-level `snapshot` and
