@@ -4,6 +4,12 @@ canonical evidence, both judges and the retained JSON/HTML report — one case."
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import tempfile
+import uuid
+from pathlib import Path
+from typing import Any
 
 import pytest
 from strands_evals import Case, Experiment
@@ -96,6 +102,19 @@ async def test_positional_recording_is_refused_as_a_journey_world(
                 services={draw.name: recording})
     with pytest.raises(EvidenceError, match="journey world"):
         await backbone._drive(draw, spec)
+
+
+def _durable_mirror(evidence: Any) -> Path:
+    """Same-run evidence copied outside pytest's rotating basetemp."""
+    root = Path(os.environ.get(
+        "NORA_JOURNEY_ARTIFACTS",
+        Path(tempfile.gettempdir()) / "nora-journey-artifacts"))
+    dest = root / f"{evidence.path.name}-{uuid.uuid4().hex[:8]}"
+    evidence.record("artifacts_mirrored", ref=str(dest))
+    os.makedirs(root, mode=0o700, exist_ok=True)
+    shutil.copytree(evidence.path, dest)
+    os.chmod(dest, 0o700)
+    return dest
 
 
 async def test_sdk_autonomous_journey_through_real_app_to_judges_and_reports(
@@ -214,3 +233,5 @@ async def test_sdk_autonomous_journey_through_real_app_to_judges_and_reports(
     assert len(reminders) == 1 and reminders[0]["state"] == "done"
     sdk_evidence.record("protocol_assertions", status="PASS", execution="PASS",
                         validity="PASS", behavior="UNMEASURED")
+
+    _durable_mirror(sdk_evidence)
