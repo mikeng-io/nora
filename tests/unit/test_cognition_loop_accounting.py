@@ -68,7 +68,7 @@ def complete_report(output):
                                     "frozen_unit", "frozen_instant", "frozen_step",
                                     "unproven", "recorded_wake", "actual_wake",
                                     "foreign_session", "partial_identity",
-                                    "bool_identity", "unproven_session",
+                                    "typed_identity", "unproven_session",
                                     "undeclared_instant"])
 def test_expected_denominators_do_not_shrink_with_missing_evidence(tmp_path, damage):
     report = complete_report(tmp_path)
@@ -126,10 +126,12 @@ def test_expected_denominators_do_not_shrink_with_missing_evidence(tmp_path, dam
         frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
         frozen.pop("recorded_wake_id")
         (tmp_path / "wake-0-11.json").write_text(json.dumps(frozen))
-    elif damage == "bool_identity":
-        # `True` is not `1`: identity is typed, never truthy-equal.
+    elif damage == "typed_identity":
+        # `11.0 == 11` but `float is not int`: identity is typed, never
+        # equality alone — the same reason `True` is not `1`.
         frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
-        frozen["recorded_wake_id"] = True
+        frozen["recorded_wake_id"] = float(
+            report["cases"][0]["wakes"][0]["recorded_wake_id"])
         (tmp_path / "wake-0-11.json").write_text(json.dumps(frozen))
     elif damage == "unproven_session":
         # A session-less row is proved by the trajectory's explicit None —
