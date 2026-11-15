@@ -8,8 +8,9 @@ borrow another occasion's effects out of a shared interval:
 - a `turn` work row's durable actions are bound by `owner_id = w-<id>`;
 - a `stimulus` work row's `stimulus_id` leads to the `stimulus_claim`
   and the wake/session that consumed it;
-- the `queue.attempt`/`queue.claim` spans naming the event's canonical
-  id own every model call and tool act the work itself made.
+- the spans stamping `nora.bridge.event_id` — the queue journal and the
+  turn's own generation root — own every model call and tool act the
+  work itself made.
 
 Everything else in the interval — a reminder's fire, a background pass,
 a foreign send — stays as window provenance, never as this turn's
@@ -32,7 +33,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.subject.effects import (
     frozen_reads,
-    observed_effects,
     read_effects,
 )
 from scripts.cognition_loop import state as state_mod
@@ -77,13 +77,24 @@ async def _stimulus_session(reads: Any, stimulus_id: int) -> dict[str, Any]:
                 outcomes[int(row["wake_id"])] = dict(row)
         wake_id = claims[-1] if claims else None
         outcome = outcomes.get(wake_id) if wake_id is not None else None
+        closed = [wid for wid in claims
+                  if (outcomes.get(wid) or {}).get("outcome") == "closed"]
+        # Two closed consumptions, or a closed claim a newer claim
+        # followed, contradict which session the stimulus settled to —
+        # conflicting evidence, never "the latest wins".
+        conflict = (
+            f"stimulus claims settle to conflicting sessions: {claims}"
+            if len(closed) > 1 or (closed and closed[0] != wake_id)
+            else None)
         return {
             "wake_id": wake_id,
             "claims": claims,
             "wake_outcome": (outcome or {}).get("outcome"),
             "session_id": ((outcome or {}).get("session_id")
-                           if (outcome or {}).get("outcome") == "closed"
+                           if conflict is None
+                           and (outcome or {}).get("outcome") == "closed"
                            else None),
+            "session_conflict": conflict,
         }
 
     if hasattr(reads, "connect"):
@@ -177,6 +188,11 @@ def _turn_causes(ctx: dict[str, Any], trajectory: dict[str, Any],
     event = ctx.get("event")
     if not isinstance(event, dict) or event.get("state") != "done":
         causes.append("admission_not_done")
+    elif event.get("id") != ctx.get("event_id"):
+        # Duplicate suppression admits the declared envelope under a
+        # different canonical id: the settled rows then belong to another
+        # occasion, never to this declared input.
+        causes.append("admission_identity_foreign")
     work = ctx.get("work")
     if (not isinstance(work, list) or not work
             or any(not isinstance(w, dict) or w.get("state")
@@ -302,7 +318,8 @@ async def observed_turn(ctx: dict[str, Any], *, subject: Any, driver: Any,
     async with frozen_reads(ctx["engine"]) as reads:
         stimulus_id = _turn_stimulus_id(ctx["work"])
         binding = {"event_id": ctx["event_id"], "stimulus_id": stimulus_id,
-                   "wake_id": None, "session_id": None, "wake_outcome": None}
+                   "wake_id": None, "session_id": None, "wake_outcome": None,
+                   "session_conflict": None}
         if stimulus_id is not None:
             binding.update(await _stimulus_session(reads, stimulus_id))
         bound, traces = bound_turn_events(
@@ -353,6 +370,11 @@ async def observed_turn(ctx: dict[str, Any], *, subject: Any, driver: Any,
 
 
 __all__ = [
-    "observed_turn", "turn_events", "_turn_outcome", "_turn_causes",
-    "_judge_turn", "_freeze_turn", "_turn_error",
+    "_freeze_turn",
+    "_judge_turn",
+    "_turn_causes",
+    "_turn_error",
+    "_turn_outcome",
+    "observed_turn",
+    "turn_events",
 ]

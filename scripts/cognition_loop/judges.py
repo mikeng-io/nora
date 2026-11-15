@@ -546,7 +546,8 @@ def turn_gap(trajectory: Any) -> list[str]:
     declared = trajectory.get("declared_input")
     if (not isinstance(declared, dict)
             or not isinstance(declared.get("text"), str)
-            or not declared["text"].strip()):
+            or not declared["text"].strip()
+            or not declared.get("event_id")):
         causes.append("declared_input_unbound")
     if "session_id" not in trajectory:
         causes.append("turn_session_unbound")
@@ -554,6 +555,12 @@ def turn_gap(trajectory: Any) -> list[str]:
     if (not isinstance(bound, dict) or not isinstance(declared, dict)
             or bound.get("event_id") != declared.get("event_id")):
         causes.append("turn_binding_foreign")
+    elif (bound.get("session_conflict")
+            or bound.get("session_id") != trajectory.get("session_id")):
+        # The frozen binding and the trajectory disagree on which session
+        # the turn's stimulus settled to — conflicting evidence, never
+        # "the artifact wins".
+        causes.append("turn_session_conflict")
     if trajectory.get("session_id") is not None:
         session_settlement = trajectory.get("session_settlement")
         if (not isinstance(session_settlement, dict)
@@ -568,9 +575,14 @@ def turn_gap(trajectory: Any) -> list[str]:
     if (not isinstance(settlement, dict)
             or settlement.get("status") != "observed"):
         causes.append("settlement_unobserved")
-    if (trajectory.get("model_calls")
-            and subject_instructions(trajectory)["status"] != "observed"):
-        causes.append("subject_instructions_unobserved")
+    if trajectory.get("model_calls"):
+        # A bound generation that never settled its terminal invocation
+        # is incomplete terminal evidence, never half a turn.
+        if (trajectory.get("final_response") or {}).get("status") \
+                != "observed":
+            causes.append("final_response_unobserved")
+        if subject_instructions(trajectory)["status"] != "observed":
+            causes.append("subject_instructions_unobserved")
     return causes
 
 

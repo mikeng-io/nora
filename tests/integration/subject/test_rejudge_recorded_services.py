@@ -335,7 +335,7 @@ def behavior_run(tmp_path, example_config_path, monkeypatch):
     write_case(case, tmp_path / "case.json")
     turns = [
         {"turn": 0, "input": case.turns[0], "status": "PASS",
-         "at_ms": 1000, "outcome": "delivered"},
+         "at_ms": 1000, "outcome": "recorded"},
         {"turn": 1, "input": case.turns[1], "status": "PASS",
          "at_ms": 2000, "outcome": "delivered"},
     ]
@@ -349,6 +349,7 @@ def behavior_run(tmp_path, example_config_path, monkeypatch):
     (tmp_path / "run_budget.json").write_text(
         json.dumps(report["run_budget"]))
     for index, turn in enumerate(turns):
+        delivered = turn["outcome"] == "delivered"
         (tmp_path / f"turn-{index}.json").write_text(json.dumps({
             "turn": index, "unit": case.unit, "at_ms": turn["at_ms"],
             "declared_input": {"text": case.turns[index],
@@ -359,20 +360,39 @@ def behavior_run(tmp_path, example_config_path, monkeypatch):
             "trajectory": {
                 "turn": index, "session_id": None, "unit": case.unit,
                 "at_ms": turn["at_ms"],
-                "declared_input": {"text": case.turns[index]},
-                "model_calls": [{"model": "generated-subject",
+                "declared_input": {"text": case.turns[index],
+                                   "event_id": f"generated-{index}"},
+                "bound": {"event_id": f"generated-{index}",
+                          "stimulus_id": 5 + index,
+                          "wake_id": None, "session_id": None,
+                          "wake_outcome": None, "session_conflict": None,
+                          "attempt_traces": [f"t-attempt-{index}"],
+                          "window": {"events": 3,
+                                     "orders": [index * 10 + 1,
+                                                index * 10 + 3]}},
+                "model_calls": ([{"model": "generated-subject",
                                  "messages": [
                                      {"role": "system",
                                       "content": "generated instructions"},
                                      {"role": "user",
-                                      "content": case.turns[index]}]}],
+                                      "content": case.turns[index]}]}]
+                                if delivered else []),
                 "effects": {"status": "observed",
-                            "items": [{"kind": "delivery",
-                                       "ref": f"delivery:b:{index}"}],
+                            "items": ([{"kind": "delivery",
+                                       "ref": f"delivery:b:{index}"}]
+                                      if delivered else []),
                             "tools": []},
                 "settlement": {"status": "observed", "event": "done"},
-                "turn_outcome": {"status": "delivered",
-                                 "said": ["the venue is Cedar Hall"]},
+                "turn_outcome": (
+                    {"status": "delivered",
+                     "said": ["the venue is Cedar Hall"]}
+                    if delivered else
+                    {"status": "recorded",
+                     "decision": {"engage": False,
+                                  "reason": "untagged"}}),
+                **({"final_response": {"status": "observed",
+                                      "text": "the venue is Cedar Hall"}}
+                   if delivered else {}),
             }}))
     cfg = tmp_path / "config.toml"
     cfg.write_bytes(example_config_path.read_bytes())
@@ -444,7 +464,10 @@ async def test_rejudge_version2_judges_turn_artifacts_through_real_doors(
     assert frozen["expectations"][0]["verdict"] == "PASS"
 
 
-@pytest.mark.parametrize("damage", ["identity", "settlement", "antecedent"])
+@pytest.mark.parametrize("damage", [
+    "identity", "settlement", "antecedent", "foreign_bound",
+    "conflicting_session", "missing_decision", "declared_event",
+])
 async def test_rejudge_version2_torn_turn_artifact_spends_no_judge(
     tmp_path, behavior_run, monkeypatch, damage,
 ):
@@ -461,6 +484,32 @@ async def test_rejudge_version2_torn_turn_artifact_spends_no_judge(
         torn = tmp_path / "turn-1.json"
         frozen = json.loads(torn.read_text())
         frozen["trajectory"]["settlement"] = {"status": "gone"}
+        torn.write_text(json.dumps(frozen))
+    elif damage == "foreign_bound":
+        # Another occasion's binding claims this artifact.
+        torn = tmp_path / "turn-1.json"
+        frozen = json.loads(torn.read_text())
+        frozen["trajectory"]["bound"]["event_id"] = "generated-9"
+        torn.write_text(json.dumps(frozen))
+    elif damage == "conflicting_session":
+        # The frozen binding and the trajectory disagree on the session
+        # the turn's stimulus settled to — conflict, never "latest wins".
+        torn = tmp_path / "turn-1.json"
+        frozen = json.loads(torn.read_text())
+        frozen["trajectory"]["bound"]["session_id"] = 9
+        torn.write_text(json.dumps(frozen))
+    elif damage == "missing_decision":
+        # Settled evidence with no production decision or output cannot
+        # read as restraint — the middle is unconfirmed, never judged.
+        torn = tmp_path / "turn-1.json"
+        frozen = json.loads(torn.read_text())
+        frozen["trajectory"]["turn_outcome"] = {"status": "unconfirmed"}
+        torn.write_text(json.dumps(frozen))
+    elif damage == "declared_event":
+        # An input with no canonical admission identity is unbound.
+        torn = tmp_path / "turn-1.json"
+        frozen = json.loads(torn.read_text())
+        frozen["trajectory"]["declared_input"].pop("event_id")
         torn.write_text(json.dumps(frozen))
     else:  # antecedent: the earlier turn's evidence cannot stand
         earlier = tmp_path / "turn-0.json"
