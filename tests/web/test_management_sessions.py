@@ -65,11 +65,11 @@ async def test_retained_sessions_revalidate_live_facts(surface, failure, expecte
     client, store, registry = surface
     value = await sign_in(client)
     account = store.accounts["generated-binding"]
-    person = store.persons["generated-person"]
+    person = store.people["generated-person"]
     if failure == "account-revision":
         store.accounts[account.account_id] = replace(account, revision=account.revision + 1)
     elif failure == "person-revision":
-        store.persons[person.person_id] = replace(person, revision=person.revision + 1)
+        store.people[person.person_id] = replace(person, revision=person.revision + 1)
     elif failure == "revoked":
         store.accounts[account.account_id] = replace(account, state=AccountState.REVOKED)
     elif failure == "suspended":

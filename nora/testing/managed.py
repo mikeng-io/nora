@@ -83,7 +83,7 @@ class FakeBindingStore(BindingStore):
     def __init__(self) -> None:
         self._mutation_lock = asyncio.Lock()
         self.identity_holds: set[tuple[str, str]] = set()
-        self.persons: dict[str, ManagedPerson] = {}
+        self.people: dict[str, ManagedPerson] = {}
         self.accounts: dict[str, ManagedAccount] = {}
         self.owners: dict[Identifier, str] = {}  # identifier -> account_id
         self.memberships: dict[tuple[str, Scope], ManagedMembership] = {}
@@ -141,20 +141,20 @@ class FakeBindingStore(BindingStore):
     async def canonical_person(self, person_id: str) -> str | None:
         self._up()
         pid = self._canonical(person_id)
-        return pid if pid in self.persons else None
+        return pid if pid in self.people else None
 
     async def former_persons(self, person_id: str) -> tuple[str, ...]:
         self._up()
         canonical = self._canonical(person_id)
         return tuple(
             former for former, survivor in self.aliases.items()
-            if survivor == canonical and canonical in self.persons
+            if survivor == canonical and canonical in self.people
         )
 
     async def persons(self) -> tuple[ManagedPerson, ...]:
         self._up()
         return tuple(
-            p for p in sorted(self.persons.values(), key=lambda m: m.person_id)
+            p for p in sorted(self.people.values(), key=lambda m: m.person_id)
             if p.lifecycle is PersonLifecycle.ACTIVE
         )
 
@@ -183,12 +183,12 @@ class FakeBindingStore(BindingStore):
 
     async def person_lifecycle(self, person_id: str) -> PersonLifecycle | None:
         self._up()
-        person = self.persons.get(self._canonical(person_id))
+        person = self.people.get(self._canonical(person_id))
         return person.lifecycle if person else None
 
     async def person(self, person_id: str) -> ManagedPerson | None:
         self._up()
-        return self.persons.get(self._canonical(person_id))
+        return self.people.get(self._canonical(person_id))
 
     async def account_record(self, account_id: str) -> ManagedAccount | None:
         self._up()
@@ -210,7 +210,7 @@ class FakeBindingStore(BindingStore):
             raise ManagedError(
                 "account.person_id disagrees with the registering person"
             )
-        existing = self.persons.get(person.person_id)
+        existing = self.people.get(person.person_id)
         if existing is not None:
             person = existing  # idempotent: keep lifecycle/correlation
         current = self.accounts.get(account.account_id)
@@ -231,7 +231,7 @@ class FakeBindingStore(BindingStore):
                 raise IdentifierConflictError(
                     f"{ident} is owned by a different bound account"
                 )
-        self.persons.setdefault(person.person_id, person)
+        self.people.setdefault(person.person_id, person)
         for ident in account.identifiers:
             owner = self.owners.get(ident)
             held = self.accounts.get(owner or "")
@@ -253,7 +253,7 @@ class FakeBindingStore(BindingStore):
         if current is None:
             self.accounts[account.account_id] = account
         if membership is not None:
-            if membership.person_id not in self.persons:
+            if membership.person_id not in self.people:
                 return denied("membership names an absent person")
             self.memberships[(membership.person_id, membership.scope)] = membership
             self.supports.setdefault(
@@ -265,17 +265,17 @@ class FakeBindingStore(BindingStore):
         self, *, person_id: str, kratos_identity_id: str
     ) -> Outcome:
         self._up()
-        person = self.persons.get(person_id)
+        person = self.people.get(person_id)
         if person is None:
             return denied("absent")
         if person.kratos_identity_id is None:
-            for other in self.persons.values():
+            for other in self.people.values():
                 if (
                     other.kratos_identity_id == kratos_identity_id
                     and other.person_id != person_id
                 ):
                     return denied("kratos-id-claimed")
-            self.persons[person_id] = ManagedPerson(
+            self.people[person_id] = ManagedPerson(
                 person_id=person.person_id, lifecycle=person.lifecycle,
                 kratos_identity_id=kratos_identity_id,
                 display_name=person.display_name,
@@ -290,10 +290,10 @@ class FakeBindingStore(BindingStore):
         self, *, person_id: str, lifecycle: PersonLifecycle
     ) -> Outcome:
         self._up()
-        person = self.persons.get(person_id)
+        person = self.people.get(person_id)
         if person is None:
             return denied("absent")
-        self.persons[person_id] = ManagedPerson(
+        self.people[person_id] = ManagedPerson(
             person_id=person.person_id, lifecycle=lifecycle,
             kratos_identity_id=person.kratos_identity_id,
             display_name=person.display_name,
@@ -320,7 +320,7 @@ class FakeBindingStore(BindingStore):
         member: bool, source: str,
     ) -> Outcome:
         self._up()
-        if person_id not in self.persons:
+        if person_id not in self.people:
             return denied("absent")
         key = (person_id, scope)
         current = self.memberships.get(key)
@@ -340,7 +340,7 @@ class FakeBindingStore(BindingStore):
         self, *, person_id: str, scope: Scope, source: str
     ) -> Outcome:
         self._up()
-        if person_id not in self.persons:
+        if person_id not in self.people:
             return denied("absent")
         key = (person_id, scope)
         remaining = self.supports.get(key, set()) - {source}
@@ -381,13 +381,13 @@ class FakeBindingStore(BindingStore):
 
     async def consolidate(self, *, survivor: str, former: str) -> Outcome:
         self._up()
-        if survivor not in self.persons:
+        if survivor not in self.people:
             return denied("absent-survivor")
-        if former not in self.persons:
+        if former not in self.people:
             return complete() if self.aliases.get(former) == survivor else denied("absent-former")
         if (
-            self.persons[survivor].lifecycle is not PersonLifecycle.ACTIVE
-            or self.persons[former].lifecycle is not PersonLifecycle.ACTIVE
+            self.people[survivor].lifecycle is not PersonLifecycle.ACTIVE
+            or self.people[former].lifecycle is not PersonLifecycle.ACTIVE
         ):
             return denied("person-inactive")
         for account_id, account in self.accounts.items():
@@ -430,20 +430,20 @@ class FakeBindingStore(BindingStore):
             (survivor if p == former else p, op)
             for (p, op) in self.identity_holds
         }
-        del self.persons[former]
-        self.persons[survivor] = replace(
-            self.persons[survivor], revision=self.persons[survivor].revision + 1,
+        del self.people[former]
+        self.people[survivor] = replace(
+            self.people[survivor], revision=self.people[survivor].revision + 1,
         )
         return complete()
 
     async def add_alias(self, *, former_id: str, person_id: str) -> Outcome:
         self._up()
-        if former_id in self.persons:
+        if former_id in self.people:
             return denied("former id is a live person")
         existing = self.aliases.get(former_id)
         if existing is not None and existing != person_id:
             return denied("alias points elsewhere")
-        if person_id not in self.persons:
+        if person_id not in self.people:
             return denied("absent")
         self.aliases[former_id] = person_id
         return complete()

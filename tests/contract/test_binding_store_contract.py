@@ -78,6 +78,7 @@ class _Store(Protocol):
     async def release_identity_hold(self, **kw: Any) -> Any: ...
     async def register(self, **kw: Any) -> Any: ...
     async def person(self, person_id: str) -> Any: ...
+    async def persons(self) -> tuple[ManagedPerson, ...]: ...
     async def record_for(self, *, account: Identifier) -> Any: ...
     async def account_for(self, platform: str, kind: str, value: str) -> Any: ...
     async def resolve(self, platform: str, value: str) -> Any: ...
@@ -186,6 +187,27 @@ async def test_registration_commits_person_account_identifiers_and_membership(
     assert await store.resolve("signal", "85290000101") is not None
     members = await store.members_of(ROOM)
     assert [m.person_id for m in members] == [PERSON]
+
+
+async def test_person_directory_is_callable_active_and_preserves_the_canonical_name(store: _Store):
+    assert (await store.register(
+        person=replace(_person(), display_name="Generated canonical name"),
+        account=_account(ACCOUNT_1), membership=None,
+    )).status is OutcomeStatus.COMPLETE
+    assert (await store.register(
+        person=_person("generated-suspended"),
+        account=_account(
+            ACCOUNT_2, person_id="generated-suspended", identifiers=frozenset({ACCT_2})
+        ),
+        membership=None,
+    )).status is OutcomeStatus.COMPLETE
+    assert (await store.set_lifecycle(
+        person_id="generated-suspended", lifecycle=PersonLifecycle.SUSPENDED,
+    )).status is OutcomeStatus.COMPLETE
+    people = await store.persons()
+    assert [(person.person_id, person.display_name) for person in people] == [
+        (PERSON, "Generated canonical name")
+    ]
 
 
 async def test_replaying_the_same_registration_is_a_no_op(store: _Store):

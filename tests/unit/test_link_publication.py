@@ -385,7 +385,7 @@ async def test_concurrent_commits_on_one_request_publish_once():
     )
     assert all(o.status is OutcomeStatus.COMPLETE for o in outcomes)
     assert await store.canonical_person(PERSON_B) == PERSON_A
-    assert len(store.persons) == 1
+    assert len(store.people) == 1
 
 
 async def test_commit_of_an_unapproved_request_never_uses_live_state_to_skip_approval():

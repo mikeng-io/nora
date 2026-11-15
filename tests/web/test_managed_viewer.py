@@ -207,5 +207,5 @@ async def test_a_shared_location_circle_with_an_unknown_member_is_unavailable_no
     client, store, _, _, authentication = surface
     path = "/app/v1/presence?personId=ken"
     assert (await client.get(path, headers=proof(authentication, path))).status == 200
-    store.persons.pop("jo")
+    store.people.pop("jo")
     assert (await client.get(path, headers=proof(authentication, path))).status == 503

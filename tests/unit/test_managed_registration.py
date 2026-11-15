@@ -123,7 +123,7 @@ async def test_the_same_operation_id_replays_the_recorded_outcome():
     assert first.status is OutcomeStatus.COMPLETE
     assert second.status is OutcomeStatus.COMPLETE
     assert len(store.accounts) == 1
-    assert len(store.persons) == 1
+    assert len(store.people) == 1
 
 
 async def test_a_reused_operation_id_with_a_different_effect_conflicts():
@@ -134,7 +134,7 @@ async def test_a_reused_operation_id_with_a_different_effect_conflicts():
     assert outcome.detail == "operation-conflict"
     # And nothing was widened under the cover of a replay.
     assert len(store.accounts) == 1
-    assert len(store.persons) == 1
+    assert len(store.people) == 1
 
 
 async def test_registration_never_attaches_an_account_to_an_existing_person():
@@ -411,7 +411,7 @@ async def test_observation_of_an_unclaimed_account_creates_an_independent_person
     assert account is not None
     # Discovery never groups: the observed person is fresh and unrelated.
     assert account.person_id != PERSON
-    assert len(store.persons) == 1
+    assert len(store.people) == 1
 
 
 async def test_an_observed_account_is_not_observed_twice():
@@ -441,7 +441,7 @@ async def test_an_observed_account_is_not_observed_twice():
             )
         )
         assert outcome.status is OutcomeStatus.COMPLETE
-    assert len(store.persons) == 1
+    assert len(store.people) == 1
 
 
 async def test_a_down_store_is_unavailable_never_denied():

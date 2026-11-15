@@ -113,3 +113,13 @@ async def test_memory_store_outage_is_unavailable_and_recovery_restores_the_posi
     recovered = await read()
     assert recovered.status in {"ok", "partial"}
     assert {hit.node.key for hit in recovered.hits} == {("message", "generated-visible")}
+
+
+async def test_managed_alias_refresh_uses_the_callable_person_directory():
+    bindings, access = await _world()
+    assert (await bindings.add_alias(
+        former_id="generated-retired-person", person_id=PERSON
+    )).status is OutcomeStatus.COMPLETE
+    await access.refresh_aliases(ttl_seconds=0)
+    assert access.subject_id_for("generated-retired-person") == PERSON
+    assert access.former_ids_for(PERSON) == ("generated-retired-person",)

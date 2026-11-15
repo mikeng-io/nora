@@ -121,8 +121,8 @@ async def test_resolution_distinguishes_absence_refusal_and_failure(
             account, state=AccountState.REVOKED,
         )
     elif failure == "suspended":
-        person = services.bindings.persons["generated-person"]
-        services.bindings.persons[person.person_id] = replace(
+        person = services.bindings.people["generated-person"]
+        services.bindings.people[person.person_id] = replace(
             person, lifecycle=PersonLifecycle.SUSPENDED,
         )
     elif failure == "inactive":
