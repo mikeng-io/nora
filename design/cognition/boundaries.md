@@ -53,9 +53,9 @@ people's responses to her acts, never only her own earlier words.
 
 - Model-composed deliveries come only from the engagement loop, through the
   tag pipeline or the fire path, after the guards run against the current room
-  and roster. The one other route is a deterministic notification from a code
-  executor, through the same delivery guards ([acts](acts.md)). Every act passes
-  the act envelope.
+  and roster. The other admitted routes — deterministic notifications and
+  public publication, with its own ledger — are the ones in [acts](acts.md),
+  through the same common guards. Every act passes the act envelope.
 - Credential and doctrine leak protection always run.
 - Content checks — identifier and coordinate filters, place and person-name
   screens, the location audience subset and unknown-person checks — follow
