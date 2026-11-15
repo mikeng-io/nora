@@ -96,5 +96,12 @@
     "old": "        earlier_wakes += ((diff, trajectory) if judgeable\n                          else (None, {\"invalid\": cause}),)\n",
     "new": "",
     "target": "tests/unit/test_cognition_loop_rejudge.py::test_rejudging_preserves_the_reason_an_answer_cannot_pass"
+  },
+  {
+    "name": "an unrelated pre-dispatch cancellation keeps the turn unsettled",
+    "file": "scripts/cognition_loop/trajectory.py",
+    "old": "        if call.get(\"cancelled\") != \"Reply already sent — the turn is finished.\":\n",
+    "new": "        if not call.get(\"cancelled\"):\n",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_an_unrelated_pre_dispatch_cancellation_stays_unsettled"
   }
 ]
