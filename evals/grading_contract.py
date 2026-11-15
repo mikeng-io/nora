@@ -28,6 +28,7 @@ IMPLEMENTATION_FILES = tuple(
             "nora/subject/effects.py",
             "nora/subject/effect_capture.py",
             "nora/subject/raw_model.py",
+            "nora/subject/request_evidence.py",
             "nora/agent/run_budget_transport.py",
             "nora/subject/run_budget_transport.py",
             "nora/subject/replay_diagnosis.py",

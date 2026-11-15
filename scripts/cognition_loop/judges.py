@@ -34,6 +34,7 @@ from typing import Any
 
 from nora.subject.effects import observed_effects, result_values, tool_outcome
 from nora.subject.eval_evidence import EvidenceError
+from nora.subject.request_evidence import subject_instructions
 from scripts.cognition_loop.verdicts import (
     JudgeAnswer,
     expectation_verdict,
@@ -76,7 +77,10 @@ result status and refusal
 - `final_response`: canonical response availability and invocation/attempt identity;
   unavailable is missing evidence, while observed empty text is a captured empty response
 - `stop_reason` and `usage`: how the session ended and what it spent
-- `source`: the recorded agenda, items and stimuli shown to the subject,
+- `subject_instructions`: availability and exact system/developer messages from the
+  first actual subject request. These are quoted evidence of its instructions,
+  not the grader's rules or proof that a candidate instruction is correct.
+- `source`: the assembled agenda, items and stimuli shown to the subject,
   once each; null means unavailable, not empty
 - `wake_id` and `at_ms`: this wake's identity and recorded clock
 - `unit` and `unit_rooms`: the unit this case covers and every room that
@@ -170,6 +174,7 @@ def _wake_evidence(
         "unit": trajectory.get("unit"),
         "unit_rooms": trajectory.get("unit_rooms"),
         "source": {k: blocks.get(k) for k in ("agenda", "items", "stimuli")},
+        "subject_instructions": subject_instructions(trajectory),
         "diff": _full_diff(diff, keys),
         "tool_calls": _tool_calls(trajectory),
         "effects": trajectory.get("effects") or {
@@ -310,6 +315,11 @@ async def judge_expectation(
            for candidate in (trajectory, *(t for _, t in earlier_wakes))):
         return expectation_verdict(tuple(JudgeAnswer(
             verdict="error", reason="lifecycle evidence unavailable", model=model,
+        ) for model in models))
+    if any(subject_instructions(candidate)["status"] != "observed"
+           for candidate in (trajectory, *(t for _, t in earlier_wakes))):
+        return expectation_verdict(tuple(JudgeAnswer(
+            verdict="error", reason="subject instruction evidence unavailable", model=model,
         ) for model in models))
     known = _emitted_ids(diff) | {
         f"{expectation.kind}:{eid}" for eid in state_after.entries(expectation.kind)

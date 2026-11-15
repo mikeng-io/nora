@@ -24,6 +24,7 @@ from scripts.cognition_loop.state import (
     UnitState,
 )
 from scripts.cognition_loop.trajectory import terminal_response
+from tests.integration.subject.evidence_fixtures import judge_trajectory
 
 
 def _expectation() -> Expectation:
@@ -60,6 +61,7 @@ def _trajectory() -> dict[str, Any]:
     return {
         "model_calls": [
             {"messages": [
+                {"role": "system", "content": "Generated actual system rule"},
                 {"role": "user", "content": [{"text": context}]},
                 {"role": "assistant", "content": [{"text": "reasoning"}]},
             ]}
@@ -277,8 +279,8 @@ async def test_a_judge_can_cite_an_emitted_prior_change_but_not_an_unshown_entry
         Entry("created", "old", after={"body": "generated"}),), unchanged=(
         Entry("unchanged", "unshown", after={"body": "not emitted"}),))})
     args = (_expectation(), StateDiff(kinds={}), UnitState(kinds={}),
-            {"effects": {"status": "observed", "items": [], "tools": []}},
-            ((prior, {"effects": {"status": "observed", "items": [], "tools": []}}),))
+            judge_trajectory(),
+            ((prior, judge_trajectory()),))
     good = await judge_expectation(Judges("note:old"), ("a", "b"), *args)
     assert good.verdict == "PASS"
     bad = await judge_expectation(Judges("note:unshown"), ("a", "b"), *args)
@@ -313,7 +315,7 @@ async def test_a_judge_cites_only_the_ids_the_digest_shows():
     state = UnitState(kinds={"note": {"n-1": {}, "n-old": {"body": "kept"}},
                              "memo": {"m-x": {"body": "counted only"}}})
     args = (_expectation(), diff, state,
-            {"effects": {"status": "observed", "items": [], "tools": []}}, ())
+            judge_trajectory(), ())
     created = await judge_expectation(Judges("note:n-1"), ("a", "b"), *args)
     assert created.verdict == "PASS"
     via_state = await judge_expectation(Judges("note:n-old"), ("a", "b"), *args)
@@ -444,7 +446,7 @@ async def test_a_citation_still_names_a_state_after_entry_under_defaults():
     state = UnitState(kinds={"note": entries})
     verdict = await judge_expectation(
         Judges(), ("a", "b"), _expectation(), StateDiff(kinds={}), state,
-        {"effects": {"status": "observed", "items": [], "tools": []}}, ())
+        judge_trajectory(), ())
     assert verdict.verdict == "PASS"
 
 
@@ -462,7 +464,7 @@ async def test_missing_lifecycle_evidence_stops_before_either_judge_call(missing
             return json.dumps({"verdict": "met", "reason": "Generated absence control",
                                "entry_ids": []})
 
-    observed = {"effects": {"status": "observed", "items": [], "tools": []}}
+    observed = judge_trajectory()
     judges = Judges()
     expectation = _expectation()
     diff, state = StateDiff(kinds={}), UnitState(kinds={})
@@ -478,3 +480,30 @@ async def test_missing_lifecycle_evidence_stops_before_either_judge_call(missing
     assert bad.verdict == "ERROR"
     assert {answer.reason for answer in bad.answers} == {"lifecycle evidence unavailable"}
     assert judges.calls == []
+
+
+def test_instruction_evidence_uses_the_first_actual_request_without_assembly_fallback():
+    trajectory = _trajectory()
+    trajectory["blocks"] = {"system": "Untransmitted assembled rule"}
+    messages = [{"role": "system", "content": "Actual transmitted rule, punctuation retained."},
+                {"role": "developer", "content": [{"type": "text", "text": "Actual second role"}]},
+                {"role": "user", "content": "Generated source"}]
+    trajectory["model_calls"] = [{"messages": messages}, {
+        "messages": [{"role": "system", "content": "Later completion rule"}]}]
+    payload = judge_payload(_expectation(), _diff(), _state(), trajectory)
+    assert payload["subject_instructions"] == {"status": "observed", "messages": messages[:2]}
+    import html
+
+    from scripts.cognition_loop.html import _read
+
+    rendered = _read({"trajectory": trajectory})
+    assert html.escape(json.dumps(payload["subject_instructions"], indent=2,
+                                  ensure_ascii=False)) in rendered
+    for missing in (None, [], [{"messages": None}]):
+        trajectory["model_calls"] = missing
+        receipt = judge_payload(
+            _expectation(), _diff(), _state(), trajectory)["subject_instructions"]
+        assert receipt["status"] == "unavailable" and receipt["messages"] is None
+    trajectory["model_calls"] = [{"messages": [{"role": "user", "content": "Generated"}]}]
+    assert judge_payload(_expectation(), _diff(), _state(), trajectory)["subject_instructions"] == {
+        "status": "unavailable", "cause": "subject_instructions_not_captured", "messages": None}

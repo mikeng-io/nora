@@ -19,6 +19,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from nora.subject.effects import tool_outcome
+from nora.subject.request_evidence import subject_instructions
 
 HKT = ZoneInfo("Asia/Hong_Kong")
 
@@ -218,9 +219,10 @@ def _arrived(wake: dict[str, Any]) -> str:
 def _read(wake: dict[str, Any]) -> str:
     trajectory = wake.get("trajectory") or {}
     blocks = trajectory.get("blocks") or {}
-    return ("<h4>b. What Nora read</h4>" + "".join(
-        _block(name, blocks.get(name))
-        for name in ("system", "instructions", "agenda", "items", "stimuli")))
+    return ("<h4>b. What Nora read</h4>" + _block(
+        "transmitted subject instructions", subject_instructions(trajectory))
+        + "".join(_block(name, blocks.get(name))
+                  for name in ("system", "instructions", "agenda", "items", "stimuli")))
 
 
 def _did(wake: dict[str, Any]) -> str:

@@ -129,7 +129,9 @@ async def check_consumers(result):
 
     judges = Judges()
     expectation = Expectation(0, "must", "note", "Generated note was created and retired.")
-    trajectory = {"effects": result}
+    from tests.integration.subject.evidence_fixtures import judge_trajectory
+
+    trajectory = judge_trajectory(effects=result)
     args = (judges, ("a", "b"), expectation, StateDiff(kinds={}), UnitState(kinds={}), trajectory)
     verdict = await judge_expectation(*args)
     assert verdict.verdict == "PASS" and len(judges.calls) == 2

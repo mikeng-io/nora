@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import html
 import json
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -184,6 +186,13 @@ async def test_real_recorded_wake_settles_and_both_judges_receive_terminal_evide
     for request in requests[-2:]:
         assert "Generated terminal response." in json.dumps(request)
         assert "cognition_wake_outcome" in json.dumps(request)
+        content = request["messages"][-1]["content"]
+        text = content if isinstance(content, str) else "".join(p["text"] for p in content)
+        block = re.search(r"<cited_sources\b[^>]*>\n(.*?)\n</cited_sources>", text, re.DOTALL)
+        assert block is not None
+        payload = json.loads(html.unescape(block.group(1)))
+        assert payload["subject_instructions"] == {"status": "observed", "messages": [
+            message for message in requests[0]["messages"] if message["role"] == "system"]}
     assert len(result["expectations"]) == 1
     assert len(result["expectations"][0]["answers"]) == 2
     assert not environment.active

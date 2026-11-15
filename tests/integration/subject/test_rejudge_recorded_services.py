@@ -17,6 +17,7 @@ from nora.subject.eval_evidence import read_events
 from scripts.cognition_loop import rejudge as module
 from scripts.cognition_loop.accounting import manifest
 from scripts.cognition_loop.cases import Expectation, generated_case, write_case
+from tests.integration.subject.evidence_fixtures import judge_trajectory
 
 MODELS = ("generated-a", "generated-b")
 
@@ -44,8 +45,8 @@ def frozen_run(tmp_path, example_config_path, monkeypatch):
         (tmp_path / f"wake-{i}-{ident}.json").write_text(json.dumps({
             "diff": {"note": {"created": [{"status": "created", "entry_id": "n1", "after": {
                 "text": f"Generated note {i}"}}]}},
-            "trajectory": {"unit_rooms": [["signal", "generated-room"]], "blocks": {
-                "agenda": f"Generated source {i}"}}}))
+            "trajectory": judge_trajectory(unit_rooms=[["signal", "generated-room"]], blocks={
+                "agenda": f"Generated source {i}"})}))
     cfg = tmp_path / "config.toml"
     cfg.write_bytes(example_config_path.read_bytes())
     loaded = module.load(cfg, require_secrets=False)
