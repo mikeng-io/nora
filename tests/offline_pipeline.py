@@ -210,10 +210,10 @@ def build_offline_pipeline(
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
         background.spawn(coro)
 
+    access = IdentityAccess.for_files(persons=persons, policy=permissive_policy())
     ingest = IngestPipeline(
-        audit=audit, memory=memory,
+        audit=audit, memory=memory, access=access,
         policy=policy, allowlist=permissive_policy(), metrics=metrics, spawn=_spawn,
-        access=IdentityAccess.for_files(persons=persons, policy=permissive_policy()),
     )
 
     tier = cfg.llm
@@ -235,8 +235,7 @@ def build_offline_pipeline(
     # participation trigger below must hold the SAME instance — two slot maps
     # would be two locks and no serialisation at all.
     slots = ConversationSlots(
-        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
-    )
+        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn)
     engagement = EngagementPipeline(
         # Keyed by the platform each adapter declares itself to be: the
         # replayed platform's adapter plus any `extra_adapters`.
@@ -250,8 +249,7 @@ def build_offline_pipeline(
         # (`ToolRegistry()` above takes no `mcp_tools`), so the allowlist this
         # resolves to is never disclosed to anything real. A caller that wants
         # to exercise MCP scoping supplies its own `EngagementPipeline`.
-        policy=permissive_policy(),
-        access=IdentityAccess.for_files(persons=persons, policy=permissive_policy()),
+        policy=permissive_policy(), access=access,
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         ai_peer=cfg.honcho.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,

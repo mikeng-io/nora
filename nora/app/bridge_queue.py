@@ -26,7 +26,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -35,6 +34,15 @@ import redis.asyncio as aioredis
 import sqlalchemy as sa
 from opentelemetry.trace import Link
 
+from nora.access import IdentityAccess
+from nora.app.bridge_payloads import (
+    _decision_dict,
+    _link,
+    _now_ms,
+    _payload_trace,
+    _person_dict,
+    _queue_wait_ms,
+)
 from nora.domain.actions import ActionOwner
 from nora.domain.observations import SourceScope
 from nora.domain.ports import EngageDecision, EngagementRequest
@@ -64,12 +72,9 @@ SILENT_OUTCOMES = frozenset({
     "scope_refused", "edit_orphaned", "edit_absorbed", "reaction_recorded",
     "delete_recorded", "sender_not_allowed", "recorded",
 })
+# `sender_unavailable`: the authority could not answer — a transient outage, so retry.
 FAILURE_OUTCOMES = frozenset({
-    "audit_refused", "extraction_refused",
-    # The authority could not answer (`Verdict.UNAVAILABLE`) — a transient
-    # backend outage, not a silence. Retrying is the honest outcome.
-    "sender_unavailable",
-})
+    "audit_refused", "extraction_refused", "sender_unavailable"})
 
 
 class _LeaseLostError(Exception):
@@ -106,62 +111,6 @@ _LANES: tuple[tuple[frozenset[str], int], ...] = (
     (_COMPREHEND_KINDS, 2),
     (_SPEAK_KINDS, 2),
 )
-
-
-def _now_ms() -> int:
-    return int(time.time() * 1000)
-
-
-def _person_dict(person: Any) -> dict[str, Any] | None:
-    """The handoff shape for a resolved sender — the field set a `PersonRef`
-    is rebuilt from on the far side of a work row or an event snapshot."""
-    if person is None:
-        return None
-    return {"person_id": person.person_id, "name": person.name,
-            "honcho_peer_id": person.honcho_peer_id,
-            "first_name": person.first_name, "last_name": person.last_name,
-            "aliases": list(person.aliases)}
-
-
-def _decision_dict(decision: Any) -> dict[str, Any] | None:
-    """The admitted-facts shape for an `EngageDecision` — what a turn
-    payload and the ingest handoff snapshot both persist."""
-    if decision is None:
-        return None
-    return {"engage": decision.engage, "reason": decision.reason,
-            "rationale": decision.rationale,
-            "confidence": decision.confidence,
-            "threshold": decision.threshold,
-            "allow_episode": decision.allow_episode,
-            "relevance_gate": decision.relevance_gate}
-
-
-def _payload_trace(payload: dict[str, Any]) -> dict[str, Any]:
-    """The producer's W3C carrier, wherever this work kind carries it —
-    `envelope.trace` for ingest, propagated `trace` for the kinds ingest
-    enqueued downstream."""
-    env = payload.get("envelope")
-    trace = env.get("trace") if isinstance(env, dict) else payload.get("trace")
-    return dict(trace) if isinstance(trace, dict) else {}
-
-
-def _queue_wait_ms(payload: dict[str, Any]) -> int | None:
-    """Enqueue→claim latency in ms: the envelope's `queued_ms` for ingest,
-    the `enqueued_ms` ingest stamps on downstream obligations for the rest.
-    A missing stamp is absent data (None), never a fabricated zero."""
-    env = payload.get("envelope")
-    ref: Any = None
-    if isinstance(env, dict):
-        ref = env.get("queued_ms")
-    if ref is None:
-        ref = payload.get("enqueued_ms")
-    if ref is None:
-        return None
-    return max(0, _now_ms() - int(ref))
-
-
-def _link(ctx: Any) -> list[Link]:
-    return [Link(ctx)] if ctx is not None else []
 
 
 class DbSpeakingLocks:
@@ -474,8 +423,9 @@ class WorkRunner:
         # an obligation enqueued under a policy that has since moved must fail
         # closed, never run under the snapshot's stale permission alone.
         self._allowlist = allowlist        # Policy | None
-        self._persons = persons            # Persons | None
-        self._access = access              # IdentityAccess | None (managed mode)
+        self._access = access or (         # IdentityAccess: managed live, file facade
+            IdentityAccess.for_files(persons, allowlist)
+            if persons is not None else None)
         self._fire_speak = fire_speak      # FirePath.speak bound method | None
         self._participation_state = participation_state  # cursor store | None
         # The typed platform-observation Record (`ObservationStore`): where
@@ -1338,14 +1288,8 @@ class WorkRunner:
             conversation_id=work.conversation_id, target=obs.target,
             target_author_id=obs.target_author_id)
         actor_pid = None
-        if obs.actor_id and obs.actor_status == "known":
-            if self._access is not None:
-                ref = await self._access.resolve_ref(
-                    work.platform, obs.actor_id)
-            elif self._persons:
-                ref = self._persons.resolve(work.platform, obs.actor_id)
-            else:
-                ref = None
+        if obs.actor_id and obs.actor_status == "known" and self._access is not None:
+            ref = await self._access.resolve_ref(work.platform, obs.actor_id)
             actor_pid = ref.person_id if ref is not None else None
         at_ms = obs.occurred_ms if obs.occurred_ms is not None else obs.received_ms
         enqueued_ms = _now_ms()
@@ -1544,13 +1488,9 @@ class WorkRunner:
         if room is None:
             await self._finish(work, "intentional_skip", {"reason": refuse})
             return
-        if self._access is not None:
-            current = await self._access.resolve_ref(
-                work.platform, work.payload["message"].get("sender_id", ""))
-        else:
-            current = (self._persons.resolve(
-                work.platform, work.payload["message"].get("sender_id", ""))
-                       if self._persons is not None else None)
+        current = (await self._access.resolve_ref(
+            work.platform, work.payload["message"].get("sender_id", ""))
+            if self._access is not None else None)
         if (current is None or current.person_id != person.person_id
                 or current.honcho_peer_id != person.honcho_peer_id):
             await self._finish(work, "intentional_skip",

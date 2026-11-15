@@ -99,9 +99,7 @@ class SignalAdapter:
         raw_event: dict,
         on_message: Callable[[NormalizedMessage], Awaitable[None]],
     ) -> None:
-        """One raw daemon event: private link consent first (the room
-        parser drops the envelope as a non-room DM), then ordinary
-        parse-and-drop room traffic."""
+        """Private link consent first, then ordinary parse-and-drop room traffic."""
         if self._on_consent is not None and await self._on_consent(raw_event):
             return
         message = parse_event(raw_event, self._account)

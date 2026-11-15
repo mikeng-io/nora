@@ -45,6 +45,7 @@ from nora.app.composition_agent import (
     mcp,
 )
 from nora.app.composition_bridge import runtime
+from nora.app.composition_computer import build_computer
 from nora.app.composition_documents import service
 from nora.app.composition_dreamer import cognition_inits, enabled, guidance, preamble, wake
 from nora.app.composition_fire import (
@@ -79,10 +80,9 @@ from nora.app.composition_stores import (
     build_language_scopes,
     build_language_store,
     build_otp,
-    database,
     identity,
+    identity_backend,
     instructions,
-    managed_identity,
     obs_stores,
     observation,
     readers,
@@ -205,9 +205,8 @@ class Dependencies:
     memory: MemoryStore
     persons: Persons
     config_reload: ReloadFiles
-    # The selected backend's services (issue #528): `file` reads the TOML
-    # pair and refuses managed mutators; `managed` is PG bindings + Keto
-    # authority + Kratos records, probed live — never a file fallback.
+    # The selected backend's services (issue #528) — `file` reads the TOML
+    # pair and refuses managed mutators; `managed` is PG+Keto+Kratos, probed live.
     managed_services: Any
     managed_session: Any  # the managed backend's owned Ory session, closed at shutdown
     # The ONE media join, so `__main__` can hand the same
@@ -528,24 +527,13 @@ async def build_dependencies(
     allowlist = _stores_identity.allowlist
     persons = _stores_identity.persons
     reload_files: ReloadFiles = _stores_identity.reload_files
-    # `access` cannot exist before `engine`; the sync `persons_view()` shape is
-    # derived from the same boot-time backend selection `managed_identity` uses.
-    from nora.access import EMPTY_PERSONS
-    _stores_database = database(
-        allowlist=allowlist, cfg=cfg, metrics=metrics,
-        persons=persons if cfg.identity.backend == "file" else EMPTY_PERSONS,
-    )
+    _stores_backend = await identity_backend(
+        allowlist=allowlist, cfg=cfg, metrics=metrics, persons=persons)
+    _stores_database = _stores_backend.database
     engine = _stores_database.engine
-    _stores_managed = await managed_identity(cfg, persons, allowlist, engine)
-    # The selected backend's identity+access reads (`nora.access`): every
-    # consumer asks THIS for who a sender is and what they may do — file
-    # people/grants are never consulted as a managed fallback.
-    access = _stores_managed.services.access
-    persons_view = access.persons_view()
-    # Warm the alias snapshot the sync `former_ids`/`subject_id_for`
-    # consumers read; afterwards every `permitted`/`person_refs` refreshes
-    # it on a TTL. A managed outage fails startup here, not a stale grant.
-    await access.refresh_aliases(ttl_seconds=0)
+    _stores_managed = _stores_backend.managed
+    access = _stores_backend.access
+    persons_view = _stores_backend.persons_view
     _stores_audit = build_audit(cfg=cfg, engine=engine, metrics=metrics)
     audit = _stores_audit.audit
     _location_stores = _location_wire.stores(engine=engine)
@@ -555,61 +543,28 @@ async def build_dependencies(
     _stores_runtime_stores = runtime_stores(engine=engine)
     compute_jobs = _stores_runtime_stores.compute_jobs
     tool_call_log_store = _stores_runtime_stores.tool_call_log_store
-    _computer_stores = _computer_wire.stores(cfg=cfg, engine=engine, metrics=metrics)
-    computer = _computer_stores.computer
-    computer_events = _computer_stores.computer_events
-    computer_leases = _computer_stores.computer_leases
-    computer_metrics = _computer_stores.computer_metrics
-    computer_probe = _computer_stores.computer_probe
-    computer_sessions = _computer_stores.computer_sessions
-    computer_token = _computer_stores.computer_token
-    _computer_queue = _computer_wire.queue()
-    browser_manager = _computer_queue.browser_manager
-    browser_tabs = _computer_queue.browser_tabs
-    computer_admission = _computer_queue.computer_admission
-    computer_dm_scope_for = _computer_queue.computer_dm_scope_for
-    computer_queue_runner = _computer_queue.computer_queue_runner
-    computer_scope_for = _computer_queue.computer_scope_for
-    computer_task_backend = _computer_queue.computer_task_backend
-    computer_tasks = _computer_queue.computer_tasks
     # Forward declarations: the thunks below resolve these at use time.
     background: BackgroundTasks
     computer_context: Any
     fire_path: FirePath | None
-    _computer_scoped = await _computer_wire.scoped(
-        allowlist=allowlist, background=lambda: background, browser_tabs=browser_tabs,
-        cfg=cfg, clock=clock,
-        compute_jobs=compute_jobs, computer=computer,
-        computer_admission=computer_admission,
-        computer_context=lambda: computer_context, computer_dm_scope_for=computer_dm_scope_for,
-        computer_events=computer_events, computer_metrics=computer_metrics,
-        computer_probe=computer_probe, computer_tasks=computer_tasks,
-        computer_token=computer_token,
-        engine=engine, metrics=metrics,
-        op_clock=op_clock,
+    _computer = await build_computer(
+        allowlist=allowlist, background=lambda: background, cfg=cfg,
+        clock=clock, compute_jobs=compute_jobs,
+        computer_context=lambda: computer_context, engine=engine,
+        metrics=metrics, op_clock=op_clock,
     )
-    browser_manager = _computer_scoped.browser_manager
-    browser_tabs = _computer_scoped.browser_tabs
-    computer = _computer_scoped.computer
-    computer_admission = _computer_scoped.computer_admission
-    computer_dm_scope_for = _computer_scoped.computer_dm_scope_for
-    computer_probe = _computer_scoped.computer_probe
-    computer_queue_runner = _computer_scoped.computer_queue_runner
-    computer_scope_for = _computer_scoped.computer_scope_for
-    computer_task_backend = _computer_scoped.computer_task_backend
-    computer_tasks = _computer_scoped.computer_tasks
-    _computer_context = _computer_wire.context(
-        allowlist=allowlist,
-        browser_tabs=browser_tabs,
-        cfg=cfg,
-        computer=computer,
-        computer_events=computer_events,
-        computer_scope_for=computer_scope_for,
-        computer_sessions=computer_sessions,
-        computer_tasks=computer_tasks,
-        metrics=metrics,
-    )
-    computer_context = _computer_context.computer_context
+    browser_manager = _computer.browser_manager
+    computer = _computer.computer
+    computer_admission = _computer.computer_admission
+    computer_context = _computer.computer_context
+    computer_dm_scope_for = _computer.computer_dm_scope_for
+    computer_events = _computer.computer_events
+    computer_leases = _computer.computer_leases
+    computer_probe = _computer.computer_probe
+    computer_queue_runner = _computer.computer_queue_runner
+    computer_scope_for = _computer.computer_scope_for
+    computer_sessions = _computer.computer_sessions
+    computer_task_backend = _computer.computer_task_backend
     _stores_obs_stores = obs_stores(engine=engine)
     reasoning_strip_store = _stores_obs_stores.reasoning_strip_store
     tag_trace_store = _stores_obs_stores.tag_trace_store
@@ -1318,10 +1273,8 @@ async def build_dependencies(
         model_client_for=model_client_for,
         note_store=note_store,
         observation_store=observation_store,
-        # The dream/cognition surface's Persons reads are sync and
-        # descriptive (names, former-id folding, room `persons` lists): the
-        # selected backend's view, absent under managed — never a stale
-        # file answer where the schema carries nothing.
+        # The dream surface's sync Persons reads get the selected backend's
+        # view — absent under managed, never a stale file answer.
         persons=persons_view,
         presence_circles=presence_circles,
         presence_reader=presence_reader,

@@ -177,7 +177,7 @@ class Room:
         platform: str,
         conversation_id: str,
         roster_source: RosterSource | None,
-        persons: Persons,
+        persons: Persons | None = None,
         access: Any = None,
         tagger: PersonRef | None = None,
         self_ids: frozenset[str] = frozenset(),
@@ -188,8 +188,9 @@ class Room:
         self._platform = platform
         self._conversation_id = conversation_id
         self._roster_source = roster_source
-        self._persons = persons
         self._access = access
+        self._persons = (persons if persons is not None
+                         else access.persons_view())
         self._tagger = tagger
         self._self_ids = frozenset(self_ids)
         self._tagger_card_injected = tagger_card_injected

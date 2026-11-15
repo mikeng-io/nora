@@ -63,8 +63,7 @@ if TYPE_CHECKING:
 
 
 def _ref(person: ManagedPerson) -> PersonRef:
-    """The name view of a managed person — aliases are descriptive profile
-    the managed schema does not carry, so the ref stays minimal."""
+    """The name view of a managed person (aliases are file-only data)."""
     return PersonRef(
         person_id=person.person_id,
         name=person.display_name or person.person_id,
@@ -166,11 +165,9 @@ class IdentityAccess:
         self._topology = cast(TopologySource, topology)
         self._persons = file_persons
         self._policy = file_policy
-        # Snapshot of the managed alias table for the SYNC consumers
-        # (`former_ids_for`, `subject_id_for`) whose callables cannot await.
-        # Refreshed by `refresh_aliases`, which every async read below
-        # piggybacks on a TTL — an empty map is an honest absence, and the
-        # file backend never uses it (it reads the live `Persons`).
+        # Alias snapshot for the SYNC consumers (`former_ids_for`,
+        # `subject_id_for`); `refresh_aliases` reloads on a TTL — file mode
+        # reads live `Persons`, and empty is an honest absence.
         self._alias_map: dict[str, tuple[str, ...]] = {}
         self._alias_canonical: dict[str, str] = {}
         self._alias_ts = 0.0

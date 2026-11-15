@@ -79,14 +79,15 @@ class MentionRenderer:
     """
 
     def __init__(
-        self, *, persons: Persons, display_name: str,
+        self, *, persons: Persons | None = None, display_name: str,
         self_ids: frozenset[str], metrics: Any,
         access: Any = None,
         content_checks: bool = True,
     ) -> None:
         self._content_checks = content_checks
-        self._persons = persons
         self._access = access
+        self._persons = (persons if persons is not None
+                         else access.persons_view())
         self._display_name = display_name
         self._self_ids = frozenset(self_ids)
         self._metrics = metrics

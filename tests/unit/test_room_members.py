@@ -82,9 +82,7 @@ def _msg(conversation_id: str) -> NormalizedMessage:
 async def test_the_tag_path_and_the_fire_path_give_the_same_members(tmp_path):
     persons, policy = _load(tmp_path)
     access = IdentityAccess.for_files(persons=persons, policy=policy)
-    holder = SimpleNamespace(
-        _policy=policy, _persons=persons, _access=None, _file_access=None,
-        _access_or_files=lambda: access)
+    holder = SimpleNamespace(_policy=policy, _persons=persons, _access=access)
     tag = await TranscriptInjection._room_members(holder, _msg("g1"))  # type: ignore[arg-type]
     fire = await FirePath._room_members(  # type: ignore[arg-type]
         holder, SimpleNamespace(platform="signal", conversation_id="g1"),
@@ -93,7 +91,7 @@ async def test_the_tag_path_and_the_fire_path_give_the_same_members(tmp_path):
     # A room outside the policy, or no policy wired: nothing.
     assert await TranscriptInjection._room_members(holder, _msg("elsewhere")) == ()  # type: ignore[arg-type]
     assert await TranscriptInjection._room_members(  # type: ignore[arg-type]
-        SimpleNamespace(_policy=None, _persons=persons, _access=None, _file_access=None),
+        SimpleNamespace(_policy=None, _persons=persons, _access=access),
         _msg("g1"),
     ) == ()
 
