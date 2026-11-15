@@ -20,9 +20,9 @@ from nora.infra.sql.schema import COGNITION_WAKE_OUTCOME
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
-from nora.testing.causal_protocol import completion
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.subject.sandbox import eval_host_lock
+from nora.testing.causal_protocol import completion
 from scripts.cognition_loop.accounting import manifest, write_report
 from scripts.cognition_loop.cases import Case, Expectation
 from scripts.cognition_loop.run import _run_wake

@@ -194,6 +194,9 @@ def _census_reconcile(census: dict[str, Any], *, scope: Any,
 
 
 __all__ = [
-    "_expectations", "_plan_error", "_bind_declared_wakes",
-    "_wake_census", "_census_reconcile",
+    "_bind_declared_wakes",
+    "_census_reconcile",
+    "_expectations",
+    "_plan_error",
+    "_wake_census",
 ]

@@ -155,7 +155,8 @@ async def nested_or_reused(nested):
         model.update_config(stream=False)
         def agent(tools):
             return factory.create_browse_agent(model=model, system_prompt="Generated task",
-                tools=tools, trace_attributes={}, retry=factory.build_retry_policy(timeout_seconds=5))
+                                               tools=tools, trace_attributes={},
+                                               retry=factory.build_retry_policy(timeout_seconds=5))
         child = agent([])
         @tool
         async def run_child() -> str:

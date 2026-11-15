@@ -27,11 +27,11 @@ from nora.platform.bridge.service import action_http_status, action_response
 from nora.subject.effects import effect_boundary, effect_scope, prepare_effect_reads, read_effects
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import read_events
-from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
-from nora.testing.signal_daemon import FakeSignalDaemon
 from nora.subject.journey import envelope, settled_event
+from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 from nora.testing.causal_protocol import CORRECTION, INITIAL, TITLE, CausalProtocol
 from nora.testing.journey_world import action_service, memory_service
+from nora.testing.signal_daemon import FakeSignalDaemon
 from tests.integration.subject.test_causal_runtime_journey import (
     runtime_evidence as runtime_evidence,
 )

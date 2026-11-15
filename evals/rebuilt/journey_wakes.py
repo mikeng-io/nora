@@ -227,6 +227,12 @@ async def _await_wake(driver: Any, *, engine: Any, scope: Any,
 
 
 __all__ = [
-    "_batch", "_freeze_wake", "_wake_error", "_judge", "_evidence_causes",
-    "_finalize", "_offered", "_await_wake",
+    "_await_wake",
+    "_batch",
+    "_evidence_causes",
+    "_finalize",
+    "_freeze_wake",
+    "_judge",
+    "_offered",
+    "_wake_error",
 ]
