@@ -102,6 +102,56 @@ def frozen_wake_identity(frozen: dict[str, Any], *, unit: Any,
     return None
 
 
+def frozen_turn_identity(frozen: dict[str, Any], *, unit: Any, turn: Any,
+                         declared_input: Any, step: Any = None) -> str | None:
+    """Why a frozen artifact cannot stand in for this case/unit/turn, else
+    None. The artifact proves it belongs by content: its own turn index,
+    unit and declared input text under typed identity, its error step
+    equal to the row's, and its trajectory's explicit `session_id: None`
+    — a turn binds no session, and an absent key never stands in for one.
+    """
+    if not isinstance(frozen, dict):
+        return "frozen turn is not an object"
+    missing: list[str] = []
+    foreign: list[str] = []
+
+    def required(actual: Any, expected: Any, label: str) -> None:
+        if actual is None or expected is None:
+            missing.append(label)
+        elif not _same(actual, expected):
+            foreign.append(label)
+
+    required(frozen.get("turn"), turn, "turn")
+    required(frozen.get("unit"), unit, "unit")
+    declared = frozen.get("declared_input")
+    required(declared.get("text") if isinstance(declared, dict) else None,
+             declared_input, "declared_input")
+    error = frozen.get("error")
+    raw_step = error.get("step") if isinstance(error, dict) else None
+    if ((error is not None and not isinstance(error, dict))
+            or (raw_step is not None and not isinstance(raw_step, str))
+            or raw_step != step):
+        foreign.append("step")
+    trajectory = frozen.get("trajectory")
+    if isinstance(trajectory, dict):
+        if "session_id" not in trajectory:
+            missing.append("session")
+        elif trajectory["session_id"] is not None:
+            foreign.append("session")
+        trajectory_unit = trajectory.get("unit")
+        if (trajectory_unit is not None and (unit is None
+                or not isinstance(trajectory_unit, str)
+                or trajectory_unit != unit)):
+            foreign.append("trajectory.unit")
+    elif step is None:
+        missing.append("trajectory")
+    if foreign:
+        return "frozen turn identity mismatch: " + ", ".join(foreign)
+    if missing:
+        return "frozen turn identity unknown: " + ", ".join(missing)
+    return None
+
+
 def reconcile(report: dict[str, Any], output: Path, *, judgments: bool = True) -> dict[str, Any]:
     """Count against the original manifest, including interrupted and missing work."""
     try:
@@ -114,7 +164,8 @@ def reconcile(report: dict[str, Any], output: Path, *, judgments: bool = True) -
 def _reconcile(report: dict[str, Any], output: Path, *, judgments: bool) -> dict[str, Any]:
     expected = report.get("expected_cases")
     errors: list[str] = []
-    counts = dict.fromkeys(("cases", "wakes", "criteria", "judge_answers"), 0)
+    counts = dict.fromkeys(
+        ("cases", "wakes", "turns", "criteria", "judge_answers"), 0)
     observed = dict(counts)
     if not isinstance(expected, list) or not expected:
         return {"status": "ERROR", "expected": None, "observed": None,
@@ -122,8 +173,10 @@ def _reconcile(report: dict[str, Any], output: Path, *, judgments: bool) -> dict
     cases = report.get("cases") or []
     observed["cases"] = len(cases)
     observed["wakes"] = sum(len(case.get("wakes") or []) for case in cases)
-    results = [e for case in cases for wake in case.get("wakes") or []
-               for e in wake.get("expectations") or []]
+    observed["turns"] = sum(len(case.get("turns") or []) for case in cases)
+    results = [e for case in cases for occasion in
+               (list(case.get("wakes") or []) + list(case.get("turns") or []))
+               for e in occasion.get("expectations") or []]
     observed["criteria"] = len(results)
     observed["judge_answers"] = sum(len(e.get("answers") or []) for e in results)
     counts["cases"] = len(expected)
@@ -168,6 +221,45 @@ def _reconcile(report: dict[str, Any], output: Path, *, judgments: bool) -> dict
                 errors.append(f"{identity}: {name}")
             if judgments:
                 actual = wake.get("expectations") or []
+                if _judgments(actual) != Counter(_criterion(e) for e in criteria):
+                    errors.append("criterion denominator mismatch: " + name)
+                if any(len(e.get("answers") or []) != 2 for e in actual):
+                    errors.append("judge answer denominator mismatch: " + name)
+                if json.dumps(frozen.get("expectations", []), sort_keys=True, allow_nan=False) != (
+                        json.dumps(actual, sort_keys=True, allow_nan=False)):
+                    errors.append("frozen/report judgments differ: " + name)
+        turns = row.get("turns") or []
+        declared_turns = list(case.get("turns") or [])
+        counts["turns"] += len(declared_turns)
+        if len(turns) != len(declared_turns):
+            errors.append(f"turn report denominator mismatch: {case['name']}")
+        for index, declared_input in enumerate(declared_turns):
+            criteria = [] if inspect_only else [
+                e for e in case["expectations"] if e.get("turn") == index]
+            counts["criteria"] += len(criteria)
+            counts["judge_answers"] += 2 * len(criteria)
+            turn = turns[index] if index < len(turns) else {}
+            if turn.get("turn") != index:
+                errors.append(f"turn report identity mismatch: "
+                              f"{case['name']}:{index}")
+            name = f"turn-{index}.json"
+            if name in files:
+                errors.append("ambiguous frozen turn: " + name)
+            files.add(name)
+            try:
+                frozen = json.loads((output / name).read_text())
+                if not isinstance(frozen, dict):
+                    raise ValueError
+            except (OSError, ValueError):
+                errors.append("missing or invalid frozen turn: " + name)
+                continue
+            identity = frozen_turn_identity(
+                frozen, unit=case["unit"], turn=index,
+                declared_input=declared_input, step=turn.get("step"))
+            if identity is not None:
+                errors.append(f"{identity}: {name}")
+            if judgments:
+                actual = turn.get("expectations") or []
                 if _judgments(actual) != Counter(_criterion(e) for e in criteria):
                     errors.append("criterion denominator mismatch: " + name)
                 if any(len(e.get("answers") or []) != 2 for e in actual):
@@ -282,6 +374,30 @@ def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
                     causes.append(
                         f"{case.get('name')}:{index} has no closed "
                         "canonical outcome")
+            turns = (rows.get(case.get("name")) or {}).get("turns") or []
+            for index in range(len(case.get("turns") or ())):
+                turn = turns[index] if index < len(turns) else None
+                if not isinstance(turn, dict):
+                    unestablished += 1
+                    continue
+                step = turn.get("step")
+                if step not in (None, "report"):
+                    errored += 1
+                    causes.append(
+                        f"{case.get('name')}:turn-{index} failed at {step}: "
+                        f"{turn.get('error')}")
+                    continue
+                # A produced turn settles to its typed outcome: confirmed
+                # delivery or intentional non-delivery. Anything else —
+                # unconfirmed, absent — stays unestablished.
+                if turn.get("outcome") in ("delivered",
+                                           "intentional_non_delivery"):
+                    settled += 1
+                else:
+                    unestablished += 1
+                    causes.append(
+                        f"{case.get('name')}:turn-{index} has no typed "
+                        "turn outcome")
         execution = axis(
             "ERROR" if errored else UNKNOWN if unestablished else "PASS",
             scope=mode, settled=settled, errored=errored,
@@ -299,8 +415,11 @@ def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
         valid = UNKNOWN
     verdicts = {"PASS": 0, "FAIL": 0, "REVIEW": 0, "ERROR": 0}
     for case in report.get("cases") or []:
-        for wake in (case.get("wakes") or []) if isinstance(case, dict) else []:
-            for entry in wake.get("expectations") or []:
+        occasions = (list(case.get("wakes") or [])
+                     + list(case.get("turns") or [])) \
+            if isinstance(case, dict) else []
+        for occasion in occasions:
+            for entry in occasion.get("expectations") or []:
                 verdict = entry.get("verdict")
                 verdicts[verdict if verdict in verdicts else "ERROR"] += 1
     return {

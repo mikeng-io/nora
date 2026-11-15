@@ -1,9 +1,18 @@
-"""A case: one unit's ordered recorded wakes plus state expectations.
+"""A case: one unit's ordered recorded wakes plus expectations.
 
 The format is JSON. Recorded wake ids and any expectation that quotes
 production content live only in the private host-side case directory;
 `generated_case` builds the synthetic fixtures tests use — generated
 rows, never production ones.
+
+Two measurement versions share the file. A version-1 case is the legacy
+state/replay diagnostic: every expectation anchors a recorded wake and
+names the store kind its claim is judged against. A version-2 case is
+the behavior measure: every expectation anchors a declared later input
+(`turns`) and names `behavior`, claiming what the produced turn recalls,
+does or refrains from — never which store carries it. A file with no
+declared version, or one neither 1 nor 2, is refused: an ambiguous
+measurement never silently becomes another.
 """
 
 from __future__ import annotations
@@ -11,37 +20,47 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from nora.subject.eval_evidence import EvidenceError
 
-#: The stores an expectation's `kind` names; the diff kinds it is judged
-#: against (`scripts.cognition_loop.state`).
+#: The stores a version-1 expectation's `kind` names; the diff kinds it is
+#: judged against (`scripts.cognition_loop.state`).
 STATE_KINDS = (
     "graph", "profile", "note", "memo", "event", "topic",
     "lesson", "standing", "reminder", "wake",
 )
 
+#: The only kind a version-2 expectation names: the claim is about the
+#: turn's observable behavior — the state diff and after-state stay in
+#: the digest as provenance, all kinds, never as the oracle.
+BEHAVIOR_KIND = "behavior"
+
 
 @dataclass(frozen=True, slots=True)
 class Expectation:
-    """One plain-words claim about the state after a wake. `wake` is the
-    anchor's position in `Case.wakes` (0-based), `polarity` is `must` or
-    `must_not`, `kind` the store the claim concerns."""
+    """One plain-words claim. A version-1 claim anchors `wake` (position
+    in `Case.wakes`, 0-based) and names a state kind. A version-2 claim
+    anchors `turn` (position in `Case.turns`) and names `behavior`;
+    `check` is the declared token a finite generated verifier can bind,
+    or None. `polarity` is `must` or `must_not`."""
 
-    wake: int
+    wake: int | None
     polarity: str  # "must" | "must_not"
     kind: str
     text: str
+    turn: int | None = None
+    check: str | None = None
 
     def __post_init__(self) -> None:
         if self.polarity not in ("must", "must_not"):
             raise EvidenceError(
                 "expectation polarity must be must|must_not, "
                 f"got {self.polarity!r}")
-        if self.kind not in STATE_KINDS:
+        if self.kind not in (*STATE_KINDS, BEHAVIOR_KIND):
             raise EvidenceError(
-                "expectation kind must name a state kind, "
-                f"got {self.kind!r}")
+                "expectation kind must name a state kind or "
+                f"{BEHAVIOR_KIND!r}, got {self.kind!r}")
         if not self.text.strip():
             raise EvidenceError("expectation text is empty")
 
@@ -69,44 +88,96 @@ class Case:
     wakes: tuple[int, ...]
     expectations: tuple[Expectation, ...] = field(default_factory=tuple)
     read_probes: tuple[ReadProbe, ...] = ()
+    turns: tuple[str, ...] = ()
+    version: int = 1
 
     def __post_init__(self) -> None:
-        if not self.wakes:
-            raise EvidenceError("a case holds at least one recorded wake")
-        for e in (*self.expectations, *self.read_probes):
-            if not 0 <= e.wake < len(self.wakes):
+        if self.version == 1:
+            if not self.wakes:
+                raise EvidenceError("a case holds at least one recorded wake")
+            if self.turns:
+                raise EvidenceError("a version-1 case declares no turns")
+            for e in (*self.expectations, *self.read_probes):
+                wake = getattr(e, "wake", None)
+                if wake is None or not 0 <= wake < len(self.wakes):
+                    raise EvidenceError(
+                        f"expectation anchors at wake index {wake}; the case "
+                        f"holds {len(self.wakes)} wake(s)")
+                if getattr(e, "turn", None) is not None or getattr(e, "check", None):
+                    raise EvidenceError(
+                        "a version-1 expectation names a wake and a state kind")
+                if isinstance(e, Expectation) and e.kind not in STATE_KINDS:
+                    raise EvidenceError(
+                        "a version-1 expectation kind names a state kind, "
+                        f"got {e.kind!r}")
+            return
+        if self.version == 2:
+            if self.read_probes:
+                raise EvidenceError("a version-2 case declares no read probes")
+            if self.expectations and not self.turns:
                 raise EvidenceError(
-                    f"expectation anchors at wake index {e.wake}; the case holds "
-                    f"{len(self.wakes)} wake(s)"
-                )
+                    "a version-2 case declares the later inputs its "
+                    "expectations anchor")
+            for e in self.expectations:
+                if e.wake is not None:
+                    raise EvidenceError(
+                        "a version-2 expectation anchors a turn, not a wake")
+                if e.turn is None or not 0 <= e.turn < len(self.turns):
+                    raise EvidenceError(
+                        f"expectation anchors at turn index {e.turn}; the case "
+                        f"declares {len(self.turns)} turn(s)")
+                if e.kind != BEHAVIOR_KIND:
+                    raise EvidenceError(
+                        "a version-2 expectation kind is 'behavior', got "
+                        f"{e.kind!r}")
+            return
+        raise EvidenceError(f"unknown case version {self.version!r}")
 
 
 def load_case(path: Path) -> Case:
     raw = json.loads(path.read_text())
-    if not isinstance(raw, dict) or raw.get("version") != 1:
-        raise EvidenceError(f"{path}: not a version-1 cognition-loop case")
-    expectations = tuple(
-        Expectation(
-            wake=int(e["wake"]), polarity=str(e["polarity"]),
+    if not isinstance(raw, dict) or raw.get("version") not in (1, 2):
+        raise EvidenceError(f"{path}: not a versioned cognition-loop case")
+    version = raw["version"]
+
+    def expectation(e: dict[str, Any]) -> Expectation:
+        if version == 1:
+            return Expectation(
+                wake=int(e["wake"]), polarity=str(e["polarity"]),
+                kind=str(e["kind"]), text=str(e["text"]))
+        if not isinstance(e, dict) or "wake" in e \
+                or type(e.get("turn")) is not int:
+            raise EvidenceError(
+                f"{path}: a version-2 expectation anchors a turn index, "
+                "never a wake")
+        if e.get("check") is not None and not isinstance(e["check"], str):
+            raise EvidenceError(
+                f"{path}: a version-2 expectation's check is text or absent")
+        return Expectation(
+            wake=None, turn=e["turn"], polarity=str(e["polarity"]),
             kind=str(e["kind"]), text=str(e["text"]),
-        )
-        for e in raw.get("expectations", [])
-    )
+            check=e.get("check"))
+
     return Case(
         name=str(raw["name"]), unit=str(raw["unit"]),
-        wakes=tuple(int(w) for w in raw["wakes"]),
-        expectations=expectations,
+        wakes=tuple(int(w) for w in raw.get("wakes") or ()),
+        expectations=tuple(expectation(e) for e in raw.get("expectations", [])),
         read_probes=tuple(ReadProbe(**p) for p in raw.get("read_probes", [])),
+        turns=tuple(str(t) for t in raw.get("turns") or ()),
+        version=version,
     )
 
 
 def write_case(case: Case, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
-        "version": 1, "name": case.name, "unit": case.unit,
-        "wakes": list(case.wakes),
+        "version": case.version, "name": case.name, "unit": case.unit,
+        "wakes": list(case.wakes), "turns": list(case.turns),
         "expectations": [
-            {"wake": e.wake, "polarity": e.polarity, "kind": e.kind, "text": e.text}
+            {k: v for k, v in {
+                "wake": e.wake, "turn": e.turn, "polarity": e.polarity,
+                "kind": e.kind, "text": e.text, "check": e.check,
+            }.items() if v is not None}
             for e in case.expectations
         ],
         "read_probes": [asdict(p) for p in case.read_probes],
@@ -124,4 +195,21 @@ def generated_case() -> Case:
             Expectation(wake=1, polarity="must_not", kind="reminder",
                         text="no reminder fires in the past"),
         ),
+    )
+
+
+def generated_behavior_case() -> Case:
+    """The synthetic version-2 case: generated later inputs, behavior claims."""
+    return Case(
+        name="generated-two-turns", unit="generated-unit",
+        wakes=(), turns=(
+            "the generated venue for the outing is Cedar Hall",
+            "where was the generated outing held?",
+        ),
+        expectations=(
+            Expectation(wake=None, turn=1, polarity="must",
+                        kind=BEHAVIOR_KIND, check="Cedar Hall",
+                        text="the reply recalls the generated venue"),
+        ),
+        version=2,
     )

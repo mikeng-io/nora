@@ -105,6 +105,12 @@ def _wake_seam(monkeypatch, tmp_path, subject):
     monkeypatch.setattr(run_mod, "effect_boundary", _noop)
     monkeypatch.setattr(run_mod, "read_effects", _async_result(
         {"status": "observed", "items": [], "tools": []}))
+
+    @asynccontextmanager
+    async def _frozen(engine):
+        yield SimpleNamespace()
+
+    monkeypatch.setattr(run_mod, "frozen_reads", _frozen)
     monkeypatch.setattr(run_mod, "_compose", _composed)
     monkeypatch.setattr(run_mod, "assert_no_egress", lambda s: {})
     monkeypatch.setattr(run_mod, "index_replay_sandbox", _noop)
@@ -127,7 +133,14 @@ def _wake_seam(monkeypatch, tmp_path, subject):
     monkeypatch.setattr(run_mod, "wake_trajectory",
                         lambda e, **k: {"blocks": dict.fromkeys(
                             ("system", "instructions", "agenda",
-                             "items", "stimuli"))})
+                             "items", "stimuli")),
+                            "model_calls": [{
+                                "model": "generated-subject",
+                                "messages": [
+                                    {"role": "system",
+                                     "content": "Generated subject instructions."},
+                                    {"role": "user",
+                                     "content": "Generated subject input."}]}]})
     return run_mod
 
 
@@ -392,7 +405,12 @@ async def test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge(
     rooms = [("signal", "r1"), ("signal", "r2")]
     scope = SimpleNamespace(unit="u", rooms=rooms, profile_keys=())
     monkeypatch.setattr(run_mod, "effect_scope", lambda subject: scope)
-    prior = (SimpleNamespace(kinds={}), {"at_ms": NOW - 60_000, "blocks": {}})
+    prior = (SimpleNamespace(kinds={}), {
+        "at_ms": NOW - 60_000, "blocks": {}, "session_id": None,
+        "effects": {"status": "observed", "items": [], "tools": []},
+        "model_calls": [{"model": "generated-subject", "messages": [
+            {"role": "system", "content": "Generated subject instructions."},
+            {"role": "user", "content": "Generated subject input."}]}]})
     args, evidence = _wake_args(tmp_path)
     expectation = SimpleNamespace(
         wake=0, polarity="must", kind="note", text="generated expectation")
@@ -452,7 +470,14 @@ async def test_the_run_hands_each_wake_only_the_earlier_wakes_evidence(
         sentinels[index] = (
             SimpleNamespace(marker=index),
             {"at_ms": at_ms, "unit": "u", "unit_rooms": [["signal", "r1"]],
-             "blocks": {"agenda": f"generated {index}"}},
+             "blocks": {"agenda": f"generated {index}"},
+             "session_id": None,
+             "effects": {"status": "observed", "items": [], "tools": []},
+             "model_calls": [{"model": "generated-subject", "messages": [
+                 {"role": "system",
+                  "content": "Generated subject instructions."},
+                 {"role": "user",
+                  "content": "Generated subject input."}]}]},
         )
         diff, trajectory = sentinels[index]
         return {

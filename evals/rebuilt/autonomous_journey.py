@@ -42,21 +42,26 @@ from scripts.cognition_loop import html as report_html
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.accounting import _canonical_outcome, write_report
 from scripts.cognition_loop.availability import availability
-from scripts.cognition_loop.cases import STATE_KINDS, Expectation
+from scripts.cognition_loop.cases import BEHAVIOR_KIND, STATE_KINDS, Expectation
 from scripts.cognition_loop.egress import assert_no_egress
 from scripts.cognition_loop.judges import (
     evidence_gap,
     judge_expectation,
     judge_history_entry,
+    observation_gap,
 )
-from scripts.cognition_loop.trajectory import session_events, wake_trajectory
+from scripts.cognition_loop.trajectory import (
+    session_events,
+    turn_events,
+    wake_trajectory,
+)
 from scripts.cognition_loop.verdicts import (
     ERROR,
     WAKE_ERRED,
     ExpectationVerdict,
     Rollup,
 )
-from scripts.memory_graph_spike import Judges
+from scripts.memory_graph_spike import Judges, freeze
 
 from .domain import Case, Outcome
 
@@ -69,7 +74,13 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _expectations(plan: dict[str, Any]) -> list[Expectation]:
+def _expectations(plan: dict[str, Any], version: int) -> list[Expectation]:
+    if version == 2:
+        return [Expectation(
+            wake=None, turn=int(raw["turn"]), polarity=str(raw["polarity"]),
+            kind=str(raw["kind"]), text=str(raw["text"]),
+            check=(str(raw["check"]) if raw.get("check") is not None else None))
+            for raw in plan.get("expectations") or ()]
     return [Expectation(wake=int(raw["wake"]), polarity=str(raw["polarity"]),
                         kind=str(raw["kind"]), text=str(raw["text"]))
             for raw in plan.get("expectations") or ()]
@@ -77,9 +88,13 @@ def _expectations(plan: dict[str, Any]) -> list[Expectation]:
 
 def _plan_error(plan: dict[str, Any]) -> str | None:
     """Why this plan cannot bind a denominator, else None — checked before anything runs."""
+    version = plan.get("version", 1)
+    if version not in (1, 2):
+        return "the journey plan declares an unknown version"
     expected = plan.get("expected_wakes")
-    if type(expected) is not int or expected <= 0:
-        return "the journey plan declares no positive expected_wakes"
+    if (type(expected) is not int or expected < 0
+            or (version == 1 and expected <= 0)):
+        return "the journey plan declares no valid expected_wakes"
     steps = plan.get("steps")
     if not isinstance(steps, list) or not steps:
         return "the journey plan declares no steps"
@@ -110,16 +125,33 @@ def _plan_error(plan: dict[str, Any]) -> str | None:
     for position, raw in enumerate(plan.get("expectations") or []):
         if not isinstance(raw, dict):
             return f"journey expectation {position} is not an object"
-        wake = raw.get("wake")
-        if type(wake) is not int or not 0 <= wake < expected:
-            return (f"journey expectation {position} anchors wake {wake!r} "
-                    f"outside the {expected} declared slots")
+        if version == 2:
+            turn = raw.get("turn")
+            if "wake" in raw:
+                return (f"journey expectation {position} names a wake; a "
+                        "version-2 claim anchors a turn")
+            if type(turn) is not int or not 0 <= turn < sent:
+                return (f"journey expectation {position} anchors turn {turn!r} "
+                        f"outside the {sent} declared sends")
+            if raw.get("kind") != BEHAVIOR_KIND:
+                return (f"journey expectation {position} kind "
+                        f"{raw.get('kind')!r} is not 'behavior'")
+            if "check" in raw and not isinstance(raw.get("check"), str):
+                return f"journey expectation {position} check is not text"
+        else:
+            wake = raw.get("wake")
+            if type(wake) is not int or not 0 <= wake < expected:
+                return (f"journey expectation {position} anchors wake {wake!r} "
+                        f"outside the {expected} declared slots")
+            if "turn" in raw or "check" in raw:
+                return (f"journey expectation {position} names a turn; a "
+                        "version-1 claim anchors a wake")
+            if raw.get("kind") not in STATE_KINDS:
+                return (f"journey expectation {position} kind {raw.get('kind')!r} "
+                        "is not a state kind")
         if raw.get("polarity") not in ("must", "must_not"):
             return (f"journey expectation {position} polarity "
                     f"{raw.get('polarity')!r} is not must|must_not")
-        if raw.get("kind") not in STATE_KINDS:
-            return (f"journey expectation {position} kind {raw.get('kind')!r} "
-                    "is not a state kind")
         if not str(raw.get("text") or "").strip():
             return f"journey expectation {position} text is empty"
     models = plan.get("judges")
@@ -363,22 +395,167 @@ async def _finalize(index: int, ctx: dict[str, Any], *, subject: Any,
         step_error=step_error, prior_links=prior_links)
 
 
+async def _judge_turn(judges: Any, models: tuple[str, str],
+                      expectations: list[Expectation], index: int, diff: Any,
+                      after: Any, trajectory: dict[str, Any],
+                      earlier_wakes: tuple) -> list[dict[str, Any]]:
+    rows = []
+    for expectation in expectations:
+        if expectation.turn != index:
+            continue
+        try:
+            verdict_obj = await judge_expectation(
+                judges, models, expectation, diff, after, trajectory, earlier_wakes)
+        except Exception as exc:  # noqa: BLE001 — a judge failure is ERROR, not a crash
+            verdict_obj = ExpectationVerdict(
+                verdict=ERROR, answers=(), detail=f"judge: {exc!r}")
+        rows.append({
+            "expectation": {
+                "turn": expectation.turn,
+                "polarity": expectation.polarity,
+                "kind": expectation.kind,
+                "text": expectation.text,
+                "check": expectation.check,
+            },
+            "verdict": verdict_obj.verdict,
+            "detail": verdict_obj.detail,
+            "verdict_obj": verdict_obj,
+            "answers": [asdict(a) for a in verdict_obj.answers],
+        })
+    return rows
+
+
+def _turn_causes(ctx: dict[str, Any], trajectory: dict[str, Any],
+                 earlier_wakes: tuple) -> list[str]:
+    """Invalidations for one turn's observation, before any judge request."""
+    causes: list[str] = []
+    event = ctx.get("event")
+    if not isinstance(event, dict) or event.get("state") != "done":
+        causes.append("admission_not_done")
+    work = ctx.get("work")
+    if (not isinstance(work, list) or not work
+            or any(not isinstance(w, dict) or w.get("state")
+                   not in ("done", "intentional_skip") for w in work)):
+        causes.append("admission_work_unsettled")
+    causes.extend(observation_gap(trajectory, earlier_wakes))
+    return causes
+
+
+def _turn_outcome(actions: list[dict[str, Any]], trajectory: dict[str, Any],
+                  work: list[dict[str, Any]]) -> dict[str, Any]:
+    """The turn's typed outcome: confirmed delivery, intentional
+    non-delivery from the settled admission rows, or the unconfirmed
+    middle — never silence guessed either way."""
+    said = [
+        call["arguments"].get("text")
+        for call in trajectory.get("tool_calls") or ()
+        if call.get("tool") == "send_reply"
+        and isinstance(call.get("arguments"), dict)
+        and isinstance(call["arguments"].get("text"), str)
+    ]
+    settled = [{"kind": w.get("kind"), "state": w.get("state")} for w in work]
+    if not actions:
+        return {"status": "intentional_non_delivery", "said": said,
+                "work": settled}
+    if all(row["state"] == "confirmed" for row in actions):
+        deliveries = [
+            item.get("ref") for item in
+            (trajectory.get("effects") or {}).get("items") or []
+            if item.get("kind") == "delivery"
+        ]
+        return {"status": "delivered", "said": said,
+                "actions": [{"id": a.get("action_id"), "op": a.get("op"),
+                             "state": a.get("state")} for a in actions],
+                "deliveries": deliveries}
+    return {"status": "unconfirmed", "said": said,
+            "actions": [{"id": a.get("action_id"), "op": a.get("op"),
+                         "state": a.get("state")} for a in actions]}
+
+
+def _freeze_turn(output: Path, ctx: dict[str, Any],
+                 trajectory: dict[str, Any], diff: Any,
+                 expectations: list[dict[str, Any]], state_after: Any, *,
+                 unit: str, step_error: tuple[str, str] | None) -> dict[str, Any]:
+    """One turn's private observation file and its report row."""
+    from scripts.cognition_loop.run import _wake_status
+
+    index = ctx["index"]
+    declared = {"text": ctx["input"], "event_id": ctx["event_id"],
+                "at_ms": ctx["at_ms"]}
+    freeze(output / f"turn-{index}.json", {
+        "turn": index, "unit": unit, "at_ms": ctx["at_ms"],
+        "declared_input": declared,
+        "error": ({"step": step_error[0], "message": step_error[1]}
+                  if step_error is not None else None),
+        "trajectory": trajectory,
+        "diff": {
+            k: {s: [asdict(e) for e in entries]
+                for s, entries in (
+                    ("created", d.created), ("revised", d.revised),
+                    ("retired", d.retired), ("unchanged", d.unchanged))}
+            for k, d in diff.kinds.items()
+        },
+        "expectations": [
+            {k: v for k, v in e.items() if k != "verdict_obj"}
+            for e in expectations
+        ],
+    })
+    outcome = (trajectory.get("turn_outcome") or {}).get("status")
+    return {
+        "turn": index, "input": ctx["input"], "at_ms": ctx["at_ms"],
+        "status": _wake_status(step_error, expectations),
+        "step": step_error[0] if step_error is not None else None,
+        "error": step_error[1] if step_error is not None else None,
+        "outcome": outcome,
+        "trajectory": trajectory,
+        "expectations": expectations,
+        "_state_before": state_after,
+        "_diff": diff,
+    }
+
+
+def _turn_error(output: Path, index: int, ctx: dict[str, Any], *, step: str,
+                message: str, unit: str,
+                trajectory: dict[str, Any] | None = None) -> dict[str, Any]:
+    """An ERROR turn row: the step is named, never folded into another's."""
+    declared = {"text": ctx["input"], "event_id": ctx["event_id"],
+                "at_ms": ctx["at_ms"]}
+    freeze(output / f"turn-{index}.json", {
+        "turn": index, "unit": unit, "at_ms": ctx["at_ms"],
+        "declared_input": declared,
+        "error": {"step": step, "message": message},
+        "trajectory": trajectory,
+    })
+    return {
+        "turn": index, "input": ctx["input"], "at_ms": ctx["at_ms"],
+        "status": ERROR, "step": step, "error": message,
+        "outcome": (trajectory or {}).get("turn_outcome", {}).get("status"),
+        "trajectory": trajectory, "expectations": [],
+    }
+
+
 async def _offered(engine: Any, unit: str, at_ms: int) -> tuple[list[int], list[int]]:
     return await offered_stimuli(engine, unit, at_ms)
 
 
 def _report(case: Case, unit: str, roll: Rollup,
-            wakes: list[dict[str, Any]]) -> dict[str, Any]:
-    for wake in wakes:
-        for expectation in wake.get("expectations", []):
+            wakes: list[dict[str, Any]], turns: list[dict[str, Any]],
+            version: int) -> dict[str, Any]:
+    for occasion in (*wakes, *turns):
+        for expectation in occasion.get("expectations", []):
             expectation.pop("verdict_obj", None)
     return {
         "status": roll.verdict, "mode": _MODE, "behavior": "UNMEASURED",
+        "version": version,
         "case": case.name, "unit": unit,
         "errors": roll.errors,
         "wakes": [
             {k: v for k, v in w.items() if not k.startswith("_")}
             for w in wakes
+        ],
+        "turns": [
+            {k: v for k, v in t.items() if not k.startswith("_")}
+            for t in turns
         ],
     }
 
@@ -437,7 +614,9 @@ async def _drive(subject: Any, *, world: Any, steps: list[dict[str, Any]],
                  expectations: list[Expectation], egress: dict[str, Any],
                  evidence: Any, output: Path, wake_seconds: float,
                  fire_seconds: float, wakes_report: list[dict[str, Any]],
-                 pending: list[dict[str, Any]]) -> Any:
+                 turns_report: list[dict[str, Any]],
+                 pending: list[dict[str, Any]], expected_wakes: int,
+                 open_turn: list[dict[str, Any]]) -> Any:
     """The plan through the owned App; the journey's opening boundary."""
     driver = JourneyDriver(subject)
     world.wire_actions(subject.deps.bridge_runtime, subject.environment)
@@ -461,6 +640,68 @@ async def _drive(subject: Any, *, world: Any, steps: list[dict[str, Any]],
         prior_links = set((row.get("loop") or {}).get("link_ids") or ())
         return row["_state_before"]
 
+    async def _observed(ctx: dict[str, Any], before: Any) -> Any:
+        """Close one open send's turn observation into a report row."""
+        nonlocal earlier_wakes
+        actions = await driver.wait_turn_settled(
+            int(ctx["at_ms"]), seconds=fire_seconds)
+        window = turn_events(evidence.since(ctx["cursor"]))
+        trajectory = wake_trajectory(
+            window, wake_id=None, session_id=None, tokens=None)
+        trajectory["turn"] = ctx["index"]
+        trajectory["at_ms"] = int(ctx["at_ms"])
+        trajectory["unit"] = scope.unit
+        trajectory["unit_rooms"] = list(scope.rooms)
+        trajectory["declared_input"] = {
+            "text": ctx["input"], "event_id": ctx["event_id"],
+            "at_ms": int(ctx["at_ms"])}
+        trajectory["availability"] = availability(subject.cfg, trajectory)
+        trajectory["settlement"] = {
+            "status": "observed", "event": ctx["event"].get("state"),
+            "work": [{"kind": w.get("kind"), "state": w.get("state")}
+                     for w in ctx["work"]]}
+        async with frozen_reads(ctx["engine"]) as reads:
+            trajectory["effects"] = await read_effects(
+                reads, since=ctx["boundary"], unit=scope.unit,
+                rooms=scope.rooms, profile_keys=scope.profile_keys,
+                events=window)
+            after = await state_mod.snapshot(
+                cast(AsyncEngine, reads), unit=scope.unit, rooms=scope.rooms,
+                profile_keys=scope.profile_keys, now_ms=_now_ms(),
+                metrics=subject.deps.metrics)
+        trajectory["turn_outcome"] = _turn_outcome(
+            actions, trajectory, ctx["work"])
+        diff = state_mod.diff(before, after)
+        causes = _turn_causes(ctx, trajectory, earlier_wakes)
+        step_error = ("evidence", "; ".join(causes)) if causes else None
+        rows = ([] if step_error is not None else await _judge_turn(
+            judges, models, expectations, ctx["index"], diff, after,
+            trajectory, earlier_wakes))
+        row = _freeze_turn(
+            output, ctx, trajectory, diff, rows, after,
+            unit=scope.unit, step_error=step_error)
+        turns_report.append(row)
+        earlier_wakes += (judge_history_entry(
+            row.get("_diff"), trajectory),)
+        return row["_state_before"]
+
+    async def _close_open(before: Any) -> Any:
+        nonlocal earlier_wakes
+        if not open_turn:
+            return before
+        (ctx,) = open_turn
+        open_turn.clear()
+        try:
+            return await _observed(ctx, before)
+        except Exception as exc:  # noqa: BLE001 — an unobserved turn is ERROR
+            turns_report.append(_turn_error(
+                output, ctx["index"], ctx, step="observe",
+                message=f"{type(exc).__name__}: {exc}", unit=scope.unit))
+            earlier_wakes += ((None, {
+                "invalid": f"turn {ctx['index']} observation failed: "
+                           f"{type(exc).__name__}"}),)
+            return before
+
     async with driver:
         engine = driver.engine
         async with frozen_reads(engine) as reads:
@@ -475,10 +716,26 @@ async def _drive(subject: Any, *, world: Any, steps: list[dict[str, Any]],
             if "send" in step:
                 before = await _drain_pending(pending, before=before,
                                               settle=_settled)
+                before = await _close_open(before)
                 boundary = await effect_boundary(engine)
+                cursor = evidence.cursor()
                 sent += 1
-                await driver.ingress(str(step["send"]),
-                                     event_id=f"generated-journey-{sent}")
+                # The turn is registered before admission: an ingress
+                # failure still freezes its ERROR row in `_run`, keeping
+                # the declared turn in the denominator.
+                ctx = {
+                    "index": sent - 1, "input": str(step["send"]),
+                    "event_id": None, "at_ms": _now_ms(), "cursor": cursor,
+                    "boundary": boundary, "engine": engine,
+                    "event": None, "work": None,
+                }
+                open_turn.append(ctx)
+                incoming, event, work = await driver.ingress(
+                    str(step["send"]), event_id=f"generated-journey-{sent}")
+                ctx.update({
+                    "event_id": incoming.event_id,
+                    "at_ms": int(incoming.sent_ms or _now_ms()),
+                    "event": event, "work": work})
                 pending.append({
                     "boundary": boundary, "engine": engine,
                     "tokens": subject.deps.metrics.get(
@@ -493,7 +750,8 @@ async def _drive(subject: Any, *, world: Any, steps: list[dict[str, Any]],
             else:
                 raise ValueError(f"unknown journey step {step!r}")
         await _drain_pending(pending, before=before, settle=_settled)
-        if not wakes_report:
+        await _close_open(before)
+        if not wakes_report and expected_wakes > 0:
             raise ValueError("the journey produced no wake to judge")
     return journey_boundary
 
@@ -531,35 +789,39 @@ async def _post_drive_census(subject: Any, *, scope: Any, expected_wakes: Any,
 
 async def _run(subject: Any, case: Case, plan: dict[str, Any],
                world: Any, output: Path,
-               ) -> tuple[Rollup, list[dict[str, Any]], list[Any] | None]:
-    """Steps through the live App; (roll, wake rows, census ids)."""
+               ) -> tuple[Rollup, list[dict[str, Any]], list[dict[str, Any]],
+                          list[Any] | None]:
+    """Steps through the live App; (roll, wake rows, turn rows, census ids)."""
     roll = Rollup()
     wakes_report: list[dict[str, Any]] = []
+    turns_report: list[dict[str, Any]] = []
     manifest_error = _plan_error(plan)
     if manifest_error is not None:
         roll.error(manifest_error)
-        return roll, wakes_report, None
-    expectations = _expectations(plan)
+        return roll, wakes_report, turns_report, None
+    version = plan.get("version", 1)
+    expectations = _expectations(plan, version)
     models = (str(plan["judges"][0]), str(plan["judges"][1]))
     judges = Judges(subject.cfg, list(models), Path(output))
     scope = effect_scope(subject)
     if subject.unit != scope.unit:
         roll.error("the composed unit and the case's scope disagree")
-        return roll, wakes_report, None
+        return roll, wakes_report, turns_report, None
     egress = assert_no_egress(subject)
     evidence = current()
     if evidence is None:
         roll.error("canonical capture unavailable mid-drive")
-        return roll, wakes_report, None
+        return roll, wakes_report, turns_report, None
     steps = plan.get("steps") or []
     if not any("send" in step for step in steps):
         roll.error("the journey plan sends nothing through real ingress")
-        return roll, wakes_report, None
+        return roll, wakes_report, turns_report, None
     wake_seconds = (subject.cfg.cognition.cue_quiet_seconds
                     + subject.cfg.cognition.tick_seconds + 300)
     fire_seconds = (subject.cfg.reminders.min_lead_seconds
                     + subject.cfg.heartbeat.tick_seconds * 2 + 60)
     pending: list[dict[str, Any]] = []
+    open_turn: list[dict[str, Any]] = []
     journey_boundary: Any = None
     try:
         journey_boundary = await _drive(
@@ -567,11 +829,12 @@ async def _run(subject: Any, case: Case, plan: dict[str, Any],
             models=models, expectations=expectations, egress=egress,
             evidence=evidence, output=output, wake_seconds=wake_seconds,
             fire_seconds=fire_seconds, wakes_report=wakes_report,
-            pending=pending)
+            turns_report=turns_report, pending=pending, open_turn=open_turn,
+            expected_wakes=int(plan["expected_wakes"]))
     except Exception as exc:  # noqa: BLE001 — a failed step is ERROR, not a crash
         roll.error(f"the journey failed: {type(exc).__name__}: {exc}")
-        # A wake settled when a later step failed still freezes an ERROR
-        # row rather than vanishing from the denominator.
+        # A wake or turn settled when a later step failed still freezes
+        # an ERROR row rather than vanishing from the denominator.
         for ctx in pending:
             if "wake" not in ctx:
                 continue
@@ -580,13 +843,18 @@ async def _run(subject: Any, case: Case, plan: dict[str, Any],
                 message=f"{type(exc).__name__}: {exc}", unit=scope.unit,
                 batch=ctx.get("batch"), trajectory=ctx.get("trajectory")))
         pending.clear()
+        for ctx in open_turn:
+            turns_report.append(_turn_error(
+                output, ctx["index"], ctx, step="journey",
+                message=f"{type(exc).__name__}: {exc}", unit=scope.unit))
+        open_turn.clear()
     observed = await _post_drive_census(
         subject, scope=scope, expected_wakes=plan.get("expected_wakes"),
         wakes_report=wakes_report, journey_boundary=journey_boundary,
         output=output, roll=roll, evidence=evidence)
-    if not wakes_report and not roll.errors:
+    if not wakes_report and not turns_report and not roll.errors:
         roll.error("the journey produced no wake report")
-    return roll, wakes_report, observed
+    return roll, wakes_report, turns_report, observed
 
 
 
@@ -608,34 +876,43 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
     output.mkdir(mode=0o700)
     roll = Rollup()
     wakes_report: list[dict[str, Any]] = []
+    turns_report: list[dict[str, Any]] = []
     observed: list[Any] | None = None
     try:
-        roll, wakes_report, observed = await _run(
+        roll, wakes_report, turns_report, observed = await _run(
             subject, case, plan, world, output)
     except Exception as exc:  # noqa: BLE001 — the run itself is ERROR, not a crash
         roll.error(f"the journey run failed: {type(exc).__name__}: {exc}")
-    for wake in wakes_report:
-        for verdict in wake.get("expectations", []):
+    for occasion in (*wakes_report, *turns_report):
+        for verdict in occasion.get("expectations", []):
             roll.add(verdict["verdict_obj"])
-    if roll.verdict != ERROR and any(w.get("status") == ERROR for w in wakes_report):
+    if roll.verdict != ERROR and any(
+            w.get("status") == ERROR for w in (*wakes_report, *turns_report)):
         roll.error(WAKE_ERRED)
     # The denominator is the whole scoped production population the census
     # recorded — never the report rows that survived to be bound.
     produced = (observed if observed is not None
                 else [w.get("recorded_wake_id") for w in wakes_report])
     bound = _bind_declared_wakes(plan.get("expected_wakes"), produced, roll)
-    case_report = _report(case, subject.unit, roll, wakes_report)
+    version = plan.get("version", 1)
+    sends = [str(step["send"]) for step in plan.get("steps") or []
+             if isinstance(step, dict) and "send" in step]
+    case_report = _report(case, subject.unit, roll, wakes_report,
+                          turns_report, version)
     expected = {
         "name": case.name or "unnamed",
         "unit": subject.unit,
         "wakes": bound,
-        "expectations": list(plan.get("expectations") or []),
+        "turns": sends,
+        "expectations": [asdict(e) for e in _expectations(plan, version)],
         "read_probes": [],
+        "version": version,
     }
     report = {
         "status": roll.verdict,
         "mode": _MODE,
         "behavior": "UNMEASURED",
+        "version": version,
         "expected_cases": json.loads(json.dumps([expected])),
         "cases": [case_report],
         "errors": roll.errors,

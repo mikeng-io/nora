@@ -143,6 +143,8 @@ class GeneratedJudge:
             raise AssertionError("the judge request carried no cited_sources payload")
         payload = json.loads(block.group(1))
         expectation = payload["expectation"]
+        if payload.get("measure") == "behavior":
+            return self._behavior(payload, expectation)
         kind = expectation["kind"]
         problems = [name for name in ("effects", "settlement", "final_response")
                     if (payload.get(name) or {}).get("status") != "observed"]
@@ -161,6 +163,67 @@ class GeneratedJudge:
         return {"verdict": verdict,
                 "reason": f"generated inspection: {expectation.get('polarity')} {kind} "
                           f"holds entries {ids or 'none'} in the shown state",
+                "entry_ids": cited}
+
+    def _behavior(self, payload: dict, expectation: dict) -> dict:
+        """The generated rehearsal's behavior binding: the claim anchors a
+        turn by its declared input and outcome, and `check` is the declared
+        token the turn's observed output must carry or lack — the token
+        the fixture itself made observable, never a scripted verdict."""
+        outcome = (payload.get("turn_outcome") or {}).get("status")
+        effects = (payload.get("effects") or {}).get("status")
+        declared = (payload.get("declared_input") or {}).get("text")
+        if (outcome not in ("delivered", "intentional_non_delivery")
+                or effects != "observed" or not declared):
+            return {"verdict": "cannot_tell",
+                    "reason": "generated inspection: turn evidence "
+                              "incomplete — outcome, effects or declared "
+                              "input missing",
+                    "entry_ids": []}
+        said = " ".join(str(v) for v in (
+            (payload.get("turn_outcome") or {}).get("said") or []))
+        said = f"{said} {payload.get('final_output') or ''}"
+        # What the turn produced is not only its replies: an action's
+        # declared arguments are observable output the claim may bind.
+        said += " " + " ".join(
+            json.dumps(call.get("arguments"), ensure_ascii=False)
+            for call in payload.get("tool_calls") or []
+            if call.get("arguments") is not None)
+        check = expectation.get("check")
+        if check is None:
+            return {"verdict": "cannot_tell",
+                    "reason": "generated inspection: the claim declares no "
+                              "check token for the rehearsal to bind",
+                    "entry_ids": []}
+        found = check in said
+        met = found if expectation.get("polarity") == "must" else not found
+        effects = payload.get("effects") or {}
+        if found:
+            # The cite is the evidence the token was found in: the tool
+            # outcome that carries it, else a delivery receipt.
+            cited = [
+                row["ref"] for row in effects.get("tools") or []
+                if row.get("ref") and check in json.dumps(
+                    row, ensure_ascii=False)][:1]
+            if not cited:
+                cited = [
+                    row["ref"] for row in effects.get("items") or []
+                    if row.get("kind") == "delivery" and row.get("ref")][:1]
+        else:
+            # An absence rests on everything the turn produced: cite the
+            # inspected output surface — its deliveries and actions —
+            # never state provenance, never an invented row.
+            cited = [
+                row["ref"]
+                for row in effects.get("items") or []
+                if row.get("kind") == "delivery" and row.get("ref")]
+            cited += [row["ref"] for row in effects.get("tools") or []
+                      if row.get("ref")]
+            cited = cited[:3]
+        return {"verdict": "met" if met else "not_met",
+                "reason": f"generated inspection: check {check!r} "
+                          f"{'present' if found else 'absent'} in the "
+                          f"turn's observed output ({outcome})",
                 "entry_ids": cited}
 
     async def respond(self, request: web.Request) -> web.Response:

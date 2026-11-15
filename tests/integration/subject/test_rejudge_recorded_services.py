@@ -233,6 +233,267 @@ async def test_failed_capture_keeps_the_new_report_and_frozen_judgments(
     assert not getattr(socket.socket.connect, "_nora_eval_guard", False)
 
 
+@pytest.mark.parametrize("damage", [
+    "terminal", "settlement", "identity", "antecedent",
+])
+async def test_rejudge_prerequisite_gap_spends_no_judge_on_the_affected(
+    tmp_path, frozen_run, monkeypatch, damage,
+):
+    """The real judge door: a torn frozen occasion is refused by name
+    BEFORE any HTTP — the sound prefix still judges through the real
+    RecordedServices, the affected request count is exactly zero."""
+    case, cfg, data = frozen_run
+    frozen_path = tmp_path / f"wake-1-{case.wakes[1]}.json"
+    frozen = json.loads(frozen_path.read_text())
+    if damage in ("terminal", "settlement"):
+        # A session-bound wake whose own settlement or terminal capture is
+        # absent: identity stays current (the row and the artifact agree on
+        # the session) so the refusal lands at the judge door, not the
+        # denominator preflight.
+        source = tmp_path / "report.json"
+        raw_report = json.loads(source.read_text())
+        raw_report["cases"][0]["wakes"][1]["session_id"] = "s-7"
+        source.write_text(json.dumps(raw_report))
+        if damage == "terminal":
+            frozen["trajectory"].update(
+                session_id="s-7", settlement={"status": "observed"})
+        else:
+            frozen["trajectory"].update(session_id="s-7")
+    elif damage == "identity":
+        frozen["unit"] = "foreign-unit"
+    else:  # antecedent: tear the FIRST wake's evidence
+        first = tmp_path / f"wake-0-{case.wakes[0]}.json"
+        earlier = json.loads(first.read_text())
+        earlier["trajectory"]["effects"] = {"status": "gone"}
+        first.write_text(json.dumps(earlier))
+    if damage != "antecedent":
+        frozen_path.write_text(json.dumps(frozen))
+    path = input_file(tmp_path, data)
+    received, environments = [], []
+    original = IsolatedServices._coverage
+
+    def observe(self, service):
+        environments.append(self)
+        coverage = original(self, service)
+
+        @web.middleware
+        async def capture(request, handler):
+            received.append(await request.json())
+            return await coverage(request, handler)
+
+        return capture
+
+    monkeypatch.setattr(IsolatedServices, "_coverage", observe)
+    report = await module.rejudge(tmp_path, tmp_path / "case.json", cfg,
+                                  *MODELS, services=path)
+    assert report["status"] == "ERROR"
+    if damage == "antecedent":
+        # The torn antecedent never judges, and the sound wake that
+        # would inherit it refuses by name — zero requests at all.
+        assert received == []
+    elif damage == "identity":
+        # A foreign artifact is refused at the denominator before any
+        # door opens: still zero judge HTTP, and the cause names the
+        # mismatch — never a silent empty history.
+        assert received == []
+        assert any("identity mismatch" in e for e in report["errors"])
+        return
+    else:
+        # Exactly the sound prefix: one wake, one expectation, both
+        # aliases — the affected wake spends nothing.
+        assert len(received) == 2
+        assert {r["model"] for r in received} == set(MODELS)
+    output = Path(report["rejudged"]["output"])
+    torn = json.loads(
+        (output / f"wake-1-{case.wakes[1]}.json").read_text())
+    if damage != "antecedent":
+        assert (torn.get("error") or {}).get("step") == "evidence"
+        assert torn["expectations"] == []
+        row = next(c for c in report["cases"] if c["case"] == case.name)
+        assert row["wakes"][0]["status"] == "PASS"
+        assert row["wakes"][1]["status"] == "ERROR"
+        assert any("wake 1" in e for e in row.get("errors") or [])
+    else:
+        row = next(c for c in report["cases"] if c["case"] == case.name)
+        assert row["wakes"][0]["status"] == "ERROR"
+        assert row["wakes"][1]["status"] == "ERROR"
+        assert any("earlier occasion" in e or "wake 1" in e
+                   for e in row.get("errors") or [])
+    assert environments and all(not env.active for env in environments)
+
+
+@pytest.fixture
+def behavior_run(tmp_path, example_config_path, monkeypatch):
+    """A frozen version-2 run: two produced turns, one behavior claim on
+    the second, sound artifacts a rejudge can stand on."""
+    from nora.subject import sandbox
+    from scripts.cognition_loop.cases import generated_behavior_case
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-only")
+    monkeypatch.setattr(sandbox, "EVAL_HOST_LOCK", tmp_path / "eval.lock")
+    case = generated_behavior_case()
+    write_case(case, tmp_path / "case.json")
+    turns = [
+        {"turn": 0, "input": case.turns[0], "status": "PASS",
+         "at_ms": 1000, "outcome": "delivered"},
+        {"turn": 1, "input": case.turns[1], "status": "PASS",
+         "at_ms": 2000, "outcome": "delivered"},
+    ]
+    report = {"status": "PASS", "expected_cases": manifest([case]),
+              "evidence": {"status": "PASS",
+                           "source_only": "generated original receipt"},
+              "run_budget": {"generated_source": True},
+              "cases": [{"case": case.name, "unit": case.unit,
+                         "status": "PASS", "wakes": [], "turns": turns}]}
+    (tmp_path / "report.json").write_text(json.dumps(report))
+    (tmp_path / "run_budget.json").write_text(
+        json.dumps(report["run_budget"]))
+    for index, turn in enumerate(turns):
+        (tmp_path / f"turn-{index}.json").write_text(json.dumps({
+            "turn": index, "unit": case.unit, "at_ms": turn["at_ms"],
+            "declared_input": {"text": case.turns[index],
+                               "event_id": f"generated-{index}",
+                               "at_ms": turn["at_ms"]},
+            "error": None,
+            "diff": {},
+            "trajectory": {
+                "turn": index, "session_id": None, "unit": case.unit,
+                "at_ms": turn["at_ms"],
+                "declared_input": {"text": case.turns[index]},
+                "model_calls": [{"model": "generated-subject",
+                                 "messages": [
+                                     {"role": "system",
+                                      "content": "generated instructions"},
+                                     {"role": "user",
+                                      "content": case.turns[index]}]}],
+                "effects": {"status": "observed",
+                            "items": [{"kind": "delivery",
+                                       "ref": f"delivery:b:{index}"}],
+                            "tools": []},
+                "settlement": {"status": "observed", "event": "done"},
+                "turn_outcome": {"status": "delivered",
+                                 "said": ["the venue is Cedar Hall"]},
+            }}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_bytes(example_config_path.read_bytes())
+    loaded = module.load(cfg, require_secrets=False)
+    bindings = {"llm.base_url": "judge"}
+    bindings.update({f"providers.{name}.base_url": "judge"
+                     for name in loaded.providers})
+    rows = []
+    for alias in MODELS:
+        rows.append({"method": "POST", "path": "/v1/chat/completions",
+                     "response": {
+                         "status": 200,
+                         "headers": {"x-omniroute-model": alias + "-served"},
+                         "json": {
+                             "id": f"generated-{alias}",
+                             "object": "chat.completion", "created": 1,
+                             "model": alias,
+                             "choices": [{"index": 0, "finish_reason": "stop",
+                                          "message": {
+                                              "role": "assistant",
+                                              "content": json.dumps({
+                                                  "verdict": "met",
+                                                  "reason": "generated",
+                                                  "entry_ids": [
+                                                      "delivery:b:1"]})}}],
+                             "usage": {"prompt_tokens": 20,
+                                       "completion_tokens": 10,
+                                       "total_tokens": 30}}}})
+    services = {"version": 1, "corpora": {"cognition-rejudge": {case.name: {
+        "version": 1, "bindings": bindings, "services": {"judge": rows}}}}}
+    return case, cfg, services
+
+
+async def test_rejudge_version2_judges_turn_artifacts_through_real_doors(
+    tmp_path, behavior_run, monkeypatch,
+):
+    """A version-2 case rejudges its frozen turn artifacts: the turn's
+    declared input, typed outcome and effects reach the real judge seam
+    — the sound turn's expectation gets both aliases, no wake is needed."""
+    case, cfg, services = behavior_run
+    path = input_file(tmp_path, services)
+    received = []
+    original = IsolatedServices._coverage
+
+    def observe(self, service):
+        coverage = original(self, service)
+
+        @web.middleware
+        async def capture(request, handler):
+            received.append(await request.json())
+            return await coverage(request, handler)
+
+        return capture
+
+    monkeypatch.setattr(IsolatedServices, "_coverage", observe)
+    result = await module.rejudge(tmp_path, tmp_path / "case.json", cfg,
+                                  *MODELS, services=path)
+    assert result["status"] == "PASS", result
+    # One behavior expectation on turn 1: both aliases, nothing for
+    # the turn with no anchored claim — the denominator is honest.
+    assert len(received) == 2
+    assert {r["model"] for r in received} == set(MODELS)
+    output = Path(result["rejudged"]["output"])
+    row = next(c for c in result["cases"] if c["case"] == case.name)
+    assert row["turns"][1]["status"] == "PASS"
+    (expectation,) = row["turns"][1]["expectations"]
+    assert len(expectation["answers"]) == 2
+    frozen = json.loads((output / "turn-1.json").read_text())
+    assert frozen["expectations"][0]["verdict"] == "PASS"
+
+
+@pytest.mark.parametrize("damage", ["identity", "settlement", "antecedent"])
+async def test_rejudge_version2_torn_turn_artifact_spends_no_judge(
+    tmp_path, behavior_run, monkeypatch, damage,
+):
+    """The real turn door is fail-closed: a foreign or torn frozen turn
+    artifact is refused by name before any HTTP — the recording proves
+    zero affected judge requests ever left."""
+    _case, cfg, services = behavior_run
+    if damage == "identity":
+        torn = tmp_path / "turn-1.json"
+        frozen = json.loads(torn.read_text())
+        frozen["unit"] = "foreign-unit"
+        torn.write_text(json.dumps(frozen))
+    elif damage == "settlement":
+        torn = tmp_path / "turn-1.json"
+        frozen = json.loads(torn.read_text())
+        frozen["trajectory"]["settlement"] = {"status": "gone"}
+        torn.write_text(json.dumps(frozen))
+    else:  # antecedent: the earlier turn's evidence cannot stand
+        earlier = tmp_path / "turn-0.json"
+        frozen = json.loads(earlier.read_text())
+        frozen["trajectory"]["effects"] = {"status": "gone"}
+        earlier.write_text(json.dumps(frozen))
+    path = input_file(tmp_path, services)
+    received = []
+    original = IsolatedServices._coverage
+
+    def observe(self, service):
+        coverage = original(self, service)
+
+        @web.middleware
+        async def capture(request, handler):
+            received.append(await request.json())
+            return await coverage(request, handler)
+
+        return capture
+
+    monkeypatch.setattr(IsolatedServices, "_coverage", observe)
+    result = await module.rejudge(tmp_path, tmp_path / "case.json", cfg,
+                                  *MODELS, services=path)
+    assert result["status"] == "ERROR"
+    # The only anchored claim lives on turn 1 — every damage lands before
+    # its door: exactly zero judge requests, never a silent empty history.
+    assert received == []
+    row = next(c for c in result["cases"] if c["case"] == _case.name)
+    errors = " ".join(row.get("errors") or [])
+    errors += json.dumps(result.get("errors") or "")
+    assert errors
+
+
 async def test_cancellation_closes_owned_services_and_retains_error(
     tmp_path, frozen_run, monkeypatch,
 ):

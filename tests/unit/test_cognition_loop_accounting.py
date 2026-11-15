@@ -152,7 +152,8 @@ def test_expected_denominators_do_not_shrink_with_missing_evidence(tmp_path, dam
     coverage = reconcile(report, tmp_path)
     assert coverage["status"] == ("PASS" if damage is None else "ERROR")
     if damage not in ("manifest", "malformed"):
-        assert coverage["expected"] == {"cases": 2, "wakes": 4, "criteria": 4, "judge_answers": 8}
+        assert coverage["expected"] == {"cases": 2, "wakes": 4, "turns": 0,
+                                        "criteria": 4, "judge_answers": 8}
     if damage is None:
         assert coverage["observed"] == coverage["expected"] and coverage["errors"] == []
     else:
@@ -351,3 +352,50 @@ def test_rejudge_preflight_allows_missing_judgments_but_keeps_case_denominator(t
     assert reconcile(report, tmp_path, judgments=False)["status"] == "PASS"
     report["cases"].pop()
     assert reconcile(report, tmp_path, judgments=False)["status"] == "ERROR"
+
+
+def _frozen_turn(**overrides):
+    """A minimal frozen turn artifact proving its own identity."""
+    frozen = {
+        "turn": 1, "unit": "generated-unit", "error": None,
+        "declared_input": {"text": "the generated correction",
+                           "event_id": "e-1", "at_ms": 2000},
+        "trajectory": {"turn": 1, "unit": "generated-unit",
+                       "session_id": None},
+    }
+    frozen.update(overrides)
+    return frozen
+
+
+def test_a_frozen_turn_proves_its_own_identity():
+    from scripts.cognition_loop.accounting import frozen_turn_identity
+    frozen = _frozen_turn()
+    assert frozen_turn_identity(
+        frozen, unit="generated-unit", turn=1,
+        declared_input="the generated correction") is None
+
+
+@pytest.mark.parametrize("damage,expect", [
+    ("turn", "mismatch"), ("unit", "mismatch"),
+    ("declared_input", "mismatch"), ("session_id", "mismatch"),
+    ("no_session_key", "unknown"), ("no_trajectory", "unknown"),
+])
+def test_a_foreign_or_unproven_turn_artifact_is_named(damage, expect):
+    from scripts.cognition_loop.accounting import frozen_turn_identity
+    frozen = _frozen_turn()
+    if damage == "turn":
+        frozen["turn"] = 9
+    elif damage == "unit":
+        frozen["unit"] = "foreign-unit"
+    elif damage == "declared_input":
+        frozen["declared_input"] = {"text": "foreign text"}
+    elif damage == "session_id":
+        frozen["trajectory"]["session_id"] = "s-foreign"
+    elif damage == "no_session_key":
+        frozen["trajectory"].pop("session_id")
+    else:
+        frozen.pop("trajectory")
+    verdict = frozen_turn_identity(
+        frozen, unit="generated-unit", turn=1,
+        declared_input="the generated correction")
+    assert verdict is not None and expect in verdict

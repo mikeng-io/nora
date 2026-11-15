@@ -209,8 +209,17 @@ def session_events(
     return events[start:terminal + 1] if terminal is not None else events[start:]
 
 
+def turn_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A produced turn's whole evidence window since its declared send:
+    admission, session, model requests, tool calls and transports as the
+    App emitted them. Nothing is filtered — a turn's behavior claim is
+    judged on everything the send produced, and a foreign session bleeding
+    into the window is left visible for the outcome gates to refuse."""
+    return list(events)
+
+
 def wake_trajectory(
-    events: list[dict[str, Any]], *, wake_id: int,
+    events: list[dict[str, Any]], *, wake_id: int | None,
     session_id: str | None, tokens: int | None,
 ) -> dict[str, Any]:
     """The session's events for one wake, grouped for a judge to read."""

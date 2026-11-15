@@ -59,5 +59,25 @@ be written merely because a wake ran; a grounded fact need not become a
 particular storage kind unless the product requires it. A passed date,
 unconfirmed plan or unrelated photo cannot establish that an event completed.
 
+## Two measurement versions
+
+The case format is versioned, and the version names the measure, never a
+cosmetic flag. A version-1 case anchors each expectation at a recorded wake
+and names the state kind it is judged against: a legacy state/replay
+diagnostic, retained with its historical semantics and verdicts. A version-2
+case anchors each expectation at a declared later input and names
+`behavior`: what the produced turn recalled, did or refrained from,
+independent of which store carried the state behind it.
+
+A version-2 turn is observed through real ingress and admission like any
+other send. The observation binds the declared input to its own session,
+model requests, tool calls, canonical effects and a typed outcome —
+confirmed delivery, intentional non-delivery, or the unconfirmed middle
+that is neither. A missing, foreign or unfinished window is a named
+observation error, never silence read as restraint; state kinds stay in
+the digest as provenance only. The recorded replay refuses a version-2
+claim rather than measuring it with the wrong instrument, and no version
+silently becomes another.
+
 The production loop and its responsibilities are owned by
 [Cognition and the Dreamer runtime](../cognition-loop/README.md).

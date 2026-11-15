@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from tests.unit.test_cognition_loop_run import _runner_subject, _wake_args, _wake_seam
+from tests.unit.test_cognition_loop_run_wake import _runner_subject, _wake_args, _wake_seam
 
 
 async def test_lifecycle_read_failure_keeps_terminal_evidence_and_names_the_error(

@@ -28,6 +28,7 @@ from nora.config import load
 from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events, validate_events
 from nora.subject.sandbox import eval_host_lock
 from scripts.cognition_loop.accounting import (
+    frozen_turn_identity,
     frozen_wake_identity,
     manifest,
     reconcile,
@@ -39,6 +40,7 @@ from scripts.cognition_loop.judges import (
     JUDGE_TOKENS_PER_CALL,
     evidence_gap,
     judge_expectation,
+    observation_gap,
 )
 from scripts.cognition_loop.state import Entry, KindDiff, StateDiff, UnitState
 from scripts.cognition_loop.verdicts import ERROR, WAKE_ERRED, ExpectationVerdict, rollup
@@ -52,7 +54,7 @@ def _measurement(output: Path, case_path: Path) -> tuple[Path, dict[str, Any]]:
     target = output / "rejudgements" / uuid.uuid4().hex
     target.mkdir(mode=0o700, parents=True)
     for path in [output / "report.json", output / "run_budget.json",
-                 *output.glob("wake-*.json")]:
+                 *output.glob("wake-*.json"), *output.glob("turn-*.json")]:
         if path.is_file():
             copied = target / path.name
             shutil.copyfile(path, copied)
@@ -109,6 +111,22 @@ def run_status_after(report: dict[str, Any]) -> str:
           else [ERROR]))
 
 
+def _manifest_entry(entry: Any) -> dict[str, Any]:
+    """One expected-case row normalized to the current manifest shape:
+    fields a version-1-era report never recorded default to their
+    version-1 values, never silently rewriting what it declared."""
+    shape = {
+        "name": None, "unit": None, "wakes": [], "expectations": [],
+        "read_probes": [], "turns": [], "version": 1,
+        **(dict(entry) if isinstance(entry, dict) else {}),
+    }
+    shape["expectations"] = [
+        {"wake": None, "turn": None, "check": None, **dict(e)}
+        for e in shape.get("expectations") or []
+    ]
+    return shape
+
+
 def _preflight(report: dict[str, Any], output: Path, case: Any) -> tuple[list, list[str]]:
     recorded = report.get("cases")
     rows = [c for c in recorded if isinstance(c, dict) and c.get("case") == case.name] if (
@@ -119,7 +137,8 @@ def _preflight(report: dict[str, Any], output: Path, case: Any) -> tuple[list, l
     if not case.expectations:
         errors.append("no judging criteria")
     expected = report.get("expected_cases")
-    planned = [c for c in expected if isinstance(c, dict) and c.get("name") == case.name] if (
+    planned = [_manifest_entry(c) for c in expected
+               if isinstance(c, dict) and c.get("name") == case.name] if (
         isinstance(expected, list)) else []
     if planned != manifest([case]):
         errors.append("case differs from expected manifest")
@@ -130,17 +149,39 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
                        judges: Any, models: tuple[str, str]) -> None:
     statuses = []
     earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = ()
-    for index, wake_id in enumerate(case.wakes):
-        path = output / f"wake-{index}-{wake_id}.json"
+    # Wakes and produced turns are judged in the order they happened —
+    # each occasion's earlier history is the occasions before it.
+    wakes_rows = row.get("wakes") or []
+    turns_rows = row.get("turns") or []
+    occasions = [
+        ((wakes_rows[index].get("at_ms") or 0
+          if index < len(wakes_rows) else 0), "wake", index, wake_id)
+        for index, wake_id in enumerate(case.wakes)
+    ] + [
+        ((turns_rows[index].get("at_ms") or 0
+          if index < len(turns_rows) else 0), "turn", index, text)
+        for index, text in enumerate(case.turns)
+    ]
+    occasions.sort(key=lambda o: (o[0], o[1]))
+    for _at_ms, which, index, anchor in occasions:
+        if which == "wake":
+            path = output / f"wake-{index}-{anchor}.json"
+        else:
+            path = output / f"turn-{index}.json"
         frozen = json.loads(path.read_text(encoding="utf-8"))
         diff, after = frozen_diff(frozen)
-        wakes = row.get("wakes") or []
-        recorded = wakes[index] if index < len(wakes) else {}
-        identity = frozen_wake_identity(
-            frozen, unit=case.unit, recorded_wake_id=wake_id,
-            at_ms=recorded.get("at_ms"), step=recorded.get("step"),
-            wake_id=recorded.get("wake_id"),
-            session_id=recorded.get("session_id"))
+        section = row.get("wakes" if which == "wake" else "turns") or []
+        recorded = section[index] if index < len(section) else {}
+        if which == "wake":
+            identity = frozen_wake_identity(
+                frozen, unit=case.unit, recorded_wake_id=anchor,
+                at_ms=recorded.get("at_ms"), step=recorded.get("step"),
+                wake_id=recorded.get("wake_id"),
+                session_id=recorded.get("session_id"))
+        else:
+            identity = frozen_turn_identity(
+                frozen, unit=case.unit, turn=index,
+                declared_input=anchor, step=recorded.get("step"))
         # The case names the unit; an old freeze never captured the rooms
         # that belong to it, and null there means unknown, never empty.
         trajectory = {**(frozen.get("trajectory") or {}),
@@ -150,21 +191,24 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
         # gap cannot judge: ERROR with its cause durable, no judge call
         # spent, and the invalidity carried into history — never empty.
         stale = unmeasured(frozen, recorded)
-        gap = evidence_gap(trajectory, earlier_wakes)
+        gap = (observation_gap(trajectory, earlier_wakes) if which == "turn"
+               else evidence_gap(trajectory, earlier_wakes))
         judgeable = identity is None and not stale and not gap
         if identity is not None:
             cause = identity
         elif stale:
-            cause = (f"frozen wake is unmeasured at step "
+            cause = (f"frozen {which} is unmeasured at step "
                      f"{(frozen.get('error') or {}).get('step', 'unknown')}")
         else:
             cause = "; ".join(gap)
         if cause:
             row.setdefault("errors", []).append(
-                f"wake {index} (recorded {wake_id}): {cause}")
+                f"{which} {index}: {cause}")
         if judgeable:
             for expectation in case.expectations:
-                if expectation.wake != index:
+                anchored = (expectation.wake if which == "wake"
+                            else expectation.turn)
+                if anchored != index:
                     continue
                 try:
                     verdict = await judge_expectation(
@@ -188,9 +232,9 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
                         encoding="utf-8")
         status = rollup(ERROR if not judgeable else "PASS",
                         *(j["verdict"] for j in judged))
-        if index < len(row.get("wakes") or []):
-            row["wakes"][index]["status"] = status
-            row["wakes"][index]["expectations"] = judged
+        if index < len(section):
+            section[index]["status"] = status
+            section[index]["expectations"] = judged
         statuses.append(status)
         earlier_wakes += ((diff, trajectory) if judgeable
                           else (None, {"invalid": cause}),)

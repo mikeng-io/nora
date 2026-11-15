@@ -7,6 +7,7 @@ contract suite binds to the real SQL stores.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -17,6 +18,7 @@ from nora.subject.eval_evidence import EvidenceError
 from scripts.cognition_loop.__main__ import token_budget
 from scripts.cognition_loop.cases import (
     Expectation,
+    generated_behavior_case,
     generated_case,
     load_case,
     write_case,
@@ -128,6 +130,62 @@ def test_expectation_polarity_and_kind_are_checked():
         Expectation(wake=0, polarity="should", kind="note", text="t")
     with pytest.raises(EvidenceError):
         Expectation(wake=0, polarity="must", kind="vibes", text="t")
+
+
+def test_the_generated_behavior_case_round_trips(tmp_path):
+    path = tmp_path / "generated-v2.json"
+    write_case(generated_behavior_case(), path)
+    loaded = load_case(path)
+    assert loaded == generated_behavior_case()
+    assert loaded.version == 2 and loaded.wakes == ()
+    (expectation,) = loaded.expectations
+    assert expectation.turn == 1 and expectation.wake is None
+    assert expectation.kind == "behavior" and expectation.check == "Cedar Hall"
+
+
+@pytest.mark.parametrize("raw", [
+    # no version — an ambiguous measurement never silently becomes one
+    {"name": "x", "unit": "u", "wakes": [1], "expectations": []},
+    {"version": 3, "name": "x", "unit": "u", "turns": ["t"]},
+    {"version": "2", "name": "x", "unit": "u", "turns": ["t"]},
+])
+def test_a_missing_or_unknown_version_is_refused(tmp_path, raw):
+    path = tmp_path / "case.json"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(EvidenceError):
+        load_case(path)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda e: dict(e, kind="note"),          # a store kind is not a claim
+    lambda e: dict(e, wake=0),               # a wake anchor is a v1 claim
+    lambda e: dict(e, turn=4),               # outside the declared turns
+    lambda e: dict(e, turn="1"),             # untyped anchor
+    lambda e: dict(e, check=5),              # the check token is text
+])
+def test_a_version2_expectation_declares_only_a_turn_behavior_claim(
+        tmp_path, mutate):
+    raw = {
+        "version": 2, "name": "x", "unit": "u",
+        "turns": ["generated first", "generated second"],
+        "expectations": [mutate({"turn": 1, "polarity": "must",
+                                "kind": "behavior",
+                                "text": "a generated claim"})],
+    }
+    path = tmp_path / "case.json"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(EvidenceError):
+        load_case(path)
+
+
+def test_a_version1_case_declares_no_turns_and_no_behavior():
+    from scripts.cognition_loop.cases import Case
+    with pytest.raises(EvidenceError):
+        Case(name="x", unit="u", wakes=(1,), turns=("generated",))
+    with pytest.raises(EvidenceError):
+        Case(name="x", unit="u", wakes=(1,), expectations=(
+            Expectation(wake=0, polarity="must", kind="behavior",
+                        text="t"),))
 
 
 # --------------------------------------------------------------------------

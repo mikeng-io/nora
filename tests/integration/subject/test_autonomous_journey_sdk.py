@@ -60,6 +60,19 @@ def world(*, overrides=None):
             "platforms.signal.enabled": True,
             "cognition.enabled": True,
             "heartbeat.enabled": True,
+            # The finite plan is deterministic in two ways. A short fire
+            # tick and a cue-quiet window wider than the reminder's whole
+            # fire window keep the plan's sends the only wakes the world
+            # produces; and every scheduled Dreamer adaptor's `wake_batch`
+            # sits above the plan's message count, so the background tick
+            # never holds the model slot the plan's own wakes and fires
+            # need — the same not-due shape a quiet deployment shows.
+            "heartbeat.tick_seconds": 5,
+            "cognition.cue_quiet_seconds": 300,
+            "culture.wake_batch": 1000,
+            "memory.profile.person.update_every_messages": 1000,
+            "memory.profile.unit.update_every_room_profile_changes": 1000,
+            "memory.profile.nora.update_every_replies": 1000,
             **(overrides or {}),
         },
         judge_models=JUDGES)
@@ -68,6 +81,36 @@ def world(*, overrides=None):
 def case():
     return Case(name="generated-autonomous-journey", input="",
                 expected_output="", metadata={"journey": dict(PLAN)})
+
+
+# The same generated world and the same production path, measured the
+# new way: the claims anchor the produced turns, not the state kind a
+# storage row landed in. `check` tokens are what the fixture itself
+# made observable — finite rehearsal binding, never a quality claim.
+PLAN_V2 = {
+    "version": 2,
+    "steps": list(PLAN["steps"]),
+    "expected_wakes": 2,
+    "expectations": [
+        {"turn": 0, "polarity": "must", "kind": "behavior",
+         "text": "the turn asks which generated venue and time to select",
+         "check": "Which generated venue and time"},
+        {"turn": 1, "polarity": "must", "kind": "behavior",
+         "text": "the turn retains the generated correction — the venue "
+                "record is revised to Cedar Hall",
+         "check": "Cedar Hall"},
+        {"turn": 1, "polarity": "must_not", "kind": "behavior",
+         "text": "the turn does not assert the generated gathering "
+                 "already happened",
+         "check": "has taken place"},
+    ],
+    "judges": list(JUDGES),
+}
+
+
+def behavior_case():
+    return Case(name="generated-behavior-journey", input="",
+                expected_output="", metadata={"journey": dict(PLAN_V2)})
 
 
 def test_autonomous_journey_entry_and_plan_preflight(evaluation_config, tmp_path):
@@ -233,5 +276,74 @@ async def test_sdk_autonomous_journey_through_real_app_to_judges_and_reports(
     assert len(reminders) == 1 and reminders[0]["state"] == "done"
     sdk_evidence.record("protocol_assertions", status="PASS", execution="PASS",
                         validity="PASS", behavior="UNMEASURED")
+
+    _durable_mirror(sdk_evidence)
+
+
+async def test_sdk_autonomous_journey_version2_turns_through_real_app(
+    clean_pg_url, evaluation_config, monkeypatch, sdk_evidence,
+):
+    """The version-2 measure end to end: the same generated world, the same
+    real ingress and App, but the claims anchor the produced turns — each
+    judged on its declared input, typed outcome and effects, both judges,
+    with the store kinds present only as provenance."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    draw = behavior_case()
+    plan = world()
+    spec = Spec(source_url=clean_pg_url, entry="autonomous_journey",
+                services={draw.name: plan})
+    experiment = Experiment(cases=[draw], evaluators=[JourneyGrader()])
+    report = await experiment.run_evaluations_async(
+        task=nora_task(spec), max_workers=1)
+
+    assert [rows[0].label for rows in report.detailed_results] == ["PASS"]
+    coverage, outcome = accounted(
+        report, experiment, evidence=evidence_outcome(sdk_evidence))
+    assert accepted(coverage, outcome), (coverage, outcome)
+    payload = backbone.retain_report(
+        sdk_evidence, draw.name, report, experiment=experiment,
+        coverage=coverage)
+    assert payload["outcome"]["behavior"]["status"] == "UNMEASURED"
+    outputs = sdk_evidence.path / f"journey-{draw.name}"
+    retained = json.loads((outputs / "report.json").read_text())
+    assert retained["status"] == "PASS", retained["errors"]
+    assert retained["version"] == 2
+    assert retained["coverage"]["status"] == "PASS", retained["coverage"]["errors"]
+    census = retained["coverage"]["expected"]
+    assert census["turns"] == 2 and census["wakes"] == 2
+    assert census["criteria"] == 3 and census["judge_answers"] == 6
+
+    (journey,) = (c for c in retained["cases"] if c["case"] == draw.name)
+    assert journey["status"] == "PASS"
+    # The wake denominator is honestly retained — each send's natural wake
+    # is a row — but the behavior claims live on the turn rows.
+    assert len(journey["wakes"]) == 2 and len(journey["turns"]) == 2
+    assert [t["outcome"] for t in journey["turns"]] == [
+        "delivered", "intentional_non_delivery"]
+    first, second = journey["turns"]
+    assert first["trajectory"]["declared_input"]["text"] == INITIAL
+    assert second["trajectory"]["declared_input"]["text"] == CORRECTION
+    assert [e["verdict"] for t in journey["turns"]
+            for e in t["expectations"]] == ["PASS", "PASS", "PASS"]
+    assert all(len(e["answers"]) == 2
+               for t in journey["turns"] for e in t["expectations"])
+    for index in range(2):
+        frozen = json.loads((outputs / f"turn-{index}.json").read_text())
+        assert frozen["turn"] == index
+        assert frozen["declared_input"]["text"] in (INITIAL, CORRECTION)
+        assert frozen["trajectory"]["session_id"] is None
+    # The state kinds stay provenance, never the oracle: the diff is
+    # frozen beside the turn it is not allowed to decide.
+    assert "diff" in frozen or "diff" in json.loads(
+        (outputs / "turn-0.json").read_text())
+
+    protocol, judge = plan.protocol, plan.judge
+    assert protocol.phase == 9 and not protocol.errors
+    assert len(judge.requests) == 6 and not judge.errors
+    assert {r["model"] for r in judge.requests} == set(JUDGES)
+    rendered = (outputs / "report.html").read_text()
+    assert draw.name in rendered and "turn" in rendered
+    sdk_evidence.record("protocol_assertions", status="PASS",
+                        version=2, behavior="UNMEASURED")
 
     _durable_mirror(sdk_evidence)

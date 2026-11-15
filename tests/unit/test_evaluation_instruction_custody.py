@@ -75,7 +75,10 @@ async def test_missing_instruction_custody_stops_before_both_judges(where):
     bad = await judge_expectation(judges, ("a", "b"), expectation, diff, state,
                                   current, ((diff, prior),))
     assert bad.verdict == "ERROR" and judges.calls == []
-    assert {answer.reason for answer in bad.answers} == {"subject instruction evidence unavailable"}
+    gap = ("subject_instructions_unobserved" if where == "current"
+           else "earlier wake 0: subject_instructions_unobserved")
+    assert {answer.reason for answer in bad.answers} == {
+        f"required journey evidence unavailable: {gap}"}
     none = empty_session()
     positive = await judge_expectation(judges, ("a", "b"), expectation, diff, state,
                                        none, ((diff, none),))

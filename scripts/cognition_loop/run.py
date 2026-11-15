@@ -148,6 +148,12 @@ async def run_case(
     """One case end to end. `judges` is None under `--inspect-only`."""
     roll = Rollup()
     wakes_report: list[dict[str, Any]] = []
+    if getattr(case, "version", 1) != 1:
+        roll.error(
+            "the recorded replay measures version-1 state expectations; a "
+            "version-2 behavior claim anchors a produced turn the replay "
+            "never delivers — the autonomous journey measures it")
+        return _report(case, roll, wakes_report)
     inputs = getattr(args, "service_inputs", None)
     recording = inputs.corpora.get("cognition-loop", {}).get(case.name) if inputs else None
     if recording is None:

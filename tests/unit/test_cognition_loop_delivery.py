@@ -238,7 +238,7 @@ async def test_an_advance_failure_freezes_the_wakes_error(
 
 
 async def test_replay_rejects_a_room_resolved_into_another_unit(monkeypatch, tmp_path):
-    from tests.unit.test_cognition_loop_run import _runner_subject, _wake_args, _wake_seam
+    from tests.unit.test_cognition_loop_run_wake import _runner_subject, _wake_args, _wake_seam
 
     subject = _runner_subject()
     subject.unit = "another-unit"

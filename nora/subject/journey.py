@@ -122,8 +122,10 @@ class JourneyDriver:
             raise EvidenceError(
                 "the bridge reader never came up") from None
 
-    async def ingress(self, body: str, *, event_id: str) -> Envelope:
-        """One generated line through real bridge ingress; returns the envelope."""
+    async def ingress(self, body: str, *, event_id: str) -> tuple[Envelope, Any, Any]:
+        """One generated line through real bridge ingress: the envelope
+        plus the admission event and work rows it settled to — the turn's
+        own settlement, never an inferred one."""
         reader = self.runtime.readers[0]
         _, room = self.subject.room
         timestamp = int(time.time() * 1000)
@@ -135,10 +137,25 @@ class JourneyDriver:
         _, canonical = await producer.enqueue(incoming)
         if self.task is None:
             raise EvidenceError("the app never started for this journey")
-        event, _ = await settled_event(self.engine, canonical, self.task)
+        event, work = await settled_event(self.engine, canonical, self.task)
         if event["state"] != "done":
             raise EvidenceError(f"bridge admission ended {event['state']!r}")
-        return incoming
+        return incoming, dict(event), [dict(row) for row in work]
+
+    async def wait_turn_settled(self, since_ms: int, *, seconds: float) -> list[Any]:
+        """Every bridge action the turn queued, settled — confirmed, or a
+        terminal rejection/uncertainty. Zero actions returns at once: the
+        admission work rows carry the typed non-delivery instead."""
+        async with asyncio.timeout(seconds):
+            while True:
+                self._require_running()
+                actions = await self.rows(BRIDGE_ACTION)
+                queued = [dict(row) for row in actions
+                          if row["created_at"].timestamp() * 1000 >= since_ms]
+                if all(row["state"] in {"confirmed", "rejected", "uncertain"}
+                       for row in queued):
+                    return queued
+                await asyncio.sleep(0.05)
 
     async def wait_closed_wakes(self, count: int, *, seconds: float) -> list[Any]:
         """At least `count` recorded wake outcomes, every one `closed` — a

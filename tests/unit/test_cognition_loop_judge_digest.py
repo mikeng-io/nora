@@ -91,6 +91,48 @@ def test_a_multi_megabyte_trajectory_still_yields_a_bounded_digest():
     assert size < JUDGE_INPUT_MAX_BYTES
 
 
+def test_a_fat_turn_trajectory_still_yields_a_bounded_digest():
+    """A turn's verbatim requests stay in its frozen artifact; the payload
+    carries a bounded digest — the same budget a wake payload holds."""
+    context = "the whole session context " * 60_000
+    # Each call's stack is ~2.4 MB once the tail repeats: undigested the
+    # payload is ~21 MB, digested it is tens of KB. The first call's
+    # system/developer stay small — they are quoted verbatim as
+    # `subject_instructions` by design.
+    messages = [{"role": "system", "content": "generated subject rules"},
+                {"role": "developer", "content": "generated developer rules"},
+                {"role": "user", "content": context},
+                *([{"role": "assistant", "content": context},
+                   {"role": "tool", "content": context}] * 20)]
+    trajectory = {
+        "turn": 0, "at_ms": 1_800_000_000_000, "unit": "generated-unit",
+        "session_id": None,
+        "declared_input": {"text": "generated", "event_id": "e-1",
+                           "at_ms": 1_800_000_000_000},
+        "model_calls": [{"model": "generated", "stream": True,
+                         "tools": [{"function": {"name": "send_reply"}}],
+                         "messages": messages}
+                        for _ in range(9)],
+        "blocks": {},
+        "settlement": {"status": "observed", "event": "done", "work": []},
+        "turn_outcome": {"status": "delivered", "said": ["generated"]},
+        "final_response": {"status": "observed", "text": "generated"},
+    }
+    expectation = Expectation(
+        wake=None, turn=0, polarity="must", kind="behavior",
+        text="the turn says the generated thing", check="generated")
+    payload = judge_payload(expectation, _diff(), _state(), trajectory)
+    size = len(json.dumps(payload, ensure_ascii=False, default=str).encode())
+    assert size < JUDGE_INPUT_MAX_BYTES
+    calls = payload["model_calls"]
+    assert [c["index"] for c in calls] == list(range(9))
+    assert calls[0]["tools"] == ["send_reply"]
+    assert calls[0]["messages_omitted"] == len(messages) - 3
+    # The newest messages are excerpted, never the verbatim stack.
+    assert all(len(m["content"]) <= 2000
+               for c in calls for m in c["messages"])
+
+
 def test_the_digest_lists_every_tool_call_and_every_diff_entry():
     payload = judge_payload(_expectation(), _diff(), _state(), _trajectory())
     assert [c["tool"] for c in payload["tool_calls"]] == [

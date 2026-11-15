@@ -20,6 +20,24 @@ def private_lock(tmp_path, monkeypatch):
     monkeypatch.setattr(sandbox, "EVAL_HOST_LOCK", tmp_path / "eval.lock")
 
 
+async def test_the_replay_refuses_a_version2_behavior_case(tmp_path):
+    """The recorded replay measures version-1 state claims only: a
+    turn-anchored behavior case is refused at the door, never silently
+    measured by the wrong instrument."""
+    from types import SimpleNamespace
+
+    from scripts.cognition_loop import run as run_mod
+
+    case = SimpleNamespace(name="v2", unit="u", wakes=(), turns=("t",),
+                           expectations=(), version=2)
+    report = await run_mod.run_case(
+        SimpleNamespace(), case, SimpleNamespace(), None,
+        SimpleNamespace(), SimpleNamespace(), tmp_path)
+    assert report["status"] == "ERROR"
+    assert any("version-1" in e and "version-2" in e
+               for e in report["errors"])
+
+
 def test_run_materialises_the_config_and_folds_the_status(
     monkeypatch, tmp_path,
 ):

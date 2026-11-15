@@ -477,6 +477,36 @@ def _wake(case_index: int, index: int, wake: dict[str, Any],
     return "".join(parts)
 
 
+def _turn(case_index: int, index: int, turn: dict[str, Any],
+          frozen: dict[str, Any]) -> str:
+    anchor = f"case-{case_index}-turn-{index}"
+    status = turn.get("status") or "ERROR"
+    error = frozen.get("error") or {}
+    trajectory = turn.get("trajectory") or frozen.get("trajectory") or {}
+    outcome = (trajectory.get("turn_outcome") or {}).get("status") \
+        or turn.get("outcome") or "unobserved"
+    declared = (trajectory.get("declared_input")
+                or frozen.get("declared_input") or {})
+    parts = [
+        f'<section class="wake" id="{anchor}">'
+        f"<h3>turn {index} — "
+        f'<span class="status-{esc(status)}">{esc(status)}</span></h3>',
+        f'<p class="summary">Declared input: {esc(declared.get("text"))} — '
+        f"outcome {esc(outcome)}</p>",
+    ]
+    if error or turn.get("error"):
+        parts.append(_kv([
+            ("failed step", error.get("step") or turn.get("step")),
+            ("error", error.get("message") or turn.get("error")),
+        ]))
+    parts.append(_did({**turn, "trajectory": trajectory}))
+    parts.append(_changed(frozen.get("diff")))
+    parts.append(_judgement(
+        turn.get("expectations") or frozen.get("expectations")))
+    parts.append("</section>")
+    return "".join(parts)
+
+
 def _toc(report: dict[str, Any], orphans: list[Path]) -> str:
     items = []
     for ci, case in enumerate(report.get("cases") or []):
@@ -485,6 +515,11 @@ def _toc(report: dict[str, Any], orphans: list[Path]) -> str:
             f'<span class="status-{esc(w.get("status") or "ERROR")}">'
             f'{esc(w.get("status") or "ERROR")}</span></li>'
             for wi, w in enumerate(case.get("wakes") or []))
+        inner += "".join(
+            f'<li><a href="#case-{ci}-turn-{ti}">turn {ti}</a> — '
+            f'<span class="status-{esc(t.get("status") or "ERROR")}">'
+            f'{esc(t.get("status") or "ERROR")}</span></li>'
+            for ti, t in enumerate(case.get("turns") or []))
         items.append(
             f'<li><a href="#case-{ci}">{esc(case.get("case"))}</a> — '
             f'<span class="status-{esc(case.get("status"))}">'
@@ -559,13 +594,21 @@ def render(output: Path) -> Path:
     }
     orphans = sorted(
         p for p in output.glob("wake-*.json") if p.name not in expected)
+    expected_turns = {
+        f"turn-{ti}.json"
+        for case in report.get("cases") or []
+        for ti, _ in enumerate(case.get("turns") or [])
+    }
+    turn_orphans = sorted(
+        p for p in output.glob("turn-*.json")
+        if p.name not in expected_turns)
     parts = [
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
         "<title>cognition loop report</title>"
         f"<style>{_CSS}</style></head><body>",
         _run(report, budget),
         _availability(output),
-        _toc(report, orphans),
+        _toc(report, orphans + turn_orphans),
     ]
     for ci, case in enumerate(report.get("cases") or []):
         parts.append(
@@ -580,6 +623,21 @@ def render(output: Path) -> Path:
                 f"wake-{wi}-{wake.get('recorded_wake_id')}.json")
             frozen = _load(frozen_path)
             parts.append(_wake(ci, wi, wake, frozen))
+        for ti, turn in enumerate(case.get("turns") or []):
+            frozen = _load(output / f"turn-{ti}.json")
+            parts.append(_turn(ci, ti, turn, frozen))
+        parts.append("</section>")
+    if turn_orphans:
+        parts.append('<section class="case">'
+                     "<h2>frozen turns absent from report.json</h2>")
+        for i, path in enumerate(turn_orphans):
+            frozen = _load(path)
+            stem = path.name[:-len(".json")].split("-", 1)
+            index = int(stem[1]) if len(stem) > 1 and stem[1].isdigit() else -1
+            parts.append(
+                f'<div id="unlisted-turn-{i}">'
+                + _turn(-1, index, {}, frozen)
+                + "</div>")
         parts.append("</section>")
     if orphans:
         parts.append('<section class="case">'
