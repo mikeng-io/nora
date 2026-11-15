@@ -27,7 +27,11 @@ from aiohttp import web
 from pydantic import BaseModel
 from sqlalchemy.engine import make_url
 
-from nora.subject.model_gateway import ModelGateway, ResolvedGateway
+from nora.subject.model_gateway import (
+    _ADMITTED_DISPATCH,
+    ModelGateway,
+    ResolvedGateway,
+)
 
 #: The declared model upstream reachable for an in-flight admitted dispatch
 #: on this task — the only non-owned destination the process guard opens,
@@ -442,6 +446,7 @@ class IsolatedServices:
                     return await _original(client, request)
                 cause = await self._model_refusal_async(client, request)
                 if cause is None:
+                    request.extensions[_ADMITTED_DISPATCH] = True
                     token = _admitted_egress.set(self._egress)
                     try:
                         return await _original(client, request)
@@ -455,6 +460,7 @@ class IsolatedServices:
                     return _original(client, request)
                 cause = self._model_refusal(client, request)
                 if cause is None:
+                    request.extensions[_ADMITTED_DISPATCH] = True
                     token = _admitted_egress.set(self._egress)
                     try:
                         return _original(client, request)

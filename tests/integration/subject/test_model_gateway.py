@@ -216,6 +216,53 @@ async def test_an_unbudgeted_dispatch_never_reaches_the_upstream(
             services.check()
 
 
+async def test_a_mounted_unbudgeted_transport_is_refused_before_the_upstream(
+        upstream, environment):
+    url, seen = upstream
+    from nora.agent.run_budget_transport import _BoundedTransport
+    origin = urlsplit(url)
+    mount = f"{origin.scheme}://{origin.netloc}"
+    async with environment() as services:
+        with _budget(max_requests=4) as budget:
+            # the client's default transport IS bounded, but the URL mount
+            # selects the transport that actually dispatches this request
+            async with httpx.AsyncClient(
+                    transport=_BoundedTransport(
+                        httpx.AsyncHTTPTransport(), budget),
+                    mounts={mount: httpx.AsyncHTTPTransport()}) as client:
+                with pytest.raises(PermissionError, match="not isolated"):
+                    await client.post(url + "/chat/completions", json=_body())
+        assert seen["requests"] == []
+        assert budget.requests == 0
+        with pytest.raises(EvidenceError, match="model_dispatch_unbudgeted"):
+            services.check()
+
+
+async def test_a_mounted_budgeted_transport_is_admitted_and_counts_once(
+        upstream, environment):
+    url, seen = upstream
+    from nora.agent.run_budget_transport import _BoundedTransport
+    origin = urlsplit(url)
+    mount = f"{origin.scheme}://{origin.netloc}"
+    async with environment() as services:
+        with _budget(max_requests=4) as budget:
+            # the default transport is unbudgeted; the selected mount's
+            # bounded transport is what must count this dispatch
+            async with httpx.AsyncClient(
+                    transport=httpx.AsyncHTTPTransport(),
+                    mounts={mount: _BoundedTransport(
+                        httpx.AsyncHTTPTransport(), budget)}) as client:
+                response = await client.post(
+                    url + "/chat/completions", json=_body())
+            assert response.status_code == 200
+            assert response.headers["x-served-model"] == "nora"
+        assert len(seen["requests"]) == 1
+        assert seen["requests"][0]["model"] == "nora"
+        assert budget.requests == 1
+        assert budget.input_tokens == 7 and budget.output_tokens == 2
+        services.check()
+
+
 async def test_an_exhausted_budget_refuses_before_the_upstream(upstream, environment):
     url, seen = upstream
     async with environment() as services:
@@ -256,6 +303,37 @@ async def test_a_followed_redirect_is_refused_before_dispatch(upstream, environm
         # the upstream saw the original POST; the redirected GET never dispatched
         assert len(seen["requests"]) == 1
         with pytest.raises(EvidenceError, match="model_method_undeclared"):
+            services.check()
+
+
+@pytest.mark.parametrize("status", [307, 308])
+async def test_a_post_preserving_redirect_creates_no_second_attempt(
+        upstream, environment, status):
+    url, seen = upstream
+    async with environment() as services:
+        async def redirect(request, body):
+            return web.json_response(
+                {"usage": {"prompt_tokens": 7, "completion_tokens": 2,
+                           "total_tokens": 9}},
+                status=status,
+                headers={"Location":
+                         f"http://{request.host}/v1/chat/completions"})
+
+        seen["respond"] = redirect
+        with _budget(max_requests=4) as budget:
+            from nora.agent.run_budget_transport import bounded_http_client
+            client = bounded_http_client(httpx.AsyncClient(follow_redirects=True))
+            client.follow_redirects = True
+            try:
+                with pytest.raises(PermissionError, match="not isolated"):
+                    await client.post(url + "/chat/completions", json=_body())
+            finally:
+                await client.aclose()
+        # the admitted POST reached upstream once; the redirect-built second
+        # attempt — same method, route, model, selected transport — was refused
+        assert len(seen["requests"]) == 1
+        assert budget.requests == 1
+        with pytest.raises(EvidenceError, match="model_dispatch_replayed"):
             services.check()
 
 

@@ -21,6 +21,12 @@ from urllib.parse import urlsplit
 
 _PORTS = {"http": 80, "https": 443}
 
+#: Stamped into an admitted request's `extensions` by the environment guard;
+#: httpx copies extensions into a redirect's request, so a request carrying
+#: the mark is a second attempt built from an admitted dispatch — never a
+#: caller-declared one.
+_ADMITTED_DISPATCH = "nora_admitted_dispatch"
+
 
 @dataclass(frozen=True, slots=True)
 class ModelGateway:
@@ -78,9 +84,9 @@ class ResolvedGateway:
         """A refusal cause for this dispatch, or None when it may proceed.
 
         `raw` is the request's already-serialized body; `client` is the
-        httpx-level client, whose transport must be the installed budget's
-        `_BoundedTransport` — the construction that counts this dispatch
-        exactly once through `RunBudget`.
+        httpx-level client, whose transport selected for this URL must be
+        the installed budget's `_BoundedTransport` — the construction that
+        counts this dispatch exactly once through `RunBudget`.
         """
         url = urlsplit(str(request.url))
         port = url.port or _PORTS.get(url.scheme, 0)
@@ -102,7 +108,13 @@ class ResolvedGateway:
         from nora.domain.run_budget import active_run_budget
 
         budget = active_run_budget.get()
-        if budget is None or getattr(
-                getattr(client, "_transport", None), "_budget", None) is not budget:
+        # `_send_single_request` dispatches through the transport selected
+        # for this URL — a matching mount, not the client's default.
+        select = getattr(client, "_transport_for_url", None)
+        transport = (select(request.url) if select is not None
+                     else getattr(client, "_transport", None))
+        if budget is None or getattr(transport, "_budget", None) is not budget:
             return "model_dispatch_unbudgeted"
+        if request.extensions.get(_ADMITTED_DISPATCH):
+            return "model_dispatch_replayed"
         return None
