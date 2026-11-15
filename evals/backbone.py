@@ -179,6 +179,12 @@ NORA_SHOWN_WHERE = "nora.shown_where"
 NORA_TRANSPORT = "nora.transport_held"
 NORA_MODE = "nora.mode"
 NORA_BEHAVIOR = "nora.behavior"
+#: The autonomous-journey entry's retained canonical verdict (`report.json`'s
+#: own `status` — PASS/FAIL/REVIEW/ERROR, never re-derived) and the private
+#: output directory's name, where the same run's `report.json`, `report.html`
+#: and frozen `wake-*` evidence live (under the case's evidence capture).
+NORA_JOURNEY = "nora.journey_status"
+NORA_JOURNEY_REPORT = "nora.journey_report"
 #: `Outcome.written`/`len(.changed)`/`len(.staged)` off the FIRST drive —
 #: the idempotence grader's input.
 #: `dream()`'s own `written`/`changed` are already PER-CALL DELTAS (it
@@ -1065,7 +1071,11 @@ class Spec:
     source_url: str
     entry: str = "participation"
     overrides: dict[str, Any] | None = None
-    services: Mapping[str, RecordedServices] | None = None
+    #: Case name -> the services plan that opens the case's isolated world.
+    #: A positional `RecordedServices` for anchored draws; a request-aware
+    #: plan (e.g. `nora.testing.journey_world.JourneyServices`) for the
+    #: live-clock entry — the contract is `open(database_url, redis=True)`.
+    services: Mapping[str, Any] | None = None
     #: Idempotence: drive the SAME subject
     #: through the SAME case `repeat` times, at the SAME `now_ms`, and carry
     #: the LAST run's `written`/`changed`/`staged` separately from the
@@ -1665,6 +1675,8 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
             "must not reach the task; `load_corpus` keeps parked cases out of "
             "the active set"
         )
+    if port.live_clock:
+        return await _drive_journey(case, spec, recording=recording)
     shot = dict(md.get("snapshot") or {})
     if md.get("corpus") == "cognition_session":
         from nora.subject.cognition import wake_from_snapshot
@@ -2089,6 +2101,84 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+async def _drive_journey(case: Case, spec: Spec, *, recording: Any) -> dict[str, Any]:
+    """The live-clock path: the case's services plan opens its world, the
+    case's own `SubjectSpec` composes the deployment subject against it, and
+    the drive runs the `App`'s own loop — no `snapshot:`, no forced wake."""
+    from evals.rebuilt.entry import ENTRY_POINTS
+    from nora.subject.eval_evidence import read_events
+
+    port = ENTRY_POINTS[spec.entry]
+    if spec.repeat > 1:
+        raise ValueError(
+            f"Spec.repeat={spec.repeat} is not meaningful for "
+            f"entry={spec.entry!r} — a live-clock journey re-runs the whole "
+            "world, not the same draw again"
+        )
+    now = datetime.now(tz=UTC)
+    workdir = Path(tempfile.mkdtemp(prefix="nora-journey-"))
+    subject = None
+    try:
+        async with (_sandbox_for(spec, now) as database_url,
+                    recording.open(database_url, redis=True) as environment):
+            plan = getattr(environment, "world", None)
+            if plan is None or getattr(plan, "subject_spec", None) is None:
+                raise EvidenceError(
+                    f"services for case {case.name or 'unnamed'!r} are not a "
+                    "generated journey world: the live-clock entry requires "
+                    "a request-aware services plan carrying `subject_spec`"
+                )
+            subject = await obtain(plan.subject_spec(
+                database_url, environment, workdir=workdir))
+            from nora.subject.eval_evidence import current, fingerprint
+
+            if evidence := current():
+                evidence.record("subject_ready", files={
+                    name: await asyncio.to_thread(fingerprint, workdir / name)
+                    for name in ("config.toml", "identity.toml", "policy.toml")
+                }, computer_enabled=subject.cfg.computer.enabled,
+                    browse_enabled=subject.cfg.computer.browse.enabled,
+                    defer_tools=subject.cfg.llm.defer_tools)
+            outcome = await port.drive(
+                subject,
+                _as_nora_case(case, spec,
+                              trigger=subject.cfg.engagement.trigger.text),
+                now_ms=int(now.timestamp() * 1000),
+            )
+            if environment.guarded:
+                environment.check()
+            report_ref = None
+            if evidence is not None:
+                for event in reversed(read_events(evidence.path)):
+                    if event.get("kind") == "journey_report":
+                        report_ref = event.get("ref")
+                        break
+            return {
+                "output": outcome.response,
+                "environment_state": [
+                    EnvironmentState(name=NORA_ERROR, state=outcome.error),
+                    EnvironmentState(name=NORA_TOKEN, state=outcome.outcome_token),
+                    EnvironmentState(name=NORA_SAID, state=len(outcome.said)),
+                    EnvironmentState(name=NORA_ADMITTED, state=outcome.admitted),
+                    EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
+                    EnvironmentState(name=NORA_JOURNEY,
+                                     state=outcome.judged or None),
+                    EnvironmentState(name=NORA_JOURNEY_REPORT, state=report_ref),
+                ],
+            }
+    except RoomNotInPolicyError as exc:
+        if pseudonyms.active():
+            raise RoomNotInPolicyError(
+                "the case's room is not in the journey policy even through the "
+                "pseudonym map (room withheld)"
+            ) from exc
+        raise
+    finally:
+        if subject is not None:
+            await _close(subject)
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 def _as_nora_case(case: Case, spec: Spec, *, trigger: str) -> Any:
     from evals.rebuilt.domain import Case as NoraCase
 
@@ -2393,6 +2483,46 @@ class AbsenceGrader(Evaluator):
         return EvaluationOutput(
             score=score, test_pass=(verdict == PASS), reason=reason, label=verdict,
         )
+
+
+class JourneyGrader(Evaluator):
+    """The autonomous-journey entry's grader — the retained canonical verdict.
+
+    It judges nothing itself: `report.json` written inside the drive holds
+    the fail-closed rollup the per-wake frozen evidence and both judges
+    produced. This evaluator carries that verdict into the SDK report —
+    `NORA_ERROR` (the drive never settled) is ERROR first, a missing
+    `NORA_JOURNEY` status is ERROR (the report was never retained), and
+    the status itself is the label otherwise. Behaviour stays UNMEASURED:
+    a PASS here means the protocol and its evidence completed, never that
+    the journey's behaviour was judged good.
+    """
+
+    def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
+        error = state_of(data, NORA_ERROR)
+        if error:
+            return [EvaluationOutput(
+                score=0.0, test_pass=False, reason=f"the case did not run: {error}",
+                label=ERROR,
+            )]
+        status = state_of(data, NORA_JOURNEY)
+        if not status:
+            return [EvaluationOutput(
+                score=0.0, test_pass=False,
+                reason="no retained journey verdict was carried back",
+                label=ERROR,
+            )]
+        report = state_of(data, NORA_JOURNEY_REPORT)
+        return [EvaluationOutput(
+            score=1.0 if status == PASS else 0.0,
+            test_pass=status == PASS,
+            reason=f"retained journey verdict {status}"
+                   + (f" ({report})" if report else ""),
+            label=status if status in (PASS, FAIL, ERROR) else FAIL,
+        )]
+
+    async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
+        return self.evaluate(data)
 
 
 class MeetsGrader(Evaluator):

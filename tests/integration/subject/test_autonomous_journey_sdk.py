@@ -1,0 +1,174 @@
+"""The native SDK autonomous journey: generated input through the real App,
+canonical evidence, both judges and the retained JSON/HTML report — one case."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+from strands_evals import Case, Experiment
+
+from evals import backbone
+from evals.accounting import accepted, accounted, evidence_outcome
+from evals.backbone import JourneyGrader, Spec, nora_task
+from evals.rebuilt.entry import ENTRY_POINTS
+from nora.subject.eval_evidence import EvidenceError, read_events
+from nora.subject.obtain import SubjectSpec, build_config, default_policy
+from nora.subject.recorded_services import RecordedServices
+from nora.testing.causal_protocol import CORRECTION, INITIAL, TITLE
+from nora.testing.journey_world import JourneyServices
+from tests.integration.subject.test_sdk_recorded_caller import (
+    sdk_evidence as sdk_evidence,
+)
+
+JUDGES = ("generated-a", "generated-b")
+
+PLAN = {
+    "steps": [
+        {"send": INITIAL},
+        {"until_wakes": 1},
+        {"until_delivery": True},
+        {"send": CORRECTION},
+        {"until_wakes": 2},
+    ],
+    "expected_wakes": 2,
+    "expectations": [
+        {"wake": 0, "polarity": "must", "kind": "note",
+         "text": "a note records the generated venue and time as undecided"},
+        {"wake": 0, "polarity": "must", "kind": "reminder",
+         "text": "a reminder asks which generated venue and time to select"},
+        {"wake": 1, "polarity": "must", "kind": "note",
+         "text": "a note records the generated venue Cedar Hall"},
+    ],
+    "judges": list(JUDGES),
+}
+
+
+def world(*, overrides=None):
+    policy = (default_policy(("signal", "g1"), unit="generated-unit")
+              + "home_room = true\nproactive = true\n")
+    return JourneyServices(
+        policy=policy, room=("signal", "g1"),
+        overrides={
+            "platforms.signal.mode": "bridge",
+            "platforms.signal.enabled": True,
+            "cognition.enabled": True,
+            "heartbeat.enabled": True,
+            **(overrides or {}),
+        },
+        judge_models=JUDGES)
+
+
+def case():
+    return Case(name="generated-autonomous-journey", input="",
+                expected_output="", metadata={"journey": dict(PLAN)})
+
+
+def test_autonomous_journey_entry_and_plan_preflight(evaluation_config, tmp_path):
+    """Focused preflight: the declared entry routes the live-clock path and
+    the generated world declares the same config the subject will compose."""
+    port = ENTRY_POINTS["autonomous_journey"]
+    assert port.live_clock and port.drive.__name__ == "autonomous_journey"
+    plan = world()
+    declared = build_config(SubjectSpec(
+        database_url="sqlite://", workdir=tmp_path / "declared",
+        policy=plan.policy, overrides=plan.overrides()))
+    assert declared.cognition.enabled and declared.heartbeat.enabled
+    assert declared.platforms.signal.enabled and declared.platforms.signal.mode == "bridge"
+    spec = plan.subject_spec("sqlite://", None, workdir=tmp_path / "subject")
+    assert spec.room == ("signal", "g1") and spec.environment is None
+    assert spec.overrides["platforms.signal.mode"] == "bridge"
+    assert spec.overrides["cognition.enabled"] is True
+
+
+async def test_positional_recording_is_refused_as_a_journey_world(
+    clean_pg_url, evaluation_config, monkeypatch, sdk_evidence,
+):
+    """Negative control: a `RecordedServices` plan — positional playback —
+    can never stand in for the request-aware journey world."""
+    sdk_evidence.record("expected_invalid_capture")
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    draw = case()
+    recording = RecordedServices({"version": 1, "bindings": {"llm.base_url": "model"},
+        "services": {"model": [{"method": "POST", "path": "/v1/chat/completions",
+                                "response": {"status": 200, "json": {}}}]}})
+    spec = Spec(source_url=clean_pg_url, entry="autonomous_journey",
+                services={draw.name: recording})
+    with pytest.raises(EvidenceError, match="journey world"):
+        await backbone._drive(draw, spec)
+
+
+async def test_sdk_autonomous_journey_through_real_app_to_judges_and_reports(
+    clean_pg_url, evaluation_config, monkeypatch, sdk_evidence,
+):
+    """The whole path, once: SDK case -> App journey -> canonical evidence ->
+    both judges -> retained JSON + HTML, with no forced wakes."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    draw = case()
+    plan = world()
+    spec = Spec(source_url=clean_pg_url, entry="autonomous_journey",
+                services={draw.name: plan})
+    experiment = Experiment(cases=[draw], evaluators=[JourneyGrader()])
+    report = await experiment.run_evaluations_async(
+        task=nora_task(spec), max_workers=1)
+
+    assert [rows[0].label for rows in report.detailed_results] == ["PASS"]
+    events = read_events(sdk_evidence.path)
+    coverage, outcome = accounted(
+        report, experiment, evidence=evidence_outcome(sdk_evidence))
+    assert accepted(coverage, outcome), (coverage, outcome)
+    assert outcome["behavior"]["status"] == "UNMEASURED"
+    outputs = sdk_evidence.path / f"journey-{draw.name}"
+    retained = json.loads((outputs / "report.json").read_text())
+    assert retained["status"] == "PASS"
+    assert retained["coverage"]["status"] == "PASS", retained["coverage"]["errors"]
+    assert retained["outcome"]["execution"]["status"] == "PASS"
+    assert retained["outcome"]["validity"]["status"] == "PASS"
+    assert retained["outcome"]["behavior"]["status"] == "UNMEASURED"
+    rendered = (outputs / "report.html").read_text()
+    assert draw.name in rendered and "autonomous-live-journey" in rendered
+
+    protocol, judge = plan.protocol, plan.judge
+    assert protocol.phase == 9 and not protocol.errors
+    assert len(protocol.requests) == 9 + protocol.background
+    assert len(judge.requests) == 6 and not judge.errors
+    assert {r["model"] for r in judge.requests} == set(JUDGES)
+    captured = [json.loads(e["attributes"]["nora.model.request.body"])
+                for e in events if e.get("name") == "nora.model.request"]
+    assert captured == plan.requests
+
+    case_rows = [c for c in retained["cases"] if c["case"] == draw.name]
+    (journey,) = case_rows
+    assert journey["status"] == "PASS" and len(journey["wakes"]) == 2
+    assert all(w["session_id"] is not None for w in journey["wakes"])
+    assert [e["verdict"] for w in journey["wakes"] for e in w["expectations"]] == [
+        "PASS", "PASS", "PASS"]
+    assert all(len(e["answers"]) == 2
+               for w in journey["wakes"] for e in w["expectations"])
+    assert all((outputs / f"wake-{i}-{w['recorded_wake_id']}.json").is_file()
+               for i, w in enumerate(journey["wakes"]))
+
+    # The case sandbox is dropped at teardown; the drive captured the same
+    # rows into the retained report, and the claims check THAT record.
+    receipts = retained["receipts"]
+    wakes, outcomes = receipts["wakes"], receipts["outcomes"]
+    assert len(wakes) == len(outcomes) == 2
+    assert all(w["reason"] == "strong_cue" and w["mode"] == "live"
+               and w["tracked"] == 1
+               and not (w.get("detail") or {}).get("recorded_wake_forced")
+               for w in wakes)
+    assert all(o["outcome"] == "closed" for o in outcomes)
+    assert len(receipts["sessions"]) == 2
+    versions = receipts["note_revisions"]
+    assert len(versions) == 2 and len({row["note_id"] for row in versions}) == 1
+    assert "Cedar Hall" in str(versions)
+    assert [row["title"] for row in receipts["notes"]] == [TITLE]
+    actions = receipts["actions"]
+    assert len(actions) == 1 and actions[0]["state"] == "confirmed"
+    sends = [row for row in receipts["messages"] if row["is_nora"]]
+    assert len(sends) == 1 and sends[0]["delivery_status"] == "sent"
+    assert sends[0]["id"] == actions[0]["message_id"]
+    reminders = receipts["reminders"]
+    assert len(reminders) == 1 and reminders[0]["state"] == "done"
+    sdk_evidence.record("protocol_assertions", status="PASS", execution="PASS",
+                        validity="PASS", behavior="UNMEASURED")

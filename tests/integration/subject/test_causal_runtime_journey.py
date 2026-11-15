@@ -14,23 +14,20 @@ from jsonschema import validate
 from opentelemetry import trace
 
 from nora.__main__ import App
-from nora.domain.models import NormalizedMessage
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.schema import BRIDGE_ACTION, BRIDGE_EVENT, BRIDGE_WORK, MESSAGES, STIMULUS
-from nora.platform.bridge.envelope import Envelope, canonical_source_key
+from nora.infra.sql.schema import BRIDGE_ACTION, MESSAGES, STIMULUS
 from nora.platform.bridge.queue import StreamProducer
-from nora.platform.bridge.rehydrate import message_to_dict
-from nora.platform.bridge.service import DurableActionService, action_http_status, action_response
-from nora.platform.signal.react import SignalReactor
-from nora.platform.signal.send import SignalSender
+from nora.platform.bridge.service import action_http_status, action_response
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
+from nora.subject.journey import envelope, settled_event
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 from nora.subject.sandbox import eval_host_lock
+from nora.testing.causal_protocol import completion
+from nora.testing.journey_world import action_service, memory_service
 from nora.testing.signal_daemon import FakeSignalDaemon
 from scripts.memory_graph_spike import measured_run_budget
-from tests.integration import test_signal_bridge_routes as signal_routes
-from tests.integration.subject.test_recorded_wake_runtime import completion, services
+from tests.integration.subject.test_recorded_wake_runtime import services
 
 
 @pytest.fixture
@@ -52,76 +49,6 @@ def runtime_evidence(tmp_path, request):
             assert any(e["kind"] == "protocol_assertions" and e["status"] == "PASS"
                        for e in read_events(evidence.path))
     assert validate_events(read_events(evidence.path))["status"] == "PASS"
-
-
-def memory_service(feeds):
-    application = web.Application()
-
-    async def create(request):
-        body = await request.json()
-        if not isinstance(body.get("id"), str) or not body["id"]:
-            return web.json_response({"error": "missing identity"}, status=422)
-        return web.json_response(body)
-
-    async def configure(request):
-        body = await request.json()
-        if not body or any(not isinstance(value, dict) for value in body.values()):
-            return web.json_response({"error": "missing peer configuration"}, status=422)
-        return web.json_response(body)
-
-    async def members(request):
-        return web.json_response({"items": [], "total": 0})
-
-    async def join(request):
-        body = await request.json()
-        if not body.get("session_ids"):
-            return web.json_response({"error": "missing sessions"}, status=422)
-        return web.Response(status=204)
-
-    async def feed(request):
-        body = await request.json()
-        if not body.get("messages") or any(
-            not row.get("content") or not row.get("peer_id") for row in body["messages"]
-        ):
-            return web.json_response({"error": "missing message or author"}, status=422)
-        feeds.extend(body["messages"])
-        return web.json_response({"messages": body["messages"]})
-
-    async def card(request):
-        if request.match_info["peer"] not in {"miles_novak", "nora"}:
-            return web.json_response({"error": "unrecorded peer"}, status=422)
-        return web.json_response({"peer_card": []})
-
-    async def representation(request):
-        body = await request.json()
-        if request.match_info["peer"] != "nora" or body.get("target") != "miles_novak":
-            return web.json_response({"error": "unrecorded peer model"}, status=422)
-        return web.json_response({"representation": ""})
-
-    application.router.add_post("/v3/workspaces", create)
-    for resource in ("peers", "sessions", "scopes"):
-        application.router.add_post(f"/v3/workspaces/{{workspace}}/{resource}", create)
-    application.router.add_post("/v3/workspaces/{workspace}/sessions/{session}/peers", configure)
-    application.router.add_post("/v3/workspaces/{workspace}/sessions/{session}/messages", feed)
-    application.router.add_post("/v3/workspaces/{workspace}/scopes/{scope}/sessions/list", members)
-    application.router.add_post("/v3/workspaces/{workspace}/scopes/{scope}/sessions", join)
-    application.router.add_get("/v3/workspaces/{workspace}/peers/{peer}/card", card)
-    application.router.add_post(
-        "/v3/workspaces/{workspace}/peers/{peer}/representation", representation)
-    return application
-
-
-def envelope(reader, room, timestamp, *, tagged=False):
-    body = "Generated bridge admission input."
-    source = canonical_source_key("signal", reader._account_key, room, "message", str(timestamp))
-    message = NormalizedMessage("signal", room, "group", "+852111", "Miles", timestamp, body,
-                                {"dataMessage": {"message": body}}, message_id=str(timestamp),
-                                mentions=frozenset({"generated-self"}) if tagged else frozenset())
-    return Envelope(platform="signal", account_key=reader._account_key, kind="message",
-        source_key=source, event_id="generated-admission", conversation_id=room,
-        conversation_type="group", sender_id="+852111", sender_name="Miles", sent_ms=timestamp,
-        received_ms=timestamp, queued_ms=timestamp, time_quality="upstream",
-        message=message_to_dict(message), admission_rev=1)
 
 
 def reply_service(cfg, requests, errors):
@@ -163,35 +90,6 @@ def reply_service(cfg, requests, errors):
 
     application.router.add_post("/v1/chat/completions", respond)
     return application
-
-
-def action_service(runtime, environment):
-    address = environment.urls["platforms.signal.base_url"]
-    executor = signal_routes.wrapper._SignalExecutor(
-        SignalSender(address), SignalReactor(address))
-    return DurableActionService(store=runtime.store, platform="signal",
-        account_key=runtime.readers[0]._account_key, execute=executor,
-        receipt_intents=frozenset)
-
-
-async def settled_event(engine, canonical, task):
-    async with asyncio.timeout(15):
-        while True:
-            async with engine.connect() as conn:
-                event = (await conn.execute(sa.select(BRIDGE_EVENT).where(
-                    BRIDGE_EVENT.c.id == canonical))).mappings().one_or_none()
-                work = (await conn.execute(sa.select(BRIDGE_WORK).where(
-                    BRIDGE_WORK.c.event_id == canonical))).mappings().all()
-            if (event and event["state"] in {"done", "intentional_skip"}
-                    and work and all(w["state"] in {"done", "intentional_skip"}
-                                     for w in work)):
-                break
-            assert not task.done(), (event, work)
-            assert all(w["state"] not in {"failed_retained", "uncertain"}
-                       for w in work), work
-            await asyncio.sleep(0.02)
-    assert work and all(w["state"] in {"done", "intentional_skip"} for w in work), work
-    return event, work
 
 
 @pytest.mark.asyncio

@@ -20,6 +20,7 @@ from nora.infra.sql.schema import COGNITION_WAKE_OUTCOME
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
+from nora.testing.causal_protocol import completion
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.subject.sandbox import eval_host_lock
 from scripts.cognition_loop.accounting import manifest, write_report
@@ -30,24 +31,6 @@ from tests.integration.subject.test_replay_service_scope import NOW
 from tests.integration.test_the_subject_is_the_deployed_graph import _empty_honcho_app
 
 MODELS = ["generated-a", "generated-b"]
-
-
-def completion(model, content, *, stream=False):
-    response = {"id": "generated-response", "object": "chat.completion", "created": 1,
-                "model": model, "choices": [{"index": 0, "finish_reason": "stop",
-                    "message": {"role": "assistant", "content": content}}],
-                "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}}
-    result = {"status": 200, "headers": {"x-omniroute-model": model + "-served"}}
-    if stream:
-        chunks = [{**response, "object": "chat.completion.chunk", "choices": [{
-            "index": 0, "delta": {"role": "assistant", "content": content},
-            "finish_reason": None}]}, {**response, "object": "chat.completion.chunk",
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}]
-        result["headers"]["content-type"] = "text/event-stream"
-        result["chunks"] = chunks
-    else:
-        result["json"] = response
-    return {"method": "POST", "path": "/v1/chat/completions", "response": result}
 
 
 def services(cfg, requests):

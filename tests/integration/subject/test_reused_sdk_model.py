@@ -6,7 +6,7 @@ from nora.agent.structured import ask_text, build_structured_model
 from nora.domain.run_budget import active_run_budget
 from nora.subject.eval_evidence import read_events
 from nora.subject.recorded_services import RecordedServices
-from tests.integration.subject.test_recorded_wake_runtime import completion
+from nora.testing.causal_protocol import completion
 from tests.integration.subject.test_sdk_recorded_caller import sdk_evidence as sdk_evidence
 
 

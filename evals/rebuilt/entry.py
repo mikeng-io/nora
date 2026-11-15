@@ -43,6 +43,7 @@ from nora.subject import (
 )
 from nora.subject.standing_fold import fold, read_fold_turn
 
+from .autonomous_journey import autonomous_journey
 from .domain import Case, Outcome, WorkingSetFinding
 from .fold_evidence import render_evidence, render_shown
 from .profile_coverage import profile_coverage
@@ -682,6 +683,12 @@ class EntryPoint:
 
     public_audience: bool = False
 
+    #: The `App`'s own live-clock scheduling loop drives this entry — real
+    #: ingress, admission, the deployment's timers, cognition, fire — over a
+    #: case-declared step plan, never a stated `snapshot:` instant and never
+    #: a forced wake. `_drive_draw`'s anchored-draw path does not apply.
+    live_clock: bool = False
+
     #: What a judge grades, when a judge is configured: `"reply"` — what she
     #: said, against the reply rubric — or `"position"` — the standing position
     #: a fold wrote — or `"identity"`, canonical heads against source meaning.
@@ -768,4 +775,12 @@ ENTRY_POINTS = {
         config={**_PARTICIPATION_SUBSYSTEM, "standing.enabled": True, "cognition.enabled": True},
         judged_on="position",
     ),
+    # The whole journey: the `App` itself runs, its own timers wake cognition
+    # and fire delivery, and the two judges read the same canonical evidence
+    # the frozen per-wake files carry. The subsystem a live runtime needs —
+    # signal bridge, cognition, heartbeat — is declared on the case's
+    # `Spec.overrides`/`JourneyServices`, not here: an entry's `config` is
+    # documentation only (`_drive_draw` reads `Spec.overrides`), and this
+    # entry's drive never touches the anchored-draw path.
+    "autonomous_journey": EntryPoint(drive=autonomous_journey, live_clock=True),
 }

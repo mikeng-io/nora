@@ -9,12 +9,28 @@ from datetime import UTC, datetime, timedelta
 from aiohttp import web
 from jsonschema import validate
 
-from tests.integration.subject.test_recorded_wake_runtime import completion
-
 INITIAL = "記低：the generated venue and time remain undecided."
 CORRECTION = "記低：the generated venue is Cedar Hall; the generated time remains undecided."
 TITLE = "Generated venue and time"
 QUESTION = "Which generated venue and time should be selected?"
+
+
+def completion(model, content, *, stream=False):
+    response = {"id": "generated-response", "object": "chat.completion", "created": 1,
+                "model": model, "choices": [{"index": 0, "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": content}}],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}}
+    result = {"status": 200, "headers": {"x-omniroute-model": model + "-served"}}
+    if stream:
+        chunks = [{**response, "object": "chat.completion.chunk", "choices": [{
+            "index": 0, "delta": {"role": "assistant", "content": content},
+            "finish_reason": None}]}, {**response, "object": "chat.completion.chunk",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}]
+        result["headers"]["content-type"] = "text/event-stream"
+        result["chunks"] = chunks
+    else:
+        result["json"] = response
+    return {"method": "POST", "path": "/v1/chat/completions", "response": result}
 
 
 def objects(value):
