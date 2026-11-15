@@ -6,12 +6,19 @@ revisions and expiry. Parsing a decision grants no authority by itself.
 
 from __future__ import annotations
 
+import logging
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from nora.domain.identity import Identifier
+from nora.domain.managed import Outcome, OutcomeStatus
+from nora.domain.models import ConversationTarget
 
 from .parser import extract_envelope
+from .send import SignalSender
+
+log = logging.getLogger(__name__)
 
 _DECISION = re.compile(r"!!!link (approve|refuse) (\S+) (\S+)", re.ASCII)
 
@@ -86,3 +93,99 @@ def parse_link_decision(
         sender=identifiers, timestamp=timestamp,
         request_id=match[2], nonce=match[3], approve=match[1] == "approve",
     )
+
+
+#: The consent service's decision entry point — the transport supplies the
+#: daemon-proven sender aliases, its own account id as the proof issuer and
+#: the envelope's timestamp; the service decides whether that proves the
+#: holder's decision. `Outcome`-typed so a transport failure and a refusal
+#: stay distinct all the way to the private reply.
+ConsentDecider = Callable[..., Awaitable[Outcome]]
+
+
+class SignalLinkDelivery:
+    """Private challenge delivery over signal-cli (`account-linking.md`).
+
+    The recipient is always an account identifier the binding store already
+    owns — the request's bound pair — never `identity.toml`'s direct-message
+    allowlist, which exists to stop room-chat DMs, not this narrow consent
+    transport. `dm_recipients=None` lifts that other check for exactly this
+    reason: the link service supplies a store-bound address, and a
+    transport failure answers `False` so the caller can report the
+    challenge through the authenticated view instead.
+    """
+
+    def __init__(self, base_url: str, *, sender: SignalSender | None = None) -> None:
+        self._sender = sender if sender is not None else SignalSender(
+            base_url, dm_recipients=None)
+
+    async def deliver(self, *, account: Identifier, text: str) -> bool:
+        if account.platform != "signal" or not account.value.strip():
+            return False
+        target = ConversationTarget(
+            platform="signal", conversation_id=account.value,
+            conversation_type="dm")
+        result = await self._sender.send(target, text)
+        return result.ok
+
+
+def _reply_address(sender: frozenset[Identifier]) -> Identifier | None:
+    """The private address a consent reply goes back to — the ACI first
+    (signal-cli's canonical private identity), then the number."""
+    for kind in ("uuid", "phone"):
+        for ident in sender:
+            if ident.kind == kind:
+                return ident
+    return next(iter(sender), None)
+
+
+class SignalLinkConsent:
+    """Dispatch parsed private decisions to the holder-link service and
+    answer privately — the same bound account address, never a room.
+
+    `dispatch` returns True when the event WAS a consent message (whether
+    the decision was recorded or refused), so the caller can consume it
+    before the ordinary room parser would drop it as a non-room DM.
+    """
+
+    def __init__(
+        self, *, own_account: str, decide: ConsentDecider,
+        delivery: SignalLinkDelivery,
+    ) -> None:
+        self._own_account = own_account
+        self._decide = decide
+        self._delivery = delivery
+
+    async def dispatch(self, event: dict) -> bool:
+        decision = parse_link_decision(event, own_account=self._own_account)
+        if decision is None:
+            return False
+        try:
+            outcome = await self._decide(
+                sender=decision.sender, issuer=self._own_account,
+                timestamp_ms=decision.timestamp,
+                request_id=decision.request_id, nonce=decision.nonce,
+                approve=decision.approve)
+        except Exception:
+            log.exception("link consent dispatch failed")
+            outcome = Outcome(OutcomeStatus.UNAVAILABLE, "decision-unavailable")
+        if (address := _reply_address(decision.sender)) is not None:
+            try:
+                await self._delivery.deliver(
+                    account=address, text=_reply_text(decision, outcome))
+            except Exception:  # noqa: BLE001 — a lost reply never re-opens the decision
+                log.warning("link consent reply delivery failed")
+        return True
+
+
+def _reply_text(decision: SignalLinkDecision, outcome: Outcome) -> str:
+    """The private answer — the decision's own request id and the honest
+    state, never the nonce and never another request's state."""
+    verb = "Approval" if decision.approve else "Decision"
+    if outcome.status is OutcomeStatus.COMPLETE:
+        return f"{verb} recorded for link request {decision.request_id}."
+    if outcome.status is OutcomeStatus.DENIED:
+        return (f"Link request {decision.request_id} refused: "
+                f"{outcome.detail or 'decision-refused'}.")
+    return (f"Link request {decision.request_id} is unavailable — "
+            "the decision was not recorded; try again later.")

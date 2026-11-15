@@ -215,6 +215,14 @@ class LinkPublicationService:
             "authority": authority,
         })
 
+    async def authority_revision(self, person_id: str) -> str | None:
+        """The live `authority` digest a holder's observed revisions bind —
+        `None` when any store cannot answer (never a guessed value)."""
+        result = await _person_authority(
+            self._bindings, self._backend, self._topology,
+            frozenset({person_id}))
+        return result if isinstance(result, str) else None
+
     # -- commit ---------------------------------------------------------------
 
     async def commit(self, request_id: str, *, now: datetime) -> Outcome:

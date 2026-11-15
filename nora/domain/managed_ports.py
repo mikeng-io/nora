@@ -26,7 +26,7 @@ from nora.domain.managed import (
     Outcome,
     PersonLifecycle,
 )
-from nora.domain.management import Operation, Scope
+from nora.domain.management import LinkSide, Operation, Scope
 
 
 @runtime_checkable
@@ -349,17 +349,43 @@ class IdentityRegistry(Protocol):
 
 
 @runtime_checkable
+class LinkChallengeDelivery(Protocol):
+    """Private challenge delivery to one exact bound account (`account-linking.md`).
+
+    Delivery is separate from consent: it carries the holder's own
+    challenge to the exact bound identifier, never to a room and never
+    to the other holder. A `False` answer means the transport could not
+    confirm the send — the holder can still retrieve the same challenge
+    through their authenticated view.
+    """
+
+    async def deliver(self, *, account: Identifier, text: str) -> bool:
+        ...
+
+
+@runtime_checkable
 class LinkRequestStore(Protocol):
     """Durable bilateral link consent (`account-linking.md`) — the request
     row and its decision evidence, serialized under the request's lock.
     The store records consent; it never publishes ownership."""
 
-    async def create(self, link: PendingLink) -> PendingLink:
-        """Persist a new request — `LinkStateError` when the id already
-        names a different effect or a recorded decision."""
+    async def create(
+        self, link: PendingLink, *, nonces: Mapping[LinkSide, str]
+    ) -> PendingLink:
+        """Persist a new request AND the private challenge material its
+        holders were sent — one transaction, so a request can never exist
+        whose challenge text was lost to a crash or restart.
+        `LinkStateError` when the id already names a different effect or a
+        recorded decision, or the nonces disagree with the recorded
+        digests."""
         ...
 
     async def get(self, request_id: str) -> PendingLink | None:
+        ...
+
+    async def challenge(self, request_id: str, *, side: LinkSide) -> str | None:
+        """The private nonce ONE side was sent — read per side, so a
+        holder's own view can never return the other holder's challenge."""
         ...
 
     async def decide(

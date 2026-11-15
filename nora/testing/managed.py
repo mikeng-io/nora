@@ -69,6 +69,7 @@ from nora.domain.managed_ports import (
 from nora.domain.management import (
     LinkApproval,
     LinkRefusal,
+    LinkSide,
     Operation,
     Scope,
     ScopeKind,
@@ -715,6 +716,8 @@ class FakeLinkRequests(LinkRequestStore):
         # operation_id -> (request_id, effect fingerprint) — a decision id
         # can never be consumed by a different request or effect.
         self.decisions: dict[str, tuple[str, str]] = {}
+        # (request_id, side) -> the private nonce that side was sent.
+        self.challenges: dict[tuple[str, LinkSide], str] = {}
 
     @staticmethod
     def _effect(operation: Operation, proof: ConsentProof) -> str:
@@ -728,9 +731,15 @@ class FakeLinkRequests(LinkRequestStore):
         }
         return hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()
 
-    async def create(self, link: PendingLink) -> PendingLink:
+    async def create(
+        self, link: PendingLink, *, nonces: Mapping[LinkSide, str]
+    ) -> PendingLink:
         if link.state is not LinkState.PENDING or link.approved:
             raise LinkStateError("create requires a new undecided request")
+        if (set(nonces) != set(LinkSide) or any(
+                hashlib.sha256(nonces[side].encode()).hexdigest()
+                != link.nonce_hashes[side] for side in LinkSide)):
+            raise LinkStateError("challenges disagree with the request's recorded digests")
         if link.request_id in self.decisions:
             raise LinkStateError("operation identity already names a decision")
         recorded = self.requests.get(link.request_id)
@@ -739,10 +748,15 @@ class FakeLinkRequests(LinkRequestStore):
                 raise LinkStateError("request identity already names a different effect")
             return recorded
         self.requests[link.request_id] = link
+        self.challenges.update(
+            {(link.request_id, side): nonces[side] for side in LinkSide})
         return link
 
     async def get(self, request_id: str) -> PendingLink | None:
         return self.requests.get(request_id)
+
+    async def challenge(self, request_id: str, *, side: LinkSide) -> str | None:
+        return self.challenges.get((request_id, side))
 
     async def decide(
         self, operation: Operation, proof: ConsentProof, *, now: datetime

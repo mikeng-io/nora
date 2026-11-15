@@ -35,4 +35,21 @@ def mount_authentication(
         ) from None
     register_session_routes(app, sessions=AccountSessions(services.bindings, services.registry),
                              verifier=verifier)
+    # The holder's private link surface — the same verified assertion, the
+    # same retained-binding check; private challenge push exists only when a
+    # direct signal-cli daemon can carry it (bridge mode pulls via the view).
+    import importlib
+
+    from nora.web.holder_links import register_holder_routes
+
+    signal = cfg.platforms.signal
+    delivery = None
+    if signal.enabled and getattr(signal, "mode", "direct") == "direct":
+        from nora.platform.signal.consent import SignalLinkDelivery
+        delivery = SignalLinkDelivery(signal.base_url)
+    register_holder_routes(
+        app,
+        holder=importlib.import_module("nora.people").wire.holder_links(
+            services, signal_delivery=delivery),
+        verifier=verifier)
     return verifier

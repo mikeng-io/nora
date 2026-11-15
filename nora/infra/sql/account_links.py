@@ -21,8 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.account_linking import ConsentProof, LinkState, LinkStateError, PendingLink
 from nora.domain.identity import Identifier
-from nora.domain.management import LinkApproval, LinkRefusal, Operation
-from nora.infra.sql.schema import MANAGED_LINK_DECISION, MANAGED_LINK_REQUEST
+from nora.domain.management import LinkApproval, LinkRefusal, LinkSide, Operation
+from nora.infra.sql.schema import (
+    MANAGED_LINK_DECISION,
+    MANAGED_LINK_DELIVERY,
+    MANAGED_LINK_REQUEST,
+)
 
 _LINK = TypeAdapter(PendingLink)
 
@@ -80,9 +84,15 @@ class SqlLinkRequests:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def create(self, link: PendingLink) -> PendingLink:
+    async def create(
+        self, link: PendingLink, *, nonces: Mapping[LinkSide, str]
+    ) -> PendingLink:
         if link.state is not LinkState.PENDING or link.approved:
             raise LinkStateError("create requires a new undecided request")
+        if (set(nonces) != set(LinkSide) or any(
+                hashlib.sha256(nonces[side].encode()).hexdigest()
+                != link.nonce_hashes[side] for side in LinkSide)):
+            raise LinkStateError("challenges disagree with the request's recorded digests")
         async with self._engine.begin() as connection:
             await _operation_lock(connection, link.request_id)
             decision = await connection.scalar(sa.select(MANAGED_LINK_DECISION.c.operation_id)
@@ -99,6 +109,11 @@ class SqlLinkRequests:
             await connection.execute(sa.insert(MANAGED_LINK_REQUEST).values(
                 request_id=link.request_id, snapshot=_snapshot(link),
             ))
+            await connection.execute(sa.insert(MANAGED_LINK_DELIVERY).values([
+                {"request_id": link.request_id, "side": side.value,
+                 "nonce": nonces[side]}
+                for side in LinkSide
+            ]))
             return link
 
     async def get(self, request_id: str) -> PendingLink | None:
@@ -106,6 +121,12 @@ class SqlLinkRequests:
             value = await connection.scalar(sa.select(MANAGED_LINK_REQUEST.c.snapshot)
                 .where(MANAGED_LINK_REQUEST.c.request_id == request_id))
             return None if value is None else _decode(value)
+
+    async def challenge(self, request_id: str, *, side: LinkSide) -> str | None:
+        async with self._engine.connect() as connection:
+            return await connection.scalar(sa.select(MANAGED_LINK_DELIVERY.c.nonce)
+                .where(MANAGED_LINK_DELIVERY.c.request_id == request_id)
+                .where(MANAGED_LINK_DELIVERY.c.side == side.value))
 
     async def decide(
         self, operation: Operation, proof: ConsentProof, *, now: datetime,

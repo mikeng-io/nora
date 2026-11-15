@@ -45,7 +45,7 @@ from nora.domain.managed_ports import (
     LinkRequestStore,
     TopologySource,
 )
-from nora.domain.management import Operation, Scope, ScopeKind
+from nora.domain.management import LinkSide, Operation, Scope, ScopeKind
 from nora.persons import Persons
 from nora.policy import DEFAULT_WORKSPACE, Policy
 
@@ -330,10 +330,15 @@ class FileLinkRequests(LinkRequestStore):
     record — there is no place for it in TOML, so recording or committing
     one refuses, and reads answer honestly: nothing is stored."""
 
-    async def create(self, link: PendingLink) -> PendingLink:
+    async def create(
+        self, link: PendingLink, *, nonces: Mapping[LinkSide, str]
+    ) -> PendingLink:
         raise LinkStateError(_OPERATOR_MAINTAINED)
 
     async def get(self, request_id: str) -> PendingLink | None:
+        return None
+
+    async def challenge(self, request_id: str, *, side: LinkSide) -> str | None:
         return None
 
     async def decide(
