@@ -59,8 +59,9 @@ def _make_media_fetch(deps):
         or unavailable, with a `note` on how to report it.
 
         Args:
-            code: The short code from a media marker, or from a shared
-                picture's or video's link handle.
+            code: The short code from a media marker, from a shared
+                picture's or video's link handle, or from an `instagram_read`
+                item that carries one.
             url: An http(s) link to a picture or video.
             question: What you want to know about it, when the stored
                 reading does not answer it. Leave empty otherwise.
@@ -87,7 +88,7 @@ def _make_media_fetch(deps):
             vision_cache=deps.vision_cache,
             vision_source=deps.vision_source,
             _instagram_story_urls=deps._instagram_story_urls,
-            _keep_fetched_image=deps._keep_fetched_image,
+            _keep_fetched_media=deps._keep_fetched_media,
             _media_window=deps._media_window,
             _now_ms=deps._now_ms,
             _serve_media=_make__serve_media(deps),
@@ -252,12 +253,15 @@ async def _media_fetch__scan_url(c):
     c.serve_code: str | None = None
     c.caller, c.persist_look = _MEDIA_READ.get()
     if (
-        c.media_type in _KEEPABLE_IMAGE_TYPES
-        and c.caller == MEDIA_FETCH_CALLERS[0]
+        (c.media_type in _KEEPABLE_IMAGE_TYPES or _modality_of(c.media_type) == "video")
         and c.persist_look
         and (c.url not in c._instagram_story_urls)
     ):
-        c.serve_code = await c._keep_fetched_image(c.url, c.data, c.media_type)
+        # Every persisted look holds the item's bytes, so the `code` the
+        # answer carries resolves later WITHOUT the signed url — the read a
+        # social reader already paid for never has to be re-downloaded or its
+        # url re-typed by the model.
+        c.serve_code = await c._keep_fetched_media(c.url, c.data, c.media_type)
     c.is_cover = False
     return (False, None, None)
 
@@ -642,7 +646,13 @@ async def _media_fetch__cut_video(c):
             c.result = c.one
         else:
             c.segments, c.read_windows = await read_video_windows(
-                cut=c.cut, media_type=c.media_type, ask=c._ask
+                cut=c.cut, media_type=c.media_type, ask=c._ask,
+                # A deliberate look may retry a timed-out window inside its
+                # own budget; a look issued by a social read runs under that
+                # read's own item envelope (`readings.ITEM_TIMEOUT_SECONDS`),
+                # which a second pass here cannot see — its envelope is the
+                # bound, so no retry.
+                retry_timeouts=_MEDIA_READ.get()[0] == MEDIA_FETCH_CALLERS[0],
             )
             if not c.read_windows:
                 _record_media(c.metrics, "unavailable", reason="vision")

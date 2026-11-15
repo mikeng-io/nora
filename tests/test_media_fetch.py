@@ -304,19 +304,29 @@ async def test_a_picture_type_the_portal_cannot_show_is_not_kept(wiring, monkeyp
     ) is None
 
 
-async def test_a_clip_from_a_url_is_never_kept(wiring, monkeypatch):
+async def test_a_clip_from_a_url_is_kept_and_resolves_by_its_code(wiring, monkeypatch):
+    """A looked-at clip is held exactly like a looked-at picture: the `code`
+    the answer carries is the stable follow-up handle, because the signed url
+    it came from expires — the reel incident's follow-up is by code, never by
+    re-typing the link."""
     await _fake_download(monkeypatch, data=b"\x00\x00\x00\x18ftypmp42", media_type="video/mp4")
     index = FakeMediaObjectStore([])
-    await _call(
+    out = await _call(
         wiring["build"](media_store=index, describe_models={"video": "test/video-model"}),
         url="https://x.com/clip.mp4",
     )
-    assert await index.get(sha256=hashlib.sha256(b"\x00\x00\x00\x18ftypmp42").hexdigest()) is None
+    sha = hashlib.sha256(b"\x00\x00\x00\x18ftypmp42").hexdigest()
+    assert out["code"] == sha[:6]
+    row = await index.get(sha256=sha)
+    assert row is not None and row.source == "fetched"
+    assert row.provenance["url"] == "https://x.com/clip.mp4"
 
 
-async def test_an_automatic_reading_keeps_nothing(wiring, monkeypatch):
-    """`instagram_read` and a summons look through `media_look`; only a look
-    the model asked for is kept."""
+async def test_an_automatic_reading_keeps_the_item_it_read(wiring, monkeypatch):
+    """`instagram_read` and a summons look through `media_look`; a PERSISTED
+    look keeps the item's bytes, so the `code` its answer carries resolves on
+    the follow-up — the signed url it came from expires. A NON-persisted look
+    (a story frame's) still keeps nothing, because a story expires in 24h."""
     from nora.agent.toolkit.media import media_look
     await _fake_download(monkeypatch)
     index = FakeMediaObjectStore([])
@@ -325,8 +335,15 @@ async def test_an_automatic_reading_keeps_nothing(wiring, monkeypatch):
                       max_video_seconds=60)
     out = await look.fetch(url="https://x.com/pic.png")
     assert out["status"] == "ok"
-    assert out["code"] is None
-    assert await index.get(sha256=PNG_SHA) is None
+    assert out["code"] == PNG_SHA[:6]
+    row = await index.get(sha256=PNG_SHA)
+    assert row is not None and row.source == "fetched"
+
+    transient = media_look(tool._tool_func, caller="instagram_read",
+                           persist=False, max_video_seconds=60)
+    out = await transient.fetch(url="https://x.com/story.png")
+    assert out["status"] == "ok"
+    assert out["code"] is None, "a story frame stays transient"
 
 
 async def test_a_url_cache_hit_makes_no_vision_call(wiring, monkeypatch):
@@ -2413,3 +2430,54 @@ async def test_a_room_clips_stored_comprehension_is_served_before_the_cache(
 
     assert out["status"] == "ok"
     assert vision.calls == [] and readings.gets == []
+
+
+async def test_an_instagram_look_keeps_the_clip_whose_code_re_reads_it(
+    wiring, monkeypatch,
+):
+    """The reel incident's follow-up, end to end: a look issued by
+    `instagram_read` holds the item's bytes and its answer carries the `code`
+    that survives the expiring, un-typeable signed url. The deliberate
+    `media_fetch(code=...)` then re-reads the HELD bytes — no second download,
+    no url to mistype — where the timed-out window is owed its second attempt
+    and the read completes. And a code the room did not mint resolves to
+    nothing, the same boundary every kept picture already lives behind."""
+    from nora.agent.toolkit.media import _MEDIA_READ
+    from nora.infra.vision import preprocess as _pre
+
+    vision = _WindowVision(
+        answers=["", "the tail", "the opening", "the tail again"])
+    await _fake_download(monkeypatch, data=b"clip-bytes", media_type="video/mp4")
+    monkeypatch.setattr(_pre, "_run_video", _ffmpeg("39.264"))
+    index = FakeMediaObjectStore([])
+    tool = wiring["build"](
+        vision_source=vision, describe_models={"video": "test/video-model"},
+        media_store=index)
+
+    token = _MEDIA_READ.set(("instagram_read", True))
+    try:
+        out = await _call(tool, url="https://cdn.example/reel.mp4")
+    finally:
+        _MEDIA_READ.reset(token)
+
+    assert out["status"] == "ok"
+    assert out["code"], "the held item hands back its stable code"
+    assert "0:00 — this part could not be read" in out["description"]
+    # The automatic look runs under its own item envelope, which a recovery
+    # pass here cannot see — so the timed-out window is NOT re-asked in it.
+    assert len(vision.calls) == 2
+    assert index.saved and index.saved[0].source == "fetched"
+    assert index.saved[0].provenance["url"] == "https://cdn.example/reel.mp4"
+
+    again = await _call(tool, code=out["code"])
+    assert again["status"] == "ok"
+    assert "the opening" in again["description"]
+    assert "the tail again" in again["description"]
+    assert "could not watch" not in again["description"]
+
+    elsewhere = wiring["build_all"](media_store=index, conversation_id="g2")
+    nope = await _call(elsewhere["media_fetch"], code=out["code"])
+    assert nope["status"] == "nothing_found", (
+        "a code born in another room resolves to nothing — the boundary is "
+        "the same one a kept picture already lives behind"
+    )

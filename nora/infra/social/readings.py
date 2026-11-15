@@ -154,15 +154,18 @@ def reading_of(served: Mapping[str, Any], *, video: bool = False) -> Reading:
     its words (the identifier screen) is `withheld`; every other answer,
     whatever its status, is `failed`: it could not look, and that is all
     this item may say."""
+    code = served.get("code")
+    if not isinstance(code, str) or not code:
+        code = None
     if served.get("status") == "ok":
         if served.get("withheld") is True:
-            return Reading("withheld")
+            return Reading("withheld", code=code)
         text = served.get("description")
         if isinstance(text, str) and text.strip():
             if video:
                 body, coverage = split_coverage(text)
-                return Reading("seen", body, coverage)
-            return Reading("seen", text)
+                return Reading("seen", body, coverage, code=code)
+            return Reading("seen", text, code=code)
     return Reading("failed")
 
 

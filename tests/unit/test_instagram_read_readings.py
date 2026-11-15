@@ -435,6 +435,37 @@ def test_a_reading_carries_text_exactly_when_it_was_seen():
         Reading("failed", "a photo")
 
 
+def test_an_ok_reading_carries_the_held_items_code_and_the_item_ref_hands_it_on():
+    """The `code` a kept look serves is the stable handle `media_fetch(code=...)`
+    resolves: it rides the `Reading` onto `items[]` — a content hash, never an
+    identifier — so the follow-up look never re-types the signed url. An `ok`
+    whose look kept nothing serves no code, and a failed look carries none:
+    a `code` that might not resolve is worse than the url that still works."""
+    from nora.infra.social.render import _item_ref
+    from nora.infra.social.views import ItemView
+
+    seen = reading_of(
+        {"status": "ok", "code": "abc123", "description": "a bowl of noodles"})
+    assert seen.code == "abc123"
+    seen_video = reading_of(
+        {"status": "ok", "code": "abc123",
+         "description": "0:00 — two people\n(I could not watch 0:30-0:39 of this clip.)"},
+        video=True)
+    assert seen_video.code == "abc123" and seen_video.coverage
+    assert reading_of(
+        {"status": "ok", "code": "abc123", "withheld": True}).code == "abc123"
+    # An ok with no keep (story look, store unwired) serves `code=None`, and a
+    # failed look keeps its answer's code to itself.
+    assert reading_of({"status": "ok", "code": None,
+                       "description": "a bowl of noodles"}).code is None
+    assert reading_of({"status": "unavailable", "code": "abc123"}).code is None
+
+    ref = _item_ref(ItemView(kind="video", url="https://cdn/x.mp4", reading=seen))
+    assert ref["code"] == "abc123" and ref["url"] == "https://cdn/x.mp4"
+    ref = _item_ref(ItemView(kind="image", url="https://cdn/x.png"))
+    assert "code" not in ref, "an item never looked at has no handle to offer"
+
+
 # ---- end to end, through the tool ----------------------------------------------
 
 

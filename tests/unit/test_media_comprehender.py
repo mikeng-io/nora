@@ -474,3 +474,160 @@ def test_missing_video_coverage_names_exact_intervals():
     cut = VideoCut(windows=windows, duration_seconds=175, covered_seconds=175, capped=False)
     assert describe_coverage(cut=cut, read=windows[3:]) == (
         '(I could not watch 0:00-1:30 of this clip.)')
+
+
+async def test_a_timed_out_window_is_asked_once_more_and_recovers():
+    """The reel incident's recovery: a window whose call ran out of time is
+    owed ONE more attempt, and only that window — a sibling that answered is
+    never re-asked, so the retry costs what the gap cost, not the whole read."""
+    from nora.infra.vision.comprehend import read_video_windows
+
+    windows = tuple(VideoWindow(start_seconds=i * 30, seconds=30, data=bytes([i]))
+                    for i in range(2))
+    cut = VideoCut(windows=windows, duration_seconds=39, covered_seconds=39, capped=False)
+    calls: dict[int, int] = {0: 0, 1: 0}
+
+    async def ask(data, count):
+        calls[data[0]] += 1
+        if data == b"\x00" and calls[0] == 1:
+            return VisionResult(available=False, reason="timeout")
+        return VisionResult(available=True, description=f"part {data[0]}")
+
+    segments, read = await read_video_windows(cut=cut, media_type="video/mp4", ask=ask)
+
+    assert calls == {0: 2, 1: 1}, "only the timed-out window is re-asked"
+    assert segments == ("0:00 — part 0", "0:30 — part 1")
+    assert read == windows
+
+
+async def test_a_window_that_times_out_twice_stays_an_honest_gap():
+    """Attempts are bounded at two: a provider that keeps timing out leaves a
+    visible gap with its own interval in the coverage sentence, never a claim
+    the clip was watched."""
+    from nora.infra.vision.comprehend import describe_coverage, read_video_windows
+
+    windows = tuple(VideoWindow(start_seconds=i * 30, seconds=30, data=bytes([i]))
+                    for i in range(2))
+    cut = VideoCut(windows=windows, duration_seconds=39, covered_seconds=39, capped=False)
+    calls: dict[int, int] = {0: 0, 1: 0}
+
+    async def ask(data, count):
+        calls[data[0]] += 1
+        if data == b"\x00":
+            return VisionResult(available=False, reason="timeout")
+        return VisionResult(available=True, description="the tail")
+
+    segments, read = await read_video_windows(cut=cut, media_type="video/mp4", ask=ask)
+
+    assert calls == {0: 2, 1: 1}, "the recovery attempt is bounded too"
+    assert segments[0] == "0:00 — this part could not be read"
+    assert read == (windows[1],)
+    assert describe_coverage(cut=cut, read=read) == (
+        "(I could not watch 0:00-0:30 of this clip.)")
+
+
+async def test_an_errored_window_is_not_re_asked():
+    """`error` already spent the client's own bounded retry inside the first
+    ceiling; only `timeout` — the one outcome that never got it — is owed the
+    read's recovery pass."""
+    from nora.infra.vision.comprehend import read_video_windows
+
+    windows = (VideoWindow(start_seconds=0, seconds=30, data=b"\x00"),)
+    cut = VideoCut(windows=windows, duration_seconds=30, covered_seconds=30, capped=False)
+    calls = 0
+
+    async def ask(data, count):
+        nonlocal calls
+        calls += 1
+        return VisionResult(available=False, reason="error")
+
+    segments, read = await read_video_windows(cut=cut, media_type="video/mp4", ask=ask)
+
+    assert calls == 1
+    assert segments == ("0:00 — this part could not be read",)
+    assert read == ()
+
+
+async def test_a_read_under_an_outer_envelope_stays_one_shot():
+    """`retry_timeouts=False` is the caller saying an enclosing bound the read
+    cannot see — a social item's own timeout — already covers it: no second
+    wave races that envelope, and the gap stays honest."""
+    from nora.infra.vision.comprehend import read_video_windows
+
+    windows = (VideoWindow(start_seconds=0, seconds=30, data=b"\x00"),)
+    cut = VideoCut(windows=windows, duration_seconds=30, covered_seconds=30, capped=False)
+    calls = 0
+
+    async def ask(data, count):
+        nonlocal calls
+        calls += 1
+        return VisionResult(available=False, reason="timeout")
+
+    segments, _ = await read_video_windows(
+        cut=cut, media_type="video/mp4", ask=ask, retry_timeouts=False)
+
+    assert calls == 1, "the envelope's own bound is the whole bound"
+    assert segments == ("0:00 — this part could not be read",)
+
+
+async def test_a_spent_budget_starts_no_recovery_wave():
+    """`budget_seconds` is the read's own wall clock: once it is gone, no
+    recovery wave starts and no further window is asked — the read returns
+    what it has rather than borrowing from the enclosing turn."""
+    import asyncio
+    import time
+
+    from nora.infra.vision.comprehend import read_video_windows
+
+    windows = tuple(VideoWindow(start_seconds=i * 30, seconds=30, data=bytes([i]))
+                    for i in range(2))
+    cut = VideoCut(windows=windows, duration_seconds=60, covered_seconds=60, capped=False)
+    calls = 0
+
+    async def ask(data, count):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(1.0)
+        return VisionResult(available=True, description="slow")
+
+    started = time.monotonic()
+    segments, read = await read_video_windows(
+        cut=cut, media_type="video/mp4", ask=ask, budget_seconds=0.05)
+
+    assert calls == 2, "each window once, no recovery wave"
+    assert time.monotonic() - started < 0.5, "the budget capped the calls it contained"
+    assert read == ()
+    assert segments == ("0:00 — this part could not be read",
+                        "0:30 — this part could not be read")
+
+
+async def test_cancellation_propagates_with_no_recovery_wave():
+    """Cancelled is cancelled: a turn that dies mid-read stops the read, no
+    recovery wave is issued, and nothing keeps asking afterwards."""
+    import asyncio
+
+    import pytest
+
+    from nora.infra.vision.comprehend import read_video_windows
+
+    windows = tuple(VideoWindow(start_seconds=i * 30, seconds=30, data=bytes([i]))
+                    for i in range(2))
+    cut = VideoCut(windows=windows, duration_seconds=60, covered_seconds=60, capped=False)
+    calls: dict[int, int] = {0: 0, 1: 0}
+    second_started = asyncio.Event()
+
+    async def ask(data, count):
+        calls[data[0]] += 1
+        if data == b"\x00":
+            return VisionResult(available=False, reason="timeout")
+        second_started.set()
+        await asyncio.Event().wait()
+        return VisionResult(available=True, description="never")
+
+    task = asyncio.create_task(
+        read_video_windows(cut=cut, media_type="video/mp4", ask=ask))
+    await asyncio.wait_for(second_started.wait(), 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert calls == {0: 1, 1: 1}, "the timed-out window was never re-asked"

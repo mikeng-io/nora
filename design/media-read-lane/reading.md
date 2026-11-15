@@ -47,6 +47,17 @@ includes those waves, nested reads, preprocessing and queueing. A low per-call
 timeout cannot silently override the configured ceiling needed for the common
 single-window case.
 
+A windowed read has its own wall-clock budget — what two full per-call
+ceilings would cost — under the same discipline: every call inside it still
+caps at the per-call derivation and at the turn's remaining share. A window
+whose call ran out of time is owed one more attempt while the budget is
+unspent, batched under the same concurrency; an `error` already spent its
+retry inside the first ceiling, and only a `timeout` never did. The recovery
+pass re-asks nothing that answered, a cancelled read issues none, and a
+window that stays unread remains a visible gap. A look issued under an
+envelope the reader cannot see — a social item's own timeout — stays
+one-shot, because the envelope is already the bound.
+
 Truncation by token limit or time is unavailable. It is never rendered as a
 short but complete reading. Deadline and size changes must preserve that
 fail-closed distinction and leave the invocation's own outer lifecycle honest.
@@ -59,9 +70,12 @@ intervals were read and which were not, including middle holes. A partial read
 never claims to have watched only the first part unless that is literally true.
 
 Media URLs and bytes remain under existing custody and download rules. A
-description is not evidence that the source was seen when its read failed or
-was withheld. Cache hits and fresh reads carry the same coverage and provenance
-contracts.
+persisted look keeps the item's bytes in fetched custody, born in the room it
+was read in, so a second look names the held object by its short code rather
+than re-typing a signed link that expires — and the same room scoping decides
+what the code may resolve to. A description is not evidence that the source
+was seen when its read failed or was withheld. Cache hits and fresh reads
+carry the same coverage and provenance contracts.
 
 Cancellation is awaited. It stops provider calls, downloads, ffmpeg and scratch
 writes before the tool returns, and no cancelled read persists a description

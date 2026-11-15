@@ -1,0 +1,44 @@
+[
+  {
+    "name": "a timed-out window is owed one recovery attempt",
+    "file": "nora/infra/vision/comprehend.py",
+    "old": "        todo = [i for i in todo if _timed_out(outcomes[i])]",
+    "new": "        todo = []",
+    "target": "tests/unit/test_media_comprehender.py -k asked_once_more_and_recovers"
+  },
+  {
+    "name": "every attempt is bounded by the read's remaining budget",
+    "file": "nora/infra/vision/comprehend.py",
+    "old": "            return await asyncio.wait_for(\n                ask(cut.windows[index].data, len(cut.windows)), timeout=remaining)",
+    "new": "            return await ask(cut.windows[index].data, len(cut.windows))",
+    "target": "tests/unit/test_media_comprehender.py -k spent_budget"
+  },
+  {
+    "name": "a look under an outer envelope stays one-shot",
+    "file": "nora/media/adapters/tools/fetch.py",
+    "old": "                retry_timeouts=_MEDIA_READ.get()[0] == MEDIA_FETCH_CALLERS[0],",
+    "new": "                retry_timeouts=True,",
+    "target": "tests/test_media_fetch.py -k instagram_look_keeps"
+  },
+  {
+    "name": "a persisted look keeps the item's bytes, video included",
+    "file": "nora/media/adapters/tools/fetch.py",
+    "old": "        (c.media_type in _KEEPABLE_IMAGE_TYPES or _modality_of(c.media_type) == \"video\")\n        and c.persist_look",
+    "new": "        c.media_type in _KEEPABLE_IMAGE_TYPES\n        and c.caller == MEDIA_FETCH_CALLERS[0]\n        and c.persist_look",
+    "target": "tests/test_media_fetch.py -k instagram_look_keeps"
+  },
+  {
+    "name": "the held item's code rides the Reading",
+    "file": "nora/infra/social/readings.py",
+    "old": "                return Reading(\"seen\", body, coverage, code=code)",
+    "new": "                return Reading(\"seen\", body, coverage)",
+    "target": "tests/unit/test_instagram_read_readings.py -k carries_the_held_items_code"
+  },
+  {
+    "name": "the item's code reaches items[] for media_fetch",
+    "file": "nora/infra/social/render.py",
+    "old": "    if item.reading is not None and item.reading.code:\n        ref[\"code\"] = item.reading.code\n    if item.duration_seconds is not None:",
+    "new": "    if item.duration_seconds is not None:",
+    "target": "tests/unit/test_instagram_read_readings.py -k carries_the_held_items_code"
+  }
+]

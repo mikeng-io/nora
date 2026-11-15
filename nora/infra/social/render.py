@@ -130,7 +130,8 @@ POST_READ_FRAMING = (
     "shows line as how it looks, not as fact. Whoever shared or linked the "
     "post has usually seen it. An item with no shows line says why, and "
     "where it can be read; every item's link is in items, in the same order, "
-    "for media_fetch(url=...)."
+    "for media_fetch(url=...), and an item that carries a `code` opens the "
+    "same media with media_fetch(code=...) instead."
 )
 
 #: No item was seen because none was read HERE: a reel longer than one
@@ -512,8 +513,12 @@ def _story_note(view: StoryView) -> str:
 
 def _item_ref(item: ItemView) -> dict[str, Any]:
     """The machine-usable reference: kind and url, a video's length, a story
-    frame's time. No prose and no reading: those are wrapped, in `text`."""
+    frame's time, and — once a look held the item's media — the `code`
+    `media_fetch(code=...)` re-opens it by. No prose and no reading: those
+    are wrapped, in `text`."""
     ref: dict[str, Any] = {"kind": item.kind, "url": item.url}
+    if item.reading is not None and item.reading.code:
+        ref["code"] = item.reading.code
     if item.duration_seconds is not None:
         ref["duration_seconds"] = item.duration_seconds
     if item.taken_at is not None:
