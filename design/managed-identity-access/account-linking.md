@@ -26,6 +26,58 @@ proofs and approvals are delivered privately to the holders, not posted into a
 shared room, and a challenge redeemed by the initiating side is not the
 receiving holder's approval.
 
+## Platform account proofs
+
+Each side's approval is expressed on a private surface while authenticated as
+the exact account named in the request. The authentication proves control of
+that account; a separate explicit approve action, bound to the request's id
+and revisions, supplies consent. The mechanisms differ per platform because
+the providers do:
+
+- **Signal** has no OIDC or OAuth. Account control is proven by a challenge
+  delivered privately to the exact account's own direct address — the bound
+  matchable identifier (`phone` or `uuid`), never the person's preferred
+  direct target. The issuer scope is Nora's own Signal service account: the
+  proof is delivered by the installation's signal-cli, not a third-party
+  provider. The holder then approves or refuses the request on the private
+  management surface under a session minted by that same account's proof.
+  Inbound direct messages are not a consent channel: the v2 Signal parser
+  drops them (`conversation_type` is group-only), and a forwarded code
+  redeemed by the initiator proves nothing about the receiver. The small
+  private transport addition — delivering the challenge to a candidate
+  account's direct address and minting the account-bound session on
+  redemption — is part of the link service implementation, not a room
+  feature.
+- **Discord** supplies provider login: OAuth2 `identify` plus
+  `GET /users/@me` yields the account's snowflake, scoped to Nora's own
+  Discord OAuth application (client id). A `discordId` captured on the JWT at
+  initial sign-in is stale provenance, not consent for a new link: the
+  approval surface requires a fresh authenticated confirmation bound to the
+  request — re-authentication or an approval action that re-derives the
+  account — while the session proves that exact snowflake. Discord direct
+  messages are not a consent channel either: the v1 adapter drops
+  guild-less messages.
+- **Telegram** supplies provider login independent of any Nora messaging
+  adapter: the Telegram Login OIDC flow (authorization code with PKCE,
+  registered allowed URLs, bot client id/secret) returns an ID token whose
+  audience is the bot's client id and whose subject is the Telegram user id.
+  The token is validated against Telegram's published keys; the issuer scope
+  is the specific Telegram bot registration. The same private-surface
+  explicit approval then applies.
+
+A platform with none of these — no provider login and no private delivery to
+the exact account — is unavailable for linking, not approximated: registration
+and room admission never double as ownership proof.
+
+Whatever supplies the proof, the approval records which exact account —
+platform, identifier kind, value and issuer scope — proved control. Today's
+OTP challenge retains only a person and platform and targets the person's
+preferred direct address; a session minted from it cannot name which account
+of that person proved control. Link consent therefore requires account-exact
+provenance that the current person-level challenge does not carry: the
+challenge, its redemption and every holder-visible approval name the account,
+and the session binds that same account for its lifetime.
+
 ## One pending request, one published result
 
 The link service owns the pending association. Neither a partial approval nor an

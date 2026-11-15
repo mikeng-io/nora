@@ -15,6 +15,48 @@ contained resources; membership alone never inherits operator powers. The
 application verifies the resource's actual containment rather than trusting a
 caller-supplied unit or workspace name.
 
+The namespace model Nora declares is small and fixed: `Workspace`, `Unit` and
+`Room` carry containment relations (`room` → `unit`, `unit` → `workspace` —
+written by Nora after it validates the real containment), and `Person` is the
+only subject. Relations: `member` on a scope, `admin` on a scope for delegated
+authority, and the permits each consumer checks — `speak`, `view` and the
+scoped-management permits (`manage_members`, `manage_grants`, `delegate`).
+Inheritance is declared in OPL: a `member` of a `Room` may `speak`/`view`
+there, a `Unit`'s `admin` may `manage_members` in contained rooms, and
+membership confers no management permit anywhere. Revocation is tuple deletion;
+the permits never widen from platform observations.
+
+## Pinned Keto surface (v26.2.0)
+
+Nora writes and deletes relationships on the write API — `PUT
+/admin/relation-tuples` (201 on create; a malformed body is 400) and `DELETE
+/admin/relation-tuples` (204 on matching deletes) — and reads on the read API:
+`GET /relation-tuples` lists tuples by namespace/object/relation/subject
+filters with `page_size`/`page_token`, and `GET`/`POST
+/relation-tuples/check` answers one check. The check mirror maps the verdict
+into the status: `allowed: true` answers 200, `allowed: false` answers
+**403** — a denied verdict arrives as an error status, never a bare 200, so
+the client reads `allowed` from the body on both. The `/check/openapi`
+variant always answers 200 with the same body; Nora uses the mirror so a
+transport-level redirect or proxy cannot launder a denial into a success
+shape. There is no `/check/open`. `POST /relation-tuples/batch/check` is
+available for several subjects in one call; `GET /relation-tuples/expand` is
+diagnostic only. `POST /opl/syntax/check` validates an OPL document's syntax
+(text/plain body), and `GET /namespaces` reports what the service actually
+loaded.
+
+Keto does not validate that a tuple's object exists or that a claimed room
+really sits inside the named unit — a check over unknown objects simply
+returns `allowed: false`, indistinguishable from a true denial. Containment
+and existence are Nora's own validation at write time, and a malformed,
+conflicting or unparsable response is `unavailable`, never allow.
+
+The development service runs `keto serve` with a sqlite DSN and
+`namespaces.location` pointing at the OPL file — the config key whose URI
+holds the namespace source in the v26.2.0 schema, with
+`experimental_strict_mode` left unset. The write and read APIs stay on
+private listeners; only Nora's service holds the write side.
+
 ## Who may change what
 
 - A room administrator manages only the room operations delegated to them.

@@ -65,6 +65,38 @@ lifecycle. Its Admin API can create an identity without login credentials. Nora
 uses a schema appropriate to platform-originated people, without inventing email
 addresses or treating every platform account as an OIDC login credential.
 
+The v26.2.0 surface Nora uses is the Admin identity lifecycle plus session
+inspection: `POST /admin/identities` to create (schema id, traits, `external_id`,
+state, metadata — credentials optional and normally absent for
+platform-originated people), `GET /admin/identities/{id}` and
+`GET /admin/identities/by/external/{externalID}` to read back,
+`PATCH /admin/identities/{id}` (JSON Patch) to update traits or state,
+`GET`/`DELETE /admin/identities/{id}/sessions` to inspect and invalidate an
+identity's sessions, `DELETE /admin/sessions/{id}` for one session, and
+`GET /sessions/whoami` to validate a presented session (200 with the session and
+its identity; 401/403 when it is not valid). `GET /schemas/{id}` exposes the
+configured identity schema.
+
+`external_id` is person correlation, not ownership evidence: it is unique across
+identities, and a duplicate create answers 409 — Nora reads back the existing
+identity by `external_id` and never assumes a colliding registration intended
+the same person. Nora's own person id survives as the canonical key; the Kratos
+identity id is stored as a binding, not substituted into historical references.
+
+A Nora person schema carries descriptive traits only — a display name and the
+non-matchable labels — because a platform-originated person may have no email,
+password or OIDC credential at all. No fake email is manufactured to satisfy a
+schema; batch upsert and credential attachment are not part of this integration.
+
+Identity `state` is `active` or `inactive`. The v26.2.0 specification text
+claims the value "has currently no effect", but the v26.2.0 source enforces it:
+`Identity.IsActive` checks state, `Session.IsActive` requires the identity to
+be active, `ManagerHTTP.FetchFromRequest` refuses an inactive session, and
+`ActivateSession` refuses to mint a session for an inactive identity. Nora
+therefore suspends a person by setting `state=inactive` plus invalidating their
+sessions — and still enforces the suspension on its own derived access rather
+than trusting the login surface alone.
+
 Nora's service controls the person binding and verified account associations.
 They are not user-editable profile traits. Kratos metadata is not a replacement
 for uniqueness constraints or authorization at Nora's binding store. Public
@@ -80,6 +112,13 @@ v26.2.0 — OSS builds, with no OEL or Ory Network capabilities assumed. The
 versioned API specifications are the contract reference:
 [Kratos](https://raw.githubusercontent.com/ory/kratos/v26.2.0/spec/api.json),
 [Keto](https://raw.githubusercontent.com/ory/keto/v26.2.0/spec/api.json).
+The pinned image digests are an implementation obligation of the service
+integration (Task 2): they must be recorded from verified registry metadata at
+pin time, not guessed. Development instances run the OSS servers' own
+development modes — Kratos `serve --dev` with a sqlite DSN and a mounted
+identity schema; Keto `serve` with a sqlite DSN and the OPL namespace file at
+`namespaces.location` — each reachable only from Nora's service, with the Admin
+API kept off any public listener.
 
 ## Backend selection and lifecycle
 

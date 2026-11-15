@@ -23,6 +23,21 @@ nominate another actor or enlarge the service's scope. Registration of an
 observed account is not permission to claim it for an existing person. Repeated
 events and retried requests reuse the same registration and operation identity.
 
+The shared contract lives in `nora/domain/management.py`: the closed operation
+vocabulary, the four actor kinds (`service`, `holder`, `operator`,
+`installation`), the typed targets (account, person, membership, scope) and the
+outcome set — `complete`, `denied`, `unavailable`, `incomplete`. Every
+operation carries an idempotency `operation_id`, the actor, the target, its
+typed inputs and the identity/ownership/authority revisions its submission
+observed. The vocabulary encodes the rulings above: ownership operations
+belong to holders and installation authority — a service principal or scoped
+operator cannot approve, refuse or unlink a link — while membership, grant and
+delegation changes belong to scoped operators, and registration and roster
+synchronisation belong to service actors within approved sources. An
+incomplete result means part of the effect committed and reconciliation is
+still owed; it is never reported as complete, and access depending on the
+unapplied remainder stays blocked.
+
 ## Explicit and semantic in-room requests
 
 An explicit command prefix and ordinary language are alternate expressions of
