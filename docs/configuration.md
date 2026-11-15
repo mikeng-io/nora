@@ -166,7 +166,8 @@ picker; neither setting enables or chooses the agent's reaction.
 | operational script credential reads | common resolver | host-local Python process | synthetic/offline input tests; never print resolved mappings |
 
 Existing Compose owns native image mappings; `scripts/secret_delivery.py` adds
-configured aliases only to Nora, presence and analytics. The installed Komodo
+configured aliases to Nora, presence and analytics, plus the app backend, selected
+authentication issuer/signing key and OTP bearer. The installed Komodo
 wrapper writes private `compose.env` and `compose.json` into `.secret-delivery/`
 beside itself (normally `/etc/komodo/nora-deploy/.secret-delivery/`). Its control
 directory must be writable and shared at the same path on the host and in

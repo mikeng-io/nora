@@ -118,7 +118,7 @@ def _portal_environment(config: dict, values: dict[str, str]) -> dict[str, str]:
 
 
 def projection(config: dict, values: dict[str, str]) -> dict:
-    """Extra operator aliases only; existing Compose owns native image mappings."""
+    """Project scoped aliases and the app backend, issuer/key and OTP environment."""
     scopes = service_references(config)
     services = {
         service: {"environment": {k: values[k] for k in sorted(keys) if k in values}}
