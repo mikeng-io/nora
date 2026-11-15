@@ -1,3 +1,4 @@
+import { privateApiFetch } from "@/server/private-api-fetch";
 import { checkSession, sessionFailure } from "@/server/session";
 import { proxyDocumentMedia } from "@/server/document-media";
 
@@ -14,5 +15,5 @@ export async function GET(
     return sessionFailure(check);
   }
   const { id, sha } = await params;
-  return proxyDocumentMedia({ base: NORA_API_BASE, personId: check.personId, id, sha });
+  return proxyDocumentMedia({ fetchImpl: privateApiFetch, base: NORA_API_BASE, personId: check.personId, id, sha });
 }

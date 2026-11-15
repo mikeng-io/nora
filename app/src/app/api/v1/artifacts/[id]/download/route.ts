@@ -1,3 +1,4 @@
+import { privateApiFetch } from "@/server/private-api-fetch";
 import { checkSession, sessionFailure } from "@/server/session";
 import { proxyArtifactDownload } from "@/server/artifact-download";
 
@@ -12,6 +13,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
   const { id } = await params;
   return proxyArtifactDownload({
+    fetchImpl: privateApiFetch,
     base: NORA_API_BASE,
     personId: check.personId,
     id,

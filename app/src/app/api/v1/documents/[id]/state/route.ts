@@ -1,3 +1,4 @@
+import { privateApiFetch } from "@/server/private-api-fetch";
 import { checkSession, sessionFailure } from "@/server/session";
 import { proxyDocumentState } from "@/server/document-state";
 
@@ -11,5 +12,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return sessionFailure(check);
   }
   const { id } = await params;
-  return proxyDocumentState({ base: NORA_API_BASE, personId: check.personId, id, request });
+  return proxyDocumentState({ fetchImpl: privateApiFetch, base: NORA_API_BASE, personId: check.personId, id, request });
 }

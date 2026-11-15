@@ -135,6 +135,12 @@ HTTP method, path and body; provisioning and OTP bearers cannot sign them. The
 assertion retains the original account/person binding and revisions, not roles
 or an actor chosen by request JSON. Scoped human mutations revalidate that
 binding and current permission inside the same write gate as their effects.
+Portal data and document/media requests carry the same request-bound retained
+identity assertion. The private API rechecks the session and refuses a query
+viewer that differs from its canonical principal; provisioning bearers do not
+authenticate portal viewers. Document writes hold the identity mutation gate
+through verification and their effect. Authentication does not replace each
+data path's unit/audience authorization.
 Browser writes also require the portal's own origin. Authentication never
 supplies bilateral consent or installation authority.
 

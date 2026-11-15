@@ -1,3 +1,4 @@
+import { privateApiFetch } from "@/server/private-api-fetch";
 import { NextResponse } from "next/server";
 import { checkSession, sessionFailure } from "@/server/session";
 import { resolveUpstream } from "@/server/upstream";
@@ -24,7 +25,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ path
 
   let res: Response;
   try {
-    res = await fetch(`${NORA_API_BASE}${resolved.upstreamPath}`, {
+    res = await privateApiFetch(`${NORA_API_BASE}${resolved.upstreamPath}`, {
       cache: "no-store",
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });

@@ -10,6 +10,7 @@ from nora.app.management_auth import mount_authentication
 from nora.app.startup import StartupError
 from nora.config import Config
 from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
+from nora.web.managed_viewer import register_managed_viewer
 from nora.web.management_api import ProvisioningCredential, register_management_routes
 
 
@@ -17,6 +18,8 @@ async def mount_management(app: web.Application, *, cfg: Config, services: Any) 
     if cfg.identity.backend != "managed":
         return
     authentication = mount_authentication(app, cfg=cfg, services=services)
+    register_managed_viewer(app, bindings=services.bindings, registry=services.registry,
+                            verifier=authentication)
     if not cfg.identity.provisioning and authentication is None:
         return
     credentials = []
