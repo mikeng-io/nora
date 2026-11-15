@@ -1,0 +1,243 @@
+"""The managed operations' journal plumbing — snapshots, replay and the
+per-step bookkeeping both services share (`design/managed-identity-access/`).
+
+Every mutation journals its intended effect before applying it; these
+helpers build the snapshot an `OperationRecord` carries, re-read it after a
+restart, and mark the steps a replay resumes. Nothing here revalidates an
+actor — authority was proved at first commitment, and the journaled effect
+is the warrant for finishing it.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable, Iterable
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any
+
+from nora.domain.identity import Identifier
+from nora.domain.managed import (
+    OperationJournalState,
+    OperationRecord,
+    Outcome,
+    OutcomeStatus,
+    complete,
+    denied,
+    incomplete,
+)
+from nora.domain.managed_ports import BindingStore
+from nora.domain.management import (
+    AccessChange,
+    AccessDirection,
+    AccountObservation,
+    AccountRegistration,
+    Delegation,
+    MembershipStanding,
+    Operation,
+    RosterSync,
+    Scope,
+    ScopeKind,
+    Unlink,
+)
+
+#: A journaled store effect, produced LAZILY: a step replayed as already
+#: done never builds the call it skips, so no coroutine is ever created
+#: un-awaited.
+Effect = Callable[[], Awaitable[Outcome]]
+Effects = Callable[[], Iterable[Awaitable[Outcome]]]
+
+def _scope_snapshot(scope: Scope) -> dict[str, str]:
+    return {"kind": scope.kind.value, "id": scope.id}
+
+
+def _scope_from(snapshot: dict[str, str]) -> Scope:
+    return Scope(ScopeKind(snapshot["kind"]), snapshot["id"])
+
+
+def _ident_snapshot(ident: Identifier) -> dict[str, str]:
+    return {"platform": ident.platform, "kind": ident.kind, "value": ident.value}
+
+
+def _ident_from(snapshot: dict[str, str]) -> Identifier:
+    return Identifier(
+        platform=snapshot["platform"], kind=snapshot["kind"], value=snapshot["value"]
+    )
+
+
+def _op_snapshot(op: Operation) -> MappingProxyType[str, Any]:
+    """The journaled effect — enough to rebuild the write side (the actor is never journaled)."""
+    payload = op.payload
+    snap: dict[str, Any] = {"kind": op.kind}
+    if isinstance(payload, AccountObservation):
+        snap["identifiers"] = [_ident_snapshot(i) for i in payload.identifiers]
+    elif isinstance(payload, AccountRegistration):
+        snap["person_id"] = payload.person_id
+        snap["scope"] = _scope_snapshot(payload.scope)
+        snap["identifiers"] = [_ident_snapshot(i) for i in payload.identifiers]
+    elif isinstance(payload, RosterSync):
+        snap["members"] = [_ident_snapshot(i) for i in payload.members]
+        snap["complete"] = payload.complete
+    elif isinstance(payload, MembershipStanding):
+        snap["member"] = payload.member
+    elif isinstance(payload, AccessChange):
+        snap["direction"] = payload.direction.value
+        snap["grantee"] = payload.grantee
+        snap["permits"] = sorted(payload.permits)
+    elif isinstance(payload, Delegation):
+        snap["delegatee"] = payload.delegatee
+        snap["permits"] = sorted(payload.permits)
+    elif isinstance(payload, Unlink):
+        snap["expected_person"] = payload.expected_person
+    if op.target.account is not None:
+        snap["account"] = _ident_snapshot(op.target.account)
+    if op.target.person_id is not None:
+        snap["target_person"] = op.target.person_id
+    if op.target.scope is not None:
+        snap["target_scope"] = _scope_snapshot(op.target.scope)
+    return MappingProxyType(snap)
+
+
+async def _record(
+    store: BindingStore, op: Operation, steps: tuple[str, ...]
+) -> OperationRecord | Outcome:
+    """Journal the intended effect — an `Outcome` means it refused or could not answer."""
+    record = OperationRecord(
+        operation_id=op.operation_id,
+        kind=op.kind,
+        state=OperationJournalState.PENDING,
+        steps=MappingProxyType(dict.fromkeys(steps, "pending")),
+        snapshot=_op_snapshot(op),
+    )
+    outcome = await store.record_operation(record)
+    return record if outcome.status is OutcomeStatus.COMPLETE else outcome
+
+
+async def _step_done(store: BindingStore, record: OperationRecord, step: str) -> None:
+    steps = dict(record.steps)
+    steps[step] = "done"
+    await store.update_operation(
+        OperationRecord(
+            operation_id=record.operation_id,
+            kind=record.kind,
+            state=OperationJournalState.INCOMPLETE,
+            steps=MappingProxyType(steps),
+            snapshot=record.snapshot,
+        )
+    )
+    object.__setattr__(record, "steps", MappingProxyType(steps))
+
+
+async def _finish(
+    store: BindingStore,
+    record: OperationRecord,
+    state: OperationJournalState,
+    outcome: str,
+    detail: str = "",
+) -> None:
+    await store.update_operation(
+        OperationRecord(
+            operation_id=record.operation_id,
+            kind=record.kind,
+            state=state,
+            steps=record.steps,
+            outcome=outcome,
+            detail=detail,
+            snapshot=record.snapshot,
+        )
+    )
+
+
+def _pending(record: OperationRecord, step: str) -> bool:
+    return record.steps.get(step) != "done"
+
+
+async def _recorded_replay(store: BindingStore, op: Operation) -> Outcome | None:
+    """A journaled op id replays its recorded state; a different effect conflicts."""
+    recorded = await store.operation(op.operation_id)
+    if recorded is None:
+        return None
+    if recorded.kind != op.kind or recorded.snapshot != _op_snapshot(op):
+        return denied("operation-conflict")
+    if recorded.state is OperationJournalState.COMPLETE:
+        return complete(recorded.detail or "replayed")
+    return incomplete("replayed: still incomplete")
+
+
+async def _revisions_fresh(store: BindingStore, op: Operation) -> Outcome | None:
+    """Revalidate the revisions the submitter observed, at commitment, before ANY effect."""
+    for name, observed in op.observed_revisions.items():
+        if name == "identity":
+            person_id = op.target.person_id or op.actor.person_id
+            if person_id is None:
+                continue
+            person = await store.person(person_id)
+            if person is None:
+                return denied("unknown-person")
+            if str(person.revision) != observed:
+                return denied("stale-identity-revision")
+        elif name == "ownership" and op.target.account is not None:
+            record = await store.record_for(account=op.target.account)
+            if record is not None and str(record.revision) != observed:
+                return denied("stale-ownership-revision")
+            # No binding yet: nothing to be stale about — discovery's own
+            # conflict path decides.
+        # "authority": unversioned — read-back is the write-path proof.
+    return None
+
+
+@dataclass(frozen=True)
+class _ReplayOp:
+    """The write side of a journaled operation, rebuilt from the journal
+    snapshot — NOT a fresh `Operation`: no actor (authority was validated at
+    first commitment; the journaled effect is the warrant for finishing it),
+    and no re-admission, so replay cannot be refused by a check the original
+    commitment already passed."""
+
+    operation_id: str
+    kind: str
+    person_id: str | None
+    scope: Scope
+    payload: object
+
+
+def _rebuild(record: OperationRecord) -> _ReplayOp | None:
+    """Reconstruct the effect from the journal snapshot — `None` when it names no known kind."""
+    snap = dict(record.snapshot)
+    kind = snap.get("kind")
+    if "target_scope" not in snap:
+        return None
+    try:
+        scope = _scope_from(snap["target_scope"])
+        payload: object
+        if kind == "set_membership":
+            payload = MembershipStanding(member=bool(snap["member"]))
+        elif kind in ("grant_access", "revoke_access"):
+            payload = AccessChange(
+                direction=AccessDirection(snap["direction"]),
+                grantee=snap["grantee"],
+                permits=frozenset(snap["permits"]),
+            )
+        elif kind in ("delegate", "revoke_delegation"):
+            payload = Delegation(
+                delegatee=snap["delegatee"],
+                permits=frozenset(snap["permits"]),
+            )
+        elif kind == "sync_membership":
+            payload = RosterSync(
+                members=frozenset(
+                    _ident_from(i) for i in snap.get("members", [])
+                ),
+                complete=bool(snap["complete"]),
+            )
+        else:
+            return None
+        return _ReplayOp(
+            operation_id=record.operation_id,
+            kind=str(kind),
+            person_id=snap.get("target_person"),
+            scope=scope,
+            payload=payload,
+        )
+    except (KeyError, ValueError, TypeError):
+        return None
+

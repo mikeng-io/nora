@@ -30,8 +30,8 @@ from nora.domain.managed import (
     split_room_scope_id,
     unknown_scope,
 )
+from nora.domain.managed_ports import AuthorityBackend, BindingStore, TopologySource
 from nora.domain.management import Scope, ScopeKind
-from nora.domain.ports import AuthorityBackend, BindingStore, TopologySource
 from nora.persons import Persons
 from nora.policy import DEFAULT_WORKSPACE, Policy
 
@@ -53,10 +53,9 @@ class FileBindingStore(BindingStore):
         account = self._persons.account_for(platform, value)
         if account is None:
             return None
-        # The file's index is flat (platform, value); confirm the account it
-        # names really carries an identifier of THIS kind, so an exact
-        # (platform, kind, value) question never coalesces two kinds that
-        # share a value.
+        # The file's index is flat (platform, value): confirm the account
+        # really carries an identifier of THIS kind — an exact question
+        # never coalesces kinds sharing a value.
         ident = Identifier(platform=platform, kind=kind, value=value)
         return account if ident in account.identifiers else None
 

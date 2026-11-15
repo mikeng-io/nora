@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from nora.domain.managed import CheckResult, Outcome, complete
-from nora.domain.ports import IdentityRegistry
+from nora.domain.managed_ports import IdentityRegistry
 from nora.infra.ory import KratosClient
 
 

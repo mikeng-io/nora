@@ -95,8 +95,7 @@ class _Store(Protocol):
 
 @pytest.fixture(scope="module")
 def _managed_db(pg_admin: Any) -> Iterator[str]:
-    """ONE database and ONE migration run for this whole file — see the
-    module docstring and `test_standing_store_contract.py::_standing_db`."""
+    """ONE database and ONE migration run for this whole file (see module docstring)."""
     dbname = "t_managed_" + uuid4().hex
     with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
         conn.execute(f'CREATE DATABASE "{dbname}"')

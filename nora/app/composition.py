@@ -199,16 +199,11 @@ class Dependencies:
     memory: MemoryStore
     persons: Persons
     config_reload: ReloadFiles
-    # The selected identity backend's services (issue #528): `file` answers
-    # reads off the TOML pair and refuses managed mutators; `managed` is
-    # PostgreSQL bindings + Keto authority + Kratos records, probed live at
-    # boot — never a silent file fallback. `Any`-typed while consumers are
-    # wired under Tasks 5+; the concrete shape is
-    # `nora.people` `wire.managed_services`' `ManagedServices`.
+    # The selected backend's services (issue #528): `file` reads the TOML
+    # pair and refuses managed mutators; `managed` is PG bindings + Keto
+    # authority + Kratos records, probed live — never a file fallback.
     managed_services: Any
-    # The Ory HTTP session the managed backend owns (None in file mode);
-    # `App.shutdown` closes it.
-    managed_session: Any
+    managed_session: Any  # the managed backend's owned Ory session, closed at shutdown
     # The ONE media join, so `__main__` can hand the same
     # instance to the dream loop and to lazy adoption — the two transcript
     # builders this module does not construct itself.
@@ -529,10 +524,7 @@ async def build_dependencies(
     reload_files: ReloadFiles = _stores_identity.reload_files
     _stores_database = database(allowlist=allowlist, cfg=cfg, metrics=metrics, persons=persons)
     engine = _stores_database.engine
-    _stores_managed = await managed_identity(
-        cfg=cfg, persons=persons, policy=allowlist, engine=engine,
-    )
-    managed_services = _stores_managed.services
+    _stores_managed = await managed_identity(cfg, persons, allowlist, engine)
     _stores_audit = build_audit(cfg=cfg, engine=engine, metrics=metrics)
     audit = _stores_audit.audit
     _location_stores = _location_wire.stores(engine=engine)
@@ -641,9 +633,7 @@ async def build_dependencies(
         cfg=cfg, compute_jobs=compute_jobs, document_service=document_service, metrics=metrics
     )
     subagents_context = _subagents_subjects.subagents_context
-    _media_join = _media_wire.join(
-        cfg=cfg, media_objects=media_objects, metrics=metrics
-    )
+    _media_join = _media_wire.join(cfg=cfg, media_objects=media_objects, metrics=metrics)
     media_join = _media_join.media_join
     _conversation_quote = _conversation_wire.quote(audit=audit, cfg=cfg, metrics=metrics)
     quote_window = _conversation_quote.quote_window
@@ -657,11 +647,8 @@ async def build_dependencies(
     memo_store = _memory_notes.memo_store
     note_store, entry_store = _memory_notes.note_store, _memory_notes.entry_store
     _voice_speech = _voice_wire.speech(
-        _discord_bridge=_discord_bridge,
-        allowlist=allowlist,
-        cfg=cfg,
-        engine=engine,
-        metrics=metrics,
+        _discord_bridge=_discord_bridge, allowlist=allowlist, cfg=cfg,
+        engine=engine, metrics=metrics,
     )
     discord_token = _voice_speech.discord_token
     music_manager = _voice_speech.music_manager
@@ -672,9 +659,7 @@ async def build_dependencies(
     _voice_speaker = _voice_wire.speaker(cfg=cfg, doctrine_store=doctrine_store, metrics=metrics)
     speaker = _voice_speaker.speaker
     _voice_rooms = _voice_wire.rooms(
-        _discord_bridge=_discord_bridge,
-        allowlist=allowlist,
-        music_manager=music_manager,
+        _discord_bridge=_discord_bridge, allowlist=allowlist, music_manager=music_manager,
         voice_hub=voice_hub,
     )
     resolve_music_channel = _voice_rooms.resolve_music_channel
@@ -888,11 +873,8 @@ async def build_dependencies(
     _agent_backends = backends()
     compute_backends = _agent_backends.compute_backends
     _media_video = _media_wire.video(
-        cfg=cfg,
-        clock=clock,
-        compute_backends=compute_backends,
-        compute_jobs=compute_jobs,
-        metrics=metrics,
+        cfg=cfg, clock=clock, compute_backends=compute_backends,
+        compute_jobs=compute_jobs, metrics=metrics,
     )
     video_desk = _media_video.video_desk
     _computer_settings = _computer_wire.settings(cfg=cfg)
@@ -1364,8 +1346,7 @@ async def build_dependencies(
         audit=audit,
         memory=memory,
         persons=persons,
-        managed_services=managed_services,
-        managed_session=_stores_managed.session,
+        managed_services=_stores_managed.services, managed_session=_stores_managed.session,
         metrics=metrics,
         media_join=media_join,
         policy=policy,

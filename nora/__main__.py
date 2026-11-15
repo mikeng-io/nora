@@ -329,9 +329,7 @@ class App:
             # a tick reads it, so a restart never holds a unit for the rest of a
             # session timeout. Never raises (it counts and logs); a wake it could
             # not release expires on its own clock.
-            await deps.wake_evaluator.reclaim_orphans(
-                process_started_ms=int(started_at * 1000),
-            )
+            await deps.wake_evaluator.reclaim_orphans(process_started_ms=int(started_at * 1000))
             deps.background.spawn(wake.wake_loop(
                 deps.wake_evaluator, deps.metrics,
                 tick_seconds=deps.wake_tick_seconds,

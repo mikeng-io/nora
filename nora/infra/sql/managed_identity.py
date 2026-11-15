@@ -60,7 +60,14 @@ from nora.domain.managed import (
     denied,
 )
 from nora.domain.management import Scope, ScopeKind
-from nora.infra.sql.schema import (
+from nora.infra.sql.managed_registration import (
+    _check_ownership,
+    _identifier_owners,
+    _insert_account,
+    _insert_person,
+    _rebind_revoked,
+)
+from nora.infra.sql.schema_managed import (
     MANAGED_ACCOUNT,
     MANAGED_ALIAS,
     MANAGED_AUTHORITY_BLOCK,
@@ -212,8 +219,7 @@ class SqlBindingStore:
     async def _canonical(
         self, conn: Any, person_id: str
     ) -> str | None:
-        """Fold `person_id` through the alias chain — at most one hop,
-        because `add_alias` only ever points at a LIVE person row."""
+        """Fold `person_id` through the alias chain — one hop (aliases point at LIVE rows)."""
         exists = await conn.execute(
             sa.select(MANAGED_PERSON.c.person_id).where(
                 MANAGED_PERSON.c.person_id == person_id
@@ -312,124 +318,12 @@ class SqlBindingStore:
         by a REVOKED binding on the same person re-binds it.
         """
         async with self._engine.begin() as conn:
-            # 1. The person row — idempotent insert. A replay never touches
-            #    an existing person's lifecycle (a suspension is not undone
-            #    by re-registration) or its Kratos correlation.
-            await conn.execute(
-                pg_insert(MANAGED_PERSON)
-                .values(
-                    person_id=person.person_id,
-                    lifecycle=person.lifecycle.value,
-                    kratos_identity_id=person.kratos_identity_id,
-                    display_name=person.display_name,
-                )
-                .on_conflict_do_nothing(index_elements=["person_id"])
-            )
-            # 2. Current ownership of every claimed identifier, in this
-            #    transaction so the writes below see the same state.
-            owners: dict[Identifier, Row[Any, Any, Any] | None] = {}
-            for ident in account.identifiers:
-                owners[ident] = (
-                    await conn.execute(
-                        sa.select(
-                            MANAGED_IDENTIFIER.c.account_id,
-                            MANAGED_ACCOUNT.c.person_id,
-                            MANAGED_ACCOUNT.c.state,
-                        )
-                        .select_from(
-                            MANAGED_IDENTIFIER.join(
-                                MANAGED_ACCOUNT,
-                                MANAGED_IDENTIFIER.c.account_id
-                                == MANAGED_ACCOUNT.c.account_id,
-                            )
-                        )
-                        .where(
-                            MANAGED_IDENTIFIER.c.platform == ident.platform,
-                            MANAGED_IDENTIFIER.c.kind == ident.kind,
-                            MANAGED_IDENTIFIER.c.value == ident.value,
-                        )
-                    )
-                ).fetchone()
-            # 3. Ownership rules. An identifier owned by a DIFFERENT person
-            #    is a conflict forever — a link/unlink is the only path that
-            #    changes ownership, and this is not it. An identifier owned
-            #    by a different BOUND account on the same person is a
-            #    conflict too: the binding exists, and a second account row
-            #    cannot take it without an unlink. A REVOKED binding on the
-            #    same person may hand its identifiers to this registration.
-            for ident, owner in owners.items():
-                if owner is None:
-                    continue
-                if owner.person_id != person.person_id:
-                    raise IdentifierConflictError(
-                        f"identifier {ident.platform}:{ident.kind} is owned "
-                        "by another person"
-                    )
-                if (
-                    owner.state == AccountState.BOUND.value
-                    and str(owner.account_id) != account.account_id
-                ):
-                    raise IdentifierConflictError(
-                        f"identifier {ident.platform}:{ident.kind} is held "
-                        "by a different bound account"
-                    )
-            # 4. Re-bind what a REVOKED binding on this person was holding:
-            #    the same account revives, a different account takes over
-            #    the identifiers outright.
-            revoked_ids = {
-                str(o.account_id)
-                for o in owners.values()
-                if o is not None and o.state == AccountState.REVOKED.value
-            }
-            if account.account_id in revoked_ids:
-                await conn.execute(
-                    sa.update(MANAGED_ACCOUNT)
-                    .where(
-                        MANAGED_ACCOUNT.c.account_id == account.account_id,
-                        MANAGED_ACCOUNT.c.state == AccountState.REVOKED.value,
-                    )
-                    .values(
-                        state=AccountState.BOUND.value,
-                        revoked_at=None,
-                        revision=MANAGED_ACCOUNT.c.revision + 1,
-                    )
-                )
-            elif revoked_ids:
-                await conn.execute(
-                    sa.update(MANAGED_IDENTIFIER)
-                    .where(MANAGED_IDENTIFIER.c.account_id.in_(revoked_ids))
-                    .values(account_id=account.account_id)
-                )
-            # 5. The account row — idempotent by surrogate id.
+            await _insert_person(conn, person)
+            owners = await _identifier_owners(conn, account.identifiers)
+            _check_ownership(owners, person, account)
+            await _rebind_revoked(conn, owners, account)
             try:
-                await conn.execute(
-                    pg_insert(MANAGED_ACCOUNT)
-                    .values(
-                        account_id=account.account_id,
-                        person_id=account.person_id,
-                        platform=account.platform,
-                        label=account.label,
-                        state=account.state.value,
-                    )
-                    .on_conflict_do_nothing(index_elements=["account_id"])
-                )
-                # 6. Identifiers with no existing row. An existing row is
-                #    already this account's, or was just re-pointed in
-                #    step 4 — inserting it again would falsely conflict.
-                #    No conflict-skip: a concurrent claim between the
-                #    pre-flight and this insert is a REAL conflict the
-                #    caller must see, not a silently dropped row.
-                for ident in account.identifiers:
-                    if owners[ident] is not None:
-                        continue
-                    await conn.execute(
-                        sa.insert(MANAGED_IDENTIFIER).values(
-                            platform=ident.platform,
-                            kind=ident.kind,
-                            value=ident.value,
-                            account_id=account.account_id,
-                        )
-                    )
+                await _insert_account(conn, account, owners)
             except IntegrityError as exc:
                 if _PG_UNIQUE_VIOLATION in str(getattr(exc, "orig", exc)):
                     raise IdentifierConflictError(

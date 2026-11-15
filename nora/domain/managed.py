@@ -40,9 +40,7 @@ def _nonblank(name: str, value: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Lifecycle states. Three DISTINCT facts the design keeps apart: a globally
-# suspended person, a revoked account binding, and a room the person left.
-# Conflating them is how "left the room" becomes "suspended everywhere".
+# Lifecycle states: suspended person, revoked binding and departed room stay DISTINCT.
 # ---------------------------------------------------------------------------
 
 
@@ -77,10 +75,7 @@ class MembershipState(Enum):
 
 
 # ---------------------------------------------------------------------------
-# Outcomes. `denied` is an authoritative refusal; `unavailable` means a
-# required store could not answer and nothing was applied; `incomplete`
-# means part of the effect committed and reconciliation is still owed —
-# never reported as `complete`.
+# Outcomes: denied authoritative, unavailable a store that could not answer, incomplete owed.
 # ---------------------------------------------------------------------------
 
 
@@ -164,11 +159,7 @@ def check_unavailable(detail: str = "") -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
-# The Keto encoding (`deploy/ory/keto/namespaces.ts`). Nora writes only the
-# declared relations — `member`, `admin`, `restricted`, `grant_<permit>`,
-# `deny_<permit>` and the two containment relations — never a computed
-# permit name: strict mode makes computed permits authoritative, and a
-# relation carrying a permit's name must not be able to launder a denial.
+# The Keto encoding (`deploy/ory/keto/namespaces.ts`): declared relations only, never computed.
 # ---------------------------------------------------------------------------
 
 #: Scope kinds to their Keto namespace names — case is the OPL class name.
@@ -306,10 +297,7 @@ class ManagedMembership:
 
 
 # ---------------------------------------------------------------------------
-# The operation journal. One row per `operation_id` records the intended
-# effect and which of its steps committed, so a partial result is visible as
-# `incomplete` across restarts and never replays as a fresh write
-# (`management.md` «Failure and independent stores»).
+# The operation journal: effect + per-step state — a partial result stays resumable.
 # ---------------------------------------------------------------------------
 
 

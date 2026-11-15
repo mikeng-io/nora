@@ -46,13 +46,13 @@ from nora.domain.managed import (
     unavailable,
     unknown_scope,
 )
-from nora.domain.management import Scope, ScopeKind
-from nora.domain.ports import (
+from nora.domain.managed_ports import (
     AuthorityBackend,
     BindingStore,
     IdentityRegistry,
     TopologySource,
 )
+from nora.domain.management import Scope, ScopeKind
 
 
 class FakeBindingStore(BindingStore):
@@ -342,8 +342,7 @@ class FakeAuthorityBackend(AuthorityBackend):
         self.down = False
 
     def _ancestors(self, namespace: str, obj: str) -> list[tuple[str, str]]:
-        """The containment chain above (ns, obj), published as subject-set
-        tuples — Room→unit→workspace, matching CONTAINMENT_RELATIONS."""
+        """The containment chain above (ns, obj) — Room→unit→workspace tuples."""
         chain: list[tuple[str, str]] = []
         ns_kind = {
             "Workspace": ScopeKind.WORKSPACE,
