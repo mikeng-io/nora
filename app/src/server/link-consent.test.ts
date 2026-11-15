@@ -1,3 +1,5 @@
+import english from "../../messages/en.json";
+import traditional from "../../messages/zh-Hant.json";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -58,6 +60,7 @@ const freshEvent = (over: Partial<Record<string, unknown>> = {}) => ({
 let server: Server;
 let calls: { path: string; body: string; claims: Record<string, unknown> }[];
 let decisionVerdict: { code: number; body: unknown };
+let loseDecisionResponse: boolean;
 let viewCode: number;
 let viewBody: unknown;
 
@@ -98,6 +101,7 @@ function deny(response: { writeHead: Function; end: Function }, code = 401) {
 
 beforeEach(async () => {
   calls = [];
+  loseDecisionResponse = false;
   jar.clear();
   startSignIn.mockClear();
   login.current = { user: { managedIdentity: identity } };
@@ -135,6 +139,10 @@ beforeEach(async () => {
         === JSON.stringify(c.account));
       if (side === undefined || decided.nonce !== link.challenge.nonce) {
         return deny(response, 403);
+      }
+      if (loseDecisionResponse) {
+        viewBody = { status: "ok", request: { ...link, state: "committed" } };
+        response.destroy(); return;
       }
       response.writeHead(decisionVerdict.code, { "Content-Type": "application/json" });
       return response.end(JSON.stringify(decisionVerdict.body));
@@ -331,4 +339,19 @@ describe("the consent result", () => {
     expect((await GET()).status).toBe(403);
     expect(jar.has("nora-link-consent")).toBe(false);
   });
+});
+
+it("keeps a post-commit lost response unknown rather than claiming no change", async () => {
+  const response = await consentAction(actionRequest({ request_id: link.request_id, action: "approve" }));
+  expect(response.status).toBe(303);
+  loseDecisionResponse = true;
+  const result = await applyConsentIntent(freshEvent(), "generated-flow");
+  expect(calls.filter((call) => call.path.endsWith("/decisions"))).toHaveLength(1);
+  expect(result?.outcome).toBe("unavailable");
+  expect(result?.state).toBeUndefined();
+  expect(viewBody).toMatchObject({ request: { state: "committed" } });
+  expect(english.accountPage.result.unavailable).toContain("couldn't confirm");
+  expect(english.accountPage.result.unavailable).not.toContain("nothing changed");
+  expect(traditional.accountPage.result.unavailable).toContain("確認唔到");
+  expect(traditional.accountPage.result.unavailable).not.toContain("咩都冇變");
 });

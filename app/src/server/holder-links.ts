@@ -1,23 +1,16 @@
 import "server-only";
 import { z } from "zod";
 import { auth } from "@/auth";
+import { linkRequestView } from "@/lib/api/holder";
 import { identityBackend, managedSessionSchema, managementURL } from "./management-session";
 import { privateApiFetch } from "./private-api-fetch";
 
+// The private request view shape lives in src/lib/api/holder.ts — the one
+// shape the route, the consent unit and the holder pages all bind — and is
+// re-exported here so the consent unit's import stays where it was.
+export { linkRequestView } from "@/lib/api/holder";
+
 const privateHeaders = { "Cache-Control": "private, no-store" };
-const account = z.object({ platform: z.enum(["discord", "signal", "telegram"]),
-  kind: z.string().min(1), value: z.string().min(1) }).strict();
-/** The private request view shape — shared with the consent unit, which must
- * bind the same server-read request rather than re-parse it differently. */
-export const linkRequestView = z.object({
-  request_id: z.string().min(1), side: z.enum(["initiating", "receiving"]),
-  state: z.enum(["pending", "committing", "committed", "refused", "cancelled", "expired"]),
-  pair: z.object({ initiating: account, receiving: account }).strict(),
-  surviving_person: z.string().min(1), created_at: z.iso.datetime({ offset: true }),
-  expires_at: z.iso.datetime({ offset: true }),
-  approved: z.array(z.enum(["initiating", "receiving"])),
-  challenge: z.object({ nonce: z.string().min(1), approve: z.string(), refuse: z.string() }).strict(),
-}).strict();
 const failure = z.object({ status: z.enum(["denied", "unavailable", "incomplete"]),
   detail: z.string().optional() }).strict();
 const response = (status: string, code: number) => Response.json({ status },

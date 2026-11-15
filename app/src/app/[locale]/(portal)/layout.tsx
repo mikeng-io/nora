@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { checkSession } from "@/server/session";
+import { identityBackend } from "@/server/management-session";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { AppShell } from "@/components/shell/app-shell";
 import { ViewerProvider } from "@/components/shell/viewer";
@@ -23,7 +24,8 @@ export default async function PortalLayout({
   if (check.status === "denied") redirect(`/${locale}/login?denied=1`);
 
   const viewer = {
-    personId: check.personId, displayName: check.displayName, image: check.image, via: check.via,
+    personId: check.personId, displayName: check.displayName, image: check.image,
+    via: check.via, managed: identityBackend() === "managed",
   };
   return (
     <ViewerProvider viewer={viewer}>

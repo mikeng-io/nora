@@ -119,7 +119,7 @@ function PortalCache({ personId, sessionId, children }: PortalCacheProps) {
         buster: CACHE_VERSION,
         dehydrateOptions: {
           // Only answers are worth keeping; errors and in-flight reads are not.
-          shouldDehydrateQuery: (q) => q.state.status === "success",
+          shouldDehydrateQuery: (q) => q.state.status === "success" && q.meta?.persist !== false,
         },
       }}
     >

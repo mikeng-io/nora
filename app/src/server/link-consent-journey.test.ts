@@ -527,8 +527,7 @@ describe("a holder consenting through a fresh provider callback", () => {
     current.headers = appHeaders();
     const result = await GET();
     expect(result.status).toBe(403);
-    expect(await result.json()).toEqual({ status: "denied",
-      request_id: "generated-request", action: "approve" });
+    expect(await result.json()).toEqual({ status: "denied" });
     // No decision ever reached the private service.
     expect(decisions()).toHaveLength(0);
   });
