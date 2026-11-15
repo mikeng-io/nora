@@ -22,6 +22,7 @@ from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.subject.sandbox import eval_host_lock
+from scripts.cognition_loop.accounting import manifest, write_report
 from scripts.cognition_loop.cases import Case, Expectation
 from scripts.cognition_loop.run import _run_wake
 from scripts.memory_graph_spike import Judges, measured_run_budget
@@ -175,6 +176,25 @@ async def test_real_recorded_wake_settles_and_both_judges_receive_terminal_evide
                 finally:
                     await engine.dispose()
                 assert not environment.denied
+                # The report consumer settles on that same canonical
+                # `read_effects` item — never on the row's own session
+                # claim — and the saved gate reflects it.
+                row = {k: v for k, v in result.items() if not k.startswith("_")}
+                for expectation in row["expectations"]:
+                    expectation.pop("verdict_obj", None)
+                report = {"status": "PASS",
+                          "expected_cases": manifest([case]),
+                          "evidence": {"status": "PASS"},
+                          "run": {"mode": "recorded-wake-protocol"},
+                          "cases": [{"case": case.name, "unit": case.unit,
+                                     "wakes": [row]}]}
+                write_report(tmp_path, report)
+                saved = json.loads((tmp_path / "report.json").read_text())
+                assert saved["coverage"]["status"] == "PASS"
+                assert saved["outcome"]["execution"]["status"] == "PASS"
+                assert saved["outcome"]["execution"]["settled"] == 1
+                assert saved["outcome"]["validity"]["status"] == "PASS"
+                assert saved["status"] == "PASS"
     events = read_events(evidence.path)
     assert validate_events(events)["status"] == "PASS"
     requests = [json.loads(e["attributes"]["nora.model.request.body"]) for e in events

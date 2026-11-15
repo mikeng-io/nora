@@ -76,7 +76,8 @@ async def test_replay_owns_one_scope_and_retains_candidate_sql(
                 await asyncio.Event().wait()
             if failure == "wake" and index == 1:
                 return module._wake_error(output, index, wake_id, at_ms, reason, None,
-                                          step="wake", message="generated failed wake")
+                                          step="wake", message="generated failed wake",
+                                          unit=case.unit)
             await store.append(message=NormalizedMessage(
                 "signal", "g1", "group", "+852111", "Miles", at_ms,
                 f"Generated candidate record {index}", {}), person_id="miles_novak")

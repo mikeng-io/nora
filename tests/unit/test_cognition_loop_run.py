@@ -96,22 +96,44 @@ def test_run_materialises_the_config_and_folds_the_status(
                 "expectation": {k: v for k, v in asdict(e).items() if k != "wake"},
                 "verdict": "FAIL", "answers": [{"model": "a"}, {"model": "b"}],
             } for e in case.expectations if e.wake == index]
+            key = {"id": (9000 + index) * 10 + 1}
+            trajectory = {
+                "unit": case.unit, "at_ms": 1000 + index,
+                "wake_id": 9000 + index, "session_id": 7000 + index,
+                "effects": {
+                    "status": "observed", "unit": case.unit,
+                    "items": [{
+                        "ref": "wake:cognition_wake_outcome:" + json.dumps(
+                            key, sort_keys=True, separators=(",", ":")),
+                        "kind": "wake", "source": "cognition_wake_outcome",
+                        "key": key, "at": "2026-01-01T00:00:00+00:00",
+                        "operation": "append",
+                        "row": {"id": key["id"], "wake_id": 9000 + index,
+                                "unit": case.unit, "session_id": 7000 + index,
+                                "outcome": "closed", "detail": "",
+                                "at_ms": 1000 + index, "cause": "none"}}],
+                    "tools": []}}
             wakes.append({"recorded_wake_id": ident, "status": "FAIL",
-                          "expectations": expectations})
-            (output / f"wake-{index}-{ident}.json").write_text(
-                json.dumps({"diff": {}, "expectations": expectations}))
+                          "wake_id": 9000 + index,
+                          "session_id": 7000 + index,
+                          "at_ms": 1000 + index,
+                          "expectations": expectations,
+                          "trajectory": trajectory})
+            (output / f"wake-{index}-{ident}.json").write_text(json.dumps(
+                {"diff": {}, "expectations": expectations,
+                 "recorded_wake_id": ident, "unit": case.unit,
+                 "at_ms": 1000 + index,
+                 "trajectory": trajectory}))
         return {"case": case.name, "unit": case.unit, "status": "FAIL", "wakes": wakes}
 
     monkeypatch.setattr(cli, "run_case", failed_case)
 
     args = SimpleNamespace(
         case=case_file, case_dir=None, smoke=False,
-        per_wake_tokens=1, token_budget=10_000_000,
-        config=config_file, policy=None, identity=None,
-        database_url="postgresql+asyncpg://x", snapshot=True,
-        output=tmp_path, judge_a="a", judge_b="b",
-        inspect_only=False, overrides={},
-    )
+        per_wake_tokens=1, token_budget=10_000_000, config=config_file,
+        policy=None, identity=None, database_url="postgresql+asyncpg://x",
+        snapshot=True, output=tmp_path, judge_a="a", judge_b="b",
+        inspect_only=False, overrides={})
     report = asyncio.run(cli.run(args))
     assert materialised["deployment"] == config_file
     assert materialised["target"].name == "config.evaluation.toml"

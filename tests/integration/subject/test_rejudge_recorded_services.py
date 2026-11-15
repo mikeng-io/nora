@@ -45,6 +45,7 @@ def frozen_run(tmp_path, example_config_path, monkeypatch):
         (tmp_path / f"wake-{i}-{ident}.json").write_text(json.dumps({
             "diff": {"note": {"created": [{"status": "created", "entry_id": "n1", "after": {
                 "text": f"Generated note {i}"}}]}},
+            "recorded_wake_id": ident, "unit": case.unit, "at_ms": 1000 + i,
             "trajectory": judge_trajectory(unit_rooms=[["signal", "generated-room"]], blocks={
                 "agenda": f"Generated source {i}"})}))
     cfg = tmp_path / "config.toml"

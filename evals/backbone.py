@@ -1563,11 +1563,24 @@ def _protocol_result(result: dict[str, Any]) -> dict[str, Any]:
     ]}
 
 
-def retain_report(evidence: Any, corpus: str, report: Any) -> dict[str, Any]:
+def retain_report(evidence: Any, corpus: str, report: Any, *,
+                  experiment: Any = None,
+                  coverage: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Retain the SDK's own report beside its expected-row accounting and
+    the three result axes — the same rows every consumer reads."""
+    from evals.accounting import evidence_outcome, reconcile_report, report_outcome
+
+    if coverage is None:
+        coverage = reconcile_report(experiment, report) if experiment is not None else {
+            "status": "UNKNOWN", "expected": None, "observed": None,
+            "errors": ["expected manifest unavailable"]}
+    ev = evidence_outcome(evidence)
+    outcome = report_outcome(report, coverage, experiment=experiment, evidence=ev)
     payload = {"corpus": corpus, "report": report.model_dump(mode="json"),
-               "mode": "protocol-rehearsal", "behavior": "UNMEASURED"}
+               "mode": "protocol-rehearsal", "behavior": "UNMEASURED",
+               "coverage": coverage, "outcome": outcome}
     retained = {**payload, "evidence": {
-        "status": "ERROR" if evidence.failure else "UNVALIDATED", "cause": evidence.failure}}
+        **ev["receipt"], "scope": "validated prefix; run terminal pending"}}
     evidence.retain(f"corpus-{corpus}.json", json.dumps(retained, ensure_ascii=False).encode())
     return payload
 
@@ -2539,6 +2552,11 @@ def read(report: Any) -> Reading:
     """
     counts = {PASS: 0, FAIL: 0, ERROR: 0}
     for outputs in report.detailed_results:
+        if not outputs:
+            # A (case, evaluator) row whose evaluator produced no verdict —
+            # a task or evaluator error — is an errored reading, never a
+            # smaller denominator.
+            counts[ERROR] += 1
         for out in outputs:
             label = getattr(out, "label", None)
             counts[label if label in counts else ERROR] += 1
@@ -2607,6 +2625,10 @@ def sample_read(report: Any) -> dict[str, SampleReading]:
     groups: dict[str, list[str]] = {}
     for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
         base = base_name(case_row["name"])
+        if not outputs:
+            # An unanswered row means the draw's evaluator produced no
+            # verdict — an errored draw, never an absent one.
+            groups.setdefault(base, []).append(ERROR)
         for out in outputs:
             label = getattr(out, "label", None)
             groups.setdefault(base, []).append(label if label in (PASS, FAIL, ERROR) else ERROR)
