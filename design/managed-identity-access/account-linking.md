@@ -56,6 +56,13 @@ the providers do:
   management-consent envelope at the transport, not a direct-message
   feature: the v2 Signal parser currently drops non-group envelopes, so
   the consent handler is the link service's own seam, not room chat.
+  The private challenge displays the exact pair, survivor and effect, then
+  supplies the request-specific reply `!!!link approve <request-id> <nonce>`
+  (or `refuse`). The transport parser retains typed sender identifiers and
+  message timestamp; the link service checks their current binding and the
+  pending request before recording a decision. The parser alone never
+  approves a link. A legacy envelope without a typed sender identifier is
+  unavailable for consent rather than guessing an identifier kind.
 - **Discord** supplies provider login: OAuth2 `identify` plus
   `GET /users/@me` yields the account's snowflake — the provider-global user
   id, bound as the ownership key `discord.user_id`. Nora's OAuth client id
