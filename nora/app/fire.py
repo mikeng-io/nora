@@ -1033,7 +1033,12 @@ class FirePath:
 
     def _render_room(self, occasion: Event) -> Any:
         """The lineage policy's room view — configured lineage or policy-derived."""
-        return (self._lineage or LineagePolicy.from_policy(self._policy)).render_room(
+        lineage = self._lineage
+        if lineage is None:
+            if self._policy is None:
+                raise ValueError("a room view requires lineage or policy")
+            lineage = LineagePolicy.from_policy(self._policy)
+        return lineage.render_room(
             platform=occasion.platform, conversation_id=occasion.conversation_id)
 
     async def _read_computer(self, occasion: Event) -> ComputerView | None:
