@@ -76,7 +76,7 @@ Stages apply as a change needs them; a small one passes several in one sitting.
 | **intake** | is this architecture or code, and where does it belong? | `nora-design` §1; `nora-decision` for issues | an issue, or a direct brief recorded in the PR | outcome, scope and non-goals are pinned to a revision |
 | **design** (architecture changes only) | what is the system? | `nora-design` | a bundle edit, before or with the code | the bundle change is reviewed per its tier |
 | **decide** | does this need a ruling on record? | `nora-decision` | a DEC row or ADR | numbered at merge |
-| **dispatch** | how is it cut, briefed and assigned? | `nora-dispatch` | units, briefs, acceptance in the issue or design | every acceptance statement is covered by a unit |
+| **dispatch** | how is it cut, briefed and assigned? | `nora-dispatch` | units, briefs, acceptance in the issue or the PR-recorded brief | every acceptance statement is covered by a unit |
 | **build** | — | the builder, with `nora-land`, `nora-structure`, `nora-test`, `nora-tool`, `nora-runtime-skill` | commits on a branch | the brief's named checks ran once |
 | **verify** | does it do what it claims? | `nora-prove-fix`, `nora-eval`, the gate in `nora-land` | evidence | each obligation is met, unmet or unavailable, with evidence |
 | **review** | does it hold up to someone else? | `nora-review`, `REVIEW.md` | findings and a verdict | no BLOCKER, within two rounds |
@@ -123,8 +123,9 @@ needs checks on what the upstream change touches.
 
 ## Intent, evidence and completion
 
-- Pin the outcome, scope, non-goals and acceptance to the issue, design or
-  operator brief before editing; for direct work the PR records the brief. Never
+- Pin the outcome, scope, non-goals and acceptance to the issue or the
+  operator's brief, recorded in the PR for direct work, before editing; the
+  design holds the invariants they link to. Never
   create an issue or contract file only to repeat it.
 - Agreement to a concrete proposed fix means implement it. File only work
   explicitly deferred from this slice, after checking for an existing home.
