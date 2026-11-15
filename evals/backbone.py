@@ -77,10 +77,12 @@ from nora.domain.note_body import (
     parse_note_body,
 )
 from nora.subject import (
+    SNAPSHOT_KEYS,
     DrawWorkspace,
     IndexCache,
     SubjectSpec,
     index_sandbox,
+    journey_initial_state,
     new_run_id,
     obtain,
     restored_room,
@@ -1232,13 +1234,6 @@ def substitute_trigger(text: str, trigger: str) -> str:
     return text.replace("{trigger_split}", split).replace("{trigger}", trigger)
 
 
-#: The keys a case's `snapshot:` states, and nothing else: the room and the
-#: instant. Its culture key and unit are RESOLVED from the deployment's own
-#: policy entry at `obtain()` (`Subject.culture_key`/`.unit`), so a case
-#: cannot state them wrongly.
-SNAPSHOT_KEYS = frozenset({"platform", "conversation_id", "before_ms"})
-
-
 #: A staged candidate whose body reached the notebook (`nora.domain.notes.
 #: CANDIDATE_CREATED`: a new note or a revision appended to one).
 _WRITTEN = "created"
@@ -2101,8 +2096,9 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
 
 async def _drive_journey(case: Case, spec: Spec, *, recording: Any) -> dict[str, Any]:
     """The live-clock path: the case's services plan opens its world, the
-    case's own `SubjectSpec` composes the deployment subject against it, and
-    the drive runs the `App`'s own loop — no `snapshot:`, no forced wake."""
+    case's own `SubjectSpec` composes the deployment subject against it,
+    and the drive runs the `App`'s own loop — `journey_initial_state`
+    restores a declared `snapshot:`'s store before the world opens."""
     from evals.rebuilt.entry import ENTRY_POINTS
     from nora.subject.eval_evidence import read_events
 
@@ -2117,8 +2113,12 @@ async def _drive_journey(case: Case, spec: Spec, *, recording: Any) -> dict[str,
     workdir = Path(tempfile.mkdtemp(prefix="nora-journey-"))
     subject = None
     try:
-        async with (_sandbox_for(spec, now) as database_url,
-                    recording.open(database_url, redis=True) as environment):
+        async with (journey_initial_state(
+                        (case.metadata or {}).get("snapshot"),
+                        case_name=case.name or "unnamed",
+                        source_url=spec.source_url, template=spec.template,
+                        full_restore=spec.full_restore, now=now) as initial,
+                    recording.open(initial.database_url, redis=True) as environment):
             plan = getattr(environment, "world", None)
             if plan is None or getattr(plan, "subject_spec", None) is None:
                 raise EvidenceError(
@@ -2127,7 +2127,8 @@ async def _drive_journey(case: Case, spec: Spec, *, recording: Any) -> dict[str,
                     "a request-aware services plan carrying `subject_spec`"
                 )
             subject = await obtain(plan.subject_spec(
-                database_url, environment, workdir=workdir))
+                initial.database_url, environment, workdir=workdir))
+            await initial.verify(subject)
             from nora.subject.eval_evidence import current, fingerprint
 
             if evidence := current():

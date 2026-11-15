@@ -1,0 +1,72 @@
+[
+ {
+  "name": "an anchored live journey consumes its declared snapshot",
+  "file": "evals/backbone.py",
+  "old": "                        (case.metadata or {}).get(\"snapshot\"),",
+  "new": "                        None,",
+  "target": "tests/integration/subject/test_journey_initial_state.py::test_the_drive_restores_the_declared_anchor_before_the_world_runs"
+ },
+ {
+  "name": "the declared instant restores once, never a blank fallback",
+  "file": "nora/subject/journey_state.py",
+  "old": "    async with sandbox_as_of(\n        source_url, anchor.at, template=template,\n    ) as (url, report):\n        yield JourneyState(url, anchor, report, source_url, live_ms)",
+  "new": "    async with sandbox_database(source_url, template=template) as url:\n        yield JourneyState(url, anchor, None, source_url, live_ms)",
+  "target": "tests/integration/subject/test_journey_initial_state.py::test_the_declared_instant_is_restored_once_and_the_candidate_moves_on"
+ },
+ {
+  "name": "a restoration declaration with no anchor refuses",
+  "file": "nora/subject/journey_state.py",
+  "old": "        if full_restore:",
+  "new": "        if False:",
+  "target": "tests/integration/subject/test_journey_initial_state.py::test_a_future_cut_and_an_anchorless_restore_both_refuse"
+ },
+ {
+  "name": "a cut in the future refuses",
+  "file": "nora/subject/journey_state.py",
+  "old": "    if before_ms > live_ms:",
+  "new": "    if False:",
+  "target": "tests/integration/subject/test_journey_initial_state.py::test_a_future_cut_and_an_anchorless_restore_both_refuse"
+ },
+ {
+  "name": "a malformed anchor refuses by shape",
+  "file": "nora/subject/journey_state.py",
+  "old": "    if unknown or missing:",
+  "new": "    if False:",
+  "target": "tests/integration/subject/test_journey_initial_state.py::test_malformed_declarations_refuse_before_any_store_opens"
+ },
+ {
+  "name": "a subject on another database refuses",
+  "file": "nora/subject/journey_state.py",
+  "old": "        if subject.database_url != self.database_url:",
+  "new": "        if False:",
+  "target": "tests/integration/subject/test_journey_initial_state.py::test_verify_refuses_a_world_disagreeing_with_the_anchor"
+ },
+ {
+  "name": "a world composing another room refuses",
+  "file": "nora/subject/journey_state.py",
+  "old": "        if subject.room != room:",
+  "new": "        if False:",
+  "target": "tests/integration/subject/test_journey_initial_state.py::test_the_drive_refuses_a_world_room_mismatch_before_any_model"
+ },
+ {
+  "name": "a subject clocked at the cut refuses",
+  "file": "nora/subject/journey_state.py",
+  "old": "        if clock_ms <= anchor.before_ms:",
+  "new": "        if False:",
+  "target": "tests/integration/subject/test_journey_initial_state.py::test_verify_refuses_a_world_disagreeing_with_the_anchor"
+ },
+ {
+  "name": "a room the source never held refuses",
+  "file": "nora/subject/journey_state.py",
+  "old": "        if not held:",
+  "new": "        if False:",
+  "target": "tests/integration/subject/test_journey_initial_state.py::test_verify_refuses_a_world_disagreeing_with_the_anchor"
+ },
+ {
+  "name": "the restored room is the identity of the source's as-of read",
+  "file": "nora/subject/journey_state.py",
+  "old": "        if restored != held:",
+  "new": "        if False:",
+  "target": "tests/integration/subject/test_journey_initial_state.py::test_verify_refuses_a_world_disagreeing_with_the_anchor"
+ }
+]
