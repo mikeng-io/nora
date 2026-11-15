@@ -9,12 +9,20 @@ from dataclasses import replace
 import pytest
 from aiohttp import web
 
+from nora.agent.whereis import Circle
 from nora.domain.identity import Identifier
 from nora.domain.managed import AccountState, ManagedAccount, ManagedPerson, PersonLifecycle
-from nora.people import AccountSessions
+from nora.domain.management import Scope, ScopeKind
+from nora.people import AccountSessions, PortalScopes
+from nora.people.app.managed_authority import AuthorityService
 from nora.persons import Persons
 from nora.testing import FakeMemoryStore, FakeRecordStore
-from nora.testing.managed import FakeBindingStore, FakeIdentityRegistry
+from nora.testing.managed import (
+    FakeAuthorityBackend,
+    FakeBindingStore,
+    FakeIdentityRegistry,
+    FakeTopologySource,
+)
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from nora.web.managed_viewer import register_managed_viewer
@@ -41,6 +49,22 @@ async def surface(aiohttp_client, request):
         account=ManagedAccount("generated-binding", "ken", "discord",
             frozenset({Identifier("discord", "user_id", "generated-account")}), AccountState.BOUND))
     await registry.ensure_identity(external_id="ken", traits={})
+    topology = FakeTopologySource(
+        rooms={"signal/r1": ("generated-unit-a", False),
+               "signal/r3": ("generated-unit-b", False)},
+        units={"generated-unit-a": "generated-workspace-a",
+               "generated-unit-b": "generated-workspace-b"},
+        workspaces={"generated-workspace-a", "generated-workspace-b"})
+    backend = FakeAuthorityBackend()
+    for pid, room in (("ken", "r1"), ("mei", "r1"), ("jo", "r3")):
+        if pid != "ken":
+            await store.register(person=ManagedPerson(pid, PersonLifecycle.ACTIVE),
+                account=ManagedAccount("binding-" + pid, pid, "discord", frozenset({
+                    Identifier("discord", "user_id", "generated-" + pid)}), AccountState.BOUND))
+        scope = Scope(ScopeKind.ROOM, "signal/" + room)
+        await store.set_membership(person_id=pid, scope=scope, member=True, source="generated")
+        await backend.put_relation(scope=scope, relation="member", person_id=pid)
+    authority = AuthorityService(store, backend, topology)
     entered = asyncio.Event()
 
     @web.middleware
@@ -52,14 +76,17 @@ async def surface(aiohttp_client, request):
 
     app = web.Application(middlewares=[observe_write])
     app["test_write_started"] = entered
+    app["test_authority"] = backend
     register_web_routes(app, store=FakeRecordStore(), honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(), persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO},
                                                      index={}), ai_peer="nora", started_at=0.0,
-        presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR, events=_fake_events(),
+        presence=None, presence_circles=(Circle("generated-circle", frozenset({"ken", "jo"})),),
+        skills_dir=NO_SKILLS_DIR, events=_fake_events(),
         doctrine_store=build_test_doctrine_store(), documents=world.store, rooms_of=world.rooms_of)
     verifier = AuthenticationVerifier([ISSUER])
     register_session_routes(app, sessions=AccountSessions(store, registry), verifier=verifier)
     register_managed_viewer(app, bindings=store, registry=registry,
+                            scopes=PortalScopes(store, topology, authority),
                             verifier=verifier if getattr(request, "param", True) else None)
     client = await aiohttp_client(app)
     return client, store, registry, world, await sign_in(client)
@@ -125,4 +152,60 @@ async def test_all_registered_portal_data_and_write_routes_are_guarded(surface):
 async def test_managed_data_routes_fail_closed_without_a_configured_authentication_gateway(surface):
     client, _, _, _, authentication = surface
     path = "/app/v1/persons"
+    assert (await client.get(path, headers=proof(authentication, path))).status == 503
+
+
+async def test_managed_roster_and_documents_follow_current_unit_access_not_the_file_roster(surface):
+    client, _, _, world, authentication = surface
+    path = "/app/v1/persons"
+    people = await (await client.get(path, headers=proof(authentication, path))).json()
+    assert {person["personId"] for person in people} == {"ken", "mei"}
+    profile = "/app/v1/persons/jo"
+    assert (await client.get(profile, headers=proof(authentication, profile))).status == 404
+    document = f"/app/v1/documents/{world.ids['c']}?personId=ken"
+    assert (await client.get(document, headers=proof(authentication, document))).status == 404
+    backend = client.server.app["test_authority"]
+    scope = Scope(ScopeKind.ROOM, "signal/r3")
+    await backend.put_relation(scope=scope, relation="grant_view", person_id="ken")
+    assert (await client.get(document, headers=proof(authentication, document))).status == 200
+    assert (await client.get(profile, headers=proof(authentication, profile))).status == 200
+    await backend.drop_relation(scope=scope, relation="grant_view", person_id="ken")
+    assert (await client.get(document, headers=proof(authentication, document))).status == 404
+    backend.down = True
+    assert (await client.get(document, headers=proof(authentication, document))).status == 503
+
+
+async def test_memory_workspace_routing_follows_authorized_units(surface):
+    client, _, _, _, authentication = surface
+    path = "/app/v1/memory?personId=ken"
+    body = await (await client.get(path, headers=proof(authentication, path))).json()
+    assert [entry["workspace"] for entry in body] == ["generated-workspace-a"]
+    backend = client.server.app["test_authority"]
+    scope = Scope(ScopeKind.ROOM, "signal/r3")
+    await backend.put_relation(scope=scope, relation="grant_view", person_id="ken")
+    body = await (await client.get(path, headers=proof(authentication, path))).json()
+    assert [entry["workspace"] for entry in body] == [
+        "generated-workspace-a", "generated-workspace-b"]
+    await backend.drop_relation(scope=scope, relation="grant_view", person_id="ken")
+    body = await (await client.get(path, headers=proof(authentication, path))).json()
+    assert [entry["workspace"] for entry in body] == ["generated-workspace-a"]
+
+
+async def test_visible_profile_aliases_resolve_without_exposing_other_units(surface):
+    client, store, _, _, authentication = surface
+    await store.add_alias(former_id="generated-former-ken", person_id="ken")
+    path = "/app/v1/persons/generated-former-ken"
+    response = await client.get(path, headers=proof(authentication, path))
+    assert response.status == 200
+    assert (await response.json())["personId"] == "ken"
+    await store.add_alias(former_id="generated-former-jo", person_id="jo")
+    path = "/app/v1/persons/generated-former-jo"
+    assert (await client.get(path, headers=proof(authentication, path))).status == 404
+
+
+async def test_a_shared_location_circle_with_an_unknown_member_is_unavailable_not_smaller(surface):
+    client, store, _, _, authentication = surface
+    path = "/app/v1/presence?personId=ken"
+    assert (await client.get(path, headers=proof(authentication, path))).status == 200
+    store.persons.pop("jo")
     assert (await client.get(path, headers=proof(authentication, path))).status == 503

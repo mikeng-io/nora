@@ -31,6 +31,7 @@ from nora.domain.rollup import NoRollupBuildError
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.persons import Persons
 from nora.web.artifacts import register_artifact_routes
+from nora.web.data_context import data_context as _ctx
 from nora.web.doctrine import build_doctrine_payload
 from nora.web.document_history import register_document_history_routes
 from nora.web.documents import (
@@ -135,10 +136,10 @@ def _viewer_circles(request: web.Request) -> tuple[Circle, ...] | None:
     to: presence is visible only between people who share a circle, so a known
     person in no circle sees nothing. `None` is a missing or unknown viewer."""
     person_id = request.query.get("personId")
-    if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
+    if not person_id or _ctx(request)["web_persons"].by_person.get(person_id) is None:
         return None
     return tuple(
-        c for c in request.app["web_presence_circles"] if person_id in c.person_ids
+        c for c in _ctx(request)["web_presence_circles"] if person_id in c.person_ids
     )
 
 
@@ -229,7 +230,7 @@ def register_web_routes(
     app["web_doctrine_store"] = doctrine_store
 
     async def status(request: web.Request) -> web.Response:
-        a = request.app
+        a = _ctx(request)
         body = await build_status_payload(
             store=a["web_store"], honcho=a["web_honcho"], reminders=a["web_reminders"],
             started_at=a["web_started_at"],
@@ -237,7 +238,7 @@ def register_web_routes(
         return web.json_response(body)
 
     async def memory(request: web.Request) -> web.Response:
-        a = request.app
+        a = _ctx(request)
         body = await build_memory_payload(
             honcho=a["web_honcho"], persons=a["web_persons"], ai_peer=a["web_ai_peer"],
             person_id=request.query.get("personId"),
@@ -248,7 +249,7 @@ def register_web_routes(
         return web.json_response(body)
 
     async def persons_roster(request: web.Request) -> web.Response:
-        body = build_persons_roster_payload(persons=request.app["web_persons"])
+        body = build_persons_roster_payload(persons=_ctx(request)["web_persons"])
         return web.json_response(body)
 
     async def tools(request: web.Request) -> web.Response:
@@ -260,7 +261,7 @@ def register_web_routes(
         return web.json_response(build_tools_payload())
 
     async def person_profile(request: web.Request) -> web.Response:
-        a = request.app
+        a = _ctx(request)
         body = await build_person_profile_payload(
             persons=a["web_persons"],
             person_id=request.match_info["personId"],
@@ -274,7 +275,7 @@ def register_web_routes(
         if circles is None:
             return web.json_response(_VIEWER_REQUIRED, status=400)
         body = await build_presence_payload(
-            presence=request.app["web_presence"], circles=circles,
+            presence=_ctx(request)["web_presence"], circles=circles,
         )
         return web.json_response(body)
 
@@ -283,7 +284,7 @@ def register_web_routes(
         if circles is None:
             return web.json_response(_VIEWER_REQUIRED, status=400)
         body = await build_presence_places_payload(
-            presence=request.app["web_presence"], circles=circles,
+            presence=_ctx(request)["web_presence"], circles=circles,
         )
         return web.json_response(body)
 
@@ -291,7 +292,7 @@ def register_web_routes(
         circles = _viewer_circles(request)
         if circles is None:
             return web.json_response(_VIEWER_REQUIRED, status=400)
-        a = request.app
+        a = _ctx(request)
         # Bind through a local NAME, not `a["web_mobility"].method(...)` — the
         # store-caller architecture walk only credits attribute calls on a
         # Name/Attribute receiver, so a subscript receiver reads as "no
@@ -327,7 +328,7 @@ def register_web_routes(
         empty: dict[str, object] = {
             "subjectId": subject_id, "bins": [], "windowDays": days,
         }
-        a = request.app
+        a = _ctx(request)
         mobility = a["web_mobility"]  # local NAME — see presence_analytics_places
         if (
             a["web_presence"] is None
@@ -369,7 +370,7 @@ def register_web_routes(
         empty: dict[str, object] = {
             "subjectId": subject_id, "trips": [], "corridors": [],
         }
-        a = request.app
+        a = _ctx(request)
         mobility = a["web_mobility"]  # local NAME — see presence_analytics_places
         if (
             a["web_presence"] is None
@@ -403,7 +404,7 @@ def register_web_routes(
         if circles is None:
             return web.json_response(_VIEWER_REQUIRED, status=400)
         body = await build_presence_history_payload(
-            presence=request.app["web_presence"], circles=circles,
+            presence=_ctx(request)["web_presence"], circles=circles,
             person_id=request.match_info["person_id"], hours=hours,
         )
         if body is None:
@@ -411,11 +412,11 @@ def register_web_routes(
         return web.json_response(body)
 
     async def skills(request: web.Request) -> web.Response:
-        body = await build_skills_payload(skills_dir=request.app["web_skills_dir"])
+        body = await build_skills_payload(skills_dir=_ctx(request)["web_skills_dir"])
         return web.json_response(body)
 
     async def doctrine(request: web.Request) -> web.Response:
-        body = build_doctrine_payload(doctrine_store=request.app["web_doctrine_store"])
+        body = build_doctrine_payload(doctrine_store=_ctx(request)["web_doctrine_store"])
         return web.json_response(body)
 
     async def events_list(request: web.Request) -> web.Response:
@@ -429,14 +430,14 @@ def register_web_routes(
         # names them (`web_rooms_of`), so there is nothing left for a param to
         # filter or leak.
         person_id = request.query.get("personId")
-        if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
+        if not person_id or _ctx(request)["web_persons"].by_person.get(person_id) is None:
             return web.json_response(
                 {"status": "refused", "note": "a valid personId is required"},
                 status=400,
             )
         body = await build_gatherings_payload(
-            events=request.app["web_events"], person_id=person_id,
-            rooms_of=request.app["web_rooms_of"], shown=request.app["web_room_event_shown"],
+            events=_ctx(request)["web_events"], person_id=person_id,
+            rooms_of=_ctx(request)["web_rooms_of"], shown=_ctx(request)["web_room_event_shown"],
         )
         return web.json_response(body)
 
@@ -446,7 +447,7 @@ def register_web_routes(
         # "forbidden") unless `person_id` created this event, has an RSVP on
         # it, or is in the room it is held in.
         person_id = request.query.get("personId")
-        if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
+        if not person_id or _ctx(request)["web_persons"].by_person.get(person_id) is None:
             return web.json_response(
                 {"status": "refused", "note": "a valid personId is required"},
                 status=400,
@@ -456,8 +457,8 @@ def register_web_routes(
         except ValueError:
             return web.json_response({"status": "refused", "note": "bad id"}, status=400)
         body = await build_gathering_payload(
-            events=request.app["web_events"], event_id=event_id, person_id=person_id,
-            rooms_of=request.app["web_rooms_of"], shown=request.app["web_room_event_shown"],
+            events=_ctx(request)["web_events"], event_id=event_id, person_id=person_id,
+            rooms_of=_ctx(request)["web_rooms_of"], shown=_ctx(request)["web_room_event_shown"],
         )
         if body is None:
             return web.json_response({"status": "not_found"}, status=404)
@@ -472,7 +473,7 @@ def register_web_routes(
         # Viewer-scoped like `events_list`: `personId` comes from the session through the
         # portal's proxy (a browser-supplied one is dropped there) and must be a person
         # this deployment knows.
-        a = request.app
+        a = _ctx(request)
         if a["web_documents"] is None or a["web_rooms_of"] is None:
             return _documents_unavailable()
         person_id = request.query.get("personId")
@@ -508,7 +509,7 @@ def register_web_routes(
         return web.json_response(body)
 
     async def documents_detail(request: web.Request) -> web.Response:
-        a = request.app
+        a = _ctx(request)
         if a["web_documents"] is None or a["web_rooms_of"] is None:
             return _documents_unavailable()
         person_id = request.query.get("personId")
@@ -544,7 +545,7 @@ def register_web_routes(
         # picture must be one the document names, and its bytes must BE a raster picture
         # (read off the bytes). Every refusal is the same 404; `Content-Security-Policy:
         # sandbox` and `nosniff` keep a mislabelled file from ever running on this origin.
-        a = request.app
+        a = _ctx(request)
         if a["web_documents"] is None or a["web_rooms_of"] is None:
             return _documents_unavailable()
         person_id = request.query.get("personId")
@@ -580,7 +581,7 @@ def register_web_routes(
         # session through the portal's proxy, exactly as on the reads, and the gate is the
         # read gate: a document the viewer may not open, or a deleted one, is the same 404
         # as no such document. Body: {"state": "active" | "archived" | "deleted"}.
-        a = request.app
+        a = _ctx(request)
         if a["web_documents"] is None or a["web_rooms_of"] is None:
             return _documents_unavailable()
         person_id = request.query.get("personId")

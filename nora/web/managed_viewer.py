@@ -7,12 +7,13 @@ from aiohttp import web
 
 from nora.domain.managed import Verdict
 from nora.domain.managed_ports import BindingStore, IdentityRegistry
-from nora.people import AccountSessions
+from nora.people import AccountSessions, PortalScopes
+from nora.web.managed_scope import scoped_context
 from nora.web.management_auth import AuthenticationRefusedError, AuthenticationVerifier
 
 
 def register_managed_viewer(app: web.Application, *, bindings: BindingStore,
-                            registry: IdentityRegistry,
+                            registry: IdentityRegistry, scopes: PortalScopes,
                             verifier: AuthenticationVerifier | None) -> None:
     owned = frozenset(route for route in app.router.routes() if route.handler.__module__ in {
         "nora.web.api", "nora.web.document_history", "nora.web.artifacts",
@@ -48,6 +49,11 @@ def register_managed_viewer(app: web.Application, *, bindings: BindingStore,
         viewers = request.query.getall("personId", [])
         if viewers and viewers != [principal.binding.person_id]:
             return refusal(403)
+        context = await scoped_context(request, scopes=scopes, bindings=bindings,
+                                       viewer=principal.binding.person_id)
+        if context is None:
+            return refusal(503)
+        request["web_context"] = context
         request["web_principal"] = principal
         response = await handler(request)
         response.headers["Cache-Control"] = "no-store"
