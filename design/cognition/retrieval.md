@@ -33,6 +33,8 @@ model-chosen anchors. Both return the same shape.
   not a boundary.
 - A search score orders candidates. It is not the probability that something
   is true, and never outranks a row's current revision.
+- Raw presence fixes are never indexed; only computed episodes such as stays
+  and trips are a read surface.
 - Structural edges support evidence lookup; a person is never a fan-out to
   everything they wrote.
 - Current content comes from the row's table, so stale index text cannot

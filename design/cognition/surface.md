@@ -32,6 +32,7 @@ verb per basis the model may propose.
 | proactive | yes | no | no | yes |
 | subconscious | yes | yes | yes | no |
 | subconscious, over history | yes | yes, never lessons | no | no |
+| review (the judge) | the graded rows and their later evidence | grades only | no | no |
 
 Understanding from a conversation is written once, by a subconscious pass
 reading the recorded turn; conscious passes only read it. A proactive pass
@@ -47,8 +48,8 @@ Every write passes code before its table:
 - reasoning and confidence are representable, and nothing inferred is promoted
   to told;
 - its scope narrows but never widens beyond its evidence;
-- identifier, coordinate, credential and doctrine protections run before
-  storage;
+- credential and doctrine protections run before storage, and the content
+  checks too when their operating mode enables them ([boundaries](boundaries.md));
 - a lesson also passes the independent doctrine check, the citation floor and
   the unit's lesson budget;
 - provenance — pass, model, instruction, trace — is stamped by code.

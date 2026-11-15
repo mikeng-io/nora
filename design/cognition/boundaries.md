@@ -41,9 +41,13 @@ people's responses to her acts, never only her own earlier words.
 
 - Only the conscious passes deliver, only through `send_reply`, and only after
   the guards run against the current room and roster.
-- The disclosure subset fails closed on any unknown person in the room.
-- Identifiers, coordinates and credentials never egress; doctrine leak
-  protection is always on.
+- Credential and doctrine leak protection always run.
+- Content checks — identifier and coordinate filters, place and person-name
+  screens, the location audience subset and unknown-person checks — follow
+  the repository's content-check operating mode, off by default
+  ([ADR 0030](../../docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md)).
+  When enabled they fail closed. Scope, consent, availability and the
+  three-state results never switch off.
 - Silence is a valid outcome of every delivering pass.
 - An outside query carries only the minimum public question: never a private
   person's name, handle, address, identifier, coordinate or trace.

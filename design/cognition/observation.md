@@ -31,7 +31,9 @@ written in orient and cited to the item.
 - Social observation covers admitted members and their opted-in accounts; a
   stranger on a member's item stays a handle and is not read as a member.
 - Face matching identifies only a person labelled by themselves or the
-  operator; an unmatched face stays unknown.
+  operator; an unmatched face stays unknown, and a non-member's biometric
+  vector is transient, never stored.
+- Media custody stays with the source room.
 - Source health is observed: missing data during an outage is not proof that
   nothing happened.
 

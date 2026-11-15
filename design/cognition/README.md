@@ -70,7 +70,7 @@ stay their own subjects and follow this one.
 - **One graph**: beliefs and commitments cite the same items and rest on each
   other; two graphs would need edges between them and two writers for one
   judgement.
-- **Basis as the one axis**: how a row is proven decides how it is written,
+- **Basis as the proof axis**: how a row is proven decides how it is written,
   checked and trusted; layers, tiers and memory types each classified by a
   different question and gave one row several names.
 - **Intentions with closing conditions**: a commitment no recorded outcome can

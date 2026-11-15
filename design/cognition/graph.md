@@ -92,6 +92,12 @@ row inspectable.
 | kind | basis | is | lifecycle |
 |---|---|---|---|
 | **entity** | computed when code resolves it; inferred when its identity is judged | an anchor: a person, room, unit, Nora, a game, a place, a topic | admitted, merged, retired |
+
+People, rooms, units and Nora are pointers to authored identity: code resolves
+them from identity and policy, and no model proposes, merges or retires them.
+A person code cannot resolve stays unresolved on the item, never a new person
+entity. Other entities are inferred and exist only as the endpoint of an
+admitted, evidenced edge.
 | **item** | observed | something that happened: a message, link, reaction, presence change, fetched page, watch result, tool outcome, Nora's own send | append-only |
 | **aggregate** | computed | a derivation over items: episodes, rollups, counts and baselines, verdicts, track records, support tallies | recomputed, never edited |
 | **claim** | inferred | a belief about an entity or a relation | revised, retired, or ended by its valid-to time |
@@ -104,8 +110,9 @@ and who it is **owed to**, and has one of two **forms**:
 
 - **achieve** — closes when its **done-when** condition is met by a recorded
   item;
-- **maintain** — holds while its **holds-while** condition stays true, and is
-  reviewed at its **review time**.
+- **maintain** — holds while its **holds-while** condition stays true, is
+  reviewed at its **review time**, and advances through child achieve
+  intentions that serve it.
 
 Either form carries:
 
@@ -117,27 +124,35 @@ Either form carries:
   behalf for as long as it holds;
 - **delivery** — *choose a moment* (a scheduled act, re-judged at delivery) or
   *when it comes up* (raised only in a natural opening);
-- **closed-by** — the item or aggregate that closed it, and its verdict.
+- **closed-by** — the item or aggregate that ended it, and its outcome.
 
-A closed achieve intention has a verdict: **achieved** (its done-when was
+**Outcomes.** An achieve intention ends with a verdict: **achieved** (its done-when was
 met), **dropped** (its drop-when was met), **leaked** (its time passed with
 neither, while every source that could have closed it was healthy) or
 **unknown** (its time passed and a source it depended on was not healthy).
 An outage is never a leak.
+
+A maintain intention ends **ceased** (its holds-while was observed false) or
+**dropped** (its drop-when was met); its watches stop when it ends. While its
+condition cannot be evaluated because a source is unhealthy, it stays open and
+its review records unknown. It has no verdict of its own: its track record is
+its children's verdicts.
+
 A condition that code cannot evaluate is untyped: the intention may still be
 held, but it cannot close mechanically, and it is counted as loose.
 
-An intention has at most one scheduled delivery at a time. It grants no
-delivery authority. Whatever it leads to still passes
-the fire path, the disclosure rules and the cap on unsolicited proposals.
+An intention has at most one scheduled delivery at a time, and every delivery
+passes the unit-wide arbitration in [the loop](loop.md). An intention grants
+no delivery authority: whatever it leads to still passes the fire path, the
+disclosure rules and the cap on unsolicited proposals.
 
 ## Presentations
 
 A presentation is a read over rows, assembled for an occasion. Nothing writes a
 presentation.
 
-- **profile** — the claims about one entity, in its parts: profile, traits and
-  hypotheses. A room's or unit's profile is its culture; Nora's is how she has
+- **profile** — the claims about one entity, in the parts [claims](claims.md)
+  defines. A room's or unit's profile is its culture; Nora's is how she has
   come across.
 - **Standing** — Nora's open intentions toward a room, unit or person, with
   their state, age and what they rest on.

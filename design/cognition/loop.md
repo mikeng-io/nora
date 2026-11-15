@@ -3,14 +3,17 @@
 ## Terms
 
 - **Cognition Loop** — the one process over the graph: five stages, OODAS.
-- **Stage** — a part of the loop that answers one question and writes one basis.
-- **Action** — one step of a stage, with exactly one actor: **code** or the
-  **model**. The model proposes; code admits, computes and delivers.
+- **Stage** — a part of the loop that answers one question and writes only its
+  declared basis set (observe: observed and computed; act: none).
+- **Action** — one step of a stage, with one owner per responsibility. An
+  action marked *model → code* is a proposal and its admission: the model owns
+  the proposal, code owns admission. Code alone computes and delivers.
 - **Pass** — one run of stages, started by one trigger.
 - **Executor** — the runtime that runs a pass or an action.
 - **CMS** — comprehend, measure, serialize: the shape of every action, every
   stage and the loop itself. An action comprehends its input once, measures its
-  result fail-closed and serializes one admitted write with provenance.
+  result fail-closed and serializes one result with provenance: an admitted
+  write, a read result or an outcome.
 
 ## OODAS
 
@@ -61,6 +64,19 @@ connects or a bound stops it. Study repeats on its timescales.
 | decide | give every intention a condition (an untyped one is counted loose) and its rests-on | a refused write returns a typed reason to repair |
 | act | deliver only through `send_reply` and the guards; treat silence as an outcome | any unknown in the guard means no delivery |
 | study | verify by code; grade by a judge that is not the writer | missing evidence is an error, never a pass |
+
+## Delivery arbitration
+
+- When a delivery is scheduled, code resolves the act's subject and action and
+  checks it atomically against the unit's pending, firing and delivered acts,
+  whatever their destination or citations. A duplicate is refused; an
+  ambiguous identity stays unresolved, never a guessed unique act. A
+  delivery to several rooms is explicit and admitted all-or-none.
+- At delivery, code rechecks the same resolved act against what was delivered
+  or superseded and the destination's current eligibility. An incomplete check
+  withholds.
+- Scheduled is not sent and attempted is not completed. An outside send whose
+  effect is uncertain is never blindly retried.
 
 ## Passes
 

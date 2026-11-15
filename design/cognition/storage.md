@@ -14,7 +14,7 @@ rebuildable; it is never the truth.
 | aggregates | one table per aggregate family | recomputable: dropping and rebuilding gives the same rows |
 | entities | one table | admitted, merged, retired |
 | claims | one table | revisions append; a stale base is refused |
-| intentions | one table | revisions append; closed only with a closed-by edge and a verdict |
+| intentions | one table | revisions append; ended only with a closed-by edge and its outcome |
 | edges | **one table for every edge between any two rows**, citations included | revisions append |
 
 Every table carries the planes under the same names and meanings: identity,
