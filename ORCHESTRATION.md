@@ -53,27 +53,42 @@ The orchestrator is whichever agent holds the operator-facing session: Claude
 Code, Codex, Devin or any other coding agent. It owns the outcome: scope, do or
 delegate, reconcile evidence, triage, land and report.
 
-- **Do small changes yourself.** Documentation, agent-skill wording, comments,
-  one- or two-line fixes and bounded edits across a few files are done in the
-  session, never delegated.
-- **Delegate only for a reason**: a separate worker brings capacity or
-  capability that outweighs the briefing cost and lost context, or the operator
-  asks. File count alone is not a reason.
+- **Do small changes yourself**: documentation, agent-skill wording, comments,
+  one- or two-line fixes and bounded edits across a few files.
+- **Delegate only for a reason**: a worker's capacity or capability outweighs
+  the briefing cost and lost context, or the operator asks. File count alone is
+  not a reason. Delegate through the session's own mechanism (a native
+  subagent, `delegate_task` or the host's equivalent); the brief and read-back
+  rules are the same.
 - **Claude models are never a delegated builder or an independent reviewer.**
-  A Claude orchestrator still makes small changes directly; it hands
-  substantial implementation to a non-Claude builder.
-- Delegate through the session's own mechanism: a native subagent,
-  `delegate_task` or the host's equivalent. The brief and read-back rules are
-  the same for each.
-- One committing agent per isolated worktree; reviews run read-only in their own
-  checkout of the exact head. Read back `pwd`, head and clean status rather than
-  trusting a worker's report.
+  A Claude orchestrator makes small changes directly and hands substantial
+  implementation to a non-Claude builder.
+- One committing agent per isolated worktree; reviews run read-only in their
+  own checkout of the exact head. Read back `pwd`, head and clean status rather
+  than trusting a worker's report.
+
+## The lifecycle
+
+Every change passes these stages; a small one passes several in one sitting.
+
+| stage | answers | owner | produces | exits when |
+|---|---|---|---|---|
+| **intake** | is this architecture or code, and where does it belong? | `nora-design` §1; `nora-decision` for issues | an issue, or a direct brief recorded in the PR | outcome, scope and non-goals are pinned to a revision |
+| **design** | what is the system? | `nora-design` | a bundle edit | the bundle change is merged, reviewed per its tier |
+| **decide** | does this need a ruling on record? | `nora-decision` | a DEC row or ADR | numbered at merge |
+| **dispatch** | how is it cut, briefed and assigned? | `nora-dispatch` | units, briefs, acceptance in the issue or design | every acceptance statement is covered by a unit |
+| **build** | — | the builder, with `nora-land`, `nora-structure`, `nora-tool`, `nora-runtime-skill` | commits on a branch | the brief's named checks ran once |
+| **verify** | does it do what it claims? | `nora-prove-fix`, `nora-eval`, the gate in `nora-land` | evidence | each obligation is met, unmet or unavailable, with evidence |
+| **review** | does it hold up to someone else? | `nora-review`, `REVIEW.md` | findings and a verdict | no BLOCKER, within two rounds |
+| **land** | — | `nora-land` | a merge commit | on master and read back |
+| **release and deploy** | — | `nora-release`, `nora-deploy`, `nora-readback` | a release; the live service | live state is read back |
+| **close and learn** | is the outcome delivered, and did the process itself fail anywhere? | the orchestrator | the issue updated; the owning skill or root document edited | obligations reconciled; a process failure (an unreadable brief, a skipped rehearsal, a rule nobody loaded) fixed in its owner in the same arc |
 
 ## Execution tier
 
-Pick the lowest tier that covers the task's ambiguity and the cost of a miss.
-Disclosure, security, data loss, concurrency, hot-table migrations and model
-spending need critical capability even in a small diff.
+Pick the lowest tier that covers the ambiguity and the cost of a miss; disclosure,
+security, data loss, concurrency, hot-table migrations and model spending need
+critical capability even in a small diff.
 
 ## Review and validation are adaptive
 
@@ -94,50 +109,36 @@ on judgement and say why in the PR's Gate section. A missed first fix, a scope
 surprise or an unplanned gate repair is evidence to raise review a step. The
 operator can require or waive any check or review.
 
-- **none**: the orchestrator checks the agreed slice, the diff, the chosen
-  evidence and any required read-back. No reviewer is launched.
-- **light**: an independent reviewer checks the changed behaviour, its direct
-  callers and the named acceptance and regression paths.
-- **full**: an independent reviewer traces the affected flows through inputs,
-  outputs, failure paths and trust/cost boundaries. Not a repository-wide audit.
+Tiers (frontmatter) are inspection depth on the same agreed slice, never
+severity or authority to add requirements; every tier applies the five Cs.
+Procedure: `.agents/skills/nora-review/SKILL.md`. A report shows acceptance
+coverage and unverified limits as well as findings; a tier name or APPROVE
+alone is not a report.
 
-Every tier applies the five Cs to the same agreed slice. Tier is inspection
-depth, not severity and not authority to add requirements. Procedure:
-`.agents/skills/nora-review/SKILL.md`. A review report shows acceptance coverage
-and unverified limits as well as findings; a tier name or APPROVE alone is not a
-report.
-
-Validation follows the same judgement. Run the focused checks that prove what
-changed; docs-only changes need a diff read and a check of the changed property
-(content, links, references), not a local gate. Required hosted checks and
-branch rules always apply. Never relabel an old exact-tree receipt as a run on a
-new tree. A moving master alone is no reason to repeat a gate or review: check
-only what the upstream change touches.
+Validation follows the same judgement: run the focused checks that prove what
+changed; docs-only changes need a diff read and a check of the changed property,
+not a local gate. Required hosted checks and branch rules always apply. Never
+relabel an old exact-tree receipt as a run on a new tree; a moving master only
+needs checks on what the upstream change touches.
 
 ## Intent, evidence and completion
 
-- Before editing, find the requested outcome, scope and non-goals, acceptance
-  and evidence obligations in the existing issue, design or operator brief, and
-  pin its revision. For direct work the PR records the brief. Do not create an
-  issue, task database or contract file only to repeat it.
-- Agreement to a concrete proposed fix means implement it; filing an issue is
-  not completion. File only actionable work explicitly deferred from this slice,
-  after checking for an existing home.
-- Read the current implementation before adding work. Judge each obligation
-  met, unmet or unavailable, with evidence bound to the source or runtime.
-  Missing evidence is unavailable, not proof the implementation is missing.
-- Tests, review, merge and deployment prove different things; require only what
-  acceptance and the repository rules specify.
-- An invalid plan goes back to scoping; an implementation defect goes back to
-  bounded repair. Expanding scope needs an explicit amendment and its authority;
-  a reviewer suggestion or an unknown in a brief is not a requirement. Never
-  soften an obligation to get a pass.
-- Close the slice when every required obligation is evidenced and no BLOCKER
-  remains; then stop adding work, checks or reviews. Record remaining
-  limitations without claiming them delivered. Update the issue's remaining
-  scope when present; an architecture change has already updated its bundle. Only a whole-issue
-  outcome closes the issue. Reopen a settled result only on new evidence or a
-  changed requirement.
+- Pin the outcome, scope, non-goals and acceptance to the issue, design or
+  operator brief before editing; for direct work the PR records the brief. Never
+  create an issue or contract file only to repeat it.
+- Agreement to a concrete proposed fix means implement it. File only work
+  explicitly deferred from this slice, after checking for an existing home.
+- Judge each obligation met, unmet or unavailable against the real source or
+  runtime; missing evidence is unavailable, not missing implementation. Tests,
+  review, merge and deployment prove different things: require what acceptance
+  specifies.
+- An invalid plan returns to scoping; a defect returns to bounded repair.
+  Expanding scope needs an explicit amendment; a reviewer suggestion is not a
+  requirement. Never soften an obligation to get a pass.
+- Close the slice when every obligation is evidenced and no BLOCKER remains,
+  then stop. Record limitations without claiming them delivered; update the
+  issue's remaining scope; close an issue only for its whole outcome. Reopen a
+  settled result only on new evidence or a changed requirement.
 
 ## Choosing a worker
 
@@ -163,11 +164,14 @@ endpoint for the same vendor is not independence. An orchestrator that
 implements directly is the builder. If no independent reviewer is available,
 block or get the operator's waiver.
 
-**A brief** links the acceptance and input revisions and names allowed paths,
-non-goals, worktree/base/branch, skills, named checks and the stop point. It
-carries task-specific deltas, not another full spec. Builders run the named
-checks once and stop at the handoff; the orchestrator owns final acceptance. No
-extra handling, tests, reviewers or scope: report an adjacent concern instead.
+**A brief** follows `nora-dispatch`: one bounded outcome a reviewer can read in
+one sitting, in complete sentences a fresh agent can follow, linking what the
+repo holds instead of pasting or abbreviating it. It names acceptance (in the
+issue, design or brief, never only a temporary file), input revisions, allowed
+paths, non-goals, worktree/base/branch, skills, named checks and the stop
+point. Builders run the named checks once and stop at the handoff; the
+orchestrator owns acceptance. No extra handling, tests, reviewers or scope:
+report an adjacent concern instead.
 Review briefs include the claims, the diff command and **do not spawn
 sub-agents; do the work yourself**. In a T3 delegated worktree start with
 `git fetch origin && git switch -c <type>/<slug> origin/master`; never create a
@@ -214,26 +218,21 @@ most six into the PR, most severe first.
 | Roadmap card | A capability outcome and its horizon; never an execution queue |
 | Run / review receipt | Actual provider, model, toolset, options, fit reason, run reference, input revision and evidence |
 
-- An issue links the design bundle it builds and owns its own scope and
-  acceptance; never copy the design into it. A Project card is a view of its issue, not another body.
-- Keep assignees, milestones, relationships and Development links native in
-  GitHub. Tiers are recorded with the issue's readiness and run brief.
-- Receipts live in the run/evidence system, never as committed run files or a
-  task database.
+- An issue links the design it builds and owns its scope and acceptance, never
+  a copy of the design; a Project card is a view of its issue. Assignees,
+  milestones, relationships and Development links stay native in GitHub; tiers
+  live with the issue's readiness and run brief; receipts live in the run
+  system, never as committed run files or a task database.
 
 Task states describe issue and run readiness, not Project fields:
-
-- **Inbox** may be incomplete; blank tiers mean unclassified, not review none.
-- **Ready**: a bounded outcome and scope, resolvable acceptance, available
-  dependencies, environment and permissions, a priority and tiers.
-- **Running** links a real launched run; choosing a worker is not enough.
-- **Review** links the run and inspectable evidence for acceptance.
-- **Blocked** links its issue and an entry stating the reason and the unblock
-  step. Never fabricate Ready metadata for it.
-- **Done** has acceptance evidence for the whole slice, including merge or live
-  read-back when specified. Cancelled or superseded work is closed as not
-  planned with its reason, never Done. Partial work references the parent issue
-  without closing it.
+**Inbox** may be incomplete (blank tiers mean unclassified); **Ready** has a
+bounded outcome, resolvable acceptance, available dependencies and
+permissions, a priority and tiers; **Running** links a real launched run;
+**Review** links the run and inspectable evidence; **Blocked** links its issue
+and the reason and unblock step, never fabricated Ready metadata; **Done** has
+acceptance evidence for the whole slice, including merge or live read-back when
+specified. Cancelled or superseded work closes as not planned with its reason;
+partial work references its parent issue without closing it.
 
 ## Interchange shape
 

@@ -114,14 +114,13 @@ NEEDS YOU   only what requires the operator, with the real trade-off
 
 Lead with the conclusion; headers are subjects, not verdicts; no internal
 identifiers in prose; errors get one clause; reasoning goes in the artifact,
-not the message. **Proceed unless blocked**: stop
-only for a blocker or a fact only the operator holds. Changes land by merge and the release
-pipeline deploys them; deploy by hand only on request, for host config, or to recover.
+not the message. **Proceed unless blocked**: stop only for a blocker or a fact
+only the operator holds. Merges deploy through the release pipeline; deploy by
+hand only on request, for host config, or to recover.
 
-**Decisions change on evidence, not argument.** New evidence (a measurement, a
-read-back, a probe) changes a decision in one line. A better-argued
-restatement does not: hold, and say what reading would overturn it. Write that
-reversal condition when you decide. A decision the operator locked is closed.
+**Decisions change on evidence, not argument**: a measurement, read-back or probe
+changes one in a line; a better-argued restatement does not, so hold and name the
+reading that would overturn it. A decision the operator locked is closed.
 
 ## Never
 
@@ -154,11 +153,10 @@ reversal condition when you decide. A decision the operator locked is closed.
 - Langfuse gets traces with a generation in them (a root declares
   `nora.trace_kind`); the rest is a counter label. Model calls use Strands'
   spans, or `start_raw_model_span` for raw completions; never hand-write `gen_ai.*`.
-- A log line is not a metric. A declared metric has a call site and an
-  increment has a declaration (`test_every_recorded_metric_is_declared.py`).
-  Label vocabularies are derived from the code (`get_args` off a `Literal`).
-- Three states on every instrument; measure the cost (the plan, the bound),
-  not only the result; pair every zero-assertion with a positive control.
+- A log line is not a metric; a declared metric has a call site, an increment a
+  declaration (`test_every_recorded_metric_is_declared.py`), and labels derive
+  from the code (`get_args` off a `Literal`). Three states on every instrument;
+  measure the cost, not only the result; pair every zero with a positive control.
 
 ## Code conventions
 
@@ -166,22 +164,20 @@ reversal condition when you decide. A decision the operator locked is closed.
   «Code map», `nora/AGENTS.md`, ADR 0037); `nora-structure` places the code.
 - Collaborators come through `__init__`: no `*_fn` hooks, no `_for_test`
   parameters, no mutable module singletons.
-- A port gains a second implementation, a test fake included, only with a
-  shared contract suite in `tests/contract/`, its database scoped to the module.
-  Port fakes live in `nora/testing/`.
-- A test directory names what makes the test true (`tests/README.md`); the
-  `tests/` root takes no new files. Tests read config from the template
-  fixtures; only a test whose subject is the deployment reads `config.toml`.
+- A port gains a second implementation, a fake included, only with a shared
+  contract suite in `tests/contract/` (database scoped to the module); fakes
+  live in `nora/testing/`. A test directory names what makes the test true
+  (`tests/README.md`) and the `tests/` root takes no new files; tests read
+  config from the template fixtures, and only a deployment test reads `config.toml`.
 - A new behavioural rule gets a decision-index row and a named test in
   `tests/test_acceptance_rules.py::RULE_TESTS`.
 
 ## Operational constraints
 
-1. Direct builds need `docker build --network=host`; compose sets it.
-2. Honcho health is `GET /health`, not `GET /v3/workspaces`.
-3. signal-cli is Nora's transport, in her compose project, on Java 25;
+1. Direct builds need `docker build --network=host` (compose sets it); Honcho
+   health is `GET /health`, not `GET /v3/workspaces`.
+2. signal-cli is Nora's transport, in her compose project, on Java 25;
    `--receive-mode=on-start` is load-bearing (without it every message drops).
-4. Dependencies via `uv add`.
 
 ## Settings and secrets
 
@@ -192,27 +188,25 @@ reversal condition when you decide. A decision the operator locked is closed.
 | `policy.toml` | who may talk to her, and where | trust changes |
 | `secret.toml` | credential values | credentials change |
 
-All are gitignored; `*.example.toml` record their shapes. No config change
-reaches a process unvalidated (`nora-deploy`). Policy is deny-by-default and
-Nora refuses to start if it allows nothing; the host's file is authoritative.
+All are gitignored, their shapes in `*.example.toml`; no config change reaches a
+process unvalidated (`nora-deploy`). Policy is deny-by-default (Nora refuses to start if it allows nothing); the host's file is authoritative.
 
 ## Deployment and releases
 
-`nora-host` is a deploy target, not a dev checkout. The Komodo stack
-`nora-releases` deploys from the `deployments` branch; `~/workspace/nora` on
-the host holds live config, data and state and is never deleted or reset. Key
-auth only: never `sshpass` or a password in `.env`, chat or a readable file. Every ordinary master push releases a patch or minor automatically;
-`nora-release` owns the rest, `nora-deploy` owns deployment.
+`nora-host` is a deploy target, not a dev checkout: Komodo's `nora-releases`
+deploys from `deployments`; the host's `~/workspace/nora` holds live config,
+data and state and is never deleted or reset. Key auth only, never a password.
+Master pushes release automatically (`nora-release`); `nora-deploy` deploys.
 
 ## Skills: the procedures
 
-Each is `.agents/skills/<name>/SKILL.md`, linked from `.claude/skills/<name>`:
-the order of the commands and the check after each. A new skill adds its row
-here and its link in the same commit.
+Each is `.agents/skills/<name>/SKILL.md`, linked from `.claude/skills/<name>`: the
+order of the commands and the check after each; a new skill adds both at once.
 
 | when the task is | load |
 |---|---|
 | starting a change, running the gate, committing, opening or merging a PR | `nora-land` |
+| turning a design or issue into briefs, delegating a build, or reading a builder's result back | `nora-dispatch` |
 | reviewing a change against its original scope and acceptance | `nora-review` |
 | an architecture change, or any edit under `design/` | `nora-design` |
 | a new DEC or R row, an ADR, an issue, a roadmap direction, or citing a decision | `nora-decision` |
@@ -228,20 +222,15 @@ here and its link in the same commit.
 
 ## Validation budget
 
-Automatic PR and master checks target three minutes with a five-minute ceiling.
-The complete backend suite is on demand through manual CI dispatch; release PRs
-do not wait for it. A timeout fails. Report fast-baseline and complete acceptance
-as separate outcomes. Use focused local checks, never a full local pre-PR suite.
-
-Python CodeQL is on demand through manual CI dispatch; its hosted analysis exceeded
-the automatic budget. Other selected security scans remain automatic. A skipped
-Python scan is no claim that Python security analysis passed.
+Automatic checks target three minutes, five at most; a timeout fails. The full
+backend suite and Python CodeQL run on manual dispatch, so a skipped run claims
+nothing; report fast-baseline and full acceptance separately. Use focused local
+checks, never a full local pre-PR suite.
 
 ## Reading order
 
-`README.md` → `ARCHITECTURE.md` → the area's design bundle → `CONTRIBUTING.md`
-and `docs/maintainers/conventions.md`; `DESIGN.md` before touching anything she
-looks like; `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` as needed.
+`README.md` → `ARCHITECTURE.md` → the area's design bundle → `CONTRIBUTING.md`, `docs/maintainers/conventions.md`;
+`DESIGN.md` before touching how she looks; `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` as needed.
 
 <!-- OPENWIKI:START -->
 
