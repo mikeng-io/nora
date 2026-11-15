@@ -25,7 +25,7 @@ registration here, authority in `managed_authority`, journal plumbing in
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import cast
 from uuid import uuid4
 
 from nora.access import IdentityAccess
@@ -419,11 +419,9 @@ class RegistrationService:
             lambda: self._bindings.revoke_binding(account=account),
         )
         if outcome.status is OutcomeStatus.COMPLETE:
-            # The binding's derived sessions end with it — an absent
-            # identity has none to drop, which is the completed effect.
             outcome = await self._run_binding(
                 record, "sessions",
-                lambda: self._drop_sessions(bound.person_id),
+                lambda: self._registry.drop_sessions(external_id=bound.person_id),
             )
         if outcome.status is OutcomeStatus.COMPLETE:
             outcome = await self._run_binding(
@@ -437,10 +435,6 @@ class RegistrationService:
         await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                       "complete")
         return complete()
-
-    async def _drop_sessions(self, person_id: str) -> Outcome:
-        outcome = await self._registry.drop_sessions(external_id=person_id)
-        return complete() if outcome.status is OutcomeStatus.DENIED else outcome
 
     async def _binding_absent(self, account: Identifier) -> Outcome:
         bound = await self._bindings.account_for(

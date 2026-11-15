@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
@@ -40,8 +42,15 @@ from nora.domain.management import (
     TargetKind,
     Unlink,
 )
+from nora.people.app.link_publication import LinkPublicationService
 from nora.people.app.managed import RegistrationService
-from nora.testing.managed import FakeBindingStore, FakeIdentityRegistry
+from nora.testing.managed import (
+    FakeAuthorityBackend,
+    FakeBindingStore,
+    FakeIdentityRegistry,
+    FakeLinkRequests,
+    FakeTopologySource,
+)
 
 ROOM = Scope(ScopeKind.ROOM, "signal/conv-1")
 PERSON = "person_alice"
@@ -314,13 +323,11 @@ async def test_a_completed_replay_still_revalidates_the_observed_revision():
     assert outcome.status is OutcomeStatus.COMPLETE
 
 
-async def test_unlink_revokes_only_that_account():
-    store, _, svc = _service()
-    await _register(svc, "op-1")
+async def _unlink_operation(store):
     bound = await store.record_for(account=ACCT)
     person = await store.person(PERSON)
     assert bound is not None and person is not None
-    op = Operation(
+    return Operation(
         operation_id="op-2",
         kind="unlink_account",
         actor=Actor(
@@ -337,7 +344,12 @@ async def test_unlink_revokes_only_that_account():
             "authority": "0",
         },
     )
-    outcome = await svc.apply(op)
+
+
+async def test_unlink_revokes_only_that_account():
+    store, _, svc = _service()
+    await _register(svc, "op-1")
+    outcome = await svc.apply(await _unlink_operation(store))
     assert outcome.status is OutcomeStatus.COMPLETE
     # The binding is revoked — the identifier resolves no longer, and it
     # can never be re-bound through a fresh registration.
@@ -346,6 +358,37 @@ async def test_unlink_revokes_only_that_account():
         svc, "op-3", person_id="person_other", identifiers=frozenset({ACCT})
     )
     assert rebind.status is OutcomeStatus.DENIED
+
+
+@pytest.mark.parametrize("failure", ["missing", "unavailable"])
+async def test_unlink_requires_confirmed_session_revocation_and_reconciles(failure):
+    store, registry, registration = _service()
+    assert (await _register(registration, "op-1")).status is OutcomeStatus.COMPLETE
+    operation = await _unlink_operation(store)
+    identity = registry.identities[PERSON]
+    registry.sessions[PERSON] = 2
+    if failure == "missing":
+        del registry.identities[PERSON]
+    else:
+        registry.down = True
+
+    outcome = await registration.apply(operation)
+    assert outcome.status is not OutcomeStatus.COMPLETE
+    record = await store.operation(operation.operation_id)
+    assert record is not None and record.state is OperationJournalState.INCOMPLETE
+    assert record.steps["sessions"] == "pending"
+    assert await store.account_for(ACCT.platform, ACCT.kind, ACCT.value) is None
+    assert registry.sessions[PERSON] == 2
+
+    registry.down = False
+    registry.identities[PERSON] = identity
+    recovery = LinkPublicationService(
+        store, FakeAuthorityBackend(), FakeTopologySource(), registry, FakeLinkRequests()
+    )
+    finished = await recovery.reconcile()
+    assert [row.operation_id for row in finished] == [operation.operation_id]
+    assert finished[0].state is OperationJournalState.COMPLETE
+    assert registry.sessions.get(PERSON, 0) == 0
 
 
 async def test_observation_of_an_unclaimed_account_creates_an_independent_person():
