@@ -48,18 +48,18 @@ from nora.platform.discord.discovery import DiscordDiscovery
 from nora.platform.discord.roster import DiscordRoster
 from nora.platform.signal import directory
 from nora.platform.signal.discovery import SignalDiscovery
+from nora.testing.discovery import ScriptedDiscovery
 from tests.unit.test_platform_onboarding import (
     GROUP,
     GUILD,
     UNIT,
-    ScriptedDiscovery,
     _graph,
     _rule,
     guild_member,
     signal_member,
 )
 from tests.unit.test_platform_onboarding import (
-    TestComposition as _Comp,  # noqa: F811 — helper holder, not a suite
+    TestComposition as _Comp,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -91,7 +91,7 @@ class TestFreshnessGuard:
         member, other = _member(1), _member(2)
         discovery = ScriptedDiscovery(CollectionSnapshot(
             available=True, complete=True, members=(member, other),
-            observed_ms=NOW_MS))
+            observed_ms=NOW_MS), collection=GUILD)
         onboarding = _onboarding(services, provisioning, _rule(discovery))
         await onboarding._drain()
         assert len(await services.bindings.members_of(UNIT)) == 2
@@ -124,7 +124,7 @@ class TestFreshnessGuard:
         member, other = _member(1), _member(2)
         discovery = ScriptedDiscovery(CollectionSnapshot(
             available=True, complete=True, members=(member, other),
-            observed_ms=NOW_MS))
+            observed_ms=NOW_MS), collection=GUILD)
         onboarding = _onboarding(services, provisioning, _rule(discovery))
         await onboarding._drain()
         assert len(await services.bindings.members_of(UNIT)) == 2
@@ -168,7 +168,7 @@ class TestFreshnessGuard:
         member, other = _member(1), _member(2)
         discovery = ScriptedDiscovery(CollectionSnapshot(
             available=True, complete=True, members=(member,),
-            observed_ms=NOW_MS))
+            observed_ms=NOW_MS), collection=GUILD)
         onboarding = _onboarding(services, provisioning, _rule(discovery))
         await onboarding._drain()
         assert len(await services.bindings.members_of(UNIT)) == 1

@@ -38,7 +38,6 @@ from nora.config_identity import (
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     CollectionSnapshot,
-    DiscoveryCapabilities,
     ObservedMember,
     ObservedRows,
 )
@@ -59,6 +58,7 @@ from nora.people.app.onboarding import OnboardingRule, PlatformOnboarding
 from nora.people.app.roster_provisioning import RosterProvisioning
 from nora.platform.discord.discovery import DiscordDiscovery
 from nora.platform.signal.discovery import SignalDiscovery
+from nora.testing.discovery import ScriptedDiscovery
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
@@ -98,34 +98,6 @@ def member_obs(ref: str, operation: Operation = "add") -> Observation:
         operation=operation, payload=MembershipPayload(state="member"),
         subject_ref="generated-subject")
 
-
-class ScriptedDiscovery:
-    """A `CollectionDiscovery` whose `members` answer a test drives —
-    for the flows the platform normalizers cannot produce (a PARTIAL
-    snapshot; Discord/Signal reads are all-or-unavailable)."""
-
-    platform = "discord"
-    capabilities = DiscoveryCapabilities(
-        roster=True, member_events=True, sender_typing=True,
-        room_audience=False)
-
-    def __init__(self, snapshot: CollectionSnapshot) -> None:
-        self.snapshot = snapshot
-        self.reads = 0
-
-    def collection_of(self, *, conversation_id: str) -> str | None:
-        return conversation_id.partition("/")[0] or None
-
-    def collection_ref(self, *, object_ref: str) -> str | None:
-        kind, _, ref = object_ref.partition(":")
-        return ref if kind == "guild" else None
-
-    async def members(self, *, collection: str) -> CollectionSnapshot:
-        self.reads += 1
-        return self.snapshot
-
-    async def sender_identifiers(self, *, collection: str, value: str):
-        return frozenset({Identifier("discord", "user_id", value)})
 
 
 def _graph() -> tuple[ManagedServices, RosterProvisioning]:
@@ -339,7 +311,7 @@ class TestOnboarding:
             available=True, complete=False,
             members=(ObservedMember(
                 frozenset({Identifier("discord", "user_id", "10003")})),),
-            observed_ms=1))
+            observed_ms=1), collection=GUILD)
         onboarding = _onboarding(services, provisioning, _rule(partial))
         await onboarding._drain()
         members = await services.bindings.members_of(UNIT)
@@ -515,7 +487,7 @@ class TestOnboarding:
     async def test_unavailable_sync_does_not_extend_the_interval(self):
         services, provisioning = _graph()
         discovery = ScriptedDiscovery(
-            CollectionSnapshot(available=False, detail="down"))
+            CollectionSnapshot(available=False, detail="down"), collection=GUILD)
         onboarding = _onboarding(
             services, provisioning, _rule(discovery), interval=10**9)
         await onboarding._drain()
