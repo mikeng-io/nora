@@ -25,12 +25,15 @@ the view's order, of which at most `MAX_READ_VIDEOS` videos, each no longer
 than `MAX_READ_VIDEO_SECONDS`; at most `READ_CONCURRENCY` looks in flight across
 the WHOLE TURN (`TurnLook.slots` is one semaphore per turn, so two batched
 calls cannot run eight at once). Each look is held to `ITEM_TIMEOUT_SECONDS`
-from the moment it gets a slot and the whole set to `TOTAL_TIMEOUT_SECONDS`,
-which inside a turn is also held under the share of the turn's remaining time
-the vision client already leaves (`seconds_left() x VISION_LOOP_SHARE`), so
-this can never outlast the turn's own `wait_for`. An item whose look fails,
-is withheld, or runs out of time says so on its own `Reading`; every other
-item still returns.
+— a video's to `VIDEO_ITEM_TIMEOUT_SECONDS` — from the moment it gets a slot
+and the whole set to `TOTAL_TIMEOUT_SECONDS`, which inside a turn is also held
+under the share of the turn's remaining time the vision client already leaves
+(`seconds_left() x VISION_LOOP_SHARE`), so this can never outlast the turn's
+own `wait_for`. The look's allowance is handed DOWN with it
+(`look_deadline`): the video read's one recovery pass spends a timed-out
+window's second attempt from the SAME budget that kills the look, never
+beside it. An item whose look fails, is withheld, or runs out of time says so
+on its own `Reading`; every other item still returns.
 
 **Cancelled means stopped.** If the read itself is cancelled (the turn's
 `wait_for` fired), every look still running is cancelled AND awaited before
@@ -48,8 +51,8 @@ from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol, TypeVar
 
-from ...domain.turn_deadline import seconds_left
-from ..vision.client import VISION_LOOP_SHARE
+from ...domain.turn_deadline import look_deadline, seconds_left
+from ..vision.client import VIDEO_READ_SECONDS, VISION_LOOP_SHARE
 from .views import ItemView, PostView, Reading, StoryView
 
 log = logging.getLogger("nora.social.instagram.readings")
@@ -85,9 +88,17 @@ READ_CONCURRENCY = 4
 #: ceiling (25 s) plus 5 s for ffmpeg.
 ITEM_TIMEOUT_SECONDS = 150.0
 
-#: Every look together. Also held under the turn's remaining share (module
-#: docstring).
-TOTAL_TIMEOUT_SECONDS = 180.0
+#: One VIDEO look: the chunked read's own whole budget (`VIDEO_READ_SECONDS`
+#: — two per-call ceilings, the first pass and a timed-out window's one
+#: recovery attempt) plus the url download ceiling and ffmpeg. The recovery
+#: pass fits INSIDE this number because the read is handed the look's own
+#: deadline and spends from it, never beside it.
+VIDEO_ITEM_TIMEOUT_SECONDS = 30.0 + VIDEO_READ_SECONDS
+
+#: Every look together: one video envelope plus the margin another item
+#: needs to have started. Inside a turn the tighter bound is still the share
+#: of the turn's remaining time (module docstring).
+TOTAL_TIMEOUT_SECONDS = 300.0
 
 V = TypeVar("V", bound=PostView | StoryView)
 
@@ -153,17 +164,22 @@ def reading_of(served: Mapping[str, Any], *, video: bool = False) -> Reading:
     is `seen` (a video's coverage sentence split off); an `ok` that withheld
     its words (the identifier screen) is `withheld`; every other answer,
     whatever its status, is `failed`: it could not look, and that is all
-    this item may say."""
+    this item may say. The verified custody `code` rides the Reading in
+    EVERY state it came back in — custody survives a failed look, so the
+    item's reference can offer the handle that re-opens the held bytes."""
+    code = served.get("code")
+    if not isinstance(code, str) or not code:
+        code = None
     if served.get("status") == "ok":
         if served.get("withheld") is True:
-            return Reading("withheld")
+            return Reading("withheld", code=code)
         text = served.get("description")
         if isinstance(text, str) and text.strip():
             if video:
                 body, coverage = split_coverage(text)
-                return Reading("seen", body, coverage)
-            return Reading("seen", text)
-    return Reading("failed")
+                return Reading("seen", body, coverage, code=code)
+            return Reading("seen", text, code=code)
+    return Reading("failed", code=code)
 
 
 def _not_read(
@@ -195,6 +211,7 @@ async def read_view(
     *,
     max_items: int = MAX_READ_ITEMS,
     item_timeout: float = ITEM_TIMEOUT_SECONDS,
+    video_item_timeout: float | None = None,
     total_timeout: float = TOTAL_TIMEOUT_SECONDS,
 ) -> V:
     """`view` with a `Reading` on each of its first `max_items` items; the
@@ -202,6 +219,8 @@ async def read_view(
     sake: a look that raises is `failed`, one that runs out of time is
     `timed_out`, a video past the cap or the length is marked so, and the
     others are unaffected. Cancelled, it stops every look before it goes."""
+    if video_item_timeout is None:
+        video_item_timeout = VIDEO_ITEM_TIMEOUT_SECONDS
     chosen = view.items[:max_items]
     if not chosen:
         return view
@@ -209,6 +228,8 @@ async def read_view(
     left = seconds_left()
     if left is not None:
         budget = min(budget, left * VISION_LOOP_SHARE)
+    #: The batch's own deadline on the same clock `one()` reads.
+    deadline_total = asyncio.get_running_loop().time() + max(0.0, budget)
     skipped = _not_read(
         chosen, max_seconds=look.max_video_seconds, story=isinstance(view, StoryView),
     )
@@ -217,18 +238,29 @@ async def read_view(
     started: set[int] = set()
 
     async def one(n: int, item: ItemView) -> Reading:
+        limit = video_item_timeout if item.kind != "image" else item_timeout
         async with look.slots:
             started.add(n)
-            try:
-                # The url and NOTHING else: no `question`, so no text a
-                # poster wrote can reach the vision prompt.
-                served = await asyncio.wait_for(look.fetch(url=item.url), timeout=item_timeout)
-            except TimeoutError:
-                return Reading("timed_out")
-            except Exception:
-                log.exception("instagram item reading failed")
-                return Reading("failed")
-            return reading_of(served, video=item.kind == "video")
+            # The look's allowance IS the deadline a nested read spends: the
+            # video read's one recovery pass comes out of this same number —
+            # the item's envelope and what the batch has left — never beside
+            # it, and never more than the `wait_for` that kills the look.
+            allowance = max(
+                0.0,
+                min(limit, deadline_total - asyncio.get_running_loop().time()),
+            )
+            with look_deadline(allowance):
+                try:
+                    # The url and NOTHING else: no `question`, so no text a
+                    # poster wrote can reach the vision prompt.
+                    served = await asyncio.wait_for(
+                        look.fetch(url=item.url), timeout=allowance)
+                except TimeoutError:
+                    return Reading("timed_out")
+                except Exception:
+                    log.exception("instagram item reading failed")
+                    return Reading("failed")
+                return reading_of(served, video=item.kind == "video")
 
     tasks = {
         n: asyncio.ensure_future(one(n, item))

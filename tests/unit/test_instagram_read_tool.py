@@ -627,15 +627,17 @@ def test_the_description_body_names_person_handle_and_link():
 def test_the_body_says_every_item_and_what_it_shows():
     """The body sentence: a post or a reel returns every item, videos included.
     It also says the result carries what each of the first 8 items SHOWS beside the
-    caption, with a link each for `media_fetch(url=...)`, and that a story's
-    frames come back the same way."""
+    caption, with each item's `code` for `media_fetch(code=...)` — the stable
+    handle, so the follow-up look never re-types a signed url — and that a
+    story's frames come back the same way."""
     body = " ".join(
         ToolRegistry()._descriptions()["instagram_read"].partition("\n\n")[2].split()
     )
     assert (
         "A post or a reel returns every item in it, videos included, with what "
-        "each of the first 8 shows beside the caption, and a link each for "
-        "`media_fetch(url=...)`; a story returns its frames the same way."
+        "each of the first 8 shows beside the caption, and each item's `code` for "
+        "`media_fetch(code=...)` (its link for `media_fetch(url=...)` when it has "
+        "none); a story returns its frames the same way."
     ) in body
 
 

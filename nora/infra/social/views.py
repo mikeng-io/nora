@@ -73,6 +73,11 @@ class Reading:
     state: ReadingState
     text: str | None = None
     coverage: str | None = None
+    #: The custody handle `media_fetch(code=...)` resolves when the look held
+    #: the item's media — a content hash, never an identifier, so it is not
+    #: the kind R-18 keeps off a view. A re-look by code never re-types the
+    #: signed url, which is what makes it stable where the link expires.
+    code: str | None = None
 
     def __post_init__(self) -> None:
         if (self.state == "seen") != bool(self.text):

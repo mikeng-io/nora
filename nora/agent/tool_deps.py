@@ -475,8 +475,8 @@ class ToolDeps:
             obj, platform=self.room.platform, conversation_id=self.bound_conversation_id
         )
 
-    async def _keep_fetched_image(self, url: str, data: bytes, media_type: str) -> str | None:
-        """Put a looked-at web picture into custody as a `fetched` row born in"""
+    async def _keep_fetched_media(self, url: str, data: bytes, media_type: str) -> str | None:
+        """Put a looked-at web medium into custody as a `fetched` row born in"""
         if self.blob_store is None or self.media_store is None:
             return None
         try:
@@ -498,7 +498,7 @@ class ToolDeps:
             )
             row = await self.media_store.get(sha256=key)
         except Exception:
-            log.exception("media_fetch could not keep a fetched picture")
+            log.exception("media_fetch could not keep a fetched medium")
             return None
         if row is None or not born_in_room(
             row, platform=self.room.platform, conversation_id=self.bound_conversation_id
