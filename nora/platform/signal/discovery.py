@@ -18,9 +18,8 @@ untypable sender must not become a person on a hunch.
 from __future__ import annotations
 
 import logging
-import time
 import uuid as uuid_module
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from nora.domain.identity import Identifier
@@ -28,6 +27,7 @@ from nora.domain.managed import (
     CollectionSnapshot,
     DiscoveryCapabilities,
     ObservedMember,
+    ObservedRows,
 )
 
 log = logging.getLogger("nora.signal.discovery")
@@ -57,11 +57,12 @@ def _sender_kind(value: str) -> str | None:
 class SignalDiscovery:
     """`CollectionDiscovery` for Signal groups.
 
-    `fetch` is `async group_id -> tuple[dict, ...] | None`: the group's raw
-    `members[]` rows, or `None` when the read cannot complete — direct mode
-    calls `directory.group_members`, bridge mode calls the bridge's
-    `/v1/reads` roster op. `own_account` is the service's own number so
-    the roster never onboards Nora herself.
+    `fetch` is `async group_id -> ObservedRows | None`: the group's raw
+    `members[]` rows plus the instant the upstream read finished, or
+    `None` when the read cannot complete — direct mode calls
+    `directory.group_members`, bridge mode calls the bridge's
+    `/v1/reads` roster op and takes its `observed_ms`. `own_account` is
+    the service's own number so the roster never onboards Nora herself.
     """
 
     platform = "signal"
@@ -76,7 +77,7 @@ class SignalDiscovery:
     def __init__(
         self,
         *,
-        fetch: Callable[[str], Awaitable[Sequence[dict[str, Any]] | None]],
+        fetch: Callable[[str], Awaitable[ObservedRows | None]],
         own_account: str,
     ) -> None:
         self._fetch = fetch
@@ -93,18 +94,18 @@ class SignalDiscovery:
         return ref if kind == "group" and ref else None
 
     async def members(self, *, collection: str) -> CollectionSnapshot:
-        rows = await self._fetch(collection)
-        if rows is None:
+        result = await self._fetch(collection)
+        if result is None:
             return CollectionSnapshot(
                 available=False, detail="group-unavailable")
-        if not rows:
+        if not result.rows:
             # signal-cli can report a group it could not refresh with an
             # empty member list; empty is then a broken read, not proof
             # everyone left, and must never stand in as a complete roster.
             return CollectionSnapshot(
                 available=False, detail="empty-roster")
         members = []
-        for row in rows:
+        for row in result.rows:
             ids = _typed_ids(row)
             if self._own and self._own in {i.value for i in ids}:
                 continue  # the service's own account is not a person
@@ -114,7 +115,9 @@ class SignalDiscovery:
             available=True,
             members=tuple(members),
             complete=True,
-            observed_ms=int(time.time() * 1000),
+            # The producer's own read instant — `0` when the transport
+            # could not establish one, never a re-stamp of delivery time.
+            observed_ms=result.observed_ms or 0,
         )
 
     async def sender_identifiers(
@@ -123,9 +126,9 @@ class SignalDiscovery:
         # Sealed sender means one account reaches us as `number` on one
         # message and `uuid` on the next — a value naming a member row
         # yields that row's whole paired set; else type by shape.
-        rows = await self._fetch(collection)
-        if rows is not None:
-            for row in rows:
+        result = await self._fetch(collection)
+        if result is not None:
+            for row in result.rows:
                 raw = {str(row[k]) for k in ("number", "uuid") if row.get(k)}
                 if value in raw:
                     ids = _typed_ids(row)

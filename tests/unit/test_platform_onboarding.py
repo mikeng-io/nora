@@ -22,6 +22,8 @@ fakes, plus the real Discord/Signal discovery normalizers (`identity.md`
 
 from __future__ import annotations
 
+import time
+
 import pytest
 from pydantic import ValidationError
 
@@ -38,6 +40,7 @@ from nora.domain.managed import (
     CollectionSnapshot,
     DiscoveryCapabilities,
     ObservedMember,
+    ObservedRows,
 )
 from nora.domain.management import (
     Actor,
@@ -156,13 +159,23 @@ def _rule(discovery, name: str = "generated-rule", collection: str = GUILD,
         collection=collection, scope=scope, discovery=discovery)
 
 
+def _rows(rows, observed_ms=None):
+    """A live producer answer: the rows plus the read's own completion
+    stamp, exactly as the real seams stamp one."""
+    return ObservedRows(
+        rows=tuple(rows),
+        observed_ms=int(time.time() * 1000) if observed_ms is None
+        else observed_ms)
+
+
 def _discord(rows):
     """`DiscordDiscovery` over a scripted fetch — the real normalizer."""
     calls = {"n": 0}
 
     async def fetch(collection: str):
         calls["n"] += 1
-        return rows() if callable(rows) else rows
+        value = rows() if callable(rows) else rows
+        return None if value is None else _rows(value)
 
     return DiscordDiscovery(fetch=fetch), calls
 
@@ -212,7 +225,7 @@ class TestDiscoveryAdapters:
         rows = [signal_member(1), signal_member(2)]
 
         async def _fetch(group):
-            return rows
+            return _rows(rows)
 
         discovery = SignalDiscovery(fetch=_fetch, own_account="")
         snapshot = await discovery.members(collection=GROUP)
@@ -226,7 +239,7 @@ class TestDiscoveryAdapters:
                 {"pending": True}]
 
         async def _fetch(group):
-            return rows
+            return _rows(rows)
 
         discovery = SignalDiscovery(
             fetch=_fetch, own_account="+852999")
@@ -241,7 +254,7 @@ class TestDiscoveryAdapters:
         rows = [signal_member(1)]
 
         async def _fetch(group):
-            return rows
+            return _rows(rows)
 
         discovery = SignalDiscovery(fetch=_fetch, own_account="")
         # The uuid-only sealed-sender value resolves through the roster
@@ -263,7 +276,7 @@ class TestDiscoveryAdapters:
         assert not (await discovery.members(collection=GROUP)).available
 
         async def _empty(group):
-            return ()
+            return _rows(())
 
         discovery = SignalDiscovery(fetch=_empty, own_account="")
         assert not (await discovery.members(collection=GROUP)).available
@@ -339,7 +352,7 @@ class TestOnboarding:
         second_rows = [guild_member(1)]
 
         async def second_fetch(collection: str):
-            return list(second_rows)
+            return _rows(list(second_rows))
 
         second = DiscordDiscovery(fetch=second_fetch)
         onboarding = _onboarding(
@@ -374,7 +387,8 @@ class TestOnboarding:
         # Now collection A's roster also drops them: the roster support
         # leaves, the manual grant still stands.
         async def empty_first(collection: str):
-            return [{"user": {"id": "999999"}}]  # somebody else only
+            # somebody else only
+            return _rows([{"user": {"id": "999999"}}])
 
         first._fetch = empty_first
         onboarding.notify_resumed(platform="discord")
@@ -405,7 +419,7 @@ class TestOnboarding:
 
         async def grown(collection: str):
             grown_reads["n"] += 1
-            return rows
+            return _rows(rows)
 
         discovery._fetch = grown
         onboarding.notify_observation(member_obs(f"guild:{GUILD}"))
@@ -452,7 +466,7 @@ class TestOnboarding:
         rows = [guild_member(1)]
 
         async def fetch(collection: str):
-            return list(rows)
+            return _rows(list(rows))
 
         discovery = DiscordDiscovery(fetch=fetch)
         onboarding = _onboarding(services, provisioning, _rule(discovery))
@@ -484,7 +498,7 @@ class TestOnboarding:
         rows = [signal_member(1)]
 
         async def fetch(collection: str):
-            return rows
+            return _rows(rows)
 
         discovery = SignalDiscovery(fetch=fetch, own_account="")
         onboarding = _onboarding(

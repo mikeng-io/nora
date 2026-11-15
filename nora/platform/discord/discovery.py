@@ -8,19 +8,20 @@ why Discord has no "who is in this channel" read). Member add/remove/
 update gateway events already stream as membership observations, and a
 sender's snowflake types to `discord:user_id` without another read.
 
-The `fetch` seam takes the row list so direct mode (`DiscordRoster.
-guild_members`, the real paginated REST read) and bridge mode (the
-bridge's own `members` read over `/v1/reads`) share this one
-classification path — the bridge runs the same `DiscordRoster` upstream,
-so either way the rows carry the provider's own `bot`/`system` flags
-rather than a shape we guessed.
+The `fetch` seam returns the row list AND the instant the upstream read
+finished, so direct mode (`DiscordRoster.guild_members`, the real
+paginated REST read) and bridge mode (the bridge's own `members` read
+over `/v1/reads`, which stamps `observed_ms` on its envelope) share this
+one classification path — the bridge runs the same `DiscordRoster`
+upstream, so either way the rows carry the provider's own `bot`/`system`
+flags rather than a shape we guessed, and the observation time is the
+producer's, never re-stamped at delivery here.
 """
 
 from __future__ import annotations
 
 import logging
-import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from nora.domain.identity import Identifier
@@ -28,6 +29,7 @@ from nora.domain.managed import (
     CollectionSnapshot,
     DiscoveryCapabilities,
     ObservedMember,
+    ObservedRows,
 )
 
 log = logging.getLogger("nora.discord.discovery")
@@ -53,9 +55,10 @@ def _observe(row: Any) -> ObservedMember:
 class DiscordDiscovery:
     """`CollectionDiscovery` for Discord guilds.
 
-    `fetch` is `async guild_id -> list[dict] | None`: the guild's raw
-    member rows, or `None` when the read cannot complete (the same
-    contract `DiscordRoster.guild_members` keeps). Injecting it keeps the
+    `fetch` is `async guild_id -> ObservedRows | None`: the guild's raw
+    member rows plus the instant the upstream read finished, or `None`
+    when the read cannot complete (the same availability contract
+    `DiscordRoster.guild_members` keeps). Injecting it keeps the
     transport choice — direct REST or the bridge's `/v1/reads` mirror —
     out of the normalization.
     """
@@ -74,7 +77,7 @@ class DiscordDiscovery:
 
     def __init__(
         self, *,
-        fetch: Callable[[str], Awaitable[Sequence[dict[str, Any]] | None]],
+        fetch: Callable[[str], Awaitable[ObservedRows | None]],
     ) -> None:
         self._fetch = fetch
 
@@ -87,11 +90,11 @@ class DiscordDiscovery:
         return ref if kind == "guild" and _snowflake(ref) else None
 
     async def members(self, *, collection: str) -> CollectionSnapshot:
-        rows = await self._fetch(collection)
-        if rows is None:
+        result = await self._fetch(collection)
+        if result is None:
             return CollectionSnapshot(
                 available=False, detail="guild-members-unavailable")
-        if not rows:
+        if not result.rows:
             # A guild can never enumerate to zero members — the application
             # itself is one. An empty answer is a broken read, not proof
             # everyone left, so it cannot stand in as a complete roster.
@@ -99,9 +102,11 @@ class DiscordDiscovery:
                 available=False, detail="empty-roster")
         return CollectionSnapshot(
             available=True,
-            members=tuple(_observe(row) for row in rows),
+            members=tuple(_observe(row) for row in result.rows),
             complete=True,
-            observed_ms=int(time.time() * 1000),
+            # The producer's own read instant — `0` when the transport
+            # could not establish one, never a re-stamp of delivery time.
+            observed_ms=result.observed_ms or 0,
         )
 
     async def sender_identifiers(

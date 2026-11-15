@@ -682,13 +682,18 @@ class Bridge:
         body = await req.json()
         if body["op"] == "roster":
             groups = await self._rpc("listGroups", {})
+            # The daemon answered just now — the read's own instant is the
+            # only honest observation time this envelope can carry.
+            observed_ms = int(time.time() * 1000)
             gid = (body.get("params") or {}).get("conversation_id")
             for g in groups or []:
                 if g.get("id") == gid or g.get("groupId") == gid:
                     members = g.get("members") or []
                     return web.json_response({"available": True,
-                                              "members": members})
-            return web.json_response({"available": False, "members": []})
+                                              "members": members,
+                                              "observed_ms": observed_ms})
+            return web.json_response({"available": False, "members": [],
+                                      "observed_ms": observed_ms})
         return web.json_response({"error": "unknown read"}, status=404)
 
     async def put_attachment(self, req: web.Request) -> web.Response:

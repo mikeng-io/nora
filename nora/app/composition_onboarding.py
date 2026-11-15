@@ -18,12 +18,14 @@ credential+scope check the private endpoint applies.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
 
+from nora.domain.managed import ObservedRows
 from nora.domain.managed_ports import CollectionDiscovery
 from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
 from nora.people import OnboardingRule, PlatformOnboarding, RosterProvisioning
@@ -100,18 +102,34 @@ def _discovery_for(
 
             async def bridge_fetch(
                 guild_id: str
-            ) -> list[dict[str, Any]] | None:
+            ) -> ObservedRows | None:
                 data = await discord_control.read(
                     "members", {"guild_id": guild_id})
                 if data is None or not data.get("available"):
                     return None
                 rows = (data.get("value") or {}).get("members")
-                return rows if isinstance(rows, list) else None
+                if not isinstance(rows, list):
+                    return None
+                # The bridge read live when asked; its own stamp is the
+                # observation time — an envelope without one stays undated.
+                return ObservedRows(
+                    rows=tuple(rows), observed_ms=_observed_ms(data))
 
             return DiscordDiscovery(fetch=bridge_fetch)
         if not discord_token:
             return None
-        return DiscordDiscovery(fetch=DiscordRoster(discord_token).guild_members)
+        roster = DiscordRoster(discord_token)
+
+        async def direct_fetch(collection: str) -> ObservedRows | None:
+            rows = await roster.guild_members(collection)
+            if rows is None:
+                return None
+            # The direct read IS the upstream observation — its own
+            # completion instant is the honest observed time.
+            return ObservedRows(
+                rows=tuple(rows), observed_ms=int(time.time() * 1000))
+
+        return DiscordDiscovery(fetch=direct_fetch)
     if platform == "signal":
         account = cfg.platforms.signal.account
         if cfg.platforms.signal.mode == "bridge":
@@ -124,27 +142,38 @@ def _discovery_for(
         if not base_url:
             return None
 
-        async def direct_fetch(
-            collection: str
-        ) -> tuple[dict[str, Any], ...] | None:
+        async def direct_fetch(collection: str) -> ObservedRows | None:
             try:
                 groups = await directory.group_members(
                     base_url=base_url, account=account, timeout=30.0)
             except directory.DirectoryError:
                 return None
-            return groups.get(collection)
+            rows = groups.get(collection)
+            if rows is None:
+                return None
+            return ObservedRows(
+                rows=rows, observed_ms=int(time.time() * 1000))
 
         return SignalDiscovery(fetch=direct_fetch, own_account=account)
     return None
 
 
+def _observed_ms(data: dict[str, Any]) -> int | None:
+    """A bridge envelope's `observed_ms` — the bridge's own stamp on its
+    read, or `None` when it carries none: an unestablished instant is
+    never guessed."""
+    stamp = data.get("observed_ms")
+    return stamp if isinstance(stamp, int) and stamp > 0 else None
+
+
 def _signal_bridge_fetch(
     endpoint: BridgeEndpoint,
-) -> Callable[[str], Awaitable[tuple[dict[str, Any], ...] | None]]:
-    """`POST /v1/reads {op: "roster"}` → raw member rows; `None` on transport failure."""
+) -> Callable[[str], Awaitable[ObservedRows | None]]:
+    """`POST /v1/reads {op: "roster"}` → raw member rows plus the bridge's
+    own read stamp; `None` on transport failure."""
     timeout = aiohttp.ClientTimeout(total=30.0)
 
-    async def fetch(collection: str) -> tuple[dict[str, Any], ...] | None:
+    async def fetch(collection: str) -> ObservedRows | None:
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session, session.post(
                 f"{endpoint.base_url}/v1/reads",
@@ -163,6 +192,8 @@ def _signal_bridge_fetch(
         members = data.get("members")
         if not isinstance(members, list):
             return None
-        return tuple(m for m in members if isinstance(m, dict))
+        return ObservedRows(
+            rows=tuple(m for m in members if isinstance(m, dict)),
+            observed_ms=_observed_ms(data))
 
     return fetch

@@ -24,7 +24,10 @@ of rules, never by event rate.
   waiting out the interval.
 - The interval itself is the repair: a complete snapshot establishes
   departures, a partial or unavailable read never can, and the linear
-  retry streak keeps a downed platform from pinning the loop.
+  retry streak keeps a downed platform from pinning the loop. A complete
+  snapshot carries departure evidence only while its own upstream-read
+  stamp is fresh — a stale, undated or future-stamped roster is
+  unavailable, never a departure.
 
 `RosterProvisioning` is the one mutation gate: a sync is journaled under
 a deterministic operation id (`onboard:<rule>:<observed_ms>:<digest>`),
@@ -66,6 +69,12 @@ from nora.people.app.roster_provisioning import RosterProvisioning
 
 log = logging.getLogger("nora.people.onboarding")
 
+#: How far into the future an `observed_ms` may sit before it is refused:
+#: bounds bridge↔app clock disagreement at the scale of the reads' own
+#: transport timeouts (30s). Anything beyond it — including a stamp meant
+#: to look permanently fresh — is a future read that never happened.
+_OBSERVATION_FUTURE_SKEW_MS = 30_000
+
 
 @dataclass(frozen=True)
 class OnboardingRule:
@@ -95,6 +104,7 @@ class PlatformOnboarding:
         interval_seconds: float,
         retry_seconds: float,
         clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         self._rules = {rule.name: rule for rule in rules}
         self._provisioning = provisioning
@@ -104,6 +114,7 @@ class PlatformOnboarding:
         self._interval = interval_seconds
         self._retry = retry_seconds
         self._clock = clock
+        self._wall_clock = wall_clock
         self._wake = asyncio.Event()
         # (rule_name, sender value) — a bounded dedup queue, not a cache:
         # `_seen` is "attempted" so one sender cannot re-register, and a
@@ -269,6 +280,22 @@ class PlatformOnboarding:
         except Exception:
             log.exception("onboarding authority reconcile failed")
 
+    def _observation_fresh(self, snapshot: CollectionSnapshot) -> bool:
+        """A departure-capable roster may only act on an instant the
+        producer timestamped itself: `observed_ms` must be present and
+        positive, no older than one sync interval, and no further into
+        the future than real clock disagreement allows. Anything else is
+        unavailable evidence — a read whose instant cannot be established
+        cannot remove anyone.
+        """
+        observed = snapshot.observed_ms
+        if not isinstance(observed, int) or observed <= 0:
+            return False
+        now_ms = self._wall_clock() * 1000
+        if observed > now_ms + _OBSERVATION_FUTURE_SKEW_MS:
+            return False
+        return now_ms - observed <= self._interval * 1000
+
     async def _sync_rule(self, rule: OnboardingRule) -> Outcome | None:
         try:
             snapshot = await rule.discovery.members(
@@ -277,6 +304,13 @@ class PlatformOnboarding:
                 log.info(
                     "onboarding %s: roster unavailable (%s)",
                     rule.name, snapshot.detail or "read failed")
+                return None
+            if (snapshot.complete
+                    and not self._observation_fresh(snapshot)):
+                log.info(
+                    "onboarding %s: complete roster's observation time is "
+                    "not fresh (observed_ms=%s) — departure evidence "
+                    "unavailable", rule.name, snapshot.observed_ms)
                 return None
             return await self._provisioning.apply(
                 operation_id=self._operation_id(rule.name, snapshot),

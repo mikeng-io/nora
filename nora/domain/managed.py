@@ -424,6 +424,25 @@ class DiscoveryCapabilities:
 
 
 @dataclass(frozen=True)
+class ObservedRows:
+    """The producer read seam's raw answer: the member rows AND when the
+    upstream read actually finished, on the producer's own clock —
+    `observed_ms=None` when the transport cannot establish it, because an
+    unavailable timestamp is never guessed. Whoever performs the read
+    supplies the stamp: a direct REST/RPC answer's own completion, or a
+    bridge envelope's `observed_ms`. A cached or delayed answer keeps its
+    real observation time instead of wearing the consumer's delivery
+    time, and an undated one stays undated.
+    """
+
+    rows: tuple[dict[str, Any], ...] = ()
+    observed_ms: int | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "rows", tuple(self.rows))
+
+
+@dataclass(frozen=True)
 class CollectionSnapshot:
     """One roster read's answer — the fail-closed rule `Roster` carries,
     kept for the management path: `available` distinguishes "the source
@@ -432,7 +451,8 @@ class CollectionSnapshot:
     own completeness claim (a paginated read that finished is complete; a
     capability returning a subset is not). `observed_ms` stamps when the
     upstream read happened — freshness a caller compares without inventing
-    a clock of its own.
+    a clock of its own. `0` means the transport could not establish it:
+    undated evidence, never a claim of the epoch.
     """
 
     available: bool
