@@ -107,7 +107,7 @@
  {
   "name": "the memory handle closes on normal shutdown too",
   "file": "nora/app/lifecycle.py",
-  "old": "            audit=deps.audit,\n            memory=deps.memory,\n            model_clients=deps.model_clients,",
+  "old": "            audit=deps.audit,\n            memory=getattr(deps, \"memory\", None),\n            model_clients=deps.model_clients,",
   "new": "            audit=deps.audit,\n            model_clients=deps.model_clients,",
   "target": "tests/integration/test_composition_unwind.py::test_a_successful_build_transfers_each_resource_once"
  }

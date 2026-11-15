@@ -66,7 +66,7 @@ async def close_dependencies(deps: Any, *, health_runner: Any = None) -> None:
         _push_close_order(
             closing,
             audit=deps.audit,
-            memory=deps.memory,
+            memory=getattr(deps, "memory", None),
             model_clients=deps.model_clients,
             client=deps.client,
             computer_close=(
