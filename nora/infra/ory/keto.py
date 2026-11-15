@@ -169,53 +169,82 @@ class KetoClient:
             return complete()
         return unavailable(result.detail)
 
+    def _tuple_row(
+        self, row: Any, *, namespace: str, object_id: str
+    ) -> RelationTuple | None:
+        """Strict shape+identity validation — an unplaceable row fails closed."""
+        if (
+            not isinstance(row, dict)
+            or row.get("namespace") != namespace
+            or row.get("object") != object_id
+            or not isinstance(row.get("relation"), str)
+            or not row["relation"]
+        ):
+            return None
+        subject_set = row.get("subject_set")
+        if subject_set is not None:
+            if (
+                not isinstance(subject_set, dict)
+                or not isinstance(subject_set.get("namespace"), str)
+                or not subject_set["namespace"]
+                or not isinstance(subject_set.get("object"), str)
+                or not subject_set["object"]
+            ):
+                return None
+            return RelationTuple(
+                namespace=namespace, object=object_id,
+                relation=row["relation"],
+                subject_set=(subject_set["namespace"], subject_set["object"]),
+            )
+        subject_id = row.get("subject_id")
+        if not isinstance(subject_id, str) or not subject_id:
+            return None
+        return RelationTuple(
+            namespace=namespace, object=object_id,
+            relation=row["relation"], subject_id=subject_id,
+        )
+
     async def tuples_on(
         self, *, namespace: str, object_id: str
     ) -> CheckResult | frozenset[RelationTuple]:
         """`GET /relation-tuples?namespace&object` — the read-back list a
-        mutation verifies itself against. `unavailable` when the read
-        cannot answer."""
-        result = await request(
-            self.session,
-            "GET",
-            f"{self.read_url}/relation-tuples",
-            params={"namespace": namespace, "object": object_id},
-            api_key=self.api_key,
-            timeout_seconds=self.timeout_seconds,
-            expected={200: HttpStatus.OK},
-        )
-        if result.status is not HttpStatus.OK:
-            return check_unavailable(result.detail)
-        rows = result.body.get("relation_tuples") if isinstance(result.body, dict) else None
-        if not isinstance(rows, list):
-            return check_unavailable("malformed-body")
+        mutation verifies itself against, FOLLOWED ACROSS PAGES: v26.2.0
+        pages the answer behind `next_page_token`, so a first-page read is
+        incomplete evidence. `unavailable` when the read cannot answer or
+        a row falls outside the requested object."""
         out: set[RelationTuple] = set()
-        for row in rows:
-            if not isinstance(row, dict):
+        page_token: str | None = None
+        for _ in range(64):  # a page cap that bounds a looping server
+            params: dict[str, Any] = {"namespace": namespace, "object": object_id}
+            if page_token:
+                params["page_token"] = page_token
+            result = await request(
+                self.session,
+                "GET",
+                f"{self.read_url}/relation-tuples",
+                params=params,
+                api_key=self.api_key,
+                timeout_seconds=self.timeout_seconds,
+                expected={200: HttpStatus.OK},
+            )
+            if result.status is not HttpStatus.OK:
+                return check_unavailable(result.detail)
+            body = result.body if isinstance(result.body, dict) else {}
+            rows = body.get("relation_tuples")
+            if not isinstance(rows, list):
                 return check_unavailable("malformed-body")
-            subject_set = row.get("subject_set")
-            if isinstance(subject_set, dict):
-                out.add(
-                    RelationTuple(
-                        namespace=row.get("namespace", ""),
-                        object=row.get("object", ""),
-                        relation=row.get("relation", ""),
-                        subject_set=(
-                            subject_set.get("namespace", ""),
-                            subject_set.get("object", ""),
-                        ),
-                    )
-                )
-            else:
-                out.add(
-                    RelationTuple(
-                        namespace=row.get("namespace", ""),
-                        object=row.get("object", ""),
-                        relation=row.get("relation", ""),
-                        subject_id=row.get("subject_id"),
-                    )
-                )
-        return frozenset(out)
+            for row in rows:
+                parsed = self._tuple_row(row, namespace=namespace, object_id=object_id)
+                if parsed is None:
+                    return check_unavailable("malformed-row")
+                out.add(parsed)
+            next_token = body.get("next_page_token")
+            if next_token in (None, ""):
+                return frozenset(out)
+            if not isinstance(next_token, str):
+                return check_unavailable("malformed-body")
+            page_token = next_token
+        return check_unavailable("pagination-exceeded")
 
     async def namespaces(self) -> HttpResult:
         """`GET /namespaces` — what the service actually loaded."""

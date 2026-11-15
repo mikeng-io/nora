@@ -9,9 +9,12 @@ authoritative refusal, not a failure.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
+from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
+from nora.domain.account_linking import ConsentProof, PendingLink
 from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.managed import (
     AuthorityBlock,
@@ -23,7 +26,7 @@ from nora.domain.managed import (
     Outcome,
     PersonLifecycle,
 )
-from nora.domain.management import Scope
+from nora.domain.management import Operation, Scope
 
 
 @runtime_checkable
@@ -151,7 +154,18 @@ class BindingStore(PersonDirectory, Protocol):
         member: bool, source: str,
     ) -> Outcome:
         """The (person, scope) standing — leaving is a state, not a delete,
-        so provenance survives a rejoin."""
+        so provenance survives a rejoin. `member=True` adds `source` to the
+        row's supports; `member=False` ends the standing, clearing every
+        support (an operator removal is never a per-source correction)."""
+        ...
+
+    async def drop_membership_support(
+        self, *, person_id: str, scope: Scope, source: str,
+    ) -> Outcome:
+        """Retract ONE source's support for the membership — the roster-
+        departure verb: a sync withdrawal cannot erase an independently
+        established standing. The row goes `left` only when its last
+        support is gone."""
         ...
 
     async def memberships_for(
@@ -160,6 +174,17 @@ class BindingStore(PersonDirectory, Protocol):
         ...
 
     async def members_of(self, scope: Scope) -> tuple[ManagedMembership, ...]:
+        ...
+
+    async def consolidate(self, *, survivor: str, former: str) -> Outcome:
+        """Retire `former` into `survivor` atomically (`identity.md`
+        consolidation): accounts move keeping their ownership records,
+        membership supports merge per scope, authority blocks follow the
+        canonical person, the former id becomes an alias and its row
+        retires. History is preserved, never rewritten — the survivor's
+        revision and the moved accounts' revisions bump so observers see
+        the identity change. `denied` when either side is inactive or the
+        former id is not a live person; idempotent on replay."""
         ...
 
     async def add_alias(self, *, former_id: str, person_id: str) -> Outcome:
@@ -226,6 +251,13 @@ class TopologySource(Protocol):
     async def is_open_room(self, scope: Scope) -> bool:
         """The room's explicit open-admission flag (file mode's `persons =
         "*"`). `False` for non-room scopes and unknown rooms."""
+        ...
+
+    async def scopes(self) -> tuple[Scope, ...]:
+        """Every canonical scope the topology declares — workspaces, units
+        and rooms under every admitted id form. The enumeration a
+        person-scoped authority read uses; Keto object existence is never
+        evidence, so the set comes from Nora's own topology only."""
         ...
 
 
@@ -310,6 +342,46 @@ class IdentityRegistry(Protocol):
     async def drop_sessions(self, *, external_id: str) -> Outcome:
         """End every derived session for the identity — absent sessions are
         a completed effect, not an error."""
+        ...
+
+    async def aclose(self) -> None:
+        ...
+
+
+@runtime_checkable
+class LinkRequestStore(Protocol):
+    """Durable bilateral link consent (`account-linking.md`) — the request
+    row and its decision evidence, serialized under the request's lock.
+    The store records consent; it never publishes ownership."""
+
+    async def create(self, link: PendingLink) -> PendingLink:
+        """Persist a new request — `LinkStateError` when the id already
+        names a different effect or a recorded decision."""
+        ...
+
+    async def get(self, request_id: str) -> PendingLink | None:
+        ...
+
+    async def decide(
+        self, operation: Operation, proof: ConsentProof, *, now: datetime
+    ) -> PendingLink:
+        """Record one holder decision — `LinkStateError` when the proof
+        does not authenticate it, and idempotent on a true retry."""
+        ...
+
+    async def begin_commit(
+        self, request_id: str, *, owners: Mapping[Identifier, str],
+        active_people: frozenset[str], revisions: Mapping[str, str],
+        now: datetime,
+    ) -> PendingLink:
+        """Atomically move a fully-approved request to `COMMITTING`,
+        revalidating the recorded owners/lifecycle/revisions against these
+        live reads. `LinkStateError` on any drift."""
+        ...
+
+    async def mark_committed(self, request_id: str) -> PendingLink:
+        """Terminal publication marker — a `COMMITTING` request becomes
+        `COMMITTED`; already-committed replays return the same row."""
         ...
 
     async def aclose(self) -> None:

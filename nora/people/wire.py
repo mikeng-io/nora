@@ -157,6 +157,7 @@ def file_services(persons, policy):
         FileAuthorityBackend,
         FileBindingStore,
         FileIdentityRegistry,
+        FileLinkRequests,
         FileTopologySource,
     )
     from nora.people.app.managed import ManagedServices
@@ -166,6 +167,7 @@ def file_services(persons, policy):
         backend=FileAuthorityBackend(policy),
         topology=FileTopologySource(policy),
         registry=FileIdentityRegistry(),
+        links=FileLinkRequests(),
     )
 
 
@@ -180,6 +182,7 @@ def managed_services(*, managed, session, policy, engine, credentials):
     private secret values with explicit environment overrides.
     """
     from nora.infra.ory import KetoClient, KratosClient
+    from nora.infra.sql.account_links import SqlLinkRequests
     from nora.infra.sql.managed_identity import SqlBindingStore
     from nora.people.adapters.file_backend import FileTopologySource
     from nora.people.adapters.keto_authority import KetoAuthorityBackend
@@ -212,4 +215,5 @@ def managed_services(*, managed, session, policy, engine, credentials):
         backend=KetoAuthorityBackend(keto_client),
         topology=FileTopologySource(policy),
         registry=KratosIdentityRegistry(kratos_client),
+        links=SqlLinkRequests(engine=engine),
     )

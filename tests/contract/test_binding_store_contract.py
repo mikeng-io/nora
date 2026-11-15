@@ -62,8 +62,9 @@ ACCT_2 = Identifier(platform="signal", kind="uuid", value="85290000102")
 PHONE = Identifier(platform="signal", kind="phone", value="85290000101")
 
 _MANAGED_TABLES = (
-    "managed_alias, managed_membership, managed_identifier, managed_account,"
-    " managed_person, managed_operation, managed_authority_block"
+    "managed_alias, managed_membership, managed_membership_support,"
+    " managed_identifier, managed_account, managed_person, managed_operation,"
+    " managed_authority_block"
 )
 
 
@@ -84,6 +85,8 @@ class _Store(Protocol):
     async def set_lifecycle(self, **kw: Any) -> Any: ...
     async def person_lifecycle(self, person_id: str) -> Any: ...
     async def set_membership(self, **kw: Any) -> Any: ...
+    async def drop_membership_support(self, **kw: Any) -> Any: ...
+    async def consolidate(self, **kw: Any) -> Any: ...
     async def memberships_for(self, person_id: str) -> Any: ...
     async def members_of(self, scope: Scope) -> Any: ...
     async def revoke_binding(self, *, account: Identifier) -> Any: ...
@@ -417,3 +420,87 @@ async def test_publication_holds_are_canonical_and_owned_by_each_operation(store
     assert await store.identity_held(PERSON)
     await store.release_identity_hold(person_id=PERSON, operation_id="generated-publication-b")
     assert not await store.identity_held("generated-retired")
+
+
+async def test_consolidation_moves_accounts_merges_supports_and_aliases(store: _Store):
+    survivor = "generated-survivor"
+    former = "generated-former"
+    await store.register(person=_person(survivor), account=_account(
+        ACCOUNT_1, person_id=survivor), membership=None)
+    await store.register(
+        person=_person(former),
+        account=_account(ACCOUNT_2, person_id=former,
+                         identifiers=frozenset({ACCT_2})),
+        membership=ManagedMembership(
+            person_id=former, scope=ROOM,
+            state=MembershipState.MEMBER, source="registration"),
+    )
+    await store.set_membership(
+        person_id=former, scope=ROOM, member=True, source="sync")
+    survivor_revision = (await store.person(survivor)).revision
+    moved_revision = (await store.record_for(account=ACCT_2)).revision
+
+    outcome = await store.consolidate(survivor=survivor, former=former)
+    assert outcome.status is OutcomeStatus.COMPLETE
+
+    # The retired id canonicalizes: person() resolves it to the survivor.
+    assert (await store.person(former)).person_id == survivor
+    assert await store.canonical_person(former) == survivor
+    survivor_person = await store.person(survivor)
+    assert survivor_person is not None
+    assert survivor_person.revision > survivor_revision
+    moved = await store.record_for(account=ACCT_2)
+    assert moved is not None and moved.person_id == survivor
+    assert moved.revision > moved_revision
+    # The supports merged per scope — the survivor carries BOTH sources.
+    room = {m for m in await store.memberships_for(survivor) if m.scope == ROOM}
+    assert {frozenset(m.sources) for m in room} == {
+        frozenset({"registration", "sync"})}
+    # Reads through the retired id resolve to the survivor, not nothing.
+    assert await store.memberships_for(former) == await store.memberships_for(survivor)
+
+
+async def test_consolidation_replays_and_refuses_inactive_people(store: _Store):
+    survivor = "generated-survivor"
+    former = "generated-former"
+    await store.register(person=_person(survivor), account=_account(
+        ACCOUNT_1, person_id=survivor), membership=None)
+    await store.register(person=_person(former), account=_account(
+        ACCOUNT_2, person_id=former, identifiers=frozenset({ACCT_2})),
+        membership=None)
+    assert (await store.consolidate(
+        survivor=survivor, former=former)).status is OutcomeStatus.COMPLETE
+    # Replay is a no-op — the alias already names the survivor.
+    assert (await store.consolidate(
+        survivor=survivor, former=former)).status is OutcomeStatus.COMPLETE
+    # And a suspended survivor can never absorb another person.
+    await store.register(person=_person("generated-third"), account=_account(
+        str(uuid4()), person_id="generated-third",
+        identifiers=frozenset({Identifier("signal", "uuid", "85290000103")})),
+        membership=None)
+    await store.set_lifecycle(
+        person_id=survivor, lifecycle=PersonLifecycle.SUSPENDED)
+    assert (await store.consolidate(
+        survivor=survivor, former="generated-third"
+    )).status is OutcomeStatus.DENIED
+    assert await store.person("generated-third") is not None
+
+
+async def test_drop_membership_support_retracts_only_its_source(store: _Store):
+    await store.register(person=_person(), account=_account(ACCOUNT_1), membership=None)
+    await store.set_membership(
+        person_id=PERSON, scope=ROOM, member=True, source="sync")
+    await store.set_membership(
+        person_id=PERSON, scope=ROOM, member=True, source="delegation")
+    outcome = await store.drop_membership_support(
+        person_id=PERSON, scope=ROOM, source="sync")
+    assert outcome.status is OutcomeStatus.COMPLETE
+    room = {m for m in await store.memberships_for(PERSON) if m.scope == ROOM}
+    standing = room.pop()
+    assert standing.state is MembershipState.MEMBER
+    assert frozenset(standing.sources) == frozenset({"delegation"})
+    # The last retraction takes the standing down — a state, not a delete.
+    await store.drop_membership_support(
+        person_id=PERSON, scope=ROOM, source="delegation")
+    room = {m for m in await store.memberships_for(PERSON) if m.scope == ROOM}
+    assert room.pop().state is MembershipState.LEFT

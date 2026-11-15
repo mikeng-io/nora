@@ -63,6 +63,12 @@ from nora.domain.managed import (
     denied,
 )
 from nora.domain.management import Scope, ScopeKind
+from nora.infra.sql.managed_publication import (
+    consolidate_people,
+    drop_membership_support,
+    retract_membership_support,
+    supports_for,
+)
 from nora.infra.sql.managed_registration import (
     _check_ownership,
     _identifier_owners,
@@ -77,6 +83,7 @@ from nora.infra.sql.schema_managed import (
     MANAGED_IDENTIFIER,
     MANAGED_IDENTITY_HOLD,
     MANAGED_MEMBERSHIP,
+    MANAGED_MEMBERSHIP_SUPPORT,
     MANAGED_OPERATION,
     MANAGED_PERSON,
 )
@@ -102,13 +109,16 @@ def _scope_from(kind: str, scope_id: str) -> Scope:
     return Scope(kind=ScopeKind(kind), id=scope_id)
 
 
-def _membership_from(r: Row[Any]) -> ManagedMembership:
+def _membership_from(
+    r: Row[Any], sources: frozenset[str] = frozenset()
+) -> ManagedMembership:
     return ManagedMembership(
         person_id=r.person_id,
         scope=_scope_from(r.scope_kind, r.scope_id),
         state=MembershipState(r.state),
         source=r.source,
         revision=r.revision,
+        sources=sources,
     )
 
 
@@ -304,10 +314,13 @@ class SqlBindingStore:
 
     async def person(self, person_id: str) -> ManagedPerson | None:
         async with self._engine.connect() as conn:
+            canonical = await self._canonical(conn, person_id)
+            if canonical is None:
+                return None
             row = (
                 await conn.execute(
                     sa.select(MANAGED_PERSON).where(
-                        MANAGED_PERSON.c.person_id == person_id
+                        MANAGED_PERSON.c.person_id == canonical
                     )
                 )
             ).fetchone()
@@ -516,6 +529,22 @@ class SqlBindingStore:
                 },
             )
         )
+        # member=True adds one support; member=False ends the standing —
+        # every support is cleared, since an operator removal is never a
+        # single-source correction (that verb is drop_membership_support).
+        if member:
+            await conn.execute(
+                pg_insert(MANAGED_MEMBERSHIP_SUPPORT)
+                .values(
+                    person_id=person_id,
+                    scope_kind=scope.kind.value,
+                    scope_id=scope.id,
+                    source=source,
+                )
+                .on_conflict_do_nothing()
+            )
+        else:
+            await drop_membership_support(conn, person_id=person_id, scope=scope)
         return complete()
 
     async def set_membership(
@@ -528,18 +557,44 @@ class SqlBindingStore:
                 source=source,
             )
 
+    async def drop_membership_support(
+        self, *, person_id: str, scope: Scope, source: str
+    ) -> Outcome:
+        async with self._engine.begin() as conn:
+            exists = (
+                await conn.execute(
+                    sa.select(MANAGED_PERSON.c.person_id).where(
+                        MANAGED_PERSON.c.person_id == person_id
+                    )
+                )
+            ).fetchone()
+            if exists is None:
+                return denied("absent-person")
+            await retract_membership_support(
+                conn, person_id=person_id, scope=scope, source=source)
+            return complete()
+
     async def memberships_for(
         self, person_id: str
     ) -> tuple[ManagedMembership, ...]:
         async with self._engine.connect() as conn:
+            canonical = await self._canonical(conn, person_id)
+            if canonical is None:
+                return ()
             rows = (
                 await conn.execute(
                     sa.select(MANAGED_MEMBERSHIP).where(
-                        MANAGED_MEMBERSHIP.c.person_id == person_id
+                        MANAGED_MEMBERSHIP.c.person_id == canonical
                     )
                 )
             ).fetchall()
-            return tuple(_membership_from(r) for r in rows)
+            supports = await supports_for(conn, rows)
+            return tuple(
+                _membership_from(
+                    r, supports.get(
+                        (r.person_id, r.scope_kind, r.scope_id), frozenset()))
+                for r in rows
+            )
 
     async def members_of(self, scope: Scope) -> tuple[ManagedMembership, ...]:
         async with self._engine.connect() as conn:
@@ -552,7 +607,17 @@ class SqlBindingStore:
                     )
                 )
             ).fetchall()
-            return tuple(_membership_from(r) for r in rows)
+            supports = await supports_for(conn, rows)
+            return tuple(
+                _membership_from(
+                    r, supports.get(
+                        (r.person_id, r.scope_kind, r.scope_id), frozenset()))
+                for r in rows
+            )
+
+    async def consolidate(self, *, survivor: str, former: str) -> Outcome:
+        async with self._engine.begin() as conn:
+            return await consolidate_people(conn, survivor=survivor, former=former)
 
     async def add_alias(self, *, former_id: str, person_id: str) -> Outcome:
         async with self._engine.begin() as conn:

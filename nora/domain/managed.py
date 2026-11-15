@@ -281,19 +281,22 @@ class ManagedAccount:
 @dataclass(frozen=True)
 class ManagedMembership:
     """One (person, scope) membership row with provenance: `source` records
-    which path established it (`registration`, `sync`, `delegation`) so a
-    roster departure can remove membership-derived grants without touching
-    direct ones (`identity.md` «Platform discovery and membership»)."""
+    which path last wrote it, and `sources` the live set of independent
+    supports (`registration`, `sync`, `delegation`) — a roster departure
+    removes only its own support, so an independently established
+    membership stands (`identity.md` «Platform discovery and membership»)."""
 
     person_id: str
     scope: Scope
     state: MembershipState
     source: str
     revision: int = 0
+    sources: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         _nonblank("person_id", self.person_id)
         _nonblank("membership source", self.source)
+        object.__setattr__(self, "sources", frozenset(self.sources))
 
 
 # ---------------------------------------------------------------------------

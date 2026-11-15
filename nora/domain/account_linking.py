@@ -88,6 +88,31 @@ class LinkState(Enum):
     CANCELLED = "cancelled"
     EXPIRED = "expired"
     COMMITTING = "committing"
+    COMMITTED = "committed"
+
+
+@dataclass(frozen=True)
+class LinkObservation:
+    """The live snapshot a link request binds (`account-linking.md`).
+
+    The service computes it from CURRENT store reads; the request records
+    these values so commitment can prove the approved state still holds.
+    """
+
+    owners: Mapping[LinkSide, str]
+    receiving_person: str
+    revisions: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "owners", MappingProxyType(dict(self.owners)))
+        object.__setattr__(self, "revisions", MappingProxyType(dict(self.revisions)))
+        if set(self.owners) != set(LinkSide):
+            raise LinkStateError("an observation names both owners")
+        if not self.receiving_person.strip():
+            raise LinkStateError("an observation names the receiving person")
+        if any(not self.revisions.get(key, "").strip()
+               for key in OPERATIONS["request_link"].revisions):
+            raise LinkStateError("an observation binds every required revision")
 
 
 @dataclass(frozen=True)
@@ -253,3 +278,12 @@ class PendingLink:
         if any(revisions.get(key) != value for key, value in self.revisions.items()):
             raise LinkStateError("current authority no longer matches the approved state")
         return replace(self, state=LinkState.COMMITTING)
+
+    def mark_committed(self) -> PendingLink:
+        """Terminal marker — reconciliation publishes and reads back before
+        this transition is recorded; nothing un-commits a link."""
+        if self.state is LinkState.COMMITTED:
+            return self
+        if self.state is not LinkState.COMMITTING:
+            raise LinkStateError("only a committing request can complete")
+        return replace(self, state=LinkState.COMMITTED)

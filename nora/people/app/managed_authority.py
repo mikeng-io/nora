@@ -13,6 +13,7 @@ keep working while a store is down.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from types import MappingProxyType
 
 from nora.domain.managed import (
@@ -193,6 +194,7 @@ class AuthorityService:
         effect = _rebuild(current)
         if effect is None:
             return denied("invalid-journal-effect")
+        effect = await self._canonicalize_effect(effect)
         refusal = await _publication_refusal(self._bindings,
             people=(effect.person_id,), payload=effect.payload, scope=effect.scope)
         if refusal is not None:
@@ -200,6 +202,25 @@ class AuthorityService:
         if current.state is OperationJournalState.COMPLETE:
             return complete("replayed")
         return await self._replay(current)
+
+    async def _canonicalize_effect(self, effect: _ReplayOp) -> _ReplayOp:
+        """A journaled effect's subjects resolve through stable aliases."""
+        payload = effect.payload
+        if isinstance(payload, AccessChange):
+            payload = replace(
+                payload, grantee=await self._canonical(payload.grantee)
+            )
+        elif isinstance(payload, Delegation):
+            payload = replace(
+                payload, delegatee=await self._canonical(payload.delegatee)
+            )
+        person_id = effect.person_id
+        if person_id is not None:
+            person_id = await self._canonical(person_id)
+        return replace(effect, person_id=person_id, payload=payload)
+
+    async def _canonical(self, person_id: str) -> str:
+        return (await self._bindings.canonical_person(person_id)) or person_id
 
     async def _replay(self, record: OperationRecord) -> Outcome:
         outcome = await self._run(None, record)
@@ -491,13 +512,21 @@ class AuthorityService:
             )
             if account is not None:
                 joined.add(account.person_id)
+        # A complete roster retracts only the sync support; the membership
+        # ends when sync was its sole support — an independently granted
+        # standing is not a roster's to erase.
         departed: set[str] = set()
+        retracted: set[str] = set()
         if payload.complete:
-            departed = {
-                m.person_id
-                for m in await self._bindings.members_of(scope)
-                if m.state is MembershipState.MEMBER and m.source == "sync"
-            } - joined
+            for m in await self._bindings.members_of(scope):
+                if (
+                    m.state is MembershipState.MEMBER
+                    and "sync" in m.sources
+                    and m.person_id not in joined
+                ):
+                    retracted.add(m.person_id)
+                    if m.sources <= {"sync"}:
+                        departed.add(m.person_id)
         outcome = await self._run_batch(
             record, "authority",
             lambda: [
@@ -532,10 +561,10 @@ class AuthorityService:
             record, "binding",
             lambda: [
                 *(
-                    self._bindings.set_membership(
-                        person_id=p, scope=scope, member=False, source="sync"
+                    self._bindings.drop_membership_support(
+                        person_id=p, scope=scope, source="sync"
                     )
-                    for p in sorted(departed)
+                    for p in sorted(retracted)
                 ),
                 *(
                     self._bindings.set_membership(

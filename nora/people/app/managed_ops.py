@@ -10,6 +10,7 @@ is the warrant for finishing it.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -17,16 +18,22 @@ from typing import Any
 
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
+    CheckResult,
     OperationJournalState,
     OperationRecord,
     Outcome,
     OutcomeStatus,
+    check_unavailable,
     complete,
     denied,
     incomplete,
     unavailable,
 )
-from nora.domain.managed_ports import BindingStore
+from nora.domain.managed_ports import (
+    AuthorityBackend,
+    BindingStore,
+    TopologySource,
+)
 from nora.domain.management import (
     AccessChange,
     AccessDirection,
@@ -212,6 +219,60 @@ async def _revisions_fresh(store: BindingStore, op: Operation) -> Outcome | None
             # conflict path decides.
         # "authority": unversioned — read-back is the write-path proof.
     return None
+
+
+def _digest_lines(lines: Iterable[str]) -> str:
+    """One canonical digest over a fact set — order-free, exact."""
+    return hashlib.sha256("\n".join(sorted(lines)).encode()).hexdigest()
+
+
+async def _scope_authority(
+    backend: AuthorityBackend, scope: Scope
+) -> CheckResult | str:
+    """The digest an `authority` observed-revision compares against for one scope."""
+    rows = await backend.relations_on(scope=scope)
+    if isinstance(rows, CheckResult):
+        return check_unavailable(rows.detail)
+    return _digest_lines(
+        f"{scope.kind.value}:{scope.id}:{relation}:{person}"
+        for relation, person in rows
+    )
+
+
+async def _person_authority(
+    store: BindingStore,
+    backend: AuthorityBackend,
+    topology: TopologySource,
+    persons: frozenset[str],
+) -> CheckResult | str:
+    """The digest an `authority` observed-revision compares against for a person set."""
+    try:
+        scopes = await topology.scopes()
+    except Exception:  # noqa: BLE001 — a broken topology adapter means unavailable, never a digest
+        return check_unavailable("topology-unavailable")
+    lines: list[str] = []
+    for scope in scopes:
+        rows = await backend.relations_on(scope=scope)
+        if isinstance(rows, CheckResult):
+            return check_unavailable(rows.detail)
+        lines += [
+            f"{scope.kind.value}:{scope.id}:{relation}:{subject}"
+            for relation, subject in rows
+            if subject in persons
+        ]
+    for person in persons:
+        for membership in await store.memberships_for(person):
+            lines.append(
+                f"membership:{membership.scope.kind.value}:{membership.scope.id}:"
+                f"{membership.state.value}:{','.join(sorted(membership.sources))}"
+            )
+    for block in await store.authority_blocks():
+        if block.person_id in persons:
+            lines.append(
+                f"block:{block.person_id}:{block.scope.kind.value}:"
+                f"{block.scope.id}:{block.reason}"
+            )
+    return _digest_lines(lines)
 
 
 @dataclass(frozen=True)

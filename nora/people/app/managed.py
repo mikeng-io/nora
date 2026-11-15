@@ -28,6 +28,7 @@ import logging
 from typing import cast
 from uuid import uuid4
 
+from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
     IdentifierConflictError,
@@ -50,6 +51,7 @@ from nora.domain.managed_ports import (
     AuthorityBackend,
     BindingStore,
     IdentityRegistry,
+    LinkRequestStore,
     TopologySource,
 )
 from nora.domain.management import (
@@ -58,6 +60,7 @@ from nora.domain.management import (
     Operation,
     Unlink,
 )
+from nora.people.app.link_publication import LinkPublicationService
 from nora.people.app.managed_authority import AuthorityService
 from nora.people.app.managed_ops import (
     Effect,
@@ -85,18 +88,24 @@ class ManagedServices:
         backend: AuthorityBackend,
         topology: TopologySource,
         registry: IdentityRegistry,
+        links: LinkRequestStore,
     ) -> None:
         self.bindings = bindings
         self.backend = backend
         self.topology = topology
         self.registry = registry
+        self.links = links
         self.registration = RegistrationService(bindings, registry)
         self.authority = AuthorityService(bindings, backend, topology)
+        self.publication = LinkPublicationService(
+            bindings, backend, topology, registry, links,
+        )
 
     async def aclose(self) -> None:
         await self.bindings.aclose()
         await self.backend.aclose()
         await self.registry.aclose()
+        await self.links.aclose()
 
 
 class RegistrationService:
@@ -369,15 +378,32 @@ class RegistrationService:
         bound = await self._bindings.account_for(
             account.platform, account.kind, account.value,
         )
-        if bound is None or bound.person_id != payload.expected_person:
+        # Holder-exact: the account's CURRENT owner must be both the
+        # payload's expected person and the actor's person — nobody else
+        # can retire someone else's binding.
+        if (bound is None or bound.person_id != payload.expected_person
+                or bound.person_id != op.actor.person_id):
             return denied("binding-mismatch")
-        record = await _record(self._bindings, op, ("binding",))
+        record = await _record(
+            self._bindings, op, ("binding", "sessions", "readback"))
         if isinstance(record, Outcome):
             return record
         outcome = await self._run_binding(
             record, "binding",
             lambda: self._bindings.revoke_binding(account=account),
         )
+        if outcome.status is OutcomeStatus.COMPLETE:
+            # The binding's derived sessions end with it — an absent
+            # identity has none to drop, which is the completed effect.
+            outcome = await self._run_binding(
+                record, "sessions",
+                lambda: self._drop_sessions(bound.person_id),
+            )
+        if outcome.status is OutcomeStatus.COMPLETE:
+            outcome = await self._run_binding(
+                record, "readback",
+                lambda: self._binding_absent(account),
+            )
         if outcome.status is not OutcomeStatus.COMPLETE:
             await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,
                           outcome.status.value, outcome.detail)
@@ -385,3 +411,12 @@ class RegistrationService:
         await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                       "complete")
         return complete()
+
+    async def _drop_sessions(self, person_id: str) -> Outcome:
+        outcome = await self._registry.drop_sessions(external_id=person_id)
+        return complete() if outcome.status is OutcomeStatus.DENIED else outcome
+
+    async def _binding_absent(self, account: Identifier) -> Outcome:
+        bound = await self._bindings.account_for(
+            account.platform, account.kind, account.value)
+        return complete() if bound is None else unavailable("read-back-mismatch")

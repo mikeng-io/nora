@@ -18,6 +18,7 @@ from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
+    FakeLinkRequests,
     FakeTopologySource,
 )
 
@@ -61,7 +62,7 @@ def services(*, known=True, bindings=None):
             rooms={ROOM.id: ("generated-unit", False)} if known else {},
             units={"generated-unit": "generated-workspace"},
             workspaces={"generated-workspace"},
-        ), FakeIdentityRegistry(),
+        ), FakeIdentityRegistry(), FakeLinkRequests(),
     )
 
 

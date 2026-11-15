@@ -12,9 +12,16 @@ retryable outage.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager, nullcontext
+from datetime import datetime
 from typing import Any
 
+from nora.domain.account_linking import (
+    ConsentProof,
+    LinkStateError,
+    PendingLink,
+)
 from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.managed import (
     AuthorityBlock,
@@ -28,11 +35,17 @@ from nora.domain.managed import (
     allowed,
     check_denied,
     denied,
+    room_scope_id,
     split_room_scope_id,
     unknown_scope,
 )
-from nora.domain.managed_ports import AuthorityBackend, BindingStore, TopologySource
-from nora.domain.management import Scope, ScopeKind
+from nora.domain.managed_ports import (
+    AuthorityBackend,
+    BindingStore,
+    LinkRequestStore,
+    TopologySource,
+)
+from nora.domain.management import Operation, Scope, ScopeKind
 from nora.persons import Persons
 from nora.policy import DEFAULT_WORKSPACE, Policy
 
@@ -130,6 +143,14 @@ class FileBindingStore(BindingStore):
     ) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
 
+    async def drop_membership_support(
+        self, *, person_id: str, scope: Scope, source: str
+    ) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
+    async def consolidate(self, *, survivor: str, former: str) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
     async def memberships_for(
         self, person_id: str
     ) -> tuple[ManagedMembership, ...]:
@@ -208,6 +229,26 @@ class FileTopologySource(TopologySource):
         convo = self._policy.conversation(platform, conversation_id)
         return convo is not None and convo.persons is None
 
+    async def scopes(self) -> tuple[Scope, ...]:
+        """Every scope policy.toml admits — the default workspace, every
+        declared unit workspace and unit, and every room under every id
+        form policy would admit a fact against."""
+        out = {Scope(ScopeKind.WORKSPACE, DEFAULT_WORKSPACE)}
+        out |= {
+            Scope(ScopeKind.WORKSPACE, workspace)
+            for workspace in self._policy.unit_workspaces().values()
+        }
+        out |= {
+            Scope(ScopeKind.UNIT, unit)
+            for unit in self._policy.unit_workspaces()
+        }
+        for convo in self._policy.rooms():
+            out |= {
+                Scope(ScopeKind.ROOM, room_scope_id(convo.platform, cid))
+                for cid in convo.ids
+            }
+        return tuple(sorted(out, key=lambda s: (s.kind.value, s.id)))
+
 
 class FileAuthorityBackend(AuthorityBackend):
     """Room admission off `Policy.is_allowed`; management verbs and every
@@ -279,6 +320,36 @@ class FileIdentityRegistry:
 
     async def drop_sessions(self, *, external_id: str) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
+
+    async def aclose(self) -> None:
+        ...
+
+
+class FileLinkRequests(LinkRequestStore):
+    """`LinkRequestStore` for file mode: a durable consent row is a managed
+    record — there is no place for it in TOML, so recording or committing
+    one refuses, and reads answer honestly: nothing is stored."""
+
+    async def create(self, link: PendingLink) -> PendingLink:
+        raise LinkStateError(_OPERATOR_MAINTAINED)
+
+    async def get(self, request_id: str) -> PendingLink | None:
+        return None
+
+    async def decide(
+        self, operation: Operation, proof: ConsentProof, *, now: datetime
+    ) -> PendingLink:
+        raise LinkStateError(_OPERATOR_MAINTAINED)
+
+    async def begin_commit(
+        self, request_id: str, *, owners: Mapping[Identifier, str],
+        active_people: frozenset[str], revisions: Mapping[str, str],
+        now: datetime,
+    ) -> PendingLink:
+        raise LinkStateError(_OPERATOR_MAINTAINED)
+
+    async def mark_committed(self, request_id: str) -> PendingLink:
+        raise LinkStateError(_OPERATOR_MAINTAINED)
 
     async def aclose(self) -> None:
         ...
