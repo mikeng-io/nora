@@ -75,6 +75,10 @@ async function holderCall<O>(
   return { status: "unavailable" };
 }
 
+export const fetchLinkResult = (requestId: string) =>
+  holderCall(`/holder/link-consent/result?request_id=${encodeURIComponent(requestId)}`,
+    z.object({ status: z.literal("ok"), result: linkConsentOutcomeSchema.nullable() }).strict());
+
 export const fetchLinkRequest = (requestId: string, signal?: AbortSignal) =>
   holderCall(`/holder/link-requests/${encodeURIComponent(requestId)}`, okView,
     { signal });

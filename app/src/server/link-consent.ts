@@ -279,9 +279,10 @@ function resultKey(): Uint8Array {
     .update("nora.link-result.v1\0").update(secret, "utf8").digest();
 }
 
-async function sealResult(outcome: LinkConsentOutcome): Promise<string> {
+async function sealResult(outcome: LinkConsentOutcome,
+  account: ConsentIntent["account"]): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  return new EncryptJWT({ ...outcome })
+  return new EncryptJWT({ ...outcome, account })
     .setProtectedHeader({ alg: "dir", enc: "A256GCM", typ: "nora.link-result+jwt" })
     .setIssuer(process.env.NORA_AUTHENTICATION_ISSUER ?? "portal")
     .setAudience("nora-link-result").setIssuedAt(now)
@@ -289,7 +290,8 @@ async function sealResult(outcome: LinkConsentOutcome): Promise<string> {
     .encrypt(resultKey());
 }
 
-async function unsealResult(sealed: string): Promise<LinkConsentOutcome | undefined> {
+async function unsealResult(sealed: string): Promise<
+  { outcome: LinkConsentOutcome; account: ConsentIntent["account"] } | undefined> {
   try {
     const { payload, protectedHeader } = await jwtDecrypt(sealed, resultKey(), {
       issuer: process.env.NORA_AUTHENTICATION_ISSUER ?? "portal",
@@ -301,24 +303,39 @@ async function unsealResult(sealed: string): Promise<LinkConsentOutcome | undefi
     const { requestId, action, operationId, outcome, state, at } = payload;
     const parsed = linkConsentOutcomeSchema.safeParse(
       { requestId, action, operationId, outcome, state, at });
-    return parsed.success ? parsed.data : undefined;
+    const account = accountRef.safeParse(payload.account);
+    return parsed.success && account.success
+      ? { outcome: parsed.data, account: account.data } : undefined;
   } catch {
     return undefined;
   }
 }
 
-/** The request page's read of the last recorded consent outcome. Returns the
- * sealed result ONLY for the request it names — the page shows a query string
- * nothing, and a result minted for another request never leaks across. */
-export async function readLinkResult(
-  requestId: string,
-): Promise<LinkConsentOutcome | undefined> {
+/** Consume the display outcome only under the exact account that decided.
+ * This route owns cookie deletion; no outcome is serialized by a server page. */
+export async function consumeLinkResult(request: Request): Promise<Response> {
   try {
-    const sealed = (await cookies()).get(RESULT_COOKIE)?.value;
+    const jar = await cookies();
+    const sealed = jar.get(RESULT_COOKIE)?.value;
+    jar.delete(RESULT_COOKIE);
+    if (identityBackend() !== "managed") return reply("denied", 403);
+    const retained = managedSessionSchema.safeParse((await auth())?.user?.managedIdentity);
+    if (!retained.success) return reply("denied", 401);
+    const ids = new URL(request.url).searchParams.getAll("request_id");
+    if (ids.length !== 1 || !/^[A-Za-z0-9_-]{1,128}$/.test(ids[0])) {
+      return reply("denied", 400);
+    }
     const result = sealed === undefined ? undefined : await unsealResult(sealed);
-    return result !== undefined && result.requestId === requestId ? result : undefined;
+    if (result !== undefined) {
+      const current = retained.data.authentication.account;
+      if (result.account.platform !== current.platform || result.account.kind !== current.kind
+        || result.account.value !== current.value) return reply("denied", 403);
+    }
+    return Response.json({ status: "ok", result:
+      result?.outcome.requestId === ids[0] ? result.outcome : null },
+    { headers: privateHeaders });
   } catch {
-    return undefined;
+    return reply("unavailable", 503);
   }
 }
 
@@ -343,11 +360,15 @@ export async function consentResult(request?: Request): Promise<Response> {
       if (identityBackend() !== "managed" || intent === undefined) {
         return Response.redirect(`${origin}${accountPath}`, 303);
       }
-      const outcome = linkConsentOutcomeSchema.safeParse(
-        (await auth())?.user?.linkConsent);
+      const session = await auth();
+      const outcome = linkConsentOutcomeSchema.safeParse(session?.user?.linkConsent);
+      const retained = managedSessionSchema.safeParse(session?.user?.managedIdentity);
+      const current = retained.success ? retained.data.authentication.account : undefined;
       if (outcome.success && intent.operation_id === outcome.data.operationId
-        && outcome.data.requestId === intent.request_id) {
-        jar.set(RESULT_COOKIE, await sealResult(outcome.data), {
+        && outcome.data.requestId === intent.request_id
+        && current?.platform === intent.account.platform && current.kind === intent.account.kind
+        && current.value === intent.account.value) {
+        jar.set(RESULT_COOKIE, await sealResult(outcome.data, intent.account), {
           httpOnly: true, sameSite: "lax", path: "/", maxAge: RESULT_SECONDS,
           secure: origin.startsWith("https:"),
         });
@@ -356,10 +377,14 @@ export async function consentResult(request?: Request): Promise<Response> {
         `${origin}${accountPath}/link-requests/${intent.request_id}`, 303);
     }
     if (identityBackend() !== "managed") return reply("denied", 403);
-    const outcome = linkConsentOutcomeSchema.safeParse(
-      (await auth())?.user?.linkConsent);
+    const session = await auth();
+    const outcome = linkConsentOutcomeSchema.safeParse(session?.user?.linkConsent);
+    const retained = managedSessionSchema.safeParse(session?.user?.managedIdentity);
+    const current = retained.success ? retained.data.authentication.account : undefined;
     if (!outcome.success || intent === undefined
-      || intent.operation_id !== outcome.data.operationId) {
+      || intent.operation_id !== outcome.data.operationId
+      || current?.platform !== intent.account.platform || current.kind !== intent.account.kind
+      || current.value !== intent.account.value) {
       return reply("denied", 403);
     }
     const { outcome: status, requestId, action, state } = outcome.data;

@@ -157,7 +157,7 @@
       "decided": "Your {verb} is recorded — the request is closed.",
       "recorded": "Your {verb} is recorded.",
       "denied": "Nora refused to record the decision — the sign-in wasn't this request's account, or the request had already moved on.",
-      "unavailable": "Nora couldn't record the decision — nothing changed; you can try again.",
+      "unavailable": "Nora couldn't confirm whether the decision was recorded. Check the current request state before trying again.",
       "incomplete": "The decision landed partway — Nora reconciles it herself. Check again in a moment."
     },
     "refresh": "Check again"

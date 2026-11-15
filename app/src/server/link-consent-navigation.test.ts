@@ -23,8 +23,9 @@ vi.mock("@/auth", () => ({
   signIn: startSignIn,
   TELEGRAM_LOGIN_ENABLED: true,
 }));
-const { consentAction, consentResult, readLinkResult } = await import("./link-consent");
+const { consentAction, consentResult } = await import("./link-consent");
 const { GET, POST } = await import("@/app/api/v1/holder/link-consent/route");
+const { GET: consumeResult } = await import("@/app/api/v1/holder/link-consent/result/route");
 
 const key = "generated-holder-authentication-key-for-local-consent";
 const issuer = "generated-portal";
@@ -295,20 +296,60 @@ describe("the provider's navigation back", () => {
   });
 });
 
-describe("the page's read of the sealed result", () => {
-  it("hands the outcome only to the request it names", async () => {
-    await POST(formRequest(`request_id=${link.request_id}&action=approve&locale=en`));
+describe("the account-bound single display result", () => {
+  const display = (id = link.request_id) => consumeResult(new Request(
+    `https://portal.generated.invalid/api/v1/holder/link-consent/result?request_id=${id}`));
+
+  async function recorded() {
+    expect((await POST(formRequest(
+      `request_id=${link.request_id}&action=approve&locale=en`))).status).toBe(303);
     login.current = { user: { managedIdentity: identity,
       linkConsent: { requestId: link.request_id, action: "approve",
         operationId: (await intentPayload())?.operation_id, outcome: "complete",
         state: "committed", at: 1_790_000_000 } } };
     await GET(navigationRequest());
-    expect(await readLinkResult(link.request_id)).toMatchObject({
-      requestId: link.request_id, outcome: "complete", state: "committed" });
-    expect(await readLinkResult("another-request")).toBeUndefined();
+    expect(await resultPayload()).toMatchObject({ account: accountA, state: "committed" });
+  }
+
+  it("returns the deciding account's outcome once, never on a second read", async () => {
+    await recorded();
+    const first = await display();
+    expect(first.headers.get("Cache-Control")).toContain("no-store");
+    expect(await first.json()).toMatchObject({ status: "ok", result: {
+      requestId: link.request_id, outcome: "complete", state: "committed" } });
+    expect(jar.has("nora-link-result")).toBe(false);
+    expect(await (await display()).json()).toEqual({ status: "ok", result: null });
+  });
+
+  it.each([
+    ["another account of the same person", { ...accountA, value: "generated-discord-second" }],
+    ["an unrelated account", { ...accountA, value: "generated-discord-unrelated" }],
+    ["the receiving side", accountB],
+  ])("refuses the prior outcome after switching to %s", async (_, account) => {
+    await recorded();
+    login.current = { user: { managedIdentity: {
+      ...identity, authentication: { ...identity.authentication, account },
+    } } };
+    const refused = await display();
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ status: "denied" });
+    expect(jar.has("nora-link-result")).toBe(false);
+  });
+
+  it("returns no other request's, forged, or absent outcome", async () => {
+    await recorded();
+    expect(await (await display("another-request")).json()).toEqual({ status: "ok", result: null });
     jar.set("nora-link-result", "forged.result.value");
-    expect(await readLinkResult(link.request_id)).toBeUndefined();
-    jar.delete("nora-link-result");
-    expect(await readLinkResult(link.request_id)).toBeUndefined();
+    expect(await (await display()).json()).toEqual({ status: "ok", result: null });
+    expect(await (await display()).json()).toEqual({ status: "ok", result: null });
+  });
+
+  it("refuses a signed-out result read without serializing the outcome", async () => {
+    await recorded();
+    login.current = null;
+    const response = await display();
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ status: "denied" });
+    expect(jar.has("nora-link-result")).toBe(false);
   });
 });

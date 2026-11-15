@@ -157,7 +157,7 @@
       "decided": "你嘅{verb}已經記低——個請求完咗。",
       "recorded": "你嘅{verb}已經記低。",
       "denied": "Nora 拒絕記低個決定——登入嘅唔係呢個請求嗰個帳戶，或者個請求已經郁咗。",
-      "unavailable": "Nora 記唔到個決定——咩都冇變，可以再試。",
+      "unavailable": "Nora 確認唔到個決定有冇記錄。再試之前，先查看要求目前嘅狀態。",
       "incomplete": "個決定落咗一半——Nora 自己收返埋尾。過陣再睇。"
     },
     "refresh": "再睇過"

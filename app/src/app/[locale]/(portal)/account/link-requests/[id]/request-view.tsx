@@ -23,6 +23,7 @@ import {
   availableVerbs,
   decisionTransport,
   fetchLinkRequest,
+  fetchLinkResult,
   platformLabel,
   type LinkConsentOutcome,
   type LinkRequestView,
@@ -48,15 +49,16 @@ const stateTone: Record<LinkRequestView["state"], "caution" | "denim" | "success
 export function RequestView({
   requestId,
   managed,
-  result,
+  sessionKey,
 }: {
   requestId: string;
   managed: boolean;
-  result?: LinkConsentOutcome;
+  sessionKey: string;
 }) {
   const t = useTranslations("accountPage");
   const query = useQuery({
-    queryKey: ["link-request", requestId],
+    queryKey: ["link-request", sessionKey, requestId],
+    meta: { persist: false },
     queryFn: ({ signal }) => fetchLinkRequest(requestId, signal),
     enabled: managed,
     // A live request keeps asking until somebody answers — or the clock wins.
@@ -66,6 +68,19 @@ export function RequestView({
         ? 10_000
         : false,
   });
+
+  const resultQuery = useQuery({
+    queryKey: ["link-consent-result", sessionKey, requestId],
+    meta: { persist: false },
+    queryFn: () => fetchLinkResult(requestId),
+    enabled: managed && query.data?.status === "ok",
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const result = resultQuery.data?.status === "ok" ? resultQuery.data.result : null;
 
   const header = (
     <PageHeader
@@ -190,9 +205,9 @@ function SidesPanel({ view }: { view: LinkRequestView }) {
           return (
             <li key={side} className="flex items-center gap-3 px-4 py-3 sm:px-5">
               <div className="grid min-w-0 flex-1 gap-0.5">
-                <span className="flex min-w-0 items-center gap-2 text-body text-ink">
+                <span className="flex min-w-0 flex-wrap items-center gap-2 text-body text-ink">
                   <span className="font-medium">{platformLabel(account.platform)}</span>
-                  <span className="truncate font-mono text-meta text-ink-muted">
+                  <span className="min-w-0 break-all font-mono text-meta text-ink-muted">
                     {account.kind} {account.value}
                   </span>
                 </span>
