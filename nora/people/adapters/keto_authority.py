@@ -19,13 +19,13 @@ from nora.domain.managed import (
     check_unavailable,
     keto_namespace,
 )
+from nora.domain.managed_ports import AuthorityBackend
 from nora.domain.management import (
     ACCESS_PERMITS,
     MANAGEMENT_PERMITS,
     Scope,
     ScopeKind,
 )
-from nora.domain.managed_ports import AuthorityBackend
 from nora.infra.ory import KetoClient, RelationTuple
 
 _PERMITS = ACCESS_PERMITS | MANAGEMENT_PERMITS
