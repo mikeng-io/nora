@@ -1,0 +1,9 @@
+[
+  {
+    "name": "the summary line accepts pytest's parenthesized elapsed-time suffix",
+    "file": "scripts/mutate.py",
+    "old": "    r\"in \\d+(?:\\.\\d+)?s(?: \\(\\d+:\\d{2}:\\d{2}\\))?\"\n",
+    "new": "    r\"in \\d+(?:\\.\\d+)?s\"\n",
+    "target": "tests/unit/test_mutate_gate_phases.py::test_pytest_verdict_keeps_proof_apart_from_noise"
+  }
+]
