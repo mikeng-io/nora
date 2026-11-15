@@ -89,8 +89,24 @@ class FileBindingStore(BindingStore):
         return self._persons.accounts_for(person_id)
 
     async def canonical_person(self, person_id: str) -> str | None:
-        canonical = self._persons.subject_id_for(person_id)
-        return canonical if canonical in self._persons.by_person else None
+        # `subject_id_for` folds retired ids; whether the canonical id is a
+        # KNOWN person is `is_allowed`'s scoped question (a room's `persons`
+        # list names who the file admits, index card or not), so existence
+        # is answered by the check, not here.
+        return self._persons.subject_id_for(person_id)
+
+    async def former_persons(self, person_id: str) -> tuple[str, ...]:
+        return self._persons.former_ids_for(self._persons.subject_id_for(person_id))
+
+    async def persons(self) -> tuple[ManagedPerson, ...]:
+        return tuple(
+            ManagedPerson(
+                person_id=pid,
+                lifecycle=PersonLifecycle.ACTIVE,
+                display_name=ref.name,
+            )
+            for pid, ref in sorted(self._persons.by_person.items())
+        )
 
     async def person_lifecycle(self, person_id: str) -> PersonLifecycle | None:
         # The file has no lifecycle: a mapped person is ACTIVE, an unmapped
@@ -99,12 +115,12 @@ class FileBindingStore(BindingStore):
         return PersonLifecycle.ACTIVE if canonical is not None else None
 
     async def person(self, person_id: str) -> ManagedPerson | None:
-        canonical = await self.canonical_person(person_id)
-        if canonical is None:
+        ref = self._persons.by_person.get(
+            self._persons.subject_id_for(person_id))
+        if ref is None:
             return None
-        ref = self._persons.by_person[canonical]
         return ManagedPerson(
-            person_id=canonical,
+            person_id=ref.person_id,
             lifecycle=PersonLifecycle.ACTIVE,
             display_name=ref.name,
         )

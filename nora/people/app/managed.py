@@ -25,9 +25,10 @@ registration here, authority in `managed_authority`, journal plumbing in
 from __future__ import annotations
 
 import logging
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
+from nora.access import IdentityAccess
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
@@ -89,6 +90,8 @@ class ManagedServices:
         topology: TopologySource,
         registry: IdentityRegistry,
         links: LinkRequestStore,
+        *,
+        access: IdentityAccess | None = None,
     ) -> None:
         self.bindings = bindings
         self.backend = backend
@@ -99,6 +102,13 @@ class ManagedServices:
         self.authority = AuthorityService(bindings, backend, topology)
         self.publication = LinkPublicationService(
             bindings, backend, topology, registry, links,
+        )
+        # The consumer read surface (`nora.access`): the SAME bindings/
+        # authority/topology. `file_services` passes the file-backed form;
+        # managed mode leaves file people/grants unattached — never a
+        # fallback for descriptive reads, which answer an honest absence.
+        self.access = access or IdentityAccess(
+            bindings=bindings, authority=self.authority, topology=topology,
         )
 
     async def aclose(self) -> None:

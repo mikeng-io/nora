@@ -67,6 +67,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from ..domain.managed import Verdict
 from ..domain.models import PersonRef
 from ..domain.self_presence import KnownRoom, TransportState, platform_name
 from ..language.presence_render import state_phrase
@@ -95,6 +96,7 @@ class Relay:
         self,
         *,
         policy: Policy,
+        access: Any,
         speak: Any = None,
         slots: Any = None,
         occasion_for: Any = None,
@@ -104,6 +106,7 @@ class Relay:
     ) -> None:
         self._content_checks = content_checks
         self._policy = policy
+        self._access = access
         # `PresenceReader.state`: one network's transport, read now, bounded
         # by the reader's own timeout, and `unknown` (never `up`) when the
         # read raises. Required, no default: a relay that cannot ask whether
@@ -216,11 +219,18 @@ class Relay:
                 "That's where we already are: just say it here instead of passing it on.",
             )
 
-        if not self._policy.is_allowed(
+        verdict = await self._access.permitted(
             platform=destination.platform,
             conversation_id=destination.primary_id,
             person_id=requester.person_id,
-        ):
+        )
+        if not verdict.allowed:
+            if verdict.verdict is Verdict.UNAVAILABLE:
+                return {
+                    "status": "unavailable",
+                    "note": "I can't check whether you're in that room right now. "
+                            "Say it didn't go rather than guessing.",
+                }
             return self._refuse(
                 "not_allowed_there",
                 "They're not in that room themselves, so I won't speak into it for "

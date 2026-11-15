@@ -41,8 +41,9 @@ from nora.domain.ports import (
 )
 from nora.ingest.comprehension import MediaComprehension
 from nora.ingest.stickers import StickerReader
+from nora.access import IdentityAccess
+from nora.domain.managed import Verdict
 from nora.obs.tracing import TRACE_KIND, annotate, span
-from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
 from nora.policy import Policy
 
@@ -81,6 +82,7 @@ IngestOutcome = Literal[
     "scope_refused",        # the room is not allowlisted; nothing was recorded
     "audit_refused",        # the audit write failed; the message was dropped
     "sender_not_allowed",   # recorded, and deliberately not answered
+    "sender_unavailable",   # recorded; the authority could not answer — refused
     "engaged",              # recorded, and handed to the engagement path
     "recorded",             # recorded, and that is all — the ambient majority
     # The EDIT path. An edit is not a message, so
@@ -186,9 +188,9 @@ class IngestPipeline:
         *,
         audit: RecordStore,
         memory: MemoryStore,
-        persons: Persons,
         policy: EngagePolicy,
         allowlist: Policy,
+        access: IdentityAccess,
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], None],
         media_sources: MediaSourceRegistry | None = None,
@@ -243,7 +245,7 @@ class IngestPipeline:
         """
         self._audit = audit
         self._memory = memory
-        self._persons = persons
+        self._access = access
         self._policy = policy
         self._allowlist = allowlist
         self._metrics = metrics
@@ -326,7 +328,7 @@ class IngestPipeline:
         # operator has not allowlisted is not recorded at all.
         with span("ingest.scope"):
             admitted = await scope_stage.run(
-                message=message, policy=self._allowlist, persons=self._persons, metrics=m,
+                message=message, policy=self._allowlist, access=self._access, metrics=m,
             )
         if not admitted:
             # Ends here, and ENDS VISIBLY: without the attribute an unallowlisted
@@ -348,7 +350,7 @@ class IngestPipeline:
             with span("ingest.edit_target"):
                 found = await edit_target_stage.run(
                     message=message, target=message.edit_of, audit=self._audit,
-                    persons=self._persons, metrics=m,
+                    access=self._access, metrics=m,
                 )
             if found.ending is not None or found.original is None:
                 _outcome(m, message, found.ending or "edit_orphaned")
@@ -370,7 +372,7 @@ class IngestPipeline:
         # ahead of the record.
         with span("ingest.identity"):
             person = await identity_stage.run(
-                message=message, persons=self._persons, metrics=m
+                message=message, access=self._access, metrics=m
             )
         # A BOOL, never the person_id (R-73). Whether the sender is somebody
         # `identity.toml` knows is the fact that explains the rest of the trace —
@@ -479,20 +481,28 @@ class IngestPipeline:
         # window will speak for it, so an excluded sender must not become one
         # (8765_44874). Without this the window's burst carries their words to
         # the gate and, on GO, into a turn.
-        if (decision.engage or decision.relevance_gate) and not self._allowlist.is_allowed(
-            platform=message.platform,
-            conversation_id=message.conversation_id,
-            person_id=person.person_id if person else None,
-        ):
+        verdict = (
+            await self._access.permitted(
+                platform=message.platform,
+                conversation_id=message.conversation_id,
+                person_id=person.person_id if person else None,
+            )
+            if (decision.engage or decision.relevance_gate)
+            else None
+        )
+        if verdict is not None and not verdict.allowed:
+            unavailable = verdict.verdict is Verdict.UNAVAILABLE
             m.inc("nora_denied_senders_total", platform=message.platform)
             log.warning(
                 "tagged by a sender who is not allowed in this conversation "
-                "(platform=%s person=%s) — recorded, not answered",
+                "(platform=%s person=%s verdict=%s) — recorded, not answered",
                 message.platform,
                 person.person_id if person else "<unmapped>",
+                verdict.verdict.value,
             )
-            decision = EngageDecision(engage=False, reason="sender_not_allowed")
-            _outcome(m, message, "sender_not_allowed")
+            reason = "sender_unavailable" if unavailable else "sender_not_allowed"
+            decision = EngageDecision(engage=False, reason=reason)
+            _outcome(m, message, reason)
         else:
             # The ambient majority ends `recorded`, so a message that passed
             # cleanly still says how it ended.
@@ -519,7 +529,7 @@ class IngestPipeline:
         absorbed = room is not None and room.absorbed
         with span("ingest.identity"):
             person = await identity_stage.run(
-                message=message, persons=self._persons, metrics=m
+                message=message, access=self._access, metrics=m
             )
         annotate(**{"nora.person_known": person is not None})
         async def _custody(msg: NormalizedMessage) -> NormalizedMessage:
@@ -561,13 +571,22 @@ class IngestPipeline:
                 message=message, previous=original, policy=self._policy, metrics=m,
             )
         annotate(**{"nora.engage_reason": decision.reason})
-        if decision.engage and not self._allowlist.is_allowed(
-            platform=message.platform,
-            conversation_id=message.conversation_id,
-            person_id=person.person_id if person else None,
-        ):
-            m.inc("nora_denied_senders_total", platform=message.platform)
-            decision = EngageDecision(engage=False, reason="sender_not_allowed")
+        if decision.engage:
+            verdict = await self._access.permitted(
+                platform=message.platform,
+                conversation_id=message.conversation_id,
+                person_id=person.person_id if person else None,
+            )
+            if not verdict.allowed:
+                m.inc("nora_denied_senders_total", platform=message.platform)
+                decision = EngageDecision(
+                    engage=False,
+                    reason=(
+                        "sender_unavailable"
+                        if verdict.verdict is Verdict.UNAVAILABLE
+                        else "sender_not_allowed"
+                    ),
+                )
         _outcome(m, message, "edit_engaged" if decision.engage else "edit_recorded")
         answered_as = dataclasses.replace(
             message, timestamp=original.ts,
@@ -584,7 +603,7 @@ class IngestPipeline:
         with span("ingest.touch"):
             done = await touch_stage.run(
                 message=message, touch=touch, audit=self._audit,
-                persons=self._persons, metrics=m,
+                access=self._access, metrics=m,
             )
         if done.row_id is not None and self._stimulus_wiring is not None:
             with span("ingest.stimulus"):

@@ -24,7 +24,7 @@ async def runtime(
     allowlist: Any, cfg: Any, engagement: Any, engine: Any,
     fire_path: Any, ingest: Any, memory: Any, metrics: Any,
     observation_store: Any, participation_trigger: Any, persons: Any, policy: Any,
-    registry: Any, slots: Any, stimulus_wiring: Any,
+    registry: Any, slots: Any, stimulus_wiring: Any, access: Any = None,
 ) -> RuntimeWiring:
 
     # ---- platform bridges (design/platform-bridges) ------------------------- Any platform
@@ -79,6 +79,7 @@ async def runtime(
             lease_seconds=cfg.bridges.lease_seconds,
             allowlist=allowlist,
             persons=persons,
+            access=access,
             fire_speak=fire_path.speak if fire_path else None,
             participation_state=SqlParticipationStateStore(engine),
             observations=observation_store,

@@ -528,9 +528,23 @@ async def build_dependencies(
     allowlist = _stores_identity.allowlist
     persons = _stores_identity.persons
     reload_files: ReloadFiles = _stores_identity.reload_files
-    _stores_database = database(allowlist=allowlist, cfg=cfg, metrics=metrics, persons=persons)
+    # `access` cannot exist before `engine`; the sync `persons_view()` shape is
+    # derived from the same boot-time backend selection `managed_identity` uses.
+    from nora.access import EMPTY_PERSONS
+    _stores_database = database(
+        allowlist=allowlist, cfg=cfg, metrics=metrics,
+        persons=persons if cfg.identity.backend == "file" else EMPTY_PERSONS,
+    )
     engine = _stores_database.engine
     _stores_managed = await managed_identity(cfg, persons, allowlist, engine)
+    # The selected backend's identity+access reads (`nora.access`): every
+    # consumer asks THIS for who a sender is and what they may do — file
+    # people/grants are never consulted as a managed fallback.
+    access = _stores_managed.services.access
+    # Warm the alias snapshot the sync `former_ids`/`subject_id_for`
+    # consumers read; afterwards every `permitted`/`person_refs` refreshes
+    # it on a TTL. A managed outage fails startup here, not a stale grant.
+    await access.refresh_aliases(ttl_seconds=0)
     _stores_audit = build_audit(cfg=cfg, engine=engine, metrics=metrics)
     audit = _stores_audit.audit
     _location_stores = _location_wire.stores(engine=engine)
@@ -611,6 +625,7 @@ async def build_dependencies(
     _location_route = _location_wire.route(cfg=cfg)
     route_client = _location_route.route_client
     _documents_ground = _documents_wire.ground(
+        access=access,
         allowlist=allowlist,
         cfg=cfg,
         content_checks=content_checks,
@@ -620,6 +635,7 @@ async def build_dependencies(
     cognition_context_screen = _documents_ground.cognition_context_screen
     cognition_shared_document_room = _documents_ground.cognition_shared_document_room
     _documents_service = service(
+        access=access,
         allowlist=allowlist,
         audit=audit,
         cfg=cfg,
@@ -687,6 +703,7 @@ async def build_dependencies(
         voice_guild_ids=voice_guild_ids,
         voice_hub=voice_hub,
         signal_consent=signal_link_consent(cfg, _stores_managed.services),
+        access=access,
     )
     account = _platforms_adapters.account
     adapter = _platforms_adapters.adapter
@@ -718,12 +735,13 @@ async def build_dependencies(
     profile_reader = _stores_readers.profile_reader
     profile_store_reader = _stores_readers.profile_store_reader
     _people_note_maps = _people_wire.note_maps(allowlist=allowlist)
-    _memory_search = _memory_wire.search(cfg=cfg, engine=engine, metrics=metrics)
+    _memory_search = _memory_wire.search(cfg=cfg, engine=engine, metrics=metrics, access=access)
     memory_index_reader = _memory_search.memory_index_reader
     memory_search = _memory_search.memory_search
     _people_unit_rooms = _people_wire.unit_rooms(allowlist=allowlist)
     unit_rooms = _people_unit_rooms.unit_rooms
     _pipelines_shared = build_shared(
+        access=access,
         allowlist=allowlist,
         audit=audit,
         background=background,
@@ -742,7 +760,7 @@ async def build_dependencies(
         metrics=metrics,
         note_store=note_store,
         observation_store=observation_store,
-        persons=persons,
+        persons=access.persons_view(),
         presence_reader=presence_reader,
         profile_reader=profile_reader,
         quote_window=quote_window,
@@ -837,6 +855,7 @@ async def build_dependencies(
     stimulus_wiring = _runtime_stimulus.stimulus_wiring
     _pipelines_ingest = build_ingest(
         _spawn=_spawn,
+        access=access,
         allowlist=allowlist,
         audit=audit,
         blobs=blobs,
@@ -846,7 +865,6 @@ async def build_dependencies(
         media_sources=media_sources,
         memory=memory,
         metrics=metrics,
-        persons=persons,
         policy=policy,
         sticker_reader=sticker_reader,
         stimulus_wiring=stimulus_wiring,
@@ -856,7 +874,7 @@ async def build_dependencies(
     _media_search = _media_wire.search(cfg=cfg)
     fetch_client = _media_search.fetch_client
     search_client = _media_search.search_client
-    _social_clients = _social_wire.clients(allowlist=allowlist, cfg=cfg, persons=persons)
+    _social_clients = _social_wire.clients(allowlist=allowlist, cfg=cfg, persons=access.persons_view())
     social_client = _social_clients.social_client
     social_subjects = _social_clients.social_subjects
     _location_weather = _location_wire.weather(cfg=cfg)
@@ -864,7 +882,7 @@ async def build_dependencies(
     _people_steam = _people_wire.steam(cfg=cfg)
     steam_client = _people_steam.steam_client
     _location_presence = _location_wire.presence(
-        cfg=cfg, engine=engine, metrics=metrics, persons=persons
+        cfg=cfg, engine=engine, metrics=metrics, persons=persons, access=access
     )
     presence_circles = _location_presence.presence_circles
     presence_store = _location_presence.presence_store
@@ -897,6 +915,7 @@ async def build_dependencies(
     giphy_client = _conversation_reactions.giphy_client
     reaction_picker = _conversation_reactions.reaction_picker
     _conversation_relay = await _conversation_wire.relay(
+        access=access,
         allowlist=allowlist,
         content_checks=content_checks,
         fire_path=lambda: fire_path, metrics=metrics,
@@ -917,7 +936,7 @@ async def build_dependencies(
     discord_presence = _voice_platforms.discord_presence
     music_bridge = _voice_platforms.music_bridge
     voice_presence = _voice_platforms.voice_presence
-    _people_lineage = _people_wire.lineage(allowlist=allowlist, cfg=cfg, persons=persons)
+    _people_lineage = _people_wire.lineage(allowlist=allowlist, cfg=cfg, persons=access.persons_view())
     lineage = _people_lineage.lineage
     _agent_desk = desk(
         cfg=cfg, clock=clock, compute_jobs=compute_jobs, document_service=document_service
@@ -962,7 +981,7 @@ async def build_dependencies(
         music_bridge=music_bridge,
         note_store=note_store,
         observation_store=observation_store,
-        persons=persons,
+        persons=access.persons_view(),
         presence_circles=presence_circles,
         presence_reader=presence_reader,
         presence_store=presence_store,
@@ -988,6 +1007,7 @@ async def build_dependencies(
     )
     tool_registry = _agent_registry.tool_registry
     _agent_subagent_backend = backend(
+        access=access,
         audit=audit,
         cfg=cfg,
         clock=clock,
@@ -1009,6 +1029,7 @@ async def build_dependencies(
     )
     subagent_backend = _agent_subagent_backend.subagent_backend
     _computer_dispatch = _computer_wire.dispatch(
+        access=access,
         allowlist=allowlist,
         audit=audit,
         compute_backends=compute_backends,
@@ -1033,6 +1054,7 @@ async def build_dependencies(
         presence_store=presence_store,
         registry=registry,
         rosters=rosters,
+        access=access,
     )
     _pipelines_standing = await standing(
         audit=audit,
@@ -1050,6 +1072,7 @@ async def build_dependencies(
     debrief_wiring = _pipelines_standing.debrief_wiring
     standing_fold = _pipelines_standing.standing_fold
     _pipelines_engagement = build_engagement(
+        access=access,
         allowlist=allowlist,
         assembler=assembler,
         audit=audit,
@@ -1086,6 +1109,7 @@ async def build_dependencies(
     )
     lost_jobs = _fire_recover.lost_jobs
     _fire_path = path(
+        access=access,
         allowlist=allowlist,
         audit=audit,
         background=background,
@@ -1107,7 +1131,7 @@ async def build_dependencies(
         metrics=metrics,
         note_store=note_store,
         participation_runner=participation_runner,
-        persons=persons,
+        persons=access.persons_view(),
         presence_reader=presence_reader,
         preview_source=preview_source,
         proactive_runner=proactive_runner,
@@ -1125,6 +1149,7 @@ async def build_dependencies(
     )
     fire_path = _fire_path.fire_path
     _fire_heartbeat = heartbeat(
+        access=access,
         allowlist=allowlist,
         background=background,
         cfg=cfg,
@@ -1149,6 +1174,8 @@ async def build_dependencies(
         media_objects=media_objects,
         metrics=metrics,
         slots=slots,
+        access=access,
+        persons=persons,
     )
     _social_summons = summons(
         background=background,
@@ -1159,7 +1186,7 @@ async def build_dependencies(
         engine=engine,
         limits=limits,
         metrics=metrics,
-        persons=persons,
+        persons=access.persons_view(),
         registry=registry,
         social_subjects=social_subjects,
         summons_inbox=summons_inbox,
@@ -1177,7 +1204,7 @@ async def build_dependencies(
         media_objects=media_objects,
         media_sources=media_sources,
         metrics=metrics,
-        persons=persons,
+        persons=access.persons_view(),
         social_subjects=social_subjects,
         stimulus_store=stimulus_store,
     )
@@ -1196,7 +1223,7 @@ async def build_dependencies(
         media_join=media_join,
         metrics=metrics,
         model_client_for=model_client_for,
-        persons=persons,
+        persons=access.persons_view(),
         route_model=route_model,
         slots=slots,
         standing_store=standing_store,
@@ -1211,6 +1238,7 @@ async def build_dependencies(
     )
     dispatcher = _pipelines_dispatcher.dispatcher
     _bridge_runtime = await runtime(
+        access=access,
         allowlist=allowlist,
         cfg=cfg,
         engagement=engagement,
@@ -1245,7 +1273,7 @@ async def build_dependencies(
         engine=engine,
         media_join=media_join,
         metrics=metrics,
-        persons=persons,
+        persons=access.persons_view(),
         presence_circles=presence_circles,
         profile_index=profile_index,
         registry=registry,
@@ -1253,6 +1281,7 @@ async def build_dependencies(
         route_model=route_model,
         tier=tier,
         unit_scopes=unit_scopes,
+        access=access,
     )
     cognition_memory = _memory_graph.cognition_memory
     _dreamer_cognition_inits = cognition_inits()
@@ -1288,7 +1317,11 @@ async def build_dependencies(
         model_client_for=model_client_for,
         note_store=note_store,
         observation_store=observation_store,
-        persons=persons,
+        # The dream/cognition surface's Persons reads are sync and
+        # descriptive (names, former-id folding, room `persons` lists): the
+        # selected backend's view, absent under managed — never a stale
+        # file answer where the schema carries nothing.
+        persons=access.persons_view(),
         presence_circles=presence_circles,
         presence_reader=presence_reader,
         proactive_homes=proactive_homes,
@@ -1310,6 +1343,7 @@ async def build_dependencies(
         tool_registry=tool_registry,
         unit_rooms=unit_rooms,
         unit_scopes=unit_scopes,
+        access=access,
     )
     cognition_runner = _dreamer_enabled.cognition_runner
     cognition_session_units = _dreamer_enabled.cognition_session_units
@@ -1352,7 +1386,7 @@ async def build_dependencies(
         config_reload=reload_files,
         audit=audit,
         memory=memory,
-        persons=persons,
+        persons=access.persons_view(),
         managed_services=_stores_managed.services, managed_session=_stores_managed.session,
         metrics=metrics,
         media_join=media_join,

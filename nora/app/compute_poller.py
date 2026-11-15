@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
+from nora.access import IdentityAccess
 from nora.app.documents_service import room_names_audience
 from nora.app.fire import FAILED_POLICY, SENT, compute_occasion
 from nora.domain.checkpoint import read_row
@@ -36,6 +37,7 @@ from nora.domain.subagent import job_title
 from nora.engagement.slots import ConversationSlots, Key
 from nora.language.checkpoint_render import render_checkpoint
 from nora.obs.metrics import Metrics
+from nora.persons import Persons
 from nora.policy import Policy
 
 log = logging.getLogger("nora.app.compute_poller")
@@ -85,11 +87,18 @@ class ComputeJobPoller:
         documents: DocumentReader | None = None,
         blobs: BlobStore | None = None,
         media: MediaObjectStore | None = None,
+        access: Any = None,
+        persons: Any = None,
     ) -> None:
         self._store = store
         # The grant is checked again at delivery, not only at launch: a job can finish long
         # after its room or its requester was removed from policy (8765_44864).
         self._policy = policy
+        self._persons = persons
+        # The selected backend's verdict at DELIVERY time — an unavailable
+        # authority refuses like a revocation; nothing delivers on a guess.
+        self._access = access
+        self._file_access: Any = None
         # Nora's own storage for a result that carries its artifact's bytes (a video clip):
         # the blob store holds the bytes, the media index the row `media_search` finds.
         self._blobs = blobs
@@ -107,6 +116,18 @@ class ComputeJobPoller:
         self._metrics = metrics
         self._tick_seconds = tick_seconds
         self._clock = clock
+
+    def _access_or_files(self) -> Any:
+        if self._access is not None:
+            return self._access
+        if self._file_access is None:
+            self._file_access = IdentityAccess.for_files(
+                persons=self._persons
+                if self._persons is not None
+                else Persons(by_person={}, index={}),
+                policy=self._policy,
+            )
+        return self._file_access
 
     async def tick(self) -> None:
         pending = await self._store.pending(limit=BATCH_LIMIT)
@@ -238,10 +259,11 @@ class ComputeJobPoller:
             self._metrics.inc("nora_compute_jobs_delivered_total", outcome=DEFERRED)
             return
         try:
-            if not self._policy.is_allowed(
+            verdict = await self._access_or_files().permitted(
                 platform=job.platform, conversation_id=job.conversation_id,
                 person_id=job.requester_person_id,
-            ):
+            )
+            if not verdict.allowed:
                 # The room was removed, or the requester was, after the job was launched.
                 # Nothing is fetched, claimed or said: the row closes as policy-failed, and
                 # the outbound adapter is never called (8765_44864).

@@ -15,6 +15,8 @@ import hashlib
 
 import pytest
 
+from nora.access import IdentityAccess
+from nora.domain.managed import check_unavailable
 from nora.domain.media import MediaRef
 from nora.domain.models import EditTarget, NormalizedMessage, PersonRef
 from nora.domain.ports import MemoryHealth
@@ -61,15 +63,17 @@ class FakeMemory:
 
 def _pipeline(*, memory, persons, policy, spawn, audit=None, allowlist=None,
               media_sources=None, blobs=None, metrics=None,
-              transcriber=None, language=""):
+              transcriber=None, language="", access=None):
     return IngestPipeline(
         audit=audit if audit is not None else FakeRecordStore(),
         memory=memory,
-        persons=persons,
         policy=policy,
         # These tests are about stage sequencing, not the allowlist; the room
         # gate has its own tests in tests/unit/test_ingest_scope.py.
         allowlist=allowlist if allowlist is not None else permissive_policy(),
+        access=access if access is not None else IdentityAccess.for_files(
+            persons=persons,
+            policy=allowlist if allowlist is not None else permissive_policy()),
         metrics=metrics if metrics is not None else Metrics(),
         spawn=spawn,
         media_sources=media_sources,
@@ -584,6 +588,30 @@ async def _drive_sender_not_allowed(metrics=None):
     return await pipeline.run(message=_msg(body="nora.000 hi"))
 
 
+class _UnavailableAccess:
+    """The authority cannot answer: every check is UNAVAILABLE, never denied."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    async def resolve_ref(self, *args, **kwargs):
+        return await self._inner.resolve_ref(*args, **kwargs)
+
+    async def permitted(self, **kwargs):
+        return check_unavailable()
+
+
+async def _drive_sender_unavailable(metrics=None):
+    pipeline = _pipeline(
+        memory=FakeMemory(), persons=_known_persons(),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        allowlist=_policy_of(), metrics=metrics,
+        access=_UnavailableAccess(IdentityAccess.for_files(
+            persons=_known_persons(), policy=_policy_of())),
+    )
+    return await pipeline.run(message=_msg(body="nora.000 hi"))
+
+
 async def _drive_edit(metrics, *, edit_body: str, original_is_nora: bool = False,
                       sender_id: str = "+852111", recorded: bool = True,
                       stale: bool = False):
@@ -643,6 +671,7 @@ def _all_drivers(monkeypatch, metrics):
         "engaged": lambda: _drive_engaged(metrics),
         "scope_refused": lambda: _drive_scope_refused(metrics),
         "sender_not_allowed": lambda: _drive_sender_not_allowed(metrics),
+        "sender_unavailable": lambda: _drive_sender_unavailable(metrics),
         "audit_refused": lambda: _drive_audit_refused(monkeypatch, metrics),
         "edit_recorded": lambda: _drive_edit(metrics, edit_body="dinner at 8"),
         "edit_engaged": lambda: _drive_edit(metrics, edit_body="nora.000 dinner at 8?"),

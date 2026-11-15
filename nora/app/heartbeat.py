@@ -105,22 +105,16 @@ HEARTBEAT_NOT_RUNNING = -1.0
 DUE_BATCH_LIMIT = 100
 
 
-class _Allowlist(Protocol):
-    """The ONE method the tick needs from `policy.toml`'s `Policy`.
-
-    A narrow local shape, like `nora.app.runtime._PrunableStore`: this module
-    has no business with the rest of `Policy`, and naming only `is_allowed`
-    makes the wiring mistake loud rather than plausible. There are two objects
-    called "policy" in the composition root — the ENGAGE policy (`CompositePolicy`,
-    which decides whether a message is a tag) and the ALLOWLIST (`policy.toml`,
-    which decides who may talk to her and where). Only the second has
-    `is_allowed`, and passing the first here would defeat the revocation check
-    rather than break it.
+class _Access(Protocol):
+    """The ONE read the tick needs from the selected identity/access backend
+    (`nora.access.IdentityAccess`): whether this person may still speak in
+    this room. `UNAVAILABLE` refuses like any other non-allow — a heartbeat
+    fires nothing on a stale view of who is allowed.
     """
 
-    def is_allowed(
+    async def permitted(
         self, *, platform: str, conversation_id: str, person_id: str | None,
-    ) -> bool: ...
+    ) -> Any: ...
 
 
 class HeartbeatLoop:
@@ -136,7 +130,7 @@ class HeartbeatLoop:
         *,
         store: ReminderStore,
         slots: ConversationSlots,
-        policy: _Allowlist,
+        access: _Access,
         clock: Callable[[], datetime],
         metrics: Metrics,
         tick_seconds: float,
@@ -145,7 +139,7 @@ class HeartbeatLoop:
     ) -> None:
         self._store = store
         self._slots = slots
-        self._policy = policy
+        self._access = access
         self._clock = clock
         self._metrics = metrics
         self._tick_seconds = tick_seconds
@@ -305,11 +299,12 @@ class HeartbeatLoop:
                 )
                 await self._resolve_all([row], state, outcome=outcome, now=now)
                 continue
-            if self._policy.is_allowed(
+            verdict = await self._access.permitted(
                 platform=row.platform,
                 conversation_id=row.conversation_id,
                 person_id=row.requester_person_id,
-            ):
+            )
+            if verdict.allowed:
                 allowed.append(row)
                 continue
             log.warning(

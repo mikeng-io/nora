@@ -107,7 +107,7 @@ def _make_lookup_person(deps):
                 "note": "I can't check who is in this group right now, so I can't "
                 "tell you who that is. Say so rather than guessing.",
             }
-        matches = room.find(view, name)
+        matches = await room.find(view, name)
         # `name` is never in the line. It is the one MODEL-SUPPLIED string
         # these tools take, and `_asked_about` exists because a model does put
         # phone numbers in it.

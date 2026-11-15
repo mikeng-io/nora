@@ -169,12 +169,17 @@ def file_services(persons, policy):
     )
     from nora.people.app.managed import ManagedServices
 
+    from nora.access import IdentityAccess
+
     return ManagedServices(
         bindings=FileBindingStore(persons),
         backend=FileAuthorityBackend(policy),
         topology=FileTopologySource(policy),
         registry=FileIdentityRegistry(),
         links=FileLinkRequests(),
+        # File mode IS the selected backend, so the read surface keeps the
+        # loaded snapshots for the descriptive reads only file data holds.
+        access=IdentityAccess.for_files(persons, policy),
     )
 
 

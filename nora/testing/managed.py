@@ -143,6 +143,21 @@ class FakeBindingStore(BindingStore):
         pid = self._canonical(person_id)
         return pid if pid in self.persons else None
 
+    async def former_persons(self, person_id: str) -> tuple[str, ...]:
+        self._up()
+        canonical = self._canonical(person_id)
+        return tuple(
+            former for former, survivor in self.aliases.items()
+            if survivor == canonical and canonical in self.persons
+        )
+
+    async def persons(self) -> tuple[ManagedPerson, ...]:
+        self._up()
+        return tuple(
+            p for p in sorted(self.persons.values(), key=lambda m: m.person_id)
+            if p.lifecycle is PersonLifecycle.ACTIVE
+        )
+
     async def identity_held(self, person_id: str) -> bool:
         self._up()
         return any(person in {person_id, self._canonical(person_id)}

@@ -29,15 +29,16 @@ log = logging.getLogger("nora.app.composition")
 
 async def _tell_about_lost_jobs(
     jobs: list[Any], speak: Any, slots: ConversationSlots, metrics: Metrics,
-    policy: Policy,
+    policy: Policy, access: Any,
 ) -> None:
     """Close the promise each lost job left open, one room at a time."""
     for job in jobs:
-        if not policy.is_allowed(
+        verdict = await access.permitted(
             platform=job.platform,
             conversation_id=job.conversation_id,
             person_id=job.requester_person_id,
-        ):
+        )
+        if not verdict.allowed:
             log.warning(
                 "lost compute job %s not told: %s is no longer allowed in %s",
                 job.id,
@@ -108,7 +109,7 @@ class PathWiring:
 
 
 def path(
-    allowlist: Any, audit: Any, background: Any, cfg: Any,
+    access: Any, allowlist: Any, audit: Any, background: Any, cfg: Any,
     clock: Any, computer_context: Any, culture_reader: Any, decision_log: Any,
     doctrine_store: Any, documents_context: Any, lessons_reader: Any, limits: Any,
     lineage: Any, llm_state: Any, lost_jobs: Any, media_join: Any,
@@ -126,6 +127,7 @@ def path(
         quote_window,
         reasoning_strip_store,
         llm_state,
+        access,
         allowlist,
         presence_reader,
         audit,
@@ -156,7 +158,8 @@ def path(
         culture_reader,
         tool_call_log_store,
     )
-    _path_lost_jobs(metrics, background, lost_jobs, slots, allowlist, fire_path)
+    _path_lost_jobs(
+        metrics, background, lost_jobs, slots, allowlist, fire_path, access)
     return PathWiring(fire_path=fire_path)
 
 
@@ -169,9 +172,11 @@ def _fire_turn_args(
     media_join: Any, decision_log: Any, clock: Any, tool_registry: Any,
     preview_source: Any, shared: Any, runner: Any, persons: Any,
     proactive_runner: Any, memory: Any, culture_reader: Any, tool_call_log_store: Any,
+    access: Any = None,
 ) -> Any:
     """The collaborators a fire turn shares with the tag path — one of each."""
     return {
+        "access": access,
         "tag_trace_store": tag_trace_store,
         "persons": persons,
         "records": audit,
@@ -296,7 +301,7 @@ def _fire_occasion_args(cfg: Any, participation_runner: Any, proactive_runner: A
 
 def _wire_fire_path(
     metrics: Any, quote_window: Any, reasoning_strip_store: Any, llm_state: Any,
-    allowlist: Any, presence_reader: Any, audit: Any, lessons_reader: Any,
+    access: Any, allowlist: Any, presence_reader: Any, audit: Any, lessons_reader: Any,
     profile_reader: Any, computer_context: Any, registry: Any, limits: Any,
     lineage: Any, memo_store: Any, rosters: Any, documents_context: Any,
     note_store: Any, doctrine_store: Any, participation_runner: Any, tag_trace_store: Any,
@@ -343,6 +348,7 @@ def _wire_fire_path(
         "memory": memory,
         "culture_reader": culture_reader,
         "tool_call_log_store": tool_call_log_store,
+        "access": access,
     }
     return FirePath(
         **_fire_turn_args(**shared_kwargs),
@@ -370,7 +376,7 @@ def _wire_fire_path(
 
 def _path_lost_jobs(
     metrics: Any, background: Any, lost_jobs: Any, slots: Any,
-    allowlist: Any, fire_path: Any,
+    allowlist: Any, fire_path: Any, access: Any,
 ) -> Any:
 
     if lost_jobs and fire_path is not None:
@@ -384,6 +390,7 @@ def _path_lost_jobs(
                 slots=slots,
                 metrics=metrics,
                 policy=allowlist,
+                access=access,
             )
         )
     elif lost_jobs:
@@ -404,7 +411,7 @@ class HeartbeatWiring:
 
 
 def heartbeat(
-    allowlist: Any, background: Any, cfg: Any, clock: Any,
+    access: Any, allowlist: Any, background: Any, cfg: Any, clock: Any,
     fire_path: Any, metrics: Any, note_store: Any, reminders: Any,
     slots: Any,
 ) -> HeartbeatWiring:
@@ -420,10 +427,12 @@ def heartbeat(
             # The SAME `slots` the engagement pipeline holds. Two instances
             # would be two locks and no serialisation at all.
             slots=slots,
-            # `allowlist` — policy.toml — NOT `policy`, which is the CompositePolicy deciding
-            # whether a message is a tag and has no `is_allowed` at all. Re-checking the ALLOWLIST
-            # at fire time is the whole point of this parameter: the live policy may change while a…
-            policy=allowlist,
+            # `access` — the selected backend's live grant check
+            # (`nora.access`), re-checked at fire time: the live grant may
+            # change while a row waits, and `UNAVAILABLE` fails the row
+            # closed like a revocation. `allowlist` remains beside it for the
+            # proactive screen's room flag.
+            access=access,
             clock=clock,
             metrics=metrics,
             tick_seconds=cfg.heartbeat.tick_seconds,
@@ -446,6 +455,7 @@ def compute_poller(
     allowlist: Any, background: Any, blobs: Any, cfg: Any,
     clock: Any, compute_backends: Any, compute_jobs: Any, document_service: Any,
     fire_path: Any, media_objects: Any, metrics: Any, slots: Any,
+    access: Any = None, persons: Any = None,
 ) -> ComputePollerWiring:
 
     # The compute-job poller: a background loop, gated on BOTH the feature flag and a live
@@ -470,6 +480,8 @@ def compute_poller(
             tick_seconds=cfg.compute.poll_tick_seconds,
             clock=clock,
             policy=allowlist,
+            access=access,
+            persons=persons,
         )
         # Spawned, never awaited — the same reason `heartbeat.run()` above
         # is: a boot must not wait on a background

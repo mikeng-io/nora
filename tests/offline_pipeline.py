@@ -19,6 +19,7 @@ from collections.abc import Callable, Coroutine, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
+from nora.access import IdentityAccess
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.app.assembler import build_assembler, lineage_policy
@@ -210,8 +211,9 @@ def build_offline_pipeline(
         background.spawn(coro)
 
     ingest = IngestPipeline(
-        audit=audit, memory=memory, persons=persons,
+        audit=audit, memory=memory,
         policy=policy, allowlist=permissive_policy(), metrics=metrics, spawn=_spawn,
+        access=IdentityAccess.for_files(persons=persons, policy=permissive_policy()),
     )
 
     tier = cfg.llm
@@ -249,6 +251,7 @@ def build_offline_pipeline(
         # resolves to is never disclosed to anything real. A caller that wants
         # to exercise MCP scoping supplies its own `EngagementPipeline`.
         policy=permissive_policy(),
+        access=IdentityAccess.for_files(persons=persons, policy=permissive_policy()),
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         ai_peer=cfg.honcho.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,

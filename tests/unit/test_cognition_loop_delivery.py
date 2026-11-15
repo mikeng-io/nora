@@ -192,13 +192,13 @@ def test_a_lost_compute_job_cannot_reach_speak():
     background = SimpleNamespace(spawn=spawned.append)
     _path_lost_jobs(
         metrics=None, background=background, lost_jobs=[object()],
-        slots=None, allowlist=None, fire_path=None)
+        slots=None, allowlist=None, fire_path=None, access=None)
     assert spawned == []
 
     # Positive control: the same job DOES spawn recovery with a fire path.
     _path_lost_jobs(
         metrics=None, background=background, lost_jobs=[object()],
-        slots=None, allowlist=None, fire_path=SimpleNamespace(speak=None))
+        slots=None, allowlist=None, fire_path=SimpleNamespace(speak=None), access=None)
     assert len(spawned) == 1
     spawned.pop().close()
 

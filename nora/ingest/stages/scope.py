@@ -38,20 +38,21 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from nora.access import IdentityAccess
 from nora.domain.models import NormalizedMessage
-from nora.persons import Persons
 from nora.policy import Policy
 
 log = logging.getLogger("nora.ingest.scope")
 
 
 async def run(
-    *, message: NormalizedMessage, policy: Policy, persons: Persons, metrics: Any,
+    *, message: NormalizedMessage, policy: Policy, access: IdentityAccess,
+    metrics: Any,
 ) -> bool:
     """Return True if this conversation is allowlisted and ingest may continue."""
     if (
         message.conversation_type == "dm"
-        and persons.resolve(message.platform, message.sender_id) is None
+        and await access.resolve_account(message.platform, message.sender_id) is None
     ):
         metrics.inc("nora_denied_conversations_total", platform=message.platform)
         # No sender id in the line: it is somebody's number, and they are

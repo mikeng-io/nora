@@ -132,7 +132,7 @@ class SearchWiring:
     memory_search: Any
 
 
-def search(cfg, engine, metrics) -> SearchWiring:
+def search(cfg, engine, metrics, access=None) -> SearchWiring:
 
     # `[memory.index] read` (ships off): the one retrieval service, held by the tag path's
     # pre-fetch (`<recalled>`) and by the tool registry's `memory_search` below, one
@@ -157,6 +157,7 @@ def search(cfg, engine, metrics) -> SearchWiring:
             model=(
                 fingerprint(cfg.memory.index.embedder_model) if cfg.memory.index.embed else None
             ),
+            access=access,
             # The embedding worker's tick: a node waiting less than a
             # few of them is fresh, not a backlog that answers `partial`.
             drain_seconds=cfg.memory.index.refresh_seconds,
@@ -187,6 +188,7 @@ def graph(
     route_model,
     tier,
     unit_scopes,
+    access=None,
 ) -> GraphWiring:
     cognition_memory = None
     if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
@@ -229,6 +231,7 @@ def graph(
                     conversation_id=conversation_id,
                     roster_source=rosters.get(platform),
                     persons=persons,
+                    access=access,
                     self_ids=registry.self_aliases(),
                 ).members(),
                 circles=presence_circles,

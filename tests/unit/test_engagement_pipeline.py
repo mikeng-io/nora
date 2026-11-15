@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from nora.access import IdentityAccess
 from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.app.runtime import BackgroundTasks
@@ -358,6 +359,9 @@ def _build_pipeline(
         rosters={"signal": roster_source} if roster_source else {},
         slots=ConversationSlots(maxlen=queue_max, spawn=background.spawn),
         policy=policy if policy is not None else permissive_policy(),
+        access=IdentityAccess.for_files(
+            persons=PERSONS,
+            policy=policy if policy is not None else permissive_policy()),
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
         decisions=decisions,

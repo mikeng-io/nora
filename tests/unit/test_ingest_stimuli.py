@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 
+from nora.access import IdentityAccess
 from nora.domain.models import EditTarget, NormalizedMessage, Quote, Touch
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import TriggerTextPolicy
@@ -67,7 +68,7 @@ def _setup(*, wired: bool = True, reply_quiet_seconds: float = 600.0):
     ) if wired else None
     pipeline = IngestPipeline(
         audit=audit, memory=_Memory(),  # type: ignore[arg-type]
-        persons=Persons(by_person={}, index={}),
+        access=IdentityAccess.for_files(persons=Persons(by_person={}, index={}), policy=permissive_policy()),
         policy=TriggerTextPolicy("nora.000"), allowlist=permissive_policy(),
         metrics=metrics, spawn=lambda coro: coro.close(), stimulus_wiring=wiring,
     )

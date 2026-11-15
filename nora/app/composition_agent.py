@@ -474,7 +474,7 @@ def backend(
     compute_jobs: Any, computer_admission: Any, computer_scope_for: Any, memory: Any,
     metrics: Any, model_client_for: Any, persons: Any, registry: Any,
     rosters: Any, route_model: Any, subagent_desk: Any, subagents_context: Any,
-    tier: Any, tool_registry: Any,
+    tier: Any, tool_registry: Any, access: Any = None,
 ) -> SubagentBackendWiring:
     # The sub-agent worker, registered under its kind for the poller below.
     # OFF by default: nothing is built and `compute_backends` stays empty. It needs the tool
@@ -493,6 +493,7 @@ def backend(
             rosters=rosters,
             self_ids=registry.self_aliases(),
             clock=clock,
+            access=access,
             result_caps=TOOL_RESULT_CAPS,
             reasoning_effort=str(
                 _reasoning_effort(

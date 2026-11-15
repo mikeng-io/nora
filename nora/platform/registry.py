@@ -241,6 +241,7 @@ class AdapterRegistry:
         signal_consent: Callable[
             [str], Callable[[dict], Awaitable[bool]] | None
         ] | None = None,
+        dm_gates: Mapping[str, Callable[[str], Awaitable[bool]]] | None = None,
         bridge_token: str = "",
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
@@ -297,6 +298,7 @@ class AdapterRegistry:
         bounded wait — collaborators through construction, so a test can
         drive the bound without waiting in real time."""
         dms = dm_recipients or {}
+        gates = dm_gates or {}
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
 
@@ -307,7 +309,8 @@ class AdapterRegistry:
             # the wire's account_key — no derive_account against signal-cli.
             adapter: PlatformAdapter = BridgeAdapter(
                 "signal", BridgeEndpoint(signal_cfg.base_url, bridge_token),
-                dm_recipients=dms.get("signal", frozenset()))
+                dm_recipients=dms.get("signal", frozenset()),
+                dm_gate=gates.get("signal"))
             try:
                 identity = await _resolve_bridge_identity(
                     adapter, sleep=sleep, clock=clock)
@@ -333,6 +336,7 @@ class AdapterRegistry:
                 # parser checks is the account signal-cli actually serves.
                 on_consent=(
                     signal_consent(account) if signal_consent else None),
+                dm_gate=gates.get("signal"),
             )
             try:
                 identity = await adapter.resolve_identity()
@@ -394,7 +398,8 @@ class AdapterRegistry:
         if whatsapp_cfg.enabled and getattr(whatsapp_cfg, "mode", "direct") == "bridge":
             whatsapp_adapter: PlatformAdapter = BridgeAdapter(
                 "whatsapp", BridgeEndpoint(whatsapp_cfg.base_url, bridge_token),
-                dm_recipients=dms.get("whatsapp", frozenset()))
+                dm_recipients=dms.get("whatsapp", frozenset()),
+                dm_gate=gates.get("whatsapp"))
             try:
                 whatsapp_identity = await _resolve_bridge_identity(
                     whatsapp_adapter, sleep=sleep, clock=clock)
@@ -412,6 +417,7 @@ class AdapterRegistry:
             # this module's own docstring).
             whatsapp_adapter = WhatsAppAdapter(
                 whatsapp_cfg.base_url, dm_recipients=dms.get("whatsapp", frozenset()),
+                dm_gate=gates.get("whatsapp"),
             )
             try:
                 whatsapp_identity = await whatsapp_adapter.resolve_identity()

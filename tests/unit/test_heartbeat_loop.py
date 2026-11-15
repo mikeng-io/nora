@@ -54,6 +54,15 @@ class _RecordingAllowlist:
         })   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
         return self._allow
 
+    async def permitted(self, *, platform, conversation_id, person_id):
+        """`IdentityAccess`'s grant read — the same recording, in the
+        selected-backend shape the loop now checks."""
+        from nora.domain.managed import allowed, check_denied
+        return allowed() if self.is_allowed(
+            platform=platform, conversation_id=conversation_id,
+            person_id=person_id,
+        ) else check_denied("test-denial")
+
 
 class _StoreWithOneFailure(FakeReminderStore):
     """The real fake, with ONE injected failure on one method's Nth call.
@@ -115,7 +124,7 @@ def _build(*, store, policy=None, fire=None, slots=None, metrics=None, clock=Non
         # for a fresh one — which hands every test its own private lock and
         # makes the held-slot test pass a turn it should have deferred.
         slots=slots if slots is not None else ConversationSlots(maxlen=16, spawn=lambda c: None),
-        policy=policy if policy is not None else _RecordingAllowlist(allow=True),
+        access=policy if policy is not None else _RecordingAllowlist(allow=True),
         clock=clock or (lambda: T0),
         metrics=metrics or Metrics(),
         tick_seconds=60.0,
@@ -650,7 +659,7 @@ async def test_a_silent_proactive_turn_resolves_done_with_outcome_silent():
 
     loop = HeartbeatLoop(
         store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
-        policy=_RoomPolicy(allow=False, proactive=True), clock=lambda: T0,
+        access=_RoomPolicy(allow=False, proactive=True), clock=lambda: T0,
         metrics=metrics, tick_seconds=60.0, fire=_fire,
         proactive=ProactiveScreen(policy=_RoomPolicy(allow=False, proactive=True), notes=notes),
     )
@@ -682,7 +691,7 @@ async def test_a_proactive_row_is_screened_on_the_flag_not_on_a_person():
 
         loop = HeartbeatLoop(
             store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
-            policy=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
+            access=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
             fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes),
         )
         await loop.tick()
@@ -737,7 +746,7 @@ async def test_a_tag_path_revision_since_the_link_cancels_the_row():
     def _loop():
         return HeartbeatLoop(
             store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
-            policy=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
+            access=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
             fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes),
         )
 
@@ -819,7 +828,7 @@ async def test_a_pending_proactive_row_on_a_merged_note_follows_its_survivor():
     def _loop():
         return HeartbeatLoop(
             store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
-            policy=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
+            access=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
             fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes),
         )
 

@@ -264,6 +264,33 @@ class SqlBindingStore:
         async with self._engine.connect() as conn:
             return await self._canonical(conn, person_id)
 
+    async def former_persons(self, person_id: str) -> tuple[str, ...]:
+        async with self._engine.connect() as conn:
+            canonical = await self._canonical(conn, person_id)
+            if canonical is None:
+                return ()
+            rows = (
+                await conn.execute(
+                    sa.select(MANAGED_ALIAS.c.former_person_id).where(
+                        MANAGED_ALIAS.c.person_id == canonical
+                    )
+                )
+            ).fetchall()
+            return tuple(r.former_person_id for r in rows)
+
+    async def persons(self) -> tuple[ManagedPerson, ...]:
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    sa.select(MANAGED_PERSON)
+                    .where(
+                        MANAGED_PERSON.c.lifecycle == PersonLifecycle.ACTIVE.value
+                    )
+                    .order_by(MANAGED_PERSON.c.person_id)
+                )
+            ).fetchall()
+            return tuple(_person_from(r) for r in rows)
+
     async def identity_held(self, person_id: str) -> bool:
         async with self._engine.connect() as connection:
             canonical = await self._canonical(connection, person_id)

@@ -185,6 +185,7 @@ __all__ = [
     "render_packet",
     "room_label",
     "scope_for",
+    "scope_for_async",
     "terms_of",
 ]
 
@@ -517,6 +518,51 @@ def scope_for(
     )
 
 
+async def scope_for_async(
+    target: RenderRoom, *, social_off: Collection[str], own_room: bool = False,
+    access: Any = None,
+) -> MemoryScope | None:
+    """`scope_for` against the selected identity backend. The file path
+    defers to `scope_for`; under managed, the listed-member sets come from
+    live room memberships (`access.room_refs`), never from a file `persons`
+    list — and a backend outage propagates, so the caller answers
+    `unavailable` rather than scoping on stale file data."""
+    scope = scope_for(target, own_room=own_room, social_off=social_off)
+    if scope is None or access is None or getattr(access, "is_file_backend", False):
+        return scope
+    here = target.room
+    unit_rooms = (
+        [] if own_room else [r for r in target.rooms if here.unit and r.unit == here.unit]
+    )
+    if not any(r.platform == here.platform and r.ids == here.ids for r in unit_rooms):
+        unit_rooms.append(here)
+    room_persons: dict[str, frozenset[str]] = {}
+    for r in unit_rooms:
+        for cid in sorted(r.ids):
+            refs = await access.room_refs(r.platform, cid)
+            room_persons[room_key(r.platform, cid)] = frozenset(
+                ref.person_id for ref in refs
+            )
+    listed = frozenset(
+        pid
+        for cid in here.ids
+        for pid in room_persons.get(room_key(here.platform, cid), frozenset())
+    )
+    live = target.live
+    candidates = listed | frozenset(p for members in target.circles for p in members)
+    presence = frozenset(
+        p for p in candidates
+        if section_permits((LineageEntry(PRESENCE, subject=p),), target, origin=None)
+    )
+    return replace(
+        scope,
+        listed_here=listed,
+        people_here=listed | (live.person_ids if live is not None else frozenset()),
+        presence_persons=presence,
+        room_persons=room_persons,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Step:
     """One step of a path: the node's kind, and how it was reached from the
@@ -817,7 +863,7 @@ class MemorySearch:
         self, index: MemoryIndexRead, metrics: Any, *,
         embedder: QueryEmbedder | None = None, model: str | None = None,
         drain_seconds: float | None = None, profile_render: bool = False,
-        graph: MemoryGraph | None = None,
+        graph: MemoryGraph | None = None, access: Any = None,
     ) -> None:
         if (embedder is None) != (model is None):
             raise ValueError("an embedder and its model fingerprint come together")
@@ -827,6 +873,7 @@ class MemorySearch:
         self._metrics = metrics
         self._embedder = embedder
         self._model = model
+        self._access = access
         self._fresh_seconds = BACKLOG_TICKS * drain_seconds if drain_seconds else 0.0
 
     async def read(
@@ -854,7 +901,8 @@ class MemorySearch:
         if self._graph is None or not 0 <= depth <= 4:
             return {"status": "unavailable", "note": "The graph could not be read."}
         try:
-            scope = scope_for(target, own_room=own_room, social_off=social_off)
+            scope = await scope_for_async(
+                target, own_room=own_room, social_off=social_off, access=self._access)
             if scope is None or target.room is None or not target.room.unit:
                 return {"status": "unavailable", "note": "The read scope is unavailable."}
             scope = replace(
@@ -1026,7 +1074,8 @@ class MemorySearch:
             return section_permits(lineage.section(ROW), target, origin=None)
 
         try:
-            scope = scope_for(target, own_room=own_room, social_off=social_off)
+            scope = await scope_for_async(
+                target, own_room=own_room, social_off=social_off, access=self._access)
             if scope is None:
                 return self._count("unavailable")
             scope = replace(scope, profile_render=self._profile_render)

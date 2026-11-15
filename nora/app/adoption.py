@@ -91,6 +91,7 @@ async def backfill(
     memory: MemoryStore,
     persons: Persons,
     metrics: Metrics,
+    access: Any = None,
     media_join: MediaJoin | None = None,
     limit: int = DEFAULT_SCAN_LIMIT,
     start_delay_seconds: float = DEFAULT_START_DELAY_SECONDS,
@@ -110,7 +111,11 @@ async def backfill(
             # empty `[image a3f2c1]` marker.
             rows = list(await media_join.enrich(rows, path="adoption"))
         for row in rows:
-            person = persons.resolve(row.platform, row.sender_id)
+            person = (
+                await access.resolve_ref(row.platform, row.sender_id)
+                if access is not None
+                else persons.resolve(row.platform, row.sender_id)
+            )
             if person is None:
                 continue        # still unmapped — a later adoption's problem
             resolved += 1

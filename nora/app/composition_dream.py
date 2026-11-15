@@ -98,7 +98,7 @@ class ProfileAdaptorWiring:
 
 def _character_adaptors(
     allowlist: Any, cfg: Any, content_checks: Any, engine: Any,
-    metrics: Any, note_store: Any, persons: Any,
+    metrics: Any, note_store: Any, persons: Any, access: Any = None,
 ) -> CharacterAdaptorWiring:
     """Culture's room fold and the Character sessions (person, unit, Nora)."""
     schedules, adaptors = _culture_adaptor(
@@ -110,6 +110,7 @@ def _character_adaptors(
     p_sched, p_ad = _character_person_adaptor(
         cfg=cfg, content_checks=content_checks, culture_store=culture_store,
         engine=engine, metrics=metrics, person_keys=person_keys, persons=persons,
+        access=access,
     )
     c_sched, c_ad, unit_keys, nora_keys = _character_collective_adaptors(
         allowlist=allowlist, cfg=cfg, culture_store=culture_store, engine=engine,
@@ -203,7 +204,7 @@ def _culture_adaptor(
 
 def _character_person_adaptor(
     cfg: Any, content_checks: Any, culture_store: Any, engine: Any,
-    metrics: Any, person_keys: Any, persons: Any,
+    metrics: Any, person_keys: Any, persons: Any, access: Any = None,
 ) -> Any:
     schedules = {
         CHARACTER_PERSON_ADAPTOR_NAME: AdaptorSchedule(
@@ -225,7 +226,8 @@ def _character_person_adaptor(
                 # cognition-loop/observation.md), read whether or not the poller
                 # runs, opted-out persons left out by the store.
                 social=readable_social_store(engine, persons),
-                former_ids=persons.former_ids_for,
+                former_ids=access.former_ids_for if access is not None
+                    else persons.former_ids_for,
             ),
             keys=person_keys,
             metrics=metrics,
@@ -304,7 +306,7 @@ def _character_collective_adaptors(
 def _profile_adaptors(
     allowlist: Any, cfg: Any, character: Any, clock: Any,
     content_checks: Any, engine: Any, media_join: Any, metrics: Any,
-    persons: Any, profile_index: Any,
+    persons: Any, profile_index: Any, access: Any = None,
 ) -> ProfileAdaptorWiring:
     """The Profile sessions (person, verdict judge, collectives), in shadow."""
 
@@ -342,7 +344,7 @@ def _profile_adaptors(
                 clock=clock, content_checks=content_checks, engine=engine,
                 media_join=media_join, metrics=metrics, persons=persons,
                 profile_collective_keys=profile_collective_keys,
-                profile_index=profile_index,
+                profile_index=profile_index, access=access,
             )
         )
         c_sched, c_ad = _profile_collective_adaptors(
@@ -364,6 +366,7 @@ def _profile_person_adaptors(
     allowlist: Any, cfg: Any, character: Any, clock: Any,
     content_checks: Any, engine: Any, media_join: Any, metrics: Any,
     persons: Any, profile_collective_keys: Any, profile_index: Any,
+    access: Any = None,
 ) -> Any:
     """The person account's session and the verdict judge."""
     profile_store = SqlProfileStore(
@@ -405,7 +408,8 @@ def _profile_person_adaptors(
                 source_inputs=SqlProfileInputs(engine, social=profile_social),
                 source_timeout_seconds=cfg.standing.store_timeout_seconds,
                 social=profile_social,
-                former_ids=persons.former_ids_for,
+                former_ids=access.former_ids_for if access is not None
+                    else persons.former_ids_for,
             ),
             reads=profile_reads,
             keys=character.person_keys,
@@ -554,7 +558,7 @@ class DreamObjectivesWiring:
 def _dream_objectives(
     allowlist: Any, cfg: Any, clock: Any, content_checks: Any,
     engine: Any, media_join: Any, metrics: Any, note_store: Any,
-    persons: Any, profile_index: Any, unit_scopes: Any,
+    persons: Any, profile_index: Any, unit_scopes: Any, access: Any = None,
 ) -> DreamObjectivesWiring:
     """Every objective session and its wake schedule, minus the retired."""
     adaptors: tuple[Any, ...] = ()
@@ -563,7 +567,7 @@ def _dream_objectives(
         character = _character_adaptors(
             allowlist=allowlist, cfg=cfg, content_checks=content_checks,
             engine=engine, metrics=metrics, note_store=note_store,
-            persons=persons,
+            persons=persons, access=access,
         )
         adaptors = (*adaptors, *character.adaptors)
         schedules = {**schedules, **character.schedules}
@@ -571,7 +575,7 @@ def _dream_objectives(
             allowlist=allowlist, cfg=cfg, character=character,
             clock=clock, content_checks=content_checks, engine=engine,
             media_join=media_join, metrics=metrics, persons=persons,
-            profile_index=profile_index,
+            profile_index=profile_index, access=access,
         )
         adaptors = (*adaptors, *profile.adaptors)
         schedules = {**schedules, **profile.schedules}

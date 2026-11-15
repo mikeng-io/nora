@@ -64,7 +64,12 @@ SILENT_OUTCOMES = frozenset({
     "scope_refused", "edit_orphaned", "edit_absorbed", "reaction_recorded",
     "delete_recorded", "sender_not_allowed", "recorded",
 })
-FAILURE_OUTCOMES = frozenset({"audit_refused", "extraction_refused"})
+FAILURE_OUTCOMES = frozenset({
+    "audit_refused", "extraction_refused",
+    # The authority could not answer (`Verdict.UNAVAILABLE`) — a transient
+    # backend outage, not a silence. Retrying is the honest outcome.
+    "sender_unavailable",
+})
 
 
 class _LeaseLostError(Exception):
@@ -451,7 +456,7 @@ class WorkRunner:
                  instance: str | None = None, lease_seconds: int = 300,
                  allowlist: Any = None, persons: Any = None,
                  fire_speak: Any = None, participation_state: Any = None,
-                 observations: Any = None) -> None:
+                 observations: Any = None, access: Any = None) -> None:
         self._store = store
         self._redis = redis
         self._ingest = ingest
@@ -470,6 +475,7 @@ class WorkRunner:
         # closed, never run under the snapshot's stale permission alone.
         self._allowlist = allowlist        # Policy | None
         self._persons = persons            # Persons | None
+        self._access = access              # IdentityAccess | None (managed mode)
         self._fire_speak = fire_speak      # FirePath.speak bound method | None
         self._participation_state = participation_state  # cursor store | None
         # The typed platform-observation Record (`ObservationStore`): where
@@ -1332,8 +1338,14 @@ class WorkRunner:
             conversation_id=work.conversation_id, target=obs.target,
             target_author_id=obs.target_author_id)
         actor_pid = None
-        if obs.actor_id and obs.actor_status == "known" and self._persons:
-            ref = self._persons.resolve(work.platform, obs.actor_id)
+        if obs.actor_id and obs.actor_status == "known":
+            if self._access is not None:
+                ref = await self._access.resolve_ref(
+                    work.platform, obs.actor_id)
+            elif self._persons:
+                ref = self._persons.resolve(work.platform, obs.actor_id)
+            else:
+                ref = None
             actor_pid = ref.person_id if ref is not None else None
         at_ms = obs.occurred_ms if obs.occurred_ms is not None else obs.received_ms
         enqueued_ms = _now_ms()
@@ -1532,9 +1544,13 @@ class WorkRunner:
         if room is None:
             await self._finish(work, "intentional_skip", {"reason": refuse})
             return
-        current = (self._persons.resolve(
-            work.platform, work.payload["message"].get("sender_id", ""))
-                   if self._persons is not None else None)
+        if self._access is not None:
+            current = await self._access.resolve_ref(
+                work.platform, work.payload["message"].get("sender_id", ""))
+        else:
+            current = (self._persons.resolve(
+                work.platform, work.payload["message"].get("sender_id", ""))
+                       if self._persons is not None else None)
         if (current is None or current.person_id != person.person_id
                 or current.honcho_peer_id != person.honcho_peer_id):
             await self._finish(work, "intentional_skip",

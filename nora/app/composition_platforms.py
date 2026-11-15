@@ -43,6 +43,7 @@ from nora.policy import Policy
 async def _presence_preflight(
     allowlist: Policy, rosters: Mapping[str, RosterSource], persons: Persons,
     circles: Sequence[Circle], metrics: Metrics, self_ids: frozenset[str] = frozenset(),
+    access: Any = None,
 ) -> None:
     """The R-21/R-31 disclosure pre-flight: for every policy"""
     for conv in allowlist.rooms():
@@ -61,6 +62,7 @@ async def _presence_preflight(
                     conversation_id=conversation_id,
                     roster_source=roster_source,
                     persons=persons,
+                    access=access,
                     self_ids=self_ids,
                 ).members()
                 if candidate.available:
@@ -211,6 +213,7 @@ async def adapters(
     music_manager: Any, persons: Any, resolve_music_channel: Any, speaker: Any,
     summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any,
     signal_consent: Any = None,
+    access: Any = None,
 ) -> AdaptersWiring:
     try:
         registry = await AdapterRegistry.from_config(
@@ -224,8 +227,10 @@ async def adapters(
             resolve_music_channel=resolve_music_channel,
             instagram_summons=summons_inbox,
             bridge_token=cfg.credentials.get(cfg.bridges.token_env, ""),
-            # A 1:1 message goes only to somebody in identity.toml; the
-            # senders hold this set and refuse the rest.
+            # A 1:1 message goes only to somebody the identity backend knows;
+            # the senders hold this set and refuse the rest. The managed
+            # backend's live version is `dm_gates`: consulted per send, never
+            # a file snapshot.
             dm_recipients={
                 p: LiveSet(functools.partial(persons.direct_addresses, p)) for p in DIRECT_PLATFORMS
             },
@@ -233,6 +238,14 @@ async def adapters(
             # room parser would drop it — `None` unless the deployment can
             # carry consent (see `signal_link_consent`).
             signal_consent=signal_consent,
+            dm_gates=(
+                {
+                    p: functools.partial(access.dm_address_allowed, p)
+                    for p in DIRECT_PLATFORMS
+                }
+                if access is not None and not access.is_file_backend
+                else None
+            ),
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
@@ -347,7 +360,7 @@ class PresencePreflightWiring:
 def presence_preflight(
     allowlist: Any, background: Any, content_checks: Any, metrics: Any,
     persons: Any, presence_circles: Any, presence_store: Any, registry: Any,
-    rosters: Any,
+    rosters: Any, access: Any = None,
 ) -> PresencePreflightWiring:
     if presence_store is not None and content_checks:
         # The R-21/R-31 startup invariant (DEC-54(4)): alarm the day a policy conversation is no
@@ -360,6 +373,7 @@ def presence_preflight(
                 persons=persons,
                 circles=presence_circles,
                 metrics=metrics,
+                access=access,
                 # Without her aliases Nora HERSELF is the «1 unmapped account»: her own membership
                 # resolves to nobody in identity.toml, exactly the stranger-shape the warning exists
                 # for. The tag path's Room gets the same set (`EngagementPipeline._run_admitted`).…

@@ -48,9 +48,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from nora.access import IdentityAccess
 from nora.domain.models import EditedMessage, NormalizedMessage, Touch
 from nora.domain.ports import RecordStore
-from nora.persons import Persons
 
 log = logging.getLogger("nora.ingest.touch")
 
@@ -79,7 +79,7 @@ class TouchResult:
 
 async def run(
     *, message: NormalizedMessage, touch: Touch, audit: RecordStore,
-    persons: Persons, metrics: Any,
+    access: IdentityAccess, metrics: Any,
 ) -> TouchResult:
     """`touch` is `message.touch`, passed on its own so its presence is a
     type rather than a runtime check."""
@@ -102,11 +102,14 @@ async def run(
     if target is None:
         return TouchResult(ending=orphaned, message=message)
 
-    person = persons.resolve(message.platform, message.sender_id) if message.sender_id else None
+    person = (
+        await access.resolve_ref(message.platform, message.sender_id)
+        if message.sender_id else None
+    )
     person_id = person.person_id if person is not None else None
     if (
         touch.kind == "delete" and message.platform in _AUTHOR_ONLY_DELETES
-        and not _same_author(message.sender_id, person_id, target)
+        and not await _same_author(message.sender_id, person_id, target, access)
     ):
         return TouchResult(ending="delete_refused", message=message, target=target)
     try:
@@ -136,9 +139,21 @@ async def run(
     )
 
 
-def _same_author(sender_id: str, person_id: str | None, target: EditedMessage) -> bool:
+async def _same_author(
+    sender_id: str, person_id: str | None, target: EditedMessage,
+    access: IdentityAccess,
+) -> bool:
     """`edit_target._same_author`'s rule: the same platform id, or the same
-    resolved person (a Signal sender seen by phone once and by ACI once)."""
+    canonical person (a Signal sender seen by phone once and by ACI once)."""
     if sender_id and sender_id == target.sender_id:
         return True
-    return person_id is not None and person_id == target.person_id
+    if person_id is None or target.person_id is None:
+        return False
+    if await access.identity_held(person_id) or await access.identity_held(
+        target.person_id
+    ):
+        return False
+    left = await access.canonical_person(person_id)
+    return left is not None and left == await access.canonical_person(
+        target.person_id
+    )

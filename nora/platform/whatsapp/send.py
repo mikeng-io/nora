@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import base64
 import logging
-from collections.abc import Set
+from collections.abc import Awaitable, Callable, Set
 
 import aiohttp
 
@@ -121,8 +121,12 @@ class WhatsAppSender:
     def __init__(
         self, base_url: str, *, timeout: float = 10.0,
         dm_recipients: Set[str] = frozenset(),
+        dm_gate: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
         self._dm_recipients = dm_recipients
+        # The managed backend's live gate: consulted FIRST when present,
+        # answered per send, and an outage fails the send — never an allow.
+        self._dm_gate = dm_gate
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
 
@@ -175,7 +179,11 @@ class WhatsAppSender:
         where = target.conversation_id
         if target.conversation_type == "dm":
             where = "dm"
-            if target.conversation_id not in self._dm_recipients:
+            if self._dm_gate is not None:
+                if not await self._dm_gate(target.conversation_id):
+                    log.error("refusing a direct message to a JID the identity backend does not know")
+                    return SendResult(ok=False)
+            elif target.conversation_id not in self._dm_recipients:
                 log.error("refusing a direct message to a JID not in identity.toml")
                 return SendResult(ok=False)
         elif target.conversation_type != "group":

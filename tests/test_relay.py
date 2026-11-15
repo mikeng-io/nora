@@ -19,10 +19,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from nora.access import IdentityAccess
 from nora.agent.relay import Relay
 from nora.domain.models import PersonRef
 from nora.domain.ports import AdapterHealth
 from nora.engagement.self_presence import PresenceReader
+from nora.persons import Persons
 from nora.platform.discord.channels import StaticChannelDirectory
 from nora.policy import Conversation, Policy
 
@@ -143,12 +145,19 @@ def _policy(*, other_unit: bool = False, ada_in_discord: bool = False) -> Policy
     )
 
 
+def _access(policy: Policy):
+    return IdentityAccess.for_files(
+        persons=Persons(by_person={}, index={}), policy=policy,
+    )
+
+
 def _relay(policy: Policy, fire=None, slots=None, metrics=None, reader=None):
     fire = fire if fire is not None else _FakeFire()
     slots = slots if slots is not None else _FakeSlots()
     reader = reader if reader is not None else _reader(policy)
     relay = Relay(
         policy=policy, speak=fire.speak, slots=slots,
+        access=_access(policy),
         occasion_for=_occasion_for, metrics=metrics, transport=reader.state,
     )
     return relay, fire, slots
@@ -343,6 +352,7 @@ async def test_a_platform_with_no_adapter_is_unavailable_not_refused():
     relay, _f, _ = _relay(_policy(), fire=None)
     relay = Relay(
         policy=_policy(), speak=None, slots=None, occasion_for=None,
+        access=_access(_policy()),
         transport=_reader(_policy()).state,
     )
 
@@ -524,6 +534,7 @@ async def test_every_non_ok_relay_outcome_carries_a_note():
         "refused/egress": (plain, {"text": "call him on +85290000101"}),
         "unavailable/no_adapter": (
             Relay(policy=_policy(), speak=None, slots=None, occasion_for=None,
+                  access=_access(_policy()),
                   transport=_reader(_policy()).state), {}),
         "unavailable/transport_down": (
             _relay(_policy(), reader=_reader(

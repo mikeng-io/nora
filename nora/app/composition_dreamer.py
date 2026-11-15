@@ -176,7 +176,7 @@ async def enabled(
     reminders: Any, rosters: Any, route_model: Any, session_guidance: Any,
     shared: Any, standing_fold: Any, standing_store: Any, stimulus_store: Any,
     tag_trace_store: Any, tier: Any, tool_registry: Any, unit_rooms: Any,
-    unit_scopes: Any,
+    unit_scopes: Any, access: Any = None,
 ) -> EnabledWiring:
     dream_adaptors = ()
     dreamer_runtime = None
@@ -190,7 +190,7 @@ async def enabled(
             content_checks=content_checks, engine=engine,
             media_join=media_join, metrics=metrics, note_store=note_store,
             persons=persons, profile_index=profile_index,
-            unit_scopes=unit_scopes,
+            unit_scopes=unit_scopes, access=access,
         )
         dream_adaptors = objectives.adaptors
         dream_schedules = objectives.schedules

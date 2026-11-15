@@ -177,6 +177,7 @@ class Room:
         conversation_id: str,
         roster_source: RosterSource | None,
         persons: Persons,
+        access: Any = None,
         tagger: PersonRef | None = None,
         self_ids: frozenset[str] = frozenset(),
         tagger_card_injected: bool = False,
@@ -187,6 +188,7 @@ class Room:
         self._conversation_id = conversation_id
         self._roster_source = roster_source
         self._persons = persons
+        self._access = access
         self._tagger = tagger
         self._self_ids = frozenset(self_ids)
         self._tagger_card_injected = tagger_card_injected
@@ -253,10 +255,10 @@ class Room:
     async def members(self) -> RoomView:
         """The room as the platform reports it. `available=False` if it could not be read."""
         if self._view is None:
-            self._view = self._resolve(await self._read())
+            self._view = await self._resolve(await self._read())
         return self._view
 
-    def find(self, view: RoomView, name: str) -> tuple[PersonRef, ...]:
+    async def find(self, view: RoomView, name: str) -> tuple[PersonRef, ...]:
         """Every person in `view` that `name` could mean: `view.find`'s
         names, the same name with a leading `@` dropped (a tag as typed), and
         an Instagram `username` the operator recorded for them
@@ -266,7 +268,12 @@ class Room:
         recorded for someone who is not in it resolves to nobody, exactly as
         their name would. One person matched two ways is one match."""
         bare = _key(name).removeprefix("@")
-        owners = self._persons.instagram_username_owners(bare) if bare else frozenset()
+        if not bare:
+            owners = frozenset()
+        elif self._access is not None:
+            owners = await self._access.instagram_username_owners(bare)
+        else:
+            owners = self._persons.instagram_username_owners(bare)
         found: dict[str, PersonRef] = {}
         for ref in (
             *view.find(name), *view.find(bare),
@@ -310,7 +317,12 @@ class Room:
             log.exception("roster source raised for %s", self._conversation_id)
             return Roster(available=False)
 
-    def _resolve(self, roster: Roster) -> RoomView:
+    async def _resolve_account(self, value: str) -> PersonRef | None:
+        if self._access is not None:
+            return await self._access.resolve_ref(self._platform, value)
+        return self._persons.resolve(self._platform, value)
+
+    async def _resolve(self, roster: Roster) -> RoomView:
         if not roster.available:
             return RoomView(available=False)
         people: dict[str, PersonRef] = {}
@@ -318,11 +330,10 @@ class Room:
         for account in roster.members:
             if account & self._self_ids:
                 continue                      # Nora is in the room; she is not a member of it
-            ref = next(
-                (r for value in sorted(account)
-                 if (r := self._persons.resolve(self._platform, value)) is not None),
-                None,
-            )
+            ref = None
+            for value in sorted(account):
+                if (ref := await self._resolve_account(value)) is not None:
+                    break
             if ref is None:
                 unnamed += 1
                 continue
