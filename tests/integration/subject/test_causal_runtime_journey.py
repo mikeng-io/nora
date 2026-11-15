@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import logging
 import socket
 import time
 from dataclasses import replace
@@ -199,7 +198,7 @@ async def settled_event(engine, canonical, task):
     ("g1", False), ("unlisted-generated-room", False), ("g1", True),
 ])
 async def test_real_app_bridge_admission_settles_before_cancellation(
-    clean_pg_url, evaluation_config, tmp_path, monkeypatch, caplog, room, tagged, runtime_evidence,
+    clean_pg_url, evaluation_config, tmp_path, monkeypatch, room, tagged, runtime_evidence,
 ):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
     with socket.socket() as listener:
@@ -300,8 +299,11 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
         captured = [json.loads(e["attributes"]["nora.model.request.body"])
                     for e in read_events(evidence.path) if e.get("name") == "nora.model.request"]
         assert captured == requests
-        assert not [(r.name, r.getMessage()) for r in caplog.records
-                    if r.name.startswith("nora.") and r.levelno >= logging.ERROR]
+        faults = [(event.get("logger"), event.get("message"))
+                  for event in read_events(evidence.path) if event["kind"] == "log"
+                  and event.get("logger", "").startswith("nora.")
+                  and event.get("level") in {"ERROR", "CRITICAL"}]
+        assert not faults, faults
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", port))
     assert not env.active
