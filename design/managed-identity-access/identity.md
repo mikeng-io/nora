@@ -34,7 +34,14 @@ account — because that account is the unit an account-control proof binds.
 The identifier's kind carries its issuer scope: a Signal `uuid` is not a
 `phone`, and an Instagram `fbid` is a different, app-scoped number than the
 same account's `igid`. A second issuer for one kind would extend the
-identifier, not collapse the kinds.
+identifier, not collapse the kinds. The bound identifier and the proof's
+issuer scope stay distinct, though: a Discord `user_id` snowflake names the
+account globally on the provider — Nora's OAuth client id is the proof's
+audience, not a namespace of the identifier; a Telegram `user_id` is the
+profile surface's canonical id — the OIDC `sub` of the login token is proof
+provenance, never the account key; and a Signal `uuid`/`phone` is vouched
+for by the installation's own signal-cli, whose service account is the
+issuer scope.
 
 ## Sources of authority
 
@@ -85,8 +92,11 @@ identity id is stored as a binding, not substituted into historical references.
 
 A Nora person schema carries descriptive traits only — a display name and the
 non-matchable labels — because a platform-originated person may have no email,
-password or OIDC credential at all. No fake email is manufactured to satisfy a
-schema; batch upsert and credential attachment are not part of this integration.
+password or OIDC credential at all. The declared schema source lives at
+`deploy/ory/kratos/person.schema.json`: credentialless, closed to additional
+properties and carrying no account ownership in mutable traits. No fake email
+is manufactured to satisfy a schema; batch upsert and credential attachment
+are not part of this integration.
 
 Identity `state` is `active` or `inactive`. The v26.2.0 specification text
 claims the value "has currently no effect", but the v26.2.0 source enforces it:
@@ -118,7 +128,10 @@ pin time, not guessed. Development instances run the OSS servers' own
 development modes — Kratos `serve --dev` with a sqlite DSN and a mounted
 identity schema; Keto `serve` with a sqlite DSN and the OPL namespace file at
 `namespaces.location` — each reachable only from Nora's service, with the Admin
-API kept off any public listener.
+API kept off any public listener. The pinned development configs live at
+`deploy/ory/kratos/kratos.dev.yaml` and `deploy/ory/keto/keto.dev.yaml`;
+`kratos migrate sql` and `keto migrate up` are the one-time prerequisites
+before the first `serve`.
 
 ## Backend selection and lifecycle
 
