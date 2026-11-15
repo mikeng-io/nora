@@ -16,7 +16,6 @@ from types import SimpleNamespace
 from typing import Any
 
 from evals import backbone
-from evals.accounting import evidence_outcome
 from scripts.cognition_loop import html as report_html
 from tests.integration.subject.test_sdk_recorded_caller import (
     sdk_evidence as sdk_evidence,
