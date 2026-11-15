@@ -46,6 +46,15 @@ Keto read `127.0.0.1:4466`, write `127.0.0.1:4467`; Kratos public
 on environment variables so the committed `*.dev.yaml` files stay correct for
 a host-side process: `SERVE_*_HOST=0.0.0.0` (the configs' `127.0.0.1` bind is
 the container's own loopback) and sqlite DSN overrides under `/home/ory/data`
-(the images do not create the configs' `/var/lib` paths). Migrations run once
+(the images do not create the configs' `/var/lib` paths). One-shot data services
+assign fresh volume ownership to each image's own `ory` user before migrations;
+the migrations and servers retain their non-root image user. Migrations run once
 per `up`; `serve` waits on their completion. This stack is development/CI
 scaffolding — it carries no credentials and no production data.
+
+CI selects the `ory` job for managed source, OPL/schema or dependency changes.
+It starts this disposable stack, runs `scripts.check_ory_policy` plus
+`scripts.check_ory_clients` against the real listeners, and removes the volumes.
+The client check covers credentialless identity creation, exact correlation,
+active/inactive read-back, session revocation, scoped grant/deny and cleanup;
+it does not claim provider login or a real holder session journey.

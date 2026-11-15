@@ -362,10 +362,39 @@ jobs:
       - name: Block high or critical findings on added PR lines
         run: python3 -m scripts.ci_plan codeql
 
+  ory:
+    needs: classify
+    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['ory']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.13.4'
+          python-version: '3.12'
+          enable-cache: false
+      - run: uv sync --frozen --extra evals
+      - id: ory
+        name: Start disposable pinned Ory services
+        run: docker compose -p nora-ory-contract -f deploy/ory/compose.yaml up -d --wait --wait-timeout 90
+      - name: Execute policy and production-client contracts
+        run: |
+          uv run python -m scripts.check_ory_policy --read-url http://127.0.0.1:4466 --write-url http://127.0.0.1:4467
+          uv run python -m scripts.check_ory_clients --kratos-url http://127.0.0.1:4434 --keto-read-url http://127.0.0.1:4466 --keto-write-url http://127.0.0.1:4467
+      - name: Read disposable service failures
+        if: failure() && steps.ory.outcome != 'skipped' && steps.ory.outcome != ''
+        run: docker compose -p nora-ory-contract -f deploy/ory/compose.yaml logs --no-color
+      - name: Remove disposable services and data
+        if: always() && steps.ory.outcome != 'skipped' && steps.ory.outcome != ''
+        run: docker compose -p nora-ory-contract -f deploy/ory/compose.yaml down -v
+
   checks:
     timeout-minutes: 1
     if: always()
-    needs: [classify, python, contracts, portal, go, site, dependency-review, codeql-python, codeql-javascript, codeql-go, codeql-actions]
+    needs: [classify, python, contracts, ory, portal, go, site, dependency-review, codeql-python, codeql-javascript, codeql-go, codeql-actions]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

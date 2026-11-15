@@ -19,6 +19,7 @@ from scripts import affected_tests, testmon_record
 JOBS = (
     "python",
     "contracts",
+    "ory",
     "portal",
     "go",
     "site",
@@ -34,6 +35,13 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
     plan = dict.fromkeys(JOBS, False)
     plan["contracts"] = True
     for path in paths:
+        if (Path(path).suffix != ".md" and path.startswith((
+            "deploy/ory/", "nora/infra/ory/", "nora/people/",
+            "nora/domain/", "scripts/check_ory_",
+        ))) or path in {
+            "pyproject.toml", "uv.lock",
+        }:
+            plan["ory"] = True
         # These component contracts read shared generated schemas/fixtures.
         if path.startswith("nora/documents/"):
             plan["portal"] = plan["codeql-javascript"] = True

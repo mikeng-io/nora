@@ -16,8 +16,19 @@
 # waits on them.
 
 services:
+  keto-data:
+    image: oryd/keto:v26.2.0@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2
+    user: "0:0"
+    volumes:
+      - keto-data:/home/ory/data
+    entrypoint: ["chown", "ory:ory", "/home/ory/data"]
+    restart: "no"
+
   keto-migrate:
     image: oryd/keto:v26.2.0@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2
+    depends_on:
+      keto-data:
+        condition: service_completed_successfully
     volumes:
       - ./keto:/etc/keto:ro
       - keto-data:/home/ory/data
@@ -48,8 +59,19 @@ services:
       timeout: 3s
       retries: 30
 
+  kratos-data:
+    image: oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+    user: "0:0"
+    volumes:
+      - kratos-data:/home/ory/data
+    entrypoint: ["chown", "ory:ory", "/home/ory/data"]
+    restart: "no"
+
   kratos-migrate:
     image: oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+    depends_on:
+      kratos-data:
+        condition: service_completed_successfully
     volumes:
       - ./kratos:/etc/kratos:ro
       - kratos-data:/home/ory/data

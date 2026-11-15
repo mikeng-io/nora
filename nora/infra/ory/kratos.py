@@ -197,9 +197,7 @@ class KratosClient:
         return unavailable(result.detail)
 
     async def drop_sessions(self, *, identity_id: str) -> Outcome:
-        """`DELETE /admin/identities/{id}/sessions`. A 404 on an identity
-        that has no sessions is a completed effect — the end state (no
-        sessions) already holds."""
+        """Delete sessions; a zero-row 404 requires an empty-list read-back."""
         result = await request(
             self.session,
             "DELETE",
@@ -211,5 +209,16 @@ class KratosClient:
         if result.status is HttpStatus.OK:
             return complete()
         if result.status is HttpStatus.ABSENT:
-            return denied("absent")
+            found, identity = await self.get_identity(identity_id)
+            if identity is None:
+                return found
+            sessions = await request(
+                self.session, "GET",
+                _path(self.admin_url, "admin", "identities", identity_id, "sessions"),
+                api_key=self.api_key, timeout_seconds=self.timeout_seconds,
+                expected={200: HttpStatus.OK},
+            )
+            if sessions.status is HttpStatus.OK and sessions.body == []:
+                return complete("sessions-already-absent")
+            return unavailable("session-revocation-unconfirmed")
         return unavailable(result.detail)

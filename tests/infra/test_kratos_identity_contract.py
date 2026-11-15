@@ -14,7 +14,7 @@ from nora.infra.ory.kratos import KratosClient
 @pytest.fixture
 async def api(aiohttp_server):
     state = {"external": "generated-person", "identity": str(uuid4()),
-             "body": None, "paths": []}
+             "body": None, "paths": [], "session_delete": 204, "sessions": []}
 
     async def handler(request):
         state["paths"].append(request.raw_path)
@@ -31,6 +31,11 @@ async def api(aiohttp_server):
             segment = request.raw_path[len(prefix):]
             if "/" not in segment and "?" not in segment and unquote(segment) == state["external"]:
                 return web.json_response(body if state["body"] is None else state["body"])
+        if request.path == "/admin/identities/" + state["identity"] + "/sessions":
+            if request.method == "DELETE":
+                return web.Response(status=state["session_delete"])
+            if request.method == "GET":
+                return web.json_response(state["sessions"])
         if request.path == "/admin/identities/" + state["identity"]:
             if request.method == "GET":
                 return web.json_response(body if state["body"] is None else state["body"])
@@ -100,3 +105,24 @@ async def test_state_update_requires_the_returned_identity_and_state_to_agree(ap
                      "state": "active", "traits": {}}
     refused = await client.set_state(identity_id=state["identity"], active=False)
     assert refused.status is OutcomeStatus.UNAVAILABLE
+
+
+async def test_session_deletion_accepts_zero_rows_only_after_empty_readback(api):
+    client, state = api
+    assert (await client.drop_sessions(identity_id=state["identity"])
+            ).status is OutcomeStatus.COMPLETE
+    state["session_delete"] = 404
+    assert (await client.drop_sessions(identity_id=state["identity"])
+            ).status is OutcomeStatus.COMPLETE
+    state["sessions"] = [{"id": "generated-session"}]
+    assert (await client.drop_sessions(identity_id=state["identity"])
+            ).status is OutcomeStatus.UNAVAILABLE
+
+
+async def test_empty_sessions_cannot_hide_a_mismatched_identity_readback(api):
+    client, state = api
+    state["session_delete"] = 404
+    state["body"] = {"id": str(uuid4()), "external_id": state["external"],
+                     "state": "active", "traits": {}}
+    assert (await client.drop_sessions(identity_id=state["identity"])
+            ).status is OutcomeStatus.UNAVAILABLE
