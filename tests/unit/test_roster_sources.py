@@ -42,7 +42,7 @@ async def test_collection_departure_preserves_other_collection_or_services_membe
     assert (await authority.check(scope=ROOM, person_id="generated-member", permit="view")).allowed
     assert (await authority.apply(snapshot("leave-b", service=service,
                                          collection=collection))).status is OutcomeStatus.COMPLETE
-    assert (await store.members_of(ROOM))[0].state is MembershipState.LEFT
+    assert (await store.memberships_for("generated-member"))[0].state is MembershipState.LEFT
     assert (await authority.check(scope=ROOM, person_id="generated-member",
                                  permit="view")).verdict is Verdict.DENIED
 
@@ -63,7 +63,7 @@ async def test_source_survives_journal_replay_and_partial_roster_cannot_remove_i
     assert journal.snapshot["sync_source"] == 'sync:["bridge","guild-a"]'
     backend.fail_drops = False
     assert await authority.reconcile()
-    assert (await store.members_of(ROOM))[0].state is MembershipState.LEFT
+    assert (await store.memberships_for("generated-member"))[0].state is MembershipState.LEFT
     assert (await authority.check(scope=ROOM, person_id="generated-member",
                                  permit="speak")).verdict is Verdict.DENIED
 

@@ -197,8 +197,6 @@ class FakeBindingStore(BindingStore):
         existing = self.persons.get(person.person_id)
         if existing is not None:
             person = existing  # idempotent: keep lifecycle/correlation
-        else:
-            self.persons[person.person_id] = person
         current = self.accounts.get(account.account_id)
         if current is not None and current.person_id != person.person_id:
             raise IdentifierConflictError("account id claimed by another person")
@@ -217,6 +215,12 @@ class FakeBindingStore(BindingStore):
                 raise IdentifierConflictError(
                     f"{ident} is owned by a different bound account"
                 )
+        self.persons.setdefault(person.person_id, person)
+        for ident in account.identifiers:
+            owner = self.owners.get(ident)
+            held = self.accounts.get(owner or "")
+            if held is None:
+                continue
             # revoked owner on the same person: re-point to this account
             if owner != account.account_id:
                 self.owners[ident] = account.account_id
@@ -355,7 +359,8 @@ class FakeBindingStore(BindingStore):
         self._up()
         return tuple(
             self._with_sources(m)
-            for (_, s), m in self.memberships.items() if s == scope
+            for (_, s), m in self.memberships.items()
+            if s == scope and m.state is MembershipState.MEMBER
         )
 
     async def consolidate(self, *, survivor: str, former: str) -> Outcome:

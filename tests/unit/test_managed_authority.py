@@ -541,7 +541,8 @@ async def test_sync_membership_removes_departed_and_keeps_joined():
         m.person_id: m.state for m in await store.members_of(ROOM)
     }
     assert standing["person_stay"] is MembershipState.MEMBER
-    assert standing["person_go"] is MembershipState.LEFT
+    assert "person_go" not in standing
+    assert (await store.memberships_for("person_go"))[0].state is MembershipState.LEFT
     # Provenance: a registration-sourced membership is not a roster's to
     # remove.
     assert standing["person_keep"] is MembershipState.MEMBER

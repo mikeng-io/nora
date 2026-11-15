@@ -174,6 +174,7 @@ class BindingStore(PersonDirectory, Protocol):
         ...
 
     async def members_of(self, scope: Scope) -> tuple[ManagedMembership, ...]:
+        """Current MEMBER standings only; memberships_for retains departed provenance."""
         ...
 
     async def consolidate(self, *, survivor: str, former: str) -> Outcome:

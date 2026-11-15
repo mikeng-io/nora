@@ -71,6 +71,7 @@ async def test_fresh_engine_resumes_bulk_registration_without_duplicate_or_regis
         assert (await fresh.apply(**request)).status is OutcomeStatus.COMPLETE
         left = await fresh.apply(**{**request, "operation_id": "generated-leave", "members": set()})
         assert left.status is OutcomeStatus.COMPLETE
-        assert (await fresh_graph.bindings.members_of(UNIT))[0].state.value == "left"
+        historical = await fresh_graph.bindings.memberships_for(before.person_id)
+        assert historical[0].state.value == "left"
     finally:
         await restarted.dispose()

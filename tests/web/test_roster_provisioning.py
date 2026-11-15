@@ -69,13 +69,15 @@ async def test_partial_roster_bots_unknowns_and_complete_departure_are_distinct(
     assert len(services.bindings.persons) == 1
     partial = roster("generated-partial", [account(3, "unknown")], complete=False)
     assert (await client.post(PATH, json=partial, headers=AUTH)).status == 200
-    assert (await services.bindings.members_of(UNIT))[0].state.value == "member"
+    member = (await services.bindings.members_of(UNIT))[0]
+    assert member.state.value == "member"
     unknown = roster("generated-unknown", [account(4, "unknown")])
     assert (await client.post(PATH, json=unknown, headers=AUTH)).status == 503
     assert (await services.bindings.members_of(UNIT))[0].state.value == "member"
     departed = await client.post(PATH, json=roster("generated-departure", []), headers=AUTH)
     assert departed.status == 200
-    assert (await services.bindings.members_of(UNIT))[0].state.value == "left"
+    assert await services.bindings.members_of(UNIT) == ()
+    assert (await services.bindings.memberships_for(member.person_id))[0].state.value == "left"
 
 
 async def test_registry_failure_leaves_no_membership_and_retry_repairs_original_person(surface):

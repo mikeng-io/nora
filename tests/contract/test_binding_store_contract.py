@@ -212,6 +212,7 @@ async def test_an_identifier_owned_by_another_person_is_a_conflict_never_a_merge
             ),
             membership=None,
         )
+    assert await store.person("person_other") is None
     # and the original ownership is untouched
     bound = await store.record_for(account=ACCT)
     assert bound is not None and bound.person_id == PERSON
@@ -280,9 +281,11 @@ async def test_leaving_is_a_state_not_a_delete(store: _Store):
     await store.set_membership(
         person_id=PERSON, scope=ROOM, member=True, source="delegation"
     )
+    assert len(await store.members_of(ROOM)) == 1
     await store.set_membership(
         person_id=PERSON, scope=ROOM, member=False, source="delegation"
     )
+    assert await store.members_of(ROOM) == ()
     memberships = await store.memberships_for(PERSON)
     assert len(memberships) == 1
     assert memberships[0].state is MembershipState.LEFT

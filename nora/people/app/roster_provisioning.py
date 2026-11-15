@@ -9,7 +9,7 @@ from types import MappingProxyType
 
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
-    AccountState,
+    IdentifierConflictError,
     OperationConflictError,
     OperationJournalState,
     OperationRecord,
@@ -113,12 +113,13 @@ class RosterProvisioning:
         raw = json.dumps([account.platform, account.kind, account.value], separators=(",", ":"))
         digest = hashlib.sha256(raw.encode()).hexdigest()
         current = await self.bindings.record_for(account=account)
-        if current is not None and current.state is not AccountState.BOUND:
-            return denied("binding-revoked")
         operation = Operation(key + ":account:" + digest, "observe_account", actor,
             Target(TargetKind.ACCOUNT, account=account), AccountObservation(frozenset({account})),
             {"ownership": str(current.revision) if current is not None else "0"})
-        outcome = await self.registration._apply(operation)
+        try:
+            outcome = await self.registration._apply(operation)
+        except IdentifierConflictError:
+            return denied("identifier-conflict")
         if outcome.status is not OutcomeStatus.COMPLETE:
             return outcome
         bound = await self.bindings.account_for(account.platform, account.kind, account.value)
