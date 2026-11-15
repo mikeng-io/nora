@@ -9,6 +9,7 @@ recorded.
 | source | arrives by | becomes |
 |---|---|---|
 | platform events: messages and their edits, reactions, deletions; presence; social items; play | the platform pushes | items |
+| platform state: polls and votes, pins, membership, room changes, shared artifacts | the platform pushes or a collector reads | items, folded into current heads |
 | sources that cannot push | a collector polls | items |
 | outside sources a maintain intention watches | the watch poller polls while the intention holds | items citing the watch |
 | Nora's own acts and tool outcomes, silence included | the executor that performed them | items |
@@ -49,6 +50,10 @@ aggregates (routines, relationships, counts) and baselines.
   unobserved wall clock.
 - A citation of an aggregate resolves by its semantic key and interval, so it
   survives a rebuild.
+- A **current head** — a poll's tally, a room's membership, its pins — is an
+  aggregate folded from its items, carrying its source position, coverage and
+  any target it cannot resolve. A partial snapshot replaces only what it
+  covers.
 - Verdicts, track records and support tallies also read the conditions and
   rests-on edges of the intentions they evaluate. No computed row reads a
   claim's content: belief never feeds what code derives.
@@ -66,12 +71,15 @@ time it becomes eligible. It is not a conclusion and not an instruction.
 | an aggregate crossed its baseline | compute |
 | an intention due, a review time, a valid-to time ending, a deadline passing | the clock |
 | a verdict written | study's verify |
-| a person's correction aimed at Nora | record, by an addressing cue |
+| a person's correction aimed at Nora, or a person's statement about themselves | record, by an addressing or self-reference cue; a **strong cue**, so a wake follows quickly |
+| a row revised, retired or contradicted that others draw on or rest on | admission; names the row, its new revision and the dependents |
 
 **Rules**
 
 - Absence is a stimulus only when every source needed to prove it was healthy
   over the interval.
-- Nora's own acts never stimulate by themselves; what people do next does.
+- Nora's own acts never stimulate by themselves; what people do next does. A
+  revision's dependency stimulus is the exception: it names work the revision
+  made due.
 - An aggregate change rides with a wake started for any reason; it is context
   for judgement, never a rule that forces speech.

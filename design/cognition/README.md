@@ -1,11 +1,20 @@
 # Cognition
 
-Nora's cognition is one graph worked by two open loops. The **Cognitive
-Graph** is her state. The **engagement loop** is Nora in a room; the
+**Nora treats memory, belief, commitment and outcome as one continuous,
+evidence-grounded cognitive state.**
+
+That state is the **Cognitive Graph** — Nora's own term, not an industry
+category. Two loops work it: the **engagement loop** is Nora in a room; the
 **reflection loop** is Nora between conversations. Both share the OODAS stage
-model, and each runs a declared subset of its stages. The goal is **emergence**: recommendation, personalisation,
-follow-through and learning arise from the generic loops working the graph,
-never from a capability's own code, store, prompt or loop.
+model, and each runs a declared subset of its stages. Each pass is a controlled
+transition: from the graph as it stands, new observations and doctrine, it runs
+its declared stages and records what was admitted and whether it completed or
+failed; an engagement pass also ends in an act or a deliberate silence. The
+graph alone does not think or act; cognition is the graph with its loops.
+
+The goal is **emergence**: recommendation, personalisation, follow-through and
+learning arise from the generic loops working the graph, never from a
+capability's own code, store, prompt or loop.
 
 **Status:** designed
 
@@ -29,6 +38,7 @@ part is [emergence](emergence.md).
 |---|---|
 | [graph](graph.md) | basis and scope, the planes, five kinds, intentions, edges, presentations |
 | [claims](claims.md) | profile parts, support and precedence, likes and constraints, disputes and decay |
+| [acts](acts.md) | the act envelope; delegated work |
 | [storage](storage.md) | per-kind tables with shared planes and one edge table, as the truth |
 | [loops](loop.md) | OODAS, the engagement and reflection loops, actions, passes, the debrief, what keeps them open |
 | [context](context.md) | the four context layers and the presentation blocks for both loops |
@@ -67,6 +77,23 @@ that code when this design is implemented. [Context
 assembly](../context-assembly/README.md) and [evaluation](../evaluation/README.md)
 stay their own subjects and follow this one.
 
+## Where it lives in the code
+
+Areas follow [ADR 0037](../../docs/adr/0037-code-is-grouped-by-area-and-depends-inward.md).
+
+| part | owner |
+|---|---|
+| the graph: registry, entities, claims, intentions, edges, admission, retrieval, presentations | `memory/`, which absorbs the Notebook, Standing, profiles, lessons and the account of herself |
+| items | the area of their source: `conversation/`, `location/`, `media/`, `social/`, `computer/`, `voice/` |
+| aggregates | `analytics/` for rollups; each area for its own current heads |
+| people, rooms, units, the primary unit | `people/` |
+| delivery triggers, schedules, watches | `agenda/` |
+| delegated work | `subagents/` and `computer/` |
+| the engagement loop and the debrief | `engagement/`, with the fire path in `app/` |
+| the reflection loop | `dreamer/` |
+| context assembly | `agent/` |
+| the act envelope | `domain/`, the shared kernel; each area's tools implement it |
+
 ## Why this shape
 
 - **One graph**: beliefs and commitments cite the same items and rest on each
@@ -82,5 +109,8 @@ stay their own subjects and follow this one.
   semantics in code, where Nora cannot learn them.
 - **Canonical rows, not an event log**: rows with revisions and provenance are
   re-derivable; a replayed log is a second truth.
-- **"Cognitive Graph", not "knowledge graph"**: most of it is belief,
-  commitment and outcome, not knowledge.
+- **"Cognitive Graph", not "knowledge graph" or "memory graph"**: a knowledge
+  graph manages what is known and a memory graph what is remembered; this
+  manages what Nora believes, what she commits to, and how outcomes correct
+  her. Its data model has precedents; what is specific is that basis decides
+  write authority and that commitments close on observed outcomes.

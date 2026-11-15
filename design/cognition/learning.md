@@ -52,6 +52,18 @@ operator retired is not relearned from evidence no newer than that retirement.
 | her own practice | study | verdicts and corrections | lessons |
 | how far a lesson holds | none: computed | verdicts resting on it | its support and contradiction |
 
+## Outcome levels
+
+| level | means | used for |
+|---|---|---|
+| **delivered** | the act's outcome item reports it done | delivery accounting |
+| **acknowledged** | any response | reception counts only |
+| **accepted** | an explicit pick, agreement or acceptance | the usual done-when of a suggestion |
+| **beneficial** | what it was for happened: they played it, they went | what learning ultimately grades, where it can be observed |
+
+A suggestion's verdict follows acceptance or benefit, never acknowledgement,
+so Nora learns to make suggestions worth taking, not to raise her reply rate.
+
 ## Signals, strongest first
 
 1. A person's correction aimed at Nora: enough alone to ground a lesson.
@@ -65,14 +77,27 @@ understanding.
 
 ## Evidence of learning
 
-- **verdict coverage**: the share of achieve intentions that close with a known
-  verdict;
-- **declared dependence**: the share of decisions resting on a lesson or
-  track record;
-- **use**: the share of sampled decisions an independent judge finds were
-  changed by the lesson or track record they rest on;
-- **efficacy**: the achieved rate of intentions resting on a lesson against
-  comparable ones resting on none — an association, never proof of cause.
+| measure | is | from | produced by |
+|---|---|---|---|
+| **verdict coverage** | the share of achieve intentions that close with a known verdict | intentions and verdicts | a read over the graph |
+| **loose share** | the share of intentions with untyped conditions | intentions | a read over the graph |
+| **declared dependence** | the share of decisions resting on a lesson or track record | rests-on edges | a read over the graph |
+| **use** | the share of sampled decisions an independent judge finds were changed by what they rest on | sampled passes' inputs, decisions and acts | evaluation, by a judge |
+| **efficacy** | the achieved rate of intentions resting on a lesson against comparable ones resting on none — an association, never proof of cause | verdicts and rests-on edges | a read over the graph |
+| **adaptation** — the headline measure | the share of sampled passes whose decision changes, judged semantically, when the same recorded pass is replayed without its learned rows (lessons, track records, verdicts), beyond the variation of replaying it unchanged | recorded passes, replayed in matched repeated draws of both arms | evaluation, by replay |
+
+Adaptation separates what Nora learned from what retrieval found. A change
+counts only when an independent semantic comparison finds the decisions differ
+and the difference exceeds the instability of replaying the pass unchanged,
+under otherwise matched conditions and evaluation's repeated-draw rules. Below
+that it is **sensitivity**, not learning. It measures the influence of learned
+rows at one recorded decision, not the whole journey from acquisition to
+correction. A replay that cannot reproduce the original input is unavailable,
+never a pass.
+
+A read over the graph reports unavailable when a source it needs is unhealthy.
+Counts of passes, admissions, refusals and debrief outcomes are instruments
+with their three states; rates are reads, not counters.
 
 Missing, truncated or unmatched evidence is an error, never a pass. The writer
 never grades its own learning.

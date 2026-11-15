@@ -41,7 +41,7 @@ Nora reads, never as code.
 
 | capability | how the generic loops produce it |
 |---|---|
-| **game recommendations** | items linking the same site rise above the room's baseline — a generic count over observed link metadata (stimulus); orient judges that the room is into those games and claims it; decide opens a maintain intention that watches those games' pages; a sale (watch item) leads to a child intention, "suggest it, done when picked up or replied", delivered by a proactive pass that may stay silent; verdicts build its track record and a lesson about which suggestions the room takes up |
+| **game recommendations** | items linking the same site rise above the room's baseline — a generic count over observed link metadata (stimulus); orient judges that the room is into those games and claims it; decide opens a maintain intention that watches those games' pages; a sale (watch item) leads to a child intention, "suggest it, done when someone accepts it", delivered by a proactive pass that may stay silent; verdicts build its track record and a lesson about which suggestions the room takes up |
 | **following through on a promise** | a called pass commits an achieve intention owed to the person, done when the booking is confirmed; the confirming item closes it, or its time passes and it leaks |
 | **noticing someone has gone quiet** | a person's activity falls well below its baseline (stimulus); orient looks for a held explanation; with none, decide may open an intention delivered when it comes up, resting on the aggregate; their return closes it |
 | **learning a room's timing** | early reminders in a room leak while later ones are achieved; the track record shows it; a lesson forms; the next reminder rests on it and moves its support |
@@ -56,7 +56,8 @@ and their checks.
 - **their usefulness**: their children's achieved rate against concerns people
   asked for;
 - **capability-specific parts**: code paths, stores, prompt sections and loops
-  serving one capability — a count that only falls.
+  serving one capability — a count that only falls, taken as an inventory of
+  the code.
 
 If originated concerns are consistently less useful than requested ones, the
 form admits concerns it cannot ground, and the admission rule for maintain

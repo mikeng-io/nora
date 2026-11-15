@@ -55,17 +55,31 @@ Three edge families never stand in for each other:
 | **about** | a row → the entities it concerns | no: an index for retrieval |
 | **draws on** | a claim or intention → another claim or intention | no: context or premise |
 
+**Support and dependency stay apart.** `cites` is evidential support: it gives
+a claim its strength and must trace to observed or computed rows. `draws on` is
+inferential dependency: claim B built on claim A's premise. It is recorded so
+revision can follow the chain, and it adds no strength. When a row is revised,
+retired or contradicted, every claim that draws on it and every intention that
+rests on it is due for reconsideration.
+
 The edge vocabulary is closed and reviewed: each type names its legal
 endpoint kinds. A new meaning is a reviewed edge type, never a new store.
 
 ## Scope
 
-- **unit** — the read boundary. A row is read only inside its unit.
+- **unit** — the read boundary. A row is read only inside its unit. Each Nora
+  has one **primary** unit, her home circle; other units are **affiliates**,
+  helper or ad hoc circles, each still its own boundary. A person's DM with
+  Nora is a room of her primary unit.
 - **origin room** — where the row was established, which governs where it may
   render and where an act about it lands.
 - **persons** — the people it concerns, by id.
 - **excluded persons** — people it must not be revealed to or through.
-- **lineage** — the source restrictions inherited from what it cites.
+- **lineage** — the source restrictions inherited from what it cites: what a
+  row may be rendered as, where, and to whom. Exclusions and exposure always
+  inherit. For DM-origin evidence the raw items stay in the DM, while a claim
+  citing them may be shown to the model in any room of the primary unit, marked
+  with its DM origin ([boundaries](boundaries.md)).
 - **exposure** — **external** (may reach a room through the guards),
   **internal** (Nora reads it, it never egresses), or **operator** (Nora never
   reads it).
@@ -77,13 +91,15 @@ A boundary is drawn by scope, never by a filter applied inside it.
 | plane | holds |
 |---|---|
 | identity | the row's id and its kind |
-| provenance | the writer, the occasion, the session or turn, the trace, the model and instruction revision |
+| provenance | the writer, the occasion, the pass, the trace, the model, and the revisions in force: code, instruction and skill, configuration, identity and policy |
 | time | when it occurred, when it was asserted, and the span it is valid for |
 | revision | the revision it replaces; a stale base is refused, never overwritten |
 | evidence | its edges to what it cites or rests on |
 | lifecycle | its state in its kind's lifecycle |
 
-Provenance is stamped by code, never written by the model. A correction adds a
+Provenance is stamped by code, never written by the model. Replay and restore
+evaluate a row under the revisions recorded with it, or return unavailable.
+A correction adds a
 revision or a retirement; it never erases the history that made the earlier
 row inspectable.
 
@@ -140,8 +156,22 @@ condition cannot be evaluated because a source is unhealthy, it stays open and
 its review records unknown. It has no verdict of its own: its track record is
 its children's verdicts.
 
-A condition that code cannot evaluate is untyped: the intention may still be
-held, but it cannot close mechanically, and it is counted as loose.
+**Conditions** are one of a closed set of forms, each evaluated by code to
+true, false or unknown:
+
+| form | holds when | its witness, written as closed-by |
+|---|---|---|
+| **event match** | an item of a given kind, from or about given entities, is recorded | that item |
+| **predicate** | an aggregate or current head meets a test, such as a poll having a winner | the aggregate revision that meets it |
+| **deadline** | a time has passed | none: verify records the clock instant with the outcome |
+| **source health** | the sources the condition depends on were healthy; without it, absence is unknown, never false | the health items over the interval |
+
+A condition in none of these forms is **untyped** and cannot close
+mechanically. An untyped achieve intention must carry a deadline; when it
+passes, the intention ends unknown, never leaked. An untyped maintain intention
+must carry a deadline in its drop-when; each review keeps or drops it
+explicitly, and at the deadline it ends dropped. Untyped conditions are counted
+as loose.
 
 An intention has at most one scheduled delivery at a time, and every delivery
 passes the unit-wide arbitration in [the loops](loop.md). An intention grants
