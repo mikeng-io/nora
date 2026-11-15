@@ -15,12 +15,16 @@ either holder's approval or use registration to attach an account to an existing
 person. Imported, operator-maintained file bindings are an explicit backend
 handoff, not a bypass offered by the managed linking API.
 
-The request binds the two accounts, the selected canonical person and the effect
-being approved. Changing any of these invalidates the approvals. Approval is
-short-lived, single-use and bound to the specific request. Refusal, cancellation
-or expiry leaves the accounts unlinked; a forwarded challenge or a replay cannot
-approve another association. Account proofs and approvals are delivered privately
-to the holders, not posted into a shared room.
+The request binds the exact initiating and receiving accounts — platform and
+matchable identifier, never a display name or handle — the surviving canonical
+person, the approved effect, and the identity, ownership and authority
+revisions observed at approval. Changing any of these invalidates the
+approvals. Approval is short-lived, single-use and bound to the specific
+request. Refusal, cancellation or expiry leaves the accounts unlinked; a
+forwarded challenge or a replay cannot approve another association. Account
+proofs and approvals are delivered privately to the holders, not posted into a
+shared room, and a challenge redeemed by the initiating side is not the
+receiving holder's approval.
 
 ## One pending request, one published result
 

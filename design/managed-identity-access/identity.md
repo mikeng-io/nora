@@ -26,6 +26,16 @@ accounts remain distinct even when names, phone claims or shared rooms suggest
 otherwise. Automated registration grants neither operator authority nor access
 to another person's data.
 
+The representation every backend shares is that same shape: a person holds
+platform accounts, and an account holds typed matchable identifiers plus
+operator-authored labels that never resolve. Resolving any matchable
+identifier returns the exact account it names — never a re-selected preferred
+account — because that account is the unit an account-control proof binds.
+The identifier's kind carries its issuer scope: a Signal `uuid` is not a
+`phone`, and an Instagram `fbid` is a different, app-scoped number than the
+same account's `igid`. A second issuer for one kind would extend the
+identifier, not collapse the kinds.
+
 ## Sources of authority
 
 | Responsibility | File backend | Managed backend |
@@ -64,6 +74,12 @@ Keto answers scoped permission questions over canonical people and resources.
 It does not discover accounts, prove ownership or decide that two people are the
 same. Identity state, ownership and permission decisions remain distinct inputs
 to admission.
+
+The managed backend is pinned to self-hosted Ory Kratos v26.2.0 and Ory Keto
+v26.2.0 — OSS builds, with no OEL or Ory Network capabilities assumed. The
+versioned API specifications are the contract reference:
+[Kratos](https://raw.githubusercontent.com/ory/kratos/v26.2.0/spec/api.json),
+[Keto](https://raw.githubusercontent.com/ory/keto/v26.2.0/spec/api.json).
 
 ## Backend selection and lifecycle
 

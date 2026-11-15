@@ -62,6 +62,11 @@ An explicit refusal and an inability to check authority are different results.
 Neither authorizes the operation. Registration or membership discovery cannot
 turn an unavailable Keto decision into an implicit grant.
 
+Keto evaluates only the relationships Nora writes. A check answer is allow or
+deny; a malformed request, an unknown object, an error or a timeout is
+unavailable, never allow. Containment — that a room belongs to a unit — is a
+Nora validation on write, not something a permission tuple proves.
+
 Kratos, Nora's binding store and Keto do not share an application transaction.
 Nora's management service owns completion and reconciliation: it records enough
 operation identity and intended effect to retry an incomplete change safely.
