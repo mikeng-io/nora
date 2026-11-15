@@ -374,6 +374,12 @@ def test_context_experiment_requires_a_prefill_receipt_for_each_draw(monkeypatch
     report = SimpleNamespace(cases=[{"name": "generated#1"}, {"name": "generated#2"}])
     experiment = SimpleNamespace(cases=report.cases, run_evaluations=lambda **kwargs: report)
     monkeypatch.setattr(m, "experiment_for", lambda *a, **k: (experiment, None))
+    # This test's subject is the prefill receipt check; the accounting seam
+    # is declared, not satisfied by a manifest-shaped accident.
+    monkeypatch.setattr(m, "accounted", lambda *a, **k: (
+        {"status": "PASS"},
+        {"execution": {"status": "PASS"}, "validity": {"status": "PASS"},
+         "behavior": {"status": "UNMEASURED"}}))
     monkeypatch.setattr(m, "census", lambda *a: "synthetic census")
     monkeypatch.setattr(m, "_print_spend", lambda: None)
     monkeypatch.setattr(m, "_print_memory_overhead", lambda: None)

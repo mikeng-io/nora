@@ -5,9 +5,11 @@ The expected set is the experiment's own cases and evaluators — never
 the rows it happened to return — so a missing, duplicated, unanswered
 or misaligned row is a measurement error, not a smaller denominator.
 The same report rows feed the three result axes: execution (did every
-expected draw run and settle), validity (did the measured rows reach
-their evaluators intact), behaviour (the protocol verdict counts,
-`UNMEASURED` as a production-behaviour claim).
+expected draw run and settle — a `case_result`/`case_failed` event is the
+canonical receipt, not a clean-looking row), validity (did the measured
+rows reach their evaluators intact — coverage plus the validated evidence
+receipt, an unvalidated prefix is UNKNOWN), behaviour (the protocol
+verdict counts, `UNMEASURED` as a production-behaviour claim).
 """
 
 from __future__ import annotations
@@ -80,10 +82,55 @@ def reconcile_report(experiment: Any, report: Any) -> dict[str, Any]:
     }
 
 
+def case_settlement(events: list[dict[str, Any]] | None) -> dict[str, str]:
+    """Each started case's canonical completion: a `case_result` is the
+    settled receipt, `case_failed` the failed one, a case that recorded
+    neither stays unestablished — never inferred from its report row."""
+    names: dict[Any, Any] = {}
+    settled: set[Any] = set()
+    failed: set[Any] = set()
+    for event in events or []:
+        case_id = event.get("case_id")
+        if case_id is None:
+            continue
+        kind = event.get("kind")
+        if kind == "case_started":
+            names.setdefault(case_id, event.get("name"))
+        elif kind == "case_result":
+            settled.add(case_id)
+        elif kind == "case_failed":
+            failed.add(case_id)
+    return {
+        name: ("failed" if case_id in failed else
+               "settled" if case_id in settled else "unestablished")
+        for case_id, name in names.items() if name is not None
+    }
+
+
+def evidence_outcome(evidence: Any) -> dict[str, Any]:
+    """The canonical receipts a report can claim from this capture: the
+    validated live prefix (the run's own terminal deferred, as `capture`
+    itself defers it) and each started case's settlement."""
+    from nora.subject.eval_evidence import EvidenceError, read_events, validate_events
+
+    if getattr(evidence, "failure", None):
+        return {"receipt": {"status": ERROR, "causes": [evidence.failure]},
+                "settlement": {}}
+    try:
+        events = read_events(evidence.path)
+        receipt = validate_events(events, require_terminal=False)
+    except (EvidenceError, OSError, ValueError, AttributeError, TypeError) as exc:
+        return {"receipt": {"status": ERROR, "causes": [str(exc)]},
+                "settlement": {}}
+    return {"receipt": receipt, "settlement": case_settlement(events)}
+
+
 def report_outcome(report: Any, coverage: dict[str, Any], *,
-                   experiment: Any = None, evidence_failure: str | None = None,
+                   experiment: Any = None, evidence: dict[str, Any] | None = None,
                    scope: str = "protocol-rehearsal") -> dict[str, Any]:
-    """The three result axes, from the same rows coverage counted."""
+    """The three result axes, from the same rows coverage counted plus the
+    canonical evidence receipts (`receipt` = the `validate_events` verdict,
+    `settlement` = `case_settlement`'s per-case completion)."""
     rows = list(getattr(report, "cases", None) or [])
     by_name: dict[Any, dict[str, Any]] = {}
     for row in rows:
@@ -94,6 +141,8 @@ def report_outcome(report: Any, coverage: dict[str, Any], *,
         names = None
     if names is None:
         names = list(by_name)
+    receipt = (evidence or {}).get("receipt")
+    settlement = (evidence or {}).get("settlement") or {}
     ran = failed = missing = 0
     causes: list[str] = []
     for name in names:
@@ -110,18 +159,32 @@ def report_outcome(report: Any, coverage: dict[str, Any], *,
         if problem:
             failed += 1
             causes.append(f"{name}: {problem}")
-        else:
+            continue
+        state = settlement.get(name)
+        if state == "failed":
+            failed += 1
+            causes.append(f"{name}: the evidence case failed")
+        elif state == "settled":
             ran += 1
+        else:
+            missing += 1
+            causes.append(
+                f"{name}: no canonical settlement recorded"
+                if evidence is not None else
+                f"{name}: settlement evidence unavailable")
     execution = axis(
         "ERROR" if failed else "UNKNOWN" if missing else "PASS",
         draws=len(names), ran=ran, errored=failed, unestablished=missing,
         causes=causes)
+    receipt_status = (receipt or {}).get("status")
     validity_causes = list(coverage.get("errors") or [])
-    if evidence_failure:
-        validity_causes.append(f"evidence: {evidence_failure}")
-    if coverage.get("status") == "PASS" and not evidence_failure:
+    if receipt_status == "ERROR":
+        validity_causes.extend(receipt.get("causes") or ["evidence receipt ERROR"])
+    elif receipt_status is None:
+        validity_causes.append("evidence capture unvalidated or unavailable")
+    if coverage.get("status") == "PASS" and receipt_status == "PASS":
         valid = "PASS"
-    elif coverage.get("status") == "ERROR" or evidence_failure:
+    elif coverage.get("status") == "ERROR" or receipt_status == "ERROR":
         valid = "ERROR"
     else:
         valid = UNKNOWN
@@ -139,10 +202,21 @@ def report_outcome(report: Any, coverage: dict[str, Any], *,
     }
 
 
-def accounted(report: Any, experiment: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+def accounted(report: Any, experiment: Any, *,
+              evidence: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """Coverage and the three axes for one SDK report, computed once."""
     coverage = reconcile_report(experiment, report)
-    return coverage, report_outcome(report, coverage, experiment=experiment)
+    return coverage, report_outcome(
+        report, coverage, experiment=experiment, evidence=evidence)
+
+
+def accepted(coverage: dict[str, Any], outcome: dict[str, Any]) -> bool:
+    """A corpus is accepted only when every required axis is established:
+    coverage, execution and validity PASS — an UNKNOWN or ERROR required
+    outcome is never a corpus success."""
+    return (coverage["status"] == "PASS"
+            and outcome["execution"]["status"] == "PASS"
+            and outcome["validity"]["status"] == "PASS")
 
 
 def describe_outcome(coverage: dict[str, Any], outcome: dict[str, Any]) -> None:

@@ -236,6 +236,7 @@ async def _wakes(
                                     output, i, wake_id, at_ms,
                                     recorded_reasons[i], None,
                                     step="advance", message=f"{exc!r}",
+                                    unit=case.unit,
                                     batch=_batch(recorded[i], None)))
                                 roll.error(
                                     f"advance before wake {i} "
@@ -249,6 +250,7 @@ async def _wakes(
                                     output, i, wake_id, at_ms,
                                     recorded_reasons[i], advance,
                                     step="advance", message=why,
+                                    unit=case.unit,
                                     batch=_batch(recorded[i], None)))
                                 roll.error(why)
                                 break
@@ -321,7 +323,7 @@ async def _run_wake(
         except Exception as exc:  # noqa: BLE001 — a failed step is ERROR, not a crash
             return _wake_error(
                 output, index, wake_id, at_ms, reason, advance,
-                step="compose", message=f"{exc!r}",
+                step="compose", message=f"{exc!r}", unit=case.unit,
                 batch=_batch(recorded_meta, None))
         offered: list[int] | None = None
         try:
@@ -343,6 +345,7 @@ async def _run_wake(
                         return _wake_error(
                             output, index, wake_id, at_ms, reason, advance,
                             step="advance", batch=_batch(recorded_meta, None),
+                            unit=case.unit,
                             message="the recorded batch is absent from the "
                                     f"sandbox: stimulus ids {missing}")
                 #: The stimulus ids the sandbox session was offered —
@@ -388,12 +391,14 @@ async def _run_wake(
                         return _wake_error(
                             output, index, wake_id, at_ms, reason, advance,
                             step=step_error[0], message=step_error[1],
+                            unit=case.unit,
                             batch=_batch(recorded_meta, offered, offered_self),
                             no_session=no_session, trajectory=got["trajectory"])
                 return _freeze_wake(
                     output, index, wake_id, wake, at_ms, reason, session_id,
                     egress, judges is not None, got["diff"], got["trajectory"],
                     got["expectations"], got.get("after"), advance,
+                    unit=case.unit,
                     batch=_batch(recorded_meta, offered, offered_self),
                     no_session=no_session,
                     step_error=step_error,
@@ -404,7 +409,7 @@ async def _run_wake(
         except Exception as exc:  # noqa: BLE001 — a failed step is ERROR, not a crash
             return _wake_error(
                 output, index, wake_id, at_ms, reason, advance,
-                step="wake", message=f"{exc!r}",
+                step="wake", message=f"{exc!r}", unit=case.unit,
                 batch=_batch(recorded_meta, offered))
     finally:
         if subject is not None:
@@ -593,23 +598,28 @@ def _wake_status(
 
 def _wake_error(
     output: Path, index: int, wake_id: int, at_ms: int, reason: str,
-    advance: Any, *, step: str, message: str,
+    advance: Any, *, step: str, message: str, unit: Any,
     batch: dict[str, Any] | None = None, no_session: str | None = None,
     trajectory: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """An ERROR wake entry: the step is named, never folded into another's."""
     freeze(output / f"wake-{index}-{wake_id}.json", {
         "error": {"step": step, "message": message},
+        "recorded_wake_id": wake_id, "unit": unit,
         "at_ms": at_ms,
         "advance": advance.written if advance is not None else None,
         "batch": batch, "no_session": no_session,
         "trajectory": trajectory,
     })
+    # A step error after the session settled freezes its real candidate
+    # identity; the row repeats what the artifact proves, never claims it.
     return {
-        "recorded_wake_id": wake_id, "wake_id": None,
+        "recorded_wake_id": wake_id,
+        "wake_id": (trajectory or {}).get("wake_id"),
         "at_ms": at_ms, "reason": reason, "forced": None,
         "status": ERROR, "step": step, "error": message,
-        "session_id": None, "egress": None, "model_calls": None,
+        "session_id": (trajectory or {}).get("session_id"),
+        "egress": None, "model_calls": None,
         "no_session": no_session, "batch": batch,
         "diff_counts": None, "trajectory": trajectory, "expectations": [],
         "loop": None,
@@ -627,6 +637,7 @@ def _freeze_wake(
     reason: str, session_id: Any, egress: dict[str, Any],
     model_calls: bool, diff: Any, trajectory: dict[str, Any],
     expectations: list[dict[str, Any]], state_after: Any, advance: Any, *,
+    unit: Any,
     batch: dict[str, Any] | None = None,
     no_session: str | None = None,
     step_error: tuple[str, str] | None = None,
@@ -635,6 +646,7 @@ def _freeze_wake(
     """The wake's private evidence file and its report row."""
     loop = loop_counts(trajectory, diff, prior_links or set())
     freeze(output / f"wake-{index}-{wake_id}.json", {
+        "recorded_wake_id": wake_id, "unit": unit, "at_ms": at_ms,
         "loop": loop,
         "error": (
             {"step": step_error[0], "message": step_error[1]}

@@ -42,7 +42,8 @@ async def test_missing_frozen_wake_stops_before_judge_setup(monkeypatch, tmp_pat
     for index, ident in enumerate(case.wakes):
         if index != missing:
             (tmp_path / f"wake-{index}-{ident}.json").write_text(
-                json.dumps({"trajectory": {"unit": case.unit}}))
+                json.dumps({"recorded_wake_id": ident, "unit": case.unit,
+                            "trajectory": {"unit": case.unit}}))
     original = (tmp_path / "report.json").read_bytes()
     def forbidden(*args):
         raise AssertionError("judge setup must not run")
@@ -101,7 +102,9 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
         "status": "PASS", "cases": [{"case": case.name, "unit": case.unit, "wakes": wakes}],
         "evidence": {"status": "PASS"}}))
     for i, ident in enumerate(case.wakes):
-        frozen = {"diff": {}, "trajectory": {"unit": case.unit, "at_ms": i}}
+        frozen = {"diff": {}, "recorded_wake_id": ident,
+                  "unit": case.unit, "at_ms": i,
+                  "trajectory": {"unit": case.unit, "at_ms": i}}
         if damage == "frozen_unit" and i == 0:
             frozen["trajectory"]["unit"] = "another-unit"
         if damage == "frozen_instant" and i == 0:
@@ -148,12 +151,16 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
     assert {name: (tmp_path / name).read_bytes() for name in originals} == originals
 
 
+@pytest.mark.parametrize("damage", ["unit", "recorded_wake", "actual_wake",
+                                    "session", "partial"])
 async def test_a_frozen_artifact_that_is_not_this_wake_is_never_judged(
-    monkeypatch, tmp_path,
+    monkeypatch, tmp_path, damage,
 ):
     """`_judge_wakes` must not judge a contradictory or unproven artifact
-    into apparent correctness: the wake stays ERROR, the cause named, and
-    no judge call is spent on it — while a sound artifact still is."""
+    into apparent correctness: a foreign wake/session, a same-unit swap
+    for a different recorded wake, or an artifact that only partially
+    proves itself all stay ERROR with no judge call spent — while a
+    sound artifact still is."""
     import json
 
     from scripts.cognition_loop import rejudge as module
@@ -162,13 +169,28 @@ async def test_a_frozen_artifact_that_is_not_this_wake_is_never_judged(
 
     case = generated_case()
     row = {"case": case.name, "unit": case.unit, "errors": [], "wakes": [
-        {"recorded_wake_id": ident, "status": "PASS", "at_ms": 1000 + i}
+        {"recorded_wake_id": ident, "status": "PASS", "at_ms": 1000 + i,
+         "wake_id": 9000 + i, "session_id": f"generated-session-{i}"}
         for i, ident in enumerate(case.wakes)]}
     for i, ident in enumerate(case.wakes):
-        (tmp_path / f"wake-{i}-{ident}.json").write_text(json.dumps({
-            "diff": {}, "trajectory": {
-                "unit": "another-unit" if i == 0 else case.unit,
-                "at_ms": 1000 + i}}))
+        frozen = {"diff": {}, "recorded_wake_id": ident,
+                  "unit": case.unit, "at_ms": 1000 + i,
+                  "trajectory": {
+                      "unit": case.unit, "at_ms": 1000 + i,
+                      "wake_id": 9000 + i,
+                      "session_id": f"generated-session-{i}"}}
+        if i == 0:
+            if damage == "unit":
+                frozen["trajectory"]["unit"] = "another-unit"
+            elif damage == "recorded_wake":
+                frozen["recorded_wake_id"] = 999
+            elif damage == "actual_wake":
+                frozen["trajectory"]["wake_id"] = -1
+            elif damage == "session":
+                frozen["trajectory"]["session_id"] = "someone-elses-session"
+            elif damage == "partial":
+                frozen.pop("recorded_wake_id")
+        (tmp_path / f"wake-{i}-{ident}.json").write_text(json.dumps(frozen))
     calls = []
 
     async def judge(*a, **k):
@@ -181,7 +203,7 @@ async def test_a_frozen_artifact_that_is_not_this_wake_is_never_judged(
     assert calls == [1]                    # only the sound wake was judged
     assert row["wakes"][0]["status"] == "ERROR"
     assert row["wakes"][0]["expectations"] == []
-    assert any("frozen wake identity mismatch" in e for e in row["errors"])
+    assert any("frozen wake identity " in e for e in row["errors"])
     assert row["wakes"][1]["status"] == "PASS"
 
 
@@ -239,12 +261,15 @@ async def test_an_unmeasured_wake_spends_no_judge_call(
                    "errors": ["a wake ended in ERROR"]}],
         "evidence": {"status": "PASS"}}))
     (tmp_path / f"wake-0-{case.wakes[0]}.json").write_text(json.dumps({
-        "diff": {},
+        "diff": {}, "recorded_wake_id": case.wakes[0],
+        "unit": case.unit, "at_ms": 1000,
         "trajectory": {"blocks": {"agenda": "generated source 0"},
                        "unit": case.unit, "at_ms": 1000}}))
     (tmp_path / f"wake-1-{case.wakes[1]}.json").write_text(json.dumps({
         "error": {"step": "wake",
                   "message": "the session ended failed: capture interrupted"},
+        "recorded_wake_id": case.wakes[1], "unit": case.unit,
+        "at_ms": 1001,
         "trajectory": {}}))
 
     judged = []
@@ -286,7 +311,9 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(
         "evidence": {"status": "PASS"}}))
     for index, ident in enumerate(case.wakes):
         (tmp_path / f"wake-{index}-{ident}.json").write_text(json.dumps({
-            "diff": {}, "trajectory": {
+            "diff": {}, "recorded_wake_id": ident,
+            "unit": case.unit, "at_ms": 1000 + index,
+            "trajectory": {
                 "blocks": {"agenda": f"generated source {index}"},
                 "unit": case.unit, "at_ms": 1000 + index}}))
 

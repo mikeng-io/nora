@@ -151,10 +151,18 @@ def test_a_report_html_failure_turns_a_passing_run_to_error(
     async def passed_case(args, case, source, judges, policy, evidence, output):
         wakes = []
         for index, ident in enumerate(case.wakes):
-            wakes.append({"recorded_wake_id": ident, "status": "PASS", "expectations": []})
+            wakes.append({"recorded_wake_id": ident, "status": "PASS",
+                          "wake_id": 9000 + index,
+                          "session_id": f"generated-session-{index}",
+                          "at_ms": 1000 + index, "expectations": []})
             (output / f"wake-{index}-{ident}.json").write_text(
                 json.dumps({"diff": {}, "expectations": [],
-                            "trajectory": {"unit": case.unit}}))
+                            "recorded_wake_id": ident, "unit": case.unit,
+                            "at_ms": 1000 + index,
+                            "trajectory": {"unit": case.unit,
+                                           "at_ms": 1000 + index,
+                                           "wake_id": 9000 + index,
+                                           "session_id": f"generated-session-{index}"}}))
         return {"case": case.name, "unit": case.unit, "status": "PASS", "wakes": wakes}
 
     monkeypatch.setattr(cli, "run_case", passed_case)

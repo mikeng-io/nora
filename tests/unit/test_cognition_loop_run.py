@@ -97,10 +97,17 @@ def test_run_materialises_the_config_and_folds_the_status(
                 "verdict": "FAIL", "answers": [{"model": "a"}, {"model": "b"}],
             } for e in case.expectations if e.wake == index]
             wakes.append({"recorded_wake_id": ident, "status": "FAIL",
+                          "wake_id": 9000 + index,
+                          "session_id": f"generated-session-{index}",
+                          "at_ms": 1000 + index,
                           "expectations": expectations})
             (output / f"wake-{index}-{ident}.json").write_text(json.dumps(
                 {"diff": {}, "expectations": expectations,
-                 "trajectory": {"unit": case.unit}}))
+                 "recorded_wake_id": ident, "unit": case.unit,
+                 "at_ms": 1000 + index,
+                 "trajectory": {"unit": case.unit, "at_ms": 1000 + index,
+                                "wake_id": 9000 + index,
+                                "session_id": f"generated-session-{index}"}}))
         return {"case": case.name, "unit": case.unit, "status": "FAIL", "wakes": wakes}
 
     monkeypatch.setattr(cli, "run_case", failed_case)

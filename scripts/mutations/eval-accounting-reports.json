@@ -49,16 +49,37 @@
     "target": "tests/unit/test_eval_report_accounting.py::test_a_failed_task_row_is_execution_error_never_silence"
   },
   {
-    "name": "the corpus gate checks expected-row coverage",
+    "name": "a clean row without canonical settlement is unestablished",
+    "file": "evals/accounting.py",
+    "old": "        state = settlement.get(name)\n        if state == \"failed\":\n            failed += 1\n            causes.append(f\"{name}: the evidence case failed\")\n        elif state == \"settled\":\n            ran += 1\n        else:\n            missing += 1\n            causes.append(\n                f\"{name}: no canonical settlement recorded\"\n                if evidence is not None else\n                f\"{name}: settlement evidence unavailable\")",
+    "new": "        state = settlement.get(name)\n        if state == \"failed\":\n            failed += 1\n            causes.append(f\"{name}: the evidence case failed\")\n        else:\n            ran += 1",
+    "target": "tests/unit/test_eval_report_accounting.py::test_a_clean_row_without_a_canonical_settlement_stays_unestablished"
+  },
+  {
+    "name": "an unvalidated capture is never validity pass",
+    "file": "evals/accounting.py",
+    "old": "    if coverage.get(\"status\") == \"PASS\" and receipt_status == \"PASS\":\n        valid = \"PASS\"",
+    "new": "    if coverage.get(\"status\") == \"PASS\":\n        valid = \"PASS\"",
+    "target": "tests/unit/test_eval_report_accounting.py::test_an_unvalidated_or_failed_capture_is_never_validity_pass"
+  },
+  {
+    "name": "the corpus gate requires coverage and both required axes",
     "file": "evals/__main__.py",
-    "old": "            and context_complete and coverage[\"status\"] == \"PASS\")",
-    "new": "            and context_complete)",
+    "old": "    return (reading.failed == 0 and reading.errored == 0\n            and context_complete and accepted(coverage, outcome))",
+    "new": "    return (reading.failed == 0 and reading.errored == 0\n            and context_complete)",
     "target": "tests/unit/test_eval_report_accounting.py::test_a_denominator_error_fails_the_run_even_when_verdicts_pass"
+  },
+  {
+    "name": "the corpus gate refuses an unestablished axis",
+    "file": "evals/__main__.py",
+    "old": "    return (reading.failed == 0 and reading.errored == 0\n            and context_complete and accepted(coverage, outcome))",
+    "new": "    return (reading.failed == 0 and reading.errored == 0\n            and context_complete)",
+    "target": "tests/unit/test_eval_report_accounting.py::test_an_unestablished_axis_fails_the_run_even_when_verdicts_pass"
   },
   {
     "name": "a frozen wake proves it belongs by content",
     "file": "scripts/cognition_loop/accounting.py",
-    "old": "            identity = frozen_wake_identity(\n                frozen, unit=case[\"unit\"], at_ms=wake.get(\"at_ms\"),\n                step=wake.get(\"step\"))\n            if identity is not None:\n                errors.append(f\"{identity}: {name}\")\n            if judgments:",
+    "old": "            identity = frozen_wake_identity(\n                frozen, unit=case[\"unit\"], recorded_wake_id=wake_id,\n                at_ms=wake.get(\"at_ms\"), step=wake.get(\"step\"),\n                wake_id=wake.get(\"wake_id\"), session_id=wake.get(\"session_id\"))\n            if identity is not None:\n                errors.append(f\"{identity}: {name}\")\n            if judgments:",
     "new": "            if judgments:",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_expected_denominators_do_not_shrink_with_missing_evidence"
   },
@@ -70,9 +91,16 @@
     "target": "tests/unit/test_cognition_loop_accounting.py::test_the_saved_report_serializes_the_three_axes_once"
   },
   {
+    "name": "the report gate requires every required axis",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "    if report[\"coverage\"][\"status\"] != \"PASS\" \\\n            or report[\"outcome\"].get(\"cause\") == \"outcome projection failed\" \\\n            or report[\"outcome\"][\"execution\"][\"status\"] != \"PASS\" \\\n            or report[\"outcome\"][\"validity\"][\"status\"] != \"PASS\":\n        # A required axis still unknown or errored is never a report PASS.\n        report[\"status\"] = \"ERROR\"",
+    "new": "    if report[\"coverage\"][\"status\"] != \"PASS\":\n        # A required axis still unknown or errored is never a report PASS.\n        report[\"status\"] = \"ERROR\"",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_report_outcome_axis_unknown_blocks_the_saved_status"
+  },
+  {
     "name": "a settled row needs a positive completion signal",
     "file": "scripts/cognition_loop/accounting.py",
-    "old": "                elif (wake.get(\"session_id\") is not None\n                      or wake.get(\"no_session\")\n                      or wake.get(\"model_calls\") is False):\n                    settled += 1\n                else:\n                    unestablished += 1\n                    causes.append(\n                        f\"{case.get('name')}:{index} settled without a \"\n                        \"completion signal\")",
+    "old": "                elif wake.get(\"session_id\") is not None:\n                    # The closed COGNITION_WAKE_OUTCOME's own session.\n                    settled += 1\n                elif wake.get(\"no_session\") is not None:\n                    # A typed no-session: the closed outcome's detail.\n                    settled += 1\n                elif (inspect_only\n                      and any(v is not None for v in\n                              ((wake.get(\"trajectory\") or {}).get(\"blocks\") or {}).values())):\n                    # Inspect-only has no session to settle: its positive\n                    # claim is the inspection's own assembled context.\n                    settled += 1\n                else:\n                    unestablished += 1\n                    causes.append(\n                        f\"{case.get('name')}:{index} settled without a \"\n                        \"completion signal\")",
     "new": "                else:\n                    settled += 1",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_a_settled_row_without_a_completion_signal_stays_unestablished"
   },

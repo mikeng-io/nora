@@ -1568,19 +1568,19 @@ def retain_report(evidence: Any, corpus: str, report: Any, *,
                   coverage: dict[str, Any] | None = None) -> dict[str, Any]:
     """Retain the SDK's own report beside its expected-row accounting and
     the three result axes — the same rows every consumer reads."""
-    from evals.accounting import reconcile_report, report_outcome
+    from evals.accounting import evidence_outcome, reconcile_report, report_outcome
 
     if coverage is None:
         coverage = reconcile_report(experiment, report) if experiment is not None else {
             "status": "UNKNOWN", "expected": None, "observed": None,
             "errors": ["expected manifest unavailable"]}
-    outcome = report_outcome(report, coverage, experiment=experiment,
-                             evidence_failure=evidence.failure)
+    ev = evidence_outcome(evidence)
+    outcome = report_outcome(report, coverage, experiment=experiment, evidence=ev)
     payload = {"corpus": corpus, "report": report.model_dump(mode="json"),
                "mode": "protocol-rehearsal", "behavior": "UNMEASURED",
                "coverage": coverage, "outcome": outcome}
     retained = {**payload, "evidence": {
-        "status": "ERROR" if evidence.failure else "UNVALIDATED", "cause": evidence.failure}}
+        **ev["receipt"], "scope": "validated prefix; run terminal pending"}}
     evidence.retain(f"corpus-{corpus}.json", json.dumps(retained, ensure_ascii=False).encode())
     return payload
 

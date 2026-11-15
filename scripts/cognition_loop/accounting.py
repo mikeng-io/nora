@@ -25,33 +25,55 @@ def _judgments(rows: list[dict[str, Any]]) -> Counter:
 
 
 def frozen_wake_identity(frozen: dict[str, Any], *, unit: Any,
-                         at_ms: Any = None, step: Any = None) -> str | None:
+                         recorded_wake_id: Any, at_ms: Any = None,
+                         step: Any = None, wake_id: Any = None,
+                         session_id: Any = None) -> str | None:
     """Why a frozen artifact cannot stand in for this case/unit/wake, else None.
 
-    An artifact proves it belongs by content, never by filename alone: its
-    trajectory's unit and instant, or its error's step, must agree with the
-    report row's own values. When nothing agrees — or there is nothing to
-    check — the artifact's provenance is unknown rather than assumed.
+    An artifact proves it belongs by content, never by filename: its own
+    recorded `recorded_wake_id`/`unit`/`at_ms` must equal the declared
+    case's, its error step must equal the row's, and where the row names a
+    candidate wake/session (the replay's own — never the recorded wake)
+    the trajectory must carry the same. Required fields the artifact never
+    recorded are unknown, a disagreement is foreign — neither is assumed.
     """
     if not isinstance(frozen, dict):
         return "frozen wake is not an object"
-    checks = []
+    missing: list[str] = []
+    foreign: list[str] = []
+
+    def required(actual: Any, expected: Any, label: str) -> None:
+        if actual is None:
+            missing.append(label)
+        elif expected is not None and actual != expected:
+            foreign.append(label)
+
+    required(frozen.get("recorded_wake_id"), recorded_wake_id, "recorded_wake")
+    required(frozen.get("unit"), unit, "unit")
+    if at_ms is not None:
+        required(frozen.get("at_ms"), at_ms, "at_ms")
+    error = frozen.get("error") if isinstance(frozen.get("error"), dict) else {}
+    if (error.get("step") or None) != step:
+        foreign.append("step")
     trajectory = frozen.get("trajectory")
     if isinstance(trajectory, dict):
-        if trajectory.get("unit") is not None:
-            checks.append(trajectory["unit"] == unit)
-        if trajectory.get("at_ms") is not None and at_ms is not None:
-            checks.append(trajectory["at_ms"] == at_ms)
-    if frozen.get("at_ms") is not None and at_ms is not None:
-        checks.append(frozen["at_ms"] == at_ms)
-    frozen_step = (frozen.get("error") or {}).get("step") \
-        if isinstance(frozen.get("error"), dict) else None
-    if frozen_step is not None:
-        checks.append(frozen_step == step)
-    if not checks:
-        return "frozen wake identity unknown"
-    if not all(checks):
-        return "frozen wake identity mismatch"
+        if wake_id is not None:
+            required(trajectory.get("wake_id"), wake_id, "actual_wake")
+        if session_id is not None:
+            required(trajectory.get("session_id"), session_id, "session")
+        elif trajectory.get("session_id") is not None:
+            foreign.append("session")
+        if trajectory.get("unit") is not None and trajectory["unit"] != unit:
+            foreign.append("trajectory.unit")
+        if (at_ms is not None and trajectory.get("at_ms") is not None
+                and trajectory["at_ms"] != at_ms):
+            foreign.append("trajectory.at_ms")
+    elif step is None and (wake_id is not None or session_id is not None):
+        missing.append("trajectory")
+    if foreign:
+        return "frozen wake identity mismatch: " + ", ".join(foreign)
+    if missing:
+        return "frozen wake identity unknown: " + ", ".join(missing)
     return None
 
 
@@ -114,8 +136,9 @@ def _reconcile(report: dict[str, Any], output: Path, *, judgments: bool) -> dict
                 errors.append("missing or invalid frozen wake: " + name)
                 continue
             identity = frozen_wake_identity(
-                frozen, unit=case["unit"], at_ms=wake.get("at_ms"),
-                step=wake.get("step"))
+                frozen, unit=case["unit"], recorded_wake_id=wake_id,
+                at_ms=wake.get("at_ms"), step=wake.get("step"),
+                wake_id=wake.get("wake_id"), session_id=wake.get("session_id"))
             if identity is not None:
                 errors.append(f"{identity}: {name}")
             if judgments:
@@ -158,6 +181,7 @@ def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
                          scope="rejudgement", causes=causes)
     else:
         settled = errored = unestablished = 0
+        inspect_only = run.get("mode") == "inspect-only"
         rows = {c.get("case"): c for c in report.get("cases") or []
                 if isinstance(c, dict)}
         for case in report.get("expected_cases") or []:
@@ -173,9 +197,17 @@ def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
                     causes.append(
                         f"{case.get('name')}:{index} failed at {step}: "
                         f"{wake.get('error')}")
-                elif (wake.get("session_id") is not None
-                      or wake.get("no_session")
-                      or wake.get("model_calls") is False):
+                elif wake.get("session_id") is not None:
+                    # The closed COGNITION_WAKE_OUTCOME's own session.
+                    settled += 1
+                elif wake.get("no_session") is not None:
+                    # A typed no-session: the closed outcome's detail.
+                    settled += 1
+                elif (inspect_only
+                      and any(v is not None for v in
+                              ((wake.get("trajectory") or {}).get("blocks") or {}).values())):
+                    # Inspect-only has no session to settle: its positive
+                    # claim is the inspection's own assembled context.
                     settled += 1
                 else:
                     unestablished += 1
@@ -219,7 +251,10 @@ def write_report(output: Path, report: dict[str, Any]) -> None:
             "execution": {"status": "ERROR"}, "validity": {"status": "ERROR"},
             "behavior": {"status": "ERROR"}, "cause": "outcome projection failed"}
     if report["coverage"]["status"] != "PASS" \
-            or report["outcome"].get("cause") == "outcome projection failed":
+            or report["outcome"].get("cause") == "outcome projection failed" \
+            or report["outcome"]["execution"]["status"] != "PASS" \
+            or report["outcome"]["validity"]["status"] != "PASS":
+        # A required axis still unknown or errored is never a report PASS.
         report["status"] = "ERROR"
     (output / "report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")

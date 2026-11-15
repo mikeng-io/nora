@@ -133,8 +133,10 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
         wakes = row.get("wakes") or []
         recorded = wakes[index] if index < len(wakes) else {}
         identity = frozen_wake_identity(
-            frozen, unit=case.unit, at_ms=recorded.get("at_ms"),
-            step=recorded.get("step"))
+            frozen, unit=case.unit, recorded_wake_id=wake_id,
+            at_ms=recorded.get("at_ms"), step=recorded.get("step"),
+            wake_id=recorded.get("wake_id"),
+            session_id=recorded.get("session_id"))
         if identity is not None:
             row.setdefault("errors", []).append(
                 f"wake {index} (recorded {wake_id}): {identity}")

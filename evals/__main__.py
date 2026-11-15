@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from evals import pseudonyms
-from evals.accounting import accounted, describe_outcome
+from evals.accounting import accepted, accounted, describe_outcome
 from evals.backbone import (
     ERROR,
     FAIL,
@@ -467,7 +467,7 @@ def _run_one(
             for reason in dict.fromkeys(reasons.get(case_name, ())):
                 print(f"      {reason}")
             ok = ok and r.verdict not in (FAIL, ERROR, UNSTABLE)
-        return ok and context_complete and coverage["status"] == "PASS"
+        return ok and context_complete and accepted(coverage, outcome)
     reading = read(report)
     print(f"  passed={reading.passed} failed={reading.failed} errored={reading.errored}")
     if reading.failed or reading.errored:
@@ -476,7 +476,7 @@ def _run_one(
                 if getattr(out, "label", None) != PASS:
                     print(f"  {case_row['name']:40} {out.label:6} {out.reason}")
     return (reading.failed == 0 and reading.errored == 0
-            and context_complete and coverage["status"] == "PASS")
+            and context_complete and accepted(coverage, outcome))
 
 
 def _print_input(name: str, case_name: str, *, source_url: str,
