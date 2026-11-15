@@ -76,6 +76,7 @@ from nora.app.composition_stores import (
     database,
     identity,
     instructions,
+    managed_identity,
     obs_stores,
     observation,
     readers,
@@ -198,6 +199,16 @@ class Dependencies:
     memory: MemoryStore
     persons: Persons
     config_reload: ReloadFiles
+    # The selected identity backend's services (issue #528): `file` answers
+    # reads off the TOML pair and refuses managed mutators; `managed` is
+    # PostgreSQL bindings + Keto authority + Kratos records, probed live at
+    # boot — never a silent file fallback. `Any`-typed while consumers are
+    # wired under Tasks 5+; the concrete shape is
+    # `nora.people` `wire.managed_services`' `ManagedServices`.
+    managed_services: Any
+    # The Ory HTTP session the managed backend owns (None in file mode);
+    # `App.shutdown` closes it.
+    managed_session: Any
     # The ONE media join, so `__main__` can hand the same
     # instance to the dream loop and to lazy adoption — the two transcript
     # builders this module does not construct itself.
@@ -518,6 +529,10 @@ async def build_dependencies(
     reload_files: ReloadFiles = _stores_identity.reload_files
     _stores_database = database(allowlist=allowlist, cfg=cfg, metrics=metrics, persons=persons)
     engine = _stores_database.engine
+    _stores_managed = await managed_identity(
+        cfg=cfg, persons=persons, policy=allowlist, engine=engine,
+    )
+    managed_services = _stores_managed.services
     _stores_audit = build_audit(cfg=cfg, engine=engine, metrics=metrics)
     audit = _stores_audit.audit
     _location_stores = _location_wire.stores(engine=engine)
@@ -1349,6 +1364,8 @@ async def build_dependencies(
         audit=audit,
         memory=memory,
         persons=persons,
+        managed_services=managed_services,
+        managed_session=_stores_managed.session,
         metrics=metrics,
         media_join=media_join,
         policy=policy,

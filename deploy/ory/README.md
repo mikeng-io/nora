@@ -26,5 +26,26 @@ uv run python -m scripts.check_ory_policy --read-url http://127.0.0.1:4466 --wri
 It creates generated relationships, checks all scope/permit pairs, conflicting
 direct grants, permit-specific and blanket denials, and parent inheritance,
 then removes those relationships. OPL source-content tests alone do not prove
-these outcomes. Image pinning and wired managed-backend integration remain
-service-integration obligations.
+these outcomes.
+
+## Disposable local/CI stack
+
+`compose.yaml` runs both services pinned by digest:
+
+- `oryd/keto:v26.2.0@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2`
+- `oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643`
+
+```bash
+docker compose -f deploy/ory/compose.yaml up -d --wait   # migrate, then serve
+docker compose -f deploy/ory/compose.yaml down -v        # wipe all state
+```
+
+Published ports are loopback-only and match `[identity.managed]`'s defaults:
+Keto read `127.0.0.1:4466`, write `127.0.0.1:4467`; Kratos public
+`127.0.0.1:4433`, admin `127.0.0.1:4434`. Two container-side adjustments ride
+on environment variables so the committed `*.dev.yaml` files stay correct for
+a host-side process: `SERVE_*_HOST=0.0.0.0` (the configs' `127.0.0.1` bind is
+the container's own loopback) and sqlite DSN overrides under `/home/ory/data`
+(the images do not create the configs' `/var/lib` paths). Migrations run once
+per `up`; `serve` waits on their completion. This stack is development/CI
+scaffolding — it carries no credentials and no production data.

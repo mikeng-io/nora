@@ -513,6 +513,8 @@ class App:
         await self.deps.client.close()
         for client in self.deps.model_clients:
             await client.close()
+        if self.deps.managed_session is not None:
+            await self.deps.managed_session.close()
         await self.deps.audit.aclose()
 
 
