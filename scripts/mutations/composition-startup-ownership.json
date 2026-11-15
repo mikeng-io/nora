@@ -85,9 +85,9 @@
  },
  {
   "name": "direct describer clients are owned with the model clients",
-  "file": "nora/app/composition.py",
-  "old": "        extra_model_clients=extra_model_clients,\n        media_objects=media_objects,",
-  "new": "        media_objects=media_objects,",
+  "file": "nora/media/wire.py",
+  "old": "        extra_model_clients.extend(direct_clients.values())",
+  "new": "        pass",
   "target": "tests/integration/test_composition_unwind.py::test_a_late_build_failure_unwinds_direct_describer_clients"
  },
  {
