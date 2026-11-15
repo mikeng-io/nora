@@ -436,20 +436,21 @@ class LifecycleAction:
 
 @dataclass(frozen=True)
 class ProfileEdit:
-    """`update_profile`: the trait fields being changed and the scope a
-    local nickname lives in — `None` is the holder's global profile, which an
-    operator cannot touch."""
+    """Exact descriptive values; a local nickname never edits a global trait."""
 
-    fields: frozenset[str]
+    display_name: str | None = None
+    nickname: str | None = None
     scope: Scope | None = None
 
     def __post_init__(self) -> None:
-        typed = frozenset(self.fields)
-        if not typed:
-            raise OperationError("a profile edit names the fields it changes")
-        if any(not f or not f.strip() for f in typed):
-            raise OperationError("a profile edit's field names must be non-blank")
-        object.__setattr__(self, "fields", typed)
+        if self.scope is None:
+            valid = isinstance(self.display_name, str) and self.nickname is None
+        else:
+            valid = isinstance(self.nickname, str) and self.display_name is None
+        if not valid:
+            raise OperationError(
+                "a profile edit supplies exactly its global name or local nickname"
+            )
 
 
 @dataclass(frozen=True)

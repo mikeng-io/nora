@@ -53,6 +53,23 @@ def test_request_uses_the_authenticated_actor_and_typed_domain_effect():
     assert operation.observed_revisions["ownership"] == "o-1"
 
 
+def test_profile_request_binds_the_actual_name_without_accepting_a_field_only_effect():
+    body = {
+        "operation_id": "synthetic-profile", "kind": "update_profile",
+        "target": {"kind": "person", "person_id": HOLDER.person_id},
+        "payload": {"display_name": "Generated name"},
+        "observed_revisions": {"identity": "i-1", "authority": "a-1"},
+    }
+    operation = decode(body)
+    assert operation.payload.display_name == "Generated name"
+    body["payload"] = {"fields": ["display_name"]}
+    with pytest.raises(ManagementRequestError):
+        decode(body)
+    body["payload"] = {"display_name": True}
+    with pytest.raises(ManagementRequestError):
+        decode(body)
+
+
 @pytest.mark.parametrize("sources,accepted", [({"signal"}, True), ({"discord"}, False)])
 def test_observation_retains_account_grouping_within_the_authenticated_service_source(
     sources, accepted,

@@ -367,18 +367,18 @@ def test_sync_membership_rejects_roster_outside_sources():
 def test_holder_profile_edit_is_global_and_own_person():
     op = _op("update_profile", HOLDER,
              Target(kind=TargetKind.PERSON, person_id="miles"),
-             ProfileEdit(fields=frozenset({"display_name"})),
+             ProfileEdit(display_name="Generated display name"),
              revisions=("identity", "authority"))
     assert op.payload.scope is None
     with pytest.raises(OperationError):
         _op("update_profile", HOLDER,
             Target(kind=TargetKind.PERSON, person_id="other"),
-            ProfileEdit(fields=frozenset({"display_name"})),
+            ProfileEdit(display_name="Generated display name"),
             revisions=("identity", "authority"))
     with pytest.raises(OperationError):
         _op("update_profile", HOLDER,
             Target(kind=TargetKind.PERSON, person_id="miles"),
-            ProfileEdit(fields=frozenset({"nickname"}), scope=ROOM),
+            ProfileEdit(nickname="Generated local nickname", scope=ROOM),
             revisions=("identity", "authority"))
 
 
@@ -386,8 +386,27 @@ def test_operator_profile_edit_needs_a_reached_scope():
     with pytest.raises(OperationError):
         _op("update_profile", OPERATOR,
             Target(kind=TargetKind.PERSON, person_id="miles"),
-            ProfileEdit(fields=frozenset({"nickname"})),
+            ProfileEdit(display_name="Generated global name"),
             revisions=("identity", "authority"))
+
+
+@pytest.mark.parametrize("values", [
+    {}, {"display_name": 1}, {"nickname": "Generated"},
+    {"display_name": "Generated", "scope": ROOM},
+    {"display_name": "Generated", "nickname": "Local", "scope": ROOM},
+    {"nickname": 1, "scope": ROOM},
+])
+def test_profile_edit_requires_the_actual_value_inside_its_own_scope(values):
+    with pytest.raises(OperationError):
+        ProfileEdit(**values)
+
+
+def test_profile_update_idempotency_distinguishes_values_and_allows_clearing():
+    first = ProfileEdit(display_name="Generated first")
+    second = ProfileEdit(display_name="Generated second")
+    assert first != second
+    assert ProfileEdit(display_name="").display_name == ""
+    assert ProfileEdit(nickname="", scope=ROOM).nickname == ""
 
 
 def test_suspend_identity_is_installation_only_and_reasoned():
