@@ -397,8 +397,14 @@ def _assert_v2_report(draw: Any, report: Any, experiment: Any,
     # closes with — every served request a production occasion raised,
     # in production's own order, nothing skipped or invented.
     assert protocol.phase == 11 and not protocol.errors
-    assert protocol.occasions == {
+    # The scenario occasions are the eleven phase-advancing calls; every
+    # other served occasion is counted background — a Dreamer pass raised
+    # on its own tick, never scenario work it could stand in for.
+    scenario = {"cognition", "turn", "fold_unit", "fold_room"}
+    assert {k: v for k, v in protocol.occasions.items() if k in scenario} == {
         "cognition": 6, "turn": 2, "fold_unit": 2, "fold_room": 1}
+    assert protocol.background == sum(
+        v for k, v in protocol.occasions.items() if k not in scenario)
     assert len(protocol.requests) == 11 + protocol.background
     # The later request carries its own recall source through the real
     # context path: the turn call that names the follow-up (the one
@@ -422,11 +428,11 @@ def _assert_v2_report(draw: Any, report: Any, experiment: Any,
     # follow-up's are two different works' confirmed actions, and only
     # the follow-up's is its turn's own output.
     receipts = retained["receipts"]
-    actions = receipts["actions"]
-    assert len(actions) == 2 and all(
-        row["state"] == "confirmed" for row in actions)
-    asked = next(a for a in actions if a["request"]["text"] == QUESTION)
-    answered = next(a for a in actions if a["request"]["text"] == ANSWER)
+    sends = [row for row in receipts["actions"] if row["op"] == "send"]
+    assert len(sends) == 2 and all(
+        row["state"] == "confirmed" for row in sends)
+    asked = next(a for a in sends if a["request"]["text"] == QUESTION)
+    answered = next(a for a in sends if a["request"]["text"] == ANSWER)
     bound_owners = {row["owner"] for row in
                     third["trajectory"]["turn_outcome"]["actions"]}
     assert answered["owner_id"] in bound_owners
