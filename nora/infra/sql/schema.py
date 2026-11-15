@@ -355,9 +355,7 @@ MESSAGE_DELETE = sa.Table(
     ),
 )
 
-IDX_MESSAGE_DELETE_MESSAGE = sa.Index(
-    "idx_message_delete_message", MESSAGE_DELETE.c.message_id,
-)
+IDX_MESSAGE_DELETE_MESSAGE = sa.Index("idx_message_delete_message", MESSAGE_DELETE.c.message_id)
 
 # Declared after the table so the expression index can reference its columns.
 # `idx_messages_conv_ts` is excluded from Alembic autogenerate by
@@ -1310,9 +1308,7 @@ COMPUTE_JOBS = sa.Table(
 
 # Declared after the table, house style. The poller's own `pending()` query
 # filters on `state` alone — matching `idx_reminders_due`'s own precedent.
-COMPUTE_JOBS_STATE_IDX = sa.Index(
-    "idx_compute_jobs_state", COMPUTE_JOBS.c.state,
-)
+COMPUTE_JOBS_STATE_IDX = sa.Index("idx_compute_jobs_state", COMPUTE_JOBS.c.state)
 
 
 # `tool_call_log` — one row per successful call to a `cacheable=True` tool,
@@ -5927,4 +5923,3 @@ IDX_PLATFORM_OBJECT_STATE_ROOM = sa.Index(
     PLATFORM_OBJECT_STATE.c.platform, PLATFORM_OBJECT_STATE.c.account_key,
     PLATFORM_OBJECT_STATE.c.conversation_id, PLATFORM_OBJECT_STATE.c.kind,
 )
-

@@ -427,11 +427,8 @@ def heartbeat(
             # The SAME `slots` the engagement pipeline holds. Two instances
             # would be two locks and no serialisation at all.
             slots=slots,
-            # `access` — the selected backend's live grant check
-            # (`nora.access`), re-checked at fire time: the live grant may
-            # change while a row waits, and `UNAVAILABLE` fails the row
-            # closed like a revocation. `allowlist` remains beside it for the
-            # proactive screen's room flag.
+            # `access` — the backend's live grant check (`nora.access`), re-checked
+            # at fire time: `UNAVAILABLE` fails the row closed like a revocation.
             access=access,
             clock=clock,
             metrics=metrics,

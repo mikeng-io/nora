@@ -298,6 +298,15 @@ class SignalSender:
                 return resp.status, resp.headers.get("Retry-After"), None
             return resp.status, None, await resp.json()
 
+    async def _dm_refusal(self, address: str) -> str | None:
+        """The refusal log line for a denied DM, `None` when admitted."""
+        if self._dm_gate is not None and not await self._dm_gate(address):
+            return "refusing a direct message to an address the identity backend does not know"
+        if (self._dm_gate is None and self._dm_recipients is not None
+                and address not in self._dm_recipients):
+            return "refusing a direct message to an address not in identity.toml"
+        return None
+
     async def send(
         self,
         target: ConversationTarget,
@@ -317,13 +326,9 @@ class SignalSender:
         where = target.conversation_id
         if target.conversation_type == "dm":
             where = "dm"
-            if self._dm_gate is not None:
-                if not await self._dm_gate(target.conversation_id):
-                    log.error("refusing a direct message to an address the identity backend does not know")
-                    return SendResult(ok=False)
-            elif (self._dm_recipients is not None
-                    and target.conversation_id not in self._dm_recipients):
-                log.error("refusing a direct message to an address not in identity.toml")
+            refusal = await self._dm_refusal(target.conversation_id)
+            if refusal is not None:
+                log.error(refusal)
                 return SendResult(ok=False)
             params: dict[str, object] = {
                 "recipient": [target.conversation_id], "message": text,

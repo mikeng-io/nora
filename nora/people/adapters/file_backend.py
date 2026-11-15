@@ -90,9 +90,8 @@ class FileBindingStore(BindingStore):
 
     async def canonical_person(self, person_id: str) -> str | None:
         # `subject_id_for` folds retired ids; whether the canonical id is a
-        # KNOWN person is `is_allowed`'s scoped question (a room's `persons`
-        # list names who the file admits, index card or not), so existence
-        # is answered by the check, not here.
+        # KNOWN person is `is_allowed`'s scoped question, so existence is
+        # answered by the check, not here.
         return self._persons.subject_id_for(person_id)
 
     async def former_persons(self, person_id: str) -> tuple[str, ...]:

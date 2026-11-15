@@ -133,6 +133,29 @@ class Relay:
         self._count(outcome)
         return {"status": "refused", "note": note}
 
+    async def _room_admission(
+        self, destination: Conversation, requester: PersonRef
+    ) -> dict | None:
+        """The selected backend's room gate: the refusal on a deny, `None` on an allow."""
+        verdict = await self._access.permitted(
+            platform=destination.platform,
+            conversation_id=destination.primary_id,
+            person_id=requester.person_id,
+        )
+        if verdict.allowed:
+            return None
+        if verdict.verdict is Verdict.UNAVAILABLE:
+            return {
+                "status": "unavailable",
+                "note": "I can't check whether you're in that room right now. "
+                        "Say it didn't go rather than guessing.",
+            }
+        return self._refuse(
+            "not_allowed_there",
+            "They're not in that room themselves, so I won't speak into it for "
+            "them. Say so plainly.",
+        )
+
     def _find(self, room: str, *, unit: str) -> tuple[Conversation, ...]:
         """Resolve only within this unit, using the room tools' shared resolver."""
         # Local import: tools declares Relay and owns the shared name resolver.
@@ -219,23 +242,9 @@ class Relay:
                 "That's where we already are: just say it here instead of passing it on.",
             )
 
-        verdict = await self._access.permitted(
-            platform=destination.platform,
-            conversation_id=destination.primary_id,
-            person_id=requester.person_id,
-        )
-        if not verdict.allowed:
-            if verdict.verdict is Verdict.UNAVAILABLE:
-                return {
-                    "status": "unavailable",
-                    "note": "I can't check whether you're in that room right now. "
-                            "Say it didn't go rather than guessing.",
-                }
-            return self._refuse(
-                "not_allowed_there",
-                "They're not in that room themselves, so I won't speak into it for "
-                "them. Say so plainly.",
-            )
+        refused = await self._room_admission(destination, requester)
+        if refused is not None:
+            return refused
 
         # Attributed, always (module docstring). Built here rather than left to
         # the model so it cannot be talked out of it.

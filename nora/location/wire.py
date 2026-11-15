@@ -118,10 +118,9 @@ def presence(cfg, engine, metrics, persons, access=None) -> PresenceWiring:
     # `whereis` (DEC-59) is wired ONLY when `[presence] enabled` AND identity.toml yields at
     # least one circle — the enabled-AND-configured gate `route` and media custody use. Off,
     # or circle-less, leaves the registry without a reader and `whereis` answers…
-    # Life360 membership is file-only identity data the managed schema does
-    # not carry: under the managed backend the circles read is absent, never
-    # a stale file answer, so `whereis` degrades to `unavailable`.
     presence_store: PresenceStore | None = None
+    # Life360 membership is file-only data: under managed the circles read is
+    # absent — never a stale file answer — and `whereis` answers `unavailable`.
     presence_circles: Sequence[Circle] = (
         ()
         if access is not None and not access.is_file_backend

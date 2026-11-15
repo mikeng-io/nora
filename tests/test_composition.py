@@ -1412,8 +1412,6 @@ async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_s
     try:
         (loop,) = _spawned(deps, "HeartbeatLoop.run")
         assert isinstance(loop._proactive, ProactiveScreen)
-        # The screen shares the SAME policy the loop's `access` facade wraps
-        # under the file backend (managed mode reads Keto instead).
         assert loop._proactive._policy is loop._access._policy
         path = loop._fire.__self__
         assert isinstance(path, FirePath)

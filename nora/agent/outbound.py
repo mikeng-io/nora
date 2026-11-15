@@ -109,8 +109,9 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from ..domain.models import PersonRef
 from ..domain.ports import (
@@ -304,7 +305,7 @@ class OutboundComposer:
         *,
         platform: str,
         conversation_id: str,
-        persons: Persons,
+        persons: Persons | None = None,
         metrics: Any,
         access: Any = None,
         roster_source: RosterSource | None = None,
@@ -314,15 +315,16 @@ class OutboundComposer:
         self._content_checks = content_checks
         self._platform = platform
         self._conversation_id = conversation_id
-        self._persons = persons
         self._access = access
+        self._persons = (persons if persons is not None
+                         else access.persons_view())
         self._metrics = metrics
         self._roster_source = roster_source
         self._preview_source = preview_source
         # `None` means "build lazily from `access`" — the managed vocabulary
         # is an async read, so it is fetched on the first resolvable handle.
         self._handles = (
-            _handle_index(persons.by_person.values())
+            _handle_index(self._persons.by_person.values())
             if access is None else None
         )
         self._roster: Roster | None = None

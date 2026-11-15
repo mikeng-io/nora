@@ -334,12 +334,10 @@ def _build_pipeline(
     if adapters is None:
         the_adapter = adapter or _FakeAdapter()
         adapters = {the_adapter.platform: the_adapter}
-    extra = {}
+    extra, pol = {}, policy if policy is not None else permissive_policy()
     pipeline = EngagementPipeline(
         adapters=adapters,
-        audit=audit,
-        memory=memory,
-        persons=PERSONS,
+        audit=audit, memory=memory, persons=PERSONS,
         doctrine_store=_FakeDoctrineStore(),
         context_assembler=context_assembler,
         runner=runner or ScriptedRunner(_reply_turns()),
@@ -358,10 +356,7 @@ def _build_pipeline(
         reactions=reactions,
         rosters={"signal": roster_source} if roster_source else {},
         slots=ConversationSlots(maxlen=queue_max, spawn=background.spawn),
-        policy=policy if policy is not None else permissive_policy(),
-        access=IdentityAccess.for_files(
-            persons=PERSONS,
-            policy=policy if policy is not None else permissive_policy()),
+        policy=pol, access=IdentityAccess.for_files(persons=PERSONS, policy=pol),
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
         decisions=decisions,

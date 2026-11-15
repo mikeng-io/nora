@@ -142,6 +142,63 @@ async def _resolve_bridge_identity(
         return identity
 
 
+async def _signal_adapter(
+    *,
+    signal_cfg: _SignalPlatformConfig,
+    bridge_token: str,
+    dm_recipients: Set[str] | frozenset[str],
+    dm_gate: Callable[[str], Awaitable[bool]] | None,
+    signal_consent: Callable[
+        [str], Callable[[dict], Awaitable[bool]] | None
+    ] | None,
+    metrics: MetricsSink,
+    sleep: Callable[[float], Awaitable[None]],
+    clock: Callable[[], float],
+) -> tuple[PlatformAdapter, PlatformIdentity] | None:
+    """The signal adapter in its enabled mode, identity resolved; `None` when disabled."""
+    if signal_cfg.enabled and getattr(signal_cfg, "mode", "direct") == "bridge":
+        # Bridge mode: the standalone signal-bridge holds the daemon; the
+        # app is a client of its action API + Redis consumer. `account` is
+        # the wire's account_key — no derive_account against signal-cli.
+        adapter: PlatformAdapter = BridgeAdapter(
+            "signal", BridgeEndpoint(signal_cfg.base_url, bridge_token),
+            dm_recipients=dm_recipients,
+            dm_gate=dm_gate)
+        try:
+            identity = await _resolve_bridge_identity(
+                adapter, sleep=sleep, clock=clock)
+        except Exception as exc:
+            raise AdapterRegistryError(
+                f"signal bridge could not resolve its own identity: {exc}"
+            ) from exc
+        return adapter, identity
+    if not signal_cfg.enabled:
+        return None
+    try:
+        account = await derive_account(
+            signal_cfg.base_url, override=signal_cfg.account,
+        )
+    except AccountError as exc:
+        raise AdapterRegistryError(f"signal account error: {exc}") from exc
+    adapter = SignalAdapter(
+        signal_cfg.base_url, account, metrics=metrics,
+        dm_recipients=dm_recipients,
+        # The private consent seam is bound to the DERIVED daemon
+        # account (never the configured claim), so provenance the
+        # parser checks is the account signal-cli actually serves.
+        on_consent=(
+            signal_consent(account) if signal_consent else None),
+        dm_gate=dm_gate,
+    )
+    try:
+        identity = await adapter.resolve_identity()
+    except Exception as exc:
+        raise AdapterRegistryError(
+            f"signal adapter could not resolve its own identity: {exc}"
+        ) from exc
+    return adapter, identity
+
+
 class _SignalPlatformConfig(Protocol):
     @property
     def base_url(self) -> str: ...
@@ -302,51 +359,13 @@ class AdapterRegistry:
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
 
-        signal_cfg = platforms.signal
-        if signal_cfg.enabled and getattr(signal_cfg, "mode", "direct") == "bridge":
-            # Bridge mode: the standalone signal-bridge holds the daemon; the
-            # app is a client of its action API + Redis consumer. `account` is
-            # the wire's account_key — no derive_account against signal-cli.
-            adapter: PlatformAdapter = BridgeAdapter(
-                "signal", BridgeEndpoint(signal_cfg.base_url, bridge_token),
-                dm_recipients=dms.get("signal", frozenset()),
-                dm_gate=gates.get("signal"))
-            try:
-                identity = await _resolve_bridge_identity(
-                    adapter, sleep=sleep, clock=clock)
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"signal bridge could not resolve its own identity: {exc}"
-                ) from exc
-            adapters["signal"] = adapter
-            identities["signal"] = identity
-        elif signal_cfg.enabled:
-            try:
-                account = await derive_account(
-                    signal_cfg.base_url, override=signal_cfg.account,
-                )
-            except AccountError as exc:
-                raise AdapterRegistryError(f"signal account error: {exc}") from exc
-
-            adapter = SignalAdapter(
-                signal_cfg.base_url, account, metrics=metrics,
-                dm_recipients=dms.get("signal", frozenset()),
-                # The private consent seam is bound to the DERIVED daemon
-                # account (never the configured claim), so provenance the
-                # parser checks is the account signal-cli actually serves.
-                on_consent=(
-                    signal_consent(account) if signal_consent else None),
-                dm_gate=gates.get("signal"),
-            )
-            try:
-                identity = await adapter.resolve_identity()
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"signal adapter could not resolve its own identity: {exc}"
-                ) from exc
-
-            adapters["signal"] = adapter
-            identities["signal"] = identity
+        signal_result = await _signal_adapter(
+            signal_cfg=platforms.signal, bridge_token=bridge_token,
+            dm_recipients=dms.get("signal", frozenset()),
+            dm_gate=gates.get("signal"), signal_consent=signal_consent,
+            metrics=metrics, sleep=sleep, clock=clock)
+        if signal_result is not None:
+            adapters["signal"], identities["signal"] = signal_result
 
         discord_cfg = platforms.discord
         if discord_cfg.enabled and getattr(discord_cfg, "mode", "direct") == "bridge":

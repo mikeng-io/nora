@@ -82,6 +82,7 @@ from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from datetime import datetime
 from typing import Any
 
+from nora.access import IdentityAccess
 from nora.agent.catalog.model import turn_occasion
 from nora.agent.intent_router import route_intent
 from nora.agent.outbound import OutboundComposer
@@ -115,7 +116,7 @@ from nora.obs.tracing import (
     root_span,
     span,
 )
-from nora.persons import sanitize_unmapped, Persons
+from nora.persons import Persons, sanitize_unmapped
 from nora.platform.bridge import telemetry as _bridge_telemetry
 from nora.policy import Policy
 from nora.tag import Debounce
@@ -227,26 +228,17 @@ class EngagementPipeline:
         # the wrong group. Keyed by `NormalizedMessage.platform`, which is
         # the only thing that can answer "where did this come from".
         self._adapters = adapters
-        self._audit = audit
-        self._memory = memory
-        self._persons = persons
-        # The descriptive `Persons` handed to tool surfaces and composers:
-        # the selected backend's view — absent under managed, never a stale
-        # file answer; identical under the file backend.
-        self._view = access.persons_view() if access is not None else persons
-        self._access = access
-        self._doctrine_store = doctrine_store
-        self._context = context_assembler
-        self._runner = runner
-        self._tool_registry = tool_registry
+        self._audit, self._memory, self._persons = audit, memory, persons
+        self._access = access or IdentityAccess.for_files(persons, policy)
+        self._doctrine_store, self._context = doctrine_store, context_assembler
+        self._runner, self._tool_registry = runner, tool_registry
         # policy.toml's per-conversation MCP allowlist. The ingest pipeline already checked
         # this tag's conversation is admitted at all (nora.ingest.stages.scope,
         # DEC-18) using the SAME Policy instance — this is the second read of
         # it, for a narrower question: which MCP servers, not whether to
         # engage at all.
         self._policy = policy
-        self._debounce = debounce
-        self._canary = canary
+        self._debounce, self._canary = debounce, canary
         self._display_name = display_name
         # The Nora aiPeer id (Honcho): her replies feed under it.
         self._ai_peer = ai_peer
@@ -256,8 +248,7 @@ class EngagementPipeline:
         # (which reads the same injected clock) state one instant. `None`
         # falls back to the wall, which is what production's clock is.
         self._clock = clock
-        self._timeout_seconds = timeout_seconds
-        self._limits = limits
+        self._timeout_seconds, self._limits = timeout_seconds, limits
         self._defer_tools = defer_tools
         self._metrics = metrics
         self._spawn = spawn
@@ -556,11 +547,10 @@ class EngagementPipeline:
         """A told-by person id as a NAME for the fold's `<profile>` block
         (45 §5): the identity index's name, "someone" when it has none (R-18 —
         never the id itself)."""
-        if self._access is not None and not self._access.is_file_backend:
-            # Sync fold callback; managed names need the async read surface —
-            # the block gets the same honest "someone" an unmapped file id gets.
-            return "someone"
-        ref = self._persons.by_person.get(person_id)
+        # Managed names need the async read surface — a sync fold gets the
+        # same honest "someone" an unmapped file id gets.
+        ref = (self._persons.by_person.get(person_id)
+               if self._access.is_file_backend else None)
         return ref.name if ref is not None else "someone"
 
     async def _debrief(
@@ -719,12 +709,10 @@ class EngagementPipeline:
             # may not import `nora.platform`), against `raw_json`, which every
             # historical row already carries. See `nora.engagement.mentions`.
             ctx = await MentionRenderer(
-                persons=self._view, display_name=self._display_name,
-                access=self._access,
+                display_name=self._display_name, access=self._access,
                 self_ids=frozenset(getattr(identity, "aliases", ())),
                 metrics=self._metrics,
-                content_checks=self._tool_registry.content_checks,
-            ).rehydrate(ctx)
+                content_checks=self._tool_registry.content_checks).rehydrate(ctx)
             doctrine = self._doctrine_store.get(applies_to="tag")
             log.info(
                 "tag start (tag_id=%s conversation_id=%s sender_id=%s person_id=%s "
@@ -784,8 +772,7 @@ class EngagementPipeline:
                 # and at most once, rather than against the whole address book.
                 composer=OutboundComposer(
                     platform=msg.platform, conversation_id=msg.conversation_id,
-                    persons=self._view, metrics=self._metrics,
-                    access=self._access,
+                    metrics=self._metrics, access=self._access,
                     roster_source=self._rosters.get(msg.platform),
                     preview_source=self._preview_source,
                     content_checks=self._tool_registry.content_checks,
@@ -812,8 +799,7 @@ class EngagementPipeline:
             # both the ingest path and the front of the model call.
             room = Room(
                 platform=msg.platform, conversation_id=msg.conversation_id,
-                roster_source=self._rosters.get(msg.platform), persons=self._view,
-                access=self._access,
+                roster_source=self._rosters.get(msg.platform), access=self._access,
                 tagger=ctx.tagger, self_ids=frozenset(getattr(identity, "aliases", ())),
                 # From the ASSEMBLED context, not from config: the block is
                 # absent when Honcho could not answer as well as when it is
@@ -834,7 +820,8 @@ class EngagementPipeline:
                 # hop of silence in the channel first.
                 occasion=turn_occasion(voice=msg.voice),
                 store=self._audit, conversation_id=msg.conversation_id,
-                conversation_type=msg.conversation_type, persons=self._view,
+                conversation_type=msg.conversation_type,
+                persons=self._access.persons_view(),
                 honcho=self._memory, deliverer=handle.deliverer,
                 room=room, question=render_file_links(msg.body),
                 context_window=self._context_window, metrics=self._metrics,
@@ -856,16 +843,9 @@ class EngagementPipeline:
                 # tools mint links into it and the sender puts back the ones the
                 # reply earned and dropped; two carriers would be a feature that
                 # collects perfectly and appends nothing.
-                links=handle.links,
-            )
-            if self._access is not None:
-                tag_ref = await self._access.resolve_ref(
-                    msg.platform, msg.sender_id)
-                tagger_name = (
-                    tag_ref.name if tag_ref is not None
-                    else msg.sender_name or sanitize_unmapped(msg.sender_id))
-            else:
-                tagger_name = self._persons.display_name(msg)
+                links=handle.links)
+            tagger_name = (ctx.tagger.name if ctx.tagger is not None
+                           else msg.sender_name or sanitize_unmapped(msg.sender_id))
             # NO ROSTER IN THE PROMPT; there is a tool instead.
             # `identity.toml` is Nora's address book across EVERY room; handing
             # all of it to one room discloses the existence and names of people

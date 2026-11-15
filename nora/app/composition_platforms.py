@@ -228,9 +228,8 @@ async def adapters(
             instagram_summons=summons_inbox,
             bridge_token=cfg.credentials.get(cfg.bridges.token_env, ""),
             # A 1:1 message goes only to somebody the identity backend knows;
-            # the senders hold this set and refuse the rest. The managed
-            # backend's live version is `dm_gates`: consulted per send, never
-            # a file snapshot.
+            # the senders refuse the rest. `dm_gates` is the managed backend's
+            # live per-send version of this set, never a file snapshot.
             dm_recipients={
                 p: LiveSet(functools.partial(persons.direct_addresses, p)) for p in DIRECT_PLATFORMS
             },
