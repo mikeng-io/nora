@@ -497,7 +497,8 @@ async def read_video_windows(
         budget_seconds = min(budget_seconds, left)
     look_left = look_seconds_left()
     if look_left is not None:
-        budget_seconds = min(budget_seconds, look_left)
+        # Leave the enclosing look time to serialize partial coverage and custody.
+        budget_seconds = min(budget_seconds, look_left * 0.9)
     outcomes: dict[int, VisionResult | None] = {}
 
     async def one(index: int) -> VisionResult | None:

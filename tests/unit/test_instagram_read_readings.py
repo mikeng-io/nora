@@ -1131,3 +1131,18 @@ async def test_the_recovery_pass_fits_inside_the_looks_own_envelope(
     assert ref["code"], (
         "the look ended with a result, not the envelope's kill — custody's "
         "verified handle rode the failed reading")
+
+
+async def test_exhausted_recovery_keeps_successful_tail_and_custody(world, monkeypatch):
+    monkeypatch.setattr(_preprocess, "_run_video", _two_window_clip)
+    monkeypatch.setattr("nora.infra.social.readings.VIDEO_ITEM_TIMEOUT_SECONDS", 0.3)
+    vision = ScriptedVision(slow_timeout={b"window@0"})
+    world.reconfigure(vision=vision, media_store=FakeMediaObjectStore())
+
+    out = await world.make()(link=_POST_LINK)
+
+    assert vision.asks[b"window@0"] == 2
+    assert vision.asks[b"window@30"] == 1
+    assert "saw window@30" in out["text"]
+    assert "0:00-0:30" in out["text"]
+    assert _video_ref(out)["code"]
