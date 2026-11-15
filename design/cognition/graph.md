@@ -37,7 +37,8 @@ Nora's own words are observed as her act; they ground only that she said them.
 
 **Citation rules.** An inferred row cites only observed or computed rows; a
 claim may *guide* a search for another, but it never supports it. A computed
-row derives only from observed or computed rows. A committed row may rest on
+row derives only from observed or computed rows, and from the conditions and
+rests-on edges of the intentions it evaluates; never from a claim's content. A committed row may rest on
 rows of any basis, because resting is what makes its reasons reconsiderable.
 
 **Edges take a basis by the same rule.** An edge recorded with an item

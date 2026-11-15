@@ -19,6 +19,14 @@ from a feature's own code, store, prompt or loop.
 - **[The loop](loop.md)**: OODAS — each stage's question, actions, actor and
   rules; the five passes (called, ambient, proactive, subconscious, review);
   the open loop's stimuli, watches and bounds.
+- **[Observation](observation.md)**: sources, aggregates and stimuli.
+- **[Execution](execution.md)**: executors, waking, time, settlement and
+  tracing.
+- **[Retrieval](retrieval.md)**: one read semantics for prefetch and read
+  tools.
+- **[The model's surface](surface.md)**: instruction, tools per pass, and
+  admission.
+- **[Boundaries](boundaries.md)**: authority of authored text, scope and egress.
 - **[Storage](storage.md)**: how the graph is held — per-kind tables with shared
   planes and one edge table; the tables are the truth.
 - **[Learning](learning.md)**: how an outcome of Nora's own act changes a later

@@ -74,9 +74,13 @@ connects or a bound stops it. Study repeats on its timescales.
 
 **Who starts it** separates the conversational passes: in a called pass
 someone addressed Nora; in an ambient pass the room is talking and she was not
-addressed; in a proactive pass Nora starts, from her own intention. Only the
-conscious passes act. The subconscious pass reaches a room only by committing
-an intention whose delivery a proactive pass carries out.
+addressed; in a proactive pass Nora starts, from her own intention.
+
+- Only the conscious passes act.
+- In the conscious passes orient only reads; understanding is written by a
+  later subconscious pass from the recorded turn.
+- The subconscious pass reaches a room only by committing an intention whose
+  delivery a proactive pass carries out.
 
 Admission is code: a call is admitted deterministically; an ambient offer is
 admitted by room policy and may never suppress a call; a proactive pass is
