@@ -25,7 +25,11 @@ from nora.obs.metrics import Metrics
 from nora.people.app.managed_authority import AuthorityService
 from nora.policy import Conversation, Policy
 from nora.testing import FakeMemoryStore
-from nora.testing.managed import FakeAuthorityBackend, FakeTopologySource
+from nora.testing.managed import (
+    FakeAuthorityBackend,
+    FakeIdentityRegistry,
+    FakeTopologySource,
+)
 
 PERSON = "generated-person"
 ACCOUNT = Identifier("signal", "uuid", "generated-account")
@@ -63,7 +67,7 @@ async def _pipeline(engine):
             ).status is OutcomeStatus.COMPLETE
     access = IdentityAccess(
         bindings=bindings, authority=AuthorityService(bindings, backend, topology),
-        topology=topology,
+        topology=topology, registry=FakeIdentityRegistry(),
     )
     room = Conversation("signal", frozenset({ROOM_ID}), frozenset(), unit="generated-unit")
     policy = Policy((room,), _by_id={("signal", ROOM_ID): room})

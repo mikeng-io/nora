@@ -90,6 +90,19 @@ def test_generated_instances_validate_and_refuse():
     assert VALIDATOR.is_valid({"traits": {}})
 
 
+def test_social_is_an_explicit_boolean_never_a_truthy_string():
+    """The opt-out's shape: `false` is recorded, anything that merely
+    LOOKS enabled is a malformed instance Kratos itself refuses."""
+    assert VALIDATOR.is_valid({"traits": {"social": True}})
+    assert VALIDATOR.is_valid({"traits": {"social": False}})
+    for instance in (
+        {"traits": {"social": "yes"}},
+        {"traits": {"social": 1}},
+        {"traits": {"social": None}},
+    ):
+        assert not VALIDATOR.is_valid(instance), instance
+
+
 @pytest.mark.parametrize("instance", [
     {"traits": {"email": "x@example.invalid"}},
     {"traits": {"owner": "miles"}},

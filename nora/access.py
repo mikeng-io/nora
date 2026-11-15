@@ -9,13 +9,18 @@ Identity and grant reads delegate to the selected `BindingStore`,
 `AuthorityService` and `TopologySource`, so dynamic registrations,
 canonical aliases, current suspension/revocation and a managed outage
 behave the same at every protection point: an unavailable authority is
-`UNAVAILABLE`, never a file fallback. Descriptive profile facts that have
-no managed source yet — social opt-outs, Instagram username metadata,
-Life360 circles — answer their file truth only when `file_persons` is
-given (file mode) and an honest absence otherwise; a managed deployment
-never reads file people or grants as authority. File room topology keeps
-its own authority in both modes (`authorization.md`), so `Policy` stays
-the source for room shape and the open-admission flag.
+`UNAVAILABLE`, never a file fallback. The social opt-out's managed source
+is the Kratos identity's `social` trait, folded over the canonical person
+and every retired identity (`identity.md`): an opted-out survivor or
+former id excludes the person's social records, and a preference that is
+missing, malformed or unreadable raises — never a guessed enabled and
+never a partial opt-out set. Descriptive profile facts that still have no
+managed source — Instagram username metadata, Life360 circles — answer
+their file truth only when `file_persons` is given (file mode) and an
+honest absence otherwise; a managed deployment never reads file people or
+grants as authority. File room topology keeps its own authority in both
+modes (`authorization.md`), so `Policy` stays the source for room shape
+and the open-admission flag.
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ from nora.domain.managed import (
     ManagedMembership,
     ManagedPerson,
     MembershipState,
+    OutcomeStatus,
     PersonLifecycle,
     allowed,
     check_denied,
@@ -38,7 +44,11 @@ from nora.domain.managed import (
     split_room_scope_id,
     unknown_scope,
 )
-from nora.domain.managed_ports import BindingStore, TopologySource
+from nora.domain.managed_ports import (
+    BindingStore,
+    IdentityRegistry,
+    TopologySource,
+)
 from nora.domain.management import Scope, ScopeKind
 from nora.domain.models import (
     ConversationTarget,
@@ -135,6 +145,13 @@ class _EmptyPersons:
 EMPTY_PERSONS = _EmptyPersons()
 
 
+class SocialPreferenceUnavailableError(RuntimeError):
+    """A managed social-preference read that cannot answer: the person is
+    unknown, a `social` trait is missing or malformed, or the registry or
+    binding read failed. Raised so the caller reports `unavailable` — never
+    a guessed enabled and never a partial opt-out set that reads as safe."""
+
+
 class IdentityAccess:
     """One read surface over the selected identity/access backend.
 
@@ -144,7 +161,8 @@ class IdentityAccess:
     (the selected `BindingStore`); grant reads go through the shared
     `AuthorityService.check` path so canonical folding, `identity_held`,
     revocation blocks, scope existence, lifecycle and the grant engine
-    apply identically everywhere.
+    apply identically everywhere. The social opt-out reads the `social`
+    trait off `registry` identities — the same record registration wrote.
     """
 
     def __init__(
@@ -153,16 +171,21 @@ class IdentityAccess:
         bindings: BindingStore | None = None,
         authority: AuthorityService | None = None,
         topology: TopologySource | None = None,
+        registry: IdentityRegistry | None = None,
         file_persons: Persons | None = None,
         file_policy: Policy | None = None,
     ) -> None:
-        if file_persons is None and any(value is None for value in (bindings, authority, topology)):
+        if file_persons is None and any(
+            value is None
+            for value in (bindings, authority, topology, registry)
+        ):
             raise ValueError("managed identity reads require all authority collaborators")
         if file_policy is not None and file_persons is None:
             raise ValueError("file authority requires its file identity source")
         self._bindings = cast(BindingStore, bindings)
         self._authority = cast(Any, authority)
         self._topology = cast(TopologySource, topology)
+        self._registry = cast(IdentityRegistry, registry)
         self._persons = file_persons
         self._policy = file_policy
         # Alias snapshot for the SYNC consumers (`former_ids_for`,
@@ -524,20 +547,75 @@ class IdentityAccess:
         return await self._topology.scope_exists(scope)
 
     # ------------------------------------------------------------------
-    # descriptive profile — file-sourced; an honest absence under managed
+    # descriptive profile — social opt-outs from the identity registry;
+    # the rest file-sourced, an honest absence under managed
     # ------------------------------------------------------------------
 
     async def social_off(self, person_id: str) -> bool:
-        if self._persons is None:
-            return False  # the managed model has no opt-out flag yet
-        return self._persons.social_off(person_id)
+        """Whether the person's social records are opted out. File mode
+        reads `Persons`; managed mode folds the person's canonical id and
+        every retired id and asks the Kratos `social` trait — an opt-out on
+        ANY of them (survivor or former) opts the folded person out. A
+        person that cannot be resolved or read raises
+        `SocialPreferenceUnavailableError`, never a guessed enabled."""
+        if self._persons is not None:
+            return self._persons.social_off(person_id)
+        return await self._opted_out(await self._preference_ids(person_id))
 
     async def social_off_ids(
         self, among: Iterable[str] | None = None
     ) -> frozenset[str]:
-        if self._persons is None:
-            return frozenset()
-        return self._persons.social_off_ids(among)
+        """Every id an opted-out listed person may be recorded under —
+        the canonical id plus each retired alias — so a node carrying any
+        of them is excluded. File mode reads `Persons`. Managed mode raises
+        `SocialPreferenceUnavailableError` for `among=None`: the roster
+        enumerates ACTIVE canonical people only, so an opt-out set that
+        cannot cover inactive or retired people would be a partial answer
+        reading as safe — the caller must name the persons."""
+        if self._persons is not None:
+            return self._persons.social_off_ids(among)
+        if among is None:
+            raise SocialPreferenceUnavailableError(
+                "managed opt-out enumeration has no inactive-or-retired "
+                "roster contract — a whole-roster answer would be partial"
+            )
+        out: set[str] = set()
+        for person_id in among:
+            ids = await self._preference_ids(person_id)
+            if await self._opted_out(ids):
+                out.update(ids)
+        return frozenset(out)
+
+    async def _preference_ids(self, person_id: str) -> tuple[str, ...]:
+        """The ids whose Kratos `social` traits decide this person: the
+        canonical id plus every retired alias. Unknown people raise —
+        an opted-out stranger answered `False` once, and it leaked."""
+        canonical = await self._bindings.canonical_person(person_id)
+        if canonical is None:
+            raise SocialPreferenceUnavailableError(f"unknown person {person_id!r}")
+        return (canonical, *await self._bindings.former_persons(canonical))
+
+    async def _opted_out(self, ids: tuple[str, ...]) -> bool:
+        """`True` when ANY of the person's identities opts out — the
+        survivor's and every retained former's preference applies after
+        linking, and a retired (inactive) identity's traits still read.
+        Any unreadable, missing or non-boolean preference raises."""
+        for external_id in ids:
+            outcome, traits = await self._registry.identity_traits(
+                external_id=external_id
+            )
+            if outcome.status is not OutcomeStatus.COMPLETE or traits is None:
+                raise SocialPreferenceUnavailableError(
+                    f"preference read for {external_id!r}: {outcome.status.value}"
+                )
+            enabled = traits.get("social")
+            if not isinstance(enabled, bool):
+                raise SocialPreferenceUnavailableError(
+                    f"missing or malformed social preference on {external_id!r}"
+                )
+            if not enabled:
+                return True
+        return False
 
     async def instagram_handle(self, fbid: str) -> str | None:
         if self._persons is None:

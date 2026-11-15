@@ -349,6 +349,17 @@ class IdentityRegistry(Protocol):
         `CheckResult(UNKNOWN_SCOPE)` — when absent."""
         ...
 
+    async def identity_traits(
+        self, *, external_id: str
+    ) -> tuple[Outcome, dict[str, Any] | None]:
+        """The identity's descriptive traits — `complete` with the traits
+        dict, `denied` when the identity is absent, `unavailable` on a
+        service or malformed-body failure. A RETIRED (inactive) identity's
+        traits read the same: a retained preference never requires
+        reactivation, and a reader must not infer a missing or malformed
+        value as its default."""
+        ...
+
     async def set_state(
         self, *, external_id: str, active: bool
     ) -> Outcome:

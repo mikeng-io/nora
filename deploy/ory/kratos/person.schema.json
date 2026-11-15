@@ -12,6 +12,10 @@
           "type": "string",
           "description": "The person's display name. Descriptive, never matchable."
         },
+        "social": {
+          "type": "boolean",
+          "description": "The social-memory opt-out. false excludes the person's social records from memory reads. Descriptive state only — ownership and grants stay in Nora's binding store and Keto — and an absent or malformed value reads as unavailable, never inferred enabled."
+        },
         "labels": {
           "type": "object",
           "description": "Operator-authored descriptive labels. Readable metadata, never matchable and never ownership evidence.",
