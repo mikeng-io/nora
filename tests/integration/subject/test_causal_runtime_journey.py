@@ -34,7 +34,7 @@ from tests.integration.subject.test_recorded_wake_runtime import completion, ser
 
 
 @pytest.fixture
-def runtime_evidence(tmp_path):
+def runtime_evidence(tmp_path, request):
     from evals.backbone import _prefill_capture
 
     _prefill_capture()
@@ -45,7 +45,8 @@ def runtime_evidence(tmp_path):
             lock_fd=lock_fd, private_root=tmp_path / "capture")
         with (evidence.capture(trace.get_tracer_provider()),
               measured_run_budget(SimpleNamespace(stop_after_tokens=20000), evidence,
-                                  tmp_path, report, max_requests=12, max_output_tokens=400000),
+                                  tmp_path, report, max_requests=getattr(request, "param", 12),
+                                  max_output_tokens=400000),
               evidence.case("generated-app", input={}, metadata={"behavior": "UNMEASURED"})):
             yield evidence, report
             assert any(e["kind"] == "protocol_assertions" and e["status"] == "PASS"
