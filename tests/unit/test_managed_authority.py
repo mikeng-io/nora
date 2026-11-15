@@ -518,7 +518,7 @@ async def test_sync_membership_removes_departed_and_keeps_joined():
     await _person(store, "person_go")
     await _person(store, "person_keep")
     await store.set_membership(
-        person_id="person_go", scope=ROOM, member=True, source="sync"
+        person_id="person_go", scope=ROOM, member=True, source='sync:["bridge",""]'
     )
     await store.set_membership(
         person_id="person_keep", scope=ROOM, member=True,
@@ -555,7 +555,7 @@ async def test_an_incomplete_roster_never_removes():
     store, backend, svc = _service()
     await _person(store, "person_go")
     await store.set_membership(
-        person_id="person_go", scope=ROOM, member=True, source="sync"
+        person_id="person_go", scope=ROOM, member=True, source='sync:["bridge",""]'
     )
     await backend.put_relation(
         scope=ROOM, relation="member", person_id="person_go"

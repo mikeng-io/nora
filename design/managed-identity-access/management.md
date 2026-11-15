@@ -95,7 +95,11 @@ rely on membership evidence known to be incomplete or stale.
 A guild/server roster is not a channel audience. Room membership and disclosure
 use the actual channel visibility and the existing roster/read contract. Leaving
 one collection revokes the grants derived from that membership while preserving
-other memberships, independently granted access and canonical identity. Direct
+other memberships, independently granted access and canonical identity. Sync
+support is keyed by the authenticated service and its collection identifier,
+inside the approved target scope. A complete snapshot retracts only that
+source; another collection mapped to the same unit retains its own support.
+Journal replay retains the same source and stable account ordering. Direct
 operator restrictions remain effective when automatic synchronisation runs.
 
 ## Web App

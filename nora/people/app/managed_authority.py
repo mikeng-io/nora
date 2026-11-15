@@ -321,6 +321,7 @@ class AuthorityService:
                 person_id=op.target.person_id,
                 scope=op.target.scope,
                 payload=op.payload,
+                sync_source=str(record.snapshot.get("sync_source", "sync")),
             )
         scope = effect.scope
         outcome = await self._run_step(
@@ -521,11 +522,11 @@ class AuthorityService:
             for m in await self._bindings.members_of(scope):
                 if (
                     m.state is MembershipState.MEMBER
-                    and "sync" in m.sources
+                    and effect.sync_source in m.sources
                     and m.person_id not in joined
                 ):
                     retracted.add(m.person_id)
-                    if m.sources <= {"sync"}:
+                    if m.sources <= {effect.sync_source}:
                         departed.add(m.person_id)
         outcome = await self._run_batch(
             record, "authority",
@@ -562,13 +563,13 @@ class AuthorityService:
             lambda: [
                 *(
                     self._bindings.drop_membership_support(
-                        person_id=p, scope=scope, source="sync"
+                        person_id=p, scope=scope, source=effect.sync_source
                     )
                     for p in sorted(retracted)
                 ),
                 *(
                     self._bindings.set_membership(
-                        person_id=p, scope=scope, member=True, source="sync"
+                        person_id=p, scope=scope, member=True, source=effect.sync_source
                     )
                     for p in sorted(joined)
                 ),

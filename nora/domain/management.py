@@ -291,8 +291,12 @@ class RosterSync:
 
     members: frozenset[Identifier]
     complete: bool
+    collection: str = ""
 
     def __post_init__(self) -> None:
+        if (not isinstance(self.collection, str)
+                or (self.collection and not self.collection.strip())):
+            raise OperationError("a roster collection must be named when supplied")
         object.__setattr__(self, "members", frozenset(self.members))
 
 

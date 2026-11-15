@@ -11,6 +11,7 @@ is the warrant for finishing it.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -111,8 +112,12 @@ def _op_snapshot(op: Operation) -> MappingProxyType[str, Any]:
         snap["scope"] = _scope_snapshot(payload.scope)
         snap["identifiers"] = [_ident_snapshot(i) for i in payload.identifiers]
     elif isinstance(payload, RosterSync):
-        snap["members"] = [_ident_snapshot(i) for i in payload.members]
+        snap["members"] = [_ident_snapshot(i) for i in sorted(
+            payload.members, key=lambda i: (i.platform, i.kind, i.value))]
         snap["complete"] = payload.complete
+        snap["collection"] = payload.collection
+        snap["sync_source"] = "sync:" + json.dumps(
+            [op.actor.service_id, payload.collection], separators=(",", ":"))
     elif isinstance(payload, MembershipStanding):
         snap["member"] = payload.member
     elif isinstance(payload, AccessChange):
@@ -288,6 +293,7 @@ class _ReplayOp:
     person_id: str | None
     scope: Scope
     payload: object
+    sync_source: str = "sync"
 
 
 def _rebuild(record: OperationRecord) -> _ReplayOp | None:
@@ -318,6 +324,7 @@ def _rebuild(record: OperationRecord) -> _ReplayOp | None:
                     _ident_from(i) for i in snap.get("members", [])
                 ),
                 complete=bool(snap["complete"]),
+                collection=snap.get("collection", ""),
             )
         else:
             return None
@@ -327,6 +334,7 @@ def _rebuild(record: OperationRecord) -> _ReplayOp | None:
             person_id=snap.get("target_person"),
             scope=scope,
             payload=payload,
+            sync_source=snap.get("sync_source", "sync"),
         )
     except (KeyError, ValueError, TypeError):
         return None
