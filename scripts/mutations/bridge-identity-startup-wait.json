@@ -2,8 +2,8 @@
   {
     "name": "signal bridge identity is waited for, not asked once",
     "file": "nora/platform/registry.py",
-    "old": "                identity = await _resolve_bridge_identity(\n                    adapter, sleep=sleep, clock=clock)",
-    "new": "                identity = await adapter.resolve_identity()",
+    "old": "            identity = await _resolve_bridge_identity(\n                adapter, sleep=sleep, clock=clock)",
+    "new": "            identity = await adapter.resolve_identity()",
     "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves[signal]"
   },
   {
