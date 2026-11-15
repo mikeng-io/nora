@@ -173,7 +173,8 @@ class GeneratedJudge:
         outcome = (payload.get("turn_outcome") or {}).get("status")
         effects = (payload.get("effects") or {}).get("status")
         declared = (payload.get("declared_input") or {}).get("text")
-        if (outcome not in ("delivered", "intentional_non_delivery")
+        if (outcome not in ("delivered", "intentional_non_delivery",
+                            "recorded")
                 or effects != "observed" or not declared):
             return {"verdict": "cannot_tell",
                     "reason": "generated inspection: turn evidence "
@@ -183,12 +184,17 @@ class GeneratedJudge:
         said = " ".join(str(v) for v in (
             (payload.get("turn_outcome") or {}).get("said") or []))
         said = f"{said} {payload.get('final_output') or ''}"
-        # What the turn produced is not only its replies: an action's
-        # declared arguments are observable output the claim may bind.
+        # What the turn SAID binds only on its delivered output and its
+        # acted calls — an observation call's arguments, or a call that
+        # failed or was refused, never proves the turn recalled or said
+        # the token.
         said += " " + " ".join(
             json.dumps(call.get("arguments"), ensure_ascii=False)
             for call in payload.get("tool_calls") or []
-            if call.get("arguments") is not None)
+            if call.get("tool") in ("send_reply", "remind")
+            and call.get("status") == "ok"
+            and not call.get("refusal")
+            and call.get("arguments") is not None)
         check = expectation.get("check")
         if check is None:
             return {"verdict": "cannot_tell",

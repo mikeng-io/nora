@@ -212,10 +212,45 @@ def session_events(
 def turn_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """A produced turn's whole evidence window since its declared send:
     admission, session, model requests, tool calls and transports as the
-    App emitted them. Nothing is filtered — a turn's behavior claim is
-    judged on everything the send produced, and a foreign session bleeding
-    into the window is left visible for the outcome gates to refuse."""
+    App emitted them. Nothing is filtered — the window is provenance, and
+    `bound_turn_events` names the subset this turn's own occasion caused."""
     return list(events)
+
+
+#: The bridge queue spans that name the canonical event they ran.
+_WORK_SPANS = ("queue.attempt", "queue.claim")
+
+
+def bound_turn_events(
+    events: list[dict[str, Any]], *, event_id: str | None,
+    session_id: Any,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """The subset of a turn's window its own declared input caused, plus
+    the work-attempt trace ids it was bound by.
+
+    Every `queue.attempt`/`queue.claim` span naming this event's canonical
+    id owns the work the bridge ran for it — ingest, the durable turn's
+    model calls and its sends — so every event on those traces belongs to
+    this occasion. The session its own stimulus settled to joins by the
+    session's own identity. Everything else in the window — a reminder's
+    fire, a background pass, a foreign occasion — stays provenance, never
+    this turn's acts.
+    """
+    traces = sorted({
+        event["trace_id"] for event in events
+        if event.get("name") in _WORK_SPANS
+        and (event.get("attributes") or {}).get("nora.bridge.event_id")
+        == event_id
+        and isinstance(event.get("trace_id"), str)
+    })
+    bound = [event for event in events
+             if event.get("trace_id") in set(traces)]
+    seen = {id(event) for event in bound}
+    if session_id is not None:
+        bound.extend(
+            event for event in session_events(events, session_id=session_id)
+            if id(event) not in seen)
+    return bound, traces
 
 
 def wake_trajectory(

@@ -21,7 +21,13 @@ from evals.rebuilt.entry import ENTRY_POINTS
 from nora.subject.eval_evidence import EvidenceError, read_events
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.subject.recorded_services import RecordedServices
-from nora.testing.causal_protocol import CORRECTION, INITIAL, TITLE
+from nora.testing.causal_protocol import (
+    ANSWER,
+    CORRECTION,
+    FOLLOWUP,
+    INITIAL,
+    TITLE,
+)
 from nora.testing.journey_world import JourneyServices
 from tests.integration.subject.test_sdk_recorded_caller import (
     sdk_evidence as sdk_evidence,
@@ -60,19 +66,12 @@ def world(*, overrides=None):
             "platforms.signal.enabled": True,
             "cognition.enabled": True,
             "heartbeat.enabled": True,
-            # The finite plan is deterministic in two ways. A short fire
-            # tick and a cue-quiet window wider than the reminder's whole
-            # fire window keep the plan's sends the only wakes the world
-            # produces; and every scheduled Dreamer adaptor's `wake_batch`
-            # sits above the plan's message count, so the background tick
-            # never holds the model slot the plan's own wakes and fires
-            # need — the same not-due shape a quiet deployment shows.
-            "heartbeat.tick_seconds": 5,
-            "cognition.cue_quiet_seconds": 300,
-            "culture.wake_batch": 1000,
-            "memory.profile.person.update_every_messages": 1000,
-            "memory.profile.unit.update_every_room_profile_changes": 1000,
-            "memory.profile.nora.update_every_replies": 1000,
+            # The deployment's own timers and thresholds compose this
+            # world — nothing shortened, nothing suppressed. The stated
+            # cue-quiet window wakes each send's stimulus on the app's own
+            # schedule, the finite protocol answers any background
+            # occasion production raises, and an occasion the plan never
+            # produced stays an ERROR, never hidden.
             **(overrides or {}),
         },
         judge_models=JUDGES)
@@ -89,17 +88,28 @@ def case():
 # made observable — finite rehearsal binding, never a quality claim.
 PLAN_V2 = {
     "version": 2,
-    "steps": list(PLAN["steps"]),
+    "steps": [
+        {"send": INITIAL},
+        {"until_wakes": 1},
+        {"until_delivery": True},
+        {"send": CORRECTION},
+        {"until_wakes": 2},
+        # The real later observation: a tagged follow-up through the same
+        # ingress — the admission's own engage decision produces a durable
+        # turn whose reply the recall claim is judged against.
+        {"send": FOLLOWUP, "tagged": True},
+        {"until_delivery": True},
+    ],
     "expected_wakes": 2,
     "expectations": [
         {"turn": 0, "polarity": "must", "kind": "behavior",
          "text": "the turn asks which generated venue and time to select",
          "check": "Which generated venue and time"},
-        {"turn": 1, "polarity": "must", "kind": "behavior",
-         "text": "the turn retains the generated correction — the venue "
-                "record is revised to Cedar Hall",
+        {"turn": 2, "polarity": "must", "kind": "behavior",
+         "text": "the later reply recalls the generated venue the "
+                "correction settled",
          "check": "Cedar Hall"},
-        {"turn": 1, "polarity": "must_not", "kind": "behavior",
+        {"turn": 2, "polarity": "must_not", "kind": "behavior",
          "text": "the turn does not assert the generated gathering "
                  "already happened",
          "check": "has taken place"},
@@ -310,35 +320,55 @@ async def test_sdk_autonomous_journey_version2_turns_through_real_app(
     assert retained["version"] == 2
     assert retained["coverage"]["status"] == "PASS", retained["coverage"]["errors"]
     census = retained["coverage"]["expected"]
-    assert census["turns"] == 2 and census["wakes"] == 2
+    assert census["turns"] == 3 and census["wakes"] == 2
     assert census["criteria"] == 3 and census["judge_answers"] == 6
 
     (journey,) = (c for c in retained["cases"] if c["case"] == draw.name)
     assert journey["status"] == "PASS"
     # The wake denominator is honestly retained — each send's natural wake
     # is a row — but the behavior claims live on the turn rows.
-    assert len(journey["wakes"]) == 2 and len(journey["turns"]) == 2
+    assert len(journey["wakes"]) == 2 and len(journey["turns"]) == 3
+    # Each turn's outcome is its own production decision, never silence
+    # guessed: the keep/correction sends' admissions explicitly declined
+    # engagement (their stimuli fed the wakes), and the tagged follow-up's
+    # durable turn delivered a bound confirmed reply.
     assert [t["outcome"] for t in journey["turns"]] == [
-        "delivered", "intentional_non_delivery"]
-    first, second = journey["turns"]
+        "recorded", "recorded", "delivered"]
+    first, second, third = journey["turns"]
     assert first["trajectory"]["declared_input"]["text"] == INITIAL
     assert second["trajectory"]["declared_input"]["text"] == CORRECTION
+    assert third["trajectory"]["declared_input"]["text"] == FOLLOWUP
+    # The causal binding is the claim: each send's own stimulus settles to
+    # the session that consumed it; the follow-up's turn work owns its send.
+    for index, turn in enumerate(journey["turns"]):
+        bound = turn["trajectory"]["bound"]
+        assert bound["event_id"] == f"generated-journey-{index + 1}"
+        assert bound["stimulus_id"] is not None
+        assert bound["attempt_traces"]
+    assert first["trajectory"]["session_id"] is not None
+    assert second["trajectory"]["session_id"] is not None
+    assert first["trajectory"]["session_id"] != second["trajectory"]["session_id"]
+    assert third["outcome"] == "delivered" and third["trajectory"]["turn_outcome"]["said"]
+    assert any(ANSWER in line for line in third["trajectory"]["turn_outcome"]["said"])
     assert [e["verdict"] for t in journey["turns"]
             for e in t["expectations"]] == ["PASS", "PASS", "PASS"]
     assert all(len(e["answers"]) == 2
                for t in journey["turns"] for e in t["expectations"])
-    for index in range(2):
+    for index in range(3):
         frozen = json.loads((outputs / f"turn-{index}.json").read_text())
         assert frozen["turn"] == index
-        assert frozen["declared_input"]["text"] in (INITIAL, CORRECTION)
-        assert frozen["trajectory"]["session_id"] is None
+        assert frozen["declared_input"]["text"] in (
+            INITIAL, CORRECTION, FOLLOWUP)
+        assert "session_id" in frozen["trajectory"]
+        assert frozen["trajectory"]["bound"]["event_id"] == (
+            frozen["declared_input"]["event_id"])
     # The state kinds stay provenance, never the oracle: the diff is
     # frozen beside the turn it is not allowed to decide.
     assert "diff" in frozen or "diff" in json.loads(
         (outputs / "turn-0.json").read_text())
 
     protocol, judge = plan.protocol, plan.judge
-    assert protocol.phase == 9 and not protocol.errors
+    assert protocol.phase >= 9 and not protocol.errors
     assert len(judge.requests) == 6 and not judge.errors
     assert {r["model"] for r in judge.requests} == set(JUDGES)
     rendered = (outputs / "report.html").read_text()

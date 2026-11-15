@@ -58,8 +58,10 @@ def envelope(
 
 async def settled_event(engine: Any, canonical: Any, task: asyncio.Task) -> tuple[Any, Any]:
     """The bridge event plus its work rows once admission settles — every
-    `failed_retained`/`uncertain` state is an error, never a wait-through."""
-    async with asyncio.timeout(15):
+    `failed_retained`/`uncertain` state is an error, never a wait-through.
+    A durable `turn` work runs a real model call and send before its row
+    settles, so the bound is the slow path's, not ingest's."""
+    async with asyncio.timeout(60):
         while True:
             async with engine.connect() as conn:
                 event = (await conn.execute(sa.select(BRIDGE_EVENT).where(
@@ -122,14 +124,17 @@ class JourneyDriver:
             raise EvidenceError(
                 "the bridge reader never came up") from None
 
-    async def ingress(self, body: str, *, event_id: str) -> tuple[Envelope, Any, Any]:
+    async def ingress(self, body: str, *, event_id: str,
+                      tagged: bool = False) -> tuple[Envelope, Any, Any]:
         """One generated line through real bridge ingress: the envelope
         plus the admission event and work rows it settled to — the turn's
-        own settlement, never an inferred one."""
+        own settlement, never an inferred one. `tagged` carries the
+        generated-self mention so the admission's own engage decision
+        produces a turn work."""
         reader = self.runtime.readers[0]
         _, room = self.subject.room
         timestamp = int(time.time() * 1000)
-        original = envelope(reader, room, timestamp, body=body)
+        original = envelope(reader, room, timestamp, body=body, tagged=tagged)
         incoming = replace(original, event_id=event_id,
             message={**(original.message or {}), "body": body,
                      "raw": {"dataMessage": {"message": body}}})

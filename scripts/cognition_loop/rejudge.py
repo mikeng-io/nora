@@ -181,7 +181,8 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
         else:
             identity = frozen_turn_identity(
                 frozen, unit=case.unit, turn=index,
-                declared_input=anchor, step=recorded.get("step"))
+                declared_input=anchor, step=recorded.get("step"),
+                session_id=recorded.get("session_id"))
         # The case names the unit; an old freeze never captured the rooms
         # that belong to it, and null there means unknown, never empty.
         trajectory = {**(frozen.get("trajectory") or {}),

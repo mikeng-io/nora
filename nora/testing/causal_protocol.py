@@ -13,6 +13,8 @@ INITIAL = "記低：the generated venue and time remain undecided."
 CORRECTION = "記低：the generated venue is Cedar Hall; the generated time remains undecided."
 TITLE = "Generated venue and time"
 QUESTION = "Which generated venue and time should be selected?"
+FOLLOWUP = "Which generated venue was finally selected?"
+ANSWER = "The selected generated venue is Cedar Hall."
 
 
 def completion(model, content, *, stream=False):
@@ -109,7 +111,7 @@ class CausalProtocol:
                        for row in objects(request["messages"]))
             return completion(request["model"], "Generated question is retained.",
                               stream=True)["response"]
-        if self.phase in {3, 8}:
+        if self.phase in {3, 8, 10}:
             assert not tools and request["model"] == self.cfg.llm.model
             return completion(request["model"], '{"items":[]}', stream=True)["response"]
         if self.phase == 4:
@@ -132,6 +134,13 @@ class CausalProtocol:
                        for row in objects(request["messages"]))
             return completion(request["model"], "Generated correction is retained.",
                               stream=True)["response"]
+        if self.phase == 9:
+            # The tagged follow-up's own turn: its model call must carry the
+            # question, the settled correction it answers on, and the real
+            # delivery tool — the reply it returns rides the durable send.
+            assert (FOLLOWUP in text and CORRECTION in text
+                    and "send_reply" in tools)
+            return self.tool(request, "send_reply", {"text": ANSWER})
         raise AssertionError(f"unmatched generated journey phase {self.phase}")
 
     async def respond(self, request):
@@ -146,7 +155,7 @@ class CausalProtocol:
                              for t in body.get("tools", []))
             if is_culture:
                 assert '<dreamer_objective name="culture">' in "\n".join(texts(body["messages"]))
-                assert body["model"] == self.cfg.dreamer.model and self.background < 4
+                assert body["model"] == self.cfg.dreamer.model and self.background < 10
                 if any(row.get("role") == "tool" for row in body["messages"]):
                     assert any(row.get("status") == "ok" for row in objects(body["messages"]))
                     response = completion(body["model"], "Generated culture pass is settled.",

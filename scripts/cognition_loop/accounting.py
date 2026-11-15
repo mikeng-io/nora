@@ -103,12 +103,14 @@ def frozen_wake_identity(frozen: dict[str, Any], *, unit: Any,
 
 
 def frozen_turn_identity(frozen: dict[str, Any], *, unit: Any, turn: Any,
-                         declared_input: Any, step: Any = None) -> str | None:
+                         declared_input: Any, step: Any = None,
+                         session_id: Any = None) -> str | None:
     """Why a frozen artifact cannot stand in for this case/unit/turn, else
     None. The artifact proves it belongs by content: its own turn index,
     unit and declared input text under typed identity, its error step
-    equal to the row's, and its trajectory's explicit `session_id: None`
-    — a turn binds no session, and an absent key never stands in for one.
+    equal to the row's, and its trajectory's `session_id` equal to the
+    row's — None for an input that bound no session, the bound session's
+    own identity when its stimulus settled to one.
     """
     if not isinstance(frozen, dict):
         return "frozen turn is not an object"
@@ -136,7 +138,7 @@ def frozen_turn_identity(frozen: dict[str, Any], *, unit: Any, turn: Any,
     if isinstance(trajectory, dict):
         if "session_id" not in trajectory:
             missing.append("session")
-        elif trajectory["session_id"] is not None:
+        elif not _same(trajectory["session_id"], session_id):
             foreign.append("session")
         trajectory_unit = trajectory.get("unit")
         if (trajectory_unit is not None and (unit is None
@@ -255,7 +257,8 @@ def _reconcile(report: dict[str, Any], output: Path, *, judgments: bool) -> dict
                 continue
             identity = frozen_turn_identity(
                 frozen, unit=case["unit"], turn=index,
-                declared_input=declared_input, step=turn.get("step"))
+                declared_input=declared_input, step=turn.get("step"),
+                session_id=turn.get("session_id"))
             if identity is not None:
                 errors.append(f"{identity}: {name}")
             if judgments:
@@ -388,10 +391,12 @@ def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
                         f"{turn.get('error')}")
                     continue
                 # A produced turn settles to its typed outcome: confirmed
-                # delivery or intentional non-delivery. Anything else —
+                # delivery, an explicit recorded abstention, or the
+                # admission's own declined engagement. Anything else —
                 # unconfirmed, absent — stays unestablished.
                 if turn.get("outcome") in ("delivered",
-                                           "intentional_non_delivery"):
+                                           "intentional_non_delivery",
+                                           "recorded"):
                     settled += 1
                 else:
                     unestablished += 1

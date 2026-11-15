@@ -126,9 +126,16 @@ claim binds, not the whole of it
 - `declared_input`: the exact input the turn answered, with its \
 admission identity
 - `turn_outcome`: the turn's typed outcome — `delivered` with confirmed \
-delivery receipts, or `intentional_non_delivery` with the settled \
-admission work states. Either is a complete observation; a missing or \
-untyped outcome is missing evidence, never silence.
+delivery receipts bound to this input's own turn work, \
+`intentional_non_delivery` with the turn work's own recorded abstention, \
+or `recorded` when the admission's own decision declined engagement. \
+Each is a complete observation; a missing or untyped outcome is missing \
+evidence, never silence.
+- `bound`: the causal binding — the canonical event id, the stimulus row \
+the input wrote, the wake and session its claim settled to, and the \
+work-attempt trace ids its evidence came from. `model_calls`, \
+`tool_calls` and `effects` below are already restricted to that bound \
+window; `bound.window` counts the wider interval kept as provenance.
 - `model_calls`: the turn's actual requests, in order, outside any \
 session — each digested to its model, offered tools and newest messages \
 excerpted; `messages_omitted` counts the earlier stack kept out of the \
@@ -541,11 +548,21 @@ def turn_gap(trajectory: Any) -> list[str]:
             or not isinstance(declared.get("text"), str)
             or not declared["text"].strip()):
         causes.append("declared_input_unbound")
-    if "session_id" not in trajectory or trajectory.get("session_id") is not None:
-        causes.append("turn_session_misbound")
+    if "session_id" not in trajectory:
+        causes.append("turn_session_unbound")
+    bound = trajectory.get("bound")
+    if (not isinstance(bound, dict) or not isinstance(declared, dict)
+            or bound.get("event_id") != declared.get("event_id")):
+        causes.append("turn_binding_foreign")
+    if trajectory.get("session_id") is not None:
+        session_settlement = trajectory.get("session_settlement")
+        if (not isinstance(session_settlement, dict)
+                or session_settlement.get("status") != "observed"):
+            causes.append("session_settlement_unobserved")
     outcome = trajectory.get("turn_outcome")
     if (not isinstance(outcome, dict)
-            or outcome.get("status") not in ("delivered", "intentional_non_delivery")):
+            or outcome.get("status") not in (
+                "delivered", "intentional_non_delivery", "recorded")):
         causes.append("turn_outcome_unobserved")
     settlement = trajectory.get("settlement")
     if (not isinstance(settlement, dict)
