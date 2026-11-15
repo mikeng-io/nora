@@ -257,6 +257,9 @@ SDK execution uses private `--services FILE` HTTP recordings keyed by corpus
 and exact draw name. It reports protocol rehearsal with model behavior
 unmeasured. Each draw owns its services and preserves workspace identities;
 an unrecorded response is an instrument error, never known empty history.
+Frozen cognition rejudge uses the same file format under `cognition-rejudge`,
+keyed by case name. It retains the source receipt and a separate rejudge capture
+and budget in its private measurement version; scripted verdicts remain protocol evidence.
 
 ```bash
 # on the deploy host, in a checkout of the branch under test (NOT the deploy checkout)

@@ -123,7 +123,8 @@ def _run(report: dict[str, Any], budget: dict[str, Any] | None) -> str:
              (budget.get("spent_reason") or "none")),
         ]) if budget is not None else
         '<p class="not-recorded">not recorded — no budget was armed</p>',
-        "<h3>Evidence receipt</h3>",
+        "<h3>Source evidence receipt</h3>" if report.get("rejudged")
+        else "<h3>Evidence receipt</h3>",
         _kv([
             ("status", ev.get("status")),
             ("causes", ", ".join(ev.get("causes") or []) or None),
@@ -131,6 +132,15 @@ def _run(report: dict[str, Any], budget: dict[str, Any] | None) -> str:
         ]),
         "<h3>Expected coverage</h3>" + _block("coverage", report.get("coverage")),
     ]
+    if report.get("rejudged"):
+        measurement = report["rejudged"]
+        parts.insert(1, "<h3>Rejudgement</h3>" + _kv([
+            ("case", measurement.get("case")), ("mode", measurement.get("mode")),
+            ("execution", measurement.get("execution")),
+            ("model behavior", measurement.get("behavior")),
+        ]))
+        parts.append(_block("Rejudge capture", report.get("rejudge_evidence")))
+        parts.append(_block("Rejudge budget", report.get("rejudge_run_budget")))
     errors = report.get("errors") or []
     if errors:
         parts.append("<h3>Run errors</h3>" + "".join(
@@ -326,6 +336,7 @@ def _judgement(expectations: list[dict[str, Any]] | None) -> str:
         return "".join(out)
     for exp in expectations:
         expectation = exp.get("expectation")
+        label: Any
         if isinstance(expectation, dict):
             label = (f"{expectation.get('polarity')} — "
                      f"{expectation.get('kind')} — {expectation.get('text')}")

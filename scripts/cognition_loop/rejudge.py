@@ -13,20 +13,28 @@ import hashlib
 import json
 import shutil
 import sys
+import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+from opentelemetry import trace
+
+from evals.backbone import _prefill_capture
+from evals.services import load_services
 from nora.config import load
+from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events, validate_events
+from nora.subject.sandbox import eval_host_lock
 from scripts.cognition_loop.accounting import manifest, reconcile
 from scripts.cognition_loop.accounting import write_report as _write_report
 from scripts.cognition_loop.cases import load_case
 from scripts.cognition_loop.html import render
-from scripts.cognition_loop.judges import judge_expectation
+from scripts.cognition_loop.judges import JUDGE_TOKENS_PER_CALL, judge_expectation
 from scripts.cognition_loop.state import Entry, KindDiff, StateDiff, UnitState
 from scripts.cognition_loop.verdicts import ERROR, WAKE_ERRED, ExpectationVerdict, rollup
-from scripts.memory_graph_spike import Judges
+from scripts.memory_graph_spike import Judges, measured_run_budget
 
 _STATUSES = ("created", "revised", "retired", "unchanged")
 
@@ -88,14 +96,12 @@ def run_status_after(report: dict[str, Any]) -> str:
     evidence_ok = (report.get("evidence") or {}).get("status") == "PASS"
     return rollup(
         *(c.get("status") or ERROR for c in report.get("cases") or [{}]),
-        *([] if evidence_ok and not report.get("errors") else [ERROR]))
+        *([] if evidence_ok and not report.get("errors") else [ERROR]),
+        *([] if report.get("rejudge_evidence", {"status": "PASS"}).get("status") == "PASS"
+          else [ERROR]))
 
 
-async def rejudge(output: Path, case_path: Path, config: Path,
-                  judge_a: str, judge_b: str) -> dict[str, Any]:
-    output, report = _measurement(output, case_path)
-    case = load_case(output / "case.json")
-    report["rejudged"]["judges"] = [judge_a, judge_b]
+def _preflight(report: dict[str, Any], output: Path, case: Any) -> tuple[list, list[str]]:
     recorded = report.get("cases")
     rows = [c for c in recorded if isinstance(c, dict) and c.get("case") == case.name] if (
         isinstance(recorded, list)) else []
@@ -109,17 +115,11 @@ async def rejudge(output: Path, case_path: Path, config: Path,
         isinstance(expected, list)) else []
     if planned != manifest([case]):
         errors.append("case differs from expected manifest")
-    if errors:
-        for row in rows:
-            row["status"] = ERROR
-            row.setdefault("errors", []).extend(errors)
-        report.setdefault("errors", []).extend(errors)
-        report["status"] = ERROR
-        _write_report(output, report)
-        render(output)
-        return report
-    row = rows[0]
-    judges = Judges(load(config), [judge_a, judge_b], config)
+    return rows, errors
+
+
+async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
+                       judges: Any, models: tuple[str, str]) -> None:
     statuses = []
     earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = ()
     for index, wake_id in enumerate(case.wakes):
@@ -141,7 +141,7 @@ async def rejudge(output: Path, case_path: Path, config: Path,
                     continue
                 try:
                     verdict = await judge_expectation(
-                        judges, (judge_a, judge_b), expectation, diff, after,
+                        judges, models, expectation, diff, after,
                         trajectory, earlier_wakes)
                 except Exception as exc:  # noqa: BLE001 — a judge failure is ERROR
                     verdict = ExpectationVerdict(
@@ -166,9 +166,81 @@ async def rejudge(output: Path, case_path: Path, config: Path,
         if not unmeasured(frozen, recorded):
             earlier_wakes += ((diff, trajectory),)
     row["status"] = case_status(row, statuses)
-    report["status"] = run_status_after(report)
-    _write_report(output, report)
-    render(output)
+
+
+def _failed(report: dict[str, Any], rows: list, errors: list[str]) -> None:
+    for row in rows:
+        row["status"] = ERROR
+        row.setdefault("errors", []).extend(errors)
+    report.setdefault("errors", []).extend(errors)
+    report["status"] = ERROR
+
+
+async def _isolated_judging(output: Path, report: dict[str, Any], case: Any,
+                           config: Path, models: tuple[str, str], services: Path | None) -> None:
+    inputs = load_services(services) if services is not None else None
+    if inputs is None:
+        raise EvidenceError("external_responses_missing: " + case.name)
+    recording = inputs.corpora.get("cognition-rejudge", {}).get(case.name)
+    if recording is None:
+        raise EvidenceError("external_responses_missing: " + case.name)
+    cfg = load(config, require_secrets=False)
+    _prefill_capture()
+    with eval_host_lock() as lock_fd:
+        evidence = RunEvidence(run_id="cognition-rejudge", metadata={
+            "mode": "protocol-rehearsal", "behavior": "UNMEASURED",
+            "source": report["rejudged"], "judges": models,
+        }, lock_fd=lock_fd, private_root=output)
+        report["rejudge_evidence"] = {"status": ERROR, "path": str(evidence.path)}
+        measured: dict[str, Any] = {}
+        requests = 2 * len(case.expectations)
+        cutoff = requests * JUDGE_TOKENS_PER_CALL
+        try:
+            with (evidence.capture(trace.get_tracer_provider()),
+                  measured_run_budget(SimpleNamespace(stop_after_tokens=cutoff), evidence,
+                                      evidence.path, measured, max_requests=requests,
+                                      max_output_tokens=requests * 4096,
+                                      deadline=time.monotonic() + requests
+                                      * cfg.llm.timeout_seconds)):
+                inputs.record(evidence)
+                with evidence.case(case.name, input=manifest([case]), metadata={"frozen": True}):
+                    async with recording.open("sqlite://") as environment:
+                        judges = Judges(environment.bind_config(cfg), list(models), config)
+                        row = next(r for r in report["cases"] if r["case"] == case.name)
+                        await _judge_wakes(output, row, case, judges, models)
+                        evidence.result(row)
+                    evidence.exit_code = 0 if row["status"] == "PASS" else 1
+        finally:
+            report["rejudge_run_budget"] = measured.get("run_budget")
+            try:
+                receipt = validate_events(read_events(evidence.path))
+            except EvidenceError as exc:
+                receipt = {"status": ERROR, "causes": [str(exc)]}
+            report["rejudge_evidence"] = {**receipt, "path": str(evidence.path)}
+
+
+async def rejudge(output: Path, case_path: Path, config: Path,
+                  judge_a: str, judge_b: str, *, services: Path | None = None) -> dict[str, Any]:
+    output, report = _measurement(output, case_path)
+    case = load_case(output / "case.json")
+    report["rejudged"].update(case=case.name, judges=[judge_a, judge_b], mode="protocol-rehearsal",
+                               behavior="UNMEASURED", execution=ERROR)
+    report["rejudge_evidence"] = {"status": ERROR, "causes": ["not_started"]}
+    rows, errors = _preflight(report, output, case)
+    try:
+        if errors:
+            _failed(report, rows, errors)
+        else:
+            await _isolated_judging(output, report, case, config, (judge_a, judge_b), services)
+            report["rejudged"]["execution"] = "PASS"
+            report["status"] = run_status_after(report)
+    except BaseException as exc:
+        _failed(report, rows, [f"rejudge: {type(exc).__name__}: {exc}"])
+        if not isinstance(exc, Exception):
+            raise
+    finally:
+        _write_report(output, report)
+        render(output)
     return report
 
 
@@ -177,11 +249,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("output", type=Path)
     parser.add_argument("--case", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--services", type=Path,
+                        help="private cognition-rejudge/case HTTP recordings; protocol only")
     parser.add_argument("--judge-a", default="nora-judge")
     parser.add_argument("--judge-b", default="nora-judge-2")
     args = parser.parse_args(argv)
     report = asyncio.run(rejudge(args.output, args.case, args.config,
-                                 args.judge_a, args.judge_b))
+                                 args.judge_a, args.judge_b, services=args.services))
     print(report["status"])
     print(report["rejudged"]["output"])
     return 0 if report["status"] == "PASS" else 1

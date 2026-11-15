@@ -9,6 +9,21 @@ from scripts.cognition_loop.rejudge import frozen_diff
 from scripts.cognition_loop.verdicts import JudgeAnswer
 
 
+@pytest.fixture
+def rejudge_services(tmp_path, example_config):
+    import json
+
+    from scripts.cognition_loop.cases import generated_case
+
+    bindings = {"llm.base_url": "judge"}
+    bindings.update({f"providers.{name}.base_url": "judge" for name in example_config.providers})
+    path = tmp_path / "services.json"
+    path.write_text(json.dumps({"version": 1, "corpora": {"cognition-rejudge": {
+        generated_case().name: {"version": 1, "bindings": bindings, "services": {"judge": []}}
+    }}}))
+    return path
+
+
 @pytest.mark.parametrize("missing", [0, 1, 2])
 async def test_missing_frozen_wake_stops_before_judge_setup(monkeypatch, tmp_path, missing):
     import json
@@ -59,7 +74,7 @@ def test_the_after_state_is_created_revised_and_unchanged_never_retired():
 @pytest.mark.parametrize("damage", [None, "row", "identity", "json", "criteria",
                                     "case_manifest", "missing_case", "malformed_manifest"])
 async def test_preflight_reconciles_rows_and_json_without_changing_originals(
-    monkeypatch, tmp_path, damage,
+    monkeypatch, tmp_path, damage, example_config, rejudge_services,
 ):
     import json
     from dataclasses import replace
@@ -103,8 +118,9 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
     originals = {p.name: p.read_bytes() for p in tmp_path.glob("*.json")}
     calls = []
 
-    def setup(*args):
+    def setup(*args, **kwargs):
         assert damage is None, "judge setup before complete evidence"
+        return example_config
 
     async def judge(_judges, _models, expectation, diff, after, trajectory, earlier):
         calls.append((expectation.kind, expectation.wake))
@@ -115,7 +131,8 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
     monkeypatch.setattr(module, "Judges", lambda *_: object())
     monkeypatch.setattr(module, "judge_expectation", judge)
     monkeypatch.setattr(module, "render", lambda _: None)
-    result = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b")
+    result = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b",
+                                  services=rejudge_services)
     assert result["status"] == ("PASS" if damage is None else "ERROR")
     assert calls == ([(e.kind, e.wake) for e in case.expectations] if damage is None else [])
     assert {name: (tmp_path / name).read_bytes() for name in originals} == originals
@@ -151,7 +168,9 @@ def test_a_report_error_with_no_frozen_after_state_stays_unmeasured():
     assert unmeasured({"error": {"step": "advance"}, "diff": {}}, {})
 
 
-async def test_an_unmeasured_wake_spends_no_judge_call(monkeypatch, tmp_path):
+async def test_an_unmeasured_wake_spends_no_judge_call(
+    monkeypatch, tmp_path, example_config, rejudge_services,
+):
     """A wake whose step failed before it settled stays ERROR on rejudge
     and its expectations are never judged; a settled wake still is."""
     import json
@@ -187,18 +206,21 @@ async def test_an_unmeasured_wake_spends_no_judge_call(monkeypatch, tmp_path):
         return ExpectationVerdict(verdict="PASS", answers=(
             JudgeAnswer("met", model="a"), JudgeAnswer("met", model="b")))
 
-    monkeypatch.setattr(module, "load", lambda _: None)
+    monkeypatch.setattr(module, "load", lambda *a, **k: example_config)
     monkeypatch.setattr(module, "Judges", lambda *_: object())
     monkeypatch.setattr(module, "judge_expectation", judge)
     monkeypatch.setattr(module, "render", lambda _: None)
-    report = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b")
+    report = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b",
+                                  services=rejudge_services)
     assert judged == [1]                    # only the settled wake was judged
     assert report["cases"][0]["wakes"][1]["status"] == "ERROR"
     assert report["cases"][0]["wakes"][1]["expectations"] == []
     assert report["status"] == "ERROR"
 
 
-async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch, tmp_path):
+async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(
+    monkeypatch, tmp_path, example_config, rejudge_services,
+):
     import json
 
     from scripts.cognition_loop import rejudge as module
@@ -228,11 +250,12 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(monkeypatch,
             verdict="ERROR" if expectation.kind == "note" else "PASS", answers=(),
             detail="a decidable answer needs a cited entry" if expectation.kind == "note" else "")
 
-    monkeypatch.setattr(module, "load", lambda _: None)
+    monkeypatch.setattr(module, "load", lambda *a, **k: example_config)
     monkeypatch.setattr(module, "Judges", lambda *_: object())
     monkeypatch.setattr(module, "judge_expectation", judge)
     monkeypatch.setattr(module, "render", lambda _: None)
-    report = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b")
+    report = await module.rejudge(tmp_path, case_path, tmp_path / "config", "a", "b",
+                                  services=rejudge_services)
     assert report["status"] == "ERROR"
     exp = report["cases"][0]["wakes"][0]["expectations"][0]
     assert exp["detail"] == "a decidable answer needs a cited entry"
