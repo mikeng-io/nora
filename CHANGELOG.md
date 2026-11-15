@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.19.2](https://github.com/mikeng-io/nora/compare/v7.19.1...v7.19.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* **media:** bound a chunked video read and recover its timed-out windows ([9cf9f49](https://github.com/mikeng-io/nora/commit/9cf9f49be2119b5d7af0d131f0c192ee3c40a956))
+* **media:** hand the item look's deadline to a video read's recovery ([fe8d3cf](https://github.com/mikeng-io/nora/commit/fe8d3cf75ecaedd401eebe6f29652c4975152c4e))
+* **media:** preserve partial results when recovery exhausts its allowance ([bf030bc](https://github.com/mikeng-io/nora/commit/bf030bc5dcbea3a584993bfd4157fd1ff7280f06))
+
 ## [7.19.1](https://github.com/mikeng-io/nora/compare/v7.19.0...v7.19.1) (2026-11-14)
 
 
