@@ -2,8 +2,8 @@
   {
     "name": "both judges require current and earlier instruction custody",
     "file": "scripts/cognition_loop/judges.py",
-    "old": "    if any(subject_instructions(candidate)[\"status\"] != \"observed\"",
-    "new": "    if any(False",
+    "old": "    if subject_instructions(trajectory)[\"status\"] != \"observed\":\n        causes.append(\"subject_instructions_unobserved\")\n",
+    "new": "    if False and subject_instructions(trajectory)[\"status\"] != \"observed\":\n        causes.append(\"subject_instructions_unobserved\")\n",
     "target": "tests/unit/test_evaluation_instruction_custody.py::test_missing_instruction_custody_stops_before_both_judges"
   },
   {

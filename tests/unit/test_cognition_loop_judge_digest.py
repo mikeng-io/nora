@@ -512,8 +512,12 @@ async def test_missing_lifecycle_evidence_stops_before_either_judge_call(missing
                                    observed, ((diff, observed),))
     assert good.verdict == "PASS" and len(judges.calls) == 2
     judges.calls.clear()
-    broken = {} if missing in ("current", "earlier") else {
-        "effects": {key: value for key, value in observed["effects"].items() if key != missing}}
+    # Every other gate (instructions, session) stays observed: only the
+    # lifecycle projection is damaged, or the missing-evidence refusal is
+    # not this test's to claim.
+    broken = {**observed, "effects": {}} if missing in ("current", "earlier") else {
+        **observed, "effects": {
+            key: value for key, value in observed["effects"].items() if key != missing}}
     bad = await judge_expectation(judges, ("a", "b"), expectation, diff, state,
         observed if missing == "earlier" else broken,
         ((diff, broken if missing == "earlier" else observed),))

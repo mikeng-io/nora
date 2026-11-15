@@ -23,8 +23,8 @@
   {
     "name": "the digest carries the earlier wakes",
     "file": "scripts/cognition_loop/judges.py",
-    "old": "        \"earlier_wakes\": [_wake_evidence(d, t, keys) for d, t in earlier_wakes],\n",
-    "new": "        \"earlier_wakes\": [],\n",
+    "old": "    earlier = [_wake_evidence(d, t, keys, history=True)\n               for d, t in earlier_wakes]\n",
+    "new": "    earlier = []\n",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_judges_receive_the_recorded_sources_and_clock_once_per_wake"
   },
   {
@@ -37,15 +37,15 @@
   {
     "name": "an unchanged entry the digest only counts is not citable",
     "file": "scripts/cognition_loop/judges.py",
-    "old": "    known = _emitted_ids(diff) | {\n",
-    "new": "    known = diff.entry_ids() | {\n",
+    "old": "    known = _emitted_ids(diff)\n",
+    "new": "    known = diff.entry_ids()\n",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_a_judge_cites_only_the_ids_the_digest_shows"
   },
   {
     "name": "a nonempty shown kind forbids an uncited decidable answer",
     "file": "scripts/cognition_loop/judges.py",
-    "old": "    nothing_to_cite = not any(\n        e.startswith(f\"{expectation.kind}:\") for e in known\n    )\n",
-    "new": "    nothing_to_cite = not any(\n        e.startswith(f\"{expectation.kind}:\") for e in diff.entry_ids()\n    ) and not state_after.entries(expectation.kind)\n",
+    "old": "        not any(e.startswith(f\"{expectation.kind}:\") for e in known))\n",
+    "new": "        not any(e.startswith(f\"{expectation.kind}:\") for e in diff.entry_ids()) and not state_after.entries(expectation.kind))\n",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_a_judge_can_cite_an_emitted_prior_change_but_not_an_unshown_entry"
   },
   {
@@ -58,9 +58,9 @@
   {
     "name": "a settled wake's diff and trajectory join the earlier history",
     "file": "scripts/cognition_loop/run.py",
-    "old": "                            if \"_diff\" in report_row:\n                                earlier_wakes += ((report_row[\"_diff\"], report_row[\"trajectory\"]),)\n",
+    "old": "                            earlier_wakes += (judge_history_entry(\n                                report_row.get(\"_diff\"),\n                                report_row.get(\"trajectory\")),)\n",
     "new": "",
-    "target": "tests/unit/test_cognition_loop_run.py::test_the_run_hands_each_wake_only_the_earlier_wakes_evidence"
+    "target": "tests/unit/test_cognition_loop_run_wake.py::test_the_run_hands_each_wake_only_the_earlier_wakes_evidence"
   },
   {
     "name": "the live trajectory carries the recorded clock",
@@ -93,7 +93,7 @@
   {
     "name": "rejudging rebuilds the earlier-wake history from frozen wakes",
     "file": "scripts/cognition_loop/rejudge.py",
-    "old": "        if judgeable:\n            earlier_wakes += ((diff, trajectory),)\n",
+    "old": "        earlier_wakes += ((diff, trajectory) if judgeable\n                          else (None, {\"invalid\": cause}),)\n",
     "new": "",
     "target": "tests/unit/test_cognition_loop_rejudge.py::test_rejudging_preserves_the_reason_an_answer_cannot_pass"
   }
