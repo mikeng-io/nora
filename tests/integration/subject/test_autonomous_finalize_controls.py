@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -299,9 +299,10 @@ async def test_finalize_torn_capture_freezes_error_without_judges(
 
 async def test_finalize_one_cut_covers_post_settle_writes(
         clean_pg_url, tmp_path):
-    """Repair-4: delivery and a pending reminder landing AFTER the wake
-    settled are inside the one cut the effects read, the state snapshot
-    and the diff all share — not split across two windows."""
+    """Repair-4: delivery and a reminder DELIVERED after the wake settled
+    are inside the one cut the effects read, the state snapshot and the
+    diff all share — a pending-only projection would hide the done row
+    and let the two windows disagree."""
 
     async def post_settle(engine):
         async with engine.begin() as conn:
@@ -315,13 +316,15 @@ async def test_finalize_one_cut_covers_post_settle_writes(
             await conn.execute(sa.text(
                 "INSERT INTO reminders (id, requester_person_id, platform,"
                 " conversation_id, conversation_type, text, created_at,"
-                " due_at, due_tick, state) VALUES (:id, :pid, 'signal', 'g1',"
-                " 'group', 'generated pending reminder', now(), :due,"
+                " due_at, due_tick, state, fired_at) VALUES (:id, :pid,"
+                " 'signal', 'g1', 'group', 'generated delivered reminder',"
+                " now(), :due,"
                 " ceil(extract(epoch from (:due -"
                 " '1970-01-01 00:00:00+00'::timestamptz)) * 1000"
-                " / 60000)::bigint, 'pending')"),
+                " / 60000)::bigint, 'done', :fired)"),
                 {"id": uuid.uuid4(), "pid": "miles_novak",
-                 "due": datetime.now(UTC) + timedelta(hours=1)})
+                 "due": datetime.now(UTC),
+                 "fired": datetime.now(UTC)})
 
     row, judges = await _finalize_once(
         clean_pg_url, tmp_path, events=_session_events(7),
@@ -331,8 +334,9 @@ async def test_finalize_one_cut_covers_post_settle_writes(
     kinds = {item["kind"] for item in items}
     assert "delivery" in kinds and "reminder" in kinds
     assert row["diff_counts"]["reminder"]["created"] == 1
-    reminder_ids = set(row["_state_before"].entries("reminder"))
-    assert len(reminder_ids) == 1
+    (reminder_id,) = set(row["_state_before"].entries("reminder"))
+    after_entries = row["_state_before"].entries("reminder")
+    assert after_entries[reminder_id]["state"] == "done"
     assert sorted(judges.calls) == sorted(MODELS)
 
 
