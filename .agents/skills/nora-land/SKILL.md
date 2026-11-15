@@ -192,8 +192,8 @@ make heads > "$LOG/heads.txt" 2>&1; grep -c '(head)' "$LOG/heads.txt"    # must 
 make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must print 0
 ```
 
-Reconcile original obligations with met/unmet/unavailable evidence; update design
-coverage and issue remaining scope, closing only a fully satisfied issue with a reason.
+Fix a process failure found on the way in its owning skill or root document now
+(`ORCHESTRATION.md` «The lifecycle»). Reconcile obligations with met/unmet/unavailable evidence; update design coverage and issue remaining scope, closing only a fully satisfied issue with a reason.
 For a linked outcome, follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap): reconcile remaining acceptance,
 update evidenced lifecycle/horizon and read back fields. A merged child is not an Achieved parent; routine work needs no card.
 Report completed/unmet obligations separately; keep required read-back, add no extra

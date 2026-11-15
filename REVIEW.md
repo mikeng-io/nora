@@ -44,8 +44,7 @@ merge and deployed behavior. A completed review is not acceptance, a green gate
 is not deployment, and neither author nor reviewer marks the task Done alone.
 Report APPROVE or REQUEST CHANGES for the reviewed scope, each acceptance
 obligation's met/unmet/unavailable evidence, and inspection limits. Unavailable
-required evidence prevents acceptance but does not prove missing implementation.
-An incomplete/invalid brief returns to scoping instead of provoking more code.
-The orchestrator applies the completion rule and records the result; this file
-and the skills guide agents, while schema/CI checks do not certify semantic
-coverage or enforce review cadence.
+evidence prevents acceptance but does not prove missing implementation. A brief
+a fresh reader cannot follow, acceptance only in a temporary file, or a diff
+beyond its brief returns to scoping instead of provoking more code. The
+orchestrator applies the completion rule; CI does not certify semantic coverage.
