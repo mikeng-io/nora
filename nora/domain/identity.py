@@ -149,6 +149,8 @@ class Identifier:
     value: str
 
     def __post_init__(self) -> None:
+        if not isinstance(self.value, str) or not self.value.strip():
+            raise UnmatchableIdentifierError("identifier value must be a non-blank string")
         if self.kind == DISPLAY_NAME_KIND:
             raise UnmatchableIdentifierError(
                 "display_name is never matchable "

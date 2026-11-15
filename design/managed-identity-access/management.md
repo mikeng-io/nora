@@ -23,6 +23,26 @@ nominate another actor or enlarge the service's scope. Registration of an
 observed account is not permission to claim it for an existing person. Repeated
 events and retried requests reuse the same registration and operation identity.
 
+The shared contract lives in `nora/domain/management.py`: the closed operation
+vocabulary, the four actor kinds (`service`, `holder`, `operator`,
+`installation`), the typed targets (account, person, membership, scope) and the
+outcome set — `complete`, `denied`, `unavailable`, `incomplete`. Every
+operation carries an idempotency `operation_id`, the actor, the target, a
+per-kind typed payload — never an arbitrary mapping — and the
+identity/ownership/authority revisions its submission observed. The
+constructed operation is an immutable snapshot: a caller cannot change a
+validated effect by mutating the structures it was built from, and reusing an
+`operation_id` for a different effect is a conflict, not a retry. The
+vocabulary encodes the rulings above: ownership operations belong to the
+authenticated holder of the exact account — a service principal, a scoped
+operator or the installation cannot approve, refuse or unlink an account
+binding (installation suspends the global identity but never asserts
+ownership) — while membership, grant and delegation changes belong to scoped
+operators, and registration and roster synchronisation belong to service
+actors within approved sources. An incomplete result means part of the effect
+committed and reconciliation is still owed; it is never reported as complete,
+and access depending on the unapplied remainder stays blocked.
+
 ## Explicit and semantic in-room requests
 
 An explicit command prefix and ordinary language are alternate expressions of
@@ -76,8 +96,10 @@ same canonical person as messaging. Possession of a phone-number string is not
 authentication; the delivered challenge must prove control of the account.
 The Web App can initiate and present linking, but both sides approve the exact
 association independently. An existing Web App session is not consent to a new
-link, and a challenge redeemed in the initiating browser is not a substitute for
-the receiving holder's explicit approval.
+link, and a challenge redeemed in the initiating browser is not a substitute
+for the receiving holder's explicit approval — on Signal no challenge mints an
+approval-capable session at all: consent there is the request-bound private
+message the link contract describes.
 
 Session identity, account ownership and permissions are checked against current
 state. Disabled identities, revoked bindings and canonical aliases cannot leave
