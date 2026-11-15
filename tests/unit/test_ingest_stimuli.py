@@ -68,7 +68,8 @@ def _setup(*, wired: bool = True, reply_quiet_seconds: float = 600.0):
     ) if wired else None
     pipeline = IngestPipeline(
         audit=audit, memory=_Memory(),  # type: ignore[arg-type]
-        access=IdentityAccess.for_files(persons=Persons(by_person={}, index={}), policy=permissive_policy()),
+        access=IdentityAccess.for_files(
+            persons=Persons(by_person={}, index={}), policy=permissive_policy()),
         policy=TriggerTextPolicy("nora.000"), allowlist=permissive_policy(),
         metrics=metrics, spawn=lambda coro: coro.close(), stimulus_wiring=wiring,
     )

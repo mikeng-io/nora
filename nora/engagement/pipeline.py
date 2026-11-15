@@ -115,7 +115,7 @@ from nora.obs.tracing import (
     root_span,
     span,
 )
-from nora.persons import sanitize_unmapped, Persons
+from nora.persons import Persons, sanitize_unmapped
 from nora.platform.bridge import telemetry as _bridge_telemetry
 from nora.policy import Policy
 from nora.tag import Debounce

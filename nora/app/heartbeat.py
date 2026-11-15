@@ -56,7 +56,7 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from nora.app.proactive_screen import PROACTIVE_KIND, ProactiveScreen
 from nora.domain.reminders import (

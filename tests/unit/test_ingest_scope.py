@@ -68,7 +68,8 @@ async def test_an_unlisted_conversation_is_refused_and_counted(policy):
 async def test_the_same_id_on_another_platform_is_a_different_room(policy):
     metrics = Metrics()
     refused = await scope.run(
-        message=_msg(ALLOWED, platform="telegram"), policy=policy, access=_access(PERSONS, policy), metrics=metrics
+        message=_msg(ALLOWED, platform="telegram"), policy=policy,
+        access=_access(PERSONS, policy), metrics=metrics
     )
     assert refused is False
 
@@ -80,5 +81,6 @@ async def test_a_direct_message_from_somebody_not_in_identity_toml_is_never_reco
     metrics = Metrics()
     dm = _msg("85299999999@s.whatsapp.net", platform="whatsapp",
               conversation_type="dm", sender="+85299999999")
-    assert await scope.run(message=dm, policy=policy, access=_access(PERSONS, policy), metrics=metrics) is False
+    assert await scope.run(
+        message=dm, policy=policy, access=_access(PERSONS, policy), metrics=metrics) is False
     assert metrics.get("nora_denied_conversations_total", platform="whatsapp") == 1

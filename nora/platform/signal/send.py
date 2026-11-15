@@ -319,7 +319,8 @@ class SignalSender:
             where = "dm"
             if self._dm_gate is not None:
                 if not await self._dm_gate(target.conversation_id):
-                    log.error("refusing a direct message to an address the identity backend does not know")
+                    log.error("refusing a direct message to an address "
+                              "the identity backend does not know")
                     return SendResult(ok=False)
             elif (self._dm_recipients is not None
                     and target.conversation_id not in self._dm_recipients):

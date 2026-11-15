@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from nora.access import IdentityAccess
 from nora.domain.culture import CultureRevision, character_key
 from nora.domain.models import NormalizedMessage, PersonRef, Quote, TranscriptRow
-from nora.access import IdentityAccess
 from nora.engagement.character_who import fire_character_people, tag_character_people
 from nora.language.culture_render import (
     CHARACTER_BLOCK_MAX_CHARS,

@@ -109,8 +109,9 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from ..domain.models import PersonRef
 from ..domain.ports import (

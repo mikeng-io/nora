@@ -160,6 +160,7 @@ def lineage(allowlist, cfg, persons) -> LineageWiring:
 def file_services(persons, policy):
     """The `file` backend's services over the loaded Persons/Policy —
     reads answer, every managed mutator refuses (`denied`)."""
+    from nora.access import IdentityAccess
     from nora.people.adapters.file_backend import (
         FileAuthorityBackend,
         FileBindingStore,
@@ -168,8 +169,6 @@ def file_services(persons, policy):
         FileTopologySource,
     )
     from nora.people.app.managed import ManagedServices
-
-    from nora.access import IdentityAccess
 
     return ManagedServices(
         bindings=FileBindingStore(persons),
