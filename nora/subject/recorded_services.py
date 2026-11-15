@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 from aiohttp import web
 
 from nora.subject.environment import IsolatedServices
-from nora.subject.eval_evidence import EvidenceError
+from nora.subject.eval_evidence import EvidenceError, current
 
 
 def _object(value: Any, required: set[str], allowed: set[str]) -> dict[str, Any]:
@@ -134,12 +134,17 @@ class RecordedServices:
                         except (ValueError, UnicodeDecodeError):
                             matches = False
                     if row is None or not matches:
-                        environment.denied.append(
-                            {
-                                "operation": "unrecorded_response",
-                                "cause": "external_response_not_recorded",
-                            }
-                        )
+                        diagnostic = {
+                            "operation": "unrecorded_response",
+                            "cause": "external_response_not_recorded",
+                            "service": name, "position": str(position),
+                            "method": request.method, "path": request.raw_path,
+                            "expected_method": row["method"] if row else "exhausted",
+                            "expected_path": row["path"] if row else "exhausted",
+                        }
+                        environment.denied.append(diagnostic)
+                        if evidence := current():
+                            evidence.record("external_service_mismatch", **diagnostic)
                         return web.Response(status=500, text="external response not recorded")
                     positions[name] += 1
                     response = row["response"]

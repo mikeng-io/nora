@@ -60,7 +60,7 @@ async def test_replay_embedder_check_uses_effective_subject_config(
         checked.assert_not_awaited()
     indexed.assert_awaited_once_with(
         "generated-sandbox", source_url="generated-source",
-        model_id="generated-subject.gguf@0000feedbeef", graph=None)
+        model_id="generated-subject.gguf@0000feedbeef", graph=None, require_vectors=read)
 
 
 async def test_replay_sandbox_projects_with_the_subjects_graph_context(
@@ -93,7 +93,7 @@ async def test_replay_sandbox_projects_with_the_subjects_graph_context(
                       {"nora_name": cfg.doctrine.display_name, "produce": False})]
     indexed.assert_awaited_once_with(
         "generated-sandbox", source_url="generated-source",
-        model_id="generated-subject.gguf@0000feedbeef", graph=made)
+        model_id="generated-subject.gguf@0000feedbeef", graph=made, require_vectors=True)
 
 
 async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, monkeypatch):

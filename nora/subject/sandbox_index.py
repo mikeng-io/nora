@@ -202,11 +202,13 @@ async def _has_vectors(conn: AsyncConnection) -> bool:
     ))).scalar_one())
 
 
-async def source_coverage(source_url: str, model_id: str) -> Coverage:
+async def source_coverage(
+    source_url: str, model_id: str, *, require_vectors: bool = True,
+) -> Coverage:
     """The source's coverage for `model_id` (`<gguf>@<sha256 prefix>`), or
     refused: no index (a clone older than migration 0106), no vector of this
-    model, or a backfill under `COVERAGE_FLOOR`. Never a lexical run in its
-    place."""
+    model, or a backfill under `COVERAGE_FLOOR`. A caller preparing only
+    derived Record nodes can measure coverage without requiring vector readiness."""
     model = fingerprint(model_id)
     engine = create_readonly_sql_engine(source_url)
     try:
@@ -219,12 +221,12 @@ async def source_coverage(source_url: str, model_id: str) -> Coverage:
             coverage = Coverage.of(await memory_index.embed_counts(conn, model))
     finally:
         await engine.dispose()
-    if coverage.embedded == 0:
+    if require_vectors and coverage.embedded == 0:
         raise GraphIndexRefusedError(
             f"the eval source holds no vector of {model!r}; refresh it with "
             "`make eval-source` once production's backfill has run"
         )
-    if coverage.ratio < COVERAGE_FLOOR:
+    if require_vectors and coverage.ratio < COVERAGE_FLOOR:
         raise GraphIndexRefusedError(
             f"the eval source's backfill is incomplete ({coverage.line()}, under "
             f"{COVERAGE_FLOOR}); every search would answer partial. Refresh it with "
@@ -248,16 +250,17 @@ def refuse_low_coverage(sandbox: Coverage, source: Coverage) -> None:
 async def index_sandbox(
     database_url: str, *, source_url: str, model_id: str,
     cache: IndexCache | None = None, key: Hashable = (),
-    graph: ProjectionContext | None = None,
+    graph: ProjectionContext | None = None, require_vectors: bool = True,
 ) -> SandboxIndex:
     """Project the sandbox's index, adopt the source's vectors of `model_id`
     (`[memory.index] embedder_model`), and read the coverage back; refused
     under the floor (module docstring). With `cache`, an index already built
     for the same `key` and the same seeded index is applied instead of
-    built, and checked before its coverage is read."""
+    built, and checked before its coverage is read. Vector readiness is
+    required unless the caller only needs derived Record nodes."""
     started = time.monotonic()
     model = fingerprint(model_id)
-    source_cov = await source_coverage(source_url, model_id)
+    source_cov = await source_coverage(source_url, model_id, require_vectors=require_vectors)
     target = create_sql_engine(database_url)
     if graph is not None:
         # Production's projection context: the rebuild also writes the
@@ -301,9 +304,10 @@ async def index_sandbox(
     finally:
         await source.dispose()
         await target.dispose()
-    refuse_low_coverage(coverage, source_cov)
+    if require_vectors:
+        refuse_low_coverage(coverage, source_cov)
     if cache is not None and image is not None:
-        # Only a build that passed its floor is kept.
+        # Only a build that met the caller's readiness is kept.
         cache.put(cache_key, _Built(image, projected))
     return SandboxIndex(coverage, source_cov, time.monotonic() - started, reused=reused)
 

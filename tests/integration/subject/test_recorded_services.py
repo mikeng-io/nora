@@ -103,21 +103,43 @@ async def test_json_sse_shared_and_planned_404(tmp_path):
     ],
 )
 async def test_unmatched_does_not_consume(tmp_path, method, path, body):
+    from opentelemetry import trace
+
+    from evals.backbone import _prefill_capture
+    from nora.subject.eval_evidence import RunEvidence, read_events
+    from nora.subject.sandbox import eval_host_lock
+
+    _prefill_capture()
     recorded = fixture(tmp_path, [row(status=200, json={"ok": True})])
-    with pytest.raises(EvidenceError, match="external_response_not_recorded"):
-        async with recorded.open("sqlite://") as env, aiohttp.ClientSession() as client:
-            async with client.request(method, env.urls["llm.base_url"] + path, json=body) as result:
-                assert result.status == 500
-            with pytest.raises(EvidenceError, match="external_response_not_recorded"):
-                env.check()
-            async with client.post(
-                env.urls["llm.base_url"] + "/v1?q=1", json={"id": "generated"}
-            ) as result:
-                assert result.status == 200
-            async with client.post(
-                env.urls["llm.base_url"] + "/v1?q=1", json={"id": "generated"}
-            ) as result:
-                assert result.status == 500
+    with eval_host_lock() as lock_fd:
+        evidence = RunEvidence(run_id="generated-mismatch", metadata={}, lock_fd=lock_fd,
+                               private_root=tmp_path / "capture")
+        with (evidence.capture(trace.get_tracer_provider()),
+              pytest.raises(EvidenceError, match="external_response_not_recorded")):
+            async with recorded.open("sqlite://") as env, aiohttp.ClientSession() as client:
+                async with client.request(
+                    method, env.urls["llm.base_url"] + path, json=body,
+                ) as result:
+                    assert result.status == 500
+                with pytest.raises(EvidenceError, match="external_response_not_recorded"):
+                    env.check()
+                async with client.post(
+                    env.urls["llm.base_url"] + "/v1?q=1", json={"id": "generated"}
+                ) as result:
+                    assert result.status == 200
+                async with client.post(
+                    env.urls["llm.base_url"] + "/v1?q=1", json={"id": "generated"}
+                ) as result:
+                    assert result.status == 500
+
+    events = [e for e in read_events(evidence.path) if e["kind"] == "external_service_mismatch"]
+    assert len(events) == 2
+    first, exhausted = events
+    actual = tuple(first.get(k) for k in ("service", "position", "method", "path"))
+    assert actual == ("one", "0", method, path)
+    assert (first["expected_method"], first["expected_path"]) == ("POST", "/v1?q=1")
+    assert (exhausted["position"], exhausted["expected_path"]) == ("1", "exhausted")
+    assert all(e["cause"] == "external_response_not_recorded" for e in events)
 
 
 @pytest.mark.asyncio

@@ -680,6 +680,7 @@ async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex
         source_url=source_url,
         model_id=subject.cfg.memory.index.embedder_model,
         graph=graph,
+        require_vectors=index.read or subject.cfg.memory.graph.enabled,
     )
 
 

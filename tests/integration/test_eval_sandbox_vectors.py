@@ -209,6 +209,9 @@ async def test_a_sandbox_is_indexed_and_read_back(source, sandbox):
         await index_sandbox(sandbox[0], source_url=source[0], model_id=MODEL_ID)
     built = Coverage.of(await _counts(sandbox[1]))
     assert (built.embedded, built.owed, built.empty) == (3, 1, 1)
+    derived = await index_sandbox(
+        sandbox[0], source_url=source[0], model_id=MODEL_ID, require_vectors=False)
+    assert (derived.coverage.embedded, derived.coverage.owed) == (3, 1)
     # The same sandbox once its rows match the source's: at the floor's right side.
     async with sandbox[1].begin() as conn:
         await conn.execute(sa.text(
@@ -228,6 +231,8 @@ async def test_a_source_without_this_models_vectors_is_refused(source):
     with pytest.raises(GraphIndexRefusedError, match="no vector of"):
         await source_coverage(source[0], "never-embedded.gguf@1")
     assert (await source_coverage(source[0], MODEL_ID)).ratio == 1.0  # positive control
+    unembedded = await source_coverage(source[0], "never-embedded.gguf@1", require_vectors=False)
+    assert unembedded.embedded == 0 and unembedded.owed > 0
 
 
 async def test_a_source_with_an_incomplete_backfill_is_refused(source):
@@ -241,6 +246,8 @@ async def test_a_source_with_an_incomplete_backfill_is_refused(source):
         )
     with pytest.raises(GraphIndexRefusedError, match="backfill is incomplete"):
         await source_coverage(source[0], MODEL_ID)
+    measured = await source_coverage(source[0], MODEL_ID, require_vectors=False)
+    assert 0 < measured.ratio < COVERAGE_FLOOR
 
 
 async def test_a_source_older_than_the_dense_channel_is_refused(pg_admin):
