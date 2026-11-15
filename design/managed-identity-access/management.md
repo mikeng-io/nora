@@ -15,7 +15,11 @@ credentials are accessible only to the management service and authorized
 installation administration; they are not model tools or public browser APIs.
 
 Automated work carries its service identity and approved onboarding scope;
-human-triggered work also carries the verified human actor. Registration of an
+human-triggered work also carries the verified human actor. Every operation
+therefore carries a typed actor — a service principal acting within its
+approved sources, or an authenticated holder — resolved once from the
+authenticated invocation; neither a model argument nor a quoted message can
+nominate another actor or enlarge the service's scope. Registration of an
 observed account is not permission to claim it for an existing person. Repeated
 events and retried requests reuse the same registration and operation identity.
 

@@ -217,6 +217,44 @@ class PlatformIdentity:
         )
 
 
+@dataclass(frozen=True)
+class BoundAccount:
+    """One account a person holds on one platform — the unit an account-control
+    proof names.
+
+    `nora.persons` builds these from `[[persons.<id>.<platform>]]` blocks; the
+    managed binding store returns the same shape. `identifiers` is every
+    matchable `Identifier` the account presents — Signal `phone` + `uuid`, an
+    Instagram `fbid` + `igid`, all kinds retained, so the same literal under
+    two kinds stays two identifiers. `label` is the operator's per-account
+    name ("personal", "business") — shown, never matchable.
+
+    An account with no matchable identifier cannot exist: the file validator
+    refuses such blocks at parse, and construction refuses the same state here
+    so a managed binding cannot manufacture one either — an account nothing
+    can match is a mapping that resolves no one.
+    """
+
+    person_id: str
+    platform: str
+    identifiers: frozenset[Identifier]
+    label: str | None = None
+
+    def __post_init__(self) -> None:
+        typed = frozenset(self.identifiers)
+        if not typed:
+            raise ValueError(
+                f"a {self.platform} account bound to {self.person_id!r} has no "
+                "matchable identifier — it would resolve no one"
+            )
+        if any(i.platform != self.platform for i in typed):
+            raise ValueError(
+                f"an identifier's platform disagrees with the account's "
+                f"{self.platform!r} — a binding cannot mix platforms"
+            )
+        object.__setattr__(self, "identifiers", typed)
+
+
 class Membership(Enum):
     """A person's normalised standing in a group conversation.
 
