@@ -28,6 +28,7 @@ holds in line.
 from __future__ import annotations
 
 from .dreaming import Pass, adaptor_names, dream
+from .journey_state import SNAPSHOT_KEYS, JourneyState, journey_initial_state
 from .knowledge import (
     AccountSeed,
     Knowledge,
@@ -96,6 +97,7 @@ __all__ = [
     "COVERAGE_FLOOR",
     "DEFAULT_ROOM",
     "EMBEDDER_FROM_HOST",
+    "SNAPSHOT_KEYS",
     "UNRESOLVED",
     "AccountSeed",
     "ActPass",
@@ -103,6 +105,7 @@ __all__ = [
     "DrawWorkspace",
     "GraphIndexRefusedError",
     "IndexCache",
+    "JourneyState",
     "Knowledge",
     "Message",
     "NoteSeed",
@@ -132,6 +135,7 @@ __all__ = [
     "dream",
     "heard",
     "index_sandbox",
+    "journey_initial_state",
     "know",
     "last_row_id",
     "new_run_id",
