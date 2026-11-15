@@ -10,6 +10,7 @@ from nora.domain.authentication import (
     AccountAuthentication,
     AuthenticatedPrincipal,
     AuthenticationResult,
+    RoomAuthentication,
     SessionBinding,
 )
 from nora.domain.managed import (
@@ -29,7 +30,9 @@ class AccountSessions:
         self._bindings = bindings
         self._registry = registry
 
-    async def check(self, authentication: AccountAuthentication) -> AuthenticationResult:
+    async def check(
+        self, authentication: AccountAuthentication | RoomAuthentication
+    ) -> AuthenticationResult:
         try:
             if authentication.purpose == "sign_in":
                 async with self._bindings.mutation():
@@ -39,7 +42,9 @@ class AccountSessions:
             log.error("managed session unavailable: %s", type(error).__name__)
             return AuthenticationResult(Verdict.UNAVAILABLE)
 
-    async def _check(self, authentication: AccountAuthentication) -> AuthenticationResult:
+    async def _check(
+        self, authentication: AccountAuthentication | RoomAuthentication
+    ) -> AuthenticationResult:
         account = await self._bindings.record_for(account=authentication.account)
         if account is None:
             return AuthenticationResult(Verdict.DENIED)
@@ -61,7 +66,9 @@ class AccountSessions:
                                  str(account.revision))
         if authentication.binding is not None and authentication.binding != binding:
             return AuthenticationResult(Verdict.DENIED)
-        if authentication.purpose == "sign_in":
+        if authentication.purpose == "sign_in" and isinstance(
+            authentication, AccountAuthentication
+        ):
             verdict = await self._capture(authentication, binding)
             if verdict is not Verdict.ALLOWED:
                 return AuthenticationResult(verdict)

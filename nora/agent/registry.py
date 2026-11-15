@@ -387,11 +387,17 @@ class ToolRegistry:
         # answers those branches `unavailable`; the message branch is the
         # Record read's own and does not consult it.
         observations: Any = None,
+        # The people area's in-room management invocation — the ONE object
+        # `member_update` and the `!!!member` command share. Process-lifetime
+        # like `rooms`: the per-turn half (which message) is `specs`'s
+        # `message`. `None` leaves the tool answering `unavailable`.
+        room_management: Any = None,
         content_checks: bool = True,
     ) -> None:
         self._display_name = display_name
         self._content_checks = content_checks
         self._observations = observations
+        self._room_management = room_management
         self._budget_overrides = dict(budget_overrides or {})
         self._profile = profile
         self._profile_read = profile_read
@@ -1131,6 +1137,7 @@ class ToolRegistry:
         grant: frozenset[str] | None = None,
         shelf: ToolShelf | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
+        message: Any = None,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies, before any Strands adaptation.
@@ -1252,6 +1259,8 @@ class ToolRegistry:
             external_files=self._external_files, google_account=self._google_account,
             shelf=shelf,
             on_rows=on_rows,
+            room_management=self._room_management,
+            message=message,
             content_checks=self._content_checks,
         )
 
@@ -1277,6 +1286,7 @@ class ToolRegistry:
         supplied_unit: str | None = None,
         dream_adaptor: str = "",
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
+        message: Any = None,
     ) -> list[Any]:
         """`surface(...).tools`, for a caller that wants only the list.
 
@@ -1293,7 +1303,7 @@ class ToolRegistry:
             fire_turn=fire_turn, allowed_mcp=allowed_mcp,
             location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
-            on_rows=on_rows,
+            on_rows=on_rows, message=message,
         ).tools
 
     def surface(
@@ -1324,6 +1334,7 @@ class ToolRegistry:
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
         defer: bool = False,
         occasion: str | None = None,
+        message: Any = None,
     ) -> ToolSurface:
         """The ONE builder every loop takes its tools from.
 
@@ -1370,7 +1381,7 @@ class ToolRegistry:
             location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
-            grant=grant, shelf=shelf, on_rows=on_rows,
+            grant=grant, shelf=shelf, on_rows=on_rows, message=message,
         )
         loader = next(spec for spec in specs if spec.name == LOADER_TOOL)
         admitted = [

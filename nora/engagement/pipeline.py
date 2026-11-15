@@ -220,6 +220,7 @@ class EngagementPipeline:
         debrief_wiring: debrief.Wiring | None = None,
         decisions: DecisionLogRecorder | None = None,
         clock: Callable[[], datetime] | None = None,
+        room_commands: Any = None,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
         # SAME platform the tag arrived on; selecting one adapter
@@ -327,6 +328,11 @@ class EngagementPipeline:
         # constructed here because the heartbeat fire path holds the SAME
         # instance — see `nora.engagement.slots`.
         self._slots = slots
+        # The people area's in-room management invocation (`!!!member`) —
+        # an object with `parse`/`invoke`, `None` where the area was never
+        # wired. Kept opaque (`Any`) like the other collaborators: the
+        # engagement package imports no area.
+        self._room_commands = room_commands
 
     def _adapter_for(self, platform: str) -> Any:
         """The adapter this tag's platform belongs to, or a hard failure.
@@ -645,8 +651,67 @@ class EngagementPipeline:
                "nora.platform": request.message.platform,
                "nora.conversation_id": request.message.conversation_id},
         ):
-            await self._run_turn(request, identity, indicator, adapter=adapter,
-                                 disposition=disposition)
+            if request.occasion == "room_command":
+                await self._run_room_command(request, identity, indicator,
+                                             adapter=adapter)
+            else:
+                await self._run_turn(request, identity, indicator, adapter=adapter,
+                                     disposition=disposition)
+
+    async def _run_room_command(
+        self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
+        adapter: Any = None,
+    ) -> None:
+        """The `!!!member` occasion: parse, invoke, reply — no model, no
+        tools, the same audit-first `Deliverer` a tag's reply takes.
+
+        The dispatcher admitted this as `occasion="room_command"` off the
+        verified `NormalizedMessage`; that same object is what
+        `RoomManagement.invoke` authenticates — actor, scope and
+        provenance can never arrive as text. A `None` command object is a
+        composition that never wired the people area; the message was
+        already ingested, so the honest thing is silence, not a wrong
+        reply.
+        """
+        msg = request.message
+        commands = self._room_commands
+        if commands is None:
+            return
+        parsed = commands.parse(msg)
+        if parsed is None:
+            return
+        convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        allowed_mcp = convo.tools if convo is not None else frozenset()
+        handle = deliver.build(
+            store=self._audit, adapter=adapter or self._adapter_for(msg.platform),
+            target=msg.target(),
+            doctrine=self._doctrine_store.get(applies_to="tag"),
+            canary=self._canary, tag_id=request.tag_id,
+            nora_sender_id=identity.primary,
+            conversation_id=msg.conversation_id,
+            budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
+            terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
+            param_names=self._tool_registry.tool_param_names(),
+            audience=audience_names.TAG,
+            cacheable_tools=self._tool_registry.cacheable_tools(),
+            tool_call_log_store=self._tool_call_log_store,
+            reasoning_strip_store=self._reasoning_strip_store,
+            composer=OutboundComposer(
+                platform=msg.platform, conversation_id=msg.conversation_id,
+                metrics=self._metrics, access=self._access,
+                roster_source=self._rosters.get(msg.platform),
+                preview_source=self._preview_source,
+                content_checks=self._tool_registry.content_checks,
+            ),
+            on_delivered=indicate.DeliverySettler(
+                indicator=indicator, spawn=self._spawn,
+            ),
+            content_checks=self._tool_registry.content_checks,
+        )
+        reply = parsed if isinstance(parsed, str) else commands.render(
+            await commands.invoke(msg, parsed)
+        )
+        await handle.deliverer.deliver(reply, source="command")
 
     async def _run_turn(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
@@ -823,7 +888,7 @@ class EngagementPipeline:
                 conversation_type=msg.conversation_type,
                 persons=self._access.persons_view(),
                 honcho=self._memory, deliverer=handle.deliverer,
-                room=room, question=render_file_links(msg.body),
+                room=room, question=render_file_links(msg.body), message=msg,
                 context_window=self._context_window, metrics=self._metrics,
                 # DEC-146: the SAME tuple `build_prefill` below renders
                 # `<group_transcript>` from. `who_said` answers out of the window

@@ -2,7 +2,7 @@
 
 import logging
 
-from nora.domain.authentication import AccountAuthentication
+from nora.domain.authentication import AccountAuthentication, RoomAuthentication
 from nora.domain.managed import (
     IdentifierConflictError,
     OperationConflictError,
@@ -32,8 +32,19 @@ class HumanManagement:
         self._registration = registration
         self._authority = authority
 
-    async def apply(self, operation: Operation, authentication: AccountAuthentication) -> Outcome:
-        if (authentication.purpose != "session" or authentication.binding is None
+    async def apply(
+        self, operation: Operation,
+        authentication: AccountAuthentication | RoomAuthentication,
+    ) -> Outcome:
+        # A session invocation retains a binding claim the gate revalidates;
+        # a room-message invocation carries transport provenance only — its
+        # binding is resolved live inside the gate, which is also where a
+        # change between the message and the write is caught.
+        authenticated = (
+            (authentication.purpose == "session" and authentication.binding is not None)
+            or (authentication.purpose == "message" and authentication.binding is None)
+        )
+        if (not authenticated
                 or operation.actor.kind is not ActorKind.OPERATOR
                 or operation.kind not in SCOPED_HUMAN_OPERATIONS):
             return denied("unsupported-human-invocation")

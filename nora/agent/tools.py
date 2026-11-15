@@ -157,6 +157,7 @@ _ORDER = [
     "group_members",
     "lookup_person",
     "about",
+    "member_update",
     "ask_memory",
     "search_memory",
     "memory_search",
@@ -444,6 +445,12 @@ def build_tool_specs(
     # `character_read` then answers from the Profile accounts instead of the
     # culture store — the same accounts `<profile>` renders; they cannot disagree.
     profile_read: ProfileHeads | None = None,
+    # The people area's in-room management invocation and the verified
+    # trigger message `member_update` authenticates — `None` for either
+    # (offline, eval, every occasion that is not a real tag) leaves the
+    # tool answering `unavailable`, never an effect with no sender.
+    room_management=None,
+    message=None,
     content_checks: bool = True,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
@@ -656,6 +663,8 @@ def build_tool_specs(
         all_memory_surfaces=all_memory_surfaces,
         profile=profile,
         profile_read=profile_read,
+        room_management=room_management,
+        message=message,
         content_checks=content_checks,
     )
     built = {}
@@ -785,6 +794,8 @@ def build_tools(
     profile_read: ProfileHeads | None = None,
     relay: Relay | None = None,
     relay_turn: bool = False,
+    room_management=None,
+    message=None,
     content_checks: bool = True,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
@@ -822,6 +833,7 @@ def build_tools(
         culture=culture, observations=observations, social_items=social_items, subagent=subagent,
         video=video, video_ref_kinds=video_ref_kinds, memory_retrieval=memory_retrieval,
         profile=profile, profile_read=profile_read, relay=relay, relay_turn=relay_turn,
+        room_management=room_management, message=message,
         content_checks=content_checks
     )
     return [adapt(spec) for spec in specs]

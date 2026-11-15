@@ -83,6 +83,10 @@ DREAMER_ONLY_TOOLS: frozenset[str] = frozenset(
 TAG_ONLY_TOOLS: frozenset[str] = frozenset({
     "subagent_create", "subagent_list", "subagent_read", "subagent_cancel",
     "video_create",
+    # `member_update` authenticates the person this tag is FROM — a fire
+    # turn, Dreamer pass or worker has no verified human sender to stand
+    # behind it, so it is never offered there.
+    "member_update",
 })
 
 

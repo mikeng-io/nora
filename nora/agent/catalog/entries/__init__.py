@@ -54,6 +54,7 @@ _KEY_ORDER = [
     "group_members",
     "lookup_person",
     "about",
+    "member_update",
     "memory_read",
     "memory_search",
     "ask_memory",

@@ -684,6 +684,12 @@ async def build_dependencies(
     policy = _platforms_policies.policy
     presence_reader = _platforms_policies.presence_reader
     rosters = _platforms_policies.rosters
+    # The ONE in-room management invocation: the `!!!member` command's
+    # occasion path and the `member_update` tool share this object, so both
+    # entries authenticate through `HumanManagement` identically.
+    room_commands = _people_wire.room_management(
+        _stores_managed.services, rosters=rosters
+    )
     _stores_readers = readers(cfg=cfg, content_checks=content_checks, engine=engine)
     culture_reader = _stores_readers.culture_reader
     lessons_reader = _stores_readers.lessons_reader
@@ -949,6 +955,7 @@ async def build_dependencies(
         reminder_caps=reminder_caps,
         reminders=reminders,
         route_client=route_client,
+        room_management=room_commands,
         search_client=search_client,
         social_client=social_client,
         standing_store=standing_store,
@@ -1047,6 +1054,7 @@ async def build_dependencies(
         preview_source=preview_source,
         reasoning_strip_store=reasoning_strip_store,
         registry=registry,
+        room_commands=room_commands,
         rosters=rosters,
         runner=runner,
         slots=slots,
@@ -1191,6 +1199,7 @@ async def build_dependencies(
         engagement=engagement,
         ingest=ingest,
         participation_trigger=participation_trigger,
+        room_command=room_commands.is_command,
     )
     dispatcher = _pipelines_dispatcher.dispatcher
     _bridge_runtime = await runtime(

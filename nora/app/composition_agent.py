@@ -113,12 +113,14 @@ def build_registry(
     observation_store: Any, persons: Any, presence_circles: Any, presence_reader: Any,
     presence_store: Any, profile_index: Any, profile_reader: Any, reaction_picker: Any,
     refresher: Any, relay: Any, reminder_caps: Any, reminders: Any,
-    route_client: Any, search_client: Any, social_client: Any, standing_store: Any,
+    route_client: Any, room_management: Any, search_client: Any, social_client: Any,
+    standing_store: Any,
     steam_client: Any, subagent_desk: Any, tool_call_log_store: Any, version_manifest: Any,
     video_desk: Any, vision_client: Any, voice_presence: Any, weather_client: Any,
 ) -> RegistryWiring:
     return RegistryWiring(
         tool_registry=_build_tool_registry(
+        room_management=room_management,
         allowlist=allowlist, blobs=blobs, browser=browser, browser_manager=browser_manager,
         cfg=cfg, clock=clock, computer=computer, computer_admission=computer_admission,
         computer_context=computer_context, computer_dm_scope_for=computer_dm_scope_for,
@@ -164,10 +166,11 @@ def _build_tool_registry(
     vision_client: Any, refresher: Any, image_refs_allowed: Any, clock: Any,
     document_service: Any, lineage: Any, blobs: Any, standing_store: Any,
     reminders: Any, reminder_caps: Any, tool_call_log_store: Any, social_client: Any,
-    computer_exports: Any, mobility: Any, computer_events: Any,
+    computer_exports: Any, mobility: Any, computer_events: Any, room_management: Any = None,
 ) -> Any:
     """The native tool surface's collaborator registry."""
     return ToolRegistry(
+        room_management=room_management,
         display_name=cfg.doctrine.display_name,
         # `[external_files]` (ships off): the source a shared file link is
         # opened through; None answers the open `unavailable`.
