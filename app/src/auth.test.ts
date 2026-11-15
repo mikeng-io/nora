@@ -7,6 +7,12 @@ vi.mock("@/server/management-session", async (original) => ({
   captureManagedSession: authentication.capture,
 }));
 
+const consent = vi.hoisted(() => ({ apply: vi.fn() }));
+vi.mock("@/server/link-consent", async (original) => ({
+  ...await original<typeof import("./server/link-consent")>(),
+  applyConsentIntent: consent.apply,
+}));
+
 const captured = vi.hoisted(() => ({ config: null as unknown }));
 vi.mock("next-auth", () => ({ default: (config: unknown) => {
   captured.config = config;
@@ -16,12 +22,15 @@ vi.mock("./discord", () => ({ discordProvider: { id: "discord" } }));
 vi.mock("@/server/otp", () => ({ codeSignInEnabled: () => false }));
 await import("./auth");
 
-const { callbacks } = captured.config as { callbacks: {
+const callbackRequest = new Request(
+  "https://portal.generated.invalid/api/auth/callback/discord?state=generated-flow");
+const { callbacks } = (captured.config as (request?: Request) => unknown)(callbackRequest) as { callbacks: {
   jwt: (args: { token: Record<string, unknown>; account?: { provider: string;
     providerAccountId?: string }; user?: { id: string; managedIdentity?: unknown } }) => Promise<Record<string, unknown>>;
   session: (args: { session: { user: Record<string, unknown> }; token: Record<string, unknown> }) => Promise<{ user: Record<string, unknown> }>;
 } };
-afterEach(() => { vi.unstubAllEnvs(); authentication.capture.mockReset(); });
+afterEach(() => { vi.unstubAllEnvs(); authentication.capture.mockReset();
+  consent.apply.mockReset(); });
 
 it("gives every sign-in a distinct generation, retaining it through session reads", async () => {
   vi.stubEnv("NORA_IDENTITY_BACKEND", "file");
@@ -41,6 +50,8 @@ it("captures managed authentication only at a verified provider callback", async
   authentication.capture.mockImplementation(async (event) => ({ authentication: event,
     binding: { person_id: "generated-person", person_revision: "1",
       account_id: "generated-binding", account_revision: "2" } }));
+  consent.apply.mockImplementation(async () => ({ requestId: "generated-request",
+    action: "approve", operationId: "generated-operation", outcome: "complete", at: 1 }));
   const token = await callbacks.jwt({ token: { personId: "invented", discordId: "invented" },
     account: { provider: "discord", providerAccountId: "generated-account" },
     user: { id: "untrusted-display-id" } });
@@ -50,11 +61,22 @@ it("captures managed authentication only at a verified provider callback", async
   }));
   expect(token).not.toHaveProperty("personId");
   expect(token).not.toHaveProperty("discordId");
+  // The consent hook runs only where `account` is a genuine fresh provider
+  // event — the retained token below cannot reach it again.
+  expect(consent.apply).toHaveBeenCalledOnce();
+  expect(consent.apply).toHaveBeenCalledWith(expect.objectContaining({
+    account: { platform: "discord", kind: "user_id", value: "generated-account" },
+    method: "discord_oauth", proofIssuer: "generated-client",
+  }), "generated-flow");
+  expect(token.linkConsent).toMatchObject({ outcome: "complete",
+    requestId: "generated-request" });
   const read = await callbacks.jwt({ token });
   expect(read).toEqual(token);
   expect(authentication.capture).toHaveBeenCalledOnce();
+  expect(consent.apply).toHaveBeenCalledOnce();
   const session = await callbacks.session({ session: { user: {} }, token });
   expect(session.user.managedIdentity).toEqual(token.managedIdentity);
+  expect(session.user.linkConsent).toEqual(token.linkConsent);
 });
 
 it("never turns a person-only code or development identity into managed account proof", async () => {
@@ -64,6 +86,7 @@ it("never turns a person-only code or development identity into managed account 
       user: { id: "generated-person" } })).rejects.toThrow("account-exact authentication");
   }
   expect(authentication.capture).not.toHaveBeenCalled();
+  expect(consent.apply).not.toHaveBeenCalled();
 });
 
 it("retains the code service's captured exact binding without recapturing a person-only session", async () => {
@@ -78,4 +101,5 @@ it("retains the code service's captured exact binding without recapturing a pers
   expect(token.managedIdentity).toEqual(managedIdentity);
   expect(token.sessionId).toBe("otp:generated-challenge");
   expect(authentication.capture).not.toHaveBeenCalled();
+  expect(consent.apply).not.toHaveBeenCalled();
 });

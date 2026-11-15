@@ -7,7 +7,9 @@ import { privateApiFetch } from "./private-api-fetch";
 const privateHeaders = { "Cache-Control": "private, no-store" };
 const account = z.object({ platform: z.enum(["discord", "signal", "telegram"]),
   kind: z.string().min(1), value: z.string().min(1) }).strict();
-const view = z.object({
+/** The private request view shape — shared with the consent unit, which must
+ * bind the same server-read request rather than re-parse it differently. */
+export const linkRequestView = z.object({
   request_id: z.string().min(1), side: z.enum(["initiating", "receiving"]),
   state: z.enum(["pending", "committing", "committed", "refused", "cancelled", "expired"]),
   pair: z.object({ initiating: account, receiving: account }).strict(),
@@ -50,7 +52,7 @@ export async function holderRoute(request: Request, context: Context): Promise<R
       headers: { "Content-Type": "application/json" },
     });
     const json: unknown = await result.json();
-    const success = z.object({ status: z.literal("ok"), request: view.optional() }).strict().safeParse(json);
+    const success = z.object({ status: z.literal("ok"), request: linkRequestView.optional() }).strict().safeParse(json);
     if (result.status === 200 && success.success) {
       const requestView = success.data.request;
       if (unlink ? requestView !== undefined : requestView === undefined) return response("unavailable", 503);

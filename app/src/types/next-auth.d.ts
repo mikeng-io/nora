@@ -1,5 +1,6 @@
 import type { DefaultSession } from "next-auth";
 import type { ManagedSession } from "@/server/management-session";
+import type { LinkConsentOutcome } from "@/server/link-consent";
 
 declare module "next-auth" {
   interface User {
@@ -10,7 +11,7 @@ declare module "next-auth" {
     // after a one-time code (DEC-287). `checkSession` turns either into the
     // same identity.toml person.
     user: { discordId?: string; personId?: string; sessionId?: string;
-      managedIdentity?: ManagedSession } & DefaultSession["user"];
+      managedIdentity?: ManagedSession; linkConsent?: LinkConsentOutcome } & DefaultSession["user"];
   }
 }
 
@@ -20,5 +21,6 @@ declare module "next-auth/jwt" {
     personId?: string;
     sessionId?: string;
     managedIdentity?: ManagedSession;
+    linkConsent?: LinkConsentOutcome;
   }
 }

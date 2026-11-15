@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { discordProvider } from "./discord";
 import Credentials from "next-auth/providers/credentials";
 import { codeSignInEnabled, verifyCode } from "@/server/otp";
-import { captureManagedSession, identityBackend, managedSessionSchema } from "@/server/management-session";
+import { captureManagedSession, identityBackend, managedSessionSchema,
+  type AuthenticationEvent } from "@/server/management-session";
+import { applyConsentIntent, linkConsentOutcomeSchema } from "@/server/link-consent";
 import { createTelegramProvider } from "./telegram";
 import { verifyManagedCode } from "@/server/managed-otp";
 
@@ -67,7 +69,7 @@ if (DEV_LOGIN_ENABLED) {
   );
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut } = NextAuth((request) => ({
   providers,
   session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 30 },
   pages: { signIn: "/zh-Hant/login", error: "/zh-Hant/login" },
@@ -101,14 +103,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (platform !== "discord" && platform !== "telegram") {
             throw new Error("Managed sign-in requires account-exact authentication");
           }
-          token.managedIdentity = await captureManagedSession({
+          const authentication: AuthenticationEvent = {
             sessionId,
             account: { platform, kind: "user_id", value: account.providerAccountId },
             method: platform === "discord" ? "discord_oauth" : "telegram_oidc",
             proofIssuer: (platform === "discord" ? process.env.AUTH_DISCORD_ID
               : process.env.AUTH_TELEGRAM_ID) ?? "",
             authenticatedAt: Math.floor(Date.now() / 1000),
-          });
+          };
+          token.managedIdentity = await captureManagedSession(authentication);
+          // Only this genuine fresh provider callback may spend a consent
+          // intent; the fresh event — never a retained session — signs it.
+          const callback = request ? new URL(request.url) : undefined;
+          const states = callback?.searchParams.getAll("state") ?? [];
+          const callbackState = callback?.pathname === `/api/auth/callback/${platform}`
+            && states.length === 1 ? states[0] : undefined;
+          const consent = await applyConsentIntent(authentication, callbackState);
+          if (consent !== undefined) token.linkConsent = consent;
           return token;
         }
       }
@@ -123,7 +134,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (typeof token.personId === "string") session.user.personId = token.personId;
       const managed = managedSessionSchema.safeParse(token.managedIdentity);
       if (managed.success) session.user.managedIdentity = managed.data;
+      const consent = linkConsentOutcomeSchema.safeParse(token.linkConsent);
+      if (consent.success) session.user.linkConsent = consent.data;
       return session;
     },
   },
-});
+}));
