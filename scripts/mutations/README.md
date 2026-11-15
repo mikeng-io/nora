@@ -4,8 +4,25 @@ One table per change, named after the branch or the issue. A table names exact
 source text, so it **rots as soon as that code moves** — that is expected. It is
 the record of what a branch proved, not a gate that runs forever.
 
-    uv run python scripts/mutate.py scripts/mutations/<name>.json
+    python scripts/mutate.py scripts/mutations/<name>.json
     make mutate TABLE=scripts/mutations/<name>.json
+
+Every Python phase runs ONE command — this interpreter's
+`python -m scripts.pytest_gate`, the same shared host lease `make test` and
+`make gate` use; never `uv`, never raw `pytest`. A held lease is waited out,
+and one that never frees makes the entry `UNAVAILABLE` — not red, not caught.
+
+A mutant counts as caught only when pytest exits 1 with a real failure count
+and the restored source is verified green. A run whose tests error at import,
+collection or setup is `BROKEN ENTRY`, and a selector that ran nothing is too —
+a nonzero exit by itself never proves anything. `ALL MUTATIONS CAUGHT` prints
+only when every selected entry reached that caught state.
+
+Each phase's full stdout/stderr, command, exit code and counts land in a
+private proof directory outside git (`~/.local/share/nora/mutation-proofs/`,
+or `--proof-dir`); its `manifest.json` records HEAD, the table's hash, each
+entry's anchor count and the sha256/git-diff restoration evidence. The path
+prints at the end of the run.
 
 `make gate` does not RUN the tables, but it does check that they still ANCHOR:
 `tests/architecture/test_mutation_tables_anchor_to_their_source.py` fails when

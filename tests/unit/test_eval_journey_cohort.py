@@ -94,7 +94,7 @@ def test_selected_cases_names_cohort_cases(tmp_path):
     pytest.param({"cases": [{"name": "c", "plan": dict(
         _V2_PLAN, version=1, expected_wakes=1,
         steps=[{"send": "hi"}, {"until_wakes": 1}],
-        expectations=[{"wake": 0, "polarity": "must", "kind": "working_memory",
+        expectations=[{"wake": 0, "polarity": "must", "kind": "memo",
                        "text": "a storage kind"}])}]}, id="legacy-kind-bound"),
     pytest.param({"cases": [{"name": "c", "plan": dict(
         _V2_PLAN, expectations=[{"turn": 0, "polarity": "must",

@@ -11,7 +11,7 @@
     "file": "evals/journey_cohort.py",
     "old": "if plan.get(\"version\") != MEASURE_VERSION:",
     "new": "if plan.get(\"version\") == MEASURE_VERSION:",
-    "target": "tests/unit/test_eval_journey_cohort.py::test_the_journey_corpus_loads_only_its_declared_cohort"
+    "target": "tests/unit/test_eval_journey_cohort.py::test_a_cohort_refuses_malformed_legacy_and_undeclared_input"
   },
   {
     "name": "a case's plan judges must be the cohort's declared aliases",
