@@ -38,6 +38,14 @@ a matter, it commits or revises an intention with a review time; when due, the
 clock stimulus starts a pass that reads the subjects as they are then. There
 is no separate self-wake.
 
+## Replaying history
+
+A subconscious pass over history runs in source-time order with the instant of
+its evidence as its clock. It reads only what existed then, proposes
+understanding only, and never creates present-day intentions, lessons or
+sends. A replay that closes records one receipt naming the exact inputs it
+observed; a failed replay records none and never takes a live slot.
+
 ## Time
 
 - A logical tick is a position on a stable UTC grid, not a count of passes.

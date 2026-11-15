@@ -38,13 +38,25 @@ Nora's own words are observed as her act; they ground only that she said them.
 **Citation rules.** An inferred row cites only observed or computed rows; a
 claim may *guide* a search for another, but it never supports it. A computed
 row derives only from observed or computed rows, and from the conditions and
-rests-on edges of the intentions it evaluates; never from a claim's content. A committed row may rest on
-rows of any basis, because resting is what makes its reasons reconsiderable.
+rests-on edges of the intentions it evaluates; never from a claim's content.
+A committed row may rest on rows of any basis, because resting is what makes
+its reasons reconsiderable.
 
 **Edges take a basis by the same rule.** An edge recorded with an item
 (authored by, replied to) is observed; an edge code derives (co-located with,
 closed by) is computed; an edge Nora judges (likes, knows) is inferred; an
 edge from her own decision (rests on, serves) is committed.
+
+Three edge families never stand in for each other:
+
+| edge | from → to | is evidence |
+|---|---|---|
+| **cites** | a row → the observed or computed rows it rests on | yes, the only evidence |
+| **about** | a row → the entities it concerns | no: an index for retrieval |
+| **draws on** | a claim or intention → another claim or intention | no: context or premise |
+
+The edge vocabulary is closed and reviewed: each type names its legal
+endpoint kinds. A new meaning is a reviewed edge type, never a new store.
 
 ## Scope
 
@@ -107,12 +119,16 @@ Either form carries:
   *when it comes up* (raised only in a natural opening);
 - **closed-by** — the item or aggregate that closed it, and its verdict.
 
-A closed achieve intention has a verdict: **achieved** (its done-when was met),
-**dropped** (its drop-when was met) or **leaked** (its time passed with neither).
+A closed achieve intention has a verdict: **achieved** (its done-when was
+met), **dropped** (its drop-when was met), **leaked** (its time passed with
+neither, while every source that could have closed it was healthy) or
+**unknown** (its time passed and a source it depended on was not healthy).
+An outage is never a leak.
 A condition that code cannot evaluate is untyped: the intention may still be
 held, but it cannot close mechanically, and it is counted as loose.
 
-An intention grants no delivery authority. Whatever it leads to still passes
+An intention has at most one scheduled delivery at a time. It grants no
+delivery authority. Whatever it leads to still passes
 the fire path, the disclosure rules and the cap on unsolicited proposals.
 
 ## Presentations

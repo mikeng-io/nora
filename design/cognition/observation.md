@@ -14,6 +14,14 @@ recorded.
 | Nora's own acts and tool outcomes, silence included | the executor that performed them | items |
 | source health | probes | items |
 
+Every item of Nora's own acts carries the pass that produced it, so her sent
+rows render with that pass and a pass's items can be opened whole. No pass
+keeps its reasoning; what it decided is an intention.
+
+A fetched outside page is an item with its fetch provenance. It can support
+public attributes of a place, work, event or organisation, never a private
+person's attendance, traits or relationships.
+
 A perception reading of a media item is not observation: it is a claim,
 written in orient and cited to the item.
 

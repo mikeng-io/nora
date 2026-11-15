@@ -22,13 +22,15 @@ available, not used.
 
 | form | is | basis | exists |
 |---|---|---|---|
-| **verdict** | the outcome of one intention: achieved, dropped or leaked | computed | from the moment it closes |
+| **verdict** | the outcome of one intention: achieved, dropped, leaked or unknown | computed | from the moment it closes |
 | **track record** | the tally of verdicts for one class of intention | computed | at read time; prefetch pushes it into decide |
 | **lesson** | a generalisation about how to act in a unit, citing several verdicts or one correction | inferred, induced | stored once with provenance, revised when its evidence changes |
 
 **Reconsideration** needs no lesson. When a claim an intention rests on is
 revised, the intention is due for reconsideration in decide: learning as
 revision, carried by the rests-on edge alone.
+
+An unknown verdict counts toward no track record, lesson or tally.
 
 **The class of an intention** is computed, never judged: its form, who it is
 owed to, its unit and the type of its closing condition. Finer similarity

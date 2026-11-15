@@ -45,3 +45,10 @@ people's responses to her acts, never only her own earlier words.
 - Identifiers, coordinates and credentials never egress; doctrine leak
   protection is always on.
 - Silence is a valid outcome of every delivering pass.
+- An outside query carries only the minimum public question: never a private
+  person's name, handle, address, identifier, coordinate or trace.
+- A saved place is an entity. Its coordinate may serve a requested route
+  inside code; it never reaches model prose or an outside query, and a
+  person's live position is never a routing endpoint.
+- Third-party memory may be fed from items under Nora's own peer; it is read
+  only as a hint, never as evidence.

@@ -27,6 +27,8 @@ from a feature's own code, store, prompt or loop.
 - **[The model's surface](surface.md)**: instruction, tools per pass, and
   admission.
 - **[Boundaries](boundaries.md)**: authority of authored text, scope and egress.
+- **[Claims](claims.md)**: profile parts, support and precedence, likes and
+  constraints, disputes, deletion and decay.
 - **[Storage](storage.md)**: how the graph is held — per-kind tables with shared
   planes and one edge table; the tables are the truth.
 - **[Learning](learning.md)**: how an outcome of Nora's own act changes a later
