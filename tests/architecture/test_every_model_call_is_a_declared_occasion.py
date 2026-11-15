@@ -238,11 +238,9 @@ def calls_a_model(tree: ast.Module) -> bool:
             return True
         if tail == "complete" and keywords & {"system", "prompt"}:
             return True
-        # A bound collaborator's own complete: the eval `Judge` binds a
-        # config and answers through `._complete(client, request)` — the
-        # receiver's spelling is the caller's choice, so any attribute call
-        # of that name counts. A BARE `_complete(...)` is a local helper
-        # (the debrief fold's own), not this door.
+        # A bound collaborator's own complete (the eval `Judge`'s door): any
+        # attribute-chain `._complete` counts — the receiver's spelling is
+        # the caller's; a BARE `_complete(...)` is a local helper, not this door.
         if tail == "_complete" and len(chain) >= 2:
             return True
         if (

@@ -252,10 +252,9 @@ async def confirm(source_url: str, config: Path, inputs: list[dict[str, object]]
     from nora.subject.eval_evidence import RunEvidence, fingerprint, revision
     from nora.subject.sandbox import eval_host_lock, sandbox_as_of
 
-    # The file every subject composes, rebuilt and drift-checked against the
-    # deployment first — as `python -m evals` does before any case, but into
-    # this run's own directory: the checkout's shared `config.evaluation.toml`
-    # belongs to whatever eval harness is using it, never to one confirmation.
+    # The file every subject composes, rebuilt into this run's own private
+    # directory — the checkout's shared `config.evaluation.toml` is never
+    # one confirmation's to write.
     with tempfile.TemporaryDirectory() as private:
         generated = Path(private) / "config.evaluation.toml"
         await asyncio.to_thread(

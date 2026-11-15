@@ -51,11 +51,7 @@ from tests.integration.test_cognition_anchor_finder import (
 
 
 def _services(cfg: Any) -> dict[str, Any]:
-    """The finite world obtain+render needs: the obtain-time workspace and
-    peer claims, then the two reads the tag assemble adds — the sender's
-    card and her model of the window's speaker — once for the LIVE obtain+
-    render and once for the snapshot's own. NO model response at all, so a
-    dispatch on this path is an unrecorded call, not a passed render."""
+    """One run's finite world — and NO model response recorded at all."""
     ws = cfg.honcho.workspace_id
     reads = [
         {"method": "GET",

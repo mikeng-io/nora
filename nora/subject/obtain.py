@@ -193,15 +193,9 @@ class SubjectSpec:
     #: file-backed. Never a shared location.
     workdir: Path
 
-    #: WHICH CONFIGURATION she composes FROM — a recorded `config.toml` in
-    #: force at the case's instant, or the deployment's eval rebuild. `None`
-    #: means the committed template (`config.evaluation.toml`), which is what
-    #: every ordinary caller composes. A seam because WHICH settings were in
-    #: force is part of the moment being measured, not part of her — a
-    #: recorded load and the live template differ exactly where a deployment
-    #: changed over time. Only the source file changes: it is still copied
-    #: into `spec.workdir` and baselined, so relative loads and credentials
-    #: resolve exactly as the template's do.
+    #: WHICH CONFIGURATION she composes FROM — the recorded `config.toml` in
+    #: force at the case's instant; `None` is the committed template. Same
+    #: copy-into-workdir path, same credential custody as the template's.
     config: Path | None = None
 
     #: Overrides onto the committed template, as dotted paths. This is the seam
