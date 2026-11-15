@@ -108,9 +108,9 @@ def test_parse_lists_drops_blanks_and_collapses_lines():
 # -- the tool is the worker's alone ----------------------------------------------------------
 
 
-def test_the_tool_is_on_the_workers_list_and_on_no_other_surface(tmp_path):
+async def test_the_tool_is_on_the_workers_list_and_on_no_other_surface(tmp_path):
     rig = _Rig(tmp_path)
-    held = {t.tool_name for t in rig.source.build(
+    held = {t.tool_name for t in await rig.source.build(
         job_id="j1", platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
         requester_person_id="miles", checkpoint_sink=SubagentProgress(),
     )}

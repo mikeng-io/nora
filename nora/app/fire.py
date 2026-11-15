@@ -71,6 +71,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
+from nora.access import IdentityAccess
 from nora.agent.catalog.model import turn_occasion
 from nora.agent.guards import ReplyGuard
 from nora.agent.lineage import (
@@ -645,6 +646,9 @@ class FirePath:
         # due row is not proof the act is still needed, and an unread premise
         # is no check at all.
         shared: Callable[..., Awaitable[SharedView]] | None = None,
+        # `nora.access.IdentityAccess` — the selected backend's identity reads.
+        # `None` keeps the file `Persons` reads (offline/eval harnesses).
+        access: Any = None,
     ) -> None:
         # `<standing>` renders on the fire path too. `build_prefill` is shared
         # and parameterised only by `header=`, so SUPPRESSING the block here
@@ -715,6 +719,8 @@ class FirePath:
         # tag reply's are. `None` is `[lineage] mode = "off"`.
         self._lineage = lineage
         self._persons = persons
+        self._access = access
+        self._file_access: Any = None
         self._records = records
         # The shared quote-window resolver (DEC-195). `None` keeps
         # `build_context`'s plain `context_window` fetch.
@@ -869,7 +875,7 @@ class FirePath:
         # refuses it as `failed_policy` with a sentence instead. `None` for an
         # occasion held on nobody's behalf, which is not an error at all.
         ref = (
-            self._persons.by_person.get(occasion.person_id)
+            await self._access_or_files().person_ref(occasion.person_id)
             if occasion.person_id is not None else None
         )
 
@@ -908,7 +914,8 @@ class FirePath:
         # turn renders the SAME transcript block through the SAME prefill, so
         # leaving it out here would reintroduce the two-name-space bug on exactly
         # the path nobody is watching when it fires.
-        transcript = self._persons.name_transcript(transcript, platform=occasion.platform)
+        transcript = await self._access_or_files().name_transcript(
+            transcript, platform=occasion.platform)
         if self._media_join is not None:
             transcript = await self._media_join.enrich(transcript, path="fire")
 
@@ -1013,7 +1020,7 @@ class FirePath:
             presence=presence,
             computer=computer,
             documents=documents,
-            room_members=self._room_members(occasion),
+            room_members=await self._room_members(occasion),
             lineage_room=(
                 self._lineage.render_room(
                     platform=occasion.platform,
@@ -1023,13 +1030,23 @@ class FirePath:
             ),
         )
 
-    def _room_members(self, occasion: Event) -> tuple[PersonRef, ...]:
+    def _access_or_files(self) -> Any:
+        """The selected backend's facade, or a file-mode one built over the
+        loaded `Persons`/`Policy` — the same reads, one call shape."""
+        if self._access is not None:
+            return self._access
+        if self._file_access is None:
+            self._file_access = IdentityAccess.for_files(
+                persons=self._persons, policy=self._policy)
+        return self._file_access
+
+    async def _room_members(self, occasion: Event) -> tuple[PersonRef, ...]:
         """This room's listed persons for `<room_members>` (a pure lookup, no
         read), the same answer the tag path's assembler gives."""
-        if self._policy is None:
+        if self._access is None and self._policy is None:
             return ()
-        conv = self._policy.conversation(occasion.platform, occasion.conversation_id)
-        return self._persons.room_members(conv.persons) if conv is not None else ()
+        return await self._access_or_files().room_refs(
+            occasion.platform, occasion.conversation_id)
 
     async def _read_computer(self, occasion: Event) -> ComputerView | None:
         """`<computer>` for this occasion's room, or `None` (no reader, or a
@@ -1106,7 +1123,7 @@ class FirePath:
         if occasion.kind != "participation" or not self._ai_peer:
             return ()
         query = _window_query(transcript)
-        refs = self._window_speakers(occasion, transcript)
+        refs = await self._window_speakers(occasion, transcript)
         try:
             people = await asyncio.wait_for(
                 self._recall_people(occasion, refs, query),
@@ -1124,7 +1141,7 @@ class FirePath:
             return ()
         return people
 
-    def _window_speakers(
+    async def _window_speakers(
         self, occasion: Event, transcript: Sequence[TranscriptRow],
     ) -> tuple[PersonRef, ...]:
         """The distinct people who SPOKE in this window, most recent first,
@@ -1148,7 +1165,8 @@ class FirePath:
         for row in reversed(tuple(transcript)):
             if row.is_nora:
                 continue
-            ref = self._persons.resolve(occasion.platform, row.sender_id)
+            ref = await self._access_or_files().resolve_ref(
+                occasion.platform, row.sender_id)
             if ref is None or ref.person_id in found:
                 continue
             found[ref.person_id] = ref
@@ -1493,8 +1511,8 @@ class FirePath:
             return ()
         return await read_character(
             self._culture, unit=convo.unit,
-            members=fire_character_people(
-                self._room_members(occasion), persons=self._persons,
+            members=await fire_character_people(
+                await self._room_members(occasion), access=self._access_or_files(),
                 platform=occasion.platform, person=ref, transcript=transcript,
             ),
             stage="fire_character", platform=occasion.platform,
@@ -1524,13 +1542,14 @@ class FirePath:
         if convo is None or not convo.unit:
             return ()
         reader = self._profile_reader
-        members = self._room_members(occasion)
+        members = await self._room_members(occasion)
         target = (self._lineage or LineagePolicy.from_policy(self._policy)).render_room(
             platform=occasion.platform, conversation_id=occasion.conversation_id,
         )
         room = Room(
             platform=occasion.platform, conversation_id=occasion.conversation_id,
             roster_source=self._rosters.get(occasion.platform), persons=self._persons,
+            access=self._access,
             tagger=ref, self_ids=self._profile_self_ids,
         )
 
@@ -1575,8 +1594,8 @@ class FirePath:
         if view is not None:
             views.append(view)
         # THEIRS, with their authored identity lines (45 §3).
-        for person in fire_character_people(
-            members, persons=self._persons,
+        for person in await fire_character_people(
+            members, access=self._access_or_files(),
             platform=occasion.platform, person=ref, transcript=transcript,
         ):
             view = await one(
@@ -1585,9 +1604,9 @@ class FirePath:
                 authored=authored_identity(
                     name=person.name, aliases=person.aliases,
                     platforms=tuple(sorted({
-                        platform_name(p)
-                        for (p, _), pid in self._persons.index.items()
-                        if pid == person.person_id
+                        platform_name(a.platform)
+                        for a in await self._access_or_files().accounts_for(
+                            person.person_id)
                     })),
                 ),
             )
@@ -1622,6 +1641,7 @@ class FirePath:
                 conversation_id=occasion.conversation_id,
                 roster_source=self._rosters.get(occasion.platform),
                 persons=self._persons, tagger=ref,
+                access=self._access,
                 self_ids=self._profile_self_ids,
             )
             target = self._lineage.render_room(
@@ -1968,8 +1988,9 @@ class FirePath:
             # tag path: on the assembled context, never at ingest (the audit
             # stores what arrived) and never in the prefill (which may not import
             # nora.platform).
-            ctx = MentionRenderer(
+            ctx = await MentionRenderer(
                 persons=self._persons, display_name=self._display_name,
+                access=self._access,
                 self_ids=self_ids, metrics=self._metrics,
                 content_checks=self._registry.content_checks,
             ).rehydrate(ctx)
@@ -2042,6 +2063,7 @@ class FirePath:
                 composer=OutboundComposer(
                     platform=occasion.platform, conversation_id=occasion.conversation_id,
                     persons=self._persons, metrics=self._metrics,
+                    access=self._access,
                     roster_source=self._rosters.get(occasion.platform),
                     preview_source=self._preview_source,
                     content_checks=self._registry.content_checks,
@@ -2051,6 +2073,7 @@ class FirePath:
             room = Room(
                 platform=occasion.platform, conversation_id=occasion.conversation_id,
                 roster_source=self._rosters.get(occasion.platform), persons=self._persons,
+                access=self._access,
                 # `None` for an occasion nobody asked for, which is what makes
                 # `Room.scope()` report UNAVAILABLE there rather than a room —
                 # the honest state (R-21), not a degraded one.
@@ -2829,7 +2852,8 @@ class FirePath:
         except Exception:
             log.exception("relevance gate shadow transcript read failed")
         else:
-            named = self._persons.name_transcript(tuple(raw), platform=platform)
+            named = await self._access_or_files().name_transcript(
+                tuple(raw), platform=platform)
             for row in reversed(named):
                 # The newest row that actually SAID something — an attachment
                 # or a reaction has no words for a reviewer to read.

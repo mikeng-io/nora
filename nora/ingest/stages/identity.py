@@ -32,17 +32,18 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from nora.access import IdentityAccess
 from nora.domain.models import NormalizedMessage, PersonRef
-from nora.persons import Persons, sanitize_unmapped
+from nora.persons import sanitize_unmapped
 
 log = logging.getLogger("nora.ingest.identity")
 
 
 async def run(
-    *, message: NormalizedMessage, persons: Persons, metrics: Any
+    *, message: NormalizedMessage, access: IdentityAccess, metrics: Any
 ) -> PersonRef | None:
     """Return the mapped person, or `None` if the sender is unmapped."""
-    person = persons.resolve(message.platform, message.sender_id)
+    person = await access.resolve_ref(message.platform, message.sender_id)
     if person is None:
         metrics.inc("nora_unmapped_senders_total", platform=message.platform)
         # Redacted: the raw id is already in the audit row's `raw_json`, and

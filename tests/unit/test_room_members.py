@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+from nora.access import IdentityAccess
 from nora.app.fire import FirePath
 from nora.domain.models import NormalizedMessage
 from nora.engagement.context import TranscriptInjection
@@ -78,18 +79,22 @@ def _msg(conversation_id: str) -> NormalizedMessage:
                              1, "@nora tell me when 俊爺 joins", {})
 
 
-def test_the_tag_path_and_the_fire_path_give_the_same_members(tmp_path):
+async def test_the_tag_path_and_the_fire_path_give_the_same_members(tmp_path):
     persons, policy = _load(tmp_path)
-    holder = SimpleNamespace(_policy=policy, _persons=persons)
-    tag = TranscriptInjection._room_members(holder, _msg("g1"))  # type: ignore[arg-type]
-    fire = FirePath._room_members(  # type: ignore[arg-type]
+    access = IdentityAccess.for_files(persons=persons, policy=policy)
+    holder = SimpleNamespace(
+        _policy=policy, _persons=persons, _access=None, _file_access=None,
+        _access_or_files=lambda: access)
+    tag = await TranscriptInjection._room_members(holder, _msg("g1"))  # type: ignore[arg-type]
+    fire = await FirePath._room_members(  # type: ignore[arg-type]
         holder, SimpleNamespace(platform="signal", conversation_id="g1"),
     )
     assert tag == fire and [m.name for m in tag] == ["Grant Carver", "Miles Novak"]
     # A room outside the policy, or no policy wired: nothing.
-    assert TranscriptInjection._room_members(holder, _msg("elsewhere")) == ()  # type: ignore[arg-type]
-    assert TranscriptInjection._room_members(  # type: ignore[arg-type]
-        SimpleNamespace(_policy=None, _persons=persons), _msg("g1"),
+    assert await TranscriptInjection._room_members(holder, _msg("elsewhere")) == ()  # type: ignore[arg-type]
+    assert await TranscriptInjection._room_members(  # type: ignore[arg-type]
+        SimpleNamespace(_policy=None, _persons=persons, _access=None, _file_access=None),
+        _msg("g1"),
     ) == ()
 
 

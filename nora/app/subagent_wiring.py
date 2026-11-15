@@ -49,6 +49,7 @@ def build_subagent_backend(
     reasoning_effort: str, jobs: Any = None,
     admission: Any = None,
     scope_for: Callable[[str, str, str], str] | None = None,
+    access: Any = None,
 ) -> Any:
     """The `SubagentBackend` for `[subagent] enabled = true`."""
     from nora.app.subagent_backend import SubagentBackend
@@ -71,7 +72,7 @@ def build_subagent_backend(
         metrics=metrics,
         tools=SubagentToolSource(
             registry=registry, store=store, persons=persons, honcho=honcho,
-            metrics=metrics, rosters=rosters, self_ids=self_ids,
+            metrics=metrics, rosters=rosters, self_ids=self_ids, access=access,
         ),
         system_prompt=load_system_prompt(
             nora_dir / SUBAGENT_DOCTRINE, doctrine_root / CONSTRAINTS,
@@ -82,6 +83,10 @@ def build_subagent_backend(
     )
 
     def requester_name(person_id: str) -> str:
+        if access is not None and not access.is_file_backend:
+            # A sync label callback; managed names are an async read, so the
+            # launch record names the canonical id rather than a stale file one.
+            return person_id
         ref = persons.by_person.get(person_id)
         return ref.name if ref is not None else person_id
 

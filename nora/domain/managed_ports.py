@@ -62,6 +62,23 @@ class PersonDirectory(Protocol):
         chain, or `None` when no such person exists."""
         ...
 
+    async def former_persons(self, person_id: str) -> tuple[str, ...]:
+        """The reverse of `canonical_person`: every RETIRED id the alias
+        chain folds into this person — the read a fold of historical
+        references (analytics subjects, retained rows) needs. A retired id
+        answers for the survivor it now names; an unknown person is empty."""
+        ...
+
+    async def persons(self) -> tuple[ManagedPerson, ...]:
+        """The ACTIVE canonical-person roster — the enumeration a roster view
+        (room members, known names, direct addresses) reads. Suspended
+        people stay resolvable by id (`person`) but are not enumerated."""
+        ...
+
+    async def person(self, person_id: str) -> ManagedPerson | None:
+        """The person's record including lifecycle and Kratos correlation."""
+        ...
+
     async def person_lifecycle(self, person_id: str) -> PersonLifecycle | None:
         """The canonical person's global state, or `None` when unknown.
         File mode has no lifecycle and answers `ACTIVE` for mapped persons."""
@@ -69,6 +86,11 @@ class PersonDirectory(Protocol):
 
     async def identity_held(self, person_id: str) -> bool:
         """An unfinished publication blocks the canonical identity across all scopes."""
+        ...
+
+    async def members_of(self, scope: Scope) -> tuple[ManagedMembership, ...]:
+        """The (person, scope) standing rows a scope holds — the room
+        roster a managed deployment knows by record, not by roster file."""
         ...
 
     async def aclose(self) -> None:
@@ -101,10 +123,6 @@ class BindingStore(PersonDirectory, Protocol):
 
     async def release_identity_hold(self, *, person_id: str, operation_id: str) -> Outcome:
         """Release this operation's hold without clearing another operation's hold."""
-        ...
-
-    async def person(self, person_id: str) -> ManagedPerson | None:
-        """The person's record including lifecycle and Kratos correlation."""
         ...
 
     async def account_record(self, account_id: str) -> ManagedAccount | None:
@@ -171,9 +189,6 @@ class BindingStore(PersonDirectory, Protocol):
     async def memberships_for(
         self, person_id: str
     ) -> tuple[ManagedMembership, ...]:
-        ...
-
-    async def members_of(self, scope: Scope) -> tuple[ManagedMembership, ...]:
         ...
 
     async def consolidate(self, *, survivor: str, former: str) -> Outcome:

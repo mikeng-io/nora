@@ -103,7 +103,7 @@ async def client(tmp_path, monkeypatch, clean_pg_url, aiohttp_client):
         adapter=SinkSender(),
         audit=store,
         memory=memory,
-        persons=load_persons(persons_path),
+        access=IdentityAccess.for_files(persons=load_persons(persons_path), policy=load_policy(policy_path)),
         doctrine_store=build_test_doctrine_store(),
         runner=FakeAgentRunner([]),
         metrics=Metrics(),

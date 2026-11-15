@@ -98,6 +98,7 @@ from nora.domain.standing import Standing
 from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.subagents_context import SubagentsView
 from nora.domain.turn_record import DisclosureRequirement
+from nora.access import IdentityAccess
 from nora.engagement.character_who import tag_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
@@ -209,6 +210,9 @@ class TranscriptInjection:
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: frozenset[str] = frozenset(),
         observations: Any = None,
+        # `nora.access.IdentityAccess` — the selected backend's identity
+        # reads. `None` builds a file-mode facade over `persons`/`policy`.
+        access: Any = None,
     ) -> None:
         self._rosters = rosters or {}
         self._self_ids = self_ids
@@ -237,6 +241,8 @@ class TranscriptInjection:
         self._shared_reader = shared
         self._memory = memory
         self._persons = persons
+        self._access = access
+        self._file_access: Any = None
         self._context_window = context_window
         # `None` renders everything that was read (every harness that predates
         # `[store] prompt_window`); a number renders at most that many rows,
@@ -315,11 +321,20 @@ class TranscriptInjection:
         # `nora_errors_total` (R-27), never a quiet fall back to the old block.
         self._profile_reader = profile
 
+    def _access_or_files(self) -> Any:
+        """The selected backend's facade, or a file-mode one built over the
+        loaded `Persons`/`Policy` — the same reads, one call shape."""
+        if self._access is not None:
+            return self._access
+        if self._file_access is None:
+            self._file_access = IdentityAccess.for_files(
+                persons=self._persons, policy=self._policy)
+        return self._file_access
+
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
-        # Resolved BEFORE the gather because reads in it are keyed on it, and it
-        # is a pure dict lookup — no reason for it to be a step.
-        ref = self._persons.resolve(msg.platform, msg.sender_id)
+        # Resolved BEFORE the gather because reads in it are keyed on it.
+        ref = await self._access_or_files().resolve_ref(msg.platform, msg.sender_id)
 
         # CONCURRENT: the reads are independent, so gathering hides each behind
         # the slowest instead of stacking their round trips (transcript, Honcho)
@@ -380,7 +395,8 @@ class TranscriptInjection:
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
-        transcript = self._persons.name_transcript(transcript, platform=msg.platform)
+        transcript = await self._access_or_files().name_transcript(
+            transcript, platform=msg.platform)
         # THEN the media join, after the transcript read and before the context
         # is frozen. It is a second round trip, so it is NOT in the gather above:
         # it needs the rows the gather returns. ONE bounded query per
@@ -440,7 +456,7 @@ class TranscriptInjection:
             and prefetch.found["status"] == "partial",
             # A pure lookup (policy.toml, identity.toml), no read: the room's
             # listed persons and their aliases for `<room_members>`.
-            room_members=self._room_members(msg),
+            room_members=await self._room_members(msg),
             lineage_room=(
                 self._lineage.render_room(
                     platform=msg.platform, conversation_id=msg.conversation_id,
@@ -464,7 +480,7 @@ class TranscriptInjection:
         listed = target.room.persons
         mentioned = [
             r.person_id for v in sorted(msg.mentions)
-            if (r := self._persons.resolve(msg.platform, v)) is not None
+            if (r := await self._access_or_files().resolve_ref(msg.platform, v)) is not None
         ]
         about = list(dict.fromkeys(
             ([ref.person_id] if ref is not None else []) + mentioned,
@@ -488,8 +504,8 @@ class TranscriptInjection:
             found = await asyncio.wait_for(traced_read(
                 "memory_index", "prefetch", self._memory_search.read(
                     query=query, depth=2, person_id=None, target=target,
-                    now_ms=int(now.timestamp() * 1000), people=self._room_members(msg),
-                    social_off=self._persons.social_off_ids(listed or ()),
+                    now_ms=int(now.timestamp() * 1000), people=await self._room_members(msg),
+                    social_off=await self._access_or_files().social_off_ids(listed or ()),
                     about=about, media=media,
                     anchors=preview_seeds(item, {}), cache=cache,
                     content_checks=target.content_checks,
@@ -552,13 +568,13 @@ class TranscriptInjection:
             prefetch.found["status"] = "partial"
         return ({"text": text},)
 
-    def _room_members(self, msg: NormalizedMessage) -> tuple[PersonRef, ...]:
+    async def _room_members(self, msg: NormalizedMessage) -> tuple[PersonRef, ...]:
         """This room's listed persons, for `<room_members>`; empty for a room
         outside the policy or a `persons = "*"` room (`Persons.room_members`)."""
-        if self._policy is None:
+        if self._access is None and self._policy is None:
             return ()
-        conv = self._policy.conversation(msg.platform, msg.conversation_id)
-        return self._persons.room_members(conv.persons) if conv is not None else ()
+        return await self._access_or_files().room_refs(
+            msg.platform, msg.conversation_id)
 
     async def _culture(self, msg: NormalizedMessage) -> CultureRevision | None:
         """This room's account, or `None` (DEC-207).
@@ -618,15 +634,14 @@ class TranscriptInjection:
             return read, (), await self._profiles(msg, ref, shown)
         return read, await self._character(msg, ref, shown), ()
 
-    def _platforms_of(self, person_id: str) -> tuple[str, ...]:
+    async def _platforms_of(self, person_id: str) -> tuple[str, ...]:
         """The display names of the networks one person is reachable on, for
         their authored identity lines — "Signal", "Discord", never a handle or
         a number (R-18). Read off the identity index, so a renamed platform
         cannot drift from what `resolve` matches."""
         return tuple(sorted({
-            platform_name(platform)
-            for (platform, _), pid in self._persons.index.items()
-            if pid == person_id
+            platform_name(a.platform)
+            for a in await self._access_or_files().accounts_for(person_id)
         }))
 
     async def _profiles(
@@ -651,13 +666,14 @@ class TranscriptInjection:
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
         if convo is None or not convo.unit:
             return ()
-        members = self._room_members(msg)
+        members = await self._room_members(msg)
         target = (self._lineage or LineagePolicy.from_policy(self._policy)).render_room(
             platform=msg.platform, conversation_id=msg.conversation_id,
         )
         room = Room(
             platform=msg.platform, conversation_id=msg.conversation_id,
             roster_source=self._rosters.get(msg.platform), persons=self._persons,
+            access=self._access_or_files(),
             tagger=ref, self_ids=self._self_ids,
         )
 
@@ -703,8 +719,8 @@ class TranscriptInjection:
             views.append(view)
         # THEIRS: every listed person this turn is about, with their authored
         # identity lines (45 §3: rendered, never written).
-        for person in tag_character_people(
-            members, persons=self._persons, message=msg,
+        for person in await tag_character_people(
+            members, access=self._access_or_files(), message=msg,
             tagger=ref, transcript=transcript,
         ):
             view = await one(
@@ -712,7 +728,7 @@ class TranscriptInjection:
                 entity="person", of=person.person_id, stage="tag_profile_person",
                 authored=authored_identity(
                     name=person.name, aliases=person.aliases,
-                    platforms=self._platforms_of(person.person_id),
+                    platforms=await self._platforms_of(person.person_id),
                 ),
             )
             if view is not None:
@@ -756,9 +772,9 @@ class TranscriptInjection:
             return ()
         return await read_character(
             self._culture_reader, unit=convo.unit,
-            members=tag_character_people(
-                self._room_members(msg), persons=self._persons, message=msg,
-                tagger=ref, transcript=transcript,
+            members=await tag_character_people(
+                await self._room_members(msg), access=self._access_or_files(),
+                message=msg, tagger=ref, transcript=transcript,
             ),
             stage="tag_character", platform=msg.platform, metrics=self._metrics,
         )
@@ -1037,6 +1053,7 @@ class TranscriptInjection:
                 platform=msg.platform, conversation_id=msg.conversation_id,
                 roster_source=self._rosters.get(msg.platform),
                 persons=self._persons, tagger=ref, self_ids=self._self_ids,
+                access=self._access_or_files(),
             )
             target = self._lineage.render_room(
                 platform=msg.platform, conversation_id=msg.conversation_id)
@@ -1148,13 +1165,24 @@ class TranscriptInjection:
                 "nora_errors_total", stage="observations", platform=msg.platform)
             return (), (), True, 0, 0
 
+        # `observation_summary`/`head_summary` are synchronous renderers, so
+        # these read the file index only in file mode — under managed a
+        # payload ref renders the summary's own «a member»/«a voter» absence
+        # rather than a stale file name (file people are never the managed
+        # fallback).
+        managed = self._access is not None and not self._access.is_file_backend
+
         def actor_of(obs: Any) -> str | None:
             if not obs.actor_id or obs.actor_status != "known":
+                return None
+            if managed:
                 return None
             ref = self._persons.resolve(obs.scope.platform, obs.actor_id)
             return ref.name if ref is not None else None
 
         def name_of(platform: str, ref: str) -> str | None:
+            if managed:
+                return None
             found = self._persons.resolve(platform, ref)
             return found.name if found is not None else None
 
@@ -1283,7 +1311,10 @@ class TranscriptInjection:
         out: list[RetainedSource] = []
         more = 0
         seen: set[str] = set(shown_handles)
+
         def name_of(person_ref: str) -> str | None:
+            if (self._access is not None and not self._access.is_file_backend):
+                return None  # sync renderer; see `actor_of` above
             found = self._persons.resolve(msg.platform, person_ref)
             return found.name if found is not None else None
 
@@ -1362,7 +1393,7 @@ class TranscriptInjection:
                 self._audit.by_ids(
                     platform=msg.platform, conversation_id=msg.conversation_id,
                     ids=tuple(sorted(wanted))[:_OBSERVATION_TARGET_MAX]))
-            named = self._persons.name_transcript(
+            named = await self._access_or_files().name_transcript(
                 list(found.values()), platform=msg.platform)
             targets = {
                 mid: target_context(

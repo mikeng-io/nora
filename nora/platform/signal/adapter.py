@@ -30,6 +30,7 @@ class SignalAdapter:
     def __init__(
         self, base_url: str, account: str, *, metrics: MetricsSink,
         dm_recipients: Set[str] = frozenset(),
+        dm_gate: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
         """`metrics` is required, not optional with a null default: identity
         enrichment degrading uncounted is R-17's entire subject, and an optional
@@ -41,7 +42,7 @@ class SignalAdapter:
         self._account = account
         self._metrics = metrics
         self._listener = SignalListener(base_url)
-        self._sender = SignalSender(base_url, dm_recipients=dm_recipients)
+        self._sender = SignalSender(base_url, dm_recipients=dm_recipients, dm_gate=dm_gate)
         self._reactor = SignalReactor(base_url)
         self._identity: PlatformIdentity | None = None
 

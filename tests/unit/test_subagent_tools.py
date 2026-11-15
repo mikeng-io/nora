@@ -382,7 +382,7 @@ async def test_a_closure_built_off_the_tag_path_refuses_to_start_a_job():
     assert out["status"] == "unavailable" and rig.worker.launched == []
 
 
-def test_the_worker_cannot_hold_a_sub_agent_tool_even_over_a_registry_that_has_them(tmp_path):
+async def test_the_worker_cannot_hold_a_sub_agent_tool_even_over_a_registry_that_has_them(tmp_path):
     rig = _Rig(tmp_path)
     registry = _Desk().registry
     assert SUBAGENT_TOOLS <= (NEVER | NOT_LOOKUPS)
@@ -392,7 +392,7 @@ def test_the_worker_cannot_hold_a_sub_agent_tool_even_over_a_registry_that_has_t
         metrics=rig.metrics, rosters={PLATFORM: FakeRosterSource(groups={ROOM: ()})},
     )
     held = {
-        t.tool_name for t in source.build(
+        t.tool_name for t in await source.build(
             job_id="j1", platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
             requester_person_id="miles",
         )

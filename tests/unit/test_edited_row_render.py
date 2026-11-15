@@ -83,7 +83,7 @@ def _mention_event(text: str, start: int, uuid: str) -> dict:
     }}}
 
 
-def test_each_text_is_rehydrated_against_the_envelope_it_came_from():
+async def test_each_text_is_rehydrated_against_the_envelope_it_came_from():
     """The latest body's mention spans index into the EDIT's envelope, the
     first text's into the original's. Looking the edited body up in the
     original envelope would name the wrong person — here, Tyler for Amy."""
@@ -107,9 +107,9 @@ def test_each_text_is_rehydrated_against_the_envelope_it_came_from():
         ),
         tagger=None, transcript=(row,), peer_card=(), started_at=0.0,
     )
-    out = MentionRenderer(
+    out = (await MentionRenderer(
         persons=persons, display_name="Nora", self_ids=frozenset(), metrics=Metrics(),
-    ).rehydrate(ctx).transcript[0]
+    ).rehydrate(ctx)).transcript[0]
 
     assert out.body == "ok @Amy come?"
     assert out.edit is not None and out.edit.was == "@Tyler come?"

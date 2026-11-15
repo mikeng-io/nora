@@ -115,7 +115,7 @@ from nora.obs.tracing import (
     root_span,
     span,
 )
-from nora.persons import Persons
+from nora.persons import sanitize_unmapped, Persons
 from nora.platform.bridge import telemetry as _bridge_telemetry
 from nora.policy import Policy
 from nora.tag import Debounce
@@ -188,6 +188,7 @@ class EngagementPipeline:
     def __init__(
         self,
         *,
+        access: Any,
         adapters: Mapping[str, Any],
         audit: RecordStore,
         memory: MemoryStore,
@@ -229,6 +230,11 @@ class EngagementPipeline:
         self._audit = audit
         self._memory = memory
         self._persons = persons
+        # The descriptive `Persons` handed to tool surfaces and composers:
+        # the selected backend's view — absent under managed, never a stale
+        # file answer; identical under the file backend.
+        self._view = access.persons_view() if access is not None else persons
+        self._access = access
         self._doctrine_store = doctrine_store
         self._context = context_assembler
         self._runner = runner
@@ -550,6 +556,10 @@ class EngagementPipeline:
         """A told-by person id as a NAME for the fold's `<profile>` block
         (45 §5): the identity index's name, "someone" when it has none (R-18 —
         never the id itself)."""
+        if self._access is not None and not self._access.is_file_backend:
+            # Sync fold callback; managed names need the async read surface —
+            # the block gets the same honest "someone" an unmapped file id gets.
+            return "someone"
         ref = self._persons.by_person.get(person_id)
         return ref.name if ref is not None else "someone"
 
@@ -708,8 +718,9 @@ class EngagementPipeline:
             # ingest (the audit stores what arrived) or in the prefill (which
             # may not import `nora.platform`), against `raw_json`, which every
             # historical row already carries. See `nora.engagement.mentions`.
-            ctx = MentionRenderer(
-                persons=self._persons, display_name=self._display_name,
+            ctx = await MentionRenderer(
+                persons=self._view, display_name=self._display_name,
+                access=self._access,
                 self_ids=frozenset(getattr(identity, "aliases", ())),
                 metrics=self._metrics,
                 content_checks=self._tool_registry.content_checks,
@@ -773,7 +784,8 @@ class EngagementPipeline:
                 # and at most once, rather than against the whole address book.
                 composer=OutboundComposer(
                     platform=msg.platform, conversation_id=msg.conversation_id,
-                    persons=self._persons, metrics=self._metrics,
+                    persons=self._view, metrics=self._metrics,
+                    access=self._access,
                     roster_source=self._rosters.get(msg.platform),
                     preview_source=self._preview_source,
                     content_checks=self._tool_registry.content_checks,
@@ -800,7 +812,8 @@ class EngagementPipeline:
             # both the ingest path and the front of the model call.
             room = Room(
                 platform=msg.platform, conversation_id=msg.conversation_id,
-                roster_source=self._rosters.get(msg.platform), persons=self._persons,
+                roster_source=self._rosters.get(msg.platform), persons=self._view,
+                access=self._access,
                 tagger=ctx.tagger, self_ids=frozenset(getattr(identity, "aliases", ())),
                 # From the ASSEMBLED context, not from config: the block is
                 # absent when Honcho could not answer as well as when it is
@@ -821,7 +834,7 @@ class EngagementPipeline:
                 # hop of silence in the channel first.
                 occasion=turn_occasion(voice=msg.voice),
                 store=self._audit, conversation_id=msg.conversation_id,
-                conversation_type=msg.conversation_type, persons=self._persons,
+                conversation_type=msg.conversation_type, persons=self._view,
                 honcho=self._memory, deliverer=handle.deliverer,
                 room=room, question=render_file_links(msg.body),
                 context_window=self._context_window, metrics=self._metrics,
@@ -845,7 +858,14 @@ class EngagementPipeline:
                 # collects perfectly and appends nothing.
                 links=handle.links,
             )
-            tagger_name = self._persons.display_name(msg)
+            if self._access is not None:
+                tag_ref = await self._access.resolve_ref(
+                    msg.platform, msg.sender_id)
+                tagger_name = (
+                    tag_ref.name if tag_ref is not None
+                    else msg.sender_name or sanitize_unmapped(msg.sender_id))
+            else:
+                tagger_name = self._persons.display_name(msg)
             # NO ROSTER IN THE PROMPT; there is a tool instead.
             # `identity.toml` is Nora's address book across EVERY room; handing
             # all of it to one room discloses the existence and names of people

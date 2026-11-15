@@ -85,6 +85,7 @@ def build_assembler(
     rosters: Mapping[str, RosterSource] | None = None,
     self_ids: frozenset[str] = frozenset(),
     observations: object = None,
+    access: object = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -155,4 +156,7 @@ def build_assembler(
         # (transcript) and folded object heads (standing slot). `None` in
         # a harness renders neither — never a guessed source line.
         observations=observations,
+        # The selected backend's identity+access facade (`nora.access`).
+        # `None` builds a file-mode facade over `persons`/`policy`.
+        access=access,
     )
