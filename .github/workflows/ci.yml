@@ -384,6 +384,21 @@ jobs:
         run: |
           uv run python -m scripts.check_ory_policy --read-url http://127.0.0.1:4466 --write-url http://127.0.0.1:4467
           uv run python -m scripts.check_ory_clients --kratos-url http://127.0.0.1:4434 --keto-read-url http://127.0.0.1:4466 --keto-write-url http://127.0.0.1:4467
+      - name: Managed identity contracts
+        run: >-
+          uv run python -m scripts.pytest_gate
+          tests/contract/test_binding_store_contract.py
+          tests/infra/test_account_link_requests.py
+          tests/infra/test_kratos_identity_contract.py
+          tests/web/test_management_bootstrap.py
+          tests/web/test_management_api.py
+          tests/unit/test_managed_authority.py
+          tests/unit/test_managed_registration.py
+          tests/unit/test_account_linking_state.py
+          tests/domain/test_management.py
+          tests/unit/test_management_request.py
+          tests/architecture/test_port_fakes_live_in_nora_testing.py
+          tests/architecture/test_ory_ci.py
       - name: Read disposable service failures
         if: failure() && steps.ory.outcome != 'skipped' && steps.ory.outcome != ''
         run: docker compose -p nora-ory-contract -f deploy/ory/compose.yaml logs --no-color
