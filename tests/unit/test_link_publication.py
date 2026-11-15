@@ -10,6 +10,8 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
+
 from nora.domain.account_linking import (
     ConsentProof,
     ConsentSurface,
@@ -103,7 +105,7 @@ def _actor(side, person):
                  account=account, proof_issuer=ISSUER[side])
 
 
-async def _approved(svc, links, *, request_id="synthetic-request"):
+async def _approved(svc, links, *, request_id="synthetic-request", now=NOW):
     """Observe -> request -> both holder decisions through the REAL store."""
     observation = await svc.observe(
         initiating=ACCT_I, receiving=ACCT_R, surviving_person=PERSON_A)
@@ -116,7 +118,7 @@ async def _approved(svc, links, *, request_id="synthetic-request"):
         op, receiving_person=observation.receiving_person,
         initiating_nonce=NONCE[LinkSide.INITIATING],
         receiving_nonce=NONCE[LinkSide.RECEIVING],
-        created_at=NOW, expires_at=NOW + timedelta(minutes=5),
+        created_at=now, expires_at=now + timedelta(minutes=5),
     ))
     for side, person in ((LinkSide.INITIATING, PERSON_A), (LinkSide.RECEIVING, PERSON_B)):
         decision = Operation(
@@ -129,10 +131,10 @@ async def _approved(svc, links, *, request_id="synthetic-request"):
         proof = ConsentProof(
             account=ACCT_I if side is LinkSide.INITIATING else ACCT_R,
             issuer=ISSUER[side], surface=SURFACE[side],
-            authenticated_at=NOW + timedelta(seconds=1),
+            authenticated_at=now + timedelta(seconds=1),
             request_id=request_id, nonce=NONCE[side],
         )
-        link = await links.decide(decision, proof, now=NOW + timedelta(seconds=2))
+        link = await links.decide(decision, proof, now=now + timedelta(seconds=2))
     return link
 
 
@@ -199,6 +201,8 @@ async def test_commit_without_both_approvals_is_denied_and_nothing_changes():
     outcome = await svc.commit("synthetic-request", now=NOW + timedelta(seconds=3))
     assert outcome.status is OutcomeStatus.DENIED
     assert await store.person(PERSON_B) is not None and not store.aliases
+    assert not await store.identity_held(PERSON_A)
+    assert not await store.identity_held(PERSON_B)
     assert (await links.get("synthetic-request")).state is LinkState.PENDING
 
 
@@ -209,6 +213,8 @@ async def test_expired_request_is_refused_not_committed():
         "synthetic-request", now=NOW + timedelta(minutes=6))
     assert outcome.status is OutcomeStatus.DENIED
     assert await store.person(PERSON_B) is not None and not store.aliases
+    assert not await store.identity_held(PERSON_A)
+    assert not await store.identity_held(PERSON_B)
 
 
 async def test_moved_ownership_between_approval_and_commit_denies():
@@ -400,3 +406,70 @@ async def test_observe_refuses_same_person_and_absent_accounts():
     result = await svc.observe(
         initiating=ACCT_I, receiving=ACCT_R, surviving_person=PERSON_A)
     assert result.verdict is Verdict.UNAVAILABLE
+
+
+class _CrashBeforeTransition:
+    def __init__(self, links):
+        self._links = links
+
+    def __getattr__(self, name):
+        if name == "begin_commit":
+            async def crash(*args, **kwargs):
+                raise RuntimeError("generated interruption before transition")
+            return crash
+        return getattr(self._links, name)
+
+
+@pytest.mark.parametrize("resume", ["commit", "reconcile"])
+async def test_interruption_after_holds_before_transition_remains_recoverable(resume):
+    store, backend, topology, registry, links, svc = await _linked_world()
+    now = datetime.now(UTC)
+    await _approved(svc, links, now=now - timedelta(seconds=3))
+    interrupted = LinkPublicationService(store, backend, topology, registry,
+                                          _CrashBeforeTransition(links))
+    result = await interrupted.commit("synthetic-request", now=now)
+    assert result.status is OutcomeStatus.UNAVAILABLE
+    assert (await links.get("synthetic-request")).state is LinkState.PENDING
+    assert await store.identity_held(PERSON_A)
+    recovered = LinkPublicationService(store, backend, topology, registry, links)
+    if resume == "commit":
+        result = await recovered.commit("synthetic-request", now=now)
+        assert result.status is OutcomeStatus.COMPLETE
+    else:
+        assert len(await recovered.reconcile()) == 1
+    assert (await links.get("synthetic-request")).state is LinkState.COMMITTED
+    assert not await store.identity_held(PERSON_A)
+    assert not await store.identity_held(PERSON_B)
+
+
+async def test_missing_retiring_kratos_identity_never_counts_as_confirmed_revocation():
+    store, backend, topology, registry, links, svc = await _linked_world()
+    await _approved(svc, links)
+    interrupted = LinkPublicationService(store, backend, topology,
+                                          _Outage(registry, {"set_state"}), links)
+    result = await interrupted.commit("synthetic-request", now=NOW + timedelta(seconds=3))
+    assert result.status is OutcomeStatus.UNAVAILABLE
+    registry.identities.pop(PERSON_B)
+    assert await svc.reconcile() == ()
+    assert (await links.get("synthetic-request")).state is LinkState.COMMITTING
+    assert await store.identity_held(PERSON_A)
+    record = await store.operation(_journal_id("synthetic-request"))
+    assert record.state is not OperationJournalState.COMPLETE
+
+
+async def test_interrupted_preparation_preserves_another_operations_hold_and_remains_retryable():
+    store, backend, topology, registry, links, svc = await _linked_world()
+    now = datetime.now(UTC)
+    await _approved(svc, links, now=now - timedelta(seconds=3))
+    interrupted = LinkPublicationService(store, backend, topology, registry,
+                                          _CrashBeforeTransition(links))
+    result = await interrupted.commit("synthetic-request", now=now)
+    assert result.status is OutcomeStatus.UNAVAILABLE
+    await store.hold_identity(person_id=PERSON_A, operation_id="generated-other-owner")
+    assert await svc.reconcile() == ()
+    record = await store.operation(_journal_id("synthetic-request"))
+    assert record.state is not OperationJournalState.COMPLETE
+    assert await store.identity_held(PERSON_A)
+    await store.release_identity_hold(person_id=PERSON_A, operation_id="generated-other-owner")
+    assert len(await svc.reconcile()) == 1
+    assert not await store.identity_held(PERSON_A)

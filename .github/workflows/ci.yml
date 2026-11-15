@@ -389,6 +389,7 @@ jobs:
           uv run python -m scripts.pytest_gate
           tests/contract/test_binding_store_contract.py
           tests/infra/test_account_link_requests.py
+          tests/infra/test_link_publication_sql.py
           tests/infra/test_managed_mutation_gate.py
           tests/infra/test_kratos_identity_contract.py
           tests/web/test_management_bootstrap.py
@@ -398,6 +399,7 @@ jobs:
           tests/unit/test_managed_authority.py
           tests/unit/test_managed_registration.py
           tests/unit/test_account_linking_state.py
+          tests/unit/test_link_publication.py
           tests/domain/test_management.py
           tests/unit/test_management_request.py
           tests/unit/test_management_authentication.py

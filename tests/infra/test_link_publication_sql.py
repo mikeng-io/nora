@@ -4,6 +4,7 @@ here against `SqlBindingStore`/`SqlLinkRequests` with live Keto/Kratos
 fakes only where no real service exists in this checkout.
 """
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -11,6 +12,7 @@ import pytest
 import sqlalchemy as sa
 
 from nora.domain.account_linking import ConsentProof, ConsentSurface, LinkState, PendingLink
+from nora.domain.authentication import AccountAuthentication
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
@@ -20,6 +22,7 @@ from nora.domain.managed import (
     MembershipState,
     OutcomeStatus,
     PersonLifecycle,
+    Verdict,
 )
 from nora.domain.management import (
     Actor,
@@ -36,6 +39,7 @@ from nora.domain.management import (
 from nora.infra.sql.account_links import SqlLinkRequests
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
+from nora.people import AccountSessions
 from nora.people.app.link_publication import LinkPublicationService, _journal_id
 from nora.testing.managed import (
     FakeAuthorityBackend,
@@ -246,3 +250,33 @@ async def test_sql_supports_survive_consolidation_for_both_people(store):
     await store.drop_membership_support(person_id=PERSON_A, scope=ROOM, source="delegation")
     assert {m for m in await store.memberships_for(PERSON_A)
             if m.scope == ROOM}.pop().state is MembershipState.LEFT
+
+
+async def test_publication_invalidates_sessions_without_refreshing_login_replays(store):
+    bindings, _, _, registry, links, publication, engine = await _world(store)
+    await _approved(publication, links)
+    sessions = AccountSessions(bindings, registry)
+    signed_in = []
+    retained = []
+    for account, method in ((ACCT_I, "discord_oauth"), (ACCT_R, "signal_code")):
+        proof = AccountAuthentication("generated-gateway", str(uuid4()), account, method,
+                                      "generated-provider", NOW, "sign_in", None)
+        result = await sessions.check(proof)
+        assert result.verdict is Verdict.ALLOWED
+        signed_in.append(proof)
+        retained.append(replace(proof, purpose="session", binding=result.principal.binding))
+    outcome = await publication.commit("synthetic-request", now=NOW + timedelta(seconds=3))
+    assert outcome.status is OutcomeStatus.COMPLETE
+    # Independent SQL reader and session service see the committed revisions.
+    other = create_sql_engine(engine.url.render_as_string(hide_password=False))
+    try:
+        recovered = AccountSessions(SqlBindingStore(other), registry)
+        for old_session, replay in zip(retained, signed_in, strict=True):
+            assert (await recovered.check(old_session)).verdict is Verdict.DENIED
+            assert (await recovered.check(replay)).verdict is Verdict.DENIED
+        fresh = replace(signed_in[1], session_id=str(uuid4()))
+        result = await recovered.check(fresh)
+        assert result.verdict is Verdict.ALLOWED
+        assert result.principal.binding.person_id == PERSON_A
+    finally:
+        await other.dispose()

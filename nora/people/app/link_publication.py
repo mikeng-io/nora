@@ -147,7 +147,7 @@ class LinkPublicationService:
             return check_denied("survivor-not-owner")
         people = await self._people(
             frozenset(owners.values()),
-            require_identity=frozenset({surviving_person}),
+            require_identity=frozenset(owners.values()),
         )
         if isinstance(people, CheckResult):
             return people
@@ -244,12 +244,23 @@ class LinkPublicationService:
                 return unavailable("journal-missing")
             return await self._resume_committed(record, link)
         if link.state is not LinkState.PENDING:
+            if record is not None and record.state is not OperationJournalState.COMPLETE:
+                released = await self._release_holds(record)
+                if released.status is not OutcomeStatus.COMPLETE:
+                    return released
+                await _finish(self._bindings, record, OperationJournalState.COMPLETE,
+                              "denied", f"request-{link.state.value}")
             return denied(f"request-{link.state.value}")
         if not link.ready:
             return denied("awaiting-approvals")
+        if record is not None and record.state is not OperationJournalState.COMPLETE:
+            released = await self._release_holds(record)
+            if released.status is not OutcomeStatus.COMPLETE:
+                return released
         plan = await self._plan(link)
         if isinstance(plan, Outcome):
-            if record is not None and record.state is not OperationJournalState.COMPLETE:
+            if (plan.status is OutcomeStatus.DENIED and record is not None
+                    and record.state is not OperationJournalState.COMPLETE):
                 await _finish(self._bindings, record,
                               OperationJournalState.COMPLETE,
                               plan.status.value, plan.detail)
@@ -284,11 +295,11 @@ class LinkPublicationService:
                 active_people=plan.active_people,
                 revisions=plan.revisions, now=now)
         except LinkStateError as error:
+            released = await self._release_holds(record)
+            if released.status is not OutcomeStatus.COMPLETE:
+                return released
             await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                           "denied", str(error))
-            for person in (plan.survivor, plan.loser):
-                await self._bindings.release_identity_hold(
-                    person_id=person, operation_id=record.operation_id)
             return denied(str(error))
         return await self._run_steps(record)
 
@@ -308,14 +319,13 @@ class LinkPublicationService:
     async def _finish_committed(self, record: OperationRecord | None) -> Outcome:
         """COMMITTED: release this operation's holds and close the journal."""
         if record is None:
-            return complete("committed")
+            return unavailable("journal-missing")
         if record.state is OperationJournalState.COMPLETE:
             return Outcome(
                 OutcomeStatus(record.outcome or "complete"), record.detail)
-        snapshot = dict(record.snapshot)
-        for person in (snapshot["survivor"], snapshot["loser"]):
-            await self._bindings.release_identity_hold(
-                person_id=person, operation_id=record.operation_id)
+        released = await self._release_holds(record)
+        if released.status is not OutcomeStatus.COMPLETE:
+            return released
         await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                       "complete")
         return complete()
@@ -334,7 +344,7 @@ class LinkPublicationService:
         if len(person_ids) != 2 or link.surviving_person not in person_ids:
             return denied("survivor-not-owner")
         people = await self._people(
-            person_ids, require_identity=frozenset({link.surviving_person})
+            person_ids, require_identity=person_ids,
         )
         if isinstance(people, CheckResult):
             if people.verdict is Verdict.UNAVAILABLE:
@@ -459,12 +469,9 @@ class LinkPublicationService:
         """Deactivate the retired person's identity and end its sessions."""
         loser = snapshot["loser"]
         outcome = await self._registry.set_state(external_id=loser, active=False)
-        if outcome.status is OutcomeStatus.DENIED:
-            outcome = complete()
         if outcome.status is not OutcomeStatus.COMPLETE:
             return outcome
-        outcome = await self._registry.drop_sessions(external_id=loser)
-        return complete() if outcome.status is OutcomeStatus.DENIED else outcome
+        return await self._registry.drop_sessions(external_id=loser)
 
     async def _normalize(self, snapshot: Mapping[str, Any]) -> Outcome:
         """Move every journaled relation to the survivor — put before drop."""
@@ -519,7 +526,7 @@ class LinkPublicationService:
             if not set(sources) <= set(survivor_members.get(scope, ())):
                 return unavailable("read-back-mismatch")
         state = await self._registry.identity_state(external_id=loser)
-        if state.verdict is Verdict.UNAVAILABLE:
+        if state.verdict in {Verdict.UNAVAILABLE, Verdict.UNKNOWN_SCOPE}:
             return unavailable("identity-unavailable")
         if state.verdict is Verdict.ALLOWED:
             return unavailable("kratos-not-retired")
@@ -533,11 +540,13 @@ class LinkPublicationService:
         request_id = snapshot["request_id"]
         if link is None:
             link = await self._links.get(request_id)
-        if link is not None and link.state is LinkState.COMMITTING:
+        if link is None or link.state not in {LinkState.COMMITTING, LinkState.COMMITTED}:
+            return unavailable("request-state-unconfirmed")
+        if link.state is LinkState.COMMITTING:
             await self._links.mark_committed(request_id)
-        for person in (snapshot["survivor"], snapshot["loser"]):
-            await self._bindings.release_identity_hold(
-                person_id=person, operation_id=record.operation_id)
+        released = await self._release_holds(record)
+        if released.status is not OutcomeStatus.COMPLETE:
+            return released
         await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                       "complete")
         return complete()
@@ -578,13 +587,14 @@ class LinkPublicationService:
         snapshot = dict(record.snapshot)
         link = await self._links.get(snapshot["request_id"])
         if link is None:
-            await _finish(self._bindings, record, OperationJournalState.COMPLETE,
-                          "denied", "request-gone")
-            return denied("request-gone")
+            return unavailable("request-state-unconfirmed")
         if link.state is LinkState.COMMITTED:
             return await self._finish_committed(record)
         if link.state is LinkState.COMMITTING:
             return await self._resume_committed(record, link)
+        released = await self._release_holds(record)
+        if released.status is not OutcomeStatus.COMPLETE:
+            return released
         if link.state is not LinkState.PENDING:
             await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                           "denied", f"request-{link.state.value}")
@@ -594,8 +604,9 @@ class LinkPublicationService:
         # refuses instead of silently publishing a different one.
         plan = await self._plan(link)
         if isinstance(plan, Outcome):
-            await _finish(self._bindings, record, OperationJournalState.COMPLETE,
-                          plan.status.value, plan.detail)
+            if plan.status is OutcomeStatus.DENIED:
+                await _finish(self._bindings, record, OperationJournalState.COMPLETE,
+                              plan.status.value, plan.detail)
             return plan
         if dict(record.snapshot) != self._snapshot(link, plan):
             await _finish(self._bindings, record, OperationJournalState.COMPLETE,
@@ -626,9 +637,17 @@ class LinkPublicationService:
         return complete()
 
     async def _sessions_dropped(self, person_id: str) -> Outcome:
-        """Absent identity = no sessions to drop — the completed effect."""
-        outcome = await self._registry.drop_sessions(external_id=person_id)
-        return complete() if outcome.status is OutcomeStatus.DENIED else outcome
+        """Require the registry's positive session-revocation read-back."""
+        return await self._registry.drop_sessions(external_id=person_id)
+
+    async def _release_holds(self, record: OperationRecord) -> Outcome:
+        """Clear only this operation's holds at a safe preparation or completed-effect boundary."""
+        for person in (record.snapshot["survivor"], record.snapshot["loser"]):
+            outcome = await self._bindings.release_identity_hold(
+                person_id=person, operation_id=record.operation_id)
+            if outcome.status is not OutcomeStatus.COMPLETE:
+                return outcome
+        return complete()
 
     async def _revoke(self, ident: Identifier) -> Outcome:
         bound = await self._bindings.account_for(
