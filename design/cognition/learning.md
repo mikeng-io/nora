@@ -1,101 +1,76 @@
 # Learning
 
-## What learning is
+Nora has learned when an outcome of her own act changes a later decision and
+every link of that chain is in the graph.
 
-Nora has learned when an outcome of her own act changes a later decision, and
-every link of that chain is in the graph:
+## The chain
 
 | link | in the graph | written by |
 |---|---|---|
-| **outcome** | the verdict on a closed intention | code (computed) |
-| **revision** | a lesson or claim created or revised, citing the verdicts | the session proposes, code admits (inferred) |
-| **retrieval** | the lesson or track record pushed when a comparable decision comes up | code (prefetch) |
-| **use** | the new intention's rests-on edge to that lesson or track record | the session proposes, code admits (committed) |
+| **outcome** | the verdict on an intention | code |
+| **revision** | a lesson or claim created or revised, citing verdicts | model proposes, code admits |
+| **retrieval** | the lesson or track record pushed into a comparable decision | code, by prefetch |
+| **use** | the new intention's rests-on edge to it | model proposes, code admits |
 
-Each link is its own claim and needs its own evidence. A write proves
-persistence; being shown proves availability, not use; a later good result
-alone does not prove that the revision caused it. A link that exists only in
-the model's context is not learning: a lesson no decision rests on was
-available, not used.
+Each link needs its own evidence: a write proves persistence, being shown
+proves availability, and neither proves use. A later good result alone does
+not prove the revision caused it. A lesson no decision rests on was available,
+not used.
 
-## Three forms, and reconsideration
+## Forms
 
 | form | is | basis | exists |
 |---|---|---|---|
-| **verdict** | the outcome of one intention: achieved, dropped, leaked or unknown | computed | from the moment it closes |
-| **track record** | the tally of verdicts for one class of intention | computed | at read time; prefetch pushes it into decide |
-| **lesson** | a generalisation about how to act in a unit, citing several verdicts or one correction | inferred, induced | stored once with provenance, revised when its evidence changes |
+| **verdict** | the outcome of one intention: achieved, dropped, leaked or unknown | computed | when it closes |
+| **track record** | the verdicts of one class of intention | computed | at read time |
+| **lesson** | how to act in a unit, citing several verdicts or one correction | inferred, induced | stored with provenance; revised as evidence changes |
+| **reconsideration** | an intention due again because a row it rests on was revised | committed, by the rests-on edge | when that row changes |
 
-**Reconsideration** needs no lesson. When a claim an intention rests on is
-revised, the intention is due for reconsideration in decide: learning as
-revision, carried by the rests-on edge alone.
-
-An unknown verdict counts toward no track record, lesson or tally.
-
-**The class of an intention** is computed, never judged: its form, who it is
-owed to, its unit and the type of its closing condition. Finer similarity
-belongs to the lesson's own citations. A model-made similarity score would
-make the track record a judgement, not a derivation.
+- The **class** of an intention is computed: its form, who it is owed to, its
+  unit and the type of its closing condition. A model-made similarity score
+  would make the track record a judgement.
+- An unknown verdict counts toward no track record, lesson or tally.
+- Only computed forms are derived afresh at read time; a lesson is written
+  once and revised, never re-inferred from raw history on every pass.
 
 ## Lessons are graded by their consequences
 
-A decision that rests on a lesson makes its own verdict evidence about that
-lesson. Code keeps each lesson's **support and contradiction**: the verdicts
-of the intentions resting on it. The tally is computed and needs no judge.
-
-A lesson whose contradiction outruns its support is put before the next
-session to revise or retire. Later evidence decides whether a lesson still
-holds; a lesson retired by the operator is not relearned from evidence no
-newer than that retirement.
+A decision resting on a lesson makes its verdict evidence about that lesson.
+Code keeps each lesson's **support and contradiction** from the verdicts of the
+intentions resting on it. A lesson whose contradiction outruns its support is
+put before the next subconscious pass to revise or retire. A lesson the
+operator retired is not relearned from evidence no newer than that retirement.
 
 ## What Nora learns about
 
 | about | stage | from | lands as |
 |---|---|---|---|
-| **the world**: people, rooms, ties, things | orient | items and aggregates | claims about entities, read as profiles and likes |
-| **her own practice**: how to act | study | verdicts of her intentions, corrections | lessons |
-| **how far a lesson holds** | none: it is computed | verdicts of the intentions resting on it | its support and contradiction |
+| the world | orient | items and aggregates | claims, read as profiles and likes |
+| her own practice | study | verdicts and corrections | lessons |
+| how far a lesson holds | none: computed | verdicts resting on it | its support and contradiction |
 
-## Signals
+## Signals, strongest first
 
-1. **A person's correction** — told, and enough on its own to ground a lesson.
-2. **A verdict** — whether what Nora set out to do happened.
-3. **Reception** — replies, reactions, edits after her act. It measures how an
-   act was received, not whether it was right, and stays marked as such.
-4. **Nora's own words** never ground a lesson or a claim about her; they ground
-   only that she said them.
+1. A person's correction aimed at Nora: enough alone to ground a lesson.
+2. A verdict: whether what she set out to do happened.
+3. Reception — replies, reactions, edits: how an act was received, never
+   whether it was right.
+4. Nora's own words ground nothing beyond that she said them.
 
-Agreement and engagement are reception. Learning must not optimise flattery
-over grounded understanding.
-
-## When it happens
-
-- **Within a pass** — rediscover follows each new link, and decide reads track
-  records before it commits. This is learning at inference time.
-- **When an intention closes** — its verdict is written by code at once.
-- **Across passes** — a lesson is induced once enough verdicts of a class
-  exist, or one correction arrives, and its tally moves with every decision
-  that rests on it.
-
-Only what is computed is derived afresh at read time. Re-inferring lessons from
-raw history on every pass would interpret the same evidence many times, leave
-no row to cite, revise or retire, and spend a model call each time.
+Learning must not optimise agreement or engagement over grounded
+understanding.
 
 ## Evidence of learning
 
-All are counts over the graph:
+- **verdict coverage**: the share of intentions that close with a known
+  verdict;
+- **use**: the share of decisions resting on a lesson or track record;
+- **efficacy**: the achieved rate of intentions resting on a lesson against
+  comparable ones resting on none — an association, never proof of cause.
 
-- **verdict coverage** — the share of intentions that close with a verdict;
-- **use** — the share of decisions resting on a lesson or track record;
-- **efficacy** — the achieved rate of intentions resting on a lesson against
-  comparable intentions that rest on none; an association, never a proof of
-  cause.
+Missing, truncated or unmatched evidence is an error, never a pass. The writer
+never grades its own learning.
 
-Evaluation reads the original items, the held state, the revision, the later
-decision and its outcome. Missing, truncated or unmatched evidence is an error,
-never a pass. Independent judges assess support and later use; the writer does
-not grade its own learning.
-
-**The reading that would reopen this:** if decide rarely writes a typed
-closing condition, verdict coverage stays low, track records stay empty, and
-learning is no stronger than reception.
+**The reading that would reopen this**: verdict coverage stays low because
+decide rarely writes a typed condition; then learning is no stronger than
+reception.
