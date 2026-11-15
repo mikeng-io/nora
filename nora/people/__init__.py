@@ -2,3 +2,4 @@
 from nora.people import wire as wire
 from nora.people.app.authentication import AccountSessions as AccountSessions
 from nora.people.app.identity_resolution import IdentityResolver as IdentityResolver
+from nora.people.app.management_invocation import HumanManagement as HumanManagement

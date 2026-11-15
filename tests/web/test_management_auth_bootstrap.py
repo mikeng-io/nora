@@ -1,14 +1,19 @@
 """Authentication keys and provisioning authority remain separate at real startup."""
 
-from types import SimpleNamespace
-
 import pytest
 from aiohttp import web
 
 from nora.app.management import mount_management
 from nora.app.startup import StartupError
 from nora.config import load
-from nora.testing.managed import FakeBindingStore, FakeIdentityRegistry
+from nora.people.app.managed import ManagedServices
+from nora.testing.managed import (
+    FakeAuthorityBackend,
+    FakeBindingStore,
+    FakeIdentityRegistry,
+    FakeLinkRequests,
+    FakeTopologySource,
+)
 
 KEY = "generated-private-authentication-key-for-local-contracts"
 SETTINGS = '''
@@ -49,12 +54,13 @@ def configured(example_config_path, monkeypatch):
 
 async def test_authentication_mounts_without_a_provisioning_service(configured, aiohttp_client):
     app = web.Application()
-    services = SimpleNamespace(bindings=FakeBindingStore(), registry=FakeIdentityRegistry())
+    services = ManagedServices(FakeBindingStore(), FakeAuthorityBackend(), FakeTopologySource(),
+                               FakeIdentityRegistry(), FakeLinkRequests())
     await mount_management(app, cfg=configured(), services=services)
     client = await aiohttp_client(app)
     response = await client.post("/app/v1/management/auth/exchange")
     assert response.status == 401
-    assert (await client.post("/app/v1/management/operations")).status == 404
+    assert (await client.post("/app/v1/management/operations")).status == 401
 
 
 @pytest.mark.parametrize("key", ["", "too-short"])

@@ -29,6 +29,15 @@ export function identityBackend(): "file" | "managed" {
   return value;
 }
 
+export function managementURL(path: string): string {
+  const base = new URL(process.env.NORA_API_BASE ?? "http://nora:9100");
+  if (!["http:", "https:"].includes(base.protocol) || base.username || base.password
+    || base.search || base.hash || base.pathname !== "/") {
+    throw new Error("Private management service is unavailable");
+  }
+  return `${base.origin}${path}`;
+}
+
 /** Sign only the authentication retained by Auth.js, never browser/model actor fields. */
 export async function authenticationAssertion(
   authentication: AuthenticationEvent,
@@ -68,10 +77,7 @@ async function call(
   try {
     const assertion = await authenticationAssertion(authentication,
       { purpose, path, body, method: "POST", binding });
-    const base = new URL(process.env.NORA_API_BASE ?? "http://nora:9100");
-    if (!["http:", "https:"].includes(base.protocol) || base.username || base.password
-      || base.search || base.hash) return { status: "unavailable" };
-    const response = await fetch(`${base.href.replace(/\/$/, "")}${path}`, {
+    const response = await fetch(managementURL(path), {
       method: "POST", body, cache: "no-store", redirect: "error",
       headers: { Authorization: `Nora-Authentication ${assertion}`, "Content-Type": "application/json" },
       signal: AbortSignal.timeout(10_000),

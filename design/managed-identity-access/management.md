@@ -115,6 +115,15 @@ state. Disabled identities, revoked bindings and canonical aliases cannot leave
 a session acting as an obsolete independent person. The portal's pages and API
 routes share this enforcement rather than relying on a page-level login gate.
 
+The Web App acts as a configured authentication gateway after verifying provider
+login. A separate private key signs short-lived assertions bound to the exact
+HTTP method, path and body; provisioning and OTP bearers cannot sign them. The
+assertion retains the original account/person binding and revisions, not roles
+or an actor chosen by request JSON. Scoped human mutations revalidate that
+binding and current permission inside the same write gate as their effects.
+Browser writes also require the portal's own origin. Authentication never
+supplies bilateral consent or installation authority.
+
 ## Rationale and integration references
 
 The design uses the provisioning pattern of a stable application principal and

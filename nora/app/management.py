@@ -16,8 +16,8 @@ from nora.web.management_api import ProvisioningCredential, register_management_
 async def mount_management(app: web.Application, *, cfg: Config, services: Any) -> None:
     if cfg.identity.backend != "managed":
         return
-    mount_authentication(app, cfg=cfg, services=services)
-    if not cfg.identity.provisioning:
+    authentication = mount_authentication(app, cfg=cfg, services=services)
+    if not cfg.identity.provisioning and authentication is None:
         return
     credentials = []
     private_values = cfg.credentials
@@ -34,6 +34,7 @@ async def mount_management(app: web.Application, *, cfg: Config, services: Any) 
             token=token, scopes=scopes,
         ))
     try:
-        register_management_routes(app, services=services, credentials=tuple(credentials))
+        register_management_routes(app, services=services, credentials=tuple(credentials),
+                                   authentication=authentication)
     except ValueError:
         raise StartupError("managed provisioning credentials are invalid or ambiguous") from None

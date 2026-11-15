@@ -22,7 +22,8 @@ from nora.domain.management import (
     Operation,
     Scope,
 )
-from nora.people import IdentityResolver
+from nora.people import HumanManagement, IdentityResolver
+from nora.web.management_auth import AuthenticationRefusedError, AuthenticationVerifier
 from nora.web.management_request import ManagementRequestError, decode_management_request
 
 
@@ -72,15 +73,20 @@ def _reply(status: str, code: int, *, detail: str | None = None,
 
 
 class _ManagementHTTP:
-    def __init__(self, services: Any, credentials: tuple[ProvisioningCredential, ...]) -> None:
+    def __init__(self, services: Any, credentials: tuple[ProvisioningCredential, ...],
+                 authentication: AuthenticationVerifier | None) -> None:
         self._credentials = tuple(credentials)
-        if not self._credentials:
+        if not self._credentials and authentication is None:
             raise ValueError("management routes require provisioning credentials")
         if len({c.token for c in self._credentials}) != len(self._credentials):
             raise ValueError("provisioning credentials cannot share a token")
         if len({c.actor.service_id for c in self._credentials}) != len(self._credentials):
             raise ValueError("provisioning service identities must be unique")
         self._services = services
+        self._authentication = authentication
+        self._human = (HumanManagement(services.bindings, services.registry,
+                                      services.registration, services.authority)
+                       if authentication is not None else None)
         self._identity = IdentityResolver(services.bindings, services.registry, services.topology)
 
     def _credential(self, request: web.Request) -> ProvisioningCredential | None:
@@ -102,7 +108,7 @@ class _ManagementHTTP:
     async def execute(self, request: web.Request) -> web.Response:
         credential = self._credential(request)
         if credential is None:
-            return _reply("denied", 401)
+            return await self._execute_human(request)
         try:
             operation = decode_management_request(
                 await request.read(), actor=credential.actor,
@@ -122,6 +128,32 @@ class _ManagementHTTP:
             outcome = await self._services.registration.apply(operation)
         else:
             outcome = await self._services.authority.apply(operation)
+        status = outcome.status.value
+        return _reply(status, {"complete": 200, "denied": 403,
+                               "unavailable": 503, "incomplete": 409}[status],
+                      detail=outcome.detail)
+
+    async def _execute_human(self, request: web.Request) -> web.Response:
+        if self._authentication is None or self._human is None:
+            return _reply("denied", 401)
+        authorization = request.headers.get("Authorization", "")
+        if not authorization.startswith("Nora-Authentication "):
+            return _reply("denied", 401)
+        raw = await request.read()
+        try:
+            authentication = self._authentication.verify(
+                authorization.removeprefix("Nora-Authentication "),
+                method=request.method, path=request.raw_path, body=raw)
+            if authentication.purpose != "session" or authentication.binding is None:
+                raise AuthenticationRefusedError("a retained session is required")
+        except AuthenticationRefusedError:
+            return _reply("denied", 401)
+        try:
+            operation = decode_management_request(
+                raw, operator_person=authentication.binding.person_id)
+        except ManagementRequestError:
+            return _reply("invalid_request", 400)
+        outcome = await self._human.apply(operation, authentication)
         status = outcome.status.value
         return _reply(status, {"complete": 200, "denied": 403,
                                "unavailable": 503, "incomplete": 409}[status],
@@ -151,8 +183,9 @@ class _ManagementHTTP:
 def register_management_routes(
     app: web.Application, *, services: Any,
     credentials: tuple[ProvisioningCredential, ...],
+    authentication: AuthenticationVerifier | None = None,
 ) -> None:
     """Add the authenticated private boundary over the selected service graph."""
-    handlers = _ManagementHTTP(services, credentials)
+    handlers = _ManagementHTTP(services, credentials, authentication)
     app.router.add_post("/app/v1/management/operations", handlers.execute)
     app.router.add_post("/app/v1/management/accounts/resolve", handlers.resolve)

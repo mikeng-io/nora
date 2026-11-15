@@ -11,9 +11,11 @@ from nora.web.management_auth import AuthenticationIssuer, AuthenticationVerifie
 from nora.web.management_sessions import register_session_routes
 
 
-def mount_authentication(app: web.Application, *, cfg: Config, services: Any) -> None:
+def mount_authentication(
+    app: web.Application, *, cfg: Config, services: Any,
+) -> AuthenticationVerifier | None:
     if not cfg.identity.authentication:
-        return
+        return None
     credentials = cfg.credentials
     service_keys = {setting.token_env for setting in cfg.identity.provisioning.values()}
     service_keys.update({cfg.identity.managed.kratos_admin_key_env,
@@ -33,3 +35,4 @@ def mount_authentication(app: web.Application, *, cfg: Config, services: Any) ->
         ) from None
     register_session_routes(app, sessions=AccountSessions(services.bindings, services.registry),
                              verifier=verifier)
+    return verifier

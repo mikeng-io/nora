@@ -10,7 +10,14 @@ import json
 
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-from nora.domain.management import OPERATIONS, Actor, Operation, Target
+from nora.domain.management import (
+    OPERATIONS,
+    AccountRegistration,
+    Actor,
+    ActorKind,
+    Operation,
+    Target,
+)
 
 
 class ManagementRequestError(ValueError):
@@ -27,7 +34,9 @@ class _Request(BaseModel):
     observed_revisions: dict[str, str]
 
 
-def decode_management_request(raw: bytes, *, actor: Actor) -> Operation:
+def decode_management_request(
+    raw: bytes, *, actor: Actor | None = None, operator_person: str | None = None,
+) -> Operation:
     """Interpret one JSON body using the closed domain operation vocabulary.
 
     A body cannot select its authenticated actor, silently add fields to a
@@ -36,6 +45,8 @@ def decode_management_request(raw: bytes, *, actor: Actor) -> Operation:
     still revalidates authority, ownership and revisions at commitment.
     """
     try:
+        if (actor is None) == (operator_person is None):
+            raise ValueError("one authenticated invocation context is required")
         request = _Request.model_validate_json(raw)
         spec = OPERATIONS.get(request.kind)
         if spec is None:
@@ -46,6 +57,9 @@ def decode_management_request(raw: bytes, *, actor: Actor) -> Operation:
         payload: object = TypeAdapter(spec.payload).validate_json(
             json.dumps(request.payload), strict=True, extra="forbid",
         )
+        if actor is None:
+            scope = payload.scope if isinstance(payload, AccountRegistration) else target.scope
+            actor = Actor(ActorKind.OPERATOR, person_id=operator_person, scope=scope)
         return Operation(
             operation_id=request.operation_id,
             kind=request.kind,
