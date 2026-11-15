@@ -19,7 +19,6 @@ from typing import Any, cast
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.stimuli import Stimulus, UnitView, WakeReason, decide
 from nora.infra.sql.cognition_replay import recorded_wake
 from nora.infra.sql.schema import (
@@ -30,7 +29,7 @@ from nora.infra.sql.schema import (
 )
 from nora.infra.sql.stimuli import SqlStimulusStore, _stimulus
 from nora.subject import SubjectSpec, obtain, sandbox_as_of
-from nora.subject.effects import effect_boundary, prepare_effect_reads, read_effects
+from nora.subject.effects import effect_boundary, effect_scope, prepare_effect_reads, read_effects
 from nora.subject.eval_evidence import read_events
 from nora.subject.recorded_services import RecordedServices
 from scripts.cognition_loop import state as state_mod
@@ -91,21 +90,6 @@ async def _wake_outcome(
             COGNITION_WAKE_OUTCOME.c.wake_id == wake_id)
         )).mappings().one_or_none()
     return dict(row) if row is not None else None
-
-
-def _profile_keys(subject: Any, unit: str) -> list[str]:
-    """The unit's profile keys: every room's people, Nora, culture."""
-    allowlist = subject.deps.config_reload.policy
-    persons: set[str] = set()
-    for convo in allowlist.rooms():
-        if convo.unit != unit:
-            continue
-        persons |= (set(subject.deps.persons.by_person)
-                    if convo.persons is None else set(convo.persons))
-    return [
-        nora_character_key(unit), unit_culture_key(unit),
-        *(character_key(unit, p) for p in sorted(persons)),
-    ]
 
 
 #: Reads the loop depends on, open unless an arm closes them (design: the loop is open).
@@ -344,7 +328,7 @@ async def _run_wake(
             engine = create_async_engine(url)
             try:
                 await prepare_effect_reads(engine, subject.environment)
-                rooms = _rooms(subject, case.unit)
+                scope = effect_scope(subject)
                 stimuli = SqlStimulusStore(engine)
                 view = await stimuli.view(
                     unit=case.unit, mode="live", now_ms=at_ms,
@@ -376,8 +360,8 @@ async def _run_wake(
                     forced=forced,
                 )
                 before = await state_mod.snapshot(
-                    engine, unit=case.unit, rooms=rooms,
-                    profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
+                    engine, unit=scope.unit, rooms=scope.rooms,
+                    profile_keys=scope.profile_keys, now_ms=at_ms,
                     metrics=subject.deps.metrics,
                 )
                 tokens_before = subject.deps.metrics.get(
@@ -395,7 +379,7 @@ async def _run_wake(
                 got: dict[str, Any] = {"trajectory": {}, "expectations": []}
                 try:
                     await _observe(
-                        got, args, case, index, judges, engine, subject, rooms,
+                        got, args, case, index, judges, engine, subject, scope,
                         before, tokens_before, evidence, session_id, wake,
                         inspection, at_ms, earlier_wakes, step_error, boundary)
                 except Exception as exc:  # noqa: BLE001 — the session settled; only its report failed
@@ -429,7 +413,7 @@ async def _run_wake(
 
 async def _observe(
     got: dict[str, Any], args: Any, case: Any, index: int, judges: Any,
-    engine: Any, subject: Any, rooms: Any, before: Any, tokens_before: float,
+    engine: Any, subject: Any, scope: Any, before: Any, tokens_before: float,
     evidence: Any, session_id: Any, wake: Any, inspection: Any, at_ms: int,
     earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = (),
     step_error: tuple[str, str] | None = None,
@@ -445,7 +429,7 @@ async def _observe(
         tokens=tokens or None)
     trajectory["at_ms"] = at_ms
     trajectory["unit"] = case.unit
-    trajectory["unit_rooms"] = rooms
+    trajectory["unit_rooms"] = list(scope.rooms)
     trajectory["availability"] = availability(
         getattr(subject, "cfg", None), trajectory)
     if inspection is not None:
@@ -456,14 +440,14 @@ async def _observe(
         trajectory["read_probes"] = inspection.get("read_probes", [])
     got["trajectory"] = trajectory
     trajectory["effects"] = await read_effects(
-        engine, since=boundary, unit=case.unit, rooms=tuple(rooms),
-        profile_keys=tuple(_profile_keys(subject, case.unit)), events=events,
+        engine, since=boundary, unit=scope.unit, rooms=scope.rooms,
+        profile_keys=scope.profile_keys, events=events,
     )
     if not subject.environment.guarded:
         subject.environment.check()
     got["after"] = after = await state_mod.snapshot(
-        engine, unit=case.unit, rooms=rooms,
-        profile_keys=_profile_keys(subject, case.unit), now_ms=at_ms,
+        engine, unit=scope.unit, rooms=scope.rooms,
+        profile_keys=scope.profile_keys, now_ms=at_ms,
         metrics=subject.deps.metrics,
     )
     got["diff"] = diff = state_mod.diff(before, after)
@@ -691,12 +675,6 @@ def _freeze_wake(
         "_state_before": state_after,
         "_diff": diff,
     }
-
-
-def _rooms(subject: Any, unit: str) -> list[tuple[str, str]]:
-    from nora.app.composition_readers import social_unit_rooms
-    allowlist = subject.deps.config_reload.policy
-    return list(social_unit_rooms(allowlist).get(unit, ()))
 
 
 def _report(case: Any, roll: Rollup, wakes: list[dict[str, Any]]) -> dict[str, Any]:

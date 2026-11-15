@@ -494,7 +494,8 @@ async def test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge(
 
     monkeypatch.setattr(run_mod, "judge_expectation", _judge_call)
     rooms = [("signal", "r1"), ("signal", "r2")]
-    monkeypatch.setattr(run_mod, "_rooms", lambda *a, **k: rooms)
+    scope = SimpleNamespace(unit="u", rooms=rooms, profile_keys=())
+    monkeypatch.setattr(run_mod, "effect_scope", lambda subject: scope)
     prior = (SimpleNamespace(kinds={}), {"at_ms": NOW - 60_000, "blocks": {}})
     args, evidence = _wake_args(tmp_path)
     expectation = SimpleNamespace(
@@ -686,7 +687,6 @@ def test_a_wakes_status_is_derived_fail_closed():
     assert _wake_status(None, []) == "PASS"
 
 
-# the frozen room directory
 
 
 async def test_an_unread_guild_is_an_error_naming_the_directory(

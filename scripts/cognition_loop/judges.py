@@ -32,7 +32,7 @@ import json
 from dataclasses import replace
 from typing import Any
 
-from nora.subject.effects import result_values, tool_outcome
+from nora.subject.effects import observed_effects, result_values, tool_outcome
 from nora.subject.eval_evidence import EvidenceError
 from scripts.cognition_loop.verdicts import (
     JudgeAnswer,
@@ -306,9 +306,7 @@ async def judge_expectation(
 ) -> Any:
     """Both judges over one expectation; citations checked against the
     wake's evidence ids; the roll-up stays fail-closed."""
-    if any((candidate.get("effects") or {}).get("status") != "observed"
-           or not all(isinstance((candidate.get("effects") or {}).get(key), list)
-                      for key in ("items", "tools"))
+    if any(not observed_effects(candidate.get("effects"))
            for candidate in (trajectory, *(t for _, t in earlier_wakes))):
         return expectation_verdict(tuple(JudgeAnswer(
             verdict="error", reason="lifecycle evidence unavailable", model=model,

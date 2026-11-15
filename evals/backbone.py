@@ -90,6 +90,7 @@ from nora.subject import (
     seed_documents,
     seed_lessons,
 )
+from nora.subject.effect_capture import subject_effects
 from nora.subject.eval_evidence import EvidenceError
 from nora.subject.obtain import RoomNotInPolicyError
 from nora.subject.recorded_services import RecordedServices
@@ -98,6 +99,7 @@ from nora.subject.transport import held_states
 #: Names carried on `environment_state`. A reader must key on these, never on
 #: `test_pass`, which is a `bool` and cannot hold the third answer.
 NORA_ERROR = "nora.error"
+NORA_EFFECTS = "nora.effects"
 NORA_TOKEN = "nora.outcome_token"  # noqa: S105 — an outcome token, not a credential
 NORA_SAID = "nora.said_count"
 NORA_DELIVERY = "nora.delivery"
@@ -1579,7 +1581,14 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     with evidence.case(
             case.name or "unnamed", input=case.input,
             metadata={"case": case.model_dump(mode="json"), "entry": spec.entry}):
-        result = _protocol_result(await _drive_uncaptured(case, spec))
+        try:
+            result = _protocol_result(await _drive_uncaptured(case, spec))
+        except Exception as exc:
+            from evals.results import task_error
+
+            if evidence.failure is None:
+                evidence.result(_protocol_result(task_error(exc, spec.source_url)))
+            raise
         evidence.result(result)
         return result
 
@@ -1592,6 +1601,10 @@ async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
     recording = (spec.services or {}).get(case.name or "unnamed")
     if recording is None:
         raise EvidenceError("external_responses_missing: " + (case.name or "unnamed"))
+    from nora.subject.eval_evidence import current
+
+    if current() is None:
+        raise EvidenceError("canonical_capture_unavailable")
     if port.frozen_input:
         async with recording.open("sqlite://") as environment:
             judge = spec.judge.bind_services(environment) if spec.judge is not None else None
@@ -1615,14 +1628,7 @@ async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
 
 
 async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) -> dict[str, Any]:
-    """Obtain, sandbox, seed, drive, tear down. Raises; `nora_task` catches.
-
-    ONE PATH. Every case names a real room at a real instant (`snapshot:`),
-    composes the deployment's own Nora against a sandbox database of its own,
-    is seeded with what that room held then, and is driven at that instant.
-    There is no authored branch: a case with no anchor is UNANCHORED and is an
-    ERROR here — never a skip, never a case quietly run in an empty room.
-    """
+    """Drive the deployment subject at its real anchor; unanchored cases are errors."""
     from evals.rebuilt.domain import Moment, Outcome
     from evals.rebuilt.entry import ENTRY_POINTS
 
@@ -1688,7 +1694,8 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
     overlay = CircleOverlay(**md['circle_overlay']) if md.get('circle_overlay') else None
     try:
         async with (_sandbox_for(spec, now) as database_url,
-                    recording.open(database_url, redis=True) as environment):
+                    recording.open(database_url, redis=True) as environment,
+                    contextlib.AsyncExitStack() as owned):
             subject = await obtain(SubjectSpec(
                 database_url=database_url, workdir=workdir, room=room,
                 environment=environment, overrides=spec.overrides,
@@ -1791,12 +1798,15 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
             from evals.rebuilt.profile_identity import REPRESENTATION_PROPERTIES
             from nora.subject.context_filter import case_scope
 
+            capture = await owned.enter_async_context(subject_effects(subject))
             if (port.judged_on == "identity" and nora_case.name in REPRESENTATION_PROPERTIES
                     and spec.judge is None and not md.get("print_input")):
                 outcome = Outcome(admitted=None, error="representation requires a semantic judge")
             else:
                 with case_scope(case.name):
-                    outcome = await port.drive(subject, nora_case, now_ms=clock_ms)
+                    outcome = await capture.drive(port, nora_case, now_ms=clock_ms)
+            if spec.judge is not None and outcome.error is None:
+                spec = dataclasses.replace(spec, judge=spec.judge.bind_evidence(capture.latest))
             blocks_empty = _blocks_empty(exporter)
             # BEFORE the judge: these describe what the SUBJECT spent, and a
             # judge's draws are the eval layer's own cost.
@@ -1979,7 +1989,7 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                 # SAME subject, SAME case, SAME now_ms — no re-`obtain()`.
                 repeat_outcome = outcome
                 for _ in range(spec.repeat - 1):
-                    repeat_outcome = await port.drive(subject, nora_case, now_ms=clock_ms)
+                    repeat_outcome = await capture.drive(port, nora_case, now_ms=clock_ms)
                 repeat_state = [
                     EnvironmentState(name=NORA_ERROR_2, state=repeat_outcome.error),
                     EnvironmentState(name=NORA_WRITTEN_2, state=repeat_outcome.written),
@@ -1996,14 +2006,13 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                     outcome, position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
                 )
 
-            # Torn down INSIDE the sandbox's lifetime: the database is dropped
-            # on exit and a pool still open on it would make the DROP hang.
             await _close(subject)
             subject = None
             return {
                 "output": outcome.response,
                 "environment_state": [
                     EnvironmentState(name=NORA_ERROR, state=outcome.error),
+                    EnvironmentState(name=NORA_EFFECTS, state=capture.receipt()),
                     EnvironmentState(name=NORA_TOKEN, state=outcome.outcome_token),
                     EnvironmentState(name=NORA_SAID, state=len(outcome.said)),
                     EnvironmentState(name=NORA_REACTIONS, state=outcome.reactions),
@@ -2111,44 +2120,9 @@ def nora_task(spec: Spec):
         try:
             return asyncio.run(_drive(case, spec))
         except Exception as exc:                      # noqa: BLE001 — see module docstring
-            return _protocol_result({
-                "output": "",
-                "environment_state": [
-                    EnvironmentState(
-                        name=NORA_ERROR,
-                        state=scrub(f"{type(exc).__name__}: {exc}", spec.source_url),
-                    ),
-                    EnvironmentState(name=NORA_TOKEN, state=""),
-                    EnvironmentState(name=NORA_SAID, state=0),
-                    EnvironmentState(name=NORA_DELIVERY, state=""),
-                    EnvironmentState(name=NORA_ADMITTED, state=None),
-                    EnvironmentState(name=NORA_BLOCKS_EMPTY, state=None),
-                    EnvironmentState(name=NORA_CALLS, state=None),
-                    EnvironmentState(name=NORA_INPUT_TOKENS, state=None),
-                    EnvironmentState(name=NORA_OUTPUT_TOKENS, state=None),
-                    EnvironmentState(name=NORA_CACHED_TOKENS, state=None),
-                    EnvironmentState(name=NORA_STOPS, state=None),
-                    EnvironmentState(name=NORA_WRITTEN, state=None),
-                    EnvironmentState(name=NORA_CHANGED_COUNT, state=None),
-                    EnvironmentState(name=NORA_STAGED_COUNT, state=None),
-                    EnvironmentState(name=NORA_WRITTEN_2, state=None),
-                    EnvironmentState(name=NORA_CHANGED_COUNT_2, state=None),
-                    EnvironmentState(name=NORA_STAGED_COUNT_2, state=None),
-                    EnvironmentState(name=NORA_CHANGED, state=()),
-                    EnvironmentState(name=NORA_JUDGED, state=""),
-                    EnvironmentState(name=NORA_CHECKS_FAILED, state=()),
-                    EnvironmentState(name=NORA_TOOLS, state=None),
-                    EnvironmentState(name=NORA_TOOL_RESULTS, state=None),
-                    EnvironmentState(name=NORA_TOOL_INPUTS, state=None),
-                    EnvironmentState(name=NORA_SHOWN_NOW, state=None),
-                    EnvironmentState(name=NORA_POSITION, state=None),
-                    EnvironmentState(name=NORA_WORKING_SET, state=()),
-                    EnvironmentState(name=NORA_SHOWN, state=""),
-                    EnvironmentState(name=NORA_JUDGED_WHY, state=""),
-                    EnvironmentState(name=NORA_SHOWN_WHERE, state=None),
-                    EnvironmentState(name=NORA_TRANSPORT, state=None),
-                ],
-            })
+            from evals.results import task_error
+
+            return _protocol_result(task_error(exc, spec.source_url))
 
     return task
 

@@ -26,6 +26,8 @@ is the vacuous pass this whole layer exists to refuse.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -250,3 +252,16 @@ _HEADER = """\
 # are bound to case-owned services by nora.subject.obtain.
 # See design/evaluation/subject.md.
 """
+
+
+def load_overrides(path: Path) -> tuple[dict, str]:
+    """Validate and fingerprint the same operator-supplied candidate bytes."""
+    from nora.subject.obtain import validate_subject_overrides
+
+    raw = path.read_bytes()
+    parsed = json.loads(raw.decode())
+    if not isinstance(parsed, dict) or not all(
+            isinstance(key, str) and key and not key.startswith(".") for key in parsed):
+        raise ValueError("--subject-overrides must be a JSON object of dotted keys")
+    validate_subject_overrides(parsed)
+    return parsed, hashlib.sha256(raw).hexdigest()

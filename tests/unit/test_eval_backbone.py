@@ -61,6 +61,8 @@ from evals.backbone import (
 from evals.rebuilt.domain import Outcome
 from evals.rebuilt.entry import ENTRY_POINTS, EntryPoint
 from nora.subject import Sandboxed
+from tests.unit.eval_dispatch_capture import JudgeBindings
+from tests.unit.eval_dispatch_capture import unit_dispatch_capture as unit_dispatch_capture
 
 grader = AbsenceGrader()
 context_grader = ContextGrader()
@@ -398,8 +400,9 @@ async def _fake_sandbox(_subject: object, **kwargs: Any) -> Sandboxed:
 
 
 @pytest.fixture
-def one_path(monkeypatch):
+def one_path(monkeypatch, unit_dispatch_capture):
     """The three seams faked; `_drive()` itself is real."""
+    monkeypatch.setattr(_FakeSubject, "cfg", unit_dispatch_capture.config)
     original = backbone._drive_uncaptured
 
     @contextlib.asynccontextmanager
@@ -506,10 +509,10 @@ async def test_a_case_with_no_anchor_is_unanchored_and_an_error(monkeypatch, one
         await backbone._drive(case, _spec("dreamer"))
 
 
-def test_nora_task_reports_an_unanchored_case_as_an_error_not_a_verdict(monkeypatch):
-    """`nora_task` (sync, its own `asyncio.run`) turns the UNANCHORED raise
-    into `NORA_ERROR` — a third answer, never `test_pass=False` dressed as a
-    considered FAIL. No seam is reached, so nothing needs faking."""
+def test_nora_task_reports_an_unanchored_case_as_an_error_not_a_verdict(
+    monkeypatch, unit_dispatch_capture,
+):
+    """An unanchored native task stays ERROR before subject composition."""
     case = Case(name="no-anchor", input="x", metadata={"expect": "none"})
     result = backbone.nora_task(_spec("dreamer", services={"no-anchor": SimpleNamespace()}))(case)
     data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
@@ -1011,16 +1014,13 @@ class _FakeJudgement:
         self.error = error
 
 
-class _FakeJudge:
+class _FakeJudge(JudgeBindings):
     """Stands in for `evals.rebuilt.grading.Judge` — no network."""
 
     def __init__(self, verdict: str = "PASS", error: str | None = None) -> None:
         self._verdict = verdict
         self._error = error
         self.calls: list[dict[str, Any]] = []
-
-    def bind(self, config):
-        return self
 
     async def grade(self, **kwargs: Any) -> _FakeJudgement:
         self.calls.append(kwargs)

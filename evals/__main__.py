@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 import os
 import signal
@@ -634,7 +633,15 @@ def _main(*, lock_fd: int = -1) -> int:
         )
         return 2
     if args.print_input:
-        return _execute(args, names, only)
+        from opentelemetry import trace
+
+        _prefill_capture()
+        evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
+            "mode": "rendering-probe", "behavior": "UNMEASURED", "corpora": names})
+        with evidence.capture(trace.get_tracer_provider()):
+            rc = _execute(args, names, only)
+            evidence.exit_code = rc
+            return rc
     from evals.grading_contract import contract_for
     args.bound_contract = contract_for(
         args, entrypoint="eval", judges=(args.judge,) if args.judge else (),
@@ -645,21 +652,13 @@ def _main(*, lock_fd: int = -1) -> int:
 
     from nora.subject.sandbox import EVAL_HOST_LOCK
     _prefill_capture()
-    # Validate and fingerprint the declared candidate before composition.
     subject_overrides: dict[str, Any] | None = None
     overrides_sha: str | None = None
     if args.subject_overrides is not None:
         try:
-            raw = args.subject_overrides.read_bytes()          # read ONCE
-            overrides_sha = hashlib.sha256(raw).hexdigest()    # hash THOSE bytes
-            parsed = json.loads(raw.decode())
-            if not isinstance(parsed, dict) or not all(
-                    isinstance(k, str) and k and not k.startswith(".")
-                    for k in parsed):
-                raise ValueError("--subject-overrides must be a JSON object of dotted keys")
-            subject_overrides = parsed
-            from nora.subject.obtain import validate_subject_overrides
-            validate_subject_overrides(subject_overrides)
+            from evals.subject_config import load_overrides
+
+            subject_overrides, overrides_sha = load_overrides(args.subject_overrides)
         except (OSError, ValueError, TypeError) as exc:
             print(f"refusing to run: {exc}", file=sys.stderr)
             return 2
@@ -752,7 +751,7 @@ def _coverage_execute(args: argparse.Namespace, names: list[str],
             raise ValueError("coverage requires --judge")
         contract = getattr(args, "bound_contract", None)
         judge = Judge(base_url=args.judge_base_url, model=args.judge,
-                      config_path=args.config, contract=contract,
+                      config_path=Path(args.config or args.deployment_config), contract=contract,
                       samples=1, timeout_seconds=args.coverage_timeout)
         ok = _run_one(names[0], source_url="", judge=judge, sample=1,
                       only=only, all_reasons=args.reasons, positions=args.positions,

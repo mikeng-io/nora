@@ -72,7 +72,7 @@
   {
     "name": "the live trajectory carries the unit and its rooms",
     "file": "scripts/cognition_loop/run.py",
-    "old": "    trajectory[\"unit\"] = case.unit\n    trajectory[\"unit_rooms\"] = rooms\n",
+    "old": "    trajectory[\"unit\"] = case.unit\n    trajectory[\"unit_rooms\"] = list(scope.rooms)\n",
     "new": "",
     "target": "tests/unit/test_cognition_loop_run.py::test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge"
   },

@@ -40,6 +40,8 @@ from nora.subject.evidence import (
     HeldOuting,
     HeldRevision,
 )
+from tests.unit.eval_dispatch_capture import JudgeBindings
+from tests.unit.eval_dispatch_capture import unit_dispatch_capture as unit_dispatch_capture
 
 _SHOT = {"platform": "signal", "conversation_id": "the-real-group", "before_ms": 1_752_000_000_000}
 _NOW = datetime.fromtimestamp(_SHOT["before_ms"] / 1000, tz=UTC)
@@ -65,8 +67,9 @@ class _Subject:
 
 
 @pytest.fixture
-def seams(monkeypatch: Any) -> dict[str, list[Any]]:
+def seams(monkeypatch: Any, unit_dispatch_capture) -> dict[str, list[Any]]:
     """Every seam either mode can reach, recording what reached it."""
+    monkeypatch.setattr(_Subject, "cfg", unit_dispatch_capture.config)
     original = backbone._drive_uncaptured
 
     @contextlib.asynccontextmanager
@@ -258,10 +261,7 @@ def test_the_corpus_is_judge_only_and_a_run_without_a_judge_refuses(monkeypatch,
     assert "refusing to run: ['conversational_recall']" in capsys.readouterr().err
 
 
-class _Judge:
-    def bind(self, config):
-        return self
-
+class _Judge(JudgeBindings):
     def __init__(self) -> None:
         self.graded: list[dict[str, Any]] = []
 

@@ -10,6 +10,7 @@ from typing import Any, cast
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.infra.sql.history import APPEND_ONLY
 from nora.infra.sql.schema import METADATA, ROW_HISTORY
 from nora.subject.environment import IsolatedServices
@@ -20,6 +21,29 @@ class EffectBoundary:
     at: datetime
     history_id: int
     positions: dict[str, int]
+
+
+@dataclass(frozen=True)
+class EffectScope:
+    unit: str
+    rooms: tuple[tuple[str, str], ...]
+    profile_keys: tuple[str, ...]
+
+
+def effect_scope(subject: Any) -> EffectScope:
+    """Resolve the composed unit's rooms and profile keys once before execution."""
+    from nora.app.composition_readers import social_unit_rooms
+
+    policy, unit = subject.deps.config_reload.policy, subject.unit
+    persons: set[str] = set()
+    for room in policy.rooms():
+        if room.unit == unit:
+            persons |= (set(subject.deps.persons.by_person)
+                        if room.persons is None else set(room.persons))
+    return EffectScope(unit, tuple(social_unit_rooms(policy).get(unit, ())), (
+        nora_character_key(unit), unit_culture_key(unit),
+        *(character_key(unit, person) for person in sorted(persons)),
+    ))
 
 
 @dataclass(frozen=True)
@@ -65,6 +89,12 @@ def _numeric(source: Source) -> bool:
 
 def _plain(value: Any) -> Any:
     return json.loads(json.dumps(value, default=str))
+
+
+def observed_effects(value: Any) -> bool:
+    """A complete captured projection, distinct from absent or partial evidence."""
+    return (isinstance(value, dict) and value.get("status") == "observed"
+            and all(isinstance(value.get(key), list) for key in ("items", "tools")))
 
 
 def result_values(result: Any) -> list[Any]:
@@ -231,7 +261,7 @@ async def read_effects(engine: AsyncEngine, *, since: EffectBoundary, unit: str,
                     effects.append(_effect(source.kind, source.table, key, at,
                                            dict(row), operation=operation))
     effects.sort(key=lambda effect: (effect["at"], effect["ref"]))
-    return {"status": "observed", "unit": unit, "unit_rooms": list(rooms),
+    return {"status": "observed", "unit": unit, "unit_rooms": _plain(rooms),
             "profile_keys": list(profile_keys), "since": since.at.isoformat(),
             "through": until.isoformat(), "history_after": since.history_id,
             "positions": dict(since.positions), "items": effects,
