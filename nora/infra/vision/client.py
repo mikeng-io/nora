@@ -89,6 +89,17 @@ VISION_LOOP_SHARE = 0.6
 # Shared with the bounded batches in read_video_windows.
 VISION_WINDOW_CONCURRENCY = 3
 
+#: How long ONE chunked video read may spend in wall clock, its timeout
+#: recovery pass included: two full per-call ceilings at the shipped
+#: configuration (2 x 120 s), so a window whose call timed out gets a real
+#: second attempt rather than a token one. It bounds the WHOLE read, not each
+#: call — a call inside it still caps at `derive_vision_timeout` and, inside a
+#: turn, at `seconds_left() x VISION_LOOP_SHARE`, so the read can never consume
+#: more than the turn has left. A first pass alone is already bounded at
+#: `waves x per_call <= loop x VISION_LOOP_SHARE` (216 s at the shipped 360 s
+#: loop), so what the budget mostly pays for is the recovery wave.
+VIDEO_READ_SECONDS = 240.0
+
 # Authored, fixed, and small — never model-supplied. The description it asks for
 # is untrusted egress, screened by the tool on every serve.
 _PROMPT = "Describe this image. If it contains text in it, transcribe that text."

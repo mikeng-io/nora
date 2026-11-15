@@ -10,6 +10,8 @@ from nora.agent.security import scan_identifiers
 from nora.agent.toolkit.files import (
     _FILE_LOOK_NOTES,
     _KEEPABLE_IMAGE_TYPES,
+    _KEPT_CLIP_NOTE,
+    _KEPT_NOTE,
     _TRUNCATED_CODE_NOTE,
     _handle_hex,
     _shared_page_link,
@@ -24,7 +26,6 @@ from nora.domain.external_files import (
 from nora.domain.external_files import recognise as _recognise_file_link
 from nora.domain.media import (
     HANDLE_CHARS,
-    MEDIA_FETCH_CALLERS,
     Sighting,
     VideoReadingKey,
     code_matches,
@@ -59,8 +60,9 @@ def _make_media_fetch(deps):
         or unavailable, with a `note` on how to report it.
 
         Args:
-            code: The short code from a media marker, or from a shared
-                picture's or video's link handle.
+            code: The short code from a media marker, from a shared
+                picture's or video's link handle, or from an `instagram_read`
+                item that carries one.
             url: An http(s) link to a picture or video.
             question: What you want to know about it, when the stored
                 reading does not answer it. Leave empty otherwise.
@@ -87,7 +89,7 @@ def _make_media_fetch(deps):
             vision_cache=deps.vision_cache,
             vision_source=deps.vision_source,
             _instagram_story_urls=deps._instagram_story_urls,
-            _keep_fetched_image=deps._keep_fetched_image,
+            _keep_fetched_media=deps._keep_fetched_media,
             _media_window=deps._media_window,
             _now_ms=deps._now_ms,
             _serve_media=_make__serve_media(deps),
@@ -252,12 +254,15 @@ async def _media_fetch__scan_url(c):
     c.serve_code: str | None = None
     c.caller, c.persist_look = _MEDIA_READ.get()
     if (
-        c.media_type in _KEEPABLE_IMAGE_TYPES
-        and c.caller == MEDIA_FETCH_CALLERS[0]
+        (c.media_type in _KEEPABLE_IMAGE_TYPES or _modality_of(c.media_type) == "video")
         and c.persist_look
         and (c.url not in c._instagram_story_urls)
     ):
-        c.serve_code = await c._keep_fetched_image(c.url, c.data, c.media_type)
+        # Every persisted look holds the item's bytes, so the `code` the
+        # answer carries resolves later WITHOUT the signed url — the read a
+        # social reader already paid for never has to be re-downloaded or its
+        # url re-typed by the model.
+        c.serve_code = await c._keep_fetched_media(c.url, c.data, c.media_type)
     c.is_cover = False
     return (False, None, None)
 
@@ -441,8 +446,14 @@ async def _media_fetch__shared_bytes(c):
         c.sha256 = hashlib.sha256(c.data).hexdigest()
         c.serve_code = c.shared.handle
         c.is_cover = False
-    c.kept_image = bool(c.url and c.serve_code)
-    c.answer_code = c.shared.handle if c.shared is not None else c.sha256[:HANDLE_CHARS]
+    # The kept-note and the code the answer may carry come from the SAME
+    # place — custody that was VERIFIED (`serve_code`): a kept row's key, a
+    # sighted row's hash prefix, or a shared ref's handle. Never a hash of
+    # bytes that were only here transiently.
+    c.kept_note = (
+        _KEPT_CLIP_NOTE if _modality_of(c.media_type) == "video" else _KEPT_NOTE
+    ) if c.url and c.serve_code else None
+    c.answer_code = c.serve_code
     if not c.url and c.shared is None and (not c.question) and (c.media_store is not None):
         try:
             c.stored = await c.media_store.get(sha256=c.sha256)
@@ -457,9 +468,9 @@ async def _media_fetch__shared_bytes(c):
                     c.sha256,
                     _stored_reading(c.stored),
                     cached=True,
-                    code=c.serve_code,
+                    code=c.answer_code,
                     cover=c.is_cover,
-                    kept=c.kept_image,
+                    kept=c.kept_note,
                 ),
             )
     return await _media_fetch__plan_describe(c)
@@ -510,8 +521,8 @@ async def _media_fetch__plan_describe(c):
                 c.sha256,
                 c.cached_description,
                 cached=True,
-                code=c.serve_code,
-                kept=c.kept_image,
+                code=c.answer_code,
+                kept=c.kept_note,
                 cover=c.is_cover,
             ),
         )
@@ -551,8 +562,8 @@ async def _media_fetch__plan_describe(c):
                     c.sha256,
                     c.cached_reading,
                     cached=True,
-                    code=c.serve_code,
-                    kept=c.kept_image,
+                    code=c.answer_code,
+                    kept=c.kept_note,
                     cover=c.is_cover,
                 ),
             )
@@ -641,8 +652,13 @@ async def _media_fetch__cut_video(c):
             )
             c.result = c.one
         else:
+            # The read bounds itself: `budget_seconds` defaults to
+            # VIDEO_READ_SECONDS and shrinks to the enclosing deadlines it
+            # CAN see — the turn's, and this look's own when a social read
+            # handed one down — so a timed-out window's recovery pass is
+            # spent from the same allowance the look dies at.
             c.segments, c.read_windows = await read_video_windows(
-                cut=c.cut, media_type=c.media_type, ask=c._ask
+                cut=c.cut, media_type=c.media_type, ask=c._ask,
             )
             if not c.read_windows:
                 _record_media(c.metrics, "unavailable", reason="vision")
@@ -697,8 +713,8 @@ async def _media_fetch__answer(c):
                 c.sha256,
                 c.description,
                 cached=False,
-                code=c.serve_code,
-                kept=c.kept_image,
+                code=c.answer_code,
+                kept=c.kept_note,
                 cover=c.is_cover,
             ),
         )
@@ -718,8 +734,8 @@ async def _media_fetch__answer(c):
             c.sha256,
             c.description,
             cached=False,
-            code=c.serve_code,
-            kept=c.kept_image,
+            code=c.answer_code,
+            kept=c.kept_note,
             cover=c.is_cover,
         ),
     )
