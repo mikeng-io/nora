@@ -143,3 +143,69 @@ def lineage(allowlist, cfg, persons) -> LineageWiring:
     # same value from the same three inputs (`build_assembler`).
     lineage = lineage_policy(cfg, policy=allowlist, persons=persons)
     return LineageWiring(lineage=lineage)
+
+
+# ---------------------------------------------------------------------------
+# Managed identity and scoped access (`design/managed-identity-access/`).
+# Composition reaches these only through `nora.people` (the area's protected
+# root); `nora.infra`'s clients are the wire layer's business to assemble.
+# ---------------------------------------------------------------------------
+
+
+def file_services(persons, policy):
+    """The `file` backend's services over the loaded Persons/Policy —
+    reads answer, every managed mutator refuses (`denied`)."""
+    from nora.people.adapters.file_backend import (
+        FileAuthorityBackend,
+        FileBindingStore,
+        FileIdentityRegistry,
+        FileTopologySource,
+    )
+    from nora.people.app.managed import ManagedServices
+
+    return ManagedServices(
+        bindings=FileBindingStore(persons),
+        backend=FileAuthorityBackend(policy),
+        topology=FileTopologySource(policy),
+        registry=FileIdentityRegistry(),
+    )
+
+
+def managed_services(*, managed, session, policy, engine):
+    """The `managed` backend's services: PostgreSQL bindings, the Keto
+    authority engine, Kratos identity records — topology still read from the
+    loaded `Policy`, because topology stays Nora configuration in every
+    backend (`authorization.md`).
+
+    `managed` is a validated `ManagedOryConfig`; `session` the shared
+    aiohttp session the runtime owns. Secrets are read from the env vars
+    the config NAMES — never from config values themselves.
+    """
+    import os
+
+    from nora.infra.ory import KetoClient, KratosClient
+    from nora.infra.sql.managed_identity import SqlBindingStore
+    from nora.people.adapters.file_backend import FileTopologySource
+    from nora.people.adapters.keto_authority import KetoAuthorityBackend
+    from nora.people.adapters.kratos_registry import KratosIdentityRegistry
+    from nora.people.app.managed import ManagedServices
+
+    keto_client = KetoClient(
+        session=session,
+        read_url=managed.keto_read_url,
+        write_url=managed.keto_write_url,
+        timeout_seconds=managed.timeout_seconds,
+        api_key=os.environ.get(managed.keto_key_env) or None,
+    )
+    kratos_client = KratosClient(
+        session=session,
+        admin_url=managed.kratos_admin_url,
+        timeout_seconds=managed.timeout_seconds,
+        api_key=os.environ.get(managed.kratos_admin_key_env) or None,
+    )
+    return ManagedServices(
+        bindings=SqlBindingStore(engine=engine),
+        backend=KetoAuthorityBackend(keto_client),
+        topology=FileTopologySource(policy),
+        registry=KratosIdentityRegistry(kratos_client),
+    )

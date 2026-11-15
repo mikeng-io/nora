@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import importlib
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -377,3 +378,63 @@ def build_otp(
             clock=lambda: datetime.now(UTC),
         )
     return OtpWiring(otp=otp, otp_api_token=otp_api_token)
+
+
+@dataclass(frozen=True)
+class ManagedIdentityWiring:
+    # `services` is the ManagedServices the selected backend serves — file
+    # answers reads from the TOML pair and refuses every managed mutator;
+    # managed is PostgreSQL bindings + Keto authority + Kratos records. The
+    # session is the Ory HTTP session the wiring OWNS (managed only): App
+    # shutdown closes it.
+    services: Any
+    session: Any = None
+
+
+async def managed_identity(
+    cfg: Any, persons: Any, policy: Any, engine: Any,
+) -> ManagedIdentityWiring:
+    """Backend selection is BOOT-TIME: `config.toml` is never reloaded, so a
+    backend change is a restart, and the two graphs cannot mix.
+
+    `managed` is refused half-wired — the probe below must see BOTH Ory
+    listeners before the app accepts the backend. An unreachable Kratos or
+    Keto is `StartupError`, never a fallback to file grants: falling back
+    would silently serve stale file authority as managed truth
+    (`design/managed-identity-access/authorization.md` «Failure»).
+    """
+    _people_wire = importlib.import_module("nora.people").wire
+    if cfg.identity.backend == "file":
+        return ManagedIdentityWiring(
+            services=_people_wire.file_services(persons, policy)
+        )
+    import aiohttp
+
+    from nora.domain.managed import Verdict
+    from nora.domain.management import Scope, ScopeKind
+
+    session = aiohttp.ClientSession()
+    services = _people_wire.managed_services(
+        managed=cfg.identity.managed, session=session,
+        policy=policy, engine=engine,
+    )
+    # Probe through the ports themselves: Kratos answers `unknown_scope`
+    # for an absent probe id when it is up; Keto answers a relation listing
+    # (possibly empty) when it is up. `unavailable` either side is refused.
+    kratos = await services.registry.identity_state(external_id="boot-probe")
+    if kratos.verdict is Verdict.UNAVAILABLE:
+        await session.close()
+        raise StartupError(
+            "managed identity: Kratos admin listener unreachable — refusing "
+            "to run half-wired"
+        )
+    keto = await services.backend.relations_on(
+        scope=Scope(ScopeKind.WORKSPACE, "boot-probe")
+    )
+    if not isinstance(keto, frozenset):
+        await session.close()
+        raise StartupError(
+            "managed identity: Keto read listener unreachable — refusing to "
+            "run half-wired"
+        )
+    return ManagedIdentityWiring(services=services, session=session)
