@@ -245,6 +245,40 @@ class FakeBindingStore(BindingStore):
             ).add(membership.source)
         return complete()
 
+    async def bind_identifiers(
+        self, *, account_id: str, identifiers: frozenset[Identifier]
+    ) -> Outcome:
+        self._up()
+        held = self.accounts.get(account_id)
+        if held is None or held.state is not AccountState.BOUND:
+            return denied("account-not-bound")
+        wanted = frozenset(identifiers)
+        for ident in wanted:
+            if ident.platform != held.platform:
+                raise ManagedError(
+                    "an identifier disagrees with the account's platform"
+                )
+        for ident in wanted:
+            owner = self.owners.get(ident)
+            if owner is not None and owner != account_id:
+                # bound or revoked — a revoked binding keeps its ownership
+                # reserved; nothing here re-points it.
+                raise IdentifierConflictError(
+                    f"{ident} is owned by a different account"
+                )
+        added = False
+        for ident in wanted:
+            if ident not in self.owners:
+                self.owners[ident] = account_id
+                added = True
+        if added:
+            self.accounts[account_id] = replace(
+                held,
+                identifiers=held.identifiers | wanted,
+                revision=held.revision + 1,
+            )
+        return complete()
+
     async def correlate_kratos(
         self, *, person_id: str, kratos_identity_id: str
     ) -> Outcome:

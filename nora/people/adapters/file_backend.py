@@ -124,6 +124,11 @@ class FileBindingStore(BindingStore):
     ) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
 
+    async def bind_identifiers(
+        self, *, account_id: str, identifiers: frozenset[Identifier]
+    ) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
     async def correlate_kratos(
         self, *, person_id: str, kratos_identity_id: str
     ) -> Outcome:

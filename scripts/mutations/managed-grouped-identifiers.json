@@ -1,0 +1,23 @@
+[
+  {
+    "name": "a group naming two accounts is a link claim, not an observation",
+    "file": "nora/people/app/managed.py",
+    "old": "        if len(resolved) > 1:\n            return denied(\"observation-accounts-conflict\")",
+    "new": "        if False:\n            return denied(\"observation-accounts-conflict\")",
+    "target": "tests/unit/test_grouped_account_observation.py::test_a_pair_spanning_two_accounts_on_one_person_is_denied"
+  },
+  {
+    "name": "an observed group binds every identifier the account does not yet hold",
+    "file": "nora/people/app/managed.py",
+    "old": "        if not resuming and payload.identifiers <= bound.identifiers:",
+    "new": "        if not resuming:",
+    "target": "tests/unit/test_grouped_account_observation.py::test_a_phone_only_account_enriches_when_the_pair_arrives"
+  },
+  {
+    "name": "a foreign or revoked identifier is never re-pointed by enrichment",
+    "file": "nora/testing/managed.py",
+    "old": "            if owner is not None and owner != account_id:",
+    "new": "            if owner is not None and False:",
+    "target": "tests/contract/test_binding_store_contract.py::test_bind_identifiers_keeps_revoked_ownership_reserved[memory]"
+  }
+]

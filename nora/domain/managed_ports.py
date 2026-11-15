@@ -133,6 +133,24 @@ class BindingStore(PersonDirectory, Protocol):
         """
         ...
 
+    async def bind_identifiers(
+        self, *, account_id: str, identifiers: frozenset[Identifier]
+    ) -> Outcome:
+        """Atomically bind matchable identifiers onto ONE existing bound
+        account — the grouped-observation enrichment: a provider proved
+        these identifiers name ONE account, so an identifier the account
+        does not yet hold joins it (`identity.md` «several identifiers of
+        one account», never several accounts folded together).
+
+        Idempotent: an identifier the account already owns is a no-op. An
+        identifier owned by a DIFFERENT account raises
+        `IdentifierConflictError`, whether that owner is bound or revoked —
+        a revoked binding keeps its ownership reserved and is never
+        re-pointed here. `denied` when the named account is absent or not
+        bound. Creates no person, account or membership, and removes
+        nothing the account already holds."""
+        ...
+
     async def correlate_kratos(
         self, *, person_id: str, kratos_identity_id: str
     ) -> Outcome:
