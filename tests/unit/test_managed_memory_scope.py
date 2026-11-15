@@ -49,9 +49,11 @@ async def _world(
     members: tuple[str, ...] = (PERSON,),
 ):
     """The managed world: bindings, authority, topology and the Kratos
-    registry. `social` names each person's recorded `social` trait —
-    a person absent from the mapping keeps an identity WITHOUT the
-    preference, which is the missing-preference shape, not an opt-in."""
+    registry. New identities explicitly enable social reads by default.
+    An explicit mapping may omit a person's preference to exercise an
+    existing malformed record rather than an opt-in."""
+    if social is None:
+        social = {PERSON: True, FOREIGN: True}
     bindings = FakeBindingStore()
     backend = FakeAuthorityBackend()
     topology = FakeTopologySource(
@@ -280,3 +282,26 @@ async def test_a_whole_roster_opt_out_read_is_unavailable_not_partial():
         await access.social_off_ids()
     # The named-persons path is unaffected — it never had the gap.
     assert await access.social_off_ids({PERSON}) == {PERSON}
+
+
+async def test_memory_walk_checks_managed_opt_out_after_replacing_stale_file_roster():
+    _, access, _ = await _world(
+        social={PERSON: False, FOREIGN: True}, members=(PERSON, FOREIGN))
+    # The room config predates managed registration and names only FOREIGN.
+    assert TARGET.room.persons == {FOREIGN}
+    caller_opt_out = await access.social_off_ids(TARGET.room.persons)
+    assert caller_opt_out == frozenset()
+    index = FakeMemoryIndex([
+        IndexedNode("social", "generated-new-opt-out", "generated picnic post", NOW,
+                    persons=(PERSON,)),
+        IndexedNode("social", "generated-enabled", "generated picnic post", NOW,
+                    persons=(FOREIGN,)),
+        IndexedNode("message", "generated-opt-out-chat", "generated picnic chat", NOW,
+                    persons=(PERSON,), origin_room="signal:generated-room-a"),
+    ])
+    result = await MemorySearch(index, Metrics(), access=access).search(
+        query="generated picnic", person_id=None, target=TARGET,
+        now_ms=NOW, social_off=caller_opt_out)
+    assert result.status in {"ok", "partial"}
+    assert {hit.node.key for hit in result.hits} == {
+        ("social", "generated-enabled"), ("message", "generated-opt-out-chat")}

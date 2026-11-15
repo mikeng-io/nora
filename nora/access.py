@@ -588,8 +588,8 @@ class IdentityAccess:
 
     async def _preference_ids(self, person_id: str) -> tuple[str, ...]:
         """The ids whose Kratos `social` traits decide this person: the
-        canonical id plus every retired alias. Unknown people raise —
-        an opted-out stranger answered `False` once, and it leaked."""
+        canonical id plus every retired alias. Unknown people cannot
+        establish permission to read social records."""
         canonical = await self._bindings.canonical_person(person_id)
         if canonical is None:
             raise SocialPreferenceUnavailableError(f"unknown person {person_id!r}")
