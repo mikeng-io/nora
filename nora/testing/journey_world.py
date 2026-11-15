@@ -192,7 +192,7 @@ class GeneratedJudge:
             json.dumps(call.get("arguments"), ensure_ascii=False)
             for call in payload.get("tool_calls") or []
             if call.get("tool") in ("send_reply", "remind")
-            and call.get("status") == "ok"
+            and (call.get("result") or {}).get("status") == "ok"
             and not call.get("refusal")
             and call.get("arguments") is not None)
         check = expectation.get("check")

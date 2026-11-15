@@ -304,6 +304,76 @@ def test_wrong_schema_unknown_and_exhausted_requests_are_named_errors(protocol):
     assert len(protocol.requests) == 17
 
 
+def _judge_body(payload, model="generated-a"):
+    return {"model": model, "stream": False,
+            "messages": [{"role": "user", "content":
+                          "<cited_sources>\n" + json.dumps(payload)
+                          + "\n</cited_sources>"}]}
+
+
+def _behavior_payload(check, *, polarity="must", outcome="delivered",
+                      said=(), calls=(), items=(), declared="the declared input"):
+    return {"measure": "behavior",
+            "expectation": {"turn_index": 2, "polarity": polarity,
+                            "kind": "behavior", "text": "the claim",
+                            "check": check},
+            "declared_input": {"text": declared},
+            "turn_outcome": {"status": outcome, "said": list(said)},
+            "effects": {"status": "observed", "items": list(items), "tools": []},
+            "tool_calls": list(calls),
+            "final_output": ""}
+
+
+def _call_args(name, arguments):
+    # The digested payload shape `judges._tool_calls` emits: outcome under
+    # `result.status`, refusal beside it — never the trajectory row's own keys.
+    return {"tool": name, "arguments": arguments,
+            "result": {"status": "ok"}, "refusal": None}
+
+
+def test_the_behavior_claim_binds_the_turns_own_output():
+    """Positive controls, both anchored shapes: a delivered turn's own
+    `send_reply` and a `recorded` turn's own session `remind` each carry
+    their claim's check token — each answers `met` on ITS evidence."""
+    judge = GeneratedJudge()
+    reply = _behavior_payload("Cedar Hall", said=[ANSWER], calls=[
+        _call_args("send_reply", {"text": ANSWER})])
+    assert judge.answer(_judge_body(reply))["verdict"] == "met"
+    scheduled = _behavior_payload(
+        "Which generated venue and time", outcome="recorded", calls=[
+            _call_args("remind", {"text": QUESTION})])
+    assert judge.answer(_judge_body(scheduled))["verdict"] == "met"
+
+
+def test_a_wrong_observed_reply_fails_its_claim():
+    """The claim is judged on the turn's own output, not on anything the
+    window held: a `must` whose token the bound output lacks is
+    `not_met`, and a `must_not` whose token it carries is `not_met`."""
+    judge = GeneratedJudge()
+    wrong = _behavior_payload("Cedar Hall", said=["The venue is Oak Room."],
+                              calls=[_call_args("send_reply",
+                                                {"text": "The venue is Oak Room."})])
+    assert judge.answer(_judge_body(wrong))["verdict"] == "not_met"
+    broke_restraint = _behavior_payload(
+        "has taken place", polarity="must_not",
+        said=["The generated gathering has taken place."],
+        calls=[_call_args("send_reply",
+                          {"text": "The generated gathering has taken place."})])
+    assert judge.answer(_judge_body(broke_restraint))["verdict"] == "not_met"
+
+
+@pytest.mark.parametrize("mutate", [
+    {"outcome": "unconfirmed"}, {"declared": None}, {"check": None},
+])
+def test_incomplete_turn_evidence_reads_cannot_tell(mutate):
+    """An unbound outcome, a missing declared input or a claim with no
+    check token is `cannot_tell` — the finite judge never guesses."""
+    judge = GeneratedJudge()
+    check = mutate.pop("check", "Cedar Hall")
+    payload = _behavior_payload(check, said=[ANSWER], **mutate)
+    assert judge.answer(_judge_body(payload))["verdict"] == "cannot_tell"
+
+
 def test_the_judge_is_reached_by_declared_model_never_by_stream_flag(tmp_path, cfg):
     """An unstreamed non-judge call — the gate, an unknown lane — belongs to
     the protocol's named errors; only the two eval aliases reach the judge."""

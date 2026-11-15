@@ -206,6 +206,99 @@ def test_tool_side_model_transport_cannot_replace_the_completed_sdk_response():
     assert terminal_response(events)["text"] == "actual terminal answer"
 
 
+def _request(invocation_id: str, tools: list[str]) -> dict[str, Any]:
+    """One captured `nora.model.request` naming its tool surface."""
+    body = {"messages": [],
+            "tools": [{"type": "function",
+                       "function": {"name": name}} for name in tools]}
+    return {"kind": "event", "name": "nora.model.request",
+            "invocation_id": invocation_id,
+            "attributes": {"nora.model.request.body": json.dumps(body)}}
+
+
+def test_downstream_work_in_the_turns_trace_keeps_its_own_terminal_response():
+    """A turn's bound window also holds the work's own downstream
+    generation — the debrief fold under the same stamped trace — so the
+    terminal response binds to the invocation whose requests were
+    offered `send_reply`, never to whichever root happened to settle."""
+    primary = _responses()
+    fold = [{**e, "invocation_id": "fold", "attempt_id": "fold:0:1"}
+            for e in _responses(text="the room fold's position")]
+    # The requests sit inside their invocation windows, as emitted.
+    events = (primary[:2] + [_request("primary", ["send_reply", "now"])]
+              + primary[2:]
+              + fold[:2] + [_request("fold", [])] + fold[2:])
+    # The fold finishes after the turn; neither order nor "the last root"
+    # may borrow it.
+    assert terminal_response(events)["text"] == "actual terminal answer"
+
+
+def test_a_turn_window_with_no_delivery_surface_stays_unavailable():
+    """Two roots and no `send_reply` request: the terminal generation is
+    ambiguous — missing evidence, never whichever response exists."""
+    events = (_responses()
+              + [{**e, "invocation_id": "fold", "attempt_id": "fold:0:1"}
+                 for e in _responses(text="the room fold's position")]
+              + [_request("primary", []), _request("fold", [])])
+    response = terminal_response(events)
+    assert response["status"] == "unavailable"
+    assert response["cause"] == "invocation_missing"
+
+
+def test_a_cycle_cancelled_after_the_send_keeps_the_settled_attempt():
+    """Production ends a sent turn by cancelling the loop's next cycle
+    before it reaches a transport — the terminal response is the settled
+    attempt that produced the send, never the end marker."""
+    identity = {"invocation_id": "primary"}
+    events = [
+        {**identity, "kind": "invocation_started",
+         "parent_invocation_id": None},
+        {**identity, "kind": "call_started",
+         "attempt_id": "primary:0:1", "cancelled": False},
+        {**identity, "kind": "transport_started",
+         "attempt_id": "primary:0:1"},
+        {**identity, "kind": "transport_response",
+         "attempt_id": "primary:0:1",
+         "response": {"choices": [{"delta": {"tool_calls": [{"id": "t-1"}]},
+                                   "finish_reason": "tool_calls"}]}},
+        {**identity, "kind": "transport_finished",
+         "attempt_id": "primary:0:1"},
+        {**identity, "kind": "call_finished",
+         "attempt_id": "primary:0:1", "retry": False},
+        {**identity, "kind": "call_started",
+         "attempt_id": "primary:1:1",
+         "cancelled": "Reply already sent — the turn is finished."},
+        {**identity, "kind": "call_cancelled", "attempt_id": "primary:1:1"},
+        {**identity, "kind": "call_finished",
+         "attempt_id": "primary:1:1", "retry": False},
+        {**identity, "kind": "invocation_finished"},
+    ]
+    response = terminal_response(events)
+    assert response["status"] == "observed"
+    assert response["attempt_id"] == "primary:0:1"
+    assert response["finish_reason"] == "tool_calls"
+
+
+def test_an_interrupted_trailing_attempt_stays_unsettled():
+    """A call cancelled after its transport began is half a generation —
+    missing evidence, never the earlier attempt's borrowed output."""
+    identity = {"invocation_id": "primary"}
+    events = [
+        {**identity, "kind": "invocation_started",
+         "parent_invocation_id": None},
+        *_responses()[1:-1],
+        {**identity, "kind": "call_started",
+         "attempt_id": "primary:1:1", "cancelled": "stream interrupted"},
+        {**identity, "kind": "transport_started",
+         "attempt_id": "primary:1:1"},
+        {**identity, "kind": "call_cancelled", "attempt_id": "primary:1:1"},
+        {**identity, "kind": "invocation_finished"},
+    ]
+    response = terminal_response(events)
+    assert response["status"] == "unavailable"
+    assert response["cause"] == "attempt_unsettled"
+
+
 def test_judge_distinguishes_domain_unavailability_from_transport_success():
     trajectory = _trajectory()
     trajectory["tool_calls"][0]["result"] = {
