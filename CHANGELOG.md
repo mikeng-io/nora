@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.19.3](https://github.com/mikeng-io/nora/compare/v7.19.2...v7.19.3) (2026-11-15)
+
+
+### Maintenance
+
+* origin/master into managed identity design, retain media recovery and release metadata ([65fbdda](https://github.com/mikeng-io/nora/commit/65fbddad08966df2189ff5092251700b9dcfec93))
+
 ## [7.19.2](https://github.com/mikeng-io/nora/compare/v7.19.1...v7.19.2) (2026-11-15)
 
 
