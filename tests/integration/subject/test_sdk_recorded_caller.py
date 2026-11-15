@@ -177,7 +177,7 @@ async def test_sdk_cases_use_real_subjects_in_distinct_owned_services(
         sdk_evidence.record("expected_invalid_capture")
 
 
-@pytest.mark.parametrize("method", ["position", "coverage"])
+@pytest.mark.parametrize("method", ["position", "coverage", "detached-coverage"])
 async def test_frozen_sdk_judge_uses_case_recording(
     evaluation_config, tmp_path, monkeypatch, sdk_evidence, method,
 ):
@@ -202,8 +202,28 @@ async def test_frozen_sdk_judge_uses_case_recording(
         }}}]}})
 
     async def frozen(judge, case, *, now_ms):
-        if method == "coverage":
-            got = await judge.coverage_batch("Generated coverage protocol input")
+        if method != "position":
+            import asyncio
+
+            from opentelemetry import baggage, context
+
+            from nora.obs.tracing import attached
+
+            async def coverage():
+                if method != "detached-coverage":
+                    return await judge.coverage_batch("Generated coverage protocol input")
+                token = context.attach(baggage.set_baggage("unrelated-parent", "generated"))
+                parent = trace.get_current_span().get_span_context()
+                try:
+                    with attached(None):
+                        assert baggage.get_baggage("unrelated-parent") is None
+                        assert not trace.get_current_span().get_span_context().is_valid
+                        return await judge.coverage_batch("Generated coverage protocol input")
+                finally:
+                    assert trace.get_current_span().get_span_context() == parent
+                    context.detach(token)
+
+            got = await asyncio.create_task(coverage())
             return Outcome(admitted=None, position="Generated position",
                            judged="PASS" if "error" not in got else "REVIEW",
                            error=got.get("error"))
@@ -234,7 +254,7 @@ async def test_frozen_sdk_judge_uses_case_recording(
     request = json.loads(calls[0]["attributes"]["nora.model.request.body"])
     assert request["model"] == "generated-judge"
     assert request["max_tokens"] == 4096
-    if method == "coverage":
+    if method != "position":
         assert request["reasoning_effort"] == "low"
         assert request["messages"] == [{
             "role": "user", "content": "Generated coverage protocol input"}]

@@ -110,5 +110,12 @@
     "old": "    if any(not observed_effects(candidate.get(\"effects\"))",
     "new": "    if False and any(not observed_effects(candidate.get(\"effects\"))",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_missing_lifecycle_evidence_stops_before_either_judge_call"
+  },
+  {
+    "name": "new trace roots retain only local evaluation custody",
+    "file": "nora/obs/tracing.py",
+    "old": "        if callable(evidence):\n            selected = otel_context.set_value(EVAL_EVIDENCE_KEY, evidence, selected)\n            selected = baggage.set_baggage(\"nora.eval.capture\", \"true\", context=selected)\n",
+    "new": "",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording[detached-coverage]"
   }
 ]
