@@ -1,11 +1,19 @@
 # Cognition
 
-Nora's cognition is one graph worked by two open loops. The **Cognitive
-Graph** is her state. The **engagement loop** is Nora in a room; the
+**Nora treats memory, belief, commitment and outcome as one continuous,
+evidence-grounded cognitive state.**
+
+That state is the **Cognitive Graph** — Nora's own term, not an industry
+category. Two loops work it: the **engagement loop** is Nora in a room; the
 **reflection loop** is Nora between conversations. Both share the OODAS stage
-model, and each runs a declared subset of its stages. The goal is **emergence**: recommendation, personalisation,
-follow-through and learning arise from the generic loops working the graph,
-never from a capability's own code, store, prompt or loop.
+model, and each runs a declared subset of its stages. Each pass is a controlled
+transition: from the graph as it stands, new observations and doctrine, it
+produces the next graph state and an act, or a deliberate silence. The graph
+alone does not think or act; cognition is the graph with its loops.
+
+The goal is **emergence**: recommendation, personalisation, follow-through and
+learning arise from the generic loops working the graph, never from a
+capability's own code, store, prompt or loop.
 
 **Status:** designed
 
@@ -100,5 +108,8 @@ Areas follow [ADR 0037](../../docs/adr/0037-code-is-grouped-by-area-and-depends-
   semantics in code, where Nora cannot learn them.
 - **Canonical rows, not an event log**: rows with revisions and provenance are
   re-derivable; a replayed log is a second truth.
-- **"Cognitive Graph", not "knowledge graph"**: most of it is belief,
-  commitment and outcome, not knowledge.
+- **"Cognitive Graph", not "knowledge graph" or "memory graph"**: a knowledge
+  graph manages what is known and a memory graph what is remembered; this
+  manages what Nora believes, what she commits to, and how outcomes correct
+  her. Its data model has precedents; what is specific is that basis decides
+  write authority and that commitments close on observed outcomes.
