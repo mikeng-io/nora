@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.19.4](https://github.com/mikeng-io/nora/compare/v7.19.3...v7.19.4) (2026-11-15)
+
+
+### Features
+
+* **identity:** expose the exact platform account a presented id binds ([7dc1cfa](https://github.com/mikeng-io/nora/commit/7dc1cfa775a6cd1ac41c19a23f26b6953fdd9c4f))
+
 ## [7.19.3](https://github.com/mikeng-io/nora/compare/v7.19.2...v7.19.3) (2026-11-15)
 
 
