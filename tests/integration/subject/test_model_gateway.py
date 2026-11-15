@@ -312,6 +312,8 @@ async def test_a_post_preserving_redirect_creates_no_second_attempt(
     url, seen = upstream
     async with environment() as services:
         async def redirect(request, body):
+            if len(seen["requests"]) > 1:
+                return web.json_response(_completion(body["model"]))
             return web.json_response(
                 {"usage": {"prompt_tokens": 7, "completion_tokens": 2,
                            "total_tokens": 9}},
