@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from scripts.cognition_loop.trajectory import tool_outcome
+from nora.subject.effects import tool_outcome
 
 HKT = ZoneInfo("Asia/Hong_Kong")
 
@@ -229,6 +229,8 @@ def _did(wake: dict[str, Any]) -> str:
     out.append("<h5>terminal model response</h5><pre>" + _json(
         trajectory.get("final_response") or {
             "status": "unavailable", "cause": "response_not_captured"}) + "</pre>")
+    out.append("<h5>lifecycle effects</h5>" + _block("effects", trajectory.get("effects") or {
+        "status": "unavailable", "cause": "lifecycle_not_captured"}))
     calls = trajectory.get("model_calls")
     out.append("<h5>model requests</h5>")
     if not calls:

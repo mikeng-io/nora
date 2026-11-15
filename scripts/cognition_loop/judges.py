@@ -32,8 +32,8 @@ import json
 from dataclasses import replace
 from typing import Any
 
+from nora.subject.effects import result_values, tool_outcome
 from nora.subject.eval_evidence import EvidenceError
-from scripts.cognition_loop.trajectory import result_values, tool_outcome
 from scripts.cognition_loop.verdicts import (
     JudgeAnswer,
     expectation_verdict,
@@ -67,6 +67,11 @@ verbatim, sent once — reconstruct each entry by merging \
 from both is absent, never null
 - `tool_calls`: the session's tool calls in order, each with arguments, \
 result status and refusal
+- `effects`: canonical SQL versions and delivery receipts inside the owned execution
+  boundary, plus tool domain outcomes. Entries retain creation followed by closure,
+  cancellation, withdrawal, replacement and deletion even when the final active view
+  is empty. Cite an effect by its exact `ref`. Unavailable effects are missing
+  evidence, never proof of no change.
 - `final_output`: the session's last assistant output
 - `final_response`: canonical response availability and invocation/attempt identity;
   unavailable is missing evidence, while observed empty text is a captured empty response
@@ -93,7 +98,7 @@ Answer whether the expectation holds for a `must`, or is violated for a \
 evidence shows it; `not_met` when the evidence shows the opposite; \
 `cannot_tell` when the evidence is silent. Cite every entry id your \
 answer rests on, as it appears in `diff`/`state_after` (`kind:id` or the \
-bare id). When the expectation's kind holds any entry, a `met` or \
+bare id) or as an exact `effects` ref. When the expectation's kind holds any entry, a `met` or \
 `not_met` cites at least one: for a `must_not`, cite the entries you \
 checked that came closest to violating it. Cite nothing only when the \
 kind holds no entry at all.
@@ -167,6 +172,10 @@ def _wake_evidence(
         "source": {k: blocks.get(k) for k in ("agenda", "items", "stimuli")},
         "diff": _full_diff(diff, keys),
         "tool_calls": _tool_calls(trajectory),
+        "effects": trajectory.get("effects") or {
+            "status": "unavailable", "cause": "lifecycle_not_captured"},
+        "settlement": trajectory.get("settlement") or {
+            "status": "unavailable", "cause": "settlement_not_captured"},
         "final_output": _final_output(trajectory),
         "final_response": trajectory.get("final_response") or {
             "status": "unavailable", "cause": "response_not_captured"},
@@ -297,11 +306,20 @@ async def judge_expectation(
 ) -> Any:
     """Both judges over one expectation; citations checked against the
     wake's evidence ids; the roll-up stays fail-closed."""
+    if any((candidate.get("effects") or {}).get("status") != "observed"
+           or not all(isinstance((candidate.get("effects") or {}).get(key), list)
+                      for key in ("items", "tools"))
+           for candidate in (trajectory, *(t for _, t in earlier_wakes))):
+        return expectation_verdict(tuple(JudgeAnswer(
+            verdict="error", reason="lifecycle evidence unavailable", model=model,
+        ) for model in models))
     known = _emitted_ids(diff) | {
         f"{expectation.kind}:{eid}" for eid in state_after.entries(expectation.kind)
     }
-    for prior_diff, _ in earlier_wakes:
+    for prior_diff, prior in earlier_wakes:
         known |= _emitted_ids(prior_diff)
+        known |= _effect_ids(prior)
+    known |= _effect_ids(trajectory)
     answers = [
         await judge_one(judges, model, judge_payload(
             expectation, diff, state_after, trajectory, earlier_wakes,
@@ -331,3 +349,8 @@ async def judge_expectation(
         e.startswith(f"{expectation.kind}:") for e in known
     )
     return expectation_verdict(tuple(checked), nothing_to_cite=nothing_to_cite)
+
+
+def _effect_ids(trajectory: dict[str, Any]) -> set[str]:
+    effects = trajectory.get("effects") or {}
+    return {row["ref"] for row in [*effects.get("items", []), *effects.get("tools", [])]}

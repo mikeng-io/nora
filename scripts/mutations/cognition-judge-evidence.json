@@ -30,8 +30,8 @@
   {
     "name": "an earlier wake's emitted changes are citable",
     "file": "scripts/cognition_loop/judges.py",
-    "old": "    for prior_diff, _ in earlier_wakes:\n        known |= _emitted_ids(prior_diff)\n",
-    "new": "",
+    "old": "        known |= _emitted_ids(prior_diff)",
+    "new": "        pass",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_a_judge_can_cite_an_emitted_prior_change_but_not_an_unshown_entry"
   },
   {

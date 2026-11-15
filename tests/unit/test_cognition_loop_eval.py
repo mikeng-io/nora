@@ -316,43 +316,14 @@ def test_wrote_only_record_refuses_derived_state():
 # --------------------------------------------------------------------------
 
 
-def _subject(**deps):
+def test_egress_requires_an_active_case_owned_boundary():
     from types import SimpleNamespace
-    registry = SimpleNamespace(adapters=deps.pop("adapters", {}))
-    base = {"bridge_runtime": None, "fire_path": None, "dispatcher": None,
-            "social_poller": None, "computer_lifecycle": None,
-            "background": SimpleNamespace(_tasks=set())}
-    base.update(deps)
-    return SimpleNamespace(deps=SimpleNamespace(registry=registry, **base))
-
-
-def test_a_live_sender_is_a_refusal():
-    from types import SimpleNamespace
-
-    class RealSignalSender:
-        pass
 
     from scripts.cognition_loop.egress import assert_no_egress
-    subject = _subject(
-        adapters={"signal": SimpleNamespace(_sender=RealSignalSender())})
-    with pytest.raises(EvidenceError, match="real platform transports"):
+
+    subject = SimpleNamespace(deps=SimpleNamespace())
+    with pytest.raises(EvidenceError, match="no active case-owned network/storage boundary"):
         assert_no_egress(subject)
-
-
-def test_a_bridge_runtime_is_a_refusal():
-    from scripts.cognition_loop.egress import assert_no_egress
-    with pytest.raises(EvidenceError, match="bridge_runtime"):
-        assert_no_egress(_subject(bridge_runtime=object()))
-
-
-def test_the_landed_sender_passes():
-    from types import SimpleNamespace
-    class LandedSignalSender:
-        pass
-    from scripts.cognition_loop.egress import assert_no_egress
-    report = assert_no_egress(_subject(
-        adapters={"signal": SimpleNamespace(_sender=LandedSignalSender())}))
-    assert report["transports"]["signal"] == {"_sender": "LandedSignalSender"}
 
 
 # --------------------------------------------------------------------------
@@ -383,87 +354,6 @@ async def test_over_budget_refuses_before_starting(monkeypatch, tmp_path):
     )
     with pytest.raises(ValueError, match="refuse rather than start"):
         await cli.run(args)
-
-
-# --------------------------------------------------------------------------
-# no-egress guard is fail-closed
-# --------------------------------------------------------------------------
-
-
-def test_the_egress_guard_refuses_every_delivery_worker():
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    for worker in ("fire_path", "social_poller",
-                   "computer_lifecycle", "bridge_runtime"):
-        subject = _subject(**{worker: object()})
-        with pytest.raises(EvidenceError, match=worker):
-            assert_no_egress(subject)
-
-
-def test_the_egress_guard_refuses_a_real_sender_on_any_platform():
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    class RealSender:
-        pass
-
-    for platform in ("signal", "discord", "instagram", "whatsapp", "anychat"):
-        subject = _subject(
-            adapters={platform: SimpleNamespace(_sender=RealSender())})
-        with pytest.raises(EvidenceError, match="real platform transports"):
-            assert_no_egress(subject)
-
-
-def test_an_adapter_whose_sender_cannot_be_identified_is_a_refusal():
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    class BridgeLikeClient:
-        pass
-
-    subject = _subject(adapters={
-        "signal": SimpleNamespace(_endpoint=object(), _client=BridgeLikeClient()),
-    })
-    with pytest.raises(EvidenceError, match="cannot be identified"):
-        assert_no_egress(subject)
-
-    subject = _subject()
-    subject.deps.registry = SimpleNamespace()  # no `adapters`
-    with pytest.raises(EvidenceError, match="cannot be enumerated"):
-        assert_no_egress(subject)
-
-
-def test_a_sender_under_another_attribute_name_is_still_found():
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    class BridgeSender:
-        pass
-
-    subject = _subject(adapters={
-        "discord": SimpleNamespace(transport=BridgeSender()),
-    })
-    with pytest.raises(EvidenceError, match="real platform transports"):
-        assert_no_egress(subject)
-
-
-def test_the_egress_guard_passes_only_when_everything_is_landed():
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    class LandedSignalSender:
-        pass
-
-    # A dispatcher is a required inbound entry point on every composed
-    # subject — present, and not a delivery worker.
-    subject = _subject(dispatcher=object(),
-        adapters={"signal": SimpleNamespace(_sender=LandedSignalSender())})
-    report = assert_no_egress(subject)
-    assert not any(report["workers"].values())
 
 
 # --------------------------------------------------------------------------
@@ -541,7 +431,7 @@ def test_overrides_parse_key_value_pairs_with_toml_types():
         parse_overrides(["not-a-pair"])
 
 
-async def test_compose_binds_arm_overrides_and_disables_delivery(
+async def test_compose_preserves_declared_arm_and_active_service_boundary(
     monkeypatch, tmp_path,
 ):
     from types import SimpleNamespace
@@ -557,18 +447,17 @@ async def test_compose_binds_arm_overrides_and_disables_delivery(
     monkeypatch.setattr(run_mod, "obtain", fake_obtain)
     args = SimpleNamespace(
         workdir=str(tmp_path),
-        overrides={"llm.model": "claude-arm"},
+        overrides={"llm.model": "claude-arm"}, environment=object(),
     )
     room = SimpleNamespace(platform="signal", primary_id="room-1")
     await run_mod._compose(
         args, "postgresql+asyncpg://x", 1_700_000_000_000, room,
-        "policy", "identity", workspace="nora-eval-run-case-abc",
+        "policy", "identity",
     )
     overrides = captured["spec"].overrides
     assert overrides["llm.model"] == "claude-arm"
-    assert overrides["computer.enabled"] is False
-    assert overrides["computer.scoped.enabled"] is False
-    assert overrides["honcho.workspace_id"] == "nora-eval-run-case-abc"
+    assert overrides == {"llm.model": "claude-arm"}
+    assert captured["spec"].environment is args.environment
 
 
 # --------------------------------------------------------------------------
@@ -704,7 +593,8 @@ async def test_two_judges_served_by_one_model_are_not_independent():
     )
     exp = Expectation(wake=0, polarity="must", kind="note", text="x")
     verdict = await judge_expectation(
-        judges, ("a", "b"), exp, StateDiff({}), UnitState(kinds={}), {})
+        judges, ("a", "b"), exp, StateDiff({}), UnitState(kinds={}),
+        {"effects": {"status": "observed", "items": [], "tools": []}})
     assert verdict.verdict == ERROR
     assert all("not independent" in a.reason for a in verdict.answers)
 

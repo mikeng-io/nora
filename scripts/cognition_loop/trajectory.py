@@ -6,7 +6,7 @@ items, stimuli), `nora.session.instructions` (doctrine and skill
 versions), `nora.session.terminal` (outcome, error, bound) — while a
 `nora.model.request` carries `nora.model.request.body`. A trajectory is
 bound to its session: the window opens at the `started` whose body
-names this session and wake, and closes at its `terminal`. A wake with
+names this session and wake, and closes at its committed `settled`. A wake with
 no session produces an empty trajectory — never the previous wake's.
 """
 
@@ -16,6 +16,7 @@ import json
 import re
 from typing import Any
 
+from nora.subject.effects import tool_outcome
 from scripts.memory_graph_spike import evidence_exchanges
 
 _MEMORY_READS = ("memory_search", "memory_read")
@@ -106,35 +107,6 @@ def loop_counts(
     }
 
 
-def result_values(result: Any) -> list[Any]:
-    """A Strands tool result's content values, JSON-decoded — the same
-    decode `evidence_exchanges` applies, so a caller never reads the
-    raw envelope."""
-    if not isinstance(result, dict):
-        return []
-    values = []
-    for part in result.get("content") or []:
-        if not isinstance(part, dict):
-            continue
-        if "json" in part:
-            values.append(part["json"])
-        elif "text" in part:
-            try:
-                values.append(json.loads(part["text"]))
-            except ValueError:
-                values.append(part["text"])
-    return values
-
-
-def tool_outcome(result: Any) -> dict[str, Any]:
-    """The tool's own three-state outcome inside the Strands envelope: the
-    envelope says `success` for a refused or unavailable write too."""
-    for value in result_values(result):
-        if isinstance(value, dict) and "status" in value:
-            return value
-    return {}
-
-
 def terminal_response(events: list[dict[str, Any]]) -> dict[str, Any]:
     """Select a settled terminal attempt; never infer output from a request."""
     starts = [(i, e) for i, e in enumerate(events)
@@ -214,8 +186,7 @@ def session_events(
     events: list[dict[str, Any]], *, session_id: str | None,
     wake_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """The events from the `started` naming `session_id`/`wake_id` to its
-    `terminal`, inclusive. No matching session: empty."""
+    """The owned replay session through settlement, or its incomplete terminal window."""
     start = None
     for i, event in enumerate(events):
         if event.get("name") != "nora.session.started":
@@ -227,13 +198,15 @@ def session_events(
             start = i
     if start is None:
         return []
-    out: list[dict[str, Any]] = []
-    for event in events[start:]:
-        out.append(event)
-        if (event.get("name") == "nora.session.terminal"
-                and _body(event).get("session_id") == session_id):
-            break
-    return out
+    terminal = None
+    for i, event in enumerate(events[start:], start):
+        if _body(event).get("session_id") != session_id:
+            continue
+        if event.get("name") == "nora.session.terminal":
+            terminal = i
+        if event.get("name") == "nora.session.settled":
+            return events[start:i + 1]
+    return events[start:terminal + 1] if terminal is not None else events[start:]
 
 
 def wake_trajectory(
@@ -244,9 +217,11 @@ def wake_trajectory(
     started: dict[str, Any] = {}
     instructions: dict[str, Any] = {}
     terminal: dict[str, Any] = {}
+    settlement: dict[str, Any] = {"status": "unavailable", "cause": "settlement_not_captured"}
+    terminal_index = len(events)
     model: list[dict[str, Any]] = []
     tools: list[dict[str, Any]] = []
-    for entry in events:
+    for index, entry in enumerate(events):
         name = entry.get("name")
         if name == "nora.session.started":
             started = _body(entry)
@@ -254,6 +229,9 @@ def wake_trajectory(
             instructions = _body(entry)
         elif name == "nora.session.terminal":
             terminal = _body(entry)
+            terminal_index = index
+        elif name == "nora.session.settled":
+            settlement = {"status": "observed", **_body(entry)}
         elif name == "nora.model.request":
             model.append(_body(entry))
         elif entry.get("kind") == "tool_finished":
@@ -284,7 +262,8 @@ def wake_trajectory(
         },
         "prefetch": prefetch,
         "model_calls": model,
-        "final_response": terminal_response(events),
+        "final_response": terminal_response(events[:terminal_index + 1]),
+        "settlement": settlement,
         "exchanges": evidence_exchanges(events),
         "tool_calls": tools,
         "stop_reason": terminal.get("outcome") or terminal.get("stop_reason"),

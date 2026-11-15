@@ -133,9 +133,6 @@ def _async_result(value):
     return _call
 
 
-# the wake's steps name themselves on ERROR
-
-
 def _wake_args(tmp_path):
     from types import SimpleNamespace
 
@@ -180,7 +177,6 @@ def _runner_subject(inspection=None, outcome=None):
 
 
 def _wake_seam(monkeypatch, tmp_path, subject):
-    """Everything `_run_wake` touches after compose, stubbed."""
     from types import SimpleNamespace
 
     from nora.domain.stimuli import Stimulus, UnitView
@@ -209,6 +205,10 @@ def _wake_seam(monkeypatch, tmp_path, subject):
     async def _state(*a, **k):
         return None
 
+    monkeypatch.setattr(run_mod, "prepare_effect_reads", _noop)
+    monkeypatch.setattr(run_mod, "effect_boundary", _noop)
+    monkeypatch.setattr(run_mod, "read_effects", _async_result(
+        {"status": "observed", "items": [], "tools": []}))
     monkeypatch.setattr(run_mod, "_compose", _composed)
     monkeypatch.setattr(run_mod, "assert_no_egress", lambda s: {})
     monkeypatch.setattr(run_mod, "index_replay_sandbox", _noop)

@@ -276,7 +276,9 @@ async def test_a_judge_can_cite_an_emitted_prior_change_but_not_an_unshown_entry
     prior = StateDiff(kinds={"note": KindDiff("note", created=(
         Entry("created", "old", after={"body": "generated"}),), unchanged=(
         Entry("unchanged", "unshown", after={"body": "not emitted"}),))})
-    args = (_expectation(), StateDiff(kinds={}), UnitState(kinds={}), {}, ((prior, {}),))
+    args = (_expectation(), StateDiff(kinds={}), UnitState(kinds={}),
+            {"effects": {"status": "observed", "items": [], "tools": []}},
+            ((prior, {"effects": {"status": "observed", "items": [], "tools": []}}),))
     good = await judge_expectation(Judges("note:old"), ("a", "b"), *args)
     assert good.verdict == "PASS"
     bad = await judge_expectation(Judges("note:unshown"), ("a", "b"), *args)
@@ -310,7 +312,8 @@ async def test_a_judge_cites_only_the_ids_the_digest_shows():
     })
     state = UnitState(kinds={"note": {"n-1": {}, "n-old": {"body": "kept"}},
                              "memo": {"m-x": {"body": "counted only"}}})
-    args = (_expectation(), diff, state, {}, ())
+    args = (_expectation(), diff, state,
+            {"effects": {"status": "observed", "items": [], "tools": []}}, ())
     created = await judge_expectation(Judges("note:n-1"), ("a", "b"), *args)
     assert created.verdict == "PASS"
     via_state = await judge_expectation(Judges("note:n-old"), ("a", "b"), *args)
@@ -440,5 +443,38 @@ async def test_a_citation_still_names_a_state_after_entry_under_defaults():
     entries = {f"e-{i}": {"shared": "v", "own": i} for i in (1, 2, 3)}
     state = UnitState(kinds={"note": entries})
     verdict = await judge_expectation(
-        Judges(), ("a", "b"), _expectation(), StateDiff(kinds={}), state, {}, ())
+        Judges(), ("a", "b"), _expectation(), StateDiff(kinds={}), state,
+        {"effects": {"status": "observed", "items": [], "tools": []}}, ())
     assert verdict.verdict == "PASS"
+
+
+@pytest.mark.parametrize("missing", ["current", "earlier", "items", "tools"])
+async def test_missing_lifecycle_evidence_stops_before_either_judge_call(missing):
+    from scripts.cognition_loop.judges import judge_expectation
+
+    class Judges:
+        def __init__(self):
+            self.served, self.calls = {}, []
+
+        async def call(self, model, instruction, payload):
+            self.calls.append(payload)
+            self.served[model] = [{"x-omniroute-model": model}]
+            return json.dumps({"verdict": "met", "reason": "Generated absence control",
+                               "entry_ids": []})
+
+    observed = {"effects": {"status": "observed", "items": [], "tools": []}}
+    judges = Judges()
+    expectation = _expectation()
+    diff, state = StateDiff(kinds={}), UnitState(kinds={})
+    good = await judge_expectation(judges, ("a", "b"), expectation, diff, state,
+                                   observed, ((diff, observed),))
+    assert good.verdict == "PASS" and len(judges.calls) == 2
+    judges.calls.clear()
+    broken = {} if missing in ("current", "earlier") else {
+        "effects": {key: value for key, value in observed["effects"].items() if key != missing}}
+    bad = await judge_expectation(judges, ("a", "b"), expectation, diff, state,
+        observed if missing == "earlier" else broken,
+        ((diff, broken if missing == "earlier" else observed),))
+    assert bad.verdict == "ERROR"
+    assert {answer.reason for answer in bad.answers} == {"lifecycle evidence unavailable"}
+    assert judges.calls == []

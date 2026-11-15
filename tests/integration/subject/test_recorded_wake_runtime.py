@@ -109,6 +109,7 @@ async def seed(url):
 
 
 @pytest.mark.asyncio
+@pytest.mark.fresh_database
 async def test_real_recorded_wake_settles_and_both_judges_receive_terminal_evidence(
     clean_pg_url, evaluation_config, tmp_path, monkeypatch,
 ):
@@ -154,6 +155,14 @@ async def test_real_recorded_wake_settles_and_both_judges_receive_terminal_evide
                 assert result["session_id"] is not None
                 terminal = result["trajectory"]["final_response"]
                 assert terminal["text"] == "Generated terminal response."
+                trajectory = result["trajectory"]
+                assert trajectory["settlement"]["status"] == "observed"
+                assert trajectory["settlement"]["outcome"] == "closed"
+                assert len(trajectory["model_calls"]) == 2
+                effects = trajectory["effects"]
+                assert effects["status"] == "observed"
+                assert {row["source"] for row in effects["items"]} >= {
+                    "cognition_session", "cognition_wake_outcome"}
                 engine = create_sql_engine(clean_pg_url)
                 try:
                     async with engine.connect() as conn:
@@ -174,6 +183,7 @@ async def test_real_recorded_wake_settles_and_both_judges_receive_terminal_evide
     assert [r["model"] for r in requests[-2:]] == MODELS
     for request in requests[-2:]:
         assert "Generated terminal response." in json.dumps(request)
+        assert "cognition_wake_outcome" in json.dumps(request)
     assert len(result["expectations"]) == 1
     assert len(result["expectations"][0]["answers"]) == 2
     assert not environment.active

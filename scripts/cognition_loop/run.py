@@ -30,6 +30,7 @@ from nora.infra.sql.schema import (
 )
 from nora.infra.sql.stimuli import SqlStimulusStore, _stimulus
 from nora.subject import SubjectSpec, obtain, sandbox_as_of
+from nora.subject.effects import effect_boundary, prepare_effect_reads, read_effects
 from nora.subject.eval_evidence import read_events
 from nora.subject.recorded_services import RecordedServices
 from scripts.cognition_loop import state as state_mod
@@ -342,6 +343,7 @@ async def _run_wake(
         try:
             engine = create_async_engine(url)
             try:
+                await prepare_effect_reads(engine, subject.environment)
                 rooms = _rooms(subject, case.unit)
                 stimuli = SqlStimulusStore(engine)
                 view = await stimuli.view(
@@ -380,6 +382,7 @@ async def _run_wake(
                 )
                 tokens_before = subject.deps.metrics.get(
                     "nora_cognition_unit_tokens_total")
+                boundary = await effect_boundary(engine)
                 session_id, inspection, no_session, step_error = await _settle(
                     runner, judges, engine, wake.wake_id,
                     unit=case.unit, view=view, at_ms=at_ms,
@@ -394,7 +397,7 @@ async def _run_wake(
                     await _observe(
                         got, args, case, index, judges, engine, subject, rooms,
                         before, tokens_before, evidence, session_id, wake,
-                        inspection, at_ms, earlier_wakes, step_error)
+                        inspection, at_ms, earlier_wakes, step_error, boundary)
                 except Exception as exc:  # noqa: BLE001 — the session settled; only its report failed
                     step_error = step_error or ("report", f"{exc!r}")
                     if got.get("diff") is None:
@@ -430,6 +433,7 @@ async def _observe(
     evidence: Any, session_id: Any, wake: Any, inspection: Any, at_ms: int,
     earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...] = (),
     step_error: tuple[str, str] | None = None,
+    boundary: Any = None,
 ) -> None:
     """Fill `got` step by step, so a later failure keeps what was built."""
     tokens = (subject.deps.metrics.get(
@@ -451,6 +455,10 @@ async def _observe(
             "system", "agenda", "items", "stimuli", "instructions")}
         trajectory["read_probes"] = inspection.get("read_probes", [])
     got["trajectory"] = trajectory
+    trajectory["effects"] = await read_effects(
+        engine, since=boundary, unit=case.unit, rooms=tuple(rooms),
+        profile_keys=tuple(_profile_keys(subject, case.unit)), events=events,
+    )
     if not subject.environment.guarded:
         subject.environment.check()
     got["after"] = after = await state_mod.snapshot(
