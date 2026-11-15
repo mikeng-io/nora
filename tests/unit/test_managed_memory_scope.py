@@ -48,10 +48,7 @@ async def _world(
     social: dict[str, Any] | None = None,
     members: tuple[str, ...] = (PERSON,),
 ):
-    """The managed world: bindings, authority, topology and the Kratos
-    registry. New identities explicitly enable social reads by default.
-    An explicit mapping may omit a person's preference to exercise an
-    existing malformed record rather than an opt-in."""
+    """Seed explicit preferences, or omit selected traits to exercise malformed records."""
     if social is None:
         social = {PERSON: True, FOREIGN: True}
     bindings = FakeBindingStore()
@@ -92,8 +89,7 @@ async def _world(
 
 
 def _social_target() -> RenderRoom:
-    """The reading room listing both people — the `listed` set the
-    prefetch hands `access.social_off_ids` under managed."""
+    """A room whose configured roster matches the managed members."""
     here = RoomFacts(
         "signal", frozenset({"generated-room-a"}), "generated-unit-a",
         frozenset({PERSON, FOREIGN}),

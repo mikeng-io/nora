@@ -547,8 +547,7 @@ class IdentityAccess:
         return await self._topology.scope_exists(scope)
 
     # ------------------------------------------------------------------
-    # descriptive profile — social opt-outs from the identity registry;
-    # the rest file-sourced, an honest absence under managed
+    # Descriptive profile; managed social opt-outs come from the registry.
     # ------------------------------------------------------------------
 
     async def social_off(self, person_id: str) -> bool:
@@ -587,19 +586,14 @@ class IdentityAccess:
         return frozenset(out)
 
     async def _preference_ids(self, person_id: str) -> tuple[str, ...]:
-        """The ids whose Kratos `social` traits decide this person: the
-        canonical id plus every retired alias. Unknown people cannot
-        establish permission to read social records."""
+        """The canonical subject and historical aliases retaining a preference."""
         canonical = await self._bindings.canonical_person(person_id)
         if canonical is None:
             raise SocialPreferenceUnavailableError(f"unknown person {person_id!r}")
         return (canonical, *await self._bindings.former_persons(canonical))
 
     async def _opted_out(self, ids: tuple[str, ...]) -> bool:
-        """`True` when ANY of the person's identities opts out — the
-        survivor's and every retained former's preference applies after
-        linking, and a retired (inactive) identity's traits still read.
-        Any unreadable, missing or non-boolean preference raises."""
+        """Refuse social reads when any retained identity opts out or cannot answer."""
         for external_id in ids:
             outcome, traits = await self._registry.identity_traits(
                 external_id=external_id

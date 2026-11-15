@@ -314,13 +314,8 @@ class RegistrationService:
             )
         if outcome.status is OutcomeStatus.COMPLETE and "kratos" in steps:
             outcome, identity_id = await self._registry.ensure_identity(
-                # The person id is `external_id`, never a trait — the
-                # nora_person schema carries descriptive fields only and
-                # holds no ownership evidence. `social` persists the file
-                # default (enabled) explicitly: a new identity never relies
-                # on a reader inferring an absent preference, and a
-                # read-back retry keeps whatever preference the identity
-                # already holds.
+                # Ownership is external_id, never a descriptive trait.
+                # Persist the file social default; conflict read-back preserves preferences.
                 external_id=person.person_id,
                 traits={"display_name": person.display_name, "social": True},
             )
