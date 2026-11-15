@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shlex
 import socket
 import sys
 from dataclasses import replace
@@ -176,6 +177,44 @@ async def test_unknown_tcp_and_dns_are_refused_and_cannot_be_a_valid_zero():
 
 
 @pytest.mark.asyncio
+async def test_the_same_real_child_process_cannot_spawn_inside_the_boundary(tmp_path):
+    """The asyncio spawn doors share `subprocess.Popen` on the supported loop."""
+    exec_sentinel = tmp_path / "exec.sentinel"
+    shell_sentinel = tmp_path / "shell.sentinel"
+    child = "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('spawned')"
+
+    async def spawn_exec(path) -> asyncio.subprocess.Process:
+        return await asyncio.create_subprocess_exec(
+            sys.executable, "-c", child, str(path))
+
+    async def spawn_shell(path) -> asyncio.subprocess.Process:
+        return await asyncio.create_subprocess_shell(
+            f"echo spawned > {shlex.quote(str(path))}")
+
+    assert await (await spawn_exec(exec_sentinel)).wait() == 0
+    assert await (await spawn_shell(shell_sentinel)).wait() == 0
+    assert exec_sentinel.read_text() == "spawned"
+    assert shell_sentinel.read_text().strip() == "spawned"
+    exec_sentinel.unlink()
+    shell_sentinel.unlink()
+
+    async with IsolatedServices(database_url="sqlite:///generated",
+                                applications={}) as environment:
+        with pytest.raises(PermissionError, match="not isolated"):
+            await spawn_exec(exec_sentinel)
+        with pytest.raises(PermissionError, match="not isolated"):
+            await spawn_shell(shell_sentinel)
+        assert not exec_sentinel.exists()
+        assert not shell_sentinel.exists()
+        assert [row["operation"] for row in environment.denied] == ["subprocess"] * 2
+        with pytest.raises(EvidenceError, match="external_dependency_not_isolated"):
+            environment.check()
+
+    assert await (await spawn_exec(exec_sentinel)).wait() == 0
+    assert exec_sentinel.read_text() == "spawned"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("http", [httpx, httpx2], ids=["httpx", "httpx2"])
 async def test_http_dispatch_and_redirects_cannot_bypass_owned_services(http):
     received: list[dict] = []
@@ -264,6 +303,11 @@ async def test_bridge_redis_is_a_private_unix_service_and_is_removed_on_exit():
             assert await client.get("generated-key") == b"generated-value"
         finally:
             await client.aclose()
+        # The owned spawn preceded the guard; the guard is still up beside it.
+        assert environment.guarded
+        with pytest.raises(PermissionError, match="not isolated"):
+            await asyncio.create_subprocess_exec(sys.executable, "-c", "pass")
+        assert [row["operation"] for row in environment.denied] == ["subprocess"]
         process = environment._process
         directory = environment._directory.name
     from pathlib import Path
