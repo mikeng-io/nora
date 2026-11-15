@@ -21,6 +21,7 @@ the in-memory fakes:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -249,6 +250,41 @@ async def test_register_mentions_one_unbound_account_as_a_new_member():
     assert bound.person_id != OP_PERSON  # a new independent person
     assert await _member_phone(bindings, bound.person_id)
     assert registry.identities[bound.person_id]["state"] == "active"
+
+
+async def test_same_phone_on_two_platforms_registers_independent_people():
+    bindings, backend, topology, registry, services = _services()
+    await _operator(bindings, backend, registry)
+    other_room = Scope(ScopeKind.ROOM, room_scope_id("whatsapp", CONV))
+    topology.rooms[other_room.id] = (UNIT_ID, False)
+    await backend.put_relation(
+        scope=other_room, relation="grant_manage_members", person_id=OP_PERSON
+    )
+    operator = await bindings.person(OP_PERSON)
+    assert operator is not None
+    await bindings.register(
+        person=operator,
+        account=ManagedAccount(
+            account_id="acct-operator-whatsapp", person_id=OP_PERSON,
+            platform="whatsapp", state=AccountState.BOUND,
+            identifiers=frozenset({Identifier("whatsapp", "phone", OP_ID)}),
+        ),
+    )
+    management = RoomManagement(services)
+    people = []
+    for platform in ("signal", "whatsapp"):
+        outcome = await management.invoke(
+            replace(_message("!!!member register", mentions=frozenset({TARGET_ID})),
+                    platform=platform),
+            RoomRequest(kind="register"),
+        )
+        assert outcome.status is OutcomeStatus.COMPLETE, (platform, outcome)
+        account = await bindings.resolve(platform, TARGET_ID)
+        assert account is not None
+        assert account.identifiers == frozenset({Identifier(platform, "phone", TARGET_ID)})
+        people.append(account.person_id)
+    assert len(set(people)) == 2
+    assert OP_PERSON not in people
 
 
 async def test_add_and_remove_flip_one_scoped_membership():
