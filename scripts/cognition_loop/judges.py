@@ -297,6 +297,55 @@ def _emitted_ids(diff: Any) -> set[str]:
     }
 
 
+def trajectory_gap(trajectory: Any) -> list[str]:
+    """The named reasons one wake's canonical evidence cannot reach a judge.
+
+    The one prerequisite every door — live, recorded replay, autonomous and
+    rejudge — shares: a missing effect projection, uncaptured subject
+    instructions, or a session with no observed terminal settlement is a
+    named refusal before any judge request, never a judge call spent on
+    evidence that is not there.
+    """
+    causes: list[str] = []
+    if not isinstance(trajectory, dict):
+        return ["trajectory_unavailable"]
+    if not observed_effects(trajectory.get("effects")):
+        causes.append("effects_unobserved")
+    if subject_instructions(trajectory)["status"] != "observed":
+        causes.append("subject_instructions_unobserved")
+    if trajectory.get("session_id") is not None:
+        for name in ("settlement", "final_response"):
+            if (trajectory.get(name) or {}).get("status") != "observed":
+                causes.append(f"{name}_unobserved")
+    return causes
+
+
+def evidence_gap(trajectory: Any,
+                 earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...]
+                 ) -> list[str]:
+    """This wake's gap plus every earlier wake its judges would inherit:
+    an invalid antecedent is a named refusal, never an empty history."""
+    causes = trajectory_gap(trajectory)
+    for index, (prior_diff, earlier) in enumerate(earlier_wakes):
+        invalid = earlier.get("invalid") if isinstance(earlier, dict) else None
+        for cause in ([invalid] if invalid else
+                      ["state_unavailable"] if prior_diff is None else
+                      trajectory_gap(earlier)):
+            causes.append(f"earlier wake {index}: {cause}")
+    return causes
+
+
+def judge_history_entry(diff: Any, trajectory: Any
+                        ) -> tuple[Any, dict[str, Any]]:
+    """One `earlier_wakes` entry: real evidence, or a durable marker that
+    keeps an invalid antecedent from reading as an empty history."""
+    causes = [] if diff is not None else ["state_unavailable"]
+    causes += trajectory_gap(trajectory)
+    if not causes:
+        return diff, trajectory
+    return diff, {"invalid": "; ".join(causes)}
+
+
 async def judge_expectation(
     judges: Any, models: tuple[str, str], expectation: Any,
     diff: Any, state_after: Any, trajectory: dict[str, Any],
@@ -304,15 +353,12 @@ async def judge_expectation(
 ) -> Any:
     """Both judges over one expectation; citations checked against the
     wake's evidence ids; the roll-up stays fail-closed."""
-    if any(not observed_effects(candidate.get("effects"))
-           for candidate in (trajectory, *(t for _, t in earlier_wakes))):
+    gap = evidence_gap(trajectory, earlier_wakes)
+    if gap:
         return expectation_verdict(tuple(JudgeAnswer(
-            verdict="error", reason="lifecycle evidence unavailable", model=model,
-        ) for model in models))
-    if any(subject_instructions(candidate)["status"] != "observed"
-           for candidate in (trajectory, *(t for _, t in earlier_wakes))):
-        return expectation_verdict(tuple(JudgeAnswer(
-            verdict="error", reason="subject instruction evidence unavailable", model=model,
+            verdict="error",
+            reason=f"required journey evidence unavailable: {'; '.join(gap)}",
+            model=model,
         ) for model in models))
     known = _emitted_ids(diff) | {
         f"{expectation.kind}:{eid}" for eid in state_after.entries(expectation.kind)

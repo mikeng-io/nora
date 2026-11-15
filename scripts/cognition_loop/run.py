@@ -29,14 +29,24 @@ from nora.infra.sql.schema import (
 )
 from nora.infra.sql.stimuli import SqlStimulusStore, _stimulus
 from nora.subject import SubjectSpec, obtain, sandbox_as_of
-from nora.subject.effects import effect_boundary, effect_scope, prepare_effect_reads, read_effects
+from nora.subject.effects import (
+    effect_boundary,
+    effect_scope,
+    frozen_reads,
+    prepare_effect_reads,
+    read_effects,
+)
 from nora.subject.eval_evidence import read_events
 from nora.subject.recorded_services import RecordedServices
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.advance import advance_record, bump_sequences
 from scripts.cognition_loop.availability import availability
 from scripts.cognition_loop.egress import assert_no_egress
-from scripts.cognition_loop.judges import judge_expectation
+from scripts.cognition_loop.judges import (
+    evidence_gap,
+    judge_expectation,
+    judge_history_entry,
+)
 from scripts.cognition_loop.trajectory import (
     loop_counts,
     session_events,
@@ -273,8 +283,9 @@ async def _wakes(
                             wakes_report.append(report_row)
                             loop = report_row.get("loop") or {}
                             prior_links = set(loop.get("link_ids") or ())
-                            if "_diff" in report_row:
-                                earlier_wakes += ((report_row["_diff"], report_row["trajectory"]),)
+                            earlier_wakes += (judge_history_entry(
+                                report_row.get("_diff"),
+                                report_row.get("trajectory")),)
                         except Exception as exc:  # noqa: BLE001 — a wake error is ERROR, not a crash
                             roll.error(
                                 f"wake {i} (recorded {wake_id}): {exc!r}")
@@ -318,8 +329,7 @@ async def _run_wake(
             runner = subject.deps.cognition_runner
             evaluator = subject.deps.wake_evaluator
             if runner is None or evaluator is None:
-                raise ValueError(
-                    "the subject composes no cognition runner/evaluator")
+                raise ValueError("the subject composes no cognition runner/evaluator")
         except Exception as exc:  # noqa: BLE001 — a failed step is ERROR, not a crash
             return _wake_error(
                 output, index, wake_id, at_ms, reason, advance,
@@ -385,7 +395,8 @@ async def _run_wake(
                         before, tokens_before, evidence, session_id, wake,
                         inspection, at_ms, earlier_wakes, step_error, boundary)
                 except Exception as exc:  # noqa: BLE001 — the session settled; only its report failed
-                    step_error = step_error or ("report", f"{exc!r}")
+                    step_error = got.get("step_error") or step_error or (
+                        "report", f"{exc!r}")
                     if got.get("diff") is None:
                         return _wake_error(
                             output, index, wake_id, at_ms, reason, advance,
@@ -400,7 +411,7 @@ async def _run_wake(
                     unit=case.unit,
                     batch=_batch(recorded_meta, offered, offered_self),
                     no_session=no_session,
-                    step_error=step_error,
+                    step_error=got.get("step_error") or step_error,
                     prior_links=prior_links,
                 )
             finally:
@@ -443,23 +454,31 @@ async def _observe(
             "system", "agenda", "items", "stimuli", "instructions")}
         trajectory["read_probes"] = inspection.get("read_probes", [])
     got["trajectory"] = trajectory
-    trajectory["effects"] = await read_effects(
-        engine, since=boundary, unit=scope.unit, rooms=scope.rooms,
-        profile_keys=scope.profile_keys, events=events,
-    )
+    async with frozen_reads(engine) as reads:
+        # One cut for effects and after-state: a commit landing between
+        # them could otherwise pair effects from one instant with a state
+        # read from another — the judges' one shared image must not tear.
+        trajectory["effects"] = await read_effects(
+            reads, since=boundary, unit=scope.unit, rooms=scope.rooms,
+            profile_keys=scope.profile_keys, events=events,
+        )
+        got["after"] = after = await state_mod.snapshot(
+            cast(AsyncEngine, reads), unit=scope.unit, rooms=scope.rooms,
+            profile_keys=scope.profile_keys, now_ms=at_ms,
+            metrics=subject.deps.metrics,
+        )
     if not subject.environment.guarded:
         subject.environment.check()
-    got["after"] = after = await state_mod.snapshot(
-        engine, unit=scope.unit, rooms=scope.rooms,
-        profile_keys=scope.profile_keys, now_ms=at_ms,
-        metrics=subject.deps.metrics,
-    )
     got["diff"] = diff = state_mod.diff(before, after)
     subject.environment.check()
-    # A wake whose step failed before it settled produced nothing to
-    # measure: partial evidence is frozen above; no judge call is spent.
+    # A wake whose step failed before it settled, or whose canonical
+    # evidence — its own or an inherited antecedent's — is incomplete:
+    # the partial evidence is frozen; no judge call is spent.
+    gap = evidence_gap(trajectory, earlier_wakes)
+    got["step_error"] = step_error or (
+        ("evidence", "; ".join(gap)) if gap else None)
     got["expectations"] = (
-        [] if step_error is not None
+        [] if got["step_error"] is not None
         else await _judge(
             args, case, index, judges, diff, after, trajectory,
             earlier_wakes))

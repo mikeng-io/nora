@@ -17,7 +17,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from types import UnionType
+from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel, TypeAdapter
 
@@ -113,6 +114,19 @@ def model_endpoint(path: Path | Config, purpose: str, model: str = "") -> tuple[
     return url, key, name
 
 
+class _Unresolved:
+    """A config path the schema cannot give a concrete default for."""
+
+    def __repr__(self) -> str:
+        return "UNRESOLVED"
+
+
+#: `config_default`'s answer for a path that is not a concrete schema leaf —
+#: a required field, a runtime-keyed container, a typo. `None` is a real
+#: nullable default; `UNRESOLVED` means there is no default to reconstruct.
+UNRESOLVED = _Unresolved()
+
+
 def config_default(key: str) -> object:
     """What `nora/config.py` gives a dotted key nobody states.
 
@@ -121,9 +135,10 @@ def config_default(key: str) -> object:
     already the eval-facing seam. It answers one question about the CONFIG
     SCHEMA, which is Nora's own, not about evaluation.
 
-    `None` means UNRESOLVABLE — a required field with no default, or a nested
-    container like `dreamer.budgets.<name>` that is keyed at runtime. Callers
-    must treat that as "cannot check", never as "agrees".
+    `UNRESOLVED` means UNRESOLVABLE — a required field with no default, or a
+    nested container like `dreamer.budgets.<name>` that is keyed at runtime.
+    `None` is a real nullable default. Callers must treat `UNRESOLVED` as
+    "cannot check", never as "agrees" — and never as the value `None`.
     """
     from pydantic_core import PydanticUndefined
 
@@ -134,15 +149,55 @@ def config_default(key: str) -> object:
     for index, part in enumerate(parts):
         field = getattr(model, "model_fields", {}).get(part)
         if field is None:
-            return None
+            return UNRESOLVED
         if index == len(parts) - 1:
-            if field.default is PydanticUndefined:
-                return None
-            return None if hasattr(field.default, "model_fields") else field.default
-        model = field.annotation
-        if not hasattr(model, "model_fields"):
-            return None
-    return None
+            default = field.default
+            if default is PydanticUndefined:
+                default = (field.default_factory()
+                           if field.default_factory is not None
+                           else PydanticUndefined)
+            return (UNRESOLVED if default is PydanticUndefined
+                    or hasattr(default, "model_fields") else default)
+        annotation = field.annotation
+        origin = get_origin(annotation)
+        if origin in (Union, UnionType):
+            annotation = next(arg for arg in get_args(annotation)
+                              if arg is not type(None))
+        if not hasattr(annotation, "model_fields"):
+            return UNRESOLVED
+        model = annotation
+    return UNRESOLVED
+
+
+def config_member_of_runtime_map(key: str) -> bool:
+    """Whether a dotted key names a member of a `dict[...]`-typed field.
+
+    `dreamer.budgets.culture.turns` is keyed at runtime: production holds no
+    `culture` member it never stated, so omitting the example's member IS
+    the parity — unlike a required leaf, whose omission cannot load.
+    """
+    from nora.config import Config
+
+    model: Any = Config
+    parts = key.split(".")
+    for index, part in enumerate(parts):
+        field = getattr(model, "model_fields", {}).get(part)
+        if field is None:
+            return False  # an unknown path, not a runtime-keyed member
+        if index == len(parts) - 1:
+            return False
+        annotation = field.annotation
+        origin = get_origin(annotation)
+        if origin in (Union, UnionType):
+            annotation = next(arg for arg in get_args(annotation)
+                              if arg is not type(None))
+            origin = get_origin(annotation)
+        if origin is dict:
+            return True
+        if not hasattr(annotation, "model_fields"):
+            return False
+        model = annotation
+    return False
 
 
 def default_policy(room: tuple[str, str], *, unit: str = "nora") -> str:

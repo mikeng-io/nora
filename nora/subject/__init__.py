@@ -54,9 +54,11 @@ from .memory_workspace import (
 )
 from .obtain import (
     DEFAULT_ROOM,
+    UNRESOLVED,
     Subject,
     SubjectSpec,
     config_default,
+    config_member_of_runtime_map,
     obtain,
 )
 from .proactive import ActPass, act, owe
@@ -94,6 +96,7 @@ __all__ = [
     "COVERAGE_FLOOR",
     "DEFAULT_ROOM",
     "EMBEDDER_FROM_HOST",
+    "UNRESOLVED",
     "AccountSeed",
     "ActPass",
     "Coverage",
@@ -123,6 +126,7 @@ __all__ = [
     "check_served_model",
     "close_private_blank_templates",
     "config_default",
+    "config_member_of_runtime_map",
     "deliver",
     "draw_workspace",
     "dream",

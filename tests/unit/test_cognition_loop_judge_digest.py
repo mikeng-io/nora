@@ -476,8 +476,10 @@ async def test_missing_lifecycle_evidence_stops_before_either_judge_call(missing
         observed if missing == "earlier" else broken,
         ((diff, broken if missing == "earlier" else observed),))
     assert bad.verdict == "ERROR"
-    assert {answer.reason for answer in bad.answers} == {"lifecycle evidence unavailable"}
     assert judges.calls == []
+    for answer in bad.answers:
+        assert answer.reason.startswith(
+            "required journey evidence unavailable:"), answer.reason
 
 
 def test_instruction_evidence_uses_the_first_actual_request_without_assembly_fallback():

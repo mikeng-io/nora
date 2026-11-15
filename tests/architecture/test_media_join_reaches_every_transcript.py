@@ -92,13 +92,9 @@ _NOT_A_BUILDER = {
     "nora/subagents/adapters/tools.py": (
         "reads the subagent job store, not message bodies"
     ),
-    # The `.since` the discovery sees is `RunEvidence.since` — an event
-    # cursor, not the record store's transcript read. The lifecycle effects it
-    # gathers ARE the judge's canonical evidence (custody, not a renderer):
-    # they reach the model only through `Judge.bind_evidence`, which renders
-    # their file links as handles (`HAND_BUILT` in the file-links gate). The
-    # rows stay exactly as stored, so a photo reads as its `[image ...]`
-    # handle — the same accepted limit as `snapshot.py`'s own-SQL read.
+    # Its `.since` is an event cursor, not a transcript read; the canonical
+    # effects it holds reach the model only through `Judge.bind_evidence`,
+    # which renders file links as handles (`HAND_BUILT` in the gate).
     "nora/subject/effect_capture.py": (
         "custody of the raw canonical effects bound for the judge; its one "
         "model-bound projection renders through grading.bind_evidence"

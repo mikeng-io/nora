@@ -32,7 +32,11 @@ import re
 import tomllib
 from pathlib import Path
 
-from nora.subject import config_default
+from nora.subject import (
+    UNRESOLVED,
+    config_default,
+    config_member_of_runtime_map,
+)
 
 # Measurement sinks are isolated separately from the subject's functional config.
 SKIP_PREFIX: tuple[str, ...] = ("obs.", "evals.langfuse.", "store.data_dir")
@@ -84,9 +88,15 @@ def adopted(deployment_toml: str) -> dict[str, object]:
     }
     # The bridge example differs from the implicit legacy deployment default.
     # Preserve the effective deployment value rather than changing transports.
-    taken.setdefault("platforms.signal.mode", config_default("platforms.signal.mode"))
+    mode_default = config_default("platforms.signal.mode")
+    if mode_default is not UNRESOLVED and mode_default is not None:
+        taken.setdefault("platforms.signal.mode", mode_default)
     taken.update(dict.fromkeys(forced_off(values), False))
     return taken
+
+
+def _exempt(key: str) -> bool:
+    return any(key.startswith(prefix) for prefix in SKIP_PREFIX)
 
 
 def build(example_toml: str, deployment_toml: str) -> str:
@@ -100,14 +110,17 @@ def build(example_toml: str, deployment_toml: str) -> str:
     An example line the DEPLOYMENT does not state is not a deployment value:
     the example is a template for a new deployment, and production takes
     `nora/config.py`'s default for a key it never reads. Such a line is
-    rewritten to that code default, so the subject runs the deployment's
-    EFFECTIVE config rather than decorative template values. Keys whose
-    default cannot be resolved (required fields, runtime-keyed containers)
-    keep the example's line — `config_default` returning None is "cannot
-    check", which `divergences()` already declines to call agreement.
+    OMITTED, so the subject loads the same schema default production
+    resolves — for a nullable default the omitted key computes to whatever
+    the model derives (a `None` whose `prompt_window_effective` still lands
+    on the deployment's number), and for a runtime-keyed container like
+    `dreamer.budgets.<name>` the empty section is dropped too, so no
+    template-only member enters the loaded dict. A key that survives into
+    the generated file without the deployment stating it is a rewrite
+    failure, and `divergences()` names it — resolved defaults are compared,
+    `UNRESOLVED` ones refuse the run rather than reading as agreement.
     """
     take = adopted(deployment_toml)
-    example_values = dict(_flat(tomllib.loads(example_toml)))
 
     # A key the deployment SETS but the example never mentions has no line to
     # rewrite, and then silently falls back to the CODE default — which is not
@@ -158,8 +171,16 @@ def build(example_toml: str, deployment_toml: str) -> str:
             seen.add(full)
             if full in take:
                 line = f"{match.group(1)}{match.group(2)}{match.group(3)}{_fmt(take[full])}"
+            elif _exempt(full):
+                pass
+            elif (config_default(full) is UNRESOLVED
+                    and not config_member_of_runtime_map(full)):
+                # A required field the deployment never stated keeps the
+                # example's line so the file loads; `divergences()` names
+                # the unknown. A runtime-map member is omitted instead.
+                pass
             else:
-                line = _defaulted_line(match, full, example_values.get(full)) or line
+                continue
         out.append(line)
     close(section)
 
@@ -169,20 +190,27 @@ def build(example_toml: str, deployment_toml: str) -> str:
             if f"{orphan}.{leaf}" not in seen:
                 out.append(f"{leaf} = {_fmt(value)}")
 
+    # A section whose every example line was omitted must not emit its
+    # bare header either — an empty member is a template artifact.
+    rendered: list[str] = []
+    block: list[str] = []
+
+    def flush() -> None:
+        nonlocal block
+        if block and (not block[0].strip().startswith("[")
+                      or any(_KEY.match(ln) and not ln.strip().startswith("#")
+                             for ln in block[1:])):
+            rendered.extend(block)
+        block = []
+
+    for line in out:
+        if line.strip().startswith("[") and not line.strip().startswith("[["):
+            flush()
+        block.append(line)
+    flush()
+    out = rendered
+
     return _HEADER + "\n".join(out) + "\n"
-
-
-def _defaulted_line(match: re.Match[str], key: str, stated: object) -> str | None:
-    """The example line rewritten to the production default, or None when the
-    key has no resolvable default (kept verbatim) or already states it."""
-    default = config_default(key)
-    if isinstance(default, Path):
-        default = str(default)
-    if default is None or not isinstance(default, (str, bool, int, float, list, tuple)):
-        return None
-    if default == stated:
-        return None
-    return f"{match.group(1)}{match.group(2)}{match.group(3)}{_fmt(default)}"
 
 
 ALLOWED_TO_DIFFER: dict[str, str] = dict.fromkeys(
@@ -211,10 +239,7 @@ def divergences(generated_toml: str, deployment_toml: str) -> dict[str, tuple]:
     out: dict[str, tuple] = {}
 
     def exempt(key: str) -> bool:
-        return (
-            any(key.startswith(prefix) for prefix in SKIP_PREFIX)
-            or key in ALLOWED_TO_DIFFER
-        )
+        return _exempt(key) or key in ALLOWED_TO_DIFFER
 
     for key, value in deployment.items():
         if not exempt(key) and generated.get(key) != value:
@@ -224,7 +249,10 @@ def divergences(generated_toml: str, deployment_toml: str) -> dict[str, tuple]:
         if key in deployment or exempt(key):
             continue
         default = config_default(key)
-        if default is None:
+        if default is UNRESOLVED:
+            # A generated key whose production default cannot be established
+            # is a refusal, never "cannot check, so agree".
+            out[key] = (value, UNRESOLVED)
             continue
         # A `Path` default against the TOML's string is the same value in two
         # types, not a divergence.

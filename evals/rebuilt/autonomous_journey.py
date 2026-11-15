@@ -18,24 +18,23 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
-from nora.infra.sql.schema import (
-    BRIDGE_ACTION,
-    COGNITION_SESSION,
-    COGNITION_WAKE,
-    COGNITION_WAKE_OUTCOME,
-    MESSAGES,
-    NOTE,
-    NOTE_REVISION,
-    REMINDERS,
-)
-from nora.infra.sql.stimuli import SqlStimulusStore
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from nora.subject.circle import create_sql_engine
 from nora.subject.effects import (
+    cognition_wake_outcomes,
+    cognition_wakes,
     effect_boundary,
     effect_scope,
+    frozen_reads,
+    journey_receipts,
     observed_effects,
+    offered_stimuli,
     read_effects,
+    sent_message_bodies,
+    wake_census,
 )
 from nora.subject.eval_evidence import current, read_events, validate_events
 from nora.subject.journey import JourneyDriver
@@ -45,7 +44,11 @@ from scripts.cognition_loop.accounting import _canonical_outcome, write_report
 from scripts.cognition_loop.availability import availability
 from scripts.cognition_loop.cases import STATE_KINDS, Expectation
 from scripts.cognition_loop.egress import assert_no_egress
-from scripts.cognition_loop.judges import judge_expectation
+from scripts.cognition_loop.judges import (
+    evidence_gap,
+    judge_expectation,
+    judge_history_entry,
+)
 from scripts.cognition_loop.trajectory import session_events, wake_trajectory
 from scripts.cognition_loop.verdicts import (
     ERROR,
@@ -147,19 +150,9 @@ def _bind_declared_wakes(declared: Any, produced: list[Any],
 
 async def _wake_census(subject: Any) -> dict[str, Any]:
     """Every wake/outcome row, read after the owned lifecycle closed."""
-    from nora.infra.sql.engine import create_sql_engine
-
     engine = create_sql_engine(subject.database_url)
     try:
-        async with engine.connect() as conn:
-            import sqlalchemy as sa
-
-            wakes = (await conn.execute(
-                sa.select(COGNITION_WAKE))).mappings().all()
-            outcomes = (await conn.execute(
-                sa.select(COGNITION_WAKE_OUTCOME))).mappings().all()
-        return {"wakes": [dict(row) for row in wakes],
-                "outcomes": [dict(row) for row in outcomes]}
+        return await wake_census(engine)
     finally:
         await engine.dispose()
 
@@ -294,7 +287,8 @@ async def _judge(judges: Any, models: tuple[str, str],
 
 def _evidence_causes(ctx: dict[str, Any], subset: list[dict[str, Any]],
                      trajectory: dict[str, Any], *, scope: Any,
-                     session_id: Any) -> list[str]:
+                     session_id: Any,
+                     earlier_wakes: tuple) -> list[str]:
     """Invalidations for one wake's canonical evidence, before any judge request."""
     causes: list[str] = []
     wake, outcome = ctx["wake"], ctx["outcome"]
@@ -309,19 +303,16 @@ def _evidence_causes(ctx: dict[str, Any], subset: list[dict[str, Any]],
     receipt = validate_events(subset, require_terminal=False)
     if receipt["status"] != "PASS":
         causes.extend(f"capture_{cause}" for cause in receipt["causes"])
-    if not observed_effects(trajectory.get("effects")):
-        causes.append("effects_unobserved")
-    else:
+    if observed_effects(trajectory.get("effects")):
         state, _ref = _canonical_outcome(
             trajectory, unit=scope.unit,
             wake_id=wake.get("id") if isinstance(wake, dict) else None,
             session_id=session_id)
         if state != "closed":
             causes.append(f"settlement_{state}")
-    if session_id is not None:
-        for name in ("settlement", "final_response"):
-            if (trajectory.get(name) or {}).get("status") != "observed":
-                causes.append(f"{name}_unobserved")
+    # The one prerequisite every judge door shares — this wake's evidence
+    # and the whole earlier history its judges would inherit.
+    causes.extend(evidence_gap(trajectory, earlier_wakes))
     return causes
 
 
@@ -347,18 +338,21 @@ async def _finalize(index: int, ctx: dict[str, Any], *, subject: Any,
     trajectory["unit"] = scope.unit
     trajectory["unit_rooms"] = list(scope.rooms)
     trajectory["availability"] = availability(subject.cfg, trajectory)
-    # One cut for all three projections: effects, snapshot and diff all
-    # measure the same "now" — nothing lands between two windows.
-    trajectory["effects"] = await read_effects(
-        ctx["engine"], since=ctx["boundary"], unit=scope.unit,
-        rooms=scope.rooms, profile_keys=scope.profile_keys, events=subset)
-    after = await state_mod.snapshot(
-        ctx["engine"], unit=scope.unit, rooms=scope.rooms,
-        profile_keys=scope.profile_keys, now_ms=_now_ms(),
-        metrics=subject.deps.metrics)
+    # One cut: effects, snapshot and diff share a REPEATABLE READ
+    # transaction, so a commit landing mid-measurement cannot tear the
+    # image the judges read.
+    async with frozen_reads(ctx["engine"]) as reads:
+        trajectory["effects"] = await read_effects(
+            reads, since=ctx["boundary"], unit=scope.unit,
+            rooms=scope.rooms, profile_keys=scope.profile_keys, events=subset)
+        after = await state_mod.snapshot(
+            cast(AsyncEngine, reads), unit=scope.unit, rooms=scope.rooms,
+            profile_keys=scope.profile_keys, now_ms=_now_ms(),
+            metrics=subject.deps.metrics)
     diff = state_mod.diff(before, after)
     causes = _evidence_causes(
-        ctx, subset, trajectory, scope=scope, session_id=session_id)
+        ctx, subset, trajectory, scope=scope, session_id=session_id,
+        earlier_wakes=earlier_wakes)
     step_error = ("evidence", "; ".join(causes)) if causes else None
     rows = ([] if step_error is not None else await _judge(
         judges, models, expectations, index, diff, after,
@@ -370,10 +364,7 @@ async def _finalize(index: int, ctx: dict[str, Any], *, subject: Any,
 
 
 async def _offered(engine: Any, unit: str, at_ms: int) -> tuple[list[int], list[int]]:
-    view = await SqlStimulusStore(engine).view(
-        unit=unit, mode="live", now_ms=at_ms, limit=500)
-    offered = sorted(s.id for s in view.pending)
-    return offered, sorted(s.id for s in view.pending if s.kind == "self")
+    return await offered_stimuli(engine, unit, at_ms)
 
 
 def _report(case: Case, unit: str, roll: Rollup,
@@ -408,8 +399,8 @@ async def _await_wake(driver: Any, *, engine: Any, scope: Any,
                       wanted: int, seconds: float) -> int:
     """Wait out the count, bind the one new wake, return rows seen."""
     await driver.wait_closed_wakes(wanted, seconds=seconds)
-    wakes = await driver.rows(COGNITION_WAKE)
-    outcomes = await driver.rows(COGNITION_WAKE_OUTCOME)
+    wakes = await cognition_wakes(engine)
+    outcomes = await cognition_wake_outcomes(engine)
     by_wake = {o["wake_id"]: o for o in outcomes}
     if (len(wakes) < wanted
             or any(w["id"] not in by_wake for w in wakes)):
@@ -465,18 +456,20 @@ async def _drive(subject: Any, *, world: Any, steps: list[dict[str, Any]],
             prior_links=prior_links, egress=egress,
             evidence_path=evidence.path, before=before)
         wakes_report.append(row)
-        earlier_wakes += ((row["_diff"], row["trajectory"]),)
+        earlier_wakes += (judge_history_entry(
+            row.get("_diff"), row.get("trajectory")),)
         prior_links = set((row.get("loop") or {}).get("link_ids") or ())
         return row["_state_before"]
 
     async with driver:
         engine = driver.engine
-        boundary = await effect_boundary(engine)
-        journey_boundary = boundary
-        before = await state_mod.snapshot(
-            engine, unit=scope.unit, rooms=scope.rooms,
-            profile_keys=scope.profile_keys, now_ms=_now_ms(),
-            metrics=subject.deps.metrics)
+        async with frozen_reads(engine) as reads:
+            boundary = await effect_boundary(reads)
+            journey_boundary = boundary
+            before = await state_mod.snapshot(
+                cast(AsyncEngine, reads), unit=scope.unit, rooms=scope.rooms,
+                profile_keys=scope.profile_keys, now_ms=_now_ms(),
+                metrics=subject.deps.metrics)
         sent = 0
         for step in steps:
             if "send" in step:
@@ -691,30 +684,11 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
                    outcome_token=f"journey:{report['status'].lower()}")
 
 
-_RECEIPT_TABLES = {
-    "wakes": COGNITION_WAKE, "outcomes": COGNITION_WAKE_OUTCOME,
-    "sessions": COGNITION_SESSION, "notes": NOTE,
-    "note_revisions": NOTE_REVISION, "actions": BRIDGE_ACTION,
-    "messages": MESSAGES, "reminders": REMINDERS,
-}
-
-
 async def _receipts(subject: Any) -> dict[str, Any]:
     """The SQL receipts the case's claims rest on, captured inside the drive."""
-    from nora.infra.sql.engine import create_sql_engine
-
     engine = create_sql_engine(subject.database_url)
     try:
-        out: dict[str, Any] = {}
-        async with engine.connect() as conn:
-            import sqlalchemy as sa
-
-            for name, table in _RECEIPT_TABLES.items():
-                rows = (await conn.execute(sa.select(table))).mappings().all()
-                out[name] = [
-                    json.loads(json.dumps(dict(row), default=str)) for row in rows
-                ]
-        return out
+        return await journey_receipts(engine)
     except Exception as exc:  # noqa: BLE001 — an unreadable receipt is named
         return {"status": "unavailable", "cause": f"{type(exc).__name__}: {exc}"}
     finally:
@@ -723,17 +697,8 @@ async def _receipts(subject: Any) -> dict[str, Any]:
 
 async def read_messages(subject: Any) -> list[Any]:
     """The delivery receipts she actually wrote: sent `is_nora` audit rows."""
-    from nora.infra.sql.engine import create_sql_engine
-
     engine = create_sql_engine(subject.database_url)
     try:
-        async with engine.connect() as conn:
-            import sqlalchemy as sa
-
-            rows = (await conn.execute(
-                sa.select(MESSAGES.c.body).where(
-                    MESSAGES.c.is_nora == 1,
-                    MESSAGES.c.delivery_status == "sent"))).scalars().all()
-        return [str(row) for row in rows]
+        return await sent_message_bodies(engine)
     finally:
         await engine.dispose()

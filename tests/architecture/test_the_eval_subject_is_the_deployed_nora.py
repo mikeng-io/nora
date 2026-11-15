@@ -51,9 +51,28 @@ def _flat(d: dict, prefix: str = ""):
 #: repo stays clear of deployment values for the same reason `config.toml` is
 #: untracked.
 _DEPLOYMENT_FIXTURE = """\
+identity_file = "identity.toml"
+policy_file = "policy.toml"
 [llm]
 model = "nora"
+base_url = "http://llm.generated:11434/v1"
 reasoning_effort = "none"
+timeout_seconds = 360
+temperature = 0.7
+max_tokens = 2000
+[llm.limits]
+turns = 20
+total_tokens = 1024000
+output_tokens = 12000
+[honcho]
+base_url = "http://honcho.generated:8000"
+workspace_id = "nora"
+[engagement]
+policy = "trigger_text"
+[engagement.trigger]
+enabled = false
+text = "nora"
+min_interval_seconds = 5
 [dreamer]
 enabled = true
 model = "nora-dreamer"
@@ -62,6 +81,10 @@ max_tokens = 6000
 [evals]
 judge_model = "nora-judge"
 [doctrine]
+dir = "nora/doctrine"
+language_hint = "yue-Hant-HK"
+reload = "mtime"
+strict = true
 canary = "A-REAL-CANARY-VALUE"
 [relevance_gate]
 enabled = true
@@ -88,6 +111,9 @@ enabled = true
 [preview]
 enabled = true
 [store]
+data_dir = "/generated/data"
+max_per_conversation = 100
+context_window = 50
 prune_enabled = false
 [speech.wake]
 enabled = false
@@ -114,8 +140,8 @@ model = "an-image-model"
 [platforms.signal]
 enabled = true
 mode = "bridge"
-[engagement.trigger]
-enabled = false
+account = "generated-signal-account"
+base_url = "http://signal-bridge.generated:18090"
 [obs.tracing]
 endpoint = "http://collector.internal:4317"
 exporter = "otlp_http"
@@ -208,14 +234,14 @@ async def test_an_enabled_adapter_stays_enabled_and_its_endpoints_bind_to_the_ca
     from nora.subject.environment import IsolatedServices
 
     deployment = _DEPLOYMENT_FIXTURE.replace(
-        'mode = "bridge"', 'mode = "bridge"\naccount = "+85200000000"')
+        'account = "generated-signal-account"', 'account = "generated-signal-account-2"')
     generated = build(
         (_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8"), deployment)
     target = tmp_path / "config.toml"
     target.write_text(generated, encoding="utf-8")
     cfg = load(target, require_secrets=False)
     assert cfg.platforms.signal.enabled is True
-    assert cfg.platforms.signal.account == "+85200000000", (
+    assert cfg.platforms.signal.account == "generated-signal-account-2", (
         "the account is declared deployment identity — parity keeps it; "
         "it is not a dial path, the adapter's base_url is"
     )
@@ -246,7 +272,7 @@ async def test_an_enabled_adapter_stays_enabled_and_its_endpoints_bind_to_the_ca
             "own services"
         )
         assert bound.platforms.signal.enabled is True
-        assert bound.platforms.signal.account == "+85200000000"
+        assert bound.platforms.signal.account == "generated-signal-account-2"
 
 
 def test_a_skipped_prefix_is_not_taken_from_the_deployment():
@@ -401,30 +427,30 @@ def test_materialise_writes_when_the_result_agrees(tmp_path):
 def test_the_gate_looks_at_keys_the_deployment_never_states():
     """The half of the key space a deployment-keys-only gate is blind to.
 
-    An example-stated, deployment-silent key is materialised at the CODE
-    DEFAULT, so a tidied or drifted EXAMPLE line cannot move the subject —
-    and `divergences()` still reports a generated config whose undeclared
-    value disagrees with `nora/config.py`, which is how a rewrite that
-    silently stops applying is caught.
+    An example-stated, deployment-silent key is OMITTED, so the subject
+    loads the same schema default production resolves — a tidied or
+    drifted EXAMPLE line cannot move it — and `divergences()` still
+    reports a generated config carrying an undeclared value, which is how
+    a rewrite that silently stops applying is caught.
     """
     from evals.subject_config import build, divergences
 
     example = (_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8")
     # `reasoning_effort` is example-stated in several sections; drift the first
-    # — the generated config must hold the code default anyway.
+    # — the generated config must not carry it at all.
     drifted = example.replace('reasoning_effort = "none"', 'reasoning_effort = "high"', 1)
     generated = build(drifted, _DEPLOYMENT_FIXTURE)
-    assert dict(_flat(tomllib.loads(generated)))["participation.reasoning_effort"] == "none", (
-        "a drifted example line must not reach the subject: deployment-silent "
-        "keys are materialised at the production default"
+    assert "participation.reasoning_effort" not in dict(
+        _flat(tomllib.loads(generated))), (
+        "a deployment-silent key is omitted: the subject takes the schema "
+        "default production resolves, never the example's line"
     )
     assert not divergences(generated, _DEPLOYMENT_FIXTURE), (
         "an example that drifts in an undeclared key is a clean build, not drift"
     )
     # The falsification: a generated config that DOES carry a wrong undeclared
     # value — the rewrite having silently stopped — must be named.
-    tampered = _build_generated().replace(
-        "cadence_moving_seconds = 20.0", "cadence_moving_seconds = 5", 1)
+    tampered = _build_generated() + '\n[presence]\ncadence_moving_seconds = 5\n'
     assert "presence.cadence_moving_seconds" in divergences(tampered, _DEPLOYMENT_FIXTURE), (
         "an undeclared key disagreeing with nora/config.py's default is a "
         "subject running settings production does not — the gate must see it"
@@ -432,19 +458,64 @@ def test_the_gate_looks_at_keys_the_deployment_never_states():
 
 
 def test_a_key_whose_default_cannot_be_resolved_is_not_silently_passed():
-    """"Cannot check" is not "agrees".
+    """"Cannot check" is not "agrees" — and is not the value `None`.
 
-    `_code_default` returns None for a key it cannot resolve. Treating that as
-    agreement would reopen the hole for exactly the keys hardest to reason
-    about.
+    `config_default` returns `UNRESOLVED` for a key it cannot resolve,
+    distinct from a real nullable default. Treating either as agreement
+    would reopen the hole for exactly the keys hardest to reason about.
     """
-    from nora.subject import config_default
+    from nora.subject import UNRESOLVED, config_default
 
-    assert config_default("no.such.setting.anywhere") is None
-    assert config_default("dreamer.budgets.culture.turns") is None, (
+    assert config_default("no.such.setting.anywhere") is UNRESOLVED
+    assert config_default("dreamer.budgets.culture.turns") is UNRESOLVED, (
         "a runtime-keyed container has no static default to compare against"
     )
     assert config_default("participation.reasoning_effort") == "none"
+    assert config_default("store.prompt_window") is None, (
+        "a nullable default is a resolved answer, not an unresolvable path"
+    )
+
+
+def test_an_unresolvable_generated_key_is_a_refusal_not_an_agreement():
+    """A runtime-keyed member the deployment never stated cannot be checked
+    against production, so `divergences()` names it `UNRESOLVED` — the run
+    refuses rather than composing a config whose parity is unknown."""
+    from evals.subject_config import divergences
+    from nora.subject import UNRESOLVED
+
+    tampered = _build_generated() + '\n[dreamer.budgets.culture]\nturns = 9\n'
+    drift = divergences(tampered, _DEPLOYMENT_FIXTURE)
+    assert drift.get("dreamer.budgets.culture.turns") == (9, UNRESOLVED)
+
+
+def test_an_omitted_optional_key_keeps_the_deployment_effective_value():
+    """The `store.prompt_window = 20` defect, closed by omission.
+
+    The deployment omits `prompt_window`; the example ships `20` and a
+    first cut of the rewrite materialised `7` — both wrong under the real
+    semantics, where `None` derives from `context_window`. Omitting the
+    key leaves `None`, and `effective_prompt_window` lands on the same
+    number the deployment computes — checked on a real `StoreConfig` load.
+    """
+    from evals.subject_config import build
+    from nora.config import StoreConfig
+
+    example = (_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8")
+    generated = build(example, _DEPLOYMENT_FIXTURE)
+    generated_store = tomllib.loads(generated)["store"]
+    assert "prompt_window" not in generated_store
+    ctx = {"base": _REPO_ROOT}
+    subject = StoreConfig.model_validate(generated_store, context=ctx)
+    deployment = StoreConfig.model_validate(
+        tomllib.loads(_DEPLOYMENT_FIXTURE)["store"], context=ctx)
+    assert subject.effective_prompt_window == deployment.effective_prompt_window
+    # An explicit value stays explicit: parity is the deployment's, not
+    # the schema's, when the deployment states one.
+    stated = _DEPLOYMENT_FIXTURE.replace(
+        "prune_enabled = false", "prompt_window = 7\nprune_enabled = false")
+    stated_store = tomllib.loads(build(example, stated))["store"]
+    assert StoreConfig.model_validate(
+        stated_store, context=ctx).prompt_window == 7
 
 
 

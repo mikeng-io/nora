@@ -111,7 +111,14 @@ async def snapshot(
     now_ms: int,
     metrics: Any = None,
 ) -> UnitState:
-    """One instant's read of every owned store for `unit`."""
+    """One instant's read of every owned store for `unit`.
+
+    `engine` may be a `FrozenReads` facade (it carries `connect()`/
+    `begin()`; `FrozenReads` is not an `AsyncEngine` subclass, so callers
+    cast): the stores then share one REPEATABLE READ cut and a
+    mid-measurement commit is absent from all of them; otherwise each
+    store keeps its own short transaction.
+    """
     kinds: dict[str, Mapping[str, Mapping[str, Any]]] = {k: {} for k in KINDS}
 
     notes = await SqlNoteStore(engine).standing(unit=unit)

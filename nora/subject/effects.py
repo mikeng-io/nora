@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
@@ -12,7 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.infra.sql.history import APPEND_ONLY
-from nora.infra.sql.schema import METADATA, ROW_HISTORY
+from nora.infra.sql.schema import (
+    COGNITION_WAKE,
+    COGNITION_WAKE_OUTCOME,
+    METADATA,
+    ROW_HISTORY,
+)
 from nora.subject.environment import IsolatedServices
 
 
@@ -28,6 +35,66 @@ class EffectScope:
     unit: str
     rooms: tuple[tuple[str, str], ...]
     profile_keys: tuple[str, ...]
+
+
+class _SharedConnection:
+    """Yields the frozen transaction's connection; exits close nothing."""
+
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    async def __aenter__(self) -> Any:
+        return self._conn
+
+    async def __aexit__(self, *_: Any) -> None:
+        return None
+
+
+class FrozenReads:
+    """The engine-shaped surface `frozen_reads` hands to store readers.
+
+    Every `connect()`/`begin()` yields the same REPEATABLE READ
+    connection, so a writer that commits mid-measurement cannot land
+    between two of this cut's reads — effects, state and diff always
+    describe one database instant.
+    """
+
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def connect(self) -> _SharedConnection:
+        return _SharedConnection(self._conn)
+
+    def begin(self) -> _SharedConnection:
+        return _SharedConnection(self._conn)
+
+
+@asynccontextmanager
+async def frozen_reads(engine: AsyncEngine) -> AsyncIterator[FrozenReads]:
+    """One stable measurement cut for every reader inside the block.
+
+    The transaction is REPEATABLE READ: a commit that lands between two
+    reads inside is absent from both. It is not READ ONLY — the effects
+    read claims its offered stimuli as it goes — but nothing in a cut
+    mutates semantic rows. Writers keep their own connections and
+    cadence: the cut is the reader's own snapshot, never a lock on them.
+    """
+    async with engine.connect() as conn:
+        conn = await conn.execution_options(isolation_level="REPEATABLE READ")
+        async with conn.begin():
+            yield FrozenReads(conn)
+
+
+async def _measured(engine: AsyncEngine | FrozenReads,
+                    read: Callable[[Any], Any]) -> Any:
+    """`read(conn)` on the shared cut when one is active, else its own."""
+    if isinstance(engine, FrozenReads):
+        async with engine.connect() as conn:
+            return await read(conn)
+    async with engine.connect() as conn:
+        conn = await conn.execution_options(isolation_level="REPEATABLE READ")
+        async with conn.begin():
+            return await read(conn)
 
 
 def effect_scope(subject: Any) -> EffectScope:
@@ -141,19 +208,26 @@ async def prepare_effect_reads(engine: AsyncEngine, environment: IsolatedService
                 f"ON {table} ({column})"))
 
 
-async def effect_boundary(engine: AsyncEngine) -> EffectBoundary:
-    """Read before starting the owned execution; no semantic writer may be in flight."""
+async def effect_boundary(engine: AsyncEngine | FrozenReads) -> EffectBoundary:
+    """Read before starting the owned execution; no semantic writer may be in flight.
+
+    Inside `frozen_reads` the boundary is taken from the same cut as the
+    before-state beside it, so the opening image is one instant too.
+    """
     positions = {
         source.table: sa.select(sa.func.coalesce(sa.func.max(
             next(iter(METADATA.tables[source.table].primary_key))), 0)).scalar_subquery()
         for source in SOURCES if _numeric(source)
     }
     history = sa.select(sa.func.coalesce(sa.func.max(ROW_HISTORY.c.id), 0)).scalar_subquery()
-    async with engine.connect() as conn:
-        row = (await conn.execute(sa.select(
+
+    async def read(conn: Any) -> Any:
+        return (await conn.execute(sa.select(
             sa.func.clock_timestamp().label("at"), history.label("history_id"),
             *(query.label(name) for name, query in positions.items()),
         ))).mappings().one()
+
+    row = await _measured(engine, read)
     return EffectBoundary(row["at"], int(row["history_id"]),
                           {name: int(row[name]) for name in positions})
 
@@ -215,51 +289,57 @@ def _effect(kind: str, source: str, key: dict[str, Any], at: datetime,
             "row": _plain(row)}
 
 
-async def read_effects(engine: AsyncEngine, *, since: EffectBoundary, unit: str,
-                       events: list[dict[str, Any]],
+async def read_effects(engine: AsyncEngine | FrozenReads, *, since: EffectBoundary,
+                       unit: str, events: list[dict[str, Any]],
                        rooms: tuple[tuple[str, str], ...],
                        profile_keys: tuple[str, ...]) -> dict[str, Any]:
-    """Read after owned work settles, retaining intermediate and terminal versions."""
+    """Read after owned work settles, retaining intermediate and terminal versions.
+
+    Inside `frozen_reads` this is one of several reads on the same cut —
+    a commit that lands while the measurement runs is absent from the
+    effects, the state and the diff alike.
+    """
     effects = []
-    async with engine.connect() as raw:
-        conn = await raw.execution_options(isolation_level="REPEATABLE READ")
-        async with conn.begin():
-            await conn.execute(sa.text("SET TRANSACTION READ ONLY"))
-            until = (await conn.execute(sa.select(sa.func.clock_timestamp()))).scalar_one()
-            for table_name, kind in HISTORY_KINDS.items():
-                rows = (await conn.execute(sa.select(ROW_HISTORY).where(
-                    ROW_HISTORY.c.id > since.history_id,
-                    ROW_HISTORY.c.table_name == table_name,
-                    _history_scope(table_name, unit, rooms, profile_keys),
-                ).order_by(ROW_HISTORY.c.id))).mappings().all()
-                for row in rows:
-                    effects.append(_effect(kind, "row_history", {"id": row["id"]},
-                        row["recorded_at"], dict(row), operation=row["op"]))
-            for source in SOURCES:
-                table = METADATA.tables[source.table]
-                owner = METADATA.tables[source.parent] if source.parent else table
-                columns = list(table.c)
-                query = sa.select(*columns)
-                if source.parent:
-                    query = query.select_from(table.join(owner,
-                        table.c[cast(str, source.foreign_key)] == owner.c.id))
-                stamp = table.c[APPEND_ONLY.get(source.table, "created_at")]
-                lower = (next(iter(table.primary_key)) > since.positions[source.table]
-                         if _numeric(source) else stamp >= since.at)
+
+    async def read(conn: Any) -> Any:
+        until = (await conn.execute(sa.select(sa.func.clock_timestamp()))).scalar_one()
+        for table_name, kind in HISTORY_KINDS.items():
+            rows = (await conn.execute(sa.select(ROW_HISTORY).where(
+                ROW_HISTORY.c.id > since.history_id,
+                ROW_HISTORY.c.table_name == table_name,
+                _history_scope(table_name, unit, rooms, profile_keys),
+            ).order_by(ROW_HISTORY.c.id))).mappings().all()
+            for row in rows:
+                effects.append(_effect(kind, "row_history", {"id": row["id"]},
+                    row["recorded_at"], dict(row), operation=row["op"]))
+        for source in SOURCES:
+            table = METADATA.tables[source.table]
+            owner = METADATA.tables[source.parent] if source.parent else table
+            columns = list(table.c)
+            query = sa.select(*columns)
+            if source.parent:
+                query = query.select_from(table.join(owner,
+                    table.c[cast(str, source.foreign_key)] == owner.c.id))
+            stamp = table.c[APPEND_ONLY.get(source.table, "created_at")]
+            lower = (next(iter(table.primary_key)) > since.positions[source.table]
+                     if _numeric(source) else stamp >= since.at)
+            if source.table == "bridge_action":
+                lower = sa.or_(lower, table.c.started_at >= since.at,
+                               table.c.completed_at >= since.at)
+            query = query.where(lower, _scope(owner, unit, rooms, profile_keys))
+            rows = (await conn.execute(query)).mappings().all()
+            for row in rows:
+                key = {column.name: row[column.name] for column in table.primary_key}
+                at = row[stamp.name]
+                operation = "append"
                 if source.table == "bridge_action":
-                    lower = sa.or_(lower, table.c.started_at >= since.at,
-                                   table.c.completed_at >= since.at)
-                query = query.where(lower, _scope(owner, unit, rooms, profile_keys))
-                rows = (await conn.execute(query)).mappings().all()
-                for row in rows:
-                    key = {column.name: row[column.name] for column in table.primary_key}
-                    at = row[stamp.name]
-                    operation = "append"
-                    if source.table == "bridge_action":
-                        at = row["completed_at"] or row["started_at"] or at
-                        operation = "receipt"
-                    effects.append(_effect(source.kind, source.table, key, at,
-                                           dict(row), operation=operation))
+                    at = row["completed_at"] or row["started_at"] or at
+                    operation = "receipt"
+                effects.append(_effect(source.kind, source.table, key, at,
+                                       dict(row), operation=operation))
+        return until
+
+    until = await _measured(engine, read)
     effects.sort(key=lambda effect: (effect["at"], effect["ref"]))
     return {"status": "observed", "unit": unit, "unit_rooms": _plain(rooms),
             "profile_keys": list(profile_keys), "since": since.at.isoformat(),
@@ -280,3 +360,68 @@ def tool_effects(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
              "error_type": event.get("error_type"), "retry": event.get("retry"),
              "argument_validation": event.get("argument_validation")}
             for event in events if event.get("kind") == "tool_finished"]
+
+
+async def cognition_wakes(engine: Any) -> list[dict[str, Any]]:
+    """Every production wake row — the whole population, never a slice."""
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sa.select(COGNITION_WAKE))).mappings().all()
+    return [dict(row) for row in rows]
+
+
+async def cognition_wake_outcomes(engine: Any) -> list[dict[str, Any]]:
+    """Every production wake outcome row — the settlement population."""
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(COGNITION_WAKE_OUTCOME))).mappings().all()
+    return [dict(row) for row in rows]
+
+
+async def wake_census(engine: Any) -> dict[str, Any]:
+    """Every wake/outcome row, read after the owned lifecycle closed."""
+    return {"wakes": await cognition_wakes(engine),
+            "outcomes": await cognition_wake_outcomes(engine)}
+
+
+async def offered_stimuli(engine: Any, unit: str,
+                          at_ms: int) -> tuple[list[int], list[int]]:
+    """The stimulus ids the wake evaluator offers this unit's session."""
+    from nora.infra.sql.stimuli import SqlStimulusStore
+
+    view = await SqlStimulusStore(engine).view(
+        unit=unit, mode="live", now_ms=at_ms, limit=500)
+    offered = sorted(s.id for s in view.pending)
+    return offered, sorted(s.id for s in view.pending if s.kind == "self")
+
+
+#: The tables whose whole population a journey retains as its receipts.
+_JOURNEY_RECEIPTS = {
+    "wakes": "cognition_wake", "outcomes": "cognition_wake_outcome",
+    "sessions": "cognition_session", "notes": "note",
+    "note_revisions": "note_revision", "actions": "bridge_action",
+    "messages": "messages", "reminders": "reminders",
+}
+
+
+async def journey_receipts(engine: Any) -> dict[str, Any]:
+    """The SQL receipts the journey's claims rest on, one table each."""
+    out: dict[str, Any] = {}
+    async with engine.connect() as conn:
+        for name, table_name in _JOURNEY_RECEIPTS.items():
+            table = METADATA.tables[table_name]
+            rows = (await conn.execute(sa.select(table))).mappings().all()
+            out[name] = [
+                json.loads(json.dumps(dict(row), default=str)) for row in rows
+            ]
+    return out
+
+
+async def sent_message_bodies(engine: Any) -> list[str]:
+    """The delivery receipts she actually wrote: sent `is_nora` audit rows."""
+    messages = METADATA.tables["messages"]
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(messages.c.body).where(
+                messages.c.is_nora == 1,
+                messages.c.delivery_status == "sent"))).scalars().all()
+    return [str(row) for row in rows]

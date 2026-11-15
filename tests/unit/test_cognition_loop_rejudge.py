@@ -9,6 +9,19 @@ from scripts.cognition_loop.rejudge import frozen_diff
 from scripts.cognition_loop.verdicts import JudgeAnswer
 
 
+def _trajectory(**fields):
+    """A frozen trajectory whose canonical evidence a judge may read."""
+    trajectory = {
+        "effects": {"status": "observed", "items": [], "tools": []},
+        "model_calls": [{"model": "generated-subject", "messages": [
+            {"role": "system", "content": "generated subject instructions"},
+            {"role": "user", "content": "generated subject input"}]}],
+        "session_id": None,
+    }
+    trajectory.update(fields)
+    return trajectory
+
+
 @pytest.fixture
 def rejudge_services(tmp_path, example_config):
     import json
@@ -45,8 +58,8 @@ async def test_missing_frozen_wake_stops_before_judge_setup(monkeypatch, tmp_pat
             (tmp_path / f"wake-{index}-{ident}.json").write_text(
                 json.dumps({"recorded_wake_id": ident, "unit": case.unit,
                             "at_ms": index,
-                            "trajectory": {"unit": case.unit,
-                                           "session_id": None}}))
+                            "trajectory": _trajectory(
+                                unit=case.unit)}))
     original = (tmp_path / "report.json").read_bytes()
     def forbidden(*args):
         raise AssertionError("judge setup must not run")
@@ -107,8 +120,7 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
     for i, ident in enumerate(case.wakes):
         frozen = {"diff": {}, "recorded_wake_id": ident,
                   "unit": case.unit, "at_ms": i,
-                  "trajectory": {"unit": case.unit, "at_ms": i,
-                                 "session_id": None}}
+                  "trajectory": _trajectory(unit=case.unit, at_ms=i)}
         if damage == "frozen_unit" and i == 0:
             frozen["trajectory"]["unit"] = "another-unit"
         if damage == "frozen_instant" and i == 0:
@@ -156,7 +168,8 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
 
 
 @pytest.mark.parametrize("damage", ["unit", "recorded_wake", "actual_wake",
-                                    "session", "partial"])
+                                    "session", "partial", "effects",
+                                    "instructions", "terminal"])
 async def test_a_frozen_artifact_that_is_not_this_wake_is_never_judged(
     monkeypatch, tmp_path, damage,
 ):
@@ -179,10 +192,12 @@ async def test_a_frozen_artifact_that_is_not_this_wake_is_never_judged(
     for i, ident in enumerate(case.wakes):
         frozen = {"diff": {}, "recorded_wake_id": ident,
                   "unit": case.unit, "at_ms": 1000 + i,
-                  "trajectory": {
-                      "unit": case.unit, "at_ms": 1000 + i,
-                      "wake_id": 9000 + i,
-                      "session_id": f"generated-session-{i}"}}
+                  "trajectory": _trajectory(
+                      unit=case.unit, at_ms=1000 + i,
+                      wake_id=9000 + i,
+                      session_id=f"generated-session-{i}",
+                      settlement={"status": "observed"},
+                      final_response={"status": "observed"})}
         if i == 0:
             if damage == "unit":
                 frozen["trajectory"]["unit"] = "another-unit"
@@ -194,6 +209,12 @@ async def test_a_frozen_artifact_that_is_not_this_wake_is_never_judged(
                 frozen["trajectory"]["session_id"] = "someone-elses-session"
             elif damage == "partial":
                 frozen.pop("recorded_wake_id")
+            elif damage == "effects":
+                frozen["trajectory"].pop("effects")
+            elif damage == "instructions":
+                frozen["trajectory"].pop("model_calls")
+            elif damage == "terminal":
+                frozen["trajectory"].pop("final_response")
         (tmp_path / f"wake-{i}-{ident}.json").write_text(json.dumps(frozen))
     calls = []
 
@@ -204,11 +225,14 @@ async def test_a_frozen_artifact_that_is_not_this_wake_is_never_judged(
 
     monkeypatch.setattr(module, "judge_expectation", judge)
     await module._judge_wakes(tmp_path, row, case, object(), ("a", "b"))
-    assert calls == [1]                    # only the sound wake was judged
+    # The sound wake's own evidence is intact, but its judges would inherit
+    # an invalid antecedent — that is a named refusal, not an empty history.
+    assert calls == []
     assert row["wakes"][0]["status"] == "ERROR"
     assert row["wakes"][0]["expectations"] == []
-    assert any("frozen wake identity " in e for e in row["errors"])
-    assert row["wakes"][1]["status"] == "PASS"
+    assert row["errors"], "a refused wake names its cause"
+    assert row["wakes"][1]["status"] == "ERROR"
+    assert any("earlier wake 0" in e for e in row["errors"])
 
 
 def test_rejudging_keeps_a_case_error_and_a_failed_evidence_receipt():
@@ -267,9 +291,9 @@ async def test_an_unmeasured_wake_spends_no_judge_call(
     (tmp_path / f"wake-0-{case.wakes[0]}.json").write_text(json.dumps({
         "diff": {}, "recorded_wake_id": case.wakes[0],
         "unit": case.unit, "at_ms": 1000,
-        "trajectory": {"blocks": {"agenda": "generated source 0"},
-                       "unit": case.unit, "at_ms": 1000,
-                       "session_id": None}}))
+        "trajectory": _trajectory(
+            blocks={"agenda": "generated source 0"},
+            unit=case.unit, at_ms=1000)}))
     (tmp_path / f"wake-1-{case.wakes[1]}.json").write_text(json.dumps({
         "error": {"step": "wake",
                   "message": "the session ended failed: capture interrupted"},
@@ -318,10 +342,9 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(
         (tmp_path / f"wake-{index}-{ident}.json").write_text(json.dumps({
             "diff": {}, "recorded_wake_id": ident,
             "unit": case.unit, "at_ms": 1000 + index,
-            "trajectory": {
-                "blocks": {"agenda": f"generated source {index}"},
-                "unit": case.unit, "at_ms": 1000 + index,
-                "session_id": None}}))
+            "trajectory": _trajectory(
+                blocks={"agenda": f"generated source {index}"},
+                unit=case.unit, at_ms=1000 + index)}))
 
     # Assertions inside the fake would be swallowed by rejudge's fail-closed
     # except; the evidence is recorded and checked after the call instead.

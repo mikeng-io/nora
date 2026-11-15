@@ -57,6 +57,7 @@ from evals.subject_config import materialise
 from evals.terminal import safe_print as print
 from nora.subject import (
     EMBEDDER_FROM_HOST,
+    UNRESOLVED,
     SharedDatabaseMutatedError,
     SourceRevisionMismatchError,
     assert_shared_databases_unchanged,
@@ -515,10 +516,12 @@ def memory_index_enabled(config_toml: str) -> bool:
 
 
 def embedder_model_of(config_toml: str) -> str:
-    """`[memory.index] embedder_model` in a config's text; absent is the
-    code default."""
+    """The stated `[memory.index] embedder_model`, else the code default."""
     stated = tomllib.loads(config_toml).get("memory", {}).get("index", {}).get("embedder_model")
-    return str(stated or config_default("memory.index.embedder_model"))
+    default = config_default("memory.index.embedder_model")
+    if stated is None and default is UNRESOLVED:
+        raise ValueError("the embedder model's schema default is unresolvable")
+    return str(stated if stated is not None else default)
 
 
 def graph_surface_lines(source_url: str, model_id: str) -> list[str]:

@@ -35,7 +35,11 @@ from scripts.cognition_loop.accounting import (
 from scripts.cognition_loop.accounting import write_report as _write_report
 from scripts.cognition_loop.cases import load_case
 from scripts.cognition_loop.html import render
-from scripts.cognition_loop.judges import JUDGE_TOKENS_PER_CALL, judge_expectation
+from scripts.cognition_loop.judges import (
+    JUDGE_TOKENS_PER_CALL,
+    evidence_gap,
+    judge_expectation,
+)
 from scripts.cognition_loop.state import Entry, KindDiff, StateDiff, UnitState
 from scripts.cognition_loop.verdicts import ERROR, WAKE_ERRED, ExpectationVerdict, rollup
 from scripts.memory_graph_spike import Judges, measured_run_budget
@@ -137,17 +141,27 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
             at_ms=recorded.get("at_ms"), step=recorded.get("step"),
             wake_id=recorded.get("wake_id"),
             session_id=recorded.get("session_id"))
-        if identity is not None:
-            row.setdefault("errors", []).append(
-                f"wake {index} (recorded {wake_id}): {identity}")
         # The case names the unit; an old freeze never captured the rooms
         # that belong to it, and null there means unknown, never empty.
         trajectory = {**(frozen.get("trajectory") or {}),
                       "at_ms": recorded.get("at_ms"), "unit": case.unit}
         judged = []
-        # A wake a step failure or a missing after-state cannot judge:
-        # it stays ERROR and no judge call is spent on it.
-        judgeable = identity is None and not unmeasured(frozen, recorded)
+        # A step failure, a missing after-state, or a canonical evidence
+        # gap cannot judge: ERROR with its cause durable, no judge call
+        # spent, and the invalidity carried into history — never empty.
+        stale = unmeasured(frozen, recorded)
+        gap = evidence_gap(trajectory, earlier_wakes)
+        judgeable = identity is None and not stale and not gap
+        if identity is not None:
+            cause = identity
+        elif stale:
+            cause = (f"frozen wake is unmeasured at step "
+                     f"{(frozen.get('error') or {}).get('step', 'unknown')}")
+        else:
+            cause = "; ".join(gap)
+        if cause:
+            row.setdefault("errors", []).append(
+                f"wake {index} (recorded {wake_id}): {cause}")
         if judgeable:
             for expectation in case.expectations:
                 if expectation.wake != index:
@@ -168,6 +182,8 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
                     "answers": [asdict(a) for a in verdict.answers],
                 })
         frozen["expectations"] = judged
+        if not judgeable and "error" not in frozen:
+            frozen["error"] = {"step": "evidence", "message": cause}
         path.write_text(json.dumps(frozen, ensure_ascii=False, default=str),
                         encoding="utf-8")
         status = rollup(ERROR if not judgeable else "PASS",
@@ -176,8 +192,8 @@ async def _judge_wakes(output: Path, row: dict[str, Any], case: Any,
             row["wakes"][index]["status"] = status
             row["wakes"][index]["expectations"] = judged
         statuses.append(status)
-        if judgeable:
-            earlier_wakes += ((diff, trajectory),)
+        earlier_wakes += ((diff, trajectory) if judgeable
+                          else (None, {"invalid": cause}),)
     row["status"] = case_status(row, statuses)
 
 

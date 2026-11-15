@@ -151,9 +151,7 @@ def _affected_target() -> str:
 
 
 def _judge_lifecycle() -> str:
-    """`Judge.bind_evidence` hands the drive's canonical effects — whose
-    `row.body` fields hold stored message text — to the judge model. The raw
-    artifact keeps the URL; the judge-bound projection must show the handle."""
+    """The canonical effects the judge model sees, via `Judge.bind_evidence`."""
     from evals.rebuilt.grading import Judge
 
     judge = Judge("https://unbound.invalid/v1", model="generated-judge")

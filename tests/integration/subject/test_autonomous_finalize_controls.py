@@ -339,6 +339,71 @@ async def test_finalize_one_cut_covers_post_settle_writes(
     assert sorted(judges.calls) == sorted(MODELS)
 
 
+async def test_finalize_cut_hides_a_concurrent_commit_consistently(
+        clean_pg_url, tmp_path, monkeypatch):
+    """F1: a writer that commits between the effects read and the state
+    read lands in NEITHER — one REPEATABLE READ image reaches the judges.
+
+    The latch is real: `state_mod.snapshot` is wrapped so an independent
+    engine connection commits a done reminder after `read_effects`
+    finished and before the snapshot's first query runs — no new wake,
+    no fake snapshot. The one shared cut reads the pre-commit image on
+    both sides; without it the snapshot would see the row and the
+    effects would not, and the diff would disagree with the evidence
+    the judges were shown.
+    """
+    real_snapshot = state_mod.snapshot
+    committed: list[bool] = []
+    calls = 0
+
+    async def latched_snapshot(engine, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            # The opening `before` snapshot — the latch belongs inside
+            # finalize's cut, after the effects read, before the state read.
+            return await real_snapshot(engine, **kwargs)
+        writer = create_sql_engine(clean_pg_url)
+        try:
+            async with writer.begin() as conn:
+                await conn.execute(sa.text(
+                    "INSERT INTO reminders (id, requester_person_id,"
+                    " platform, conversation_id, conversation_type, text,"
+                    " created_at, due_at, due_tick, state, fired_at)"
+                    " VALUES (:id, :pid, 'signal', 'g1', 'group',"
+                    " 'generated concurrent reminder', now(), :due,"
+                    " ceil(extract(epoch from (:due -"
+                    " '1970-01-01 00:00:00+00'::timestamptz)) * 1000"
+                    " / 60000)::bigint, 'done', :fired)"),
+                    {"id": uuid.uuid4(), "pid": "miles_novak",
+                     "due": datetime.now(UTC), "fired": datetime.now(UTC)})
+            committed.append(True)
+        finally:
+            await writer.dispose()
+        return await real_snapshot(engine, **kwargs)
+
+    monkeypatch.setattr(state_mod, "snapshot", latched_snapshot)
+    row, judges = await _finalize_once(
+        clean_pg_url, tmp_path, events=_session_events(7))
+    assert committed == [True]
+    items = row["trajectory"]["effects"]["items"]
+    assert not any("concurrent" in json.dumps(item) for item in items)
+    entries = row["_state_before"].entries("reminder")
+    assert not any("concurrent" in json.dumps(entry)
+                   for entry in entries.values())
+    # The commit is real — a fresh read outside the cut sees the row.
+    engine = create_sql_engine(clean_pg_url)
+    try:
+        async with engine.connect() as conn:
+            seen = (await conn.execute(sa.text(
+                "SELECT count(*) FROM reminders"
+                " WHERE text = 'generated concurrent reminder'"))).scalar_one()
+        assert seen == 1
+    finally:
+        await engine.dispose()
+    assert sorted(judges.calls) == sorted(MODELS)
+
+
 @pytest.mark.parametrize("broken", [
     {},                                     # no expected_wakes
     {"expected_wakes": 0},

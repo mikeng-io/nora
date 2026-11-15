@@ -473,9 +473,36 @@ def no_build_stamp():
 #: run always uses public stated inputs; the live eval CLI explicitly materialises
 #: the requested deployment separately.
 _STATED_DEPLOYMENT = """\
+identity_file = "identity.toml"
+policy_file = "policy.toml"
 [llm]
 model = "nora"
+base_url = "http://llm.generated:11434/v1"
 reasoning_effort = "none"
+timeout_seconds = 360
+temperature = 0.7
+max_tokens = 2000
+[llm.limits]
+turns = 20
+total_tokens = 1024000
+output_tokens = 12000
+[doctrine]
+dir = "nora/doctrine"
+language_hint = "yue-Hant-HK"
+reload = "mtime"
+strict = true
+[honcho]
+base_url = "http://honcho.generated:8000"
+workspace_id = "nora"
+[engagement]
+policy = "trigger_text"
+[engagement.trigger]
+enabled = false
+text = "nora"
+min_interval_seconds = 5
+[platforms.signal]
+account = "generated-signal-account"
+base_url = "http://signal-bridge.generated:18090"
 [dreamer]
 enabled = true
 model = "nora-dreamer"
@@ -492,6 +519,9 @@ enabled = true
 [notes]
 enabled = true
 [store]
+data_dir = "/generated/data"
+max_per_conversation = 100
+context_window = 50
 prune_enabled = false
 """
 

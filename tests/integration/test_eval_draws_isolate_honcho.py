@@ -131,9 +131,7 @@ def run_evidence(tmp_path):
 
 
 def _recording(cfg, *, workspace_create: bool = True, completion: bool = True):
-    """Finite external responses for one case's owned world, in protocol
-    order. The workspace row pins `cfg.honcho.workspace_id` on the wire: a
-    subject that renamed the workspace would mismatch and be refused."""
+    """Finite external responses for one case's owned world, in protocol order."""
     bindings = {"llm.base_url": "model", "honcho.base_url": "memory",
                 "platforms.signal.base_url": "bridge"}
     bindings.update({f"providers.{name}.base_url": "model" for name in cfg.providers})
