@@ -1,5 +1,41 @@
 # Changelog
 
+## [7.19.5](https://github.com/mikeng-io/nora/compare/v7.19.4...v7.19.5) (2026-11-15)
+
+
+### Features
+
+* **identity:** pin the managed-mode operation contract and platform account proofs ([563d578](https://github.com/mikeng-io/nora/commit/563d57864be013dad4d713fe313a70286972c457))
+
+
+### Bug Fixes
+
+* **identity:** enforce revision and permission contract boundaries ([e46cf90](https://github.com/mikeng-io/nora/commit/e46cf9081a680f38129e7ae63a8bed444980cec0))
+* **identity:** repair the managed contract's invariants and consent semantics ([e80a23e](https://github.com/mikeng-io/nora/commit/e80a23e034175e4503a044daf69fff1eedc104ac))
+
+## [7.19.4](https://github.com/mikeng-io/nora/compare/v7.19.3...v7.19.4) (2026-11-15)
+
+
+### Features
+
+* **identity:** expose the exact platform account a presented id binds ([7dc1cfa](https://github.com/mikeng-io/nora/commit/7dc1cfa775a6cd1ac41c19a23f26b6953fdd9c4f))
+
+## [7.19.3](https://github.com/mikeng-io/nora/compare/v7.19.2...v7.19.3) (2026-11-15)
+
+
+### Maintenance
+
+* origin/master into managed identity design, retain media recovery and release metadata ([65fbdda](https://github.com/mikeng-io/nora/commit/65fbddad08966df2189ff5092251700b9dcfec93))
+
+## [7.19.2](https://github.com/mikeng-io/nora/compare/v7.19.1...v7.19.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* **media:** bound a chunked video read and recover its timed-out windows ([9cf9f49](https://github.com/mikeng-io/nora/commit/9cf9f49be2119b5d7af0d131f0c192ee3c40a956))
+* **media:** hand the item look's deadline to a video read's recovery ([fe8d3cf](https://github.com/mikeng-io/nora/commit/fe8d3cf75ecaedd401eebe6f29652c4975152c4e))
+* **media:** preserve partial results when recovery exhausts its allowance ([bf030bc](https://github.com/mikeng-io/nora/commit/bf030bc5dcbea3a584993bfd4157fd1ff7280f06))
+
 ## [7.19.1](https://github.com/mikeng-io/nora/compare/v7.19.0...v7.19.1) (2026-11-14)
 
 

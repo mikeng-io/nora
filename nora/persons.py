@@ -14,6 +14,11 @@ Both flatten into one reverse index, so every id a person presents resolves to
 the same `person_id` and therefore to one Honcho peer card (A2). A hidden
 Signal phone number still resolves as long as the operator pasted in the ACI
 Nora saw.
+
+The index answers WHO; it drops the account block's grouping, so it cannot
+answer WHICH account a presented id belongs to. `load_persons` keeps that
+grouping in a parallel account view — `account_for` / `accounts_for` return
+the exact `BoundAccount`, the unit a proof of account control binds.
 """
 
 from __future__ import annotations
@@ -26,7 +31,12 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .domain.identity import ACCOUNT_LABEL_KEY, metadata_keys
+from .domain.identity import (
+    ACCOUNT_LABEL_KEY,
+    BoundAccount,
+    Identifier,
+    metadata_keys,
+)
 from .domain.models import ConversationTarget, NormalizedMessage, PersonRef, TranscriptRow
 from .persons_file import PLATFORM_FIELDS, _PersonsFile
 
@@ -89,6 +99,12 @@ def _direct_address(platform: str, id_value: str) -> str | None:
 class Persons:
     by_person: dict[str, PersonRef]
     index: dict[tuple[str, str], str] = field(repr=False)   # (platform, id_value) → person_id
+    # (platform, id_value) → the exact account block that claimed it, built in
+    # the same loop as `index` so the two can never disagree. This is the view
+    # `index` cannot express: which of a person's accounts an id names.
+    _accounts: dict[tuple[str, str], BoundAccount] = field(
+        default_factory=dict, repr=False,
+    )
     # Every person's Life360 membership(s), the source the presence collector
     # derives its circles from — so config.toml carries no ids.
     life360: tuple[Life360Membership, ...] = ()
@@ -198,6 +214,39 @@ class Persons:
             value for (plat, value), pid in self.index.items()
             if plat == platform and pid == person_id
         )
+
+    def account_for(self, platform: str, id_value: str) -> BoundAccount | None:
+        """The exact account `id_value` names on `platform`, or None.
+
+        `resolve` answers WHO; this answers WHICH account — the distinction
+        `direct_target` cannot draw, since it picks from every id the person
+        presents. This is the unit a proof of account control binds: a holder
+        of two Signal accounts approves linking ONE of them, so a link request
+        names this account, never "the person on Signal". An unknown id is
+        None, never a `KeyError` (`platform_ids`' reason).
+        """
+        return self._accounts.get((platform, id_value))
+
+    def accounts_for(
+        self, person_id: str, platform: str | None = None
+    ) -> tuple[BoundAccount, ...]:
+        """Every distinct account `person_id` holds — on `platform` when
+        given — in the file's own block order.
+
+        Distinct on the matchable-identifier SET: a Life360 `member_id`
+        legitimately repeats across one block per circle, and those blocks are
+        ONE account (the circle split lives on `life360`, not here). A retired
+        person_id answers for whoever it resolves to (`subject_id_for`); an
+        unknown person is empty, never a `KeyError`.
+        """
+        pid = self.subject_id_for(person_id)
+        out: list[BoundAccount] = []
+        for acct in self._accounts.values():
+            if acct.person_id == pid and (
+                platform is None or acct.platform == platform
+            ) and acct not in out:
+                out.append(acct)
+        return tuple(out)
 
     def direct_addresses(self, platform: str) -> frozenset[str]:
         """Every direct-message address on `platform` that belongs to somebody
@@ -353,6 +402,49 @@ def instagram_username_key(handle: str) -> str:
     return text.removeprefix("@").strip().casefold()
 
 
+def _bound_account(
+    platform: str,
+    person_id: str,
+    account: dict[str, str | int],
+    metadata: frozenset[str],
+) -> BoundAccount:
+    """The account one `[[persons.<id>.<platform>]]` block binds."""
+    return BoundAccount(
+        person_id=person_id,
+        platform=platform,
+        label=str(account[ACCOUNT_LABEL_KEY])
+        if ACCOUNT_LABEL_KEY in account else None,
+        identifiers=frozenset(
+            Identifier(platform=platform, kind=kind, value=str(value))
+            for kind, value in account.items()
+            if kind != ACCOUNT_LABEL_KEY and kind not in metadata
+        ),
+    )
+
+
+def _subject_alias_map(parsed: _PersonsFile) -> dict[str, str]:
+    """former → current person_id, fail-closed on live collisions and double claims."""
+    subject_aliases: dict[str, str] = {}
+    for person_id, entry in parsed.persons.items():
+        for former in entry.former_person_ids:
+            if former in parsed.persons:
+                raise PersonsError(
+                    f"former_person_ids entry {former!r} on "
+                    f"[persons.{person_id}] collides with a LIVE "
+                    f"[persons.{former}] block — a former id must not also "
+                    "be a live person_id; remove one or the other"
+                )
+            if former in subject_aliases:
+                raise PersonsError(
+                    f"former_person_ids entry {former!r} is claimed by both "
+                    f"[persons.{subject_aliases[former]}] and "
+                    f"[persons.{person_id}] — an ambiguous merge is refused "
+                    "rather than silently resolved to one of them"
+                )
+            subject_aliases[former] = person_id
+    return subject_aliases
+
+
 def load_persons(path: Path) -> Persons:
     path = Path(path).expanduser()
     if not path.exists():
@@ -369,6 +461,7 @@ def load_persons(path: Path) -> Persons:
 
     by_person: dict[str, PersonRef] = {}
     index: dict[tuple[str, str], str] = {}
+    bound_accounts: dict[tuple[str, str], BoundAccount] = {}
     life360: list[Life360Membership] = []
     instagram_handles: dict[str, str] = {}
     instagram_igids: dict[str, set[str]] = {}
@@ -395,8 +488,13 @@ def load_persons(path: Path) -> Persons:
             # below widens the key with `circle_id` to a 3-tuple (a member_id
             # legitimately repeats across circles), so the dedup key is variable-length.
             claimed_by: dict[tuple[str, ...], int] = {}
+            # One BoundAccount per distinct matchable-identifier set: a life360
+            # member_id repeated across per-circle blocks stays ONE account.
+            seen_accounts: dict[frozenset[Identifier], BoundAccount] = {}
             metadata = metadata_keys(platform)
             for account_no, account in enumerate(getattr(entry, platform) or ()):
+                built = _bound_account(platform, person_id, account, metadata)
+                acct = seen_accounts.setdefault(built.identifiers, built)
                 if platform == "life360" and "member_id" in account:
                     # Retain the membership so presence can derive its circles
                     # from identity. circle_id is optional at
@@ -479,29 +577,13 @@ def load_persons(path: Path) -> Persons:
                             "would silently misattribute Honcho memory"
                         )
                     index[key] = person_id
-
-    subject_aliases: dict[str, str] = {}
-    for person_id, entry in parsed.persons.items():
-        for former in entry.former_person_ids:
-            if former in parsed.persons:
-                raise PersonsError(
-                    f"former_person_ids entry {former!r} on "
-                    f"[persons.{person_id}] collides with a LIVE "
-                    f"[persons.{former}] block — a former id must not also "
-                    "be a live person_id; remove one or the other"
-                )
-            if former in subject_aliases:
-                raise PersonsError(
-                    f"former_person_ids entry {former!r} is claimed by both "
-                    f"[persons.{subject_aliases[former]}] and "
-                    f"[persons.{person_id}] — an ambiguous merge is refused "
-                    "rather than silently resolved to one of them"
-                )
-            subject_aliases[former] = person_id
+                    bound_accounts[key] = acct
 
     return Persons(
         by_person=by_person, index=index, life360=tuple(life360),
-        _subject_aliases=subject_aliases, _instagram_handles=instagram_handles,
+        _accounts=bound_accounts,
+        _subject_aliases=_subject_alias_map(parsed),
+        _instagram_handles=instagram_handles,
         _instagram_igids={pid: frozenset(ids) for pid, ids in instagram_igids.items()},
         _instagram_usernames={
             handle: frozenset(pids) for handle, pids in instagram_usernames.items()

@@ -1,6 +1,6 @@
 ---
 name: nora-design
-description: Writes and edits Nora's design bundles (design/<topic>/), the anchor the code is built from. Decides whether a change is architecture (design first) or code (straight to code), keeps a bundle at design altitude, and edits it in place. Load before any design/ edit, any architecture change, or when a bundle and the code disagree.
+description: Writes and edits Nora's design bundles (design/<topic>/), the anchor the code is built from, with design/cognition/ as the architecture every bundle uses. Decides whether a change is architecture (design first) or code (straight to code), keeps a bundle at design altitude, and edits it in place. Load before any design/ edit, any architecture change, or when a bundle and the code disagree.
 ---
 
 # nora-design
@@ -38,10 +38,30 @@ with the reason.
 | Boundaries and invariants | **Log** (dates, reviews, measurements, "supersedes", deprecation): git and the PRs |
 | Why it is shaped this way: rationale, alternatives rejected | **Status claims** ("shipped", "not built", "designed vs shipped"): the bundle's one status line and its open issues |
 
-A contract stays at the level of terms and promises. *"A note is a claim about
-a subject with the evidence it rests on; it names people by id, never by
-display name; only Cognition writes notes"* is design. The note's fields,
-lengths and rendering are code.
+A contract stays at the level of terms and promises. *"An intention is what
+Nora has committed to; it closes only by a recorded outcome; the model
+proposes it and code admits it"* is design. Its columns, lengths and rendering
+are code.
+
+**How a definition is written.** Concise and precise; each form does one job:
+
+| form | use it for |
+|---|---|
+| one sentence | what a term *is* |
+| table | a set of members sharing attributes: stages, kinds, passes, tables |
+| bullets | rules and invariants, one testable rule per line |
+| short paragraph | how parts relate, and why it is shaped this way |
+
+A rule forced into a table loses its "because"; a set written as prose hides
+its gaps. Each term is defined once, in the file that owns it, and every other
+file links to it.
+
+**The architecture anchor.** [`design/cognition/`](../../../design/cognition/README.md)
+defines how Nora works: one Cognitive Graph (basis, scope, five kinds) worked
+by one open Cognition Loop (OODAS stages, passes, executors). Every bundle
+uses its vocabulary. A bundle that adds its own classifying axis, store, loop
+or engine for one capability fails Coherence: extend the anchor's form for
+every capability, or express the capability in its kinds and stages.
 
 ## 3. Shape
 

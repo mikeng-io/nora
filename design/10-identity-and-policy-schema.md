@@ -20,6 +20,14 @@ current, and treat any remaining future tense as historical. The schema is what
 decides whether platform four is an edit or a rebuild, which is why it was
 settled first.
 
+## Managed identity alternative
+
+This document owns the operator-maintained file representation. The
+[managed identity and access bundle](managed-identity-access/README.md) owns the
+optional Ory-backed authority, cross-platform link consent and private management
+boundary. Both use one canonical person with many platform accounts; selecting
+managed mode does not turn room membership into a separate person identity.
+
 ## 1. The problem, stated precisely
 
 Identity has **two independent axes**, and the original version of this

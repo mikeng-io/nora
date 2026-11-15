@@ -49,8 +49,9 @@ from typing import Any, Protocol
 from nora.domain.blocks import wrap_outside_text
 from nora.domain.media import parse_media_type
 from nora.domain.ports import MediaDescription
+from nora.domain.turn_deadline import look_seconds_left, seconds_left
 
-from .client import VISION_WINDOW_CONCURRENCY, VisionClient, VisionResult
+from .client import VIDEO_READ_SECONDS, VISION_WINDOW_CONCURRENCY, VisionClient, VisionResult
 from .preprocess import (
     VIDEO_CHUNK_SECONDS,
     VIDEO_MAX_CHUNKS,
@@ -444,11 +445,24 @@ class MediaComprehender:
 AskWindow = Callable[[bytes, int], Awaitable[VisionResult | None]]
 
 
+def _timed_out(result: VisionResult | None) -> bool:
+    """Whether a window's call ran out of time — the one outcome a second
+    attempt can heal. `error` already got the client's own bounded retry
+    inside the same ceiling, and a `timeout` result is the only one that never
+    did: the shared `wait_for` fired around it."""
+    return (
+        isinstance(result, VisionResult)
+        and not result.available
+        and result.reason == "timeout"
+    )
+
+
 async def read_video_windows(
     *,
     cut: VideoCut,
     media_type: str,
     ask: AskWindow,
+    budget_seconds: float = VIDEO_READ_SECONDS,
 ) -> tuple[tuple[str, ...], tuple[VideoWindow, ...]]:
     """Every window through `ask`, timecoded from the WINDOW's own start.
 
@@ -466,26 +480,67 @@ async def read_video_windows(
     the marker is checked structurally by the caller rather than by searching
     the rendered text for a phrase — a real description containing the words
     "could not be read" would otherwise be miscounted as a failure.
+
+    `budget_seconds` bounds the whole read's wall clock, and `remaining` caps
+    each call it contains — the per-call vision ceiling can still bind lower.
+    A window that TIMED OUT is owed one more attempt at the end, batched under
+    the same concurrency, while the budget is unspent. Two enclosing deadlines
+    shrink the budget before the first call — the turn's (`seconds_left`) and,
+    when the read runs inside a social item's look, that look's own
+    (`look_seconds_left`) — so a recovery pass is always spent from an
+    allowance that already bounds the read, never beside it. Cancelled is
+    cancelled: the exception propagates with no retry.
     """
+    started = asyncio.get_running_loop().time()
+    left = seconds_left()
+    if left is not None:
+        budget_seconds = min(budget_seconds, left)
+    look_left = look_seconds_left()
+    if look_left is not None:
+        # Leave the enclosing look time to serialize partial coverage and custody.
+        budget_seconds = min(budget_seconds, look_left * 0.9)
+    outcomes: dict[int, VisionResult | None] = {}
+
+    async def one(index: int) -> VisionResult | None:
+        remaining = budget_seconds - (asyncio.get_running_loop().time() - started)
+        if remaining <= 0:
+            return None
+        try:
+            return await asyncio.wait_for(
+                ask(cut.windows[index].data, len(cut.windows)), timeout=remaining)
+        except TimeoutError:
+            return VisionResult(available=False, reason="timeout")
+
+    todo = list(range(len(cut.windows)))
+    for _attempt in range(2):
+        # Bounded batches, never all windows at once — VISION_WINDOW_CONCURRENCY
+        # is also the divisor's companion (`vision_waves`), so changing the
+        # fan-out changes the per-call ceiling and they move together or the
+        # invariant they prove is false.
+        for start in range(0, len(todo), VISION_WINDOW_CONCURRENCY):
+            batch = todo[start:start + VISION_WINDOW_CONCURRENCY]
+            results = await asyncio.gather(*(one(i) for i in batch), return_exceptions=True)
+            for i, result in zip(batch, results, strict=True):
+                if isinstance(result, BaseException):
+                    if isinstance(result, asyncio.CancelledError):
+                        raise result
+                    log.warning("video window read failed", exc_info=result)
+                    result = None
+                outcomes[i] = result
+        todo = [i for i in todo if _timed_out(outcomes[i])]
+        if not todo or asyncio.get_running_loop().time() - started >= budget_seconds:
+            break
+
     segments: list[str] = []
     read: list[VideoWindow] = []
-    for start in range(0, len(cut.windows), VISION_WINDOW_CONCURRENCY):
-        batch = cut.windows[start:start + VISION_WINDOW_CONCURRENCY]
-        results = await asyncio.gather(*(
-            ask(window.data, len(cut.windows)) for window in batch
-        ), return_exceptions=True)
-        for window, result in zip(batch, results, strict=True):
-            if isinstance(result, BaseException):
-                if isinstance(result, asyncio.CancelledError):
-                    raise result
-                log.warning("video window read failed", exc_info=result)
-                result = None
-            stamp = _timecode(window.start_seconds)
-            if result is None or not result.available or not result.description.strip():
-                segments.append(f"{stamp} — {_UNREAD_MARKER}")
-                continue
-            segments.append(f"{stamp} — {result.description.strip()}")
-            read.append(window)
+    for i, window in enumerate(cut.windows):
+        result = outcomes.get(i)
+        stamp = _timecode(window.start_seconds)
+        if result is None or not result.available or not result.description.strip():
+            segments.append(f"{stamp} — {_UNREAD_MARKER}")
+            continue
+        segments.append(f"{stamp} — {result.description.strip()}")
+        read.append(window)
     return tuple(segments), tuple(read)
 
 

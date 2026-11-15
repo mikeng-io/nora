@@ -7,6 +7,7 @@ into title/description/content, and the content-hash description cache the
 from .cache import VisionCache
 from .client import (
     DESCRIBE_PROMPTS,
+    VIDEO_READ_SECONDS,
     VISION_LOOP_SHARE,
     VISION_WINDOW_CONCURRENCY,
     VisionClient,
@@ -28,6 +29,7 @@ from .preprocess import VideoCut, VideoWindow, cut_video
 __all__ = [
     "COMPREHEND_QUESTIONS",
     "DESCRIBE_PROMPTS",
+    "VIDEO_READ_SECONDS",
     "VISION_LOOP_SHARE",
     "VISION_WINDOW_CONCURRENCY",
     "AskWindow",
