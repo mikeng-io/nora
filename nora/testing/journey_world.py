@@ -269,6 +269,7 @@ class JourneyServices:
         self._overrides = dict(overrides or {})
         self.judge_models = tuple(judge_models)
         self.requests: list[dict] = []
+        self.errors: list[tuple] = []
         self.feeds: list[dict] = []
         self.owners: dict[str, Any] = {}
         self.daemon: FakeSignalDaemon | None = None
@@ -330,6 +331,22 @@ class JourneyServices:
             database_url=database_url, workdir=workdir,
             policy=self.policy, identity=self.identity, overrides=self.overrides()))
 
+    def _destination(self, body: dict) -> Any:
+        """The responder a request belongs to, by its declared model.
+
+        The judge aliases answer the eval's own calls — a judge request that
+        arrives streamed or with tools is `GeneratedJudge`'s named error, not
+        a subject call. Every other request is the subject's to dispatch:
+        `stream` status alone never picks a responder, so a raw non-judge
+        call (the relevance gate, a malformed request, an unknown lane)
+        reaches `CausalProtocol`, which names it into `errors` — it never
+        lands on the judge by accident."""
+        if body.get("model") in self.judge_models:
+            assert self.judge is not None
+            return self.judge.respond
+        assert self.protocol is not None
+        return self.protocol.respond
+
     @asynccontextmanager
     async def open(self, database_url: str, redis: bool = False) -> Any:
         """`Spec.services`' contract: the case-owned world beside this database."""
@@ -341,13 +358,16 @@ class JourneyServices:
         model = web.Application()
 
         async def respond(request: web.Request) -> web.StreamResponse:
-            body = await request.json()
+            try:
+                body = await request.json()
+            except ValueError as exc:
+                self.errors.append(("malformed_request", type(exc).__name__))
+                return web.json_response(
+                    {"error": "malformed journey request"}, status=400)
             self.requests.append(body)
             if self.protocol is None or self.judge is None:
                 return web.json_response({"error": "world unbound"}, status=503)
-            if body.get("stream") is True:
-                return await self.protocol.respond(request)
-            return await self.judge.respond(request)
+            return await self._destination(body)(request)
 
         model.router.add_post("/v1/chat/completions", respond)
         apps = {
