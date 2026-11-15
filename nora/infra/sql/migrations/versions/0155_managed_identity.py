@@ -24,6 +24,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    _person_and_bindings()
+    _alias()
+    _membership()
+    _journal_and_blocks()
+
+
+def _person_and_bindings() -> None:
     op.create_table(
         "managed_person",
         sa.Column("person_id", sa.Text, primary_key=True),
@@ -73,6 +80,9 @@ def upgrade() -> None:
         "idx_managed_identifier_account",
         "managed_identifier", ["account_id"],
     )
+
+
+def _alias() -> None:
     op.create_table(
         "managed_alias",
         sa.Column("former_person_id", sa.Text, primary_key=True),
@@ -83,6 +93,9 @@ def upgrade() -> None:
             ["person_id"], ["managed_person.person_id"],
             name="managed_alias_person_fkey", ondelete="RESTRICT"),
     )
+
+
+def _membership() -> None:
     op.create_table(
         "managed_membership",
         sa.Column("person_id", sa.Text, nullable=False),
@@ -109,6 +122,9 @@ def upgrade() -> None:
         "idx_managed_membership_scope",
         "managed_membership", ["scope_kind", "scope_id"],
     )
+
+
+def _journal_and_blocks() -> None:
     op.create_table(
         "managed_operation",
         sa.Column("operation_id", sa.Text, primary_key=True),

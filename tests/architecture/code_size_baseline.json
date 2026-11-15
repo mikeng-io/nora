@@ -1770,9 +1770,6 @@
   "comment_blocks": 3,
   "internal_docstrings": 1
  },
- "nora/platform/discord/roster.py": {
-  "comment_blocks": 3
- },
  "nora/platform/discord/self_id.py": {
   "comment_blocks": 1
  },

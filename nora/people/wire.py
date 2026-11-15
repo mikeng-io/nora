@@ -146,9 +146,7 @@ def lineage(allowlist, cfg, persons) -> LineageWiring:
 
 
 # ---------------------------------------------------------------------------
-# Managed identity and scoped access (`design/managed-identity-access/`).
-# Composition reaches these only through `nora.people` (the area's protected
-# root); `nora.infra`'s clients are the wire layer's business to assemble.
+# Managed identity (`design/managed-identity-access/`): reached only through `nora.people`.
 # ---------------------------------------------------------------------------
 
 

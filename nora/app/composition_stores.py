@@ -382,11 +382,9 @@ def build_otp(
 
 @dataclass(frozen=True)
 class ManagedIdentityWiring:
-    # `services` is the ManagedServices the selected backend serves — file
-    # answers reads from the TOML pair and refuses every managed mutator;
-    # managed is PostgreSQL bindings + Keto authority + Kratos records. The
-    # session is the Ory HTTP session the wiring OWNS (managed only): App
-    # shutdown closes it.
+    # `services`: the backend's ManagedServices — file reads the TOML pair
+    # and refuses managed mutators; `session`: the owned Ory HTTP session
+    # (managed only), closed at App shutdown.
     services: Any
     session: Any = None
 

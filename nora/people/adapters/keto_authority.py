@@ -25,7 +25,7 @@ from nora.domain.management import (
     Scope,
     ScopeKind,
 )
-from nora.domain.ports import AuthorityBackend
+from nora.domain.managed_ports import AuthorityBackend
 from nora.infra.ory import KetoClient, RelationTuple
 
 _PERMITS = ACCESS_PERMITS | MANAGEMENT_PERMITS
