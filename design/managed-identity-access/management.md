@@ -1,0 +1,99 @@
+# Private management and platform synchronisation
+
+## One application boundary
+
+Nora's managed identity capability exposes a private service API for account
+registration/resolution, profile updates, link requests and approvals,
+membership synchronisation and scoped grant changes. Platform adapters, in-room
+management and the Web App use those same operations. They do not write Kratos,
+Keto or a private TOML file independently.
+
+The API authenticates service callers using Nora's service-authentication
+boundary and authorizes each caller's permitted sources and resources. Network
+privacy alone is not caller authentication. Ory administrative endpoints and
+credentials are accessible only to the management service and authorized
+installation administration; they are not model tools or public browser APIs.
+
+Automated work carries its service identity and approved onboarding scope;
+human-triggered work also carries the verified human actor. Registration of an
+observed account is not permission to claim it for an existing person. Repeated
+events and retried requests reuse the same registration and operation identity.
+
+## Explicit and semantic in-room requests
+
+An explicit command prefix and ordinary language are alternate expressions of
+the same management intent. A prefix distinguishes a command from conversation;
+it confers no authority. A model can interpret an intent, but cannot nominate the
+authenticated actor or decide whether authorization succeeded.
+
+Context assembly supplies the verified actor and current room/unit/workspace
+context once. Target resolution uses platform mentions or authoritative account
+bindings. An ambiguous display name or an unspecified consequential scope needs
+clarification before a write; quoted messages, forwarded requests and transcript
+content are not fresh management instructions from the quoted author.
+
+The resulting typed operation passes through the private boundary's permission
+check. Identity linking always uses the [bilateral protocol](account-linking.md),
+even when the initiating sentence was explicit. Routine scoped membership changes
+need the delegated operator's authorized request, not an invented bilateral
+account-link ceremony. A successful response states the applied effect and scope;
+unavailable or refused results cannot be narrated as completion.
+
+## Platform discovery and membership
+
+An operator approves which platform collections Nora may onboard and which
+membership rules apply. A bridge supplies accounts, membership observations and
+the provenance necessary to interpret them; it cannot grant authority outside
+that approved scope. Platform adapters normalize these observations into the same
+domain concepts rather than teaching each consumer a separate identity model.
+
+An initial roster supports bulk registration. Join, leave and role events keep
+membership current, and reconciliation repairs missed events after reconnects.
+An authenticated newly observed sender can be registered under the same approved
+rule without waiting for a full roster. Neither route guesses a cross-platform
+link. Bots and other non-person accounts are not silently classified as humans.
+
+Roster completeness is explicit. Only a successful, complete observation of the
+relevant collection can establish absence from it; a partial page, lost intent,
+timeout or unavailable roster does not remove every missing member. Failed
+synchronisation is visible as unavailable, and fresh privileged decisions do not
+rely on membership evidence known to be incomplete or stale.
+
+A guild/server roster is not a channel audience. Room membership and disclosure
+use the actual channel visibility and the existing roster/read contract. Leaving
+one collection revokes the grants derived from that membership while preserving
+other memberships, independently granted access and canonical identity. Direct
+operator restrictions remain effective when automatic synchronisation runs.
+
+## Web App
+
+Discord authentication and the existing Signal/WhatsApp code flow resolve to the
+same canonical person as messaging. Possession of a phone-number string is not
+authentication; the delivered challenge must prove control of the account.
+The Web App can initiate and present linking, but both sides approve the exact
+association independently. An existing Web App session is not consent to a new
+link, and a challenge redeemed in the initiating browser is not a substitute for
+the receiving holder's explicit approval.
+
+Session identity, account ownership and permissions are checked against current
+state. Disabled identities, revoked bindings and canonical aliases cannot leave
+a session acting as an obsolete independent person. The portal's pages and API
+routes share this enforcement rather than relying on a page-level login gate.
+
+## Rationale and integration references
+
+The design uses the provisioning pattern of a stable application principal and
+shared registration logic, rather than copying an application's user/tenant
+schema. Financial-account provisioning, single-default-tenant constraints and
+wildcard capability grants are not Nora's person/unit/room model.
+
+The existing [platform bridge architecture](../platform-bridges/00-contract.md) owns
+authenticated event handoff, and [file reload](../policy-reload/README.md) owns
+file publication. The managed service connects to these boundaries rather than
+building another event transport or rewriting file-mode reload semantics.
+
+[Discord's member API](https://github.com/discord/discord-api-docs/blob/main/developers/resources/guild.mdx#list-guild-members)
+illustrates why adapters must report capabilities and completeness: full member
+enumeration needs the privileged members intent and pagination. Other platforms
+have different discovery limits; universal identity does not imply universal
+roster visibility.
