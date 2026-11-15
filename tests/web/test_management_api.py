@@ -103,6 +103,13 @@ async def test_authentication_precedes_even_malformed_body(surface, authorizatio
     assert not services.registration.calls and not services.authority.calls
 
 
+async def test_a_valid_effect_without_credentials_cannot_reach_the_use_case(surface):
+    client, services = surface
+    response = await client.post(PATH, json=registration())
+    assert response.status == 401
+    assert not services.registration.calls and not services.authority.calls
+
+
 @pytest.mark.parametrize("location", ["body", "target", "payload"])
 async def test_request_cannot_nominate_an_actor_at_any_level(surface, location):
     client, services = surface

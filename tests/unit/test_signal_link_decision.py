@@ -110,6 +110,28 @@ def test_self_send_and_wrong_service_account_are_refused() -> None:
     assert parse_link_decision({"envelope": env}, own_account="") is None
 
 
+@pytest.mark.parametrize("framing", ["rpc", "subscription"])
+def test_nested_receiving_service_account_must_match_the_configured_issuer(framing):
+    container = {"envelope": envelope(), "account": SERVICE}
+    params = container if framing == "rpc" else {"subscription": 0, "result": container}
+    event = {"method": "receive", "params": params}
+    result = parse_link_decision(event, own_account=SERVICE)
+    assert result is not None and result.sender
+    container["account"] = "another-service"
+    assert parse_link_decision(event, own_account=SERVICE) is None
+    # An additional matching outer claim cannot override the daemon's actual
+    # receiving account in the supported subscription framing.
+    event["account"] = SERVICE
+    assert parse_link_decision(event, own_account=SERVICE) is None
+
+
+def test_private_challenge_nonce_is_not_rendered_in_transport_decision_repr():
+    result = parse_link_decision({"envelope": envelope()}, own_account=SERVICE)
+    assert result is not None
+    assert result.nonce == "synthetic-nonce"
+    assert "synthetic-nonce" not in repr(result)
+
+
 @pytest.mark.parametrize("event", [
     {}, {"envelope": []}, {"envelope": {"dataMessage": []}},
     {"method": "receive", "params": []},

@@ -7,7 +7,7 @@ revisions and expiry. Parsing a decision grants no authority by itself.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from nora.domain.identity import Identifier
 
@@ -21,8 +21,24 @@ class SignalLinkDecision:
     sender: frozenset[Identifier]
     timestamp: int
     request_id: str
-    nonce: str
+    nonce: str = field(repr=False)
     approve: bool
+
+
+def _matches_service(event: dict, own_account: str) -> bool:
+    containers = [event]
+    if "method" in event:
+        params = event.get("params")
+        if not isinstance(params, dict):
+            return False
+        containers.append(params)
+        if "result" in params:
+            result = params["result"]
+            if not isinstance(result, dict):
+                return False
+            containers.append(result)
+    return all(container.get("account", own_account) == own_account
+               for container in containers)
 
 
 def parse_link_decision(
@@ -34,7 +50,7 @@ def parse_link_decision(
     Sender aliases are retained together for binding-store conflict checking;
     neither names nor body content can supply a sender identifier.
     """
-    if not own_account or event.get("account", own_account) != own_account:
+    if not own_account or not _matches_service(event, own_account):
         return None
     try:
         env = extract_envelope(event)
