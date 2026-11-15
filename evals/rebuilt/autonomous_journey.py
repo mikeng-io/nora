@@ -140,15 +140,96 @@ def _bind_declared_wakes(declared: Any, produced: list[Any],
     silently smaller census."""
     if not (type(declared) is int and declared > 0):
         return produced
-    if len(produced) != len(set(produced)):
-        roll.error("a produced wake occupied two declared slots")
+    repeated = sorted(i for i in set(produced) if produced.count(i) > 1)
+    if repeated:
+        roll.error(f"produced wake(s) occupied two declared slots: {repeated}")
     if len(produced) < declared:
         roll.error(f"the runtime produced only {len(produced)} of the "
                    f"{declared} declared wake slots")
     elif len(produced) > declared:
         roll.error(f"the runtime produced {len(produced) - declared} "
-                   f"wakes beyond the {declared} declared slots")
+                   f"wakes beyond the {declared} declared slots: "
+                   f"{list(produced[declared:])}")
     return produced[:declared] + [None] * (declared - len(produced))
+
+
+async def _wake_census(subject: Any) -> dict[str, Any]:
+    """Every wake/outcome row, read after the owned lifecycle closed."""
+    from nora.infra.sql.engine import create_sql_engine
+
+    engine = create_sql_engine(subject.database_url)
+    try:
+        async with engine.connect() as conn:
+            import sqlalchemy as sa
+
+            wakes = (await conn.execute(
+                sa.select(COGNITION_WAKE))).mappings().all()
+            outcomes = (await conn.execute(
+                sa.select(COGNITION_WAKE_OUTCOME))).mappings().all()
+        return {"wakes": [dict(row) for row in wakes],
+                "outcomes": [dict(row) for row in outcomes]}
+    finally:
+        await engine.dispose()
+
+
+def _census_reconcile(census: dict[str, Any], *, scope: Any,
+                      reported: list[Any], after: int,
+                      ) -> tuple[list[Any], list[str], list[dict[str, Any]]]:
+    """Census vs report rows: (observed ids, errors, unaccounted rows)."""
+    errors: list[str] = []
+    foreign = [row.get("id") for row in census["wakes"]
+               if row.get("unit") != scope.unit]
+    if foreign:
+        errors.append(f"the wake census found wake(s) in a foreign unit: "
+                      f"{foreign}")
+    by_wake: dict[Any, list[dict[str, Any]]] = {}
+    foreign_outcomes: list[Any] = []
+    for row in census["outcomes"]:
+        if row.get("unit") != scope.unit:
+            foreign_outcomes.append(row.get("wake_id"))
+        else:
+            by_wake.setdefault(row.get("wake_id"), []).append(row)
+    if foreign_outcomes:
+        errors.append(f"the wake census found wake outcome(s) in a foreign "
+                      f"unit: {foreign_outcomes}")
+    scoped = sorted(
+        (row for row in census["wakes"]
+         if row.get("unit") == scope.unit and type(row.get("id")) is int),
+        key=lambda row: row["id"])
+    stale = [row["id"] for row in scoped if row["id"] <= after]
+    if stale:
+        errors.append(f"the wake census found wake(s) predating the "
+                      f"journey's execution boundary: {stale}")
+    scoped = [row for row in scoped if row["id"] > after]
+    observed = [row["id"] for row in scoped]
+    orphans = sorted(wake_id for wake_id in by_wake
+                     if wake_id not in set(observed))
+    if orphans:
+        errors.append(f"the wake census found wake outcome(s) naming no "
+                      f"scoped wake: {orphans}")
+    unsettled = sorted(wake_id for wake_id in observed
+                       if not any(row.get("outcome") == "closed"
+                                  for row in by_wake.get(wake_id, ())))
+    if unsettled:
+        errors.append(f"the wake census found wake(s) never closed: "
+                      f"{unsettled}")
+    repeated = sorted(wake_id for wake_id, rows in by_wake.items()
+                      if len(rows) > 1)
+    if repeated:
+        errors.append(f"the wake census found repeated wake outcome(s): "
+                      f"{repeated}")
+    if len(reported) != len(set(reported)):
+        errors.append("a report row repeated a produced wake id")
+    unaccounted = [row for row in scoped if row["id"] not in set(reported)]
+    if unaccounted:
+        errors.append(f"the wake census found produced wake(s) absent from "
+                      f"the report: {[row['id'] for row in unaccounted]}")
+    vanished = sorted((wake_id for wake_id in set(reported)
+                       if wake_id not in set(observed)), key=repr)
+    if vanished:
+        errors.append(f"the wake census lacks wake(s) the report claims: "
+                      f"{vanished}")
+    return observed, errors, unaccounted
 
 
 def _batch(offered: list[int], offered_self: list[int],
@@ -332,152 +413,209 @@ def _report(case: Case, unit: str, roll: Rollup,
     }
 
 
+async def _drain_pending(pending: list[dict[str, Any]], *, before: Any,
+                         settle: Any) -> Any:
+    """Finalize every settled pending ctx; the next `before` state."""
+    for ctx in pending:
+        if "wake" not in ctx:
+            continue
+        before = await settle(ctx, before)
+    pending.clear()
+    return before
+
+
+async def _await_wake(driver: Any, *, engine: Any, scope: Any,
+                      pending: list[dict[str, Any]], seen_wakes: int,
+                      wanted: int, seconds: float) -> int:
+    """Wait out the count, bind the one new wake, return rows seen."""
+    await driver.wait_closed_wakes(wanted, seconds=seconds)
+    wakes = await driver.rows(COGNITION_WAKE)
+    outcomes = await driver.rows(COGNITION_WAKE_OUTCOME)
+    by_wake = {o["wake_id"]: o for o in outcomes}
+    if (len(wakes) < wanted
+            or any(w["id"] not in by_wake for w in wakes)):
+        raise ValueError(
+            f"wake/outcome denominator disagree: {len(wakes)} wakes, "
+            f"{len(outcomes)} outcomes after {wanted} wanted")
+    # Every observed wake counts: a second settled wake is an error, never
+    # a quietly sliced-off tail; the census reconciles the whole set.
+    new = wakes[seen_wakes:]
+    if not pending:
+        raise ValueError("a wake settled with no send window")
+    ctx = pending[-1]
+    if len(new) != 1 or "wake" in ctx:
+        raise ValueError(
+            f"the step expected exactly one new wake and {len(new)} "
+            "appeared; one wake per wait is the bound the state windows "
+            "can prove")
+    latest = new[0]
+    if latest["unit"] != scope.unit:
+        raise ValueError("a wake in another unit appeared")
+    outcome = by_wake[latest["id"]]
+    offered, offered_self = await _offered(engine, scope.unit,
+                                           int(latest["at_ms"]))
+    # Plain dicts: `rows` yields RowMappings, which the identity/typing
+    # checks downstream must not confuse for malformed evidence.
+    ctx.update({"wake": dict(latest), "outcome": dict(outcome),
+                "batch": _batch(offered, offered_self,
+                                outcome["session_id"] is not None)})
+    return len(wakes)
+
+
+async def _drive(subject: Any, *, world: Any, steps: list[dict[str, Any]],
+                 scope: Any, judges: Any, models: tuple[str, str],
+                 expectations: list[Expectation], egress: dict[str, Any],
+                 evidence: Any, output: Path, wake_seconds: float,
+                 fire_seconds: float, wakes_report: list[dict[str, Any]],
+                 pending: list[dict[str, Any]]) -> Any:
+    """The plan through the owned App; the journey's opening boundary."""
+    driver = JourneyDriver(subject)
+    world.wire_actions(subject.deps.bridge_runtime, subject.environment)
+    earlier_wakes: tuple = ()
+    prior_links: set[str] = set()
+    seen_wakes = 0
+    journey_boundary: Any = None
+
+    async def _settled(ctx: dict[str, Any], before: Any) -> Any:
+        """Finalize one pending wake ctx into a report row."""
+        nonlocal earlier_wakes, prior_links
+        row = await _finalize(
+            len(wakes_report), ctx, subject=subject, scope=scope,
+            output=output, judges=judges, models=models,
+            expectations=expectations, earlier_wakes=earlier_wakes,
+            prior_links=prior_links, egress=egress,
+            evidence_path=evidence.path, before=before)
+        wakes_report.append(row)
+        earlier_wakes += ((row["_diff"], row["trajectory"]),)
+        prior_links = set((row.get("loop") or {}).get("link_ids") or ())
+        return row["_state_before"]
+
+    async with driver:
+        engine = driver.engine
+        boundary = await effect_boundary(engine)
+        journey_boundary = boundary
+        before = await state_mod.snapshot(
+            engine, unit=scope.unit, rooms=scope.rooms,
+            profile_keys=scope.profile_keys, now_ms=_now_ms(),
+            metrics=subject.deps.metrics)
+        sent = 0
+        for step in steps:
+            if "send" in step:
+                before = await _drain_pending(pending, before=before,
+                                              settle=_settled)
+                boundary = await effect_boundary(engine)
+                sent += 1
+                await driver.ingress(str(step["send"]),
+                                     event_id=f"generated-journey-{sent}")
+                pending.append({
+                    "boundary": boundary, "engine": engine,
+                    "tokens": subject.deps.metrics.get(
+                        "nora_cognition_unit_tokens_total")})
+            elif "until_wakes" in step:
+                seen_wakes = await _await_wake(
+                    driver, engine=engine, scope=scope, pending=pending,
+                    seen_wakes=seen_wakes, wanted=int(step["until_wakes"]),
+                    seconds=wake_seconds)
+            elif "until_delivery" in step:
+                await driver.wait_delivery(seconds=fire_seconds)
+            else:
+                raise ValueError(f"unknown journey step {step!r}")
+        await _drain_pending(pending, before=before, settle=_settled)
+        if not wakes_report:
+            raise ValueError("the journey produced no wake to judge")
+    return journey_boundary
+
+
+async def _post_drive_census(subject: Any, *, scope: Any, expected_wakes: Any,
+                             wakes_report: list[dict[str, Any]],
+                             journey_boundary: Any, output: Path,
+                             roll: Rollup, evidence: Any
+                             ) -> list[Any] | None:
+    """Closed-lifecycle census: observed scoped ids, `None` if unreadable."""
+    # The owned App lifecycle is closed on every path out of `_drive`, so
+    # the census reads the whole production population at one instant.
+    try:
+        census = await _wake_census(subject)
+    except Exception as exc:  # noqa: BLE001 — an unreadable census is an ERROR
+        roll.error(f"the wake census is unreadable: "
+                   f"{type(exc).__name__}: {exc}")
+        return None
+    reported = [row.get("recorded_wake_id") for row in wakes_report]
+    observed, census_errors, unaccounted = _census_reconcile(
+        census, scope=scope, reported=reported,
+        after=(journey_boundary.positions.get("cognition_wake", 0)
+               if journey_boundary is not None else 0))
+    for why in census_errors:
+        roll.error(why)
+    for wake in unaccounted:
+        wakes_report.append(_wake_error(
+            output, len(wakes_report), wake, step="census",
+            message="a produced wake never entered the planned waits "
+                    "and stays ungraded", unit=scope.unit))
+    evidence.record("journey_wake_census", observed=observed,
+                    reported=reported, declared=expected_wakes)
+    return observed
+
+
 async def _run(subject: Any, case: Case, plan: dict[str, Any],
-               world: Any, output: Path) -> tuple[Rollup, list[dict[str, Any]]]:
-    """The steps through the live app; wakes finalized in order, judges
-    bound to the SAME canonical evidence the frozen files carry."""
+               world: Any, output: Path,
+               ) -> tuple[Rollup, list[dict[str, Any]], list[Any] | None]:
+    """Steps through the live App; (roll, wake rows, census ids)."""
     roll = Rollup()
     wakes_report: list[dict[str, Any]] = []
     manifest_error = _plan_error(plan)
     if manifest_error is not None:
         roll.error(manifest_error)
-        return roll, wakes_report
+        return roll, wakes_report, None
     expectations = _expectations(plan)
     models = (str(plan["judges"][0]), str(plan["judges"][1]))
     judges = Judges(subject.cfg, list(models), Path(output))
     scope = effect_scope(subject)
     if subject.unit != scope.unit:
         roll.error("the composed unit and the case's scope disagree")
-        return roll, wakes_report
+        return roll, wakes_report, None
     egress = assert_no_egress(subject)
     evidence = current()
     if evidence is None:
         roll.error("canonical capture unavailable mid-drive")
-        return roll, wakes_report
+        return roll, wakes_report, None
     steps = plan.get("steps") or []
     if not any("send" in step for step in steps):
         roll.error("the journey plan sends nothing through real ingress")
-        return roll, wakes_report
+        return roll, wakes_report, None
     wake_seconds = (subject.cfg.cognition.cue_quiet_seconds
                     + subject.cfg.cognition.tick_seconds + 300)
     fire_seconds = (subject.cfg.reminders.min_lead_seconds
                     + subject.cfg.heartbeat.tick_seconds * 2 + 60)
     pending: list[dict[str, Any]] = []
-    earlier_wakes: tuple = ()
-    prior_links: set[str] = set()
-    index = 0
-    seen_wakes = 0
-    step_error: tuple[str, str] | None = None
-
-    async def _settled(ctx: dict[str, Any], before: Any) -> Any:
-        """Finalize one pending wake ctx into a report row."""
-        nonlocal earlier_wakes, prior_links
-        row = await _finalize(
-            index, ctx, subject=subject, scope=scope, output=output,
-            judges=judges, models=models, expectations=expectations,
-            earlier_wakes=earlier_wakes, prior_links=prior_links,
-            egress=egress, evidence_path=evidence.path, before=before)
-        wakes_report.append(row)
-        earlier_wakes += ((row["_diff"], row["trajectory"]),)
-        prior_links = set((row.get("loop") or {}).get("link_ids") or ())
-        return row["_state_before"]
-
-    async def _drive() -> None:
-        nonlocal index, seen_wakes, step_error
-        driver = JourneyDriver(subject)
-        world.wire_actions(subject.deps.bridge_runtime, subject.environment)
-        async with driver:
-            engine = driver.engine
-            boundary = await effect_boundary(engine)
-            before = await state_mod.snapshot(
-                engine, unit=scope.unit, rooms=scope.rooms,
-                profile_keys=scope.profile_keys, now_ms=_now_ms(),
-                metrics=subject.deps.metrics)
-            sent = 0
-            for step in steps:
-                if "send" in step:
-                    for ctx in pending:
-                        if "wake" not in ctx:
-                            continue
-                        before = await _settled(ctx, before)
-                        index += 1
-                    pending.clear()
-                    boundary = await effect_boundary(engine)
-                    sent += 1
-                    await driver.ingress(str(step["send"]),
-                                         event_id=f"generated-journey-{sent}")
-                    pending.append({
-                        "boundary": boundary, "engine": engine,
-                        "tokens": subject.deps.metrics.get(
-                            "nora_cognition_unit_tokens_total"),
-                    })
-                elif "until_wakes" in step:
-                    wanted = int(step["until_wakes"])
-                    await driver.wait_closed_wakes(wanted, seconds=wake_seconds)
-                    wakes = await driver.rows(COGNITION_WAKE)
-                    outcomes = await driver.rows(COGNITION_WAKE_OUTCOME)
-                    by_wake = {o["wake_id"]: o for o in outcomes}
-                    if (len(wakes) < wanted
-                            or any(w["id"] not in by_wake for w in wakes[:wanted])):
-                        raise ValueError(
-                            f"wake/outcome denominator disagree: {len(wakes)} wakes, "
-                            f"{len(outcomes)} outcomes after {wanted} wanted")
-                    new = wakes[seen_wakes:wanted]
-                    seen_wakes = wanted
-                    if not pending:
-                        raise ValueError("a wake settled with no send window")
-                    ctx = pending[-1]
-                    if len(new) != 1 or "wake" in ctx:
-                        raise ValueError(
-                            f"the step expected exactly one new wake and "
-                            f"{len(new)} appeared; one wake per wait is the "
-                            "bound the state windows can prove")
-                    latest = new[0]
-                    if latest["unit"] != scope.unit:
-                        raise ValueError("a wake in another unit appeared")
-                    outcome = by_wake[latest["id"]]
-                    offered, offered_self = await _offered(
-                        engine, scope.unit, int(latest["at_ms"]))
-                    ctx.update({
-                        # Plain dicts: `rows` yields RowMappings, which the
-                        # identity/typing checks downstream must not confuse
-                        # for malformed evidence.
-                        "wake": dict(latest), "outcome": dict(outcome),
-                        "batch": _batch(offered, offered_self,
-                                        outcome["session_id"] is not None),
-                    })
-                elif "until_delivery" in step:
-                    await driver.wait_delivery(seconds=fire_seconds)
-                else:
-                    raise ValueError(f"unknown journey step {step!r}")
-            for ctx in pending:
-                if "wake" not in ctx:
-                    continue
-                before = await _settled(ctx, before)
-                index += 1
-            pending.clear()
-            if not wakes_report:
-                raise ValueError("the journey produced no wake to judge")
-
+    journey_boundary: Any = None
     try:
-        await _drive()
+        journey_boundary = await _drive(
+            subject, world=world, steps=steps, scope=scope, judges=judges,
+            models=models, expectations=expectations, egress=egress,
+            evidence=evidence, output=output, wake_seconds=wake_seconds,
+            fire_seconds=fire_seconds, wakes_report=wakes_report,
+            pending=pending)
     except Exception as exc:  # noqa: BLE001 — a failed step is ERROR, not a crash
-        step_error = ("journey", f"{type(exc).__name__}: {exc}")
-        roll.error(f"the journey failed: {step_error[1]}")
-        # A wake that had already settled when a later step failed still
-        # freezes an ERROR row rather than vanishing from the denominator.
+        roll.error(f"the journey failed: {type(exc).__name__}: {exc}")
+        # A wake settled when a later step failed still freezes an ERROR
+        # row rather than vanishing from the denominator.
         for ctx in pending:
             if "wake" not in ctx:
                 continue
             wakes_report.append(_wake_error(
-                output, index, ctx["wake"], step=step_error[0],
-                message=step_error[1], unit=scope.unit, batch=ctx.get("batch"),
-                trajectory=ctx.get("trajectory")))
-            index += 1
+                output, len(wakes_report), ctx["wake"], step="journey",
+                message=f"{type(exc).__name__}: {exc}", unit=scope.unit,
+                batch=ctx.get("batch"), trajectory=ctx.get("trajectory")))
         pending.clear()
+    observed = await _post_drive_census(
+        subject, scope=scope, expected_wakes=plan.get("expected_wakes"),
+        wakes_report=wakes_report, journey_boundary=journey_boundary,
+        output=output, roll=roll, evidence=evidence)
     if not wakes_report and not roll.errors:
         roll.error("the journey produced no wake report")
-    return roll, wakes_report
+    return roll, wakes_report, observed
+
 
 
 async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcome:
@@ -498,8 +636,10 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
     output.mkdir(mode=0o700)
     roll = Rollup()
     wakes_report: list[dict[str, Any]] = []
+    observed: list[Any] | None = None
     try:
-        roll, wakes_report = await _run(subject, case, plan, world, output)
+        roll, wakes_report, observed = await _run(
+            subject, case, plan, world, output)
     except Exception as exc:  # noqa: BLE001 — the run itself is ERROR, not a crash
         roll.error(f"the journey run failed: {type(exc).__name__}: {exc}")
     for wake in wakes_report:
@@ -507,7 +647,10 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
             roll.add(verdict["verdict_obj"])
     if roll.verdict != ERROR and any(w.get("status") == ERROR for w in wakes_report):
         roll.error(WAKE_ERRED)
-    produced = [w.get("recorded_wake_id") for w in wakes_report]
+    # The denominator is the whole scoped production population the census
+    # recorded — never the report rows that survived to be bound.
+    produced = (observed if observed is not None
+                else [w.get("recorded_wake_id") for w in wakes_report])
     bound = _bind_declared_wakes(plan.get("expected_wakes"), produced, roll)
     case_report = _report(case, subject.unit, roll, wakes_report)
     expected = {
@@ -532,6 +675,8 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
             "judges": [str(m) for m in plan.get("judges") or ()],
             "judge_requests": len(getattr(world.judge, "requests", []) or []),
             "model_requests": len(getattr(world, "requests", []) or []),
+            "wake_census": {"observed": produced,
+                            "declared": plan.get("expected_wakes")},
         },
     }
     try:
