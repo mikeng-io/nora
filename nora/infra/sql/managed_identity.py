@@ -32,6 +32,9 @@ compare against when the service revalidates at commitment.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from types import MappingProxyType
 from typing import Any
 
@@ -72,6 +75,7 @@ from nora.infra.sql.schema_managed import (
     MANAGED_ALIAS,
     MANAGED_AUTHORITY_BLOCK,
     MANAGED_IDENTIFIER,
+    MANAGED_IDENTITY_HOLD,
     MANAGED_MEMBERSHIP,
     MANAGED_OPERATION,
     MANAGED_PERSON,
@@ -81,6 +85,7 @@ from nora.infra.sql.schema_managed import (
 # rule `nora.infra.sql.reminders` applies: a CHECK violation is also an
 # IntegrityError and must not be misread as a duplicate.
 _PG_UNIQUE_VIOLATION = "23505"
+MANAGED_MUTATION_LOCK = "nora-managed-identity-writer"
 
 
 def _person_from(r: Row[Any]) -> ManagedPerson:
@@ -135,6 +140,16 @@ class SqlBindingStore:
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
+        self._mutation_lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def mutation(self) -> AsyncIterator[None]:
+        # ponytail: one store per engine; queue locally so lock waiters cannot exhaust its pool.
+        async with self._mutation_lock, self._engine.begin() as connection:
+            await connection.execute(sa.select(sa.func.pg_advisory_xact_lock(
+                sa.func.hashtextextended(MANAGED_MUTATION_LOCK, 0),
+            )))
+            yield
 
     async def aclose(self) -> None:
         await self._engine.dispose()
@@ -238,6 +253,36 @@ class SqlBindingStore:
     async def canonical_person(self, person_id: str) -> str | None:
         async with self._engine.connect() as conn:
             return await self._canonical(conn, person_id)
+
+    async def identity_held(self, person_id: str) -> bool:
+        async with self._engine.connect() as connection:
+            canonical = await self._canonical(connection, person_id)
+            return bool(await connection.scalar(sa.select(sa.exists().where(
+                MANAGED_IDENTITY_HOLD.c.person_id.in_({person_id, canonical} - {None}),
+            ))))
+
+    async def hold_identity(self, *, person_id: str, operation_id: str) -> Outcome:
+        if not operation_id.strip():
+            raise ManagedError("an identity hold requires an owning operation")
+        async with self._engine.begin() as connection:
+            canonical = await self._canonical(connection, person_id)
+            if canonical is None:
+                return denied("unknown-person")
+            await connection.execute(pg_insert(MANAGED_IDENTITY_HOLD).values(
+                person_id=canonical, operation_id=operation_id,
+            ).on_conflict_do_nothing())
+            return complete()
+
+    async def release_identity_hold(self, *, person_id: str, operation_id: str) -> Outcome:
+        if not operation_id.strip():
+            raise ManagedError("an identity hold requires an owning operation")
+        async with self._engine.begin() as connection:
+            canonical = await self._canonical(connection, person_id)
+            await connection.execute(sa.delete(MANAGED_IDENTITY_HOLD).where(
+                MANAGED_IDENTITY_HOLD.c.person_id.in_({person_id, canonical} - {None}),
+                MANAGED_IDENTITY_HOLD.c.operation_id == operation_id,
+            ))
+            return complete()
 
     async def accounts_for(self, person_id: str) -> tuple[BoundAccount, ...]:
         async with self._engine.connect() as conn:

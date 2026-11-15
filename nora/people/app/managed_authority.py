@@ -51,6 +51,7 @@ from nora.people.app.managed_ops import (
     Effects,
     _finish,
     _pending,
+    _publication_refusal,
     _rebuild,
     _record,
     _recorded_replay,
@@ -112,6 +113,8 @@ class AuthorityService:
         self, *, scope: Scope, person_id: str, permit: str
     ) -> CheckResult:
         canonical = await self._bindings.canonical_person(person_id)
+        if await self._bindings.identity_held(canonical or person_id) is not False:
+            return check_unavailable("identity-publication-pending")
         for block in await self._bindings.authority_blocks():
             if block.person_id in {person_id, canonical} and block.scope == scope:
                 return check_unavailable("authority-blocked")
@@ -130,7 +133,8 @@ class AuthorityService:
 
     async def apply(self, op: Operation) -> Outcome:
         try:
-            return await self._apply(op)
+            async with self._bindings.mutation():
+                return await self._apply(op)
         except OperationConflictError:
             # Two first-commitments raced one operation_id and the journal
             # recorded the other effect.
@@ -142,6 +146,11 @@ class AuthorityService:
             return unavailable("store-failure")
 
     async def _apply(self, op: Operation) -> Outcome:
+        refusal = await _publication_refusal(self._bindings,
+            people=(op.actor.person_id, op.target.person_id), payload=op.payload,
+            account=op.target.account, scope=op.target.scope)
+        if refusal is not None:
+            return refusal
         stale = await _revisions_fresh(self._bindings, op)
         if stale is not None:
             return stale
@@ -168,12 +177,29 @@ class AuthorityService:
         at first commitment; a revoked actor's journaled intent completing
         is the design's revocation-first story)."""
         try:
-            return await self._replay(record)
+            async with self._bindings.mutation():
+                return await self._replay_current(record)
         except ManagedError:
             raise
         except Exception:
             log.exception("authority replay failed")
             return unavailable("store-failure")
+
+    async def _replay_current(self, record: OperationRecord) -> Outcome:
+        current = await self._bindings.operation(record.operation_id)
+        if (current is None or current.kind != record.kind
+                or current.snapshot != record.snapshot):
+            return denied("journal-conflict")
+        effect = _rebuild(current)
+        if effect is None:
+            return denied("invalid-journal-effect")
+        refusal = await _publication_refusal(self._bindings,
+            people=(effect.person_id,), payload=effect.payload, scope=effect.scope)
+        if refusal is not None:
+            return refusal
+        if current.state is OperationJournalState.COMPLETE:
+            return complete("replayed")
+        return await self._replay(current)
 
     async def _replay(self, record: OperationRecord) -> Outcome:
         outcome = await self._run(None, record)
@@ -560,11 +586,23 @@ class AuthorityService:
         """Resume every journaled-but-unfinished operation — restart recovery
         and outage recovery are the same path: replay the pending steps,
         re-read back, then clear the blocks the operation raised."""
+        async with self._bindings.mutation():
+            return await self._reconcile()
+
+    async def _reconcile(self) -> tuple[OperationRecord, ...]:
         finished: list[OperationRecord] = []
         for record in await self._bindings.incomplete_operations():
             if record.kind not in _AUTHORITY_KINDS:
                 continue
-            outcome = await self.apply_replay(record)
+            try:
+                outcome = await self._replay_current(record)
+            except ManagedError:
+                raise
+            except Exception:
+                log.exception("authority replay failed")
+                outcome = unavailable("store-failure")
             if outcome.status is OutcomeStatus.COMPLETE:
-                finished.append(record)
+                current = await self._bindings.operation(record.operation_id)
+                if current is not None and current.state is OperationJournalState.COMPLETE:
+                    finished.append(current)
         return tuple(finished)

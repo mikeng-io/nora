@@ -24,6 +24,7 @@ from nora.domain.managed import (
     complete,
     denied,
     incomplete,
+    unavailable,
 )
 from nora.domain.managed_ports import BindingStore
 from nora.domain.management import (
@@ -45,6 +46,34 @@ from nora.domain.management import (
 #: un-awaited.
 Effect = Callable[[], Awaitable[Outcome]]
 Effects = Callable[[], Iterable[Awaitable[Outcome]]]
+
+
+async def _publication_refusal(
+    store: BindingStore, *, people: Iterable[str | None], payload: object,
+    account: Identifier | None = None, scope: Scope | None = None,
+) -> Outcome | None:
+    subjects = {person for person in people if person is not None}
+    accounts = set() if account is None else {account}
+    if isinstance(payload, AccountRegistration):
+        subjects.add(payload.person_id)
+    elif isinstance(payload, AccessChange):
+        subjects.add(payload.grantee)
+    elif isinstance(payload, Delegation):
+        subjects.add(payload.delegatee)
+    elif isinstance(payload, Unlink):
+        subjects.add(payload.expected_person)
+    elif isinstance(payload, RosterSync):
+        accounts.update(payload.members)
+        if payload.complete and scope is not None:
+            subjects.update(member.person_id for member in await store.members_of(scope))
+    for identifier in accounts:
+        bound = await store.account_for(identifier.platform, identifier.kind, identifier.value)
+        if bound is not None:
+            subjects.add(bound.person_id)
+    for person in subjects:
+        if await store.identity_held(person) is not False:
+            return unavailable("identity-publication-pending")
+    return None
 
 def _scope_snapshot(scope: Scope) -> dict[str, str]:
     return {"kind": scope.kind.value, "id": scope.id}

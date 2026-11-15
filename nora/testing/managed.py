@@ -18,6 +18,8 @@ socket.
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 from nora.domain.identity import BoundAccount, Identifier
@@ -60,6 +62,8 @@ class FakeBindingStore(BindingStore):
     service maps a genuine store failure to `unavailable`."""
 
     def __init__(self) -> None:
+        self._mutation_lock = asyncio.Lock()
+        self.identity_holds: set[tuple[str, str]] = set()
         self.persons: dict[str, ManagedPerson] = {}
         self.accounts: dict[str, ManagedAccount] = {}
         self.owners: dict[Identifier, str] = {}  # identifier -> account_id
@@ -68,6 +72,10 @@ class FakeBindingStore(BindingStore):
         self.operations: dict[str, OperationRecord] = {}
         self.blocks: dict[tuple[str, Scope], AuthorityBlock] = {}
         self.down = False
+
+    def mutation(self) -> AbstractAsyncContextManager[None]:
+        self._up()
+        return self._mutation_lock
 
     def _up(self) -> None:
         if self.down:
@@ -114,6 +122,29 @@ class FakeBindingStore(BindingStore):
         self._up()
         pid = self._canonical(person_id)
         return pid if pid in self.persons else None
+
+    async def identity_held(self, person_id: str) -> bool:
+        self._up()
+        return any(person in {person_id, self._canonical(person_id)}
+                   for person, _ in self.identity_holds)
+
+    async def hold_identity(self, *, person_id: str, operation_id: str) -> Outcome:
+        self._up()
+        if not operation_id.strip():
+            raise ManagedError("an identity hold requires an owning operation")
+        canonical = await self.canonical_person(person_id)
+        if canonical is None:
+            return denied("unknown-person")
+        self.identity_holds.add((canonical, operation_id))
+        return complete()
+
+    async def release_identity_hold(self, *, person_id: str, operation_id: str) -> Outcome:
+        self._up()
+        if not operation_id.strip():
+            raise ManagedError("an identity hold requires an owning operation")
+        for person in {person_id, self._canonical(person_id)}:
+            self.identity_holds.discard((person, operation_id))
+        return complete()
 
     async def person_lifecycle(self, person_id: str) -> PersonLifecycle | None:
         self._up()

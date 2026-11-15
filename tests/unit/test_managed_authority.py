@@ -18,6 +18,7 @@ managed backend's scoped-authority half owns (`authorization.md`):
 
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import uuid4
 
 from nora.domain.identity import Identifier
@@ -164,6 +165,28 @@ async def test_retired_subject_checks_the_survivors_permissions_and_blocks():
     store.blocks[(PERSON, ROOM)] = AuthorityBlock(PERSON, ROOM, "generated hold", "generated-op")
     assert (await svc.check(scope=ROOM, person_id=former,
                             permit="view")).verdict is Verdict.UNAVAILABLE
+
+
+async def test_publication_hold_blocks_checks_and_new_mutations_until_its_owner_releases():
+    store, backend, service = _service()
+    await _person(store, PERSON)
+    await _grant_operator(store, backend, "manage_grants")
+    await backend.put_relation(scope=ROOM, relation="member", person_id=PERSON)
+    assert (await service.check(scope=ROOM, person_id=PERSON,
+                                permit="view")).verdict is Verdict.ALLOWED
+    await store.hold_identity(person_id=PERSON, operation_id="generated-publication")
+    assert (await service.check(scope=ROOM, person_id=PERSON,
+                                permit="view")).verdict is Verdict.UNAVAILABLE
+    operation = _op("generated-held-grant", "grant_access",
+        target=Target(kind=TargetKind.SCOPE, scope=ROOM),
+        payload=AccessChange(direction=AccessDirection.GRANT, grantee=PERSON,
+                             permits=frozenset({"view"})))
+    assert (await service.apply(operation)).status is OutcomeStatus.UNAVAILABLE
+    assert await store.operation(operation.operation_id) is None
+    await store.release_identity_hold(person_id=PERSON, operation_id="generated-other")
+    assert (await service.apply(operation)).status is OutcomeStatus.UNAVAILABLE
+    await store.release_identity_hold(person_id=PERSON, operation_id="generated-publication")
+    assert (await service.apply(operation)).status is OutcomeStatus.COMPLETE
 
 
 async def test_member_check_allows_room_speak_and_view():
@@ -397,6 +420,35 @@ async def test_an_incomplete_operation_replays_to_complete():
     assert result.verdict is Verdict.DENIED
 
 
+async def test_a_stale_replay_cannot_revoke_a_later_completed_grant():
+    backend = _DropsFail()
+    store, backend, service = _service(backend)
+    await _person(store, PERSON)
+    await _grant_operator(store, backend, "manage_grants")
+    await backend.put_relation(scope=ROOM, relation="grant_speak", person_id=PERSON)
+    payload = AccessChange(direction=AccessDirection.GRANT, grantee=PERSON,
+                           permits=frozenset({"speak"}))
+    target = Target(kind=TargetKind.SCOPE, scope=ROOM)
+    backend.fail_drops = True
+    failed = await service.apply(_op("generated-old-revoke", "revoke_access",
+        actor_kind=ActorKind.INSTALLATION, target=target, payload=payload))
+    assert failed.status is OutcomeStatus.UNAVAILABLE
+    stale = await store.operation("generated-old-revoke")
+    assert stale is not None and stale.state is OperationJournalState.INCOMPLETE
+    backend.fail_drops = False
+    assert (await service.apply_replay(replace(stale))).status is OutcomeStatus.COMPLETE
+    assert (await service.check(scope=ROOM, person_id=PERSON,
+                                permit="speak")).verdict is Verdict.DENIED
+    assert (await service.apply(_op("generated-later-grant", "grant_access",
+        target=target, payload=payload))
+            ).status is OutcomeStatus.COMPLETE
+    assert (await service.check(scope=ROOM, person_id=PERSON,
+                                permit="speak")).verdict is Verdict.ALLOWED
+    assert (await service.apply_replay(stale)).status is OutcomeStatus.COMPLETE
+    assert (await service.check(scope=ROOM, person_id=PERSON,
+                                permit="speak")).verdict is Verdict.ALLOWED
+
+
 async def test_reconcile_resumes_what_a_restart_left():
     """Restart path: an operation journaled incomplete is resumed by
     `reconcile` alone — the block it raised clears only after the replayed
@@ -423,6 +475,7 @@ async def test_reconcile_resumes_what_a_restart_left():
     backend.fail_drops = False
     finished = await svc.reconcile()
     assert [r.operation_id for r in finished] == ["op-1"]
+    assert finished[0].state is OperationJournalState.COMPLETE
     assert await store.authority_blocks() == ()
     result = await svc.check(scope=ROOM, person_id=PERSON, permit="speak")
     assert result.verdict is Verdict.DENIED

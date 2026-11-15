@@ -20,7 +20,10 @@ tables are truncated between tests, per the contract-suite house rule.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
+from contextlib import AbstractAsyncContextManager
+from dataclasses import replace
 from types import MappingProxyType
 from typing import Any, Protocol
 from uuid import uuid4
@@ -68,6 +71,10 @@ class _Store(Protocol):
     """The surface both implementations offer — the suite type-checks the
     SHAPE, not whichever class the fixture yielded."""
 
+    def mutation(self) -> AbstractAsyncContextManager[None]: ...
+    async def identity_held(self, person_id: str) -> bool: ...
+    async def hold_identity(self, **kw: Any) -> Any: ...
+    async def release_identity_hold(self, **kw: Any) -> Any: ...
     async def register(self, **kw: Any) -> Any: ...
     async def person(self, person_id: str) -> Any: ...
     async def record_for(self, *, account: Identifier) -> Any: ...
@@ -359,3 +366,54 @@ async def test_incomplete_operations_surface_for_reconciliation(store: _Store):
     )
     incomplete = await store.incomplete_operations()
     assert [r.operation_id for r in incomplete] == ["op-1"]
+
+
+async def test_mutation_gate_serializes_journal_read_modify_write(store: _Store):
+    record = OperationRecord("generated-counter", "grant_access", OperationJournalState.PENDING,
+                            MappingProxyType({"counter": "0"}))
+    await store.record_operation(record)
+
+    async def increment():
+        async with store.mutation():
+            current = await store.operation(record.operation_id)
+            await asyncio.sleep(0)
+            await store.update_operation(replace(
+                current, steps=MappingProxyType({
+                    "counter": str(int(current.steps["counter"]) + 1),
+                }),
+            ))
+
+    await asyncio.gather(*(increment() for _ in range(8)))
+    assert (await store.operation(record.operation_id)).steps["counter"] == "8"
+
+
+async def test_mutation_gate_release_preserves_committed_saga_steps(store: _Store):
+    record = OperationRecord("generated-step", "grant_access", OperationJournalState.INCOMPLETE,
+                            MappingProxyType({"authority": "pending"}))
+    with pytest.raises(RuntimeError, match="generated interruption"):
+        async with store.mutation():
+            await store.record_operation(record)
+            raise RuntimeError("generated interruption")
+    async with store.mutation():
+        found = await store.operation(record.operation_id)
+        assert found.state is OperationJournalState.INCOMPLETE
+
+
+async def test_publication_holds_are_canonical_and_owned_by_each_operation(store: _Store):
+    assert (await store.hold_identity(person_id=PERSON,
+        operation_id="generated-missing")).status is OutcomeStatus.DENIED
+    await store.register(person=_person(), account=_account(ACCOUNT_1), membership=None)
+    await store.add_alias(former_id="generated-retired", person_id=PERSON)
+    assert not await store.identity_held(PERSON)
+    for operation in ("generated-publication-a", "generated-publication-b"):
+        for _ in range(2):
+            assert (await store.hold_identity(person_id=PERSON,
+                operation_id=operation)).status is OutcomeStatus.COMPLETE
+    assert await store.identity_held("generated-retired")
+    await store.release_identity_hold(person_id="generated-retired",
+                                       operation_id="generated-publication-a")
+    assert await store.identity_held(PERSON)
+    await store.release_identity_hold(person_id=PERSON, operation_id="generated-unrelated")
+    assert await store.identity_held(PERSON)
+    await store.release_identity_hold(person_id=PERSON, operation_id="generated-publication-b")
+    assert not await store.identity_held("generated-retired")

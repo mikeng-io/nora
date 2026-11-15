@@ -30,6 +30,16 @@ MANAGED_PERSON = sa.Table(
         name="ck_managed_person_lifecycle"),
 )
 
+MANAGED_IDENTITY_HOLD = sa.Table(
+    "managed_identity_hold", METADATA,
+    sa.Column("person_id", sa.Text,
+              sa.ForeignKey("managed_person.person_id", ondelete="CASCADE",
+                            name="managed_identity_hold_person_fkey"), primary_key=True),
+    sa.Column("operation_id", sa.Text, primary_key=True),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+)
+
 MANAGED_ACCOUNT = sa.Table(
     "managed_account", METADATA,
     sa.Column("account_id", pg.UUID(as_uuid=False), primary_key=True),

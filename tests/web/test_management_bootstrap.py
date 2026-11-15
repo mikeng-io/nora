@@ -9,7 +9,7 @@ from nora.app.management import mount_management
 from nora.app.startup import StartupError
 from nora.config import ConfigError, load
 from nora.domain.identity import Identifier
-from nora.domain.managed import MembershipState, PersonLifecycle
+from nora.domain.managed import MembershipState, OutcomeStatus, PersonLifecycle, Verdict
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
@@ -88,6 +88,47 @@ def request():
                     "scope": {"kind": "room", "id": ROOM.id}},
         "observed_revisions": {"ownership": "0", "authority": "0"},
     }
+
+
+async def test_persisted_publication_hold_blocks_resolution_retry_and_permission_reads(
+    configuration, aiohttp_client, sql_services, pg_module_url,
+):
+    managed = sql_services
+    app = web.Application()
+    await mount_management(app, cfg=configuration(), services=managed)
+    client = await aiohttp_client(app)
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    assert (await client.post(PATH, headers=headers, json=request())).status == 200
+    await managed.backend.put_relation(scope=ROOM, relation="member", person_id="generated-person")
+    assert (await managed.authority.check(scope=ROOM, person_id="generated-person",
+                                         permit="view")).verdict is Verdict.ALLOWED
+    held = await managed.bindings.hold_identity(
+        person_id="generated-person", operation_id="generated-publication",
+    )
+    assert held.status is OutcomeStatus.COMPLETE
+    engine = create_sql_engine(pg_module_url)
+    try:
+        assert await SqlBindingStore(engine).identity_held("generated-person")
+    finally:
+        await engine.dispose()
+    query = {"account": request()["target"]["account"],
+             "scope": {"kind": ROOM.kind.value, "id": ROOM.id}}
+    resolution = "/app/v1/management/accounts/resolve"
+    unavailable = await client.post(resolution, headers=headers, json=query)
+    assert unavailable.status == 503
+    assert await unavailable.json() == {"status": "unavailable"}
+    assert (await client.post(PATH, headers=headers, json=request())).status == 503
+    assert (await managed.authority.check(scope=ROOM, person_id="generated-person",
+                                         permit="view")).verdict is Verdict.UNAVAILABLE
+    await managed.bindings.release_identity_hold(
+        person_id="generated-person", operation_id="generated-other",
+    )
+    assert (await client.post(resolution, headers=headers, json=query)).status == 503
+    await managed.bindings.release_identity_hold(
+        person_id="generated-person", operation_id="generated-publication",
+    )
+    assert (await client.post(resolution, headers=headers, json=query)).status == 200
+    assert (await client.post(PATH, headers=headers, json=request())).status == 200
 
 
 async def test_private_secret_mounts_the_real_registration_service(configuration, aiohttp_client):

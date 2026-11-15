@@ -64,6 +64,7 @@ from nora.people.app.managed_ops import (
     _finish,
     _op_snapshot,
     _pending,
+    _publication_refusal,
     _record,
     _recorded_replay,
     _revisions_fresh,
@@ -108,7 +109,8 @@ class RegistrationService:
 
     async def apply(self, op: Operation) -> Outcome:
         try:
-            return await self._apply(op)
+            async with self._bindings.mutation():
+                return await self._apply(op)
         except IdentifierConflictError:
             # A concurrent claim landed between the pre-flight read and the
             # write — the store's unique ownership is the authority, and a
@@ -125,6 +127,12 @@ class RegistrationService:
             return unavailable("store-failure")
 
     async def _apply(self, op: Operation) -> Outcome:
+        if op.kind != "suspend_identity":
+            refusal = await _publication_refusal(self._bindings,
+                people=(op.actor.person_id, op.target.person_id), payload=op.payload,
+                account=op.target.account, scope=op.target.scope)
+            if refusal is not None:
+                return refusal
         if op.kind == "register_account":
             replay = await self._completed_registration(op)
             if replay is not None:

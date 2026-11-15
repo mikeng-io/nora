@@ -9,6 +9,7 @@ authoritative refusal, not a failure.
 
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol, runtime_checkable
 
 from nora.domain.identity import BoundAccount, Identifier
@@ -63,6 +64,10 @@ class PersonDirectory(Protocol):
         File mode has no lifecycle and answers `ACTIVE` for mapped persons."""
         ...
 
+    async def identity_held(self, person_id: str) -> bool:
+        """An unfinished publication blocks the canonical identity across all scopes."""
+        ...
+
     async def aclose(self) -> None:
         ...
 
@@ -82,6 +87,18 @@ class BindingStore(PersonDirectory, Protocol):
     to `unavailable`. Every mutator returns an `Outcome` so the file backend
     can refuse honestly.
     """
+
+    def mutation(self) -> AbstractAsyncContextManager[None]:
+        """Serialize managed orchestration while preserving individually committed saga steps."""
+        ...
+
+    async def hold_identity(self, *, person_id: str, operation_id: str) -> Outcome:
+        """Persist the owning operation's publication hold before changing dependent stores."""
+        ...
+
+    async def release_identity_hold(self, *, person_id: str, operation_id: str) -> Outcome:
+        """Release this operation's hold without clearing another operation's hold."""
+        ...
 
     async def person(self, person_id: str) -> ManagedPerson | None:
         """The person's record including lifecycle and Kratos correlation."""

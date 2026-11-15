@@ -36,6 +36,8 @@ class IdentityResolver:
             canonical = await self._bindings.canonical_person(bound.person_id)
             if canonical is None:
                 return IdentityResolution(ResolutionStatus.UNAVAILABLE)
+            if await self._bindings.identity_held(canonical) is not False:
+                return IdentityResolution(ResolutionStatus.UNAVAILABLE)
             lifecycle = await self._bindings.person_lifecycle(canonical)
             if lifecycle is PersonLifecycle.SUSPENDED:
                 return IdentityResolution(ResolutionStatus.DENIED)

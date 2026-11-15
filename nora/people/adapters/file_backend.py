@@ -1,5 +1,5 @@
 """The file backend over the loaded `Persons`/`Policy` snapshots — the
-`file` side of `nora.domain.ports`' managed ports (`design/managed-identity-access/`).
+`file` side of `nora.domain.managed_ports` (`design/managed-identity-access/`).
 
 Reads answer exactly what the TOML pair already knows: flat sender
 resolution, exact account lookup, alias folding, room admission and the
@@ -12,6 +12,7 @@ retryable outage.
 
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager, nullcontext
 from typing import Any
 
 from nora.domain.identity import BoundAccount, Identifier
@@ -43,6 +44,18 @@ class FileBindingStore(BindingStore):
 
     def __init__(self, persons: Persons) -> None:
         self._persons = persons
+
+    def mutation(self) -> AbstractAsyncContextManager[None]:
+        return nullcontext()
+
+    async def identity_held(self, person_id: str) -> bool:
+        return False
+
+    async def hold_identity(self, *, person_id: str, operation_id: str) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
+    async def release_identity_hold(self, *, person_id: str, operation_id: str) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
 
     async def resolve(self, platform: str, value: str) -> BoundAccount | None:
         return self._persons.account_for(platform, value)
