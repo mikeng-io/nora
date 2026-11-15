@@ -8,7 +8,7 @@ verified person may do.
 
 **Only somebody in `identity.toml`.** The identifier
 a caller sends is resolved against the file, and the address is built from the
-file (`Persons.direct_target`); there is no way to name a phone number that is
+same account (`direct_account_target`); there is no way to name a phone number that is
 not in it, and the senders refuse one anyway (`Persons.direct_addresses`).
 
 **Through `deliver.build`, the fourth caller R-1b names.** The message is a
@@ -39,10 +39,11 @@ from typing import Any
 
 from nora.domain.actions import ActionOwner
 from nora.domain.audience import ONE_TIME_CODE
+from nora.domain.identity import BoundAccount
 from nora.domain.otp import PURPOSES
 from nora.engagement.stages import deliver
 from nora.infra.sql.otp import SqlOtpStore
-from nora.persons import DIRECT_PLATFORMS, Persons
+from nora.persons import DIRECT_PLATFORMS, Persons, direct_account_target
 
 log = logging.getLogger("nora.app.otp")
 
@@ -90,15 +91,12 @@ class OtpService:
         message = f"{challenge_id}:{code}".encode()
         return hmac.new(self._secret, message, hashlib.sha256).hexdigest()
 
-    def _person_for(self, platform: str, identifier: str) -> str | None:
-        """The person whose `platform` id this is (a phone number, or a Signal
-        ACI), as typed or with phone punctuation removed. A person_id does NOT
-        resolve: it is a first name anybody could guess, and the portal hands
-        this endpoint to the internet."""
+    def _account_for(self, platform: str, identifier: str) -> BoundAccount | None:
+        """Resolve the exact account, allowing phone punctuation but no person-name inference."""
         ident = identifier.strip()
         for candidate in (ident, _PHONE_PUNCTUATION.sub("", ident)):
-            if person := self._persons.resolve(platform, candidate):
-                return person.person_id
+            if account := self._persons.account_for(platform, candidate):
+                return account
         return None
 
     async def request(self, *, identifier: str, platform: str, purpose: str) -> str:
@@ -116,10 +114,11 @@ class OtpService:
     async def _request(
         self, challenge_id: uuid.UUID, identifier: str, platform: str, purpose: str,
     ) -> str:
-        person_id = self._person_for(platform, identifier)
-        if person_id is None:
+        account = self._account_for(platform, identifier)
+        if account is None:
             return "unknown"
-        target = self._persons.direct_target(platform, person_id)
+        person_id = account.person_id
+        target = direct_account_target(account)
         if target is None:
             return "no_account"
         adapter = self._adapters.get(platform)
