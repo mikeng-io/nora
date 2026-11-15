@@ -37,7 +37,6 @@ from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, nora_task
 from evals.grading_contract import GradingContract
 from evals.recall import evidence_problems
 from evals.route_grader import ToolRouteGrader
-from nora.subject.recorded_services import RecordedServices
 from nora.subject.transport import TRANSPORT_STATES
 
 _CORPORA = Path(__file__).parent / "corpora"
@@ -351,25 +350,37 @@ def _case(row: dict[str, Any], corpus: str = "") -> Case:
     )
 
 
-def load_all(name: str) -> list[Case]:
-    """Every case in `evals/corpora/<name>.yaml`, parked ones included."""
+def load_all(name: str, *, cohort: Any = None) -> list[Case]:
+    """Every case in `evals/corpora/<name>.yaml`, parked ones included —
+    or the declared cohort's, for a live-clock corpus."""
+    if name in JOURNEY_CORPORA:
+        if cohort is None:
+            raise ValueError(
+                f"{name}: the live-clock corpus loads only its declared "
+                "journey cohort (--journey-cohort), never evals/corpora/"
+            )
+        return list(cohort.cases)
+    if cohort is not None:
+        raise ValueError(
+            f"{name}: a journey cohort binds {sorted(JOURNEY_CORPORA)} only")
     rows = _rows(name)
     for row in rows:
         _check(name, row)
     return [_case(row, name) for row in rows]
 
 
-def load_corpus(name: str) -> list[Case]:
+def load_corpus(name: str, *, cohort: Any = None) -> list[Case]:
     """The ACTIVE set: every case that is not parked. Unanchored cases are
     included — they ERROR when driven, which is the point."""
-    return [c for c in load_all(name) if not c.metadata.get("parked")]
+    return [c for c in load_all(name, cohort=cohort) if not c.metadata.get("parked")]
 
 
-def census(name: str) -> Census:
-    cases = load_all(name)
+def census(name: str, *, cohort: Any = None) -> Census:
+    cases = load_all(name, cohort=cohort)
     parked = sum(1 for c in cases if c.metadata.get("parked"))
     unanchored = sum(
-        1 for c in cases if not c.metadata.get("parked") and not c.metadata.get("snapshot")
+        1 for c in cases if not c.metadata.get("parked")
+        and not c.metadata.get("snapshot") and not c.metadata.get("journey")
     )
     return Census(
         total=len(cases), active=len(cases) - parked, parked=parked,
@@ -426,6 +437,19 @@ CORPUS_ENTRY: dict[str, str] = {
     # `recall_grounded`, in a FULL-RESTORE sandbox (`FULL_RESTORE_CORPORA`).
     "conversational_recall": "tag",
 }
+
+#: The live-clock corpora: cases come from the declared private cohort
+#: (`evals.journey_cohort`), never `evals/corpora/`, `--all` or `--class`;
+#: each corpus's entry is the entry of the same name.
+JOURNEY_CORPORA = frozenset({"autonomous_journey"})
+
+
+def corpus_entry(name: str) -> str:
+    """The entry a corpus selects; a journey corpus's entry is its own name."""
+    if name in JOURNEY_CORPORA:
+        return name
+    return CORPUS_ENTRY[name]
+
 
 #: Corpora whose sandbox is the FULL RESTORE (`nora.subject.sandbox_as_of`):
 #: every restorable store as of the instant, row for row with its own ids, and
@@ -515,11 +539,12 @@ COGNITION_SESSION_OVERRIDES: dict[str, object] = {
 
 def selected_cases(
     name: str, *, only: frozenset[str] | None = None, memory_index: bool = False,
+    cohort: Any = None,
 ) -> list[Case]:
     """The cases of corpus `name` a run draws, before sampling: `only`'s, on
     the resolved memory surface (`experiment_for` says why each filter).
     Refused (ValueError) when `only` names a case the run cannot draw."""
-    cases = load_corpus(name)
+    cases = load_corpus(name, cohort=cohort)
     if only is not None:
         # NAMED cases only. A re-measurement asks about the cases that moved,
         # and paying for a whole corpus to re-draw four of them is how a
@@ -553,7 +578,8 @@ def experiment_for(
     only: frozenset[str] | None = None, memory_index: bool = False,
     overrides: dict[str, Any] | None = None,
     contract: GradingContract | None = None,
-    services: Mapping[str, RecordedServices] | None = None,
+    services: Mapping[str, Any] | None = None,
+    cohort: Any = None,
 ) -> tuple[Experiment, Any]:
     """A ready-to-run `(Experiment, task)` pair for one corpus.
 
@@ -575,8 +601,35 @@ def experiment_for(
     selects the cases, composes the subject on the graph surface
     (`MEMORY_INDEX_OVERRIDES`), and is checked against the composed config
     per case (`Spec.memory_surface`).
+
+    A `JOURNEY_CORPORA` name selects the declared `cohort` instead of a
+    yaml corpus: `Experiment` graded by `JourneyGrader`, `Spec.services`
+    carrying each selected case's declared finite world
+    (`bound_journey_services` refuses missing, wrong-kind or judge-mismatched
+    plans), and `Spec.entry` the live-clock entry. No sampling, no
+    `--judge`, no memory surface: the world declares its subject and its
+    two judge aliases, and behavior stays UNMEASURED.
     """
+    from evals.backbone import JourneyGrader
+    from evals.journey_cohort import bound_journey_services
     from evals.reading import sampled
+
+    if name in JOURNEY_CORPORA:
+        if sample != 1:
+            raise ValueError(
+                f"{name}: --sample re-draws are not declared for a live-clock "
+                "journey; each run is one declared world")
+        cases = selected_cases(name, only=only, cohort=cohort)
+        plans = bound_journey_services(
+            name, cases, services, judges=cohort.judges)
+        if contract is not None:
+            cases = [contract.bind_case(name, case) for case in cases]
+        spec = Spec(
+            source_url=source_url,
+            services=plans,
+            entry=corpus_entry(name),
+        )
+        return Experiment(cases=cases, evaluators=[JourneyGrader()]), nora_task(spec)
 
     cases = selected_cases(name, only=only, memory_index=memory_index)
     if contract is not None:

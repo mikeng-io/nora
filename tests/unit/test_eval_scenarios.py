@@ -729,3 +729,5 @@ def test_controlled_circle_cases_keep_their_declared_entry_and_overlay():
     public = cases['circle_public_private_boundary']
     assert public.metadata['circle_overlay'] == {'memory': 'partial'}
     assert len([c for c in cases.values() if c.metadata.get('circle_overlay')]) == 8
+
+

@@ -245,3 +245,112 @@ def test_source_url_default_refuses_missing_and_broken_credentials(
     (tmp_path / "secret.toml").write_text("malformed = [")
     with pytest.raises(ValueError, match="unreadable"):
         source_url_for("", tmp_path)
+
+
+# --- the journey selection ---------------------------------------------------
+
+_JOURNEY_PLAN = {
+    "version": 2,
+    "expected_wakes": 0,
+    "steps": [{"send": "the venue is Cedar Hall"}, {"until_delivery": True}],
+    "expectations": [{"turn": 0, "polarity": "must", "kind": "behavior",
+                      "text": "says where the outing was held",
+                      "check": "Cedar Hall"}],
+    "judges": ["alpha", "beta"],
+}
+
+
+def _journey_inputs(tmp_path):
+    """The declared cohort and services manifest a journey selection binds."""
+    import json
+
+    from evals.services import load_services
+
+    cohort_path = tmp_path / "cohort.json"
+    cohort_path.write_text(json.dumps({
+        "version": 1, "judges": ["alpha", "beta"],
+        "cases": [{"name": "the_outing", "plan": dict(_JOURNEY_PLAN)}]}))
+    services_path = tmp_path / "services.json"
+    services_path.write_text(json.dumps({"version": 1, "corpora": {
+        "autonomous_journey": {"the_outing": {
+            "kind": "journey_world", "policy": "[rooms]\nallow = []",
+            "judges": ["alpha", "beta"]}}}}))
+    return argparse.Namespace(
+        journey_cohort=cohort_path, services=services_path,
+        service_inputs=load_services(services_path), run_budget="10",
+        sample=1, memory_index=False, subject_overrides=None, judge=None)
+
+
+def test_the_journey_corpus_is_selectable_by_name_never_by_class_or_all():
+    assert _corpora_for(_args(corpus=["autonomous_journey"])) == ["autonomous_journey"]
+    everything = _corpora_for(_args(all=True))
+    assert "autonomous_journey" not in everything, (
+        "--all stays the yaml corpora; a live-clock journey needs its "
+        "declared inputs and never rides a bulk selection")
+    classes = set().union(*(
+        _corpora_for(_args(cls=[c])) for c in set(CORPUS_CLASS.values())))
+    assert "autonomous_journey" not in classes
+
+
+def test_a_journey_selection_binds_the_declared_inputs(tmp_path):
+    from evals.journey_cohort import bound_selection
+
+    cohort = bound_selection(_journey_inputs(tmp_path), ["autonomous_journey"], None)
+    assert cohort.judges == ("alpha", "beta")
+    assert [c.name for c in cohort.cases] == ["the_outing"]
+
+
+@pytest.mark.parametrize("damage", [
+    pytest.param({"journey_cohort": None}, id="no-cohort"),
+    pytest.param({"services": None}, id="no-services"),
+    pytest.param({"run_budget": None}, id="no-budget"),
+    pytest.param({"sample": 2}, id="sampled"),
+    pytest.param({"memory_index": True}, id="subject-arm"),
+    pytest.param({"subject_overrides": "x.json"}, id="subject-overrides"),
+    pytest.param({"judge": "some-judge"}, id="eval-judge-on-journey-only"),
+])
+def test_a_journey_selection_refuses_an_absent_or_promoting_input(tmp_path, damage):
+    """Every clause refuses BEFORE composition or model dispatch, and no
+    flag promotes the finite world into a real-model baseline."""
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    for key, value in damage.items():
+        setattr(args, key, value)
+    with pytest.raises(ValueError):
+        bound_selection(args, ["autonomous_journey"], None)
+
+
+def test_a_journey_selection_refuses_an_undeclared_world(tmp_path):
+    """A services manifest naming another corpus, a wrong-kind plan, or
+    aliases the cohort did not declare all refuse."""
+    import json
+
+    from evals.journey_cohort import bound_selection
+    from evals.services import load_services
+
+    args = _journey_inputs(tmp_path)
+    empty_services = tmp_path / "empty.json"
+    empty_services.write_text(json.dumps(
+        {"version": 1, "corpora": {"other": {"c": {
+            "version": 1, "bindings": {"llm.base_url": "x"}, "services": {"x": []}}}}}))
+    args.service_inputs = load_services(empty_services)
+    with pytest.raises(ValueError, match="no plans"):
+        bound_selection(args, ["autonomous_journey"], None)
+
+
+def test_the_cohort_flag_on_an_ordinary_selection_is_refused(tmp_path):
+    """A declared input that binds nothing is a selection error, not a
+    silently ignored flag."""
+    from evals.journey_cohort import bound_selection
+
+    with pytest.raises(ValueError, match="no selected corpus"):
+        bound_selection(_journey_inputs(tmp_path), ["standing"], None)
+
+
+def test_an_ordinary_selection_binds_no_cohort(tmp_path):
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    args.journey_cohort = None
+    assert bound_selection(args, ["standing"], None) is None
