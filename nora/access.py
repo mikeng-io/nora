@@ -21,9 +21,9 @@ the source for room shape and the open-admission flag.
 from __future__ import annotations
 
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, cast
 
 from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.managed import (
@@ -38,6 +38,7 @@ from nora.domain.managed import (
     split_room_scope_id,
     unknown_scope,
 )
+from nora.domain.managed_ports import BindingStore, TopologySource
 from nora.domain.management import Scope, ScopeKind
 from nora.domain.models import (
     ConversationTarget,
@@ -52,7 +53,6 @@ from nora.persons import (
     direct_account_target,
     sanitize_unmapped,
 )
-from nora.domain.managed_ports import BindingStore, TopologySource
 from nora.policy import Policy
 
 if TYPE_CHECKING:
@@ -157,9 +157,13 @@ class IdentityAccess:
         file_persons: Persons | None = None,
         file_policy: Policy | None = None,
     ) -> None:
-        self._bindings = bindings
-        self._authority = authority
-        self._topology = topology
+        if file_persons is None and any(value is None for value in (bindings, authority, topology)):
+            raise ValueError("managed identity reads require all authority collaborators")
+        if file_policy is not None and file_persons is None:
+            raise ValueError("file authority requires its file identity source")
+        self._bindings = cast(BindingStore, bindings)
+        self._authority = cast(Any, authority)
+        self._topology = cast(TopologySource, topology)
         self._persons = file_persons
         self._policy = file_policy
         # Snapshot of the managed alias table for the SYNC consumers
@@ -182,7 +186,7 @@ class IdentityAccess:
         return self._persons is not None
 
     @classmethod
-    def for_files(cls, persons: Persons, policy: Policy) -> "IdentityAccess":
+    def for_files(cls, persons: Persons, policy: Policy | None) -> IdentityAccess:
         """The file backend's access surface — what `file_services` builds
         (and the honest default wherever a caller only holds the loaded
         files). No `nora.people` parts: every file-mode read below calls
@@ -339,6 +343,8 @@ class IdentityAccess:
         scope — an open room (`persons = "*"`) lists nobody in file mode
         because no live roster exists there."""
         if self._persons is not None:
+            if self._policy is None:
+                raise RuntimeError("file room authority is unavailable")
             convo = self._policy.conversation(platform, conversation_id)
             listed = convo.persons if convo is not None else frozenset()
             return self._persons.room_members(listed)
@@ -456,7 +462,7 @@ class IdentityAccess:
             # `AuthorityService` over the file backend, inlined: canonicalize,
             # no holds, all file people ACTIVE, then `FileAuthorityBackend`'s
             # own `Policy` rules — verbatim.
-            person_id = self._persons.subject_id_for(person_id)
+            person_id = cast(Persons, self._persons).subject_id_for(person_id)
             if scope.kind is not ScopeKind.ROOM:
                 return check_denied("file mode has no scoped management")
             platform, conversation_id = split_room_scope_id(scope.id)

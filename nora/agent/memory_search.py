@@ -531,6 +531,8 @@ async def scope_for_async(
     if scope is None or access is None or getattr(access, "is_file_backend", False):
         return scope
     here = target.room
+    if here is None:
+        return None
     unit_rooms = (
         [] if own_room else [r for r in target.rooms if here.unit and r.unit == here.unit]
     )

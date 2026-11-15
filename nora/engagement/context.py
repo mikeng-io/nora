@@ -24,8 +24,9 @@ import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
-from typing import Any, NamedTuple, Protocol
+from typing import Any, NamedTuple, Protocol, cast
 
+from nora.access import IdentityAccess
 from nora.agent.clock import local_now
 from nora.agent.egress import scan_identifiers
 from nora.agent.lineage import (
@@ -98,7 +99,6 @@ from nora.domain.standing import Standing
 from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.subagents_context import SubagentsView
 from nora.domain.turn_record import DisclosureRequirement
-from nora.access import IdentityAccess
 from nora.engagement.character_who import tag_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
@@ -242,7 +242,7 @@ class TranscriptInjection:
         self._memory = memory
         self._persons = persons
         self._access = access
-        self._file_access: Any = None
+        self._file_access: IdentityAccess | None = None
         self._context_window = context_window
         # `None` renders everything that was read (every harness that predates
         # `[store] prompt_window`); a number renders at most that many rows,
@@ -321,11 +321,11 @@ class TranscriptInjection:
         # `nora_errors_total` (R-27), never a quiet fall back to the old block.
         self._profile_reader = profile
 
-    def _access_or_files(self) -> Any:
+    def _access_or_files(self) -> IdentityAccess:
         """The selected backend's facade, or a file-mode one built over the
         loaded `Persons`/`Policy` — the same reads, one call shape."""
         if self._access is not None:
-            return self._access
+            return cast(IdentityAccess, self._access)
         if self._file_access is None:
             self._file_access = IdentityAccess.for_files(
                 persons=self._persons, policy=self._policy)

@@ -541,6 +541,7 @@ async def build_dependencies(
     # consumer asks THIS for who a sender is and what they may do — file
     # people/grants are never consulted as a managed fallback.
     access = _stores_managed.services.access
+    persons_view = access.persons_view()
     # Warm the alias snapshot the sync `former_ids`/`subject_id_for`
     # consumers read; afterwards every `permitted`/`person_refs` refreshes
     # it on a TTL. A managed outage fails startup here, not a stale grant.
@@ -760,7 +761,7 @@ async def build_dependencies(
         metrics=metrics,
         note_store=note_store,
         observation_store=observation_store,
-        persons=access.persons_view(),
+        persons=persons_view,
         presence_reader=presence_reader,
         profile_reader=profile_reader,
         quote_window=quote_window,
@@ -874,7 +875,7 @@ async def build_dependencies(
     _media_search = _media_wire.search(cfg=cfg)
     fetch_client = _media_search.fetch_client
     search_client = _media_search.search_client
-    _social_clients = _social_wire.clients(allowlist=allowlist, cfg=cfg, persons=access.persons_view())
+    _social_clients = _social_wire.clients(allowlist=allowlist, cfg=cfg, persons=persons_view)
     social_client = _social_clients.social_client
     social_subjects = _social_clients.social_subjects
     _location_weather = _location_wire.weather(cfg=cfg)
@@ -936,7 +937,7 @@ async def build_dependencies(
     discord_presence = _voice_platforms.discord_presence
     music_bridge = _voice_platforms.music_bridge
     voice_presence = _voice_platforms.voice_presence
-    _people_lineage = _people_wire.lineage(allowlist=allowlist, cfg=cfg, persons=access.persons_view())
+    _people_lineage = _people_wire.lineage(allowlist=allowlist, cfg=cfg, persons=persons_view)
     lineage = _people_lineage.lineage
     _agent_desk = desk(
         cfg=cfg, clock=clock, compute_jobs=compute_jobs, document_service=document_service
@@ -981,7 +982,7 @@ async def build_dependencies(
         music_bridge=music_bridge,
         note_store=note_store,
         observation_store=observation_store,
-        persons=access.persons_view(),
+        persons=persons_view,
         presence_circles=presence_circles,
         presence_reader=presence_reader,
         presence_store=presence_store,
@@ -1131,7 +1132,7 @@ async def build_dependencies(
         metrics=metrics,
         note_store=note_store,
         participation_runner=participation_runner,
-        persons=access.persons_view(),
+        persons=persons_view,
         presence_reader=presence_reader,
         preview_source=preview_source,
         proactive_runner=proactive_runner,
@@ -1186,7 +1187,7 @@ async def build_dependencies(
         engine=engine,
         limits=limits,
         metrics=metrics,
-        persons=access.persons_view(),
+        persons=persons_view,
         registry=registry,
         social_subjects=social_subjects,
         summons_inbox=summons_inbox,
@@ -1204,7 +1205,7 @@ async def build_dependencies(
         media_objects=media_objects,
         media_sources=media_sources,
         metrics=metrics,
-        persons=access.persons_view(),
+        persons=persons_view,
         social_subjects=social_subjects,
         stimulus_store=stimulus_store,
     )
@@ -1223,7 +1224,7 @@ async def build_dependencies(
         media_join=media_join,
         metrics=metrics,
         model_client_for=model_client_for,
-        persons=access.persons_view(),
+        persons=persons_view,
         route_model=route_model,
         slots=slots,
         standing_store=standing_store,
@@ -1273,7 +1274,7 @@ async def build_dependencies(
         engine=engine,
         media_join=media_join,
         metrics=metrics,
-        persons=access.persons_view(),
+        persons=persons_view,
         presence_circles=presence_circles,
         profile_index=profile_index,
         registry=registry,
@@ -1321,7 +1322,7 @@ async def build_dependencies(
         # descriptive (names, former-id folding, room `persons` lists): the
         # selected backend's view, absent under managed — never a stale
         # file answer where the schema carries nothing.
-        persons=access.persons_view(),
+        persons=persons_view,
         presence_circles=presence_circles,
         presence_reader=presence_reader,
         proactive_homes=proactive_homes,
@@ -1386,7 +1387,7 @@ async def build_dependencies(
         config_reload=reload_files,
         audit=audit,
         memory=memory,
-        persons=access.persons_view(),
+        persons=persons_view,
         managed_services=_stores_managed.services, managed_session=_stores_managed.session,
         metrics=metrics,
         media_join=media_join,

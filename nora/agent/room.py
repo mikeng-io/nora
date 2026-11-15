@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import Roster, RosterSource
@@ -268,6 +269,7 @@ class Room:
         recorded for someone who is not in it resolves to nobody, exactly as
         their name would. One person matched two ways is one match."""
         bare = _key(name).removeprefix("@")
+        owners: frozenset[str]
         if not bare:
             owners = frozenset()
         elif self._access is not None:
