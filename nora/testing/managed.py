@@ -19,9 +19,20 @@ socket.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
+from dataclasses import replace
+from datetime import datetime
 from typing import Any
 
+from nora.domain.account_linking import (
+    ConsentProof,
+    LinkState,
+    LinkStateError,
+    PendingLink,
+)
 from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.managed import (
     CONTAINMENT_RELATIONS,
@@ -52,9 +63,16 @@ from nora.domain.managed_ports import (
     AuthorityBackend,
     BindingStore,
     IdentityRegistry,
+    LinkRequestStore,
     TopologySource,
 )
-from nora.domain.management import Scope, ScopeKind
+from nora.domain.management import (
+    LinkApproval,
+    LinkRefusal,
+    Operation,
+    Scope,
+    ScopeKind,
+)
 
 
 class FakeBindingStore(BindingStore):
@@ -68,6 +86,7 @@ class FakeBindingStore(BindingStore):
         self.accounts: dict[str, ManagedAccount] = {}
         self.owners: dict[Identifier, str] = {}  # identifier -> account_id
         self.memberships: dict[tuple[str, Scope], ManagedMembership] = {}
+        self.supports: dict[tuple[str, Scope], set[str]] = {}
         self.aliases: dict[str, str] = {}
         self.operations: dict[str, OperationRecord] = {}
         self.blocks: dict[tuple[str, Scope], AuthorityBlock] = {}
@@ -217,6 +236,9 @@ class FakeBindingStore(BindingStore):
             if membership.person_id not in self.persons:
                 return denied("membership names an absent person")
             self.memberships[(membership.person_id, membership.scope)] = membership
+            self.supports.setdefault(
+                (membership.person_id, membership.scope), set()
+            ).add(membership.source)
         return complete()
 
     async def correlate_kratos(
@@ -282,6 +304,10 @@ class FakeBindingStore(BindingStore):
             return denied("absent")
         key = (person_id, scope)
         current = self.memberships.get(key)
+        if member:
+            self.supports.setdefault(key, set()).add(source)
+        else:
+            self.supports.pop(key, None)
         self.memberships[key] = ManagedMembership(
             person_id=person_id, scope=scope,
             state=MembershipState.MEMBER if member else MembershipState.LEFT,
@@ -290,16 +316,104 @@ class FakeBindingStore(BindingStore):
         )
         return complete()
 
+    async def drop_membership_support(
+        self, *, person_id: str, scope: Scope, source: str
+    ) -> Outcome:
+        self._up()
+        if person_id not in self.persons:
+            return denied("absent")
+        key = (person_id, scope)
+        remaining = self.supports.get(key, set()) - {source}
+        current = self.memberships.get(key)
+        if remaining:
+            self.supports[key] = remaining
+            return complete()
+        self.supports.pop(key, None)
+        self.memberships[key] = ManagedMembership(
+            person_id=person_id, scope=scope,
+            state=MembershipState.LEFT, source=source,
+            revision=(current.revision if current else 0) + 1,
+        )
+        return complete()
+
+    def _with_sources(self, m: ManagedMembership) -> ManagedMembership:
+        return replace(
+            m, sources=frozenset(self.supports.get((m.person_id, m.scope), ()))
+        )
+
     async def memberships_for(
         self, person_id: str
     ) -> tuple[ManagedMembership, ...]:
         self._up()
         pid = self._canonical(person_id)
-        return tuple(m for (p, _), m in self.memberships.items() if p == pid)
+        return tuple(
+            self._with_sources(m)
+            for (p, _), m in self.memberships.items() if p == pid
+        )
 
     async def members_of(self, scope: Scope) -> tuple[ManagedMembership, ...]:
         self._up()
-        return tuple(m for (_, s), m in self.memberships.items() if s == scope)
+        return tuple(
+            self._with_sources(m)
+            for (_, s), m in self.memberships.items() if s == scope
+        )
+
+    async def consolidate(self, *, survivor: str, former: str) -> Outcome:
+        self._up()
+        if survivor not in self.persons:
+            return denied("absent-survivor")
+        if former not in self.persons:
+            return complete() if self.aliases.get(former) == survivor else denied("absent-former")
+        if (
+            self.persons[survivor].lifecycle is not PersonLifecycle.ACTIVE
+            or self.persons[former].lifecycle is not PersonLifecycle.ACTIVE
+        ):
+            return denied("person-inactive")
+        for account_id, account in self.accounts.items():
+            if account.person_id == former:
+                self.accounts[account_id] = replace(
+                    account, person_id=survivor,
+                    revision=account.revision + 1,
+                )
+        for (pid, scope), sources in list(self.supports.items()):
+            if pid == former:
+                self.supports.setdefault((survivor, scope), set()).update(sources)
+                del self.supports[(pid, scope)]
+        fallen = {s: m for (p, s), m in self.memberships.items() if p == former}
+        for scope in fallen:
+            del self.memberships[(former, scope)]
+        for scope in {
+            s for (p, s) in self.supports if p == survivor
+        } | set(fallen):
+            existing = self.memberships.get((survivor, scope))
+            fallen_m = fallen.get(scope)
+            member = bool(self.supports.get((survivor, scope)))
+            self.memberships[(survivor, scope)] = ManagedMembership(
+                person_id=survivor, scope=scope,
+                state=MembershipState.MEMBER if member else MembershipState.LEFT,
+                source=(existing.source if existing is not None
+                        else fallen_m.source if fallen_m is not None
+                        else "consolidation"),
+                revision=max(
+                    existing.revision if existing is not None else 0,
+                    fallen_m.revision if fallen_m is not None else 0,
+                ) + 1,
+            )
+        for (pid, scope), block in list(self.blocks.items()):
+            if pid == former and (survivor, scope) not in self.blocks:
+                self.blocks[(survivor, scope)] = replace(block, person_id=survivor)
+            if pid == former:
+                del self.blocks[(pid, scope)]
+        self.aliases[former] = survivor
+        self.identity_holds = {
+            (survivor if p == former else p, op)
+            for (p, op) in self.identity_holds
+        }
+        del self.persons[former]
+        self.persons[survivor] = replace(
+            self.persons[survivor], revision=self.persons[survivor].revision + 1,
+        )
+        return complete()
 
     async def add_alias(self, *, former_id: str, person_id: str) -> Outcome:
         self._up()
@@ -527,6 +641,16 @@ class FakeTopologySource(TopologySource):
         entry = self.rooms.get(scope.id)
         return bool(entry and entry[1]) if scope.kind is ScopeKind.ROOM else False
 
+    async def scopes(self) -> tuple[Scope, ...]:
+        if self.down:
+            raise RuntimeError("fake topology is down")
+        return tuple(sorted(
+            {Scope(ScopeKind.ROOM, r) for r in self.rooms}
+            | {Scope(ScopeKind.UNIT, u) for u in self.units}
+            | {Scope(ScopeKind.WORKSPACE, w) for w in self.workspaces},
+            key=lambda s: (s.kind.value, s.id),
+        ))
+
 
 class FakeIdentityRegistry(IdentityRegistry):
     """In-memory Kratos records keyed by `external_id` — same rules: one
@@ -577,6 +701,92 @@ class FakeIdentityRegistry(IdentityRegistry):
             return denied("absent")
         self.sessions.pop(external_id, None)
         return complete()
+
+    async def aclose(self) -> None:
+        ...
+
+
+class FakeLinkRequests(LinkRequestStore):
+    """In-memory durable link consent — the same identity/effect rules as
+    `SqlLinkRequests`, so unit services exercise the real decision path."""
+
+    def __init__(self) -> None:
+        self.requests: dict[str, PendingLink] = {}
+        # operation_id -> (request_id, effect fingerprint) — a decision id
+        # can never be consumed by a different request or effect.
+        self.decisions: dict[str, tuple[str, str]] = {}
+
+    @staticmethod
+    def _effect(operation: Operation, proof: ConsentProof) -> str:
+        fingerprint = {
+            "operation_id": operation.operation_id,
+            "kind": operation.kind,
+            "request_id": getattr(operation.payload, "request_id", ""),
+            "actor": operation.actor.person_id,
+            "issuer": proof.issuer,
+            "nonce": hashlib.sha256(proof.nonce.encode()).hexdigest(),
+        }
+        return hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()
+
+    async def create(self, link: PendingLink) -> PendingLink:
+        if link.state is not LinkState.PENDING or link.approved:
+            raise LinkStateError("create requires a new undecided request")
+        if link.request_id in self.decisions:
+            raise LinkStateError("operation identity already names a decision")
+        recorded = self.requests.get(link.request_id)
+        if recorded is not None:
+            if recorded.effect_id != link.effect_id:
+                raise LinkStateError("request identity already names a different effect")
+            return recorded
+        self.requests[link.request_id] = link
+        return link
+
+    async def get(self, request_id: str) -> PendingLink | None:
+        return self.requests.get(request_id)
+
+    async def decide(
+        self, operation: Operation, proof: ConsentProof, *, now: datetime
+    ) -> PendingLink:
+        payload = operation.payload
+        if not isinstance(payload, LinkApproval | LinkRefusal):
+            raise LinkStateError("expected a private holder decision")
+        if operation.operation_id in self.requests:
+            raise LinkStateError("operation identity already names a request")
+        effect = self._effect(operation, proof)
+        previous = self.decisions.get(operation.operation_id)
+        if previous is not None and previous != (payload.request_id, effect):
+            raise LinkStateError("decision identity already names a different effect")
+        link = self.requests.get(payload.request_id)
+        if link is None:
+            raise LinkStateError("unknown private link request")
+        if previous is not None:
+            return link
+        changed = link.decide(operation, proof, now=now)
+        self.decisions[operation.operation_id] = (payload.request_id, effect)
+        self.requests[payload.request_id] = changed
+        return changed
+
+    async def begin_commit(
+        self, request_id: str, *, owners: Mapping[Identifier, str],
+        active_people: frozenset[str], revisions: Mapping[str, str],
+        now: datetime,
+    ) -> PendingLink:
+        link = self.requests.get(request_id)
+        if link is None:
+            raise LinkStateError("unknown private link request")
+        changed = link.begin_commit(
+            now=now, owners=owners, active_people=active_people,
+            revisions=revisions)
+        self.requests[request_id] = changed
+        return changed
+
+    async def mark_committed(self, request_id: str) -> PendingLink:
+        link = self.requests.get(request_id)
+        if link is None:
+            raise LinkStateError("unknown private link request")
+        changed = link.mark_committed()
+        self.requests[request_id] = changed
+        return changed
 
     async def aclose(self) -> None:
         ...

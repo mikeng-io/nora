@@ -20,6 +20,7 @@ from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.account_linking import ConsentProof, LinkState, LinkStateError, PendingLink
+from nora.domain.identity import Identifier
 from nora.domain.management import LinkApproval, LinkRefusal, Operation
 from nora.infra.sql.schema import MANAGED_LINK_DECISION, MANAGED_LINK_REQUEST
 
@@ -143,3 +144,42 @@ class SqlLinkRequests:
                 .where(MANAGED_LINK_REQUEST.c.request_id == payload.request_id)
                 .values(snapshot=_snapshot(changed)))
             return changed
+
+    async def begin_commit(
+        self, request_id: str, *, owners: Mapping[Identifier, str],
+        active_people: frozenset[str], revisions: Mapping[str, str],
+        now: datetime,
+    ) -> PendingLink:
+        """The approval-to-COMMITTING transition under the request's lock —
+        live owners/lifecycle/revisions are supplied by the caller, who holds
+        the store mutation lock so the reads cannot drift before publish."""
+        async with self._engine.begin() as connection:
+            await _operation_lock(connection, request_id)
+            value = await connection.scalar(sa.select(MANAGED_LINK_REQUEST.c.snapshot)
+                .where(MANAGED_LINK_REQUEST.c.request_id == request_id).with_for_update())
+            if value is None:
+                raise LinkStateError("unknown private link request")
+            link = _decode(value)
+            changed = link.begin_commit(
+                now=now, owners=owners, active_people=active_people,
+                revisions=revisions)
+            await connection.execute(sa.update(MANAGED_LINK_REQUEST)
+                .where(MANAGED_LINK_REQUEST.c.request_id == request_id)
+                .values(snapshot=_snapshot(changed)))
+            return changed
+
+    async def mark_committed(self, request_id: str) -> PendingLink:
+        async with self._engine.begin() as connection:
+            await _operation_lock(connection, request_id)
+            value = await connection.scalar(sa.select(MANAGED_LINK_REQUEST.c.snapshot)
+                .where(MANAGED_LINK_REQUEST.c.request_id == request_id).with_for_update())
+            if value is None:
+                raise LinkStateError("unknown private link request")
+            changed = _decode(value).mark_committed()
+            await connection.execute(sa.update(MANAGED_LINK_REQUEST)
+                .where(MANAGED_LINK_REQUEST.c.request_id == request_id)
+                .values(snapshot=_snapshot(changed)))
+            return changed
+
+    async def aclose(self) -> None:
+        await self._engine.dispose()

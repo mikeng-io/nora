@@ -130,6 +130,24 @@ IDX_MANAGED_MEMBERSHIP_SCOPE = sa.Index(
     MANAGED_MEMBERSHIP.c.scope_kind, MANAGED_MEMBERSHIP.c.scope_id,
 )
 
+# The live supports behind a membership row (`identity.md`): membership
+# standing derives from these — a roster departure retracts only its own
+# support, so an independently established membership survives it.
+MANAGED_MEMBERSHIP_SUPPORT = sa.Table(
+    "managed_membership_support", METADATA,
+    sa.Column("person_id", sa.Text, nullable=False),
+    sa.Column("scope_kind", sa.Text, nullable=False),
+    sa.Column("scope_id", sa.Text, nullable=False),
+    sa.Column("source", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.PrimaryKeyConstraint("person_id", "scope_kind", "scope_id", "source",
+                            name="pk_managed_membership_support"),
+    sa.ForeignKeyConstraint(
+        ["person_id"], ["managed_person.person_id"],
+        name="managed_membership_support_person_fkey", ondelete="RESTRICT"),
+)
+
 MANAGED_OPERATION = sa.Table(
     "managed_operation", METADATA,
     sa.Column("operation_id", sa.Text, primary_key=True),
