@@ -331,9 +331,7 @@ def _expanded(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _roundtrips(payload: dict[str, Any], original: dict[str, Any]) -> None:
-    """Expansion restores the original bodies, serialized type included —
-    `{"flag": true}` and `{"flag": 1}` are different bytes, so `==` is not
-    enough."""
+    """Expansion restores the original bodies, serialized type included."""
     expanded = _expanded(payload)
     assert expanded.keys() == original.keys()
     for i, body in expanded.items():

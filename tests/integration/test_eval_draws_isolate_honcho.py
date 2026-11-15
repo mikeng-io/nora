@@ -25,7 +25,8 @@ import pytest
 from strands_evals import Case
 
 from evals import backbone
-from evals.backbone import NORA_MEMORY_WORKSPACE, sampled
+from evals.backbone import NORA_MEMORY_WORKSPACE
+from evals.reading import sampled
 from evals.rebuilt.domain import Outcome
 from evals.rebuilt.entry import ENTRY_POINTS, EntryPoint
 from nora.infra.honcho import HonchoClient

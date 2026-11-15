@@ -12,8 +12,7 @@ from scripts.cognition_loop.html import render
 
 def _outcome_item(unit, wake_id, session_id, *, outcome="closed", at_ms,
                   ref=True):
-    """A generated canonical `cognition_wake_outcome` effect in the shape
-    `read_effects` retains — consumer fixture, no runtime claimed."""
+    """A generated canonical `cognition_wake_outcome` effect in `read_effects` shape."""
     key = {"id": wake_id * 10 + 1}
     return {
         "ref": ("wake:cognition_wake_outcome:" + json.dumps(

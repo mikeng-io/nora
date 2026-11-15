@@ -1,14 +1,14 @@
 [
   {
     "name": "an unanswered SDK verdict row is an errored reading",
-    "file": "evals/backbone.py",
+    "file": "evals/reading.py",
     "old": "    for outputs in report.detailed_results:\n        if not outputs:\n            # A (case, evaluator) row whose evaluator produced no verdict —\n            # a task or evaluator error — is an errored reading, never a\n            # smaller denominator.\n            counts[ERROR] += 1\n        for out in outputs:",
     "new": "    for outputs in report.detailed_results:\n        for out in outputs:",
     "target": "tests/unit/test_eval_report_accounting.py::test_a_failed_task_row_is_execution_error_never_silence"
   },
   {
     "name": "a sampled draw with no verdict is an errored draw",
-    "file": "evals/backbone.py",
+    "file": "evals/reading.py",
     "old": "        if not outputs:\n            # An unanswered row means the draw's evaluator produced no\n            # verdict — an errored draw, never an absent one.\n            groups.setdefault(base, []).append(ERROR)\n        for out in outputs:",
     "new": "        for out in outputs:",
     "target": "tests/unit/test_eval_report_accounting.py::test_a_sampled_draw_that_never_answered_is_errored_not_missing"

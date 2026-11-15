@@ -97,7 +97,7 @@ def eval_parser() -> argparse.ArgumentParser:
     ap.add_argument(
         "--sample", type=int, default=1,
         help=(
-            "draw each case this many times (evals.backbone.sampled/"
+            "draw each case this many times (evals.reading.sampled/"
             "sample_read) rather than once. One draw of a stochastic "
             "process is not a reading of it; the default of 1 is a cheap "
             "smoke run and says so"

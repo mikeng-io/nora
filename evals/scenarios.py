@@ -561,9 +561,9 @@ def experiment_for(
     `AbsenceGrader`'s vocabulary, so there is no per-corpus grader selection
     to get wrong. `judge` is threaded through only for `JUDGED_CORPORA`.
 
-    `sample > 1` draws each case `sample` times via `evals.backbone.sampled`
+    `sample > 1` draws each case `sample` times via `evals.reading.sampled`
     — one draw of a stochastic process is not a reading of it. Read the
-    result with `evals.backbone.sample_read`, not `read`, when `sample > 1`.
+    result with `evals.reading.sample_read`, not `read`, when `sample > 1`.
 
     `only` restricts the run to named cases, so re-measuring the few that
     moved does not cost the whole corpus. `sample_read`'s UNSTABLE is the
@@ -576,7 +576,7 @@ def experiment_for(
     (`MEMORY_INDEX_OVERRIDES`), and is checked against the composed config
     per case (`Spec.memory_surface`).
     """
-    from evals.backbone import sampled
+    from evals.reading import sampled
 
     cases = selected_cases(name, only=only, memory_index=memory_index)
     if contract is not None:

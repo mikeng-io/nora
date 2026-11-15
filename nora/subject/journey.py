@@ -201,10 +201,8 @@ class JourneyDriver:
         return self
 
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        # The `IsolatedServices` pattern: a body cancelled mid-drive still
-        # finishes its own teardown before the cancellation continues.
-        # `asyncio.wait` never cancels the cleanup task, so cancelling the
-        # caller — again and again — delays only the propagation.
+        # A body cancelled mid-drive still finishes its own teardown;
+        # `asyncio.wait` never cancels the cleanup task.
         cleanup = asyncio.create_task(self.stop())
         cancelled: asyncio.CancelledError | None = None
         while not cleanup.done():

@@ -190,13 +190,7 @@ def _wake_evidence(
 
 
 def _state_after(entries: Any, keys: dict[str, str]) -> tuple[Any, dict[str, Any]]:
-    """The named entries with the fields every body repeats verbatim lifted out.
-
-    A field rides once under `state_after_defaults` only when EVERY entry
-    carries it with a byte-identical serialized value — a field one entry
-    lacks, or carries under a different serialization (`true` is not `1`),
-    stays in its own body.
-    """
+    """The named entries with every body's byte-identical shared fields lifted out."""
     named = {i: _named(e, keys) for i, e in entries.items()}
     bodies = list(named.values())
     if len(bodies) < 2 or not all(isinstance(b, dict) for b in bodies):
@@ -295,8 +289,7 @@ async def judge_one(
 
 
 def _emitted_ids(diff: Any) -> set[str]:
-    """The ids a digest emits for one diff: the changed entries. Unchanged
-    is a count only — its ids are shown nowhere and cite nothing."""
+    """The ids a digest emits for one diff: the changed entries."""
     return {
         f"{kind}:{e.entry_id}"
         for kind, changes in diff.kinds.items()

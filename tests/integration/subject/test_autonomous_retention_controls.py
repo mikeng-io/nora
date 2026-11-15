@@ -43,8 +43,7 @@ def _axes() -> dict[str, Any]:
 
 
 def _report() -> dict[str, Any]:
-    """A minimal retained cognition report: one case, one wake, one
-    delivery and one settlement inside that wake's observed effects."""
+    """A minimal retained cognition report for the retention seams."""
     return {
         "status": "PASS", "mode": "autonomous-live-journey",
         "behavior": "UNMEASURED", "errors": [],

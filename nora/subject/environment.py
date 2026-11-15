@@ -57,9 +57,8 @@ class IsolatedServices:
         self._subjects: list[Any] = []
         self._before_tasks: set[asyncio.Task[Any]] = set()
         #: The services plan that opened this environment, when the plan
-        #: carries request-aware state a driver needs back (the generated
-        #: journey world's protocol/judge counters). `None` for positional
-        #: recordings, which expose nothing of their own.
+        #: carries request-aware state a driver needs back (e.g. the journey
+        #: world's counters). `None` for positional recordings.
         self.world: Any | None = None
 
     @property

@@ -348,8 +348,7 @@ async def _run_wake(
                             unit=case.unit,
                             message="the recorded batch is absent from the "
                                     f"sandbox: stimulus ids {missing}")
-                #: The stimulus ids the sandbox session was offered —
-                #: shown beside the recorded wake's batch in the report.
+                #: Stimulus ids the sandbox session was offered.
                 offered = sorted(s.id for s in view.pending)
                 offered_self = sorted(
                     s.id for s in view.pending if s.kind == "self")

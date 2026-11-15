@@ -535,9 +535,7 @@ async def test_the_reply_judge_declares_its_output_ceiling_on_the_final_wire(mon
 
 
 def _default_client_with_mock(requests, *, chunks=None):
-    """`factory.create_client` with NO injected http_client — the SDK's
-    own client, transport wrapped in place by the installed budget, its
-    inner swapped for a mock so only the wrapped transport serves."""
+    """`factory.create_client` with no injected client, wrapped transport mocked."""
     client = factory.create_client(
         base_url="http://127.0.0.1:1/v1", api_key="generated-key")
 

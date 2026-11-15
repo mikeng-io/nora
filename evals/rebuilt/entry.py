@@ -684,9 +684,8 @@ class EntryPoint:
     public_audience: bool = False
 
     #: The `App`'s own live-clock scheduling loop drives this entry — real
-    #: ingress, admission, the deployment's timers, cognition, fire — over a
-    #: case-declared step plan, never a stated `snapshot:` instant and never
-    #: a forced wake. `_drive_draw`'s anchored-draw path does not apply.
+    #: ingress, admission, the deployment's timers, cognition, fire — never
+    #: a `snapshot:` instant and never a forced wake.
     live_clock: bool = False
 
     #: What a judge grades, when a judge is configured: `"reply"` — what she
@@ -775,12 +774,8 @@ ENTRY_POINTS = {
         config={**_PARTICIPATION_SUBSYSTEM, "standing.enabled": True, "cognition.enabled": True},
         judged_on="position",
     ),
-    # The whole journey: the `App` itself runs, its own timers wake cognition
-    # and fire delivery, and the two judges read the same canonical evidence
-    # the frozen per-wake files carry. The subsystem a live runtime needs —
-    # signal bridge, cognition, heartbeat — is declared on the case's
-    # `Spec.overrides`/`JourneyServices`, not here: an entry's `config` is
-    # documentation only (`_drive_draw` reads `Spec.overrides`), and this
-    # entry's drive never touches the anchored-draw path.
+    # The `App` itself runs its own timers; the live subsystem is declared
+    # on the case's `Spec.overrides`/`JourneyServices` — an entry's `config`
+    # is documentation only, and this drive never touches the anchored path.
     "autonomous_journey": EntryPoint(drive=autonomous_journey, live_clock=True),
 }

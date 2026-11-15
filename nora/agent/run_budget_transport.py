@@ -282,12 +282,9 @@ class _BoundedTransport(httpx.AsyncBaseTransport):
             except ImportError:  # an SDK pinned before the httpx2 rename
                 httpx2 = None  # type: ignore[assignment]
 
-            # The client over this transport asserts its own protocol's
-            # stream type — the SDK's default client is httpx2, an
-            # injected client httpx — so the bound stream subclasses
-            # whichever the inner transport answered with (built by
-            # `type`, a variable base is not a static one), on a response
-            # of the same class.
+            # The bound stream subclasses whichever base the inner
+            # transport answered with — the SDK's default client is
+            # httpx2, an injected client httpx.
             wrap = _BoundedStream(stream, budget, reservation)
 
             async def _aiter(_self: Any) -> AsyncIterator[bytes]:
@@ -318,6 +315,11 @@ class _BoundedTransport(httpx.AsyncBaseTransport):
                     "run budget: unwrappable stream response")
                 raise RunBudgetError(
                     "run budget: unwrappable stream response") from exc
+        return await self._read_bounded_response(response, reservation)
+
+    async def _read_bounded_response(self, response: Any,
+                                     reservation: int) -> Any:
+        budget = self._budget
         try:
             left = budget.remaining()
             if left is not None and left <= 0:

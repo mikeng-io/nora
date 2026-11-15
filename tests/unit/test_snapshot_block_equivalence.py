@@ -49,9 +49,7 @@ def _instruction_load(name: str) -> InstructionLoad:
 
 
 def _in_force(config: dict[str, InstructionLoad | None]) -> InForce:
-    """A complete `materialise` result: both instruction corpora and a
-    versioned deploy recorded; `config` holds each file's load, `None`
-    where `--at` recorded none."""
+    """A complete `materialise` result for `config`'s per-file loads."""
     return InForce(
         doctrine=_instruction_load("doctrine"),
         dreamer=_instruction_load("dreamer"),
@@ -61,8 +59,7 @@ def _in_force(config: dict[str, InstructionLoad | None]) -> InForce:
 
 
 def _recording_observer(reached: list[str]) -> Any:
-    """A `RecordedServices.load` that records the `--services` read it was
-    asked for, then refuses to continue."""
+    """A `RecordedServices.load` that records the read, then refuses."""
     def load(path: str | Path) -> RecordedServices:
         reached.append(str(path))
         raise _RecordingOpened(str(path))

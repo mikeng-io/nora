@@ -181,19 +181,7 @@ def _reconcile(report: dict[str, Any], output: Path, *, judgments: bool) -> dict
 
 def _canonical_outcome(trajectory: Any, *, unit: Any, wake_id: Any,
                        session_id: Any) -> tuple[str, str | None]:
-    """This wake's lifecycle settlement inside its own captured effects.
-
-    `read_effects` already retains every `cognition_wake_outcome` row the
-    sandbox wrote after the boundary, each with its citable `ref` — the
-    same projection `subject_instructions` reads for a typed no-session.
-    The wake settles only on the row for ITS candidate wake id, in ITS
-    unit, `closed`, carrying the session the report row claims — an
-    explicit NULL for a typed no-session. Returns `(state, ref)`: `closed`
-    for the observed settlement, `failed` for an observed non-closed
-    ending, `foreign` when the observed row's unit or session contradicts
-    the claim, `absent` when nothing matching was captured or the effects
-    themselves were never observed.
-    """
+    """This wake's settlement row in its captured effects: (state, ref)."""
     effects = trajectory.get("effects") if isinstance(trajectory, dict) else None
     items = effects.get("items") if isinstance(effects, dict) else None
     if (not isinstance(items, list) or effects.get("status") != "observed"

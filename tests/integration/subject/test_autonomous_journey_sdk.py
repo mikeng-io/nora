@@ -118,10 +118,9 @@ async def test_sdk_autonomous_journey_through_real_app_to_judges_and_reports(
         report, experiment, evidence=evidence_outcome(sdk_evidence))
     assert accepted(coverage, outcome), (coverage, outcome)
     assert outcome["behavior"]["status"] == "UNMEASURED"
-    # The same retention seam `python -m evals` uses: the SDK's own
-    # report rows plus the three axes, durable in the case's evidence
-    # directory before the sandbox goes away — the memory copy is not
-    # the artifact.
+    # The same retention seam `python -m evals` uses: SDK rows plus the
+    # three axes, durable in the case's evidence directory — the memory
+    # copy is not the artifact.
     payload = backbone.retain_report(
         sdk_evidence, draw.name, report, experiment=experiment,
         coverage=coverage)

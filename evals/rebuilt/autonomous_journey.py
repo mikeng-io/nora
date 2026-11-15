@@ -73,12 +73,7 @@ def _expectations(plan: dict[str, Any]) -> list[Expectation]:
 
 
 def _plan_error(plan: dict[str, Any]) -> str | None:
-    """Why this plan cannot bind a denominator, else None — checked before
-    the App, a model call or a judge ever runs. `expected_wakes` is the
-    declared census: a positive int whose slots every `until_wakes` step
-    reaches in order and every expectation anchors inside. A malformed
-    plan refuses the case outright; the declared slots and criteria then
-    stay in the denominator whether or not the runtime produces them."""
+    """Why this plan cannot bind a denominator, else None — checked before anything runs."""
     expected = plan.get("expected_wakes")
     if type(expected) is not int or expected <= 0:
         return "the journey plan declares no positive expected_wakes"
@@ -134,10 +129,7 @@ def _plan_error(plan: dict[str, Any]) -> str | None:
 
 def _bind_declared_wakes(declared: Any, produced: list[Any],
                          roll: Rollup) -> list[Any]:
-    """The expected manifest's wake slots: each produced wake binds to the
-    declared slot at its position and slots never reached stay `None`, so
-    missing, extra or duplicated wakes are denominator errors, never a
-    silently smaller census."""
+    """The declared wake slots with each produced wake bound at its position."""
     if not (type(declared) is int and declared > 0):
         return produced
     repeated = sorted(i for i in set(produced) if produced.count(i) > 1)
@@ -234,8 +226,7 @@ def _census_reconcile(census: dict[str, Any], *, scope: Any,
 
 def _batch(offered: list[int], offered_self: list[int],
            had_session: bool | None) -> dict[str, Any]:
-    """Offered-versus-recorded evidence; `recorded` is None — the production
-    wake's own `from`/`through` range is on the wake row, not restated here."""
+    """Offered-versus-recorded evidence for the report row."""
     return {
         "recorded": None, "offered": offered,
         "recorded_self": None, "offered_self": offered_self,
@@ -249,10 +240,7 @@ def _freeze_wake(output: Path, index: int, wake: Any, session_id: Any,
                  unit: str, batch: dict[str, Any] | None,
                  no_session: str | None, step_error: tuple[str, str] | None,
                  prior_links: set[str] | None) -> dict[str, Any]:
-    """The production wake's private evidence file and its report row —
-    the same shape `scripts.cognition_loop.run._freeze_wake` freezes, with
-    the production wake id standing in both `recorded_wake_id` and
-    `wake_id` (this journey replays nothing; every wake IS the wake)."""
+    """The production wake's private evidence file and its report row."""
     from scripts.cognition_loop.run import _freeze_wake as freeze_row
 
     return freeze_row(
@@ -307,11 +295,7 @@ async def _judge(judges: Any, models: tuple[str, str],
 def _evidence_causes(ctx: dict[str, Any], subset: list[dict[str, Any]],
                      trajectory: dict[str, Any], *, scope: Any,
                      session_id: Any) -> list[str]:
-    """Named invalidations for one wake's canonical evidence, computed
-    before any judge request: its own typed closed wake/unit/session, the
-    captured event window's custody, the observed complete effects and
-    lifecycle settlement. Any cause freezes the wake ERROR with zero
-    judge traffic — torn or foreign evidence never reaches a judge."""
+    """Invalidations for one wake's canonical evidence, before any judge request."""
     causes: list[str] = []
     wake, outcome = ctx["wake"], ctx["outcome"]
     if (not isinstance(wake, dict) or type(wake.get("id")) is not int
@@ -346,10 +330,7 @@ async def _finalize(index: int, ctx: dict[str, Any], *, subject: Any,
                     expectations: list[Expectation], earlier_wakes: tuple,
                     prior_links: set[str], egress: dict[str, Any],
                     evidence_path: Path, before: Any) -> dict[str, Any]:
-    """Canonical finalization for one production wake: events → trajectory →
-    effects → state cut → diff — all at THIS instant, so fire/delivery
-    between the wake's close and finalization lands inside the window —
-    then validity, and only then both judges and the frozen file."""
+    """Canonical finalization for one production wake, then validity and both judges."""
     wake, outcome = ctx["wake"], ctx["outcome"]
     session_id = outcome["session_id"]
     no_session = (outcome["detail"] or "empty agenda") if session_id is None else None
@@ -366,10 +347,8 @@ async def _finalize(index: int, ctx: dict[str, Any], *, subject: Any,
     trajectory["unit"] = scope.unit
     trajectory["unit_rooms"] = list(scope.rooms)
     trajectory["availability"] = availability(subject.cfg, trajectory)
-    # One cut for all three projections: the effects read, the state
-    # snapshot and the diff all measure the same "now" — delivery rows
-    # that landed since `until_wakes` are inside, never dropped between
-    # two windows.
+    # One cut for all three projections: effects, snapshot and diff all
+    # measure the same "now" — nothing lands between two windows.
     trajectory["effects"] = await read_effects(
         ctx["engine"], since=ctx["boundary"], unit=scope.unit,
         rooms=scope.rooms, profile_keys=scope.profile_keys, events=subset)
@@ -721,9 +700,7 @@ _RECEIPT_TABLES = {
 
 
 async def _receipts(subject: Any) -> dict[str, Any]:
-    """The SQL receipts the case's claims rest on, captured inside the drive —
-    the case sandbox is dropped at drive teardown, so the durable record is
-    the only place the rows can be checked against later."""
+    """The SQL receipts the case's claims rest on, captured inside the drive."""
     from nora.infra.sql.engine import create_sql_engine
 
     engine = create_sql_engine(subject.database_url)

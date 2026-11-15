@@ -173,7 +173,7 @@ class IndexCache:
     """Built indexes, by key (module docstring), most recent `size` kept.
 
     Per process, so per run: a run's draws of one case are adjacent
-    (`evals.backbone.sampled`), so a small `size` holds every hit while an
+    (`evals.reading.sampled`), so a small `size` holds every hit while an
     image (a few thousand nodes, each with its vector as text) stays a few
     tens of MB."""
 

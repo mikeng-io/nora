@@ -16,7 +16,8 @@ from strands_evals.evaluators.evaluator import Evaluator
 from strands_evals.types.evaluation import EvaluationOutput
 
 from evals.accounting import case_settlement, reconcile_report, report_outcome
-from evals.backbone import ERROR, PASS, read, sample_read
+from evals.backbone import ERROR, PASS
+from evals.reading import read, sample_read
 
 
 class _Verdict(Evaluator):
@@ -48,8 +49,7 @@ def _run(cases, evaluators, task=_answered):
 
 
 def _evidence(tmp_path, events):
-    """A private evidence record holding the generated events, ordered the
-    way `RunEvidence` itself numbers them."""
+    """A private evidence record holding the generated events in `RunEvidence` order."""
     root = tmp_path / "evidence-record"
     root.mkdir(mode=0o700)
     lines = []

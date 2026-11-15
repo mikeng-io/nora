@@ -176,8 +176,7 @@ async def _finalize_once(clean_pg_url: str, tmp_path: Path, *,
                          outcome: str = "closed",
                          wake_unit: str = UNIT,
                          post_settle=None) -> tuple[dict[str, Any], CountingJudges]:
-    """The journey's own finalize on one wake: boundary -> before snapshot ->
-    the settled rows a live wake would have written -> finalize NOW."""
+    """The journey's own finalize on one wake, with its settled rows pre-written."""
     engine = create_sql_engine(clean_pg_url)
     try:
         boundary = await effect_boundary(engine)

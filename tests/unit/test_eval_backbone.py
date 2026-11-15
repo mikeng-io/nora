@@ -26,6 +26,7 @@ from strands_evals.types.evaluation import EnvironmentState, EvaluationData, Eva
 from strands_evals.types.trace import Session
 
 import evals.backbone as backbone
+import evals.reading as reading
 from evals.backbone import (
     ERROR,
     FAIL,
@@ -44,20 +45,17 @@ from evals.backbone import (
     NORA_WRITTEN_2,
     PASS,
     SNAPSHOT_KEYS,
-    UNSTABLE,
     AbsenceGrader,
     ContextGrader,
     IdempotenceGrader,
     MeetsGrader,
-    SampleReading,
     Spec,
     SubstringGrader,
     render_transcript_at,
-    sample_read,
-    sampled,
     state_of,
     traced_nora_task,
 )
+from evals.reading import UNSTABLE, SampleReading, sample_read, sampled
 from evals.rebuilt.domain import Outcome
 from evals.rebuilt.entry import ENTRY_POINTS, EntryPoint
 from nora.subject import Sandboxed
@@ -945,13 +943,13 @@ def test_sampled_draws_are_uniquely_named_off_the_base_case():
 
 
 def testbase_name_reverses_a_sampled_suffix():
-    assert backbone.base_name("speak-1#1") == "speak-1"
-    assert backbone.base_name("speak-1#12") == "speak-1"
+    assert reading.base_name("speak-1#1") == "speak-1"
+    assert reading.base_name("speak-1#12") == "speak-1"
 
 
 def testbase_name_is_unchanged_for_a_name_sampled_never_drew():
-    assert backbone.base_name("speak-1") == "speak-1"
-    assert backbone.base_name("room#general") == "room#general", (
+    assert reading.base_name("speak-1") == "speak-1"
+    assert reading.base_name("room#general") == "room#general", (
         "a '#' not followed by a digit is not a sampled() suffix"
     )
 
