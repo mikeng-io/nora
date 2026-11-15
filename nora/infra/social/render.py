@@ -166,6 +166,28 @@ POST_UNSEEN_FRAMING = (
     "couldn't see the post; don't describe it from the caption."
 )
 
+#: Every look failed — but at least one item's media was HELD, so its `code`
+#: re-opens it without the expiring url. The note still says nothing was
+#: seen, and offers the held handle rather than the link that just failed.
+POST_UNSEEN_KEPT_FRAMING = (
+    "One Instagram post. None of its items was seen (each says why), so the "
+    "caption is all there is, and it is only what the poster wrote. Say you "
+    "couldn't see the post; don't describe it from the caption. An item that "
+    "carries a `code` in items is held here — media_fetch(code=...) opens it "
+    "again without its link."
+)
+
+#: `POST_MIXED_FRAMING` with a held item: the looks that ran all failed, but
+#: one item's media is held, so its `code` is offered beside the not-read
+#: links instead of being lost with the failure.
+POST_MIXED_KEPT_FRAMING = (
+    "One Instagram post. None of its items was seen: the ones that were "
+    "looked at could not be seen just now — an item that carries a `code` in "
+    "items is held here, media_fetch(code=...) — and only the ones marked "
+    "not read here open with media_fetch(url=...) on their link. The caption "
+    "is only what the poster wrote; don't describe the post from it alone."
+)
+
 #: The framing for an `ok` search (ADR 0015: the result explains the status).
 #: It says the one thing a model would otherwise assume: the first result is
 #: not always the person.
@@ -422,11 +444,23 @@ def _post_blocks(view: PostView, now: int) -> list[_Block]:
 
 
 def _post_note(view: PostView) -> str:
+    # A `code` means custody survived the look — even a failed one — so the
+    # note can offer the held handle instead of only the link that failed.
+    # Only the failure framings change: seen and never-looked reads have no
+    # failed item to explain.
+    kept = any(
+        item.reading is not None and item.reading.code for item in view.items
+    )
+    key = _outcome(view.items)
+    if kept and key in ("mixed", "unseen"):
+        key = f"{key}_kept"
     return {
         "none": POST_FRAMING, "read": POST_READ_FRAMING,
         "not_read": POST_NOT_READ_FRAMING, "mixed": POST_MIXED_FRAMING,
         "unseen": POST_UNSEEN_FRAMING,
-    }[_outcome(view.items)]
+        "mixed_kept": POST_MIXED_KEPT_FRAMING,
+        "unseen_kept": POST_UNSEEN_KEPT_FRAMING,
+    }[key]
 
 
 def _looked(items: tuple[ItemView, ...]) -> bool:

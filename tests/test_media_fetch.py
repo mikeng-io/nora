@@ -2443,10 +2443,12 @@ async def test_an_instagram_look_keeps_the_clip_whose_code_re_reads_it(
     and the read completes. And a code the room did not mint resolves to
     nothing, the same boundary every kept picture already lives behind."""
     from nora.agent.toolkit.media import _MEDIA_READ
+    from nora.domain.turn_deadline import look_deadline
+    from nora.infra.social.readings import VIDEO_ITEM_TIMEOUT_SECONDS
     from nora.infra.vision import preprocess as _pre
 
     vision = _WindowVision(
-        answers=["", "the tail", "the opening", "the tail again"])
+        answers=["", "the tail", "the opening", "again@0", "again@30"])
     await _fake_download(monkeypatch, data=b"clip-bytes", media_type="video/mp4")
     monkeypatch.setattr(_pre, "_run_video", _ffmpeg("39.264"))
     index = FakeMediaObjectStore([])
@@ -2456,23 +2458,29 @@ async def test_an_instagram_look_keeps_the_clip_whose_code_re_reads_it(
 
     token = _MEDIA_READ.set(("instagram_read", True))
     try:
-        out = await _call(tool, url="https://cdn.example/reel.mp4")
+        # The envelope `read_view` wraps the automatic look in — its allowance
+        # is the budget the read spends a timed-out window's recovery from.
+        with look_deadline(VIDEO_ITEM_TIMEOUT_SECONDS):
+            out = await _call(tool, url="https://cdn.example/reel.mp4")
     finally:
         _MEDIA_READ.reset(token)
 
     assert out["status"] == "ok"
     assert out["code"], "the held item hands back its stable code"
-    assert "0:00 — this part could not be read" in out["description"]
-    # The automatic look runs under its own item envelope, which a recovery
-    # pass here cannot see — so the timed-out window is NOT re-asked in it.
-    assert len(vision.calls) == 2
+    assert "the opening" in out["description"]
+    assert "the tail" in out["description"]
+    assert "could not be read" not in out["description"]
+    assert vision.calls == [
+        b"window@0.000", b"window@30.000", b"window@0.000"], (
+        "the timed-out opening was owed its one recovery attempt inside the "
+        "look's own allowance; the answered tail was never re-asked")
     assert index.saved and index.saved[0].source == "fetched"
     assert index.saved[0].provenance["url"] == "https://cdn.example/reel.mp4"
 
     again = await _call(tool, code=out["code"])
     assert again["status"] == "ok"
-    assert "the opening" in again["description"]
-    assert "the tail again" in again["description"]
+    assert "again@0" in again["description"]
+    assert "again@30" in again["description"]
     assert "could not watch" not in again["description"]
 
     elsewhere = wiring["build_all"](media_store=index, conversation_id="g2")

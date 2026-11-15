@@ -2,8 +2,8 @@
   {
     "name": "the caption is passed into the vision prompt, as media_fetch's question",
     "file": "nora/infra/social/readings.py",
-    "old": "                served = await asyncio.wait_for(look.fetch(url=item.url), timeout=item_timeout)",
-    "new": "                served = await asyncio.wait_for(look.fetch(url=item.url, question=getattr(view, \"caption\", None) or item.caption or \"\"), timeout=item_timeout)",
+    "old": "                    served = await asyncio.wait_for(\n                        look.fetch(url=item.url), timeout=allowance)",
+    "new": "                    served = await asyncio.wait_for(\n                        look.fetch(url=item.url, question=getattr(view, \"caption\", None) or item.caption or \"\"), timeout=allowance)",
     "target": "tests/unit/test_instagram_read_readings.py::test_the_caption_never_reaches_a_vision_prompt tests/unit/test_instagram_read_readings.py::test_a_look_is_handed_the_url_and_nothing_else"
   },
   {
@@ -16,15 +16,15 @@
   {
     "name": "partial-failure handling is removed: one look that fails fails the call",
     "file": "nora/infra/social/readings.py",
-    "old": "            except Exception:\n                log.exception(\"instagram item reading failed\")\n                return Reading(\"failed\")",
-    "new": "            except Exception:\n                raise",
+    "old": "                except Exception:\n                    log.exception(\"instagram item reading failed\")\n                    return Reading(\"failed\")",
+    "new": "                except Exception:\n                    raise",
     "target": "tests/unit/test_instagram_read_readings.py -k costs_only_its_own_item"
   },
   {
     "name": "a look that runs out of time fails the call instead of its own item",
     "file": "nora/infra/social/readings.py",
-    "old": "            except TimeoutError:\n                return Reading(\"timed_out\")",
-    "new": "            except TimeoutError:\n                raise",
+    "old": "                except TimeoutError:\n                    return Reading(\"timed_out\")",
+    "new": "                except TimeoutError:\n                    raise",
     "target": "tests/unit/test_instagram_read_readings.py -k runs_out_of_time_costs_only"
   },
   {

@@ -49,7 +49,7 @@ from typing import Any, Protocol
 from nora.domain.blocks import wrap_outside_text
 from nora.domain.media import parse_media_type
 from nora.domain.ports import MediaDescription
-from nora.domain.turn_deadline import seconds_left
+from nora.domain.turn_deadline import look_seconds_left, seconds_left
 
 from .client import VIDEO_READ_SECONDS, VISION_WINDOW_CONCURRENCY, VisionClient, VisionResult
 from .preprocess import (
@@ -463,7 +463,6 @@ async def read_video_windows(
     media_type: str,
     ask: AskWindow,
     budget_seconds: float = VIDEO_READ_SECONDS,
-    retry_timeouts: bool = True,
 ) -> tuple[tuple[str, ...], tuple[VideoWindow, ...]]:
     """Every window through `ask`, timecoded from the WINDOW's own start.
 
@@ -485,15 +484,20 @@ async def read_video_windows(
     `budget_seconds` bounds the whole read's wall clock, and `remaining` caps
     each call it contains — the per-call vision ceiling can still bind lower.
     A window that TIMED OUT is owed one more attempt at the end, batched under
-    the same concurrency, while the budget is unspent; `retry_timeouts=False`
-    is the caller saying an enclosing bound it cannot see — a social read's
-    item envelope — already covers it. Cancelled is cancelled: the exception
-    propagates with no retry.
+    the same concurrency, while the budget is unspent. Two enclosing deadlines
+    shrink the budget before the first call — the turn's (`seconds_left`) and,
+    when the read runs inside a social item's look, that look's own
+    (`look_seconds_left`) — so a recovery pass is always spent from an
+    allowance that already bounds the read, never beside it. Cancelled is
+    cancelled: the exception propagates with no retry.
     """
     started = asyncio.get_running_loop().time()
     left = seconds_left()
     if left is not None:
         budget_seconds = min(budget_seconds, left)
+    look_left = look_seconds_left()
+    if look_left is not None:
+        budget_seconds = min(budget_seconds, look_left)
     outcomes: dict[int, VisionResult | None] = {}
 
     async def one(index: int) -> VisionResult | None:
@@ -522,8 +526,6 @@ async def read_video_windows(
                     log.warning("video window read failed", exc_info=result)
                     result = None
                 outcomes[i] = result
-        if not retry_timeouts:
-            break
         todo = [i for i in todo if _timed_out(outcomes[i])]
         if not todo or asyncio.get_running_loop().time() - started >= budget_seconds:
             break

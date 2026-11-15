@@ -10,6 +10,8 @@ from nora.agent.security import scan_identifiers
 from nora.agent.toolkit.files import (
     _FILE_LOOK_NOTES,
     _KEEPABLE_IMAGE_TYPES,
+    _KEPT_CLIP_NOTE,
+    _KEPT_NOTE,
     _TRUNCATED_CODE_NOTE,
     _handle_hex,
     _shared_page_link,
@@ -24,7 +26,6 @@ from nora.domain.external_files import (
 from nora.domain.external_files import recognise as _recognise_file_link
 from nora.domain.media import (
     HANDLE_CHARS,
-    MEDIA_FETCH_CALLERS,
     Sighting,
     VideoReadingKey,
     code_matches,
@@ -445,8 +446,14 @@ async def _media_fetch__shared_bytes(c):
         c.sha256 = hashlib.sha256(c.data).hexdigest()
         c.serve_code = c.shared.handle
         c.is_cover = False
-    c.kept_image = bool(c.url and c.serve_code)
-    c.answer_code = c.shared.handle if c.shared is not None else c.sha256[:HANDLE_CHARS]
+    # The kept-note and the code the answer may carry come from the SAME
+    # place — custody that was VERIFIED (`serve_code`): a kept row's key, a
+    # sighted row's hash prefix, or a shared ref's handle. Never a hash of
+    # bytes that were only here transiently.
+    c.kept_note = (
+        _KEPT_CLIP_NOTE if _modality_of(c.media_type) == "video" else _KEPT_NOTE
+    ) if c.url and c.serve_code else None
+    c.answer_code = c.serve_code
     if not c.url and c.shared is None and (not c.question) and (c.media_store is not None):
         try:
             c.stored = await c.media_store.get(sha256=c.sha256)
@@ -461,9 +468,9 @@ async def _media_fetch__shared_bytes(c):
                     c.sha256,
                     _stored_reading(c.stored),
                     cached=True,
-                    code=c.serve_code,
+                    code=c.answer_code,
                     cover=c.is_cover,
-                    kept=c.kept_image,
+                    kept=c.kept_note,
                 ),
             )
     return await _media_fetch__plan_describe(c)
@@ -514,8 +521,8 @@ async def _media_fetch__plan_describe(c):
                 c.sha256,
                 c.cached_description,
                 cached=True,
-                code=c.serve_code,
-                kept=c.kept_image,
+                code=c.answer_code,
+                kept=c.kept_note,
                 cover=c.is_cover,
             ),
         )
@@ -555,8 +562,8 @@ async def _media_fetch__plan_describe(c):
                     c.sha256,
                     c.cached_reading,
                     cached=True,
-                    code=c.serve_code,
-                    kept=c.kept_image,
+                    code=c.answer_code,
+                    kept=c.kept_note,
                     cover=c.is_cover,
                 ),
             )
@@ -645,14 +652,13 @@ async def _media_fetch__cut_video(c):
             )
             c.result = c.one
         else:
+            # The read bounds itself: `budget_seconds` defaults to
+            # VIDEO_READ_SECONDS and shrinks to the enclosing deadlines it
+            # CAN see — the turn's, and this look's own when a social read
+            # handed one down — so a timed-out window's recovery pass is
+            # spent from the same allowance the look dies at.
             c.segments, c.read_windows = await read_video_windows(
                 cut=c.cut, media_type=c.media_type, ask=c._ask,
-                # A deliberate look may retry a timed-out window inside its
-                # own budget; a look issued by a social read runs under that
-                # read's own item envelope (`readings.ITEM_TIMEOUT_SECONDS`),
-                # which a second pass here cannot see — its envelope is the
-                # bound, so no retry.
-                retry_timeouts=_MEDIA_READ.get()[0] == MEDIA_FETCH_CALLERS[0],
             )
             if not c.read_windows:
                 _record_media(c.metrics, "unavailable", reason="vision")
@@ -707,8 +713,8 @@ async def _media_fetch__answer(c):
                 c.sha256,
                 c.description,
                 cached=False,
-                code=c.serve_code,
-                kept=c.kept_image,
+                code=c.answer_code,
+                kept=c.kept_note,
                 cover=c.is_cover,
             ),
         )
@@ -728,8 +734,8 @@ async def _media_fetch__answer(c):
             c.sha256,
             c.description,
             cached=False,
-            code=c.serve_code,
-            kept=c.kept_image,
+            code=c.answer_code,
+            kept=c.kept_note,
             cover=c.is_cover,
         ),
     )

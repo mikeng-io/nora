@@ -55,8 +55,9 @@ unspent, batched under the same concurrency; an `error` already spent its
 retry inside the first ceiling, and only a `timeout` never did. The recovery
 pass re-asks nothing that answered, a cancelled read issues none, and a
 window that stays unread remains a visible gap. A look issued under an
-envelope the reader cannot see — a social item's own timeout — stays
-one-shot, because the envelope is already the bound.
+envelope the reader cannot otherwise bound — a social item's own timeout —
+hands that deadline DOWN to the read, so the recovery pass is spent from
+the same allowance that kills the look, never beside it.
 
 Truncation by token limit or time is unavailable. It is never rendered as a
 short but complete reading. Deadline and size changes must preserve that

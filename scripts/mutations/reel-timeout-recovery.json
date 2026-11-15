@@ -14,18 +14,32 @@
     "target": "tests/unit/test_media_comprehender.py -k spent_budget"
   },
   {
-    "name": "a look under an outer envelope stays one-shot",
-    "file": "nora/media/adapters/tools/fetch.py",
-    "old": "                retry_timeouts=_MEDIA_READ.get()[0] == MEDIA_FETCH_CALLERS[0],",
-    "new": "                retry_timeouts=True,",
-    "target": "tests/test_media_fetch.py -k instagram_look_keeps"
+    "name": "the read spends only the look's own allowance",
+    "file": "nora/infra/vision/comprehend.py",
+    "old": "    look_left = look_seconds_left()\n    if look_left is not None:\n        budget_seconds = min(budget_seconds, look_left)\n",
+    "new": "",
+    "target": "tests/unit/test_media_comprehender.py -k look_envelope_spends_only"
+  },
+  {
+    "name": "the look's deadline is handed down to the read",
+    "file": "nora/infra/social/readings.py",
+    "old": "            with look_deadline(allowance):",
+    "new": "            if True:",
+    "target": "tests/unit/test_instagram_read_readings.py -k timed_out_opening"
   },
   {
     "name": "a persisted look keeps the item's bytes, video included",
     "file": "nora/media/adapters/tools/fetch.py",
     "old": "        (c.media_type in _KEEPABLE_IMAGE_TYPES or _modality_of(c.media_type) == \"video\")\n        and c.persist_look",
-    "new": "        c.media_type in _KEEPABLE_IMAGE_TYPES\n        and c.caller == MEDIA_FETCH_CALLERS[0]\n        and c.persist_look",
+    "new": "        c.media_type in _KEEPABLE_IMAGE_TYPES\n        and c.persist_look",
     "target": "tests/test_media_fetch.py -k instagram_look_keeps"
+  },
+  {
+    "name": "only verified custody serves a code",
+    "file": "nora/media/adapters/tools/fetch.py",
+    "old": "    c.answer_code = c.serve_code",
+    "new": "    c.answer_code = c.serve_code or c.sha256[:HANDLE_CHARS]",
+    "target": "tests/unit/test_instagram_read_readings.py -k custody_failed"
   },
   {
     "name": "the held item's code rides the Reading",
@@ -33,6 +47,20 @@
     "old": "                return Reading(\"seen\", body, coverage, code=code)",
     "new": "                return Reading(\"seen\", body, coverage)",
     "target": "tests/unit/test_instagram_read_readings.py -k carries_the_held_items_code"
+  },
+  {
+    "name": "a failed look still hands the held code",
+    "file": "nora/infra/social/readings.py",
+    "old": "    return Reading(\"failed\", code=code)",
+    "new": "    return Reading(\"failed\")",
+    "target": "tests/unit/test_instagram_read_readings.py -k every_look_failing"
+  },
+  {
+    "name": "the all-unseen note offers the held handle",
+    "file": "nora/infra/social/render.py",
+    "old": "    if kept and key in (\"mixed\", \"unseen\"):\n        key = f\"{key}_kept\"\n",
+    "new": "",
+    "target": "tests/unit/test_instagram_read_readings.py -k every_look_failing"
   },
   {
     "name": "the item's code reaches items[] for media_fetch",

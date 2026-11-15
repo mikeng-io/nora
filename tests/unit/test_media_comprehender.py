@@ -548,10 +548,15 @@ async def test_an_errored_window_is_not_re_asked():
     assert read == ()
 
 
-async def test_a_read_under_an_outer_envelope_stays_one_shot():
-    """`retry_timeouts=False` is the caller saying an enclosing bound the read
-    cannot see — a social item's own timeout — already covers it: no second
-    wave races that envelope, and the gap stays honest."""
+async def test_a_read_under_a_look_envelope_spends_only_its_allowance():
+    """The look's own deadline IS the budget a recovery pass spends: with
+    `look_deadline` set around the read (what `read_view` wraps a social
+    item's look in), the first call's hang eats the whole allowance — the
+    recovery wave has nothing left to spend, so the gap stays honest and
+    nothing is asked again."""
+    import asyncio
+
+    from nora.domain.turn_deadline import look_deadline
     from nora.infra.vision.comprehend import read_video_windows
 
     windows = (VideoWindow(start_seconds=0, seconds=30, data=b"\x00"),)
@@ -561,10 +566,12 @@ async def test_a_read_under_an_outer_envelope_stays_one_shot():
     async def ask(data, count):
         nonlocal calls
         calls += 1
+        await asyncio.sleep(0.6)
         return VisionResult(available=False, reason="timeout")
 
-    segments, _ = await read_video_windows(
-        cut=cut, media_type="video/mp4", ask=ask, retry_timeouts=False)
+    with look_deadline(0.4):
+        segments, _ = await read_video_windows(
+            cut=cut, media_type="video/mp4", ask=ask)
 
     assert calls == 1, "the envelope's own bound is the whole bound"
     assert segments == ("0:00 — this part could not be read",)

@@ -9,7 +9,6 @@ from typing import Literal, get_args, get_type_hints
 from nora.agent.security import scan_identifiers
 from nora.agent.toolkit.files import (
     _COVER_NOTE,
-    _KEPT_NOTE,
     _MEDIA_READING_NOTE,
     _handle_hex,
     _is_external_reference,
@@ -40,7 +39,7 @@ def _make__serve_media(deps):
         cached: bool,
         code: str | None = None,
         cover: bool = False,
-        kept: bool = False,
+        kept: str | None = None,
     ) -> dict:
         """The `ok` path, with the untrusted-egress screen run on EVERY serve."""
         if scan_identifiers(description, content_checks=content_checks) is not None:
@@ -72,7 +71,7 @@ def _make__serve_media(deps):
         if cover:
             served["note"] = f"{served['note']} {_COVER_NOTE}"
         if kept:
-            served["note"] = f"{served['note']} {_KEPT_NOTE}"
+            served["note"] = f"{served['note']} {kept}"
         return served
 
     return _serve_media
