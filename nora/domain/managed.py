@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.management import (
@@ -363,3 +363,83 @@ class IdentifierConflictError(ManagedError):
 class OperationConflictError(ManagedError):
     """An `operation_id` replayed with a different effect — a conflict, not
     a retry (`management.md`)."""
+
+
+# ---------------------------------------------------------------------------
+# Platform discovery (`identity.md` «Platform discovery and membership»).
+# ---------------------------------------------------------------------------
+
+MemberClassification = Literal["person", "bot", "unknown"]
+
+
+@dataclass(frozen=True)
+class ObservedMember:
+    """One observed platform account inside a collection roster.
+
+    `identifiers` carries EVERY matchable identifier that ONE account
+    presented — a Signal member's `number`+`uuid` pair is one member, never
+    two — and all of one platform. A member the source cannot type down to
+    a matchable identifier is `unknown`: representable so a complete roster
+    can refuse rather than pretend it knows everyone, and never syncable
+    as a person (a classification the source did not make is never "person"
+    — that is how a bot can never ride in as a human).
+    """
+
+    identifiers: frozenset[Identifier]
+    classification: MemberClassification = "person"
+
+    def __post_init__(self) -> None:
+        typed = frozenset(self.identifiers)
+        if not typed and self.classification != "unknown":
+            raise ManagedError(
+                "a roster member carries at least one identifier unless "
+                "it is unclassifiable"
+            )
+        platforms = {i.platform for i in typed}
+        if len(platforms) > 1:
+            raise ManagedError(
+                f"a roster member cannot mix platforms {sorted(platforms)}"
+            )
+        object.__setattr__(self, "identifiers", typed)
+
+
+@dataclass(frozen=True)
+class DiscoveryCapabilities:
+    """What one platform's collection discovery can honestly supply —
+    declared per adapter, never assumed equal across platforms.
+
+    `roster`: the platform can enumerate a collection's member set.
+    `member_events`: membership deltas stream as observations.
+    `sender_typing`: an observed sender's value can be typed to matchable
+    identifiers. `room_audience`: a collection IS one room's audience —
+    False wherever the only roster is a superset (a guild's members are
+    never a channel's audience), so an `audience="room"` rule refuses to
+    build rather than silently over-grant.
+    """
+
+    roster: bool
+    member_events: bool
+    sender_typing: bool
+    room_audience: bool
+
+
+@dataclass(frozen=True)
+class CollectionSnapshot:
+    """One roster read's answer — the fail-closed rule `Roster` carries,
+    kept for the management path: `available` distinguishes "the source
+    could not answer" from "the collection is empty", and only a complete,
+    available snapshot may establish departures. `complete` is the source's
+    own completeness claim (a paginated read that finished is complete; a
+    capability returning a subset is not). `observed_ms` stamps when the
+    upstream read happened — freshness a caller compares without inventing
+    a clock of its own.
+    """
+
+    available: bool
+    members: tuple[ObservedMember, ...] = ()
+    complete: bool = False
+    observed_ms: int = 0
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "members", tuple(self.members))

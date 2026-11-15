@@ -23,7 +23,8 @@ class RuntimeWiring:
 async def runtime(
     allowlist: Any, cfg: Any, engagement: Any, engine: Any,
     fire_path: Any, ingest: Any, memory: Any, metrics: Any,
-    observation_store: Any, participation_trigger: Any, persons: Any, policy: Any,
+    observation_store: Any, onboarding: Any, participation_trigger: Any,
+    persons: Any, policy: Any,
     registry: Any, slots: Any, stimulus_wiring: Any,
 ) -> RuntimeWiring:
 
@@ -82,6 +83,7 @@ async def runtime(
             fire_speak=fire_path.speak if fire_path else None,
             participation_state=SqlParticipationStateStore(engine),
             observations=observation_store,
+            onboarding=onboarding,
         )
         # The inspector reads the REAL redis client + engine the runtime
         # runs on — a second connection would measure a different world.

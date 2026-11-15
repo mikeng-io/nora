@@ -3,4 +3,6 @@ from nora.people import wire as wire
 from nora.people.app.authentication import AccountSessions as AccountSessions
 from nora.people.app.identity_resolution import IdentityResolver as IdentityResolver
 from nora.people.app.management_invocation import HumanManagement as HumanManagement
+from nora.people.app.onboarding import OnboardingRule as OnboardingRule
+from nora.people.app.onboarding import PlatformOnboarding as PlatformOnboarding
 from nora.people.app.roster_provisioning import RosterProvisioning as RosterProvisioning

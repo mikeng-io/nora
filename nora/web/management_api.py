@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from nora.domain.identity import Identifier
 from nora.domain.identity_resolution import ResolutionStatus
+from nora.domain.managed import ObservedMember
 from nora.domain.management import (
     AccountRegistration,
     Actor,
@@ -172,14 +173,13 @@ class _ManagementHTTP:
         if (roster.scope not in credential.scopes or roster.platform not in credential.actor.sources
                 or (roster.audience == "collection" and roster.scope.kind is ScopeKind.ROOM)):
             return _reply("denied", 403)
-        if roster.complete and any(m.classification == "unknown" for m in roster.members):
-            return _reply("unavailable", 503)
         services = self._services
         outcome = await RosterProvisioning(services.bindings, services.registry, services.topology,
             services.registration, services.authority).apply(
                 operation_id=roster.operation_id, actor=credential.actor, scope=roster.scope,
                 collection=roster.collection, complete_roster=roster.complete,
-                members=(m.account for m in roster.members if m.classification == "person"))
+                members=(ObservedMember(frozenset({m.account}), m.classification)
+                         for m in roster.members))
         return _reply(outcome.status.value, {"complete": 200, "denied": 403,
             "unavailable": 503, "incomplete": 409}[outcome.status.value], detail=outcome.detail)
 

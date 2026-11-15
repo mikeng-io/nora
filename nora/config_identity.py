@@ -90,6 +90,62 @@ class AuthenticationIssuerConfig(BaseModel):
         return values
 
 
+class OnboardingCollectionConfig(BaseModel):
+    """One operator-approved onboarding rule (`identity.md` «Platform
+    discovery and membership»): `collection`'s member set flows into the
+    named scope under the named provisioning service's authenticated
+    identity. Nothing onboards implicitly — every rule is declared and its
+    admission is the same service+scope check the roster endpoint applies.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1)
+    service: str = Field(min_length=1)
+    platform: str = Field(min_length=1)
+    collection: str = Field(min_length=1)
+    scope: ProvisioningScopeConfig
+    audience: Literal["collection", "room"] = "collection"
+
+    @field_validator("platform")
+    @classmethod
+    def _known_platform(cls, value: str) -> str:
+        if not id_kinds(value):
+            raise ValueError(
+                f"unknown platform {value!r}: no id-kind vocabulary declared"
+            )
+        return value
+
+
+class OnboardingConfig(BaseModel):
+    """Managed-identity onboarding: which collection member sets feed which
+    scopes through the provisioning boundary, and the reconciliation
+    cadence. An absent section — or empty `collections` — keeps current
+    behavior: no collection ever onboards implicitly."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    collections: tuple[OnboardingCollectionConfig, ...] = ()
+    interval_seconds: float = Field(default=300.0, ge=15.0, le=86400.0)
+    retry_seconds: float = Field(default=60.0, ge=5.0, le=86400.0)
+
+    @field_validator("collections")
+    @classmethod
+    def _distinct_rules(
+        cls, value: tuple[OnboardingCollectionConfig, ...]
+    ) -> tuple[OnboardingCollectionConfig, ...]:
+        names = [c.name for c in value]
+        if len(names) != len(set(names)):
+            raise ValueError("onboarding collection names must be distinct")
+        keys = [(c.service, c.platform, c.collection) for c in value]
+        if len(keys) != len(set(keys)):
+            raise ValueError(
+                "duplicate onboarding collection: one service+platform+"
+                "collection may carry only one rule"
+            )
+        return value
+
+
 class IdentityBackendConfig(BaseModel):
     """`[identity]` — which backend owns person binding and scoped grants.
 
@@ -107,11 +163,42 @@ class IdentityBackendConfig(BaseModel):
     managed: ManagedOryConfig = ManagedOryConfig()
     provisioning: dict[str, ProvisioningServiceConfig] = Field(default_factory=dict)
     authentication: dict[str, AuthenticationIssuerConfig] = Field(default_factory=dict)
+    onboarding: OnboardingConfig = Field(default_factory=OnboardingConfig)
 
     @model_validator(mode="after")
     def _managed_needs_its_services(self) -> IdentityBackendConfig:
         if any(not name.strip() for name in {*self.provisioning, *self.authentication}):
             raise ValueError("management services require a nonblank identity")
+        if self.backend != "managed" and self.onboarding.collections:
+            raise ValueError(
+                "[identity.onboarding] collections require backend = \"managed\""
+            )
+        for rule in self.onboarding.collections:
+            service = self.provisioning.get(rule.service)
+            if service is None:
+                raise ValueError(
+                    f"onboarding collection {rule.name!r} names a service not "
+                    "declared in [identity.provisioning]"
+                )
+            if rule.platform not in service.sources:
+                raise ValueError(
+                    f"onboarding collection {rule.name!r}: service "
+                    f"{rule.service!r} is not approved for platform "
+                    f"{rule.platform!r}"
+                )
+            if rule.scope not in service.scopes:
+                raise ValueError(
+                    f"onboarding collection {rule.name!r}: service "
+                    f"{rule.service!r} is not approved for scope "
+                    f"{rule.scope.kind}={rule.scope.id!r}"
+                )
+            if (rule.audience == "collection") == (rule.scope.kind == "room"):
+                raise ValueError(
+                    f"onboarding collection {rule.name!r}: audience "
+                    f"{rule.audience!r} requires scope.kind "
+                    f"{'room' if rule.audience == 'room' else 'non-room'} — a "
+                    "collection-wide roster can never grant room membership"
+                )
         if self.backend != "managed":
             return self
         required = {

@@ -459,8 +459,7 @@ class DiscordBridge:
             DiscordMusicToolBridge(
                 adapter=shim, manager=manager, hub=hub,
                 voice_guild_ids=self._voice_guild_ids,
-                resolve_music_channel=self._resolve_music_channel,
-            )
+                resolve_music_channel=self._resolve_music_channel)
             if manager is not None
             else None
         )
@@ -618,12 +617,10 @@ class DiscordBridge:
         client.event(on_socket_raw_receive)
         self._listener = DiscordListener(
             client, token or self._bot_token,
-            on_ready_extra=self.on_gateway_ready,
-        )
+            on_ready_extra=self.on_gateway_ready)
         await self._listener.listen(
             self._capture_message, self._capture_edit, self._capture_touch,
-            self._capture_observation,
-        )
+            self._capture_observation)
 
     async def on_gateway_ready(self) -> None:
         """The ONE graph-attach point — `DiscordListener.on_ready_extra`.
@@ -649,13 +646,11 @@ class DiscordBridge:
                 hub=self._hub, voice_guild_ids=self._voice_guild_ids,
                 resolve_music_channel=self._resolve_music_channel,
                 client_getter=self.current_client,
-                admission=self._slash_admission,
-            )
+                admission=self._slash_admission)
             await resume_persisted_sessions(
                 client, self._manager, hub=self._hub,
                 resolve_music_channel=self._resolve_music_channel,
-                client_getter=self.current_client,
-            )
+                client_getter=self.current_client)
             self._manager.start_liveness_watch()
         if self._hub is not None:
             await self._hub.adopt_boot_voice_sessions(self._voice_guild_ids)
@@ -761,8 +756,7 @@ class DiscordBridge:
         elif kind in ("reaction_add", "reaction_remove"):
             msg = parse_discord_reaction(
                 payload, own_id=self.self_id,
-                removed=kind == "reaction_remove", room_channel_id=parent,
-            )
+                removed=kind == "reaction_remove", room_channel_id=parent)
         else:
             return
         if msg is None:
@@ -965,8 +959,7 @@ class DiscordBridge:
             now = int(time.time() * 1000)
             sk = canonical_source_key(
                 PLATFORM, self._account_key, msg.conversation_id, kind,
-                upstream,
-            )
+                upstream)
             env = Envelope(
                 platform=PLATFORM, account_key=self._account_key, kind=kind,
                 source_key=sk,
@@ -985,8 +978,7 @@ class DiscordBridge:
                     dataclasses.replace(carried[0], received_ms=now))
                     if carried else None),
                 trace=dict(carrier),
-                admission_rev=_admission_rev(proj),
-            )
+                admission_rev=_admission_rev(proj))
             # The transition ledger step commits ON this event's record.
             ok = (await self._capture_sink.capture(
                 env, transition=transition) if transition is not None
@@ -1031,8 +1023,7 @@ class DiscordBridge:
                     obs,
                     scope=dataclasses.replace(obs.scope, conversation_id=room),
                     coverage=dataclasses.replace(
-                        obs.coverage, covered=f"guild:{obs.coverage.covered}"),
-                )
+                        obs.coverage, covered=f"guild:{obs.coverage.covered}"))
                 sent = await self._emit_observation(
                     scoped, upstream=upstream, transition=transition,
                     trace=trace, proj=proj)
@@ -1621,6 +1612,15 @@ class DiscordBridge:
                 return reply(
                     available, value,
                     None if available else "cache_unavailable")
+            if op == "members":
+                # RAW member rows — `roster` unprojected — `bot`/`system` kept.
+                if self._roster is None:
+                    return reply(False, None, "cache_unavailable")
+                rows = await self._roster.guild_members(
+                    str(params.get("guild_id") or ""))
+                return reply(rows is not None,
+                             None if rows is None else {"members": rows},
+                             None if rows is not None else "cache_unavailable")
             if op == "channels":
                 guild_id = str(params.get("guild_id") or "")
                 channels = self._channels.guild_channels(guild_id=guild_id)

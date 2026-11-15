@@ -451,7 +451,7 @@ class WorkRunner:
                  instance: str | None = None, lease_seconds: int = 300,
                  allowlist: Any = None, persons: Any = None,
                  fire_speak: Any = None, participation_state: Any = None,
-                 observations: Any = None) -> None:
+                 observations: Any = None, onboarding: Any = None) -> None:
         self._store = store
         self._redis = redis
         self._ingest = ingest
@@ -476,6 +476,7 @@ class WorkRunner:
         # v2 envelope sidecars and observation-only events persist. `None`
         # retains an observation as a failure, never drops it silently.
         self._observations = observations
+        self._onboarding = onboarding
         self._owner = instance or f"nora-{uuid.uuid4().hex[:8]}"
         self._lease = lease_seconds
         self._stop = asyncio.Event()
@@ -900,8 +901,7 @@ class WorkRunner:
                     await conn.execute(sa.text(
                         "UPDATE bridge_event SET payload = payload || :patch,"
                         " updated_at = now() WHERE id = :eid"),
-                        {"patch": json.dumps(
-                            {"message_row_id": row_id, "handoff": handoff}),
+                        {"patch": json.dumps({"message_row_id": row_id, "handoff": handoff}),
                          "eid": envelope.event_id})
                     # Observations retained BEFORE their target existed
                     # re-link inside the row's own commit — the link lands
@@ -916,14 +916,12 @@ class WorkRunner:
                         platform_message_id=arrived.message_id or None,
                         sent_ts=arrived.timestamp or None,
                         sender_id=arrived.sender_id or None)
-                result = await self._ingest.run(message=message, tx_hook=hook,
-                                                durable=True)
+                result = await self._ingest.run(message=message, tx_hook=hook, durable=True)
                 if result.outcome in FAILURE_OUTCOMES:
                     # A swallowed audit failure is a typed failure, never a skip.
                     state = ("retryable_failure" if work.attempts < 5
                              else "failed_retained")
-                    ok = await self._finish(
-                        work, state, {"outcome": result.outcome})
+                    ok = await self._finish(work, state, {"outcome": result.outcome})
                     if ok and state == "failed_retained":
                         # Terminal AND nothing downstream owns the event —
                         # discharge the entry now, not on a 30s reclaim.
@@ -955,6 +953,7 @@ class WorkRunner:
                 absorbed = result.absorbed
                 unit = result.unit
                 row_id = result.row_id
+            self._maybe_observe_sender(person, work, envelope)
             observation_status: str | None = None
             if envelope.observation is not None:
                 # Message + observation sidecar on ONE envelope: ONE
@@ -976,8 +975,7 @@ class WorkRunner:
                         work, envelope, unit=unit,
                         sibling_message=result_message,
                         sibling_row_id=row_id,
-                        sibling_person_id=(
-                            person.person_id if person else None))
+                        sibling_person_id=person.person_id if person else None)
                     if status is None:
                         return
                     observation_status = status
@@ -1011,8 +1009,7 @@ class WorkRunner:
                         ordinal=91, platform=work.platform,
                         account_key=work.account_key,
                         conversation_id=work.conversation_id,
-                        payload=self._obligation_payload(
-                            work, envelope, part="observation"),
+                        payload=self._obligation_payload(work, envelope, part="observation"),
                         result={"reason": observation_status})
                 ordinal = 1
                 if decision.engage:
@@ -1115,6 +1112,12 @@ class WorkRunner:
                              trace=attempt[1] if attempt else None)
             await self._ack(work)
 
+    def _maybe_observe_sender(self, person: Any, work: Any, envelope: Any) -> None:
+        if person is None and self._onboarding is not None and envelope.sender_id:
+            self._onboarding.notify_sender(
+                platform=work.platform, conversation_id=work.conversation_id,
+                sender_id=envelope.sender_id)
+
     async def _stamp_ingest_ended(
         self, event_id: str, *, outcome: str,
         unit: str | None, absorbed: bool,
@@ -1166,8 +1169,7 @@ class WorkRunner:
                 # legitimate non-admission, not a retained failure.
                 observation_status = "refused:scope_refused"
             else:
-                status = await self._append_observation(
-                    work, envelope, unit=unit)
+                status = await self._append_observation(work, envelope, unit=unit)
                 if status is None:
                     return  # the append's failure already finished the work
                 observation_status = status
@@ -1185,8 +1187,7 @@ class WorkRunner:
                     ordinal=91, platform=work.platform,
                     account_key=work.account_key,
                     conversation_id=work.conversation_id,
-                    payload=self._obligation_payload(
-                        work, envelope, part="observation"),
+                    payload=self._obligation_payload(work, envelope, part="observation"),
                     result={"reason": observation_status})
             ok = await self._store.finish_work(
                 conn, work.id, generation=work.generation, state=state,
@@ -1228,8 +1229,7 @@ class WorkRunner:
                 await self._ack(work)
 
         if self._observations is None:
-            await finish("failed_retained", {},
-                         reason="observation store unwired")
+            await finish("failed_retained", {}, reason="observation store unwired")
             return
         room = (self._allowlist.conversation(
                     work.platform, work.conversation_id)
@@ -1322,6 +1322,8 @@ class WorkRunner:
                 expect_scope=self._observation_scope(work))
         except (ValueError, KeyError, TypeError) as exc:
             return f"refused:malformed observation: {exc}"
+        if self._onboarding is not None:
+            self._onboarding.notify_observation(obs)
         if envelope.kind not in V1_KINDS and envelope.kind != obs.object_kind:
             # Payload-kind consistency: a typed envelope names the object
             # kind it carries; a mismatch is a malformed source event.
@@ -1414,8 +1416,7 @@ class WorkRunner:
         request = EngagementRequest(
             message=message_from_dict(payload["message"]),
             decision=EngageDecision(**payload["decision"]),
-            tag_id=payload["tag_id"],
-        )
+            tag_id=payload["tag_id"])
         adapter = self._adapters.get(work.platform)
         bound = (adapter.bind_owner(owner)
                  if adapter is not None and hasattr(adapter, "bind_owner")
@@ -1736,8 +1737,7 @@ class WorkRunner:
                     platform=work.platform, conversation_id=work.conversation_id,
                     conversation_type=work.payload.get("conversation_type",
                                                        "group"),
-                    relevance_score=score,
-                ),
+                    relevance_score=score),
                 send_permitted=send_permitted,
                 gate_verdict=verdict, gate_score=score,
                 adapter=bound)

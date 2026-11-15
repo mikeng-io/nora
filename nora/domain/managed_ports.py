@@ -19,6 +19,8 @@ from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.managed import (
     AuthorityBlock,
     CheckResult,
+    CollectionSnapshot,
+    DiscoveryCapabilities,
     ManagedAccount,
     ManagedMembership,
     ManagedPerson,
@@ -346,6 +348,50 @@ class IdentityRegistry(Protocol):
         ...
 
     async def aclose(self) -> None:
+        ...
+
+
+@runtime_checkable
+class CollectionDiscovery(Protocol):
+    """A platform's roster/proof capability for managed onboarding
+    (`identity.md` «Platform discovery and membership»).
+
+    One adapter per platform, capability-declared — platforms do NOT share
+    one discovery API, so what each can prove is explicit on the adapter,
+    never assumed. `members` is the complete-or-unavailable read: an
+    error, a partial page, an empty member list, or a capability the
+    platform lacks is `available=False`, never an empty roster that would
+    read as mass departure. `collection_of`/`collection_ref` map the
+    platform's own id shapes to the collection a rule names — a guild's
+    member set is a different object than a channel's audience and can
+    never stand in for it. `sender_identifiers` types one observed
+    sender's platform value into matchable identifiers — `None` when the
+    platform cannot prove the value's kind; a sender is never guessed.
+    """
+
+    platform: str
+    capabilities: DiscoveryCapabilities
+
+    def collection_of(self, *, conversation_id: str) -> str | None:
+        """The collection a conversation belongs to (a Discord room's
+        guild), or `None` when the id names no collection."""
+        ...
+
+    def collection_ref(self, *, object_ref: str) -> str | None:
+        """The collection an observation's `object_ref` names
+        (`guild:G` → `G`), or `None` when it is not a member-set object."""
+        ...
+
+    async def members(self, *, collection: str) -> CollectionSnapshot:
+        """The collection's current member set — `available=False` when the
+        read cannot complete."""
+        ...
+
+    async def sender_identifiers(
+        self, *, collection: str, value: str
+    ) -> frozenset[Identifier] | None:
+        """The matchable identifiers the account `value` presents inside
+        `collection`, or `None` when the platform cannot prove them."""
         ...
 
 

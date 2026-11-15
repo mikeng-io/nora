@@ -19,7 +19,7 @@ import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from . import config
 from .agent.telemetry import setup_agent_tracing
@@ -332,8 +332,7 @@ class App:
             await deps.wake_evaluator.reclaim_orphans(process_started_ms=int(started_at * 1000))
             deps.background.spawn(wake.wake_loop(
                 deps.wake_evaluator, deps.metrics,
-                tick_seconds=deps.wake_tick_seconds,
-            ))
+                tick_seconds=deps.wake_tick_seconds))
         else:
             log.info("cognition loop disabled ([cognition] enabled = false)")
         # The OAuth keepalive (DEC-308): HERE and not in composition, because
@@ -378,8 +377,7 @@ class App:
         deps.background.spawn(runtime.debounce_sweep_loop(
             deps.debounce, deps.metrics,
             interval_seconds=DEBOUNCE_SWEEP_INTERVAL_SECONDS,
-            ttl_seconds=DEBOUNCE_SWEEP_TTL_SECONDS,
-        ))
+            ttl_seconds=DEBOUNCE_SWEEP_TTL_SECONDS))
         # The participation occasion's clock: `deps.participation_trigger` is
         # None unless `[participation] enabled` AND composition built a fire
         # path. The flag alone gates nothing, matching the dream clock's "the
@@ -388,8 +386,7 @@ class App:
             deps.background.spawn(runtime.participation_loop(
                 deps.participation_trigger, deps.metrics,
                 tick_seconds=PARTICIPATION_TICK_SECONDS,
-                sweep_ttl_seconds=PARTICIPATION_SWEEP_TTL_SECONDS,
-            ))
+                sweep_ttl_seconds=PARTICIPATION_SWEEP_TTL_SECONDS))
         # EVERY enabled adapter, not just Signal's: one that never had
         # `listen()` called would be present in `/health` yet deaf. Each
         # platform gets its own supervised task, so one wedged Gateway cannot
@@ -405,14 +402,17 @@ class App:
             # lifetime; this ticks beside it and stops on the same _stop.
             deps.background.spawn(deps.bridge_runtime.inspect_forever())
 
+        # `deps.onboarding` is None in the default deployment — nothing spawned.
+        if deps.onboarding is not None:
+            deps.background.spawn(deps.onboarding.run())
+
         adapter_tasks = runtime.start_adapters(
             deps.background,
             [
                 runtime.SupervisedAdapter(
                     platform=adapter.platform,
                     listen=functools.partial(
-                        adapter.listen, on_message=deps.dispatcher.on_message
-                    ),
+                        adapter.listen, **_listen_kwargs(deps, adapter)),
                 )
                 for adapter in deps.registry
             ],
@@ -516,6 +516,14 @@ class App:
         if self.deps.managed_session is not None:
             await self.deps.managed_session.close()
         await self.deps.audit.aclose()
+
+
+def _listen_kwargs(deps: Dependencies, adapter: Any) -> dict[str, Any]:
+    """One adapter's `listen(**)` kwargs — bare `on_message` absent onboarding."""
+    on_message = deps.dispatcher.on_message
+    if deps.onboarding is None:
+        return {"on_message": on_message}
+    return deps.onboarding.listen_extras(adapter, on_message=on_message)
 
 
 def build_parser() -> argparse.ArgumentParser:

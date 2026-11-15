@@ -10,6 +10,7 @@ from types import MappingProxyType
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     IdentifierConflictError,
+    ObservedMember,
     OperationConflictError,
     OperationJournalState,
     OperationRecord,
@@ -49,19 +50,26 @@ class RosterProvisioning:
     authority: AuthorityService
 
     async def apply(self, *, operation_id: str, actor: Actor, scope: Scope,
-                    collection: str, members: Iterable[Identifier],
+                    collection: str, members: Iterable[ObservedMember],
                     complete_roster: bool) -> Outcome:
-        accounts = frozenset(members)
+        roster = tuple(members)
+        groups = tuple(frozenset(member.identifiers) for member in roster
+                       if member.classification == "person")
         if (actor.kind is not ActorKind.SERVICE or not operation_id.strip()
                 or not collection.strip()
-                or any(a.platform not in actor.sources for a in accounts)):
+                or any(len({i.platform for i in group}) != 1
+                       or any(i.platform not in actor.sources for i in group)
+                       for group in groups)):
             return denied("invalid-roster-source")
+        if complete_roster and any(
+                member.classification == "unknown" for member in roster):
+            return unavailable("unclassified-member")
         try:
             async with self.bindings.mutation():
                 if not await self.topology.scope_exists(scope):
                     return denied("unknown-scope")
                 return await self._apply(operation_id, actor, scope, collection,
-                                         accounts, complete_roster)
+                                         groups, complete_roster)
         except OperationConflictError:
             return denied("operation-conflict")
         except Exception:
@@ -69,11 +77,16 @@ class RosterProvisioning:
             return unavailable("store-failure")
 
     async def _apply(self, key: str, actor: Actor, scope: Scope, collection: str,
-                     members: frozenset[Identifier], complete_roster: bool) -> Outcome:
-        ordered = sorted(members, key=lambda a: (a.platform, a.kind, a.value))
+                     groups: tuple[frozenset[Identifier], ...],
+                     complete_roster: bool) -> Outcome:
+        ordered = sorted(groups, key=lambda group: min(
+            (i.platform, i.kind, i.value) for i in group))
         snapshot = {"service": actor.service_id, "collection": collection,
             "scope": {"kind": scope.kind.value, "id": scope.id}, "complete": complete_roster,
-            "members": [[a.platform, a.kind, a.value] for a in ordered]}
+            "members": [[
+                [i.platform, i.kind, i.value]
+                for i in sorted(group, key=lambda i: (i.platform, i.kind, i.value))
+            ] for group in ordered]}
         record = await self.bindings.operation(key)
         if record is not None:
             if record.kind != "provision_roster" or record.snapshot != snapshot:
@@ -87,13 +100,14 @@ class RosterProvisioning:
             recorded = await self.bindings.record_operation(record)
             if recorded.status is not OutcomeStatus.COMPLETE:
                 return recorded
-        for account in ordered:
-            outcome = await self._account(key, actor, account)
+        for group in ordered:
+            outcome = await self._account(key, actor, group)
             if outcome.status is not OutcomeStatus.COMPLETE:
                 await _finish(self.bindings, record, OperationJournalState.INCOMPLETE,
                               outcome.status.value, outcome.detail)
                 return incomplete("account-registration-unconfirmed")
         await _step_done(self.bindings, record, "accounts")
+        members = frozenset().union(*ordered) if ordered else frozenset()
         sync = Operation(key + ":membership", "sync_membership", actor,
             Target(TargetKind.SCOPE, scope=scope),
             RosterSync(members, complete_roster, collection), {"authority": "current"})
@@ -109,12 +123,18 @@ class RosterProvisioning:
         await _finish(self.bindings, record, state, outcome.status.value, outcome.detail)
         return outcome if state is OperationJournalState.COMPLETE else incomplete(outcome.detail)
 
-    async def _account(self, key: str, actor: Actor, account: Identifier) -> Outcome:
-        raw = json.dumps([account.platform, account.kind, account.value], separators=(",", ":"))
+    async def _account(self, key: str, actor: Actor,
+                       group: frozenset[Identifier]) -> Outcome:
+        """Registers ONE observed account — `group` is every identifier that account presented."""
+        raw = json.dumps(
+            [[i.platform, i.kind, i.value]
+             for i in sorted(group, key=lambda i: (i.platform, i.kind, i.value))],
+            separators=(",", ":"))
         digest = hashlib.sha256(raw.encode()).hexdigest()
+        account = min(group, key=lambda i: (i.platform, i.kind, i.value))
         current = await self.bindings.record_for(account=account)
         operation = Operation(key + ":account:" + digest, "observe_account", actor,
-            Target(TargetKind.ACCOUNT, account=account), AccountObservation(frozenset({account})),
+            Target(TargetKind.ACCOUNT, account=account), AccountObservation(group),
             {"ownership": str(current.revision) if current is not None else "0"})
         try:
             outcome = await self.registration._apply(operation)
