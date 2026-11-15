@@ -53,6 +53,7 @@ from .memory_workspace import (
     new_run_id,
     sweep_stale_draw_workspaces,
 )
+from .model_gateway import ModelGateway
 from .obtain import (
     DEFAULT_ROOM,
     UNRESOLVED,
@@ -108,6 +109,7 @@ __all__ = [
     "JourneyState",
     "Knowledge",
     "Message",
+    "ModelGateway",
     "NoteSeed",
     "Pass",
     "ReminderSeed",

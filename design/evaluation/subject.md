@@ -27,6 +27,15 @@ result contracts while their effects land in isolated services. Disabling a
 feature, deleting a tool or substituting an unavailable reader is not isolation
 of the same capability.
 
+The one declared exception is the model gateway. When a case declares it,
+dispatches naming the declared subject or judge identities reach that single
+configured upstream unchanged — model alias, tools and context intact — each
+request admitted on destination, method, configured route and declared model,
+counted once through the installed run budget, and the upstream's addresses
+reachable only while an admitted dispatch is in flight. Every other external
+effect remains refused; a missing declaration or budget refuses rather than
+defaulting to a live endpoint.
+
 Recorded external responses cross the real dependency boundary, not a prompt
 block pretending to be a tool result. Their identities, time and availability
 remain part of the scenario. An unknown historical roster cannot be replaced

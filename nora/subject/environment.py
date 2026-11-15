@@ -13,6 +13,7 @@ import ssl
 import subprocess
 import uuid
 from collections.abc import Mapping
+from contextvars import ContextVar
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import TracebackType
@@ -26,6 +27,14 @@ from aiohttp import web
 from pydantic import BaseModel
 from sqlalchemy.engine import make_url
 
+from nora.subject.model_gateway import ModelGateway, ResolvedGateway
+
+#: The declared model upstream reachable for an in-flight admitted dispatch
+#: on this task — the only non-owned destination the process guard opens,
+#: and only for the duration of one admitted request.
+_admitted_egress: ContextVar[ResolvedGateway | None] = ContextVar(
+    "admitted_egress", default=None)
+
 
 class IsolatedServices:
     """Own HTTP listeners and optional Redis for one evaluation case.
@@ -33,15 +42,21 @@ class IsolatedServices:
     Applications implement external services, never Nora's control loop.
     Missing routes retain their protocol errors. Unbound network destinations
     are refused, including clients which use a hard-coded remote endpoint.
+    A declared `model_gateway` is the one exception: dispatches naming the
+    declared identities are admitted to it, request by request, through the
+    installed run budget's bounded transport.
     The context encloses composition, execution and dependency teardown.
     """
 
     def __init__(self, *, database_url: str,
                  applications: Mapping[str, web.Application],
-                 redis: bool = False) -> None:
+                 redis: bool = False,
+                 model_gateway: ModelGateway | None = None) -> None:
         self.database_url = database_url
         self._applications = dict(applications)
         self._redis = redis
+        self._gateway = model_gateway
+        self._egress: ResolvedGateway | None = None
         self.urls: dict[str, str] = {}
         self.redis_url = ""
         self.denied: list[dict[str, str]] = []
@@ -141,7 +156,8 @@ class IsolatedServices:
             cfg = _with(cfg, path, urlunsplit((replacement.scheme, replacement.netloc,
                                               original.path, original.query, "")))
         model_urls = [cfg.llm.base_url, *(provider.base_url for provider in cfg.providers.values())]
-        if any(url and not self.owns(url) for url in model_urls):
+        if any(url and not self.owns(url) and not self._declared_endpoint(url)
+               for url in model_urls):
             raise ValueError("model dispatch requires a case-owned service boundary")
         variable = f"NORA_SUBJECT_DATABASE_URL_{uuid.uuid4().hex}"
         cfg = _with(cfg, "store.database_url_env", variable)
@@ -149,6 +165,60 @@ class IsolatedServices:
         if self.redis_url:
             cfg._credentials = {**cfg.credentials, cfg.bridges.redis_url_env: self.redis_url}
         return cfg
+
+    def _declared_endpoint(self, url: str) -> bool:
+        """Whether `url` IS the declared model gateway's upstream origin."""
+        egress = self._egress
+        if egress is None:
+            return False
+        parts = urlsplit(url)
+        return (parts.scheme, (parts.hostname or "").lower(),
+                parts.port or (443 if parts.scheme == "https" else 80)) == (
+            egress.scheme, egress.host, egress.port)
+
+    def _deny_dispatch(self, cause: str, request: Any) -> None:
+        """Refuse a dispatch against the declared gateway, visibly.
+
+        The cause lands in `denied` (so `check()` reports it) and in canonical
+        evidence when a run is recording; the request's headers and body are
+        never copied — credentials and prompts stay in the client.
+        """
+        self.denied.append({"operation": "http", "cause": cause})
+        if cause != "external_dependency_not_isolated":
+            from nora.subject.eval_evidence import current
+            if evidence := current():
+                evidence.record(
+                    "external_service_mismatch", service="model_gateway",
+                    position="boundary", method=request.method,
+                    path=str(request.url.path),
+                    expected_method="POST",
+                    expected_path=self._egress.route if self._egress else "",
+                    cause=cause)
+        raise PermissionError(errno.EACCES, "evaluation dependency is not isolated")
+
+    async def _model_refusal_async(self, client: Any, request: Any) -> str | None:
+        if self._egress is None:
+            return "external_dependency_not_isolated"
+        try:
+            raw = request.content
+        except (httpx.StreamError, httpx2.StreamError):
+            try:
+                raw = await request.aread()
+            except (httpx.StreamError, httpx2.StreamError):
+                raw = None
+        return self._egress.refusal(client, request, raw)
+
+    def _model_refusal(self, client: Any, request: Any) -> str | None:
+        if self._egress is None:
+            return "external_dependency_not_isolated"
+        try:
+            raw = request.content
+        except (httpx.StreamError, httpx2.StreamError):
+            try:
+                raw = request.read()
+            except (httpx.StreamError, httpx2.StreamError):
+                raw = None
+        return self._egress.refusal(client, request, raw)
 
     async def __aenter__(self) -> IsolatedServices:
         if self._active or self._runners:
@@ -196,6 +266,10 @@ class IsolatedServices:
                         address = str(item[4][0])
                         self._database_addresses.add(address)
                         self._addresses.add((address, port))
+            if self._gateway is not None:
+                # Real resolution, before the guard installs: the declared
+                # upstream's addresses are pinned for the case's lifetime.
+                self._egress = self._gateway.resolve()
             self._guard_network()
             self._before_tasks = asyncio.all_tasks()
             self._active = True
@@ -245,12 +319,16 @@ class IsolatedServices:
 
         def allowed(address: Any) -> bool:
             if isinstance(address, tuple) and len(address) >= 2:
-                return (str(address[0]), int(address[1])) in self._addresses
+                if (str(address[0]), int(address[1])) in self._addresses:
+                    return True
+                egress = _admitted_egress.get()
+                return (egress is not None
+                        and (str(address[0]), int(address[1])) in egress.addresses)
             return isinstance(address, str) and address in self._unix
 
-        def refuse(operation: str) -> None:
-            self.denied.append({"operation": operation,
-                                "cause": "external_dependency_not_isolated"})
+        def refuse(operation: str,
+                   cause: str = "external_dependency_not_isolated") -> None:
+            self.denied.append({"operation": operation, "cause": cause})
             raise PermissionError(errno.EACCES, "evaluation dependency is not isolated")
 
         original_lookup = socket.getaddrinfo
@@ -265,6 +343,20 @@ class IsolatedServices:
                         continue
                 if not result:
                     raise socket.gaierror(socket.EAI_NONAME, "no owned address for database")
+                return result
+            egress = _admitted_egress.get()
+            if egress is not None and (host, port) == (egress.host, egress.port):
+                # The declared upstream resolves only inside an admitted
+                # dispatch, and only ever to the addresses pinned at open.
+                result = []
+                for address, pinned in sorted(egress.addresses):
+                    try:
+                        result.extend(original_lookup(address, pinned, *args, **kwargs))
+                    except socket.gaierror:
+                        continue
+                if not result:
+                    raise socket.gaierror(socket.EAI_NONAME,
+                                          "no owned address for model gateway")
                 return result
             addresses = {h for h, _ in self._addresses}
             if host not in addresses and host not in (None, "localhost"):
@@ -281,28 +373,7 @@ class IsolatedServices:
             "NO_PROXY": "127.0.0.1,localhost,::1",
             "no_proxy": "127.0.0.1,localhost,::1",
         }))
-        # HTTPX2 may use a native transport; guard each dispatch, including
-        # redirects, before either Python or native transport can send bytes.
-        for module in (httpx, httpx2):
-            original_async = module.AsyncClient._send_single_request
-            original_sync = module.Client._send_single_request
-
-            async def request_async(client: Any, request: Any,
-                                    _original: Any = original_async) -> Any:
-                if not self.owns(str(request.url)):
-                    refuse("http")
-                return await _original(client, request)
-
-            def request_sync(client: Any, request: Any,
-                             _original: Any = original_sync) -> Any:
-                if not self.owns(str(request.url)):
-                    refuse("http")
-                return _original(client, request)
-
-            self._patches.enter_context(patch.object(
-                module.AsyncClient, "_send_single_request", request_async))
-            self._patches.enter_context(patch.object(
-                module.Client, "_send_single_request", request_sync))
+        self._guard_requests()
 
         def subprocess_refused(*args: Any, **kwargs: Any) -> Any:
             refuse("subprocess")
@@ -327,7 +398,14 @@ class IsolatedServices:
             # Anonymous socketpairs are asyncio's wake-up pipe, not egress.
             if sock.family == socket.AF_UNIX and peer == local == "":
                 return
-            if not allowed(peer) and not allowed(local):
+            # A socket bound to the declared upstream's address is the in-process
+            # listener itself answering; its clients still had to connect under
+            # an admitted dispatch, so replies flow without a standing exemption.
+            egress = self._egress
+            serving = (egress is not None and isinstance(local, tuple)
+                       and len(local) >= 2
+                       and (str(local[0]), int(local[1])) in egress.addresses)
+            if not allowed(peer) and not allowed(local) and not serving:
                 refuse("send")
 
         for cls, names in ((socket.socket, ("send", "sendall")),
@@ -350,6 +428,44 @@ class IsolatedServices:
             return original_sendto(sock, data, *args)
 
         self._patches.enter_context(patch.object(socket.socket, "sendto", sendto))
+
+    def _guard_requests(self) -> None:
+        # HTTPX2 may use a native transport; guard each dispatch, including
+        # redirects, before either Python or native transport can send bytes.
+        for module in (httpx, httpx2):
+            original_async = module.AsyncClient._send_single_request
+            original_sync = module.Client._send_single_request
+
+            async def request_async(client: Any, request: Any,
+                                    _original: Any = original_async) -> Any:
+                if self.owns(str(request.url)):
+                    return await _original(client, request)
+                cause = await self._model_refusal_async(client, request)
+                if cause is None:
+                    token = _admitted_egress.set(self._egress)
+                    try:
+                        return await _original(client, request)
+                    finally:
+                        _admitted_egress.reset(token)
+                self._deny_dispatch(cause, request)
+
+            def request_sync(client: Any, request: Any,
+                             _original: Any = original_sync) -> Any:
+                if self.owns(str(request.url)):
+                    return _original(client, request)
+                cause = self._model_refusal(client, request)
+                if cause is None:
+                    token = _admitted_egress.set(self._egress)
+                    try:
+                        return _original(client, request)
+                    finally:
+                        _admitted_egress.reset(token)
+                self._deny_dispatch(cause, request)
+
+            self._patches.enter_context(patch.object(
+                module.AsyncClient, "_send_single_request", request_async))
+            self._patches.enter_context(patch.object(
+                module.Client, "_send_single_request", request_sync))
 
     async def __aexit__(self, exc_type: type[BaseException] | None,
                         exc: BaseException | None,
