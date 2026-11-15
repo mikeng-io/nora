@@ -1,9 +1,15 @@
-# The loop
+# The loops
 
 ## Terms
 
-- **Cognition Loop** — the one process over the graph: five stages, OODAS.
-- **Stage** — a part of the loop that answers one question and writes only its
+- **OODAS** — the stage model: observe, orient, decide, act, study. Both loops
+  run it.
+- **Engagement loop** — Nora in a room, in the foreground: it reads
+  understanding, composes, delivers or stays silent, and closes each pass with
+  a debrief. The only loop that delivers.
+- **Reflection loop** — Nora between conversations, in the background: it forms
+  and revises understanding, learns and keeps concerns. It never delivers.
+- **Stage** — a part of OODAS that answers one question and writes only its
   declared basis set (observe: observed and computed; act: none).
 - **Action** — one step of a stage, with one owner per responsibility. An
   action marked *model → code* is a proposal and its admission: the model owns
@@ -11,7 +17,7 @@
 - **Pass** — one run of stages, started by one trigger.
 - **Executor** — the runtime that runs a pass or an action.
 - **CMS** — comprehend, measure, serialize: the shape of every action, every
-  stage and the loop itself. An action comprehends its input once, measures its
+  stage and each loop itself. An action comprehends its input once, measures its
   result fail-closed and serializes one result with provenance: an admitted
   write, a read result or an outcome.
 
@@ -44,6 +50,7 @@ poller. Every other stage runs inside a pass.
 | decide | **deliberate** | model | weighs the situation against open intentions, due ones, ones whose rests-on changed, and track records |
 | | **commit** | model → code | proposes intentions; code admits them with a receipt |
 | | **schedule** | code | places due times, review times and watches |
+| | **debrief** | model → code | engagement loop only: after act, a second, tools-less model reviews the pass's recorded execution and proposes the working state it left as `commit` operations; code admits them |
 | act | **compose** | model | drafts the act from the situation at that moment |
 | | **guard** | code | runs disclosure and send guards against the current room |
 | | **perform** | code | delivers what the model's `send_reply` call carries, or records silence |
@@ -78,34 +85,95 @@ connects or a bound stops it. Study repeats on its timescales.
 - Scheduled is not sent and attempted is not completed. An outside send whose
   effect is uncertain is never blindly retried.
 
+## Two loops over one graph
+
+| | engagement loop | reflection loop |
+|---|---|---|
+| observe | shared: ingest records every item, the pass's own tool calls and sends included | shared |
+| orient | reads only: prefetch and pull over understanding | forms and revises understanding: entities, claims |
+| decide | commit for what the reply promises; debrief for everything the pass left | commits and revises intentions: reconsider, close stale, schedule, watch |
+| act | the only loop that delivers | none |
+| study | none | learn; the review pass verifies, grades and reports |
+| writes | committed rows | inferred rows; committed rows through its own decide |
+| executor | conscious turn, fire path | Dreamer runtime: reflection session, verifier, judge |
+
 ## Passes
 
-| pass | trigger | purpose | stages | executor | delivers |
+A pass is one run of a loop, started by a trigger. **The trigger supplies the
+pass's input**; everything after the input is the same run.
+
+| pass | loop | trigger source | input it digests | entry point | delivers |
 |---|---|---|---|---|---|
-| **called** | a tag, mention or reply to Nora | answer when asked | orient, decide, act | conscious turn | yes; a reply is owed |
-| **ambient** | a room's conversation admitted as an offer, without a call | be present: join when welcome, otherwise listen | orient, decide, act | conscious turn | yes; never owed, silence by default |
-| **proactive** | an intention due for delivery | follow through on what Nora committed to | orient, decide, act, re-judged at delivery | fire path | yes; may stay silent |
-| **subconscious** | stimuli the wake evaluator claims | understand, keep concerns, commit intentions, learn | orient, decide, study's learn | Cognition session | never |
-| **review** | a schedule | verify, grade and report | study's verify, grade, report | verifier, judge | never |
+| **called** | engagement | a person addresses Nora: a tag, mention or reply | the message and what it quotes | tag pipeline | yes; a reply is owed |
+| **ambient** | engagement | a person's conversation, Nora not addressed, admitted as an offer | the room's recent window | fire path | yes; never owed, silence by default |
+| **proactive** | engagement | Nora's own intention: its time is due or its watched condition holds — a reminder, a gathering, a finished job's result, a relay | the due intention, what it rests on and serves, and why it is due now | fire path | yes; may stay silent |
+| **wake** | reflection | stimuli the wake evaluator claims | the claimed stimuli | Dreamer runtime | never |
+| **review** | reflection | a schedule | the rows due for verification and grading | verifier, judge | never |
 
-**Who starts it** separates the conversational passes: in a called pass
-someone addressed Nora; in an ambient pass the room is talking and she was not
-addressed; in a proactive pass Nora starts, from her own intention.
-
-- Only the conscious passes act.
-- In the conscious passes orient only reads; understanding is written by a
-  later subconscious pass from the recorded turn.
-- The subconscious pass reaches a room only by committing an intention whose
+- A proactive pass digests its intention: is it still wanted, what does the
+  room look like now, and what should be done — deliver, act elsewhere, move
+  its trigger with evidence, or stay silent.
+- Only the tag pipeline and the fire path can deliver.
+- The engagement loop never writes understanding; the reflection loop writes it
+  from the engagement loop's recorded passes.
+- The reflection loop reaches a room only by committing an intention whose
   delivery a proactive pass carries out.
+
+## The debrief
+
+Nora is sessionless: every engagement pass is a fresh agent, and nothing in
+her own run follows the reply. The debrief is the one exception that carries a
+pass's working state to the next: it serializes that state into the graph
+before the room's slot is released.
+
+- **Runs** on every finished engagement pass — reply, silence, veto or timeout —
+  inside the slot, as a declared occasion of its own.
+- **Reads** the pass's items — what Nora expressed (drafts and conclusions she
+  wrote, never hidden reasoning), tool calls and results, sends and the
+  recorded outcome — the room's messages since the last debrief, and the open
+  intentions for the room and unit, including what the pass itself committed.
+- **Re-judges** what it reads rather than appending: each open intention it
+  touches is kept, revised or dropped against this pass.
+- **Writes** only intentions and their edges, as `commit` operations through
+  `commit`'s admission. Every citation is an item of this pass; a stale base is
+  refused; deliveries pass the delivery arbitration.
+- **Proposes, never performs, a close.** A `close` names the successful outcome
+  item; admission routes it through observe's compute, the one writer of
+  closed-by, which accepts it only if that item meets the intention's
+  condition. Study's verify writes the verdict. Attempted is never closed.
+- **Carries findings as findings.** A result the pass found but did not give —
+  the third restaurant a search returned — becomes a child intention, "offer it
+  when it comes up", citing its result item and serving the decision it bears
+  on. It is re-judged at every debrief and dropped when that decision closes or
+  once it is given. A finding is never a promise.
+- **Never writes** claims, entities, items or prose: understanding is the
+  reflection loop's.
+
+**A proactive pass's debrief** may revise the intention it delivered —
+including moving its trigger, citing the evidence that moved it — and close or
+drop it, but opens no other delivery. New concerns are the reflection loop's.
+
+**Failure** is bounded and never raises, in three cases: an operation refused
+before admission changes nothing; an admitted operation stays admitted; a
+write whose commit state is uncertain is unavailable and is read back before
+anything retries it.
+
+**Settlement**: an engagement pass is complete only once its debrief's attempt
+and outcome are durably recorded. A failed debrief is not a normally closed
+pass.
+
+The pass commits only what its reply promises, so the reply never claims what
+was not written; the debrief commits everything else the pass left and does
+not repeat what the pass committed.
 
 Admission is code: a call is admitted deterministically; an ambient offer is
 admitted by room policy and may never suppress a call; a proactive pass is
 admitted when its intention is due; a wake is admitted by the wake evaluator
 with no model call. A failed admission produces no pass and no fallback.
 
-## The open loop
+## Open loops
 
-The loop takes in any stimulus, keeps concerns that never finish, reaches
+Together the loops take in any stimulus, keeps concerns that never finish, reaches
 outward and takes its results back in.
 
 **Stimuli**: a platform item; a watched source changing; an aggregate crossing
