@@ -206,8 +206,10 @@ def _report(sdk_evidence: Any, case: Any) -> dict[str, Any]:
 
 
 def _census_record(sdk_evidence: Any) -> dict[str, Any]:
-    return [event for event in read_events(sdk_evidence.path)
-            if event.get("kind") == "journey_wake_census"][-1]
+    records = [event for event in read_events(sdk_evidence.path)
+               if event.get("kind") == "journey_wake_census"]
+    assert records, "the census never recorded its population"
+    return records[-1]
 
 
 async def test_census_exact_population_passes(clean_pg_url, tmp_path,
