@@ -57,15 +57,15 @@
   },
   {
     "name": "a service mismatch retains the actual route and expected recording position",
-    "file": "nora/subject/recorded_services.py",
-    "old": "                            \"service\": name, \"position\": str(position),\n                            \"method\": request.method, \"path\": request.raw_path,\n",
+    "file": "nora/subject/environment.py",
+    "old": "                      \"service\": service, \"position\": position, \"method\": method, \"path\": path,\n",
     "new": "",
     "target": "tests/integration/subject/test_recorded_services.py::test_unmatched_does_not_consume"
   },
   {
     "name": "a service mismatch reaches private durable canonical evidence",
-    "file": "nora/subject/recorded_services.py",
-    "old": "                        if evidence := current():\n                            evidence.record(\"external_service_mismatch\", **diagnostic)\n",
+    "file": "nora/subject/environment.py",
+    "old": "        if evidence := current():\n            evidence.record(\"external_service_mismatch\", **diagnostic)\n",
     "new": "",
     "target": "tests/integration/subject/test_recorded_services.py::test_unmatched_does_not_consume"
   }

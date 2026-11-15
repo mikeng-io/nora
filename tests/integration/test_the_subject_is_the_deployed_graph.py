@@ -40,7 +40,7 @@ def _bridge_app(received: list[dict]) -> web.Application:
         return web.json_response({"state": state, "platform_ref": f"generated-{len(received)}"})
 
     async def groups(request: web.Request) -> web.Response:
-        return web.json_response({"groups": [{"id": "g1", "members": []}]})
+        return web.json_response([{"id": "g1", "members": []}])
 
     async def absent(request: web.Request) -> web.Response:
         return web.json_response({"error": "known_missing"}, status=404)
@@ -50,6 +50,45 @@ def _bridge_app(received: list[dict]) -> web.Application:
     app.router.add_get("/v1/groups", groups)
     app.router.add_get("/known-absent", absent)
     return app
+
+
+@pytest.mark.parametrize("members,available", [
+    ([["generated-a", "generated-alias"], ["generated-b"]], True),
+    ([], True), (None, False), (["generated-a"], False), ([[]], False), ([[False]], False),
+    ("invalid-json", False), ("invalid-root", False),
+])
+async def test_bridge_roster_decodes_accounts_once_and_keeps_unknown_unavailable(
+    members, available,
+):
+    from nora.platform.bridge.client import BridgeRoster
+
+    application = web.Application()
+
+    async def groups(request):
+        if members == "invalid-json":
+            return web.Response(text="{", content_type="application/json")
+        if members == "invalid-root":
+            return web.json_response(None)
+        return web.json_response([{"id": "generated-room", "members": members}])
+
+    application.router.add_get("/v1/groups", groups)
+    async with IsolatedServices(database_url="sqlite:///generated", applications={
+        "platforms.signal.base_url": application,
+    }) as environment:
+        roster = BridgeRoster("signal", BridgeEndpoint(
+            environment.urls["platforms.signal.base_url"], "generated-token"))
+        known = await roster.roster(conversation_id="generated-room")
+        unknown = await roster.roster(conversation_id="generated-unlisted")
+        assert known.available is available
+        assert not unknown.available
+        if available:
+            assert known.members == tuple(frozenset(account) for account in members)
+            assert all(isinstance(account, frozenset) for account in known.members)
+            if members:
+                assert known.members[0] & frozenset({"generated-a"}) == {"generated-a"}
+        else:
+            assert known.members == ()
+        environment.check()
 
 
 @pytest.mark.asyncio

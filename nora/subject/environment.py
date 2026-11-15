@@ -74,6 +74,18 @@ class IsolatedServices:
         if self.denied:
             raise EvidenceError("; ".join(sorted({row["cause"] for row in self.denied})))
 
+    def unrecorded_response(self, *, service: str, method: str, path: str,
+                            position: str = "unmatched", expected_method: str = "unmatched",
+                            expected_path: str = "unmatched") -> None:
+        from nora.subject.eval_evidence import current
+
+        diagnostic = {"operation": "unrecorded_response", "cause": "external_response_not_recorded",
+                      "service": service, "position": position, "method": method, "path": path,
+                      "expected_method": expected_method, "expected_path": expected_path}
+        self.denied.append(diagnostic)
+        if evidence := current():
+            evidence.record("external_service_mismatch", **diagnostic)
+
     def register_subject(self, subject: Any) -> None:
         self._subjects.append(subject)
 
@@ -192,9 +204,8 @@ class IsolatedServices:
         @web.middleware
         async def coverage(request: web.Request, handler: Any) -> web.StreamResponse:
             if request.match_info.http_exception is not None:
-                self.denied.append({"operation": "unrecorded_response",
-                                    "cause": "external_response_not_recorded",
-                                    "service": service, "method": request.method})
+                self.unrecorded_response(service=service, method=request.method,
+                                         path=request.raw_path)
             return await handler(request)
 
         return coverage

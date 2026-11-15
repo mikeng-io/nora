@@ -392,10 +392,21 @@ class BridgeRoster:
                 if resp.status != 200:
                     return Roster(available=False)
                 groups = await resp.json()
-        except (TimeoutError, aiohttp.ClientError):
+        except (TimeoutError, aiohttp.ClientError, ValueError):
+            return Roster(available=False)
+        if not isinstance(groups, list):
             return Roster(available=False)
         for g in groups:
+            if not isinstance(g, dict):
+                return Roster(available=False)
             if g.get("id") == conversation_id:
+                members = g.get("members")
+                if not isinstance(members, list) or any(
+                    not isinstance(account, list) or not account
+                    or any(not isinstance(alias, str) or not alias for alias in account)
+                    for account in members
+                ):
+                    return Roster(available=False)
                 return Roster(available=True,
-                              members=tuple(g.get("members") or ()))
+                              members=tuple(frozenset(account) for account in members))
         return Roster(available=False)
