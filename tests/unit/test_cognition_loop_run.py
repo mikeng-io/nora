@@ -98,20 +98,19 @@ def test_run_materialises_the_config_and_folds_the_status(
             } for e in case.expectations if e.wake == index]
             wakes.append({"recorded_wake_id": ident, "status": "FAIL",
                           "expectations": expectations})
-            (output / f"wake-{index}-{ident}.json").write_text(
-                json.dumps({"diff": {}, "expectations": expectations}))
+            (output / f"wake-{index}-{ident}.json").write_text(json.dumps(
+                {"diff": {}, "expectations": expectations,
+                 "trajectory": {"unit": case.unit}}))
         return {"case": case.name, "unit": case.unit, "status": "FAIL", "wakes": wakes}
 
     monkeypatch.setattr(cli, "run_case", failed_case)
 
     args = SimpleNamespace(
         case=case_file, case_dir=None, smoke=False,
-        per_wake_tokens=1, token_budget=10_000_000,
-        config=config_file, policy=None, identity=None,
-        database_url="postgresql+asyncpg://x", snapshot=True,
-        output=tmp_path, judge_a="a", judge_b="b",
-        inspect_only=False, overrides={},
-    )
+        per_wake_tokens=1, token_budget=10_000_000, config=config_file,
+        policy=None, identity=None, database_url="postgresql+asyncpg://x",
+        snapshot=True, output=tmp_path, judge_a="a", judge_b="b",
+        inspect_only=False, overrides={})
     report = asyncio.run(cli.run(args))
     assert materialised["deployment"] == config_file
     assert materialised["target"].name == "config.evaluation.toml"

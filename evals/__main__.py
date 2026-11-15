@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from evals import pseudonyms
+from evals.accounting import accounted, describe_outcome
 from evals.backbone import (
     ERROR,
     FAIL,
@@ -419,23 +420,25 @@ def _run_one(
         services=services,
     )
     report = experiment.run_evaluations(task=task)
+    coverage, outcome = accounted(report, experiment)
     from nora.subject.eval_evidence import current
 
     if evidence := current():
-        retained = retain_report(evidence, name, report)
+        retained = retain_report(evidence, name, report, experiment=experiment, coverage=coverage)
+        outcome = retained["outcome"]
         evidence.check()
         evidence.record("corpus_report", **retained)
     context_complete = True
     if context_receipts is not None:
         missing = {c["name"] for c in report.cases} - {
-            r.get("case") for r in context_receipts
-        }
+            r.get("case") for r in context_receipts}
         if missing:
             print(f"context experiment ERROR: no measured prefill for {sorted(missing)}")
             context_complete = False
     scope = f" [{len(experiment.cases)} selected]" if only else ""
     print(f"--- {name}: {census(name)}{scope} ---")
     print("mode: protocol rehearsal; model behavior: UNMEASURED")
+    describe_outcome(coverage, outcome)
     _print_spend()
     _print_memory_overhead()
     if positions:
@@ -453,21 +456,18 @@ def _run_one(
             for out in outputs:
                 if all_reasons or getattr(out, "label", None) != PASS:
                     reasons.setdefault(base_name(case_row["name"]), []).append(
-                        f"{out.label}: {out.reason}"
-                    )
+                        f"{out.label}: {out.reason}")
         ok = True
         for case_name, r in sorted(readings.items()):
-            split = (
-                "" if r.verdict == PASS
-                else f"  [{r.passed} pass / {r.failed} fail / {r.errored} error]"
-            )
+            split = ("" if r.verdict == PASS else
+                     f"  [{r.passed} pass / {r.failed} fail / {r.errored} error]")
             print(f"  {case_name:40} {r.verdict}{split}")
             # One line per DISTINCT reason: three draws failing the same way
             # is one fact, and printing it three times hides that it is.
             for reason in dict.fromkeys(reasons.get(case_name, ())):
                 print(f"      {reason}")
             ok = ok and r.verdict not in (FAIL, ERROR, UNSTABLE)
-        return ok and context_complete
+        return ok and context_complete and coverage["status"] == "PASS"
     reading = read(report)
     print(f"  passed={reading.passed} failed={reading.failed} errored={reading.errored}")
     if reading.failed or reading.errored:
@@ -475,7 +475,8 @@ def _run_one(
             for out in outputs:
                 if getattr(out, "label", None) != PASS:
                     print(f"  {case_row['name']:40} {out.label:6} {out.reason}")
-    return reading.failed == 0 and reading.errored == 0 and context_complete
+    return (reading.failed == 0 and reading.errored == 0
+            and context_complete and coverage["status"] == "PASS")
 
 
 def _print_input(name: str, case_name: str, *, source_url: str,
