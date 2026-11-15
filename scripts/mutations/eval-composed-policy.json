@@ -4,7 +4,7 @@
     "file": "nora/subject/obtain.py",
     "old": "        convo = _conversation_for(spec, deps.config_reload.policy)",
     "new": "        convo = _conversation_for(spec, __import__(\"nora.policy\", fromlist=[\"load_policy\"]).load_policy(spec.workdir / \"policy.toml\"))",
-    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[True-obtain] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[True-replay]"
+    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[obtain-True] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[replay-True]"
   },
   {
     "name": "a failed room resolution closes composed dependencies",
@@ -18,21 +18,21 @@
     "file": "nora/app/composition.py",
     "old": "        config_reload=reload_files, discord_control=discord_control,",
     "new": "        config_reload=reload_files, discord_control=None,",
-    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[True-obtain] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[True-replay]"
+    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[obtain-True] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[replay-True]"
   },
   {
     "name": "shared shutdown closes the bridge directory client",
     "file": "nora/app/lifecycle.py",
     "old": "        stack.push_async_callback(discord_control.close)",
     "new": "        pass  # leave reader connection open",
-    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[True-obtain] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[True-replay]"
+    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[obtain-True] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[replay-True]"
   },
   {
     "name": "isolated subject teardown uses the shared lifecycle",
     "file": "nora/subject/environment.py",
     "old": "        await close_dependencies(subject.deps)",
     "new": "        pass  # skip subject resource owners",
-    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[True-obtain] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[True-replay]"
+    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[obtain-True] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[replay-True]"
   },
   {
     "name": "a close failure still unwinds downstream resources",
