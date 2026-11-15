@@ -1,0 +1,288 @@
+"""The generated world behind one autonomous-journey case's isolated services.
+
+`JourneyServices` is the `Spec.services` plan an autonomous-journey case
+declares: opening it binds every external the composition will reach —
+the model (finite request-aware `CausalProtocol` for subject calls, a
+payload-inspecting `GeneratedJudge` for the two judge aliases), the
+memory service, and the signal bridge's action/daemon routes — to
+listeners this process owns, with a Redis for the real bridge queue.
+The world is generated rehearsal input, never Nora's control loop.
+"""
+
+from __future__ import annotations
+
+import html as html_mod
+import importlib.util
+import json
+import re
+import socket
+import sys
+import tempfile
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
+
+from aiohttp import web
+
+from nora.platform.bridge.service import DurableActionService, action_http_status, action_response
+from nora.platform.signal.react import SignalReactor
+from nora.platform.signal.send import SignalSender
+from nora.subject.environment import IsolatedServices
+from nora.subject.obtain import SubjectSpec, build_config
+from nora.testing.causal_protocol import CausalProtocol, texts
+from nora.testing.signal_daemon import FakeSignalDaemon
+
+
+def _wrapper() -> Any:
+    """The deployed signal-bridge wrapper, loaded the way the bridge tests load it."""
+    if module := sys.modules.get("signal_bridge_wrapper"):
+        return module
+    root = Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location(
+        "signal_bridge_wrapper", root / "deploy" / "signal-bridge" / "wrapper.py")
+    if spec is None or spec.loader is None:
+        raise RuntimeError("deploy/signal-bridge/wrapper.py unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["signal_bridge_wrapper"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def memory_service(feeds: list) -> web.Application:
+    application = web.Application()
+
+    async def create(request):
+        body = await request.json()
+        if not isinstance(body.get("id"), str) or not body["id"]:
+            return web.json_response({"error": "missing identity"}, status=422)
+        return web.json_response(body)
+
+    async def configure(request):
+        body = await request.json()
+        if not body or any(not isinstance(value, dict) for value in body.values()):
+            return web.json_response({"error": "missing peer configuration"}, status=422)
+        return web.json_response(body)
+
+    async def members(request):
+        return web.json_response({"items": [], "total": 0})
+
+    async def join(request):
+        body = await request.json()
+        if not body.get("session_ids"):
+            return web.json_response({"error": "missing sessions"}, status=422)
+        return web.Response(status=204)
+
+    async def feed(request):
+        body = await request.json()
+        if not body.get("messages") or any(
+            not row.get("content") or not row.get("peer_id") for row in body["messages"]
+        ):
+            return web.json_response({"error": "missing message or author"}, status=422)
+        feeds.extend(body["messages"])
+        return web.json_response({"messages": body["messages"]})
+
+    async def card(request):
+        if request.match_info["peer"] not in {"miles_novak", "nora"}:
+            return web.json_response({"error": "unrecorded peer"}, status=422)
+        return web.json_response({"peer_card": []})
+
+    async def representation(request):
+        body = await request.json()
+        if request.match_info["peer"] != "nora" or body.get("target") != "miles_novak":
+            return web.json_response({"error": "unrecorded peer model"}, status=422)
+        return web.json_response({"representation": ""})
+
+    application.router.add_post("/v3/workspaces", create)
+    for resource in ("peers", "sessions", "scopes"):
+        application.router.add_post(f"/v3/workspaces/{{workspace}}/{resource}", create)
+    application.router.add_post("/v3/workspaces/{workspace}/sessions/{session}/peers", configure)
+    application.router.add_post("/v3/workspaces/{workspace}/sessions/{session}/messages", feed)
+    application.router.add_post("/v3/workspaces/{workspace}/scopes/{scope}/sessions/list", members)
+    application.router.add_post("/v3/workspaces/{workspace}/scopes/{scope}/sessions", join)
+    application.router.add_get("/v3/workspaces/{workspace}/peers/{peer}/card", card)
+    application.router.add_post(
+        "/v3/workspaces/{workspace}/peers/{peer}/representation", representation)
+    return application
+
+
+def action_service(runtime: Any, environment: IsolatedServices) -> DurableActionService:
+    """Signal's durable action executor against the case-owned daemon address."""
+    address = environment.urls["platforms.signal.base_url"]
+    executor = _wrapper()._SignalExecutor(SignalSender(address), SignalReactor(address))
+    return DurableActionService(
+        store=runtime.store, platform="signal",
+        account_key=runtime.readers[0]._account_key, execute=executor,
+        receipt_intents=frozenset)
+
+
+class GeneratedJudge:
+    """Answers each judge request from ITS received payload, never a fixed string.
+
+    Finite and inspecting: it verifies the digest's required evidence axes and
+    answers against the expectation's own kind in the shown `state_after`,
+    citing the ids it actually read — so judge citations resolve to the
+    evidence the judge was shown, not to a scripted verdict.
+    """
+
+    def __init__(self) -> None:
+        self.requests: list[dict] = []
+        self.errors: list[tuple] = []
+
+    def answer(self, body: dict) -> dict:
+        text = "\n".join(texts(body.get("messages", [])))
+        block = re.search(r"<cited_sources\b[^>]*>\n(.*?)\n</cited_sources>",
+                          html_mod.unescape(text), re.DOTALL)
+        if block is None:
+            raise AssertionError("the judge request carried no cited_sources payload")
+        payload = json.loads(block.group(1))
+        expectation = payload["expectation"]
+        kind = expectation["kind"]
+        problems = [name for name in ("effects", "settlement", "final_response")
+                    if (payload.get(name) or {}).get("status") != "observed"]
+        instructions = payload.get("subject_instructions") or {}
+        if instructions.get("status") not in ("observed", None):
+            problems.append("subject_instructions")
+        if problems:
+            return {"verdict": "cannot_tell",
+                    "reason": f"generated inspection: evidence unavailable {problems}",
+                    "entry_ids": []}
+        ids = [f"{kind}:{key}" for key in (payload.get("state_after") or {})]
+        if expectation.get("polarity") == "must":
+            verdict, cited = ("met", ids[:1]) if ids else ("not_met", [])
+        else:
+            verdict, cited = ("not_met", ids[:1]) if ids else ("met", [])
+        return {"verdict": verdict,
+                "reason": f"generated inspection: {expectation.get('polarity')} {kind} "
+                          f"holds entries {ids or 'none'} in the shown state",
+                "entry_ids": cited}
+
+    async def respond(self, request: web.Request) -> web.Response:
+        body = await request.json()
+        self.requests.append(body)
+        try:
+            if body.get("stream") is True or body.get("tools"):
+                raise AssertionError("a judge request is an unstreamed, tool-less completion")
+            answer = self.answer(body)
+        except (AssertionError, KeyError, TypeError, ValueError) as exc:
+            self.errors.append((body.get("model"), type(exc).__name__, str(exc)))
+            return web.json_response({"error": "unmatched generated judge request"}, status=422)
+        return web.json_response(
+            {"id": "generated-judge", "object": "chat.completion", "created": 1,
+             "model": body["model"],
+             "choices": [{"index": 0, "finish_reason": "stop",
+                          "message": {"role": "assistant", "content": json.dumps(answer)}}],
+             "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}},
+            headers={"x-omniroute-model": f"{body['model']}-served",
+                     "x-omniroute-provider": f"generated-{body['model']}"})
+
+
+class JourneyServices:
+    """A `Spec.services` plan: one case's generated world, opened as
+    `IsolatedServices` beside the case's own database.
+
+    Carries the case's composition inputs (`policy`, `identity`, `room`,
+    `overrides`) as well as the world's state — the `subject_spec` the
+    drive composes comes from the same values, so the model the finite
+    protocol answers and the subject the case composes cannot drift.
+    """
+
+    def __init__(self, *, policy: str, room: tuple[str, str] = ("signal", "g1"),
+                 identity: str = "", overrides: dict[str, Any] | None = None,
+                 judge_models: tuple[str, str] = ("generated-a", "generated-b")) -> None:
+        self.policy, self.room, self.identity = policy, room, identity
+        self._overrides = dict(overrides or {})
+        self.judge_models = tuple(judge_models)
+        self.requests: list[dict] = []
+        self.feeds: list[dict] = []
+        self.owners: dict[str, Any] = {}
+        self.daemon: FakeSignalDaemon | None = None
+        self.protocol: CausalProtocol | None = None
+        self.judge: GeneratedJudge | None = None
+        self._metrics_port = self._free_port()
+
+    @staticmethod
+    def _free_port() -> int:
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            return listener.getsockname()[1]
+
+    def overrides(self) -> dict[str, Any]:
+        return {**self._overrides, "obs.metrics.port": self._metrics_port}
+
+    def subject_spec(self, database_url: str, environment: IsolatedServices,
+                     *, workdir: Path) -> SubjectSpec:
+        """The case's own `SubjectSpec`, from the same inputs the world read."""
+        return SubjectSpec(
+            database_url=database_url, workdir=workdir, room=self.room,
+            policy=self.policy, identity=self.identity, overrides=self.overrides(),
+            environment=environment)
+
+    def wire_actions(self, runtime: Any, environment: IsolatedServices) -> None:
+        """Bind the real `DurableActionService` once the composed runtime exists."""
+        self.owners["actions"] = action_service(runtime, environment)
+
+    async def _actions(self, request: web.Request) -> web.Response:
+        body = await request.json()
+        if self.daemon is not None:
+            self.daemon.sent_at_ms = int(time.time() * 1000)
+        actions = self.owners.get("actions")
+        if actions is None:
+            return web.json_response({"error": "actions not wired"}, status=422)
+        result = await actions.run(body)
+        return web.json_response(action_response(body["action_id"], result),
+                                 status=action_http_status(result))
+
+    def _bridge_app(self) -> web.Application:
+        application = web.Application()
+
+        async def read(request):
+            return web.json_response({
+                "/v1/self": {"primary": "generated-self", "aliases": []},
+                "/v1/groups": [{"id": "g1", "members": [["+852111"]]}],
+                "/v1/health": {"ok": True},
+            }[request.path])
+
+        for path in ("/v1/self", "/v1/groups", "/v1/health"):
+            application.router.add_get(path, read)
+        application.router.add_post("/v1/actions", self._actions)
+        assert self.daemon is not None
+        application.router.add_post("/api/v1/rpc", self.daemon.rpc)
+        return application
+
+    def _declared_config(self, database_url: str, workdir: Path) -> Any:
+        return build_config(SubjectSpec(
+            database_url=database_url, workdir=workdir,
+            policy=self.policy, identity=self.identity, overrides=self.overrides()))
+
+    @asynccontextmanager
+    async def open(self, database_url: str, redis: bool = False) -> Any:
+        """`Spec.services`' contract: the case-owned world beside this database."""
+        declared = Path(tempfile.mkdtemp(prefix="nora-journey-declared-"))
+        cfg = self._declared_config(database_url, declared)
+        self.protocol = CausalProtocol(cfg)
+        self.judge = GeneratedJudge()
+        self.daemon = FakeSignalDaemon(sent_at_ms=int(time.time() * 1000))
+        model = web.Application()
+
+        async def respond(request: web.Request) -> web.StreamResponse:
+            body = await request.json()
+            self.requests.append(body)
+            if self.protocol is None or self.judge is None:
+                return web.json_response({"error": "world unbound"}, status=503)
+            if body.get("stream") is True:
+                return await self.protocol.respond(request)
+            return await self.judge.respond(request)
+
+        model.router.add_post("/v1/chat/completions", respond)
+        apps = {
+            "llm.base_url": model,
+            "honcho.base_url": memory_service(self.feeds),
+            "platforms.signal.base_url": self._bridge_app(),
+        }
+        apps.update({f"providers.{name}.base_url": model for name in cfg.providers})
+        environment = IsolatedServices(
+            database_url=database_url, applications=apps, redis=redis)
+        async with environment as env:
+            env.world = self
+            yield env

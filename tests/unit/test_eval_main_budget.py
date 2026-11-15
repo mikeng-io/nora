@@ -49,7 +49,8 @@ def test_sdk_report_survives_a_failed_real_evidence_recorder(monkeypatch, tmp_pa
             m._run_one("generated", source_url="unused", judge=None, sample=1)
     saved = json.loads((evidence.path / "corpus-generated.json").read_text())
     assert saved["mode"] == "protocol-rehearsal" and saved["behavior"] == "UNMEASURED"
-    assert saved["evidence"] == {"status": "ERROR", "cause": "generated instrument failure"}
+    assert saved["evidence"]["status"] == "ERROR"
+    assert "generated instrument failure" in saved["evidence"]["causes"]
     assert saved["report"]["detailed_results"][0][0]["label"] == "ERROR"
 
 

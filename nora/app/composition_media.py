@@ -356,9 +356,14 @@ async def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
         # RustFS unreachable, or misconfigured beyond what the checks above catch (wrong
         # credentials, wrong bucket permissions). This runs at STARTUP, before
         # build_dependencies' own per-message protection (nora.ingest.stages.media._take…
+        s3.close()
         log.exception(
             "media.rustfs is configured but the bucket could not be reached "
             "or created — falling back to the filesystem blob store."
         )
         return fallback
+    except BaseException:
+        # Cancellation inside `ensure_bucket` must not strand the pool.
+        s3.close()
+        raise
     return store

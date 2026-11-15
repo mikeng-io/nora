@@ -32,6 +32,14 @@ or measure the session and its downstream effects at that boundary, but forcing
 a wake cannot establish scheduling, and importing recorded conscious replies
 cannot establish candidate engagement. Those limits remain visible in its claim.
 
+An autonomous-live journey is the other claim: the case's services plan opens
+a request-aware generated world beside the case database, the composed subject
+runs its real `App`, generated input enters through real ingress and
+admission, and the deployment's own timers schedule cognition and fire —
+never a recorded wake and never a forced session. Per-wake evidence,
+finalization, the two judges and the retained JSON/HTML report use the same
+canonical pipeline a replay uses; the claim differs, not the measurement.
+
 ## What the evidence must connect
 
 A cross-wake criterion retains the source and changes across the entire causal

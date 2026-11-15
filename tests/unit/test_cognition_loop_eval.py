@@ -594,7 +594,9 @@ async def test_two_judges_served_by_one_model_are_not_independent():
     exp = Expectation(wake=0, polarity="must", kind="note", text="x")
     verdict = await judge_expectation(
         judges, ("a", "b"), exp, StateDiff({}), UnitState(kinds={}),
-        {"effects": {"status": "observed", "items": [], "tools": []}})
+        {"model_calls": [{"messages": [
+            {"role": "system", "content": "generated instructions"}]}],
+         "effects": {"status": "observed", "items": [], "tools": []}})
     assert verdict.verdict == ERROR
     assert all("not independent" in a.reason for a in verdict.answers)
 

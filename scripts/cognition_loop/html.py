@@ -133,6 +133,15 @@ def _run(report: dict[str, Any], budget: dict[str, Any] | None) -> str:
             ("events file", ev.get("ref")),
         ]),
         "<h3>Expected coverage</h3>" + _block("coverage", report.get("coverage")),
+        # The same axes report.json carries — read, never re-derived.
+        "<h3>Outcomes</h3>" + _kv([
+            ("execution", (report.get("outcome") or {})
+             .get("execution", {}).get("status")),
+            ("measurement validity", (report.get("outcome") or {})
+             .get("validity", {}).get("status")),
+            ("behaviour", (report.get("outcome") or {})
+             .get("behavior", {}).get("status")),
+        ]) + _block("outcome detail", report.get("outcome")),
     ]
     if report.get("rejudged"):
         measurement = report["rejudged"]

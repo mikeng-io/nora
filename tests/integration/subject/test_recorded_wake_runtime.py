@@ -20,8 +20,10 @@ from nora.infra.sql.schema import COGNITION_WAKE_OUTCOME
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
+from nora.testing.causal_protocol import completion
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.subject.sandbox import eval_host_lock
+from scripts.cognition_loop.accounting import manifest, write_report
 from scripts.cognition_loop.cases import Case, Expectation
 from scripts.cognition_loop.run import _run_wake
 from scripts.memory_graph_spike import Judges, measured_run_budget
@@ -29,24 +31,6 @@ from tests.integration.subject.test_replay_service_scope import NOW
 from tests.integration.test_the_subject_is_the_deployed_graph import _empty_honcho_app
 
 MODELS = ["generated-a", "generated-b"]
-
-
-def completion(model, content, *, stream=False):
-    response = {"id": "generated-response", "object": "chat.completion", "created": 1,
-                "model": model, "choices": [{"index": 0, "finish_reason": "stop",
-                    "message": {"role": "assistant", "content": content}}],
-                "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}}
-    result = {"status": 200, "headers": {"x-omniroute-model": model + "-served"}}
-    if stream:
-        chunks = [{**response, "object": "chat.completion.chunk", "choices": [{
-            "index": 0, "delta": {"role": "assistant", "content": content},
-            "finish_reason": None}]}, {**response, "object": "chat.completion.chunk",
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}]
-        result["headers"]["content-type"] = "text/event-stream"
-        result["chunks"] = chunks
-    else:
-        result["json"] = response
-    return {"method": "POST", "path": "/v1/chat/completions", "response": result}
 
 
 def services(cfg, requests):
@@ -175,6 +159,25 @@ async def test_real_recorded_wake_settles_and_both_judges_receive_terminal_evide
                 finally:
                     await engine.dispose()
                 assert not environment.denied
+                # The report consumer settles on that same canonical
+                # `read_effects` item — never on the row's own session
+                # claim — and the saved gate reflects it.
+                row = {k: v for k, v in result.items() if not k.startswith("_")}
+                for expectation in row["expectations"]:
+                    expectation.pop("verdict_obj", None)
+                report = {"status": "PASS",
+                          "expected_cases": manifest([case]),
+                          "evidence": {"status": "PASS"},
+                          "run": {"mode": "recorded-wake-protocol"},
+                          "cases": [{"case": case.name, "unit": case.unit,
+                                     "wakes": [row]}]}
+                write_report(tmp_path, report)
+                saved = json.loads((tmp_path / "report.json").read_text())
+                assert saved["coverage"]["status"] == "PASS"
+                assert saved["outcome"]["execution"]["status"] == "PASS"
+                assert saved["outcome"]["execution"]["settled"] == 1
+                assert saved["outcome"]["validity"]["status"] == "PASS"
+                assert saved["status"] == "PASS"
     events = read_events(evidence.path)
     assert validate_events(events)["status"] == "PASS"
     requests = [json.loads(e["attributes"]["nora.model.request.body"]) for e in events
