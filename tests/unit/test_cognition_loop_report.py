@@ -154,7 +154,10 @@ def test_a_report_html_failure_turns_a_passing_run_to_error(
             wakes.append({"recorded_wake_id": ident, "status": "PASS",
                           "wake_id": 9000 + index,
                           "session_id": f"generated-session-{index}",
-                          "at_ms": 1000 + index, "expectations": []})
+                          "at_ms": 1000 + index, "expectations": [],
+                          "trajectory": {
+                              "blocks": {"system": "generated",
+                                         "agenda": "generated"}}})
             (output / f"wake-{index}-{ident}.json").write_text(
                 json.dumps({"diff": {}, "expectations": [],
                             "recorded_wake_id": ident, "unit": case.unit,

@@ -98,11 +98,11 @@
     "target": "tests/unit/test_cognition_loop_accounting.py::test_a_report_outcome_axis_unknown_blocks_the_saved_status"
   },
   {
-    "name": "a settled row needs a positive completion signal",
+    "name": "a failed or foreign canonical outcome is an execution error",
     "file": "scripts/cognition_loop/accounting.py",
-    "old": "                elif wake.get(\"session_id\") is not None:\n                    # The closed COGNITION_WAKE_OUTCOME's own session.\n                    settled += 1\n                elif wake.get(\"no_session\") is not None:\n                    # A typed no-session: the closed outcome's detail.\n                    settled += 1\n                elif (inspect_only\n                      and any(v is not None for v in\n                              ((wake.get(\"trajectory\") or {}).get(\"blocks\") or {}).values())):\n                    # Inspect-only has no session to settle: its positive\n                    # claim is the inspection's own assembled context.\n                    settled += 1\n                else:\n                    unestablished += 1\n                    causes.append(\n                        f\"{case.get('name')}:{index} settled without a \"\n                        \"completion signal\")",
-    "new": "                else:\n                    settled += 1",
-    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_settled_row_without_a_completion_signal_stays_unestablished"
+    "old": "                elif state in (\"failed\", \"foreign\"):\n                    errored += 1\n                    causes.append(\n                        f\"{case.get('name')}:{index} canonical outcome \"\n                        f\"{state}: {ref or 'uncited'}\")",
+    "new": "                elif state in (\"failed\", \"foreign\"):\n                    unestablished += 1\n                    causes.append(\n                        f\"{case.get('name')}:{index} canonical outcome \"\n                        f\"{state}: {ref or 'uncited'}\")",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_wake_settles_only_on_its_own_closed_canonical_outcome"
   },
   {
     "name": "a contradictory frozen artifact is never judged",

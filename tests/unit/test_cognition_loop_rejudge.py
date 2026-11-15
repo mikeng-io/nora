@@ -38,12 +38,15 @@ async def test_missing_frozen_wake_stops_before_judge_setup(monkeypatch, tmp_pat
     (tmp_path / "report.json").write_text(json.dumps({
         "expected_cases": manifest([case]),
         "status": "PASS", "cases": [{"case": case.name, "unit": case.unit, "wakes": [
-            {"recorded_wake_id": ident} for ident in case.wakes]}]}))
+            {"recorded_wake_id": ident, "at_ms": i}
+            for i, ident in enumerate(case.wakes)]}]}))
     for index, ident in enumerate(case.wakes):
         if index != missing:
             (tmp_path / f"wake-{index}-{ident}.json").write_text(
                 json.dumps({"recorded_wake_id": ident, "unit": case.unit,
-                            "trajectory": {"unit": case.unit}}))
+                            "at_ms": index,
+                            "trajectory": {"unit": case.unit,
+                                           "session_id": None}}))
     original = (tmp_path / "report.json").read_bytes()
     def forbidden(*args):
         raise AssertionError("judge setup must not run")
@@ -104,7 +107,8 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
     for i, ident in enumerate(case.wakes):
         frozen = {"diff": {}, "recorded_wake_id": ident,
                   "unit": case.unit, "at_ms": i,
-                  "trajectory": {"unit": case.unit, "at_ms": i}}
+                  "trajectory": {"unit": case.unit, "at_ms": i,
+                                 "session_id": None}}
         if damage == "frozen_unit" and i == 0:
             frozen["trajectory"]["unit"] = "another-unit"
         if damage == "frozen_instant" and i == 0:
@@ -264,13 +268,14 @@ async def test_an_unmeasured_wake_spends_no_judge_call(
         "diff": {}, "recorded_wake_id": case.wakes[0],
         "unit": case.unit, "at_ms": 1000,
         "trajectory": {"blocks": {"agenda": "generated source 0"},
-                       "unit": case.unit, "at_ms": 1000}}))
+                       "unit": case.unit, "at_ms": 1000,
+                       "session_id": None}}))
     (tmp_path / f"wake-1-{case.wakes[1]}.json").write_text(json.dumps({
         "error": {"step": "wake",
                   "message": "the session ended failed: capture interrupted"},
         "recorded_wake_id": case.wakes[1], "unit": case.unit,
         "at_ms": 1001,
-        "trajectory": {}}))
+        "trajectory": {"session_id": None}}))
 
     judged = []
 
@@ -315,7 +320,8 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(
             "unit": case.unit, "at_ms": 1000 + index,
             "trajectory": {
                 "blocks": {"agenda": f"generated source {index}"},
-                "unit": case.unit, "at_ms": 1000 + index}}))
+                "unit": case.unit, "at_ms": 1000 + index,
+                "session_id": None}}))
 
     # Assertions inside the fake would be swallowed by rejudge's fail-closed
     # except; the evidence is recorded and checked after the call instead.

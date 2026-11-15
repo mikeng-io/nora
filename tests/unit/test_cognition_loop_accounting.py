@@ -10,6 +10,23 @@ from scripts.cognition_loop.cases import generated_case
 from scripts.cognition_loop.html import render
 
 
+def _outcome_item(unit, wake_id, session_id, *, outcome="closed", at_ms,
+                  ref=True):
+    """A generated canonical `cognition_wake_outcome` effect in the shape
+    `read_effects` retains — consumer fixture, no runtime claimed."""
+    key = {"id": wake_id * 10 + 1}
+    return {
+        "ref": ("wake:cognition_wake_outcome:" + json.dumps(
+            key, sort_keys=True, separators=(",", ":"))) if ref else None,
+        "kind": "wake", "source": "cognition_wake_outcome", "key": key,
+        "at": "2026-01-01T00:00:00+00:00", "operation": "append",
+        "row": {"id": key["id"], "wake_id": wake_id, "unit": unit,
+                "session_id": session_id, "outcome": outcome, "detail": "",
+                "at_ms": at_ms, "cause": "none",
+                "recorded_at": "2026-01-01T00:00:00+00:00"},
+    }
+
+
 def complete_report(output):
     first = generated_case()
     second = replace(first, name="generated-second-case", wakes=(101, 202))
@@ -23,18 +40,25 @@ def complete_report(output):
                 "expectation": {k: v for k, v in asdict(e).items() if k != "wake"},
                 "verdict": "PASS", "answers": [{"model": "a"}, {"model": "b"}],
             } for e in case.expectations if e.wake == index]
+            trajectory = {"unit": case.unit, "at_ms": 1000 + index,
+                          "wake_id": 9000 + index,
+                          "session_id": 7000 + index,
+                          "effects": {
+                              "status": "observed", "unit": case.unit,
+                              "items": [_outcome_item(
+                                  case.unit, 9000 + index, 7000 + index,
+                                  at_ms=1000 + index)],
+                              "tools": []}}
             wakes.append({"recorded_wake_id": ident, "expectations": expectations,
                           "wake_id": 9000 + index,
-                          "session_id": f"generated-session-{index}",
-                          "at_ms": 1000 + index})
+                          "session_id": 7000 + index,
+                          "at_ms": 1000 + index,
+                          "trajectory": trajectory})
             (output / f"wake-{index}-{ident}.json").write_text(
                 json.dumps({"diff": {}, "expectations": expectations,
                             "recorded_wake_id": ident, "unit": case.unit,
                             "at_ms": 1000 + index,
-                            "trajectory": {"unit": case.unit,
-                                           "at_ms": 1000 + index,
-                                           "wake_id": 9000 + index,
-                                           "session_id": f"generated-session-{index}"}}))
+                            "trajectory": trajectory}))
         report["cases"].append({"case": case.name, "unit": case.unit, "wakes": wakes})
     return report
 
@@ -43,7 +67,9 @@ def complete_report(output):
                                     "frozen", "identity", "duplicate", "manifest", "malformed",
                                     "frozen_unit", "frozen_instant", "frozen_step",
                                     "unproven", "recorded_wake", "actual_wake",
-                                    "foreign_session", "partial_identity"])
+                                    "foreign_session", "partial_identity",
+                                    "bool_identity", "unproven_session",
+                                    "undeclared_instant"])
 def test_expected_denominators_do_not_shrink_with_missing_evidence(tmp_path, damage):
     report = complete_report(tmp_path)
     if damage == "case":
@@ -100,6 +126,24 @@ def test_expected_denominators_do_not_shrink_with_missing_evidence(tmp_path, dam
         frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
         frozen.pop("recorded_wake_id")
         (tmp_path / "wake-0-11.json").write_text(json.dumps(frozen))
+    elif damage == "bool_identity":
+        # `True` is not `1`: identity is typed, never truthy-equal.
+        frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
+        frozen["recorded_wake_id"] = True
+        (tmp_path / "wake-0-11.json").write_text(json.dumps(frozen))
+    elif damage == "unproven_session":
+        # A session-less row is proved by the trajectory's explicit None —
+        # an absent key is unproven, never a silent pass.
+        report["cases"][0]["wakes"][0].pop("session_id")
+        report["cases"][0]["wakes"][0]["trajectory"].pop("session_id")
+        frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
+        frozen["trajectory"].pop("session_id")
+        (tmp_path / "wake-0-11.json").write_text(json.dumps(frozen))
+    elif damage == "undeclared_instant":
+        # The row never declared the instant: the artifact's cannot be
+        # verified, so the identity stays unknown.
+        report["cases"][0]["wakes"][0].pop("at_ms")
+        report["cases"][0]["wakes"][0]["trajectory"].pop("at_ms")
     if damage in ("criterion", "answer"):
         frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
         frozen["expectations"] = report["cases"][0]["wakes"][0]["expectations"]
@@ -161,15 +205,15 @@ def test_an_unsettled_wake_is_execution_unknown_not_pass(tmp_path):
 
 
 def test_a_settled_row_without_a_completion_signal_stays_unestablished(tmp_path):
-    """A row with no session, no recorded no-session detail and no inspect
-    claim carries no positive canonical completion — its execution axis is
-    UNKNOWN and the report can never be a PASS."""
+    """A row naming no candidate wake or session and carrying no closed
+    canonical outcome stays unestablished — its execution axis is UNKNOWN
+    and the report can never be a PASS."""
     report = complete_report(tmp_path)
     report["cases"][0]["wakes"][0].pop("session_id")
     report["cases"][0]["wakes"][0].pop("wake_id")
     frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
-    frozen["trajectory"].pop("session_id")
-    frozen["trajectory"].pop("wake_id")
+    frozen["trajectory"]["session_id"] = None
+    frozen["trajectory"]["wake_id"] = None
     (tmp_path / "wake-0-11.json").write_text(json.dumps(frozen))
     write_report(tmp_path, report)
     saved = json.loads((tmp_path / "report.json").read_text())
@@ -181,21 +225,72 @@ def test_a_settled_row_without_a_completion_signal_stays_unestablished(tmp_path)
 
 
 def test_a_no_session_row_is_a_typed_silent_settlement(tmp_path):
-    """The closed outcome's own no-session detail is the positive signal —
-    no fake session id, and the axis is PASS only with it recorded."""
+    """A closed `cognition_wake_outcome` whose own session is NULL is the
+    typed no-session settlement: the row keeps its real candidate wake,
+    claims no session, and the axis is PASS on that receipt alone."""
     report = complete_report(tmp_path)
     wake = report["cases"][0]["wakes"][0]
-    wake.pop("session_id"), wake.pop("wake_id")
+    wake["session_id"] = None
     wake["no_session"] = "empty agenda"
+    wake["trajectory"]["session_id"] = None
+    wake["trajectory"]["effects"]["items"] = [
+        _outcome_item("generated-unit", 9000, None, at_ms=1000)]
     frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
     frozen["no_session"] = "empty agenda"
-    frozen["trajectory"].pop("session_id")
-    frozen["trajectory"].pop("wake_id")
+    frozen["trajectory"]["session_id"] = None
     (tmp_path / "wake-0-11.json").write_text(json.dumps(frozen))
     write_report(tmp_path, report)
     saved = json.loads((tmp_path / "report.json").read_text())
     assert saved["outcome"]["execution"]["status"] == "PASS"
     assert saved["outcome"]["execution"]["settled"] == 4
+
+
+@pytest.mark.parametrize("damage,expected", [
+    ("removed", "UNKNOWN"), ("foreign_unit", "ERROR"),
+    ("foreign_wake", "UNKNOWN"), ("foreign_session", "ERROR"),
+    ("failed", "ERROR"), ("unobserved", "UNKNOWN"),
+    ("malformed", "UNKNOWN"), ("uncited", "UNKNOWN"),
+    ("prose_only", "UNKNOWN"),
+])
+def test_a_wake_settles_only_on_its_own_closed_canonical_outcome(
+        tmp_path, damage, expected):
+    """Session existence is not settlement: removed, malformed or
+    uncaptured effects stay UNKNOWN, a foreign or failed canonical
+    outcome is ERROR — and a prose `no_session` detail alone never
+    settles. Only the observed closed receipt counts."""
+    report = complete_report(tmp_path)
+    wake = report["cases"][0]["wakes"][0]
+    effects = wake["trajectory"]["effects"]
+    if damage == "removed":
+        effects["items"] = []
+    elif damage == "foreign_unit":
+        effects["items"][0]["row"]["unit"] = "another-unit"
+    elif damage == "foreign_wake":
+        effects["items"][0]["row"]["wake_id"] = 4242
+    elif damage == "foreign_session":
+        effects["items"][0]["row"]["session_id"] = 9999
+    elif damage == "failed":
+        effects["items"][0]["row"]["outcome"] = "failed"
+    elif damage == "unobserved":
+        effects["status"] = "unavailable"
+    elif damage == "malformed":
+        effects["items"] = ["unreadable"]
+    elif damage == "uncited":
+        effects["items"][0]["ref"] = None
+    elif damage == "prose_only":
+        effects["items"] = []
+        wake["session_id"] = None
+        wake["no_session"] = "empty agenda"
+        wake["trajectory"]["session_id"] = None
+        frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
+        frozen["trajectory"]["session_id"] = None
+        (tmp_path / "wake-0-11.json").write_text(json.dumps(frozen))
+    write_report(tmp_path, report)
+    saved = json.loads((tmp_path / "report.json").read_text())
+    assert saved["coverage"]["status"] == "PASS"
+    assert saved["outcome"]["execution"]["status"] == expected
+    assert saved["outcome"]["execution"]["settled"] == 3
+    assert saved["status"] == "ERROR"
 
 
 def test_inspect_only_settles_on_the_inspections_own_evidence(tmp_path):
@@ -210,16 +305,19 @@ def test_inspect_only_settles_on_the_inspections_own_evidence(tmp_path):
             wake["model_calls"] = False
             trajectory = {
                 "unit": case["unit"], "at_ms": 1000 + index,
+                "session_id": None, "wake_id": None,
                 "blocks": {"system": "generated", "agenda": "generated",
                            "items": [], "stimuli": [], "instructions": None}}
             wake["trajectory"] = trajectory
             frozen = json.loads(
                 (tmp_path / f"wake-{index}-{wake['recorded_wake_id']}.json").read_text())
-            frozen["trajectory"].pop("session_id")
-            frozen["trajectory"].pop("wake_id")
+            frozen["trajectory"]["session_id"] = None
+            frozen["trajectory"]["wake_id"] = None
             (tmp_path / f"wake-{index}-{wake['recorded_wake_id']}.json").write_text(
                 json.dumps(frozen))
-    report["cases"][0]["wakes"][1]["trajectory"]["blocks"] = {}
+    report["cases"][0]["wakes"][1]["trajectory"]["blocks"] = {
+        "system": "", "agenda": {}, "items": [], "stimuli": [],
+        "instructions": None}
     write_report(tmp_path, report)
     saved = json.loads((tmp_path / "report.json").read_text())
     assert saved["outcome"]["execution"]["status"] == "UNKNOWN"
@@ -234,8 +332,8 @@ def test_a_report_outcome_axis_unknown_blocks_the_saved_status(tmp_path):
     report["cases"][0]["wakes"][0].pop("session_id")
     report["cases"][0]["wakes"][0].pop("wake_id")
     frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
-    frozen["trajectory"].pop("session_id")
-    frozen["trajectory"].pop("wake_id")
+    frozen["trajectory"]["session_id"] = None
+    frozen["trajectory"]["wake_id"] = None
     (tmp_path / "wake-0-11.json").write_text(json.dumps(frozen))
     write_report(tmp_path, report)
     saved = json.loads((tmp_path / "report.json").read_text())

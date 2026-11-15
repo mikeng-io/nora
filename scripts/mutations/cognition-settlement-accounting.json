@@ -1,0 +1,79 @@
+[
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "a wake settles only on a canonical outcome state",
+    "old": "                if state == \"closed\":\n                    settled += 1\n                elif state in (\"failed\", \"foreign\"):\n                    errored += 1\n                    causes.append(\n                        f\"{case.get('name')}:{index} canonical outcome \"\n                        f\"{state}: {ref or 'uncited'}\")",
+    "new": "                if True:\n                    settled += 1\n                elif state in (\"failed\", \"foreign\"):\n                    errored += 1\n                    causes.append(\n                        f\"{case.get('name')}:{index} canonical outcome \"\n                        f\"{state}: {ref or 'uncited'}\")",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_settled_row_without_a_completion_signal_stays_unestablished"
+  },
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "a failed or foreign canonical outcome is an execution error",
+    "old": "                elif state in (\"failed\", \"foreign\"):\n                    errored += 1",
+    "new": "                elif state in (\"failed\", \"foreign\"):\n                    unestablished += 1",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_wake_settles_only_on_its_own_closed_canonical_outcome"
+  },
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "settlement requires the closed outcome, not any captured row",
+    "old": "        if row.get(\"outcome\") != \"closed\":\n            return \"failed\", ref",
+    "new": "        if row.get(\"outcome\") == \"never-matches\":\n            return \"failed\", ref",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_wake_settles_only_on_its_own_closed_canonical_outcome"
+  },
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "the canonical outcome must name the report's candidate wake",
+    "old": "        if not isinstance(row, dict) \\\n                or not (type(wake_id) is int and type(row.get(\"wake_id\")) is int\n                        and row[\"wake_id\"] == wake_id):\n            continue",
+    "new": "        if not isinstance(row, dict):\n            continue",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_wake_settles_only_on_its_own_closed_canonical_outcome"
+  },
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "the canonical outcome must be in the case's unit",
+    "old": "        if row.get(\"unit\") != unit:\n            return \"foreign\", ref",
+    "new": "        if row.get(\"unit\") == \"never-matches\":\n            return \"foreign\", ref",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_wake_settles_only_on_its_own_closed_canonical_outcome"
+  },
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "the canonical outcome must carry the claimed session",
+    "old": "        if session_id is None:\n            same_session = \"session_id\" in row and row[\"session_id\"] is None\n        else:\n            same_session = (type(session_id) is int\n                            and type(row.get(\"session_id\")) is int\n                            and row[\"session_id\"] == session_id)\n        if not same_session:\n            return \"foreign\", ref",
+    "new": "        same_session = True\n        if not same_session:\n            return \"foreign\", ref",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_wake_settles_only_on_its_own_closed_canonical_outcome"
+  },
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "settlement needs the row's citable ref",
+    "old": "        return (\"closed\", ref) if ref is not None else (\"absent\", None)",
+    "new": "        return (\"closed\", ref)",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_wake_settles_only_on_its_own_closed_canonical_outcome"
+  },
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "frozen identity is typed, not just equal",
+    "old": "    return type(actual) is type(expected) and actual == expected",
+    "new": "    return actual == expected",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_expected_denominators_do_not_shrink_with_missing_evidence"
+  },
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "a missing required identity stays unknown",
+    "old": "    def required(actual: Any, expected: Any, label: str) -> None:\n        if actual is None or expected is None:\n            missing.append(label)\n        elif not _same(actual, expected):",
+    "new": "    def required(actual: Any, expected: Any, label: str) -> None:\n        if actual is None or expected is None:\n            return\n        elif not _same(actual, expected):",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_expected_denominators_do_not_shrink_with_missing_evidence"
+  },
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "a no-session claim needs the trajectory's explicit null",
+    "old": "        if session_id is None:\n            if trajectory.get(\"session_id\") is not None:\n                foreign.append(\"session\")\n            elif \"session_id\" not in trajectory:\n                missing.append(\"session\")",
+    "new": "        if session_id is None:\n            if trajectory.get(\"session_id\") is not None:\n                foreign.append(\"session\")",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_expected_denominators_do_not_shrink_with_missing_evidence"
+  },
+  {
+    "file": "scripts/cognition_loop/accounting.py",
+    "name": "inspect-only settles only on assembled inspection evidence",
+    "old": "                elif (inspect_only\n                      and any(v for v in\n                              ((wake.get(\"trajectory\") or {}).get(\"blocks\") or {}).values())):",
+    "new": "                elif inspect_only:",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_inspect_only_settles_on_the_inspections_own_evidence"
+  }
+]

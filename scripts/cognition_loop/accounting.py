@@ -24,6 +24,11 @@ def _judgments(rows: list[dict[str, Any]]) -> Counter:
     return Counter(_criterion(row.get("expectation") or {}) for row in rows)
 
 
+def _same(actual: Any, expected: Any) -> bool:
+    """Typed identity: `True` never equals `1`, an int never equals a str."""
+    return type(actual) is type(expected) and actual == expected
+
+
 def frozen_wake_identity(frozen: dict[str, Any], *, unit: Any,
                          recorded_wake_id: Any, at_ms: Any = None,
                          step: Any = None, wake_id: Any = None,
@@ -32,10 +37,13 @@ def frozen_wake_identity(frozen: dict[str, Any], *, unit: Any,
 
     An artifact proves it belongs by content, never by filename: its own
     recorded `recorded_wake_id`/`unit`/`at_ms` must equal the declared
-    case's, its error step must equal the row's, and where the row names a
-    candidate wake/session (the replay's own — never the recorded wake)
-    the trajectory must carry the same. Required fields the artifact never
-    recorded are unknown, a disagreement is foreign — neither is assumed.
+    case's under typed identity, its error step must equal the row's, and
+    where the row names a candidate wake/session (the replay's own —
+    never the recorded wake) the trajectory must carry the same. A row
+    that names no session is matched only by the trajectory's own
+    explicit `session_id: None`, never by an absent key. Required fields
+    either side never recorded are unknown, a disagreement is foreign —
+    neither is assumed.
     """
     if not isinstance(frozen, dict):
         return "frozen wake is not an object"
@@ -43,30 +51,47 @@ def frozen_wake_identity(frozen: dict[str, Any], *, unit: Any,
     foreign: list[str] = []
 
     def required(actual: Any, expected: Any, label: str) -> None:
-        if actual is None:
+        if actual is None or expected is None:
             missing.append(label)
-        elif expected is not None and actual != expected:
+        elif not _same(actual, expected):
+            foreign.append(label)
+
+    def candidate(actual: Any, expected: Any, label: str) -> None:
+        if expected is None:
+            if actual is not None:
+                foreign.append(label)
+        elif actual is None:
+            missing.append(label)
+        elif not _same(actual, expected):
             foreign.append(label)
 
     required(frozen.get("recorded_wake_id"), recorded_wake_id, "recorded_wake")
     required(frozen.get("unit"), unit, "unit")
-    if at_ms is not None:
-        required(frozen.get("at_ms"), at_ms, "at_ms")
-    error = frozen.get("error") if isinstance(frozen.get("error"), dict) else {}
-    if (error.get("step") or None) != step:
+    required(frozen.get("at_ms"), at_ms, "at_ms")
+    error = frozen.get("error")
+    raw_step = error.get("step") if isinstance(error, dict) else None
+    if ((error is not None and not isinstance(error, dict))
+            or (raw_step is not None and not isinstance(raw_step, str))
+            or raw_step != step):
         foreign.append("step")
     trajectory = frozen.get("trajectory")
     if isinstance(trajectory, dict):
-        if wake_id is not None:
-            required(trajectory.get("wake_id"), wake_id, "actual_wake")
-        if session_id is not None:
-            required(trajectory.get("session_id"), session_id, "session")
-        elif trajectory.get("session_id") is not None:
-            foreign.append("session")
-        if trajectory.get("unit") is not None and trajectory["unit"] != unit:
+        candidate(trajectory.get("wake_id"), wake_id, "actual_wake")
+        if session_id is None:
+            if trajectory.get("session_id") is not None:
+                foreign.append("session")
+            elif "session_id" not in trajectory:
+                missing.append("session")
+        else:
+            candidate(trajectory.get("session_id"), session_id, "session")
+        trajectory_unit = trajectory.get("unit")
+        if trajectory_unit is not None and (
+                unit is None or not isinstance(trajectory_unit, str)
+                or trajectory_unit != unit):
             foreign.append("trajectory.unit")
-        if (at_ms is not None and trajectory.get("at_ms") is not None
-                and trajectory["at_ms"] != at_ms):
+        trajectory_ms = trajectory.get("at_ms")
+        if (trajectory_ms is not None and at_ms is not None
+                and not _same(trajectory_ms, at_ms)):
             foreign.append("trajectory.at_ms")
     elif step is None and (wake_id is not None or session_id is not None):
         missing.append("trajectory")
@@ -154,17 +179,66 @@ def _reconcile(report: dict[str, Any], output: Path, *, judgments: bool) -> dict
             "observed": observed, "errors": list(dict.fromkeys(errors))}
 
 
+def _canonical_outcome(trajectory: Any, *, unit: Any, wake_id: Any,
+                       session_id: Any) -> tuple[str, str | None]:
+    """This wake's lifecycle settlement inside its own captured effects.
+
+    `read_effects` already retains every `cognition_wake_outcome` row the
+    sandbox wrote after the boundary, each with its citable `ref` — the
+    same projection `subject_instructions` reads for a typed no-session.
+    The wake settles only on the row for ITS candidate wake id, in ITS
+    unit, `closed`, carrying the session the report row claims — an
+    explicit NULL for a typed no-session. Returns `(state, ref)`: `closed`
+    for the observed settlement, `failed` for an observed non-closed
+    ending, `foreign` when the observed row's unit or session contradicts
+    the claim, `absent` when nothing matching was captured or the effects
+    themselves were never observed.
+    """
+    effects = trajectory.get("effects") if isinstance(trajectory, dict) else None
+    items = effects.get("items") if isinstance(effects, dict) else None
+    if (not isinstance(items, list) or effects.get("status") != "observed"
+            or not isinstance(unit, str) or effects.get("unit") != unit):
+        return "absent", None
+    for item in items:
+        if not isinstance(item, dict) \
+                or item.get("source") != "cognition_wake_outcome":
+            continue
+        row = item.get("row")
+        if not isinstance(row, dict) \
+                or not (type(wake_id) is int and type(row.get("wake_id")) is int
+                        and row["wake_id"] == wake_id):
+            continue
+        ref = item.get("ref")
+        ref = ref if isinstance(ref, str) and ref else None
+        if row.get("unit") != unit:
+            return "foreign", ref
+        if row.get("outcome") != "closed":
+            return "failed", ref
+        if session_id is None:
+            same_session = "session_id" in row and row["session_id"] is None
+        else:
+            same_session = (type(session_id) is int
+                            and type(row.get("session_id")) is int
+                            and row["session_id"] == session_id)
+        if not same_session:
+            return "foreign", ref
+        return ("closed", ref) if ref is not None else ("absent", None)
+    return "absent", None
+
+
 def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
     """The three result axes, from the same rows the denominators counted.
 
     Execution answers whether every expected wake ran and settled — a
-    silent/no-session wake counts only on its positive canonical
-    completion, a missing row stays unestablished, never assumed.
-    Validity answers whether the measurement reached its consumers
-    intact: coverage plus the evidence receipt together, never paired
-    event counts alone. Behaviour carries the protocol verdict counts
-    under the path's own claim scope — `UNMEASURED` as a production
-    behaviour claim.
+    wake counts only on the closed `cognition_wake_outcome` its own
+    captured effects recorded for its candidate wake, unit and session
+    (NULL for a typed no-session); a failed or foreign receipt is an
+    error, a missing one stays unestablished, never assumed. Validity
+    answers whether the measurement reached its consumers intact:
+    coverage plus the evidence receipt together, never paired event
+    counts alone. Behaviour carries the protocol verdict counts under
+    the path's own claim scope — `UNMEASURED` as a production behaviour
+    claim.
     """
     rejudged = report.get("rejudged")
     run = report.get("run") or {}
@@ -197,14 +271,20 @@ def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
                     causes.append(
                         f"{case.get('name')}:{index} failed at {step}: "
                         f"{wake.get('error')}")
-                elif wake.get("session_id") is not None:
-                    # The closed COGNITION_WAKE_OUTCOME's own session.
+                    continue
+                state, ref = _canonical_outcome(
+                    wake.get("trajectory"), unit=case.get("unit"),
+                    wake_id=wake.get("wake_id"),
+                    session_id=wake.get("session_id"))
+                if state == "closed":
                     settled += 1
-                elif wake.get("no_session") is not None:
-                    # A typed no-session: the closed outcome's detail.
-                    settled += 1
+                elif state in ("failed", "foreign"):
+                    errored += 1
+                    causes.append(
+                        f"{case.get('name')}:{index} canonical outcome "
+                        f"{state}: {ref or 'uncited'}")
                 elif (inspect_only
-                      and any(v is not None for v in
+                      and any(v for v in
                               ((wake.get("trajectory") or {}).get("blocks") or {}).values())):
                     # Inspect-only has no session to settle: its positive
                     # claim is the inspection's own assembled context.
@@ -212,8 +292,8 @@ def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
                 else:
                     unestablished += 1
                     causes.append(
-                        f"{case.get('name')}:{index} settled without a "
-                        "completion signal")
+                        f"{case.get('name')}:{index} has no closed "
+                        "canonical outcome")
         execution = axis(
             "ERROR" if errored else UNKNOWN if unestablished else "PASS",
             scope=mode, settled=settled, errored=errored,
