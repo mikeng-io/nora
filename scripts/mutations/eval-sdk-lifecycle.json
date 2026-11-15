@@ -117,5 +117,12 @@
     "old": "        if callable(evidence):\n            selected = otel_context.set_value(EVAL_EVIDENCE_KEY, evidence, selected)\n            selected = baggage.set_baggage(\"nora.eval.capture\", \"true\", context=selected)\n",
     "new": "",
     "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording[detached-coverage]"
+  },
+  {
+    "name": "SDK-owned HTTP pools follow upstream per-request lifetime",
+    "file": "nora/agent/structured.py",
+    "old": "    if http_client is not None:\n        client_args[\"http_client\"] = http_client\n",
+    "new": "    # A bounded run gates the SDK-owned client too: `bounded_http_client`\n    # wraps whatever transport is present (a real one when unset) so the\n    # AsyncOpenAI `_get_client` builds inside the provider admits through\n    # the same budget. None with no budget installed \u2014 the SDK default.\n    from nora.agent.run_budget_transport import bounded_http_client\n    bounded = bounded_http_client(http_client)\n    if bounded is not None:\n        client_args[\"http_client\"] = bounded\n        from ..domain.run_budget import active_run_budget\n        if active_run_budget.get() is not None:\n            client_args[\"max_retries\"] = 0\n",
+    "target": "tests/integration/subject/test_reused_sdk_model.py::test_reused_model_opens_a_fresh_bounded_sdk_client_for_each_invocation"
   }
 ]

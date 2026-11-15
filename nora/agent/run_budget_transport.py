@@ -5,9 +5,8 @@
 reservation exactly once; `bounded_http_client` and `gate_client` put
 them on the clients a bounded run reaches — factory clients, the
 judge's direct client, and SDK-owned provider clients
-(`build_structured_model` injects `bounded_http_client` into
-`client_args`, so the `AsyncOpenAI` the SDK builds internally
-dispatches through it too). Domain holds only the budget itself —
+(providers resolve a fresh bounded transport for each SDK-owned
+client). Domain holds only the budget itself —
 `nora.domain.run_budget` stays standard-library.
 """
 
