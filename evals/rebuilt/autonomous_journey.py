@@ -439,7 +439,10 @@ async def _run(subject: Any, case: Case, plan: dict[str, Any],
                     offered, offered_self = await _offered(
                         engine, scope.unit, int(latest["at_ms"]))
                     ctx.update({
-                        "wake": latest, "outcome": outcome,
+                        # Plain dicts: `rows` yields RowMappings, which the
+                        # identity/typing checks downstream must not confuse
+                        # for malformed evidence.
+                        "wake": dict(latest), "outcome": dict(outcome),
                         "batch": _batch(offered, offered_self,
                                         outcome["session_id"] is not None),
                     })
