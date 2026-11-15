@@ -77,7 +77,7 @@ Every change passes these stages; a small one passes several in one sitting.
 | **design** | what is the system? | `nora-design` | a bundle edit | the bundle change is merged, reviewed per its tier |
 | **decide** | does this need a ruling on record? | `nora-decision` | a DEC row or ADR | numbered at merge |
 | **dispatch** | how is it cut, briefed and assigned? | `nora-dispatch` | units, briefs, acceptance in the issue or design | every acceptance statement is covered by a unit |
-| **build** | — | the builder, with `nora-land`, `nora-structure`, `nora-tool`, `nora-runtime-skill` | commits on a branch | the brief's named checks ran once |
+| **build** | — | the builder, with `nora-land`, `nora-structure`, `nora-test`, `nora-tool`, `nora-runtime-skill` | commits on a branch | the brief's named checks ran once |
 | **verify** | does it do what it claims? | `nora-prove-fix`, `nora-eval`, the gate in `nora-land` | evidence | each obligation is met, unmet or unavailable, with evidence |
 | **review** | does it hold up to someone else? | `nora-review`, `REVIEW.md` | findings and a verdict | no BLOCKER, within two rounds |
 | **land** | — | `nora-land` | a merge commit | on master and read back |

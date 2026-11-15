@@ -33,6 +33,19 @@ Three rules, each with a gate under `architecture/`:
   reason in `architecture/test_port_fakes_live_in_nora_testing.py`, and the
   list only shrinks.
 
+**When a test exists, and how it is written** — `.agents/skills/nora-test/SKILL.md`
+is the procedure. A test exists for a fix (red when reverted), a behavioural
+rule, a trust boundary's negative case, a port's contract, or non-trivial logic
+— at the cheapest level that can prove it — and not for wiring, framework
+behaviour, implementation shape, duplicates or speculation. Then: name the
+property and prove the test can fail; reuse the
+shared fakes, builders and fixtures; one behaviour per test, named as a
+sentence; collaborators through `__init__`, with `monkeypatch` only at the
+process boundary; time from the fake clock, never a sleep; fakes that behave
+like the real thing; three states kept apart; every zero paired with a positive
+control; generated data only. A module past about a thousand lines takes no new
+group of behaviour.
+
 Shared modules at this level:
 
 - `conftest.py` — the fixtures every directory shares: the Postgres

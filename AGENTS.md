@@ -214,6 +214,7 @@ order of the commands and the check after each; a new skill adds both at once.
 | cutting a release: the release-please PR, the `vX.Y.Z` tag, the GitHub Release | `nora-release` |
 | reading a trace, a metric, a row or a log as evidence | `nora-readback` |
 | confirming a built prompt, doctrine, tool-text or routing fix with the eval suite (find the cause offline first) | `nora-eval` |
+| writing or changing a test under `tests/` | `nora-test` |
 | proving a fix is guarded (revert, watch a named test go red, restore) | `nora-prove-fix` |
 | adding a module, or moving or splitting code | `nora-structure` |
 | adding or changing one of Nora's tools | `nora-tool` |
@@ -229,8 +230,7 @@ checks, never a full local pre-PR suite.
 
 ## Reading order
 
-`README.md` → `ARCHITECTURE.md` → the area's design bundle → `CONTRIBUTING.md`, `docs/maintainers/conventions.md`;
-`DESIGN.md` before touching how she looks; `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` as needed.
+`README.md` → `ARCHITECTURE.md` → the area's design bundle → `CONTRIBUTING.md`, `docs/maintainers/conventions.md`; `DESIGN.md` before touching how she looks; `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` as needed.
 
 <!-- OPENWIKI:START -->
 
