@@ -36,7 +36,8 @@ export function AccountMenu() {
         <PersonAvatar id={viewer.personId} name={viewer.displayName} size={32} />
         <span className="grid min-w-0 flex-1">
           <span className="truncate text-[0.875rem] font-semibold text-ink">{viewer.displayName}</span>
-          <span className="truncate text-label text-ink-muted">{t(viewer.via === "code" ? "signedInCode" : "signedIn")}</span>
+          <span className="truncate text-label text-ink-muted">{t(viewer.via === "code" ? "signedInCode"
+              : viewer.via === "telegram" ? "signedInTelegram" : "signedIn")}</span>
         </span>
         <ChevronsUpDown className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
       </Menu.Trigger>
@@ -132,7 +133,8 @@ export function AccountSheet({ trigger }: { trigger: ReactNode }) {
                 <Drawer.Title className="truncate text-[1.0625rem] font-semibold text-ink">
                   {viewer.displayName}
                 </Drawer.Title>
-                <p className="text-meta text-ink-muted">{t(viewer.via === "code" ? "signedInCode" : "signedIn")}</p>
+                <p className="text-meta text-ink-muted">{t(viewer.via === "code" ? "signedInCode"
+              : viewer.via === "telegram" ? "signedInTelegram" : "signedIn")}</p>
               </div>
             </div>
 

@@ -745,3 +745,8 @@ headers_env = ""                      # env var NAME holding auth headers; reuse
 # token_env = "NORA_COMMUNITY_PROVISIONING_TOKEN"  # private secret reference
 # sources = ["discord"]
 # scopes = [{ kind = "room", id = "discord/guild/channel" }]  # exact policy room
+# [identity.authentication.portal]
+# key_env = "NORA_AUTHENTICATION_KEY"  # distinct private key, at least 32 bytes
+# methods = { discord_oauth = "your-discord-client-id", telegram_oidc = "your-telegram-client-id" }
+# Only enable methods whose provider authentication the gateway verifies.
+# This key authenticates account-exact requests; it grants no scoped permissions.

@@ -392,12 +392,15 @@ jobs:
           tests/infra/test_managed_mutation_gate.py
           tests/infra/test_kratos_identity_contract.py
           tests/web/test_management_bootstrap.py
+          tests/web/test_management_auth_bootstrap.py
+          tests/web/test_management_sessions.py
           tests/web/test_management_api.py
           tests/unit/test_managed_authority.py
           tests/unit/test_managed_registration.py
           tests/unit/test_account_linking_state.py
           tests/domain/test_management.py
           tests/unit/test_management_request.py
+          tests/unit/test_management_authentication.py
           tests/architecture/test_port_fakes_live_in_nora_testing.py
           tests/architecture/test_ory_ci.py
       - name: Read disposable service failures

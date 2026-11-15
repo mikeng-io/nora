@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from nora.domain.authentication import AuthenticationMethod
 from nora.domain.identity import id_kinds
 
 
@@ -74,6 +75,21 @@ class ProvisioningServiceConfig(BaseModel):
         return values
 
 
+class AuthenticationIssuerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    key_env: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    methods: dict[AuthenticationMethod, str] = Field(min_length=1)
+
+    @field_validator("methods")
+    @classmethod
+    def _provider_provenance(cls, values: dict[AuthenticationMethod, str]
+                             ) -> dict[AuthenticationMethod, str]:
+        if any(not value.strip() for value in values.values()):
+            raise ValueError("authentication methods require provider provenance")
+        return values
+
+
 class IdentityBackendConfig(BaseModel):
     """`[identity]` — which backend owns person binding and scoped grants.
 
@@ -90,11 +106,12 @@ class IdentityBackendConfig(BaseModel):
     backend: Literal["file", "managed"] = "file"
     managed: ManagedOryConfig = ManagedOryConfig()
     provisioning: dict[str, ProvisioningServiceConfig] = Field(default_factory=dict)
+    authentication: dict[str, AuthenticationIssuerConfig] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _managed_needs_its_services(self) -> IdentityBackendConfig:
-        if any(not name.strip() for name in self.provisioning):
-            raise ValueError("provisioning services require a nonblank identity")
+        if any(not name.strip() for name in {*self.provisioning, *self.authentication}):
+            raise ValueError("management services require a nonblank identity")
         if self.backend != "managed":
             return self
         required = {

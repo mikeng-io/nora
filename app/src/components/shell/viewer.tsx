@@ -8,7 +8,7 @@ export interface Viewer {
   image: string | null;
   // How they signed in, for the account chip: the person is the same either
   // way (DEC-287).
-  via: "discord" | "code";
+  via: "discord" | "telegram" | "code";
 }
 
 const ViewerContext = createContext<Viewer | null>(null);

@@ -18,6 +18,7 @@ export default async function PortalLayout({
 }) {
   const { locale } = await params;
   const check = await checkSession();
+  if (check.status === "unavailable") throw new Error("Authentication temporarily unavailable");
   if (check.status === "no-session") redirect(`/${locale}/login`);
   if (check.status === "denied") redirect(`/${locale}/login?denied=1`);
 

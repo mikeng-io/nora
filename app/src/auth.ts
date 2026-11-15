@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { discordProvider } from "./discord";
 import Credentials from "next-auth/providers/credentials";
 import { codeSignInEnabled, verifyCode } from "@/server/otp";
+import { captureManagedSession, identityBackend, managedSessionSchema } from "@/server/management-session";
+import { createTelegramProvider } from "./telegram";
 
 // Development sign-in, for working on the portal without a Discord app:
 // pick a person from dev/identity.dev.toml and be them. It exists only when
@@ -11,9 +13,16 @@ import { codeSignInEnabled, verifyCode } from "@/server/otp";
 // switched on in the container, which runs `node server.js` from a
 // production build.
 export const DEV_LOGIN_ENABLED =
-  process.env.NODE_ENV === "development" && process.env.NORA_DEV_LOGIN === "1";
+  identityBackend() === "file" && process.env.NODE_ENV === "development"
+  && process.env.NORA_DEV_LOGIN === "1";
 
 const providers: NextAuthConfig["providers"] = [discordProvider];
+export const TELEGRAM_LOGIN_ENABLED = identityBackend() === "managed"
+  && !!process.env.AUTH_TELEGRAM_ID && !!process.env.AUTH_TELEGRAM_SECRET;
+if (TELEGRAM_LOGIN_ENABLED) {
+  providers.push(createTelegramProvider({ clientId: process.env.AUTH_TELEGRAM_ID!,
+    clientSecret: process.env.AUTH_TELEGRAM_SECRET! }));
+}
 
 // A one-time code Nora sent to the person's own Signal or WhatsApp account
 // (DEC-287). Nora checks it and answers who it was for, a person_id from
@@ -66,7 +75,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // account at another provider to resolve, only the person.
     async jwt({ token, account, user }) {
       // Stable through JWT rotation, distinct even when the same person signs in again.
-      if (account) token.sessionId = randomUUID();
+      if (account) {
+        const sessionId = randomUUID();
+        token.sessionId = sessionId;
+        delete token.managedIdentity;
+        delete token.discordId;
+        delete token.personId;
+        if (identityBackend() === "managed") {
+          const platform = account.provider;
+          if (platform !== "discord" && platform !== "telegram") {
+            throw new Error("Managed sign-in requires account-exact authentication");
+          }
+          token.managedIdentity = await captureManagedSession({
+            sessionId,
+            account: { platform, kind: "user_id", value: account.providerAccountId },
+            method: platform === "discord" ? "discord_oauth" : "telegram_oidc",
+            proofIssuer: (platform === "discord" ? process.env.AUTH_DISCORD_ID
+              : process.env.AUTH_TELEGRAM_ID) ?? "",
+            authenticatedAt: Math.floor(Date.now() / 1000),
+          });
+          return token;
+        }
+      }
       if (account?.provider === "discord") token.discordId = account.providerAccountId;
       if (account?.provider === "dev" && user?.id) token.discordId = user.id;
       if (account?.provider === "otp" && user?.id) token.personId = user.id;
@@ -76,6 +106,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (typeof token.sessionId === "string") session.user.sessionId = token.sessionId;
       if (typeof token.discordId === "string") session.user.discordId = token.discordId;
       if (typeof token.personId === "string") session.user.personId = token.personId;
+      const managed = managedSessionSchema.safeParse(token.managedIdentity);
+      if (managed.success) session.user.managedIdentity = managed.data;
       return session;
     },
   },

@@ -6,6 +6,7 @@ from typing import Any
 
 from aiohttp import web
 
+from nora.app.management_auth import mount_authentication
 from nora.app.startup import StartupError
 from nora.config import Config
 from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
@@ -13,7 +14,10 @@ from nora.web.management_api import ProvisioningCredential, register_management_
 
 
 async def mount_management(app: web.Application, *, cfg: Config, services: Any) -> None:
-    if cfg.identity.backend != "managed" or not cfg.identity.provisioning:
+    if cfg.identity.backend != "managed":
+        return
+    mount_authentication(app, cfg=cfg, services=services)
+    if not cfg.identity.provisioning:
         return
     credentials = []
     private_values = cfg.credentials
