@@ -69,7 +69,7 @@ if (DEV_LOGIN_ENABLED) {
   );
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut } = NextAuth((request) => ({
   providers,
   session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 30 },
   pages: { signIn: "/zh-Hant/login", error: "/zh-Hant/login" },
@@ -114,7 +114,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.managedIdentity = await captureManagedSession(authentication);
           // Only this genuine fresh provider callback may spend a consent
           // intent; the fresh event — never a retained session — signs it.
-          const consent = await applyConsentIntent(authentication);
+          const callback = request ? new URL(request.url) : undefined;
+          const callbackState = callback?.pathname === `/api/auth/callback/${platform}`
+            ? callback.searchParams.get("state") ?? undefined : undefined;
+          const consent = await applyConsentIntent(authentication, callbackState);
           if (consent !== undefined) token.linkConsent = consent;
           return token;
         }
@@ -135,4 +138,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
   },
-});
+}));

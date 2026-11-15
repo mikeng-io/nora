@@ -22,7 +22,9 @@ vi.mock("./discord", () => ({ discordProvider: { id: "discord" } }));
 vi.mock("@/server/otp", () => ({ codeSignInEnabled: () => false }));
 await import("./auth");
 
-const { callbacks } = captured.config as { callbacks: {
+const callbackRequest = new Request(
+  "https://portal.generated.invalid/api/auth/callback/discord?state=generated-flow");
+const { callbacks } = (captured.config as (request?: Request) => unknown)(callbackRequest) as { callbacks: {
   jwt: (args: { token: Record<string, unknown>; account?: { provider: string;
     providerAccountId?: string }; user?: { id: string; managedIdentity?: unknown } }) => Promise<Record<string, unknown>>;
   session: (args: { session: { user: Record<string, unknown> }; token: Record<string, unknown> }) => Promise<{ user: Record<string, unknown> }>;
@@ -65,7 +67,7 @@ it("captures managed authentication only at a verified provider callback", async
   expect(consent.apply).toHaveBeenCalledWith(expect.objectContaining({
     account: { platform: "discord", kind: "user_id", value: "generated-account" },
     method: "discord_oauth", proofIssuer: "generated-client",
-  }));
+  }), "generated-flow");
   expect(token.linkConsent).toMatchObject({ outcome: "complete",
     requestId: "generated-request" });
   const read = await callbacks.jwt({ token });

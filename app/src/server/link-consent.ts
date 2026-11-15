@@ -33,6 +33,7 @@ const intentSchema = z.object({
   action: z.enum(["approve", "refuse", "cancel"]),
   nonce: z.string().min(1),
   operation_id: z.string().min(1),
+  flow_digest: z.string().regex(/^[a-f0-9]{64}$/),
 });
 type ConsentIntent = z.infer<typeof intentSchema>;
 
@@ -103,9 +104,13 @@ async function readIntent(): Promise<ConsentIntent | undefined> {
  * provider callback may carry to the decision endpoint. */
 export async function applyConsentIntent(
   fresh: AuthenticationEvent,
+  callbackState?: string,
 ): Promise<LinkConsentOutcome | undefined> {
   const intent = await readIntent();
-  if (!intent) return undefined;
+  if (!intent || !callbackState
+    || intent.flow_digest !== createHash("sha256").update(callbackState).digest("hex")) {
+    return undefined;
+  }
   const base = { requestId: intent.request_id, action: intent.action,
     operationId: intent.operation_id, at: fresh.authenticatedAt };
   const expected = intent.account;
@@ -196,10 +201,6 @@ export async function consentAction(request: Request): Promise<Response> {
       || (provider === "telegram" && !TELEGRAM_LOGIN_ENABLED)) {
       return reply("denied", 403);
     }
-    const sealed = await sealIntent({
-      request_id, side: view.side, account: { ...own, platform: provider }, action,
-      nonce: view.challenge.nonce, operation_id: randomUUID(),
-    }, Math.floor(Date.parse(view.expires_at) / 1000));
     // `prompt=consent` shows Discord's authorization screen so the holder sees
     // which account is about to consent; Telegram's fresh callback itself is
     // the confirmation (its authorization endpoint accepts no such parameter).
@@ -209,6 +210,13 @@ export async function consentAction(request: Request): Promise<Response> {
     if (typeof url !== "string" || !/^https?:\/\//.test(url)) {
       return reply("unavailable", 503);
     }
+    const state = new URL(url).searchParams.get("state");
+    if (!state) return reply("unavailable", 503);
+    const sealed = await sealIntent({
+      request_id, side: view.side, account: { ...own, platform: provider }, action,
+      nonce: view.challenge.nonce, operation_id: randomUUID(),
+      flow_digest: createHash("sha256").update(state).digest("hex"),
+    }, Math.floor(Date.parse(view.expires_at) / 1000));
     (await cookies()).set(CONSENT_COOKIE, sealed, {
       httpOnly: true, sameSite: "lax", path: "/", maxAge: INTENT_SECONDS,
       secure: origin.startsWith("https:"),

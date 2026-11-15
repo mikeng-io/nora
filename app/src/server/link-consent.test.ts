@@ -16,7 +16,7 @@ vi.mock("next/headers", () => ({
   headers: async () => new Headers(),
 }));
 const login = vi.hoisted(() => ({ current: null as unknown }));
-const startSignIn = vi.hoisted(() => vi.fn(async () => "https://provider.invalid/authorize"));
+const startSignIn = vi.hoisted(() => vi.fn(async () => "https://provider.invalid/authorize?state=generated-flow"));
 vi.mock("@/auth", () => ({
   auth: async () => login.current,
   signIn: startSignIn,
@@ -165,7 +165,7 @@ describe("the consent action", () => {
   it("binds the server-read request into a fresh provider redirect", async () => {
     const response = await POST(actionRequest({ request_id: link.request_id, action: "approve" }));
     expect(response.status).toBe(303);
-    expect(response.headers.get("Location")).toBe("https://provider.invalid/authorize");
+    expect(response.headers.get("Location")).toBe("https://provider.invalid/authorize?state=generated-flow");
     expect(startSignIn).toHaveBeenCalledWith("discord",
       { redirect: false, redirectTo: "/api/v1/holder/link-consent" },
       { prompt: "consent" });
@@ -243,7 +243,7 @@ describe("the fresh callback", () => {
   it("lets only the matching fresh provider event submit the bound decision", async () => {
     await intend();
     const fresh = freshEvent();
-    const outcome = await applyConsentIntent(fresh);
+    const outcome = await applyConsentIntent(fresh, "generated-flow");
     expect(outcome).toMatchObject({ requestId: link.request_id, action: "approve",
       outcome: "complete", state: "pending", at: fresh.authenticatedAt });
     expect(calls).toHaveLength(1);
@@ -260,20 +260,30 @@ describe("the fresh callback", () => {
 
   it("never submits for a different account, no intent, a tampered or an expired intent", async () => {
     // No intent at all: a bare sign-in does nothing.
-    expect(await applyConsentIntent(freshEvent())).toBeUndefined();
+    expect(await applyConsentIntent(freshEvent(), "generated-flow")).toBeUndefined();
     await intend();
     const wrong = freshEvent({ account: { platform: "discord", kind: "user_id", value: "another-account" } });
-    expect(await applyConsentIntent(wrong)).toMatchObject({ outcome: "denied" });
+    expect(await applyConsentIntent(wrong, "generated-flow")).toMatchObject({ outcome: "denied" });
     expect(calls).toHaveLength(0);
     jar.set("nora-link-consent", "forged.intent.value");
-    expect(await applyConsentIntent(freshEvent())).toBeUndefined();
+    expect(await applyConsentIntent(freshEvent(), "generated-flow")).toBeUndefined();
     jar.clear();
     await intend();
     vi.useFakeTimers();
     vi.setSystemTime(Date.now() + 400_000);
-    expect(await applyConsentIntent(freshEvent())).toBeUndefined();
+    expect(await applyConsentIntent(freshEvent(), "generated-flow")).toBeUndefined();
     vi.useRealTimers();
     expect(calls).toHaveLength(0);
+  });
+
+  it("requires the exact authorization flow even for the matching account", async () => {
+    await intend();
+    expect(await applyConsentIntent(freshEvent())).toBeUndefined();
+    expect(await applyConsentIntent(freshEvent(), "another-flow")).toBeUndefined();
+    expect(calls).toHaveLength(0);
+    expect(await applyConsentIntent(freshEvent(), "generated-flow"))
+      .toMatchObject({ outcome: "complete" });
+    expect(calls).toHaveLength(1);
   });
 
   it("keeps denial, unavailability and partial commitment distinct and never reports success", async () => {
@@ -281,11 +291,11 @@ describe("the fresh callback", () => {
       [503, "unavailable", "unavailable"], [409, "incomplete", "incomplete"]] as const) {
       await intend();
       decisionVerdict = { code, body: { status } };
-      expect(await applyConsentIntent(freshEvent())).toMatchObject({ outcome });
+      expect(await applyConsentIntent(freshEvent(), "generated-flow")).toMatchObject({ outcome });
     }
     await intend();
     decisionVerdict = { code: 200, body: { status: "ok", extra: "contradiction" } };
-    expect(await applyConsentIntent(freshEvent())).toMatchObject({ outcome: "unavailable" });
+    expect(await applyConsentIntent(freshEvent(), "generated-flow")).toMatchObject({ outcome: "unavailable" });
     // The last submission is the only call since `intend` clears the log.
     expect(calls).toHaveLength(1);
   });
@@ -296,7 +306,7 @@ describe("the consent result", () => {
     const response = await POST(actionRequest({ request_id: link.request_id, action: "refuse" }));
     expect(response.status).toBe(303);
     const fresh = freshEvent();
-    await applyConsentIntent(fresh);
+    await applyConsentIntent(fresh, "generated-flow");
     const decision = calls.find((c) => c.path.endsWith("/decisions"));
     const opId = decision && JSON.parse(decision.body).operation_id;
     login.current = { user: { managedIdentity: identity,
