@@ -9,7 +9,7 @@ publication path, not a mock of it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -27,6 +27,7 @@ from nora.domain.management import LinkSide, Scope, ScopeKind
 from nora.people.adapters.file_backend import FileLinkRequests
 from nora.people.app.holder_link import HolderLinkService, HolderLinkView
 from nora.people.app.managed import ManagedServices
+from nora.testing.link_delivery import FakeLinkChallengeDelivery as FakeDelivery
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
@@ -49,21 +50,6 @@ ISSUER = "synthetic-issuer"
 UNIT = Scope(ScopeKind.UNIT, "synthetic-unit")
 ROOM = Scope(ScopeKind.ROOM, "signal/synthetic-room")
 WS = Scope(ScopeKind.WORKSPACE, "synthetic-workspace")
-
-
-@dataclass
-class FakeDelivery:
-    """Records private pushes instead of sending — proves the address and
-    the text without a transport."""
-
-    sent: list[tuple[Identifier, str]] = field(default_factory=list)
-    fail: bool = False
-
-    async def deliver(self, *, account: Identifier, text: str) -> bool:
-        if self.fail:
-            return False
-        self.sent.append((account, text))
-        return True
 
 
 def _clock_holder(start=NOW):
