@@ -107,12 +107,39 @@ def loop_counts(
     }
 
 
+def _delivery_invocations(events: list[dict[str, Any]]) -> set[str]:
+    """Invocations whose requests were offered the `send_reply` surface —
+    a turn's own generation, beside the downstream work (a debrief fold
+    offers no tools) that shares its stamped trace."""
+    owners: set[str] = set()
+    for event in events:
+        if event.get("name") != "nora.model.request":
+            continue
+        names = {
+            name for tool in _body(event).get("tools") or []
+            if isinstance(tool, dict)
+            for name in (
+                tool.get("name"),
+                (tool.get("function") or {}).get("name")
+                if isinstance(tool.get("function"), dict) else None,
+                (tool.get("toolSpec") or {}).get("name")
+                if isinstance(tool.get("toolSpec"), dict) else None)
+            if isinstance(name, str)}
+        if "send_reply" in names and event.get("invocation_id"):
+            owners.add(event["invocation_id"])
+    return owners
+
+
 def terminal_response(events: list[dict[str, Any]]) -> dict[str, Any]:
     """Select a settled terminal attempt; never infer output from a request."""
     starts = [(i, e) for i, e in enumerate(events)
               if e.get("kind") == "invocation_started"]
     ids = {e.get("invocation_id") for _, e in starts}
     roots = [(i, e) for i, e in starts if e.get("parent_invocation_id") not in ids]
+    if len(roots) != 1:
+        owners = _delivery_invocations(events)
+        roots = [(i, e) for i, e in roots
+                 if e.get("invocation_id") in owners]
     selected: dict[str, Any] = (
         {"invocation_id": roots[0][1].get("invocation_id"), "index": roots[0][0]}
         if len(roots) == 1 else {})
@@ -126,14 +153,25 @@ def terminal_response(events: list[dict[str, Any]]) -> dict[str, Any]:
     if not invocation or invocation[-1].get("kind") != "invocation_finished":
         return {**result, "cause": "invocation_unsettled"}
     calls = [e for e in invocation if e.get("kind") == "call_started"]
-    attempt = calls[-1].get("attempt_id") if calls else None
+    # A sent reply ends the turn: the loop's next cycle is cancelled before
+    # it reaches a transport — the settled attempt before it is terminal.
+    last = None
+    for call in reversed(calls):
+        if any(e.get("kind") == "transport_started" for e in invocation
+               if e.get("attempt_id") == call.get("attempt_id")):
+            last = call
+            break
+        if not call.get("cancelled"):
+            break
+    last = last or (calls[-1] if calls else None)
+    attempt = last.get("attempt_id") if last else None
     result["attempt_id"] = attempt
     if not attempt:
         return {**result, "cause": "attempt_missing"}
     records = [e for e in invocation if e.get("attempt_id") == attempt]
     finished = [(i, e) for i, e in enumerate(records) if e.get("kind") == "call_finished"]
     if (not finished or finished[-1][1].get("retry") or finished[-1][1].get("error_type")
-            or calls[-1].get("cancelled")):
+            or (last or {}).get("cancelled")):
         return {**result, "cause": "attempt_unsettled"}
     records = records[:finished[-1][0] + 1]
     transports = [i for i, e in enumerate(records) if e.get("kind") == "transport_started"]

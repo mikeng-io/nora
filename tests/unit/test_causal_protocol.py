@@ -325,7 +325,10 @@ def _behavior_payload(check, *, polarity="must", outcome="delivered",
 
 
 def _call_args(name, arguments):
-    return {"tool": name, "status": "ok", "arguments": arguments}
+    # The digested payload shape `judges._tool_calls` emits: outcome under
+    # `result.status`, refusal beside it — never the trajectory row's own keys.
+    return {"tool": name, "arguments": arguments,
+            "result": {"status": "ok"}, "refusal": None}
 
 
 def test_the_behavior_claim_binds_the_turns_own_output():
