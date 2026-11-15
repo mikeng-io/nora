@@ -16,9 +16,11 @@ from a feature's own code, store, prompt or loop.
 - **[The graph](graph.md)**: two axes every row carries (basis and scope), the
   planes shared by every row, five kinds, typed edges and the read-time
   presentations (profile, Standing, lessons, likes).
-- **[The loop](loop.md)**: CMS at every grain; the five OODAS stages (observe,
-  orient, decide, act, study) and their steps; the executors that run passes;
-  what makes the loop open — any stimulus, kept concerns, watches.
+- **[The loop](loop.md)**: OODAS — each stage's question, actions, actor and
+  rules; the five passes (called, ambient, proactive, subconscious, review);
+  the open loop's stimuli, watches and bounds.
+- **[Storage](storage.md)**: how the graph is held — per-kind tables with shared
+  planes and one edge table; the tables are the truth.
 - **[Learning](learning.md)**: how an outcome of Nora's own act changes a later
   decision, and how every link of that chain lives in the graph.
 - **[Emergence](emergence.md)**: closed form over open content; code computes

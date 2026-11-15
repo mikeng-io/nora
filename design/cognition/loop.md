@@ -1,161 +1,102 @@
 # The loop
 
-## CMS at every grain
+## Terms
 
-**Comprehend, measure, serialize** is the primitive. It is not a stage and not
-a loop; it is the shape of every step at every grain:
-
-- **a step** comprehends its input once, measures its result fail-closed and
-  serializes one admitted write with provenance;
-- **a stage** is the same three one level up: its input is comprehended, its
-  check is the measure, its hand-off is the serialization;
-- **the loop** is the same again: observe and orient comprehend, study
-  measures, and every stage's writes are the serialized state the next pass
-  comprehends.
+- **Cognition Loop** — the one process over the graph: five stages, OODAS.
+- **Stage** — a part of the loop that answers one question and writes one basis.
+- **Action** — one step of a stage, with exactly one actor: **code** or the
+  **model**. The model proposes; code admits, computes and delivers.
+- **Pass** — one run of stages, started by one trigger.
+- **Executor** — the runtime that runs a pass or an action.
+- **CMS** — comprehend, measure, serialize: the shape of every action, every
+  stage and the loop itself. An action comprehends its input once, measures its
+  result fail-closed and serializes one admitted write with provenance.
 
 ## OODAS
 
-The Cognition Loop has five stages.
-
-| stage | answers | writes |
+| stage | question | writes |
 |---|---|---|
-| **observe** | what happened? | items (observed); aggregates and closing edges (computed) |
-| **orient** | what does it mean? | entities and claims (inferred) |
-| **decide** | what will Nora do? | intentions (committed) |
-| **act** | carry it out | nothing directly; the act re-enters through observe |
-| **study** | how did what she committed to turn out, and what follows? | verdicts (computed); grades and lessons (inferred) |
+| **observe** | what happened? | item (observed); aggregate, closed-by edge (computed) |
+| **orient** | what does it mean? | entity, claim, edge (inferred) |
+| **decide** | what will Nora do? | intention (committed) |
+| **act** | carry it out | nothing; its outcome enters through observe |
+| **study** | how did her commitments turn out, and what follows? | verdict (computed); grade, lesson (inferred) |
 
-**Study** compares the outcomes of what Nora committed to with what happened,
-judges the gap and learns from it. It reads only outcomes of her own
-commitments, never new input; making sense of new input is orient's.
+Observe runs continuously, for every input, executed by ingest and the watch
+poller. Every other stage runs inside a pass.
 
-## The stage template
+## Actions
 
-Every stage is stated on one template:
+| stage | action | actor | does |
+|---|---|---|---|
+| observe | **receive** | code | accepts an input: a platform event, a watch result, a tool outcome, Nora's own act, a clock edge |
+| | **resolve** | code | binds accounts to persons, rooms to units, references to entities it can resolve |
+| | **record** | code | writes the item |
+| | **compute** | code | recomputes affected aggregates and baselines; matches the item against open intentions' conditions and writes closed-by |
+| | **stimulate** | code | makes the change a durable stimulus |
+| orient | **prefetch** | code | walks the graph from the pass's anchors and pushes that neighbourhood |
+| | **discover** | model | reads further through its read tools |
+| | **link** | model → code | proposes entities, claims and edges; code admits them |
+| | **rediscover** | code → model | returns each admitted row's neighbours; discovery continues from them |
+| decide | **deliberate** | model | weighs the situation against open intentions, due ones, ones whose rests-on changed, and track records |
+| | **commit** | model → code | proposes intentions; code admits them with a receipt |
+| | **schedule** | code | places due times, review times and watches |
+| act | **compose** | model | drafts the act from the situation at that moment |
+| | **guard** | code | runs disclosure and send guards against the current room |
+| | **perform** | code | delivers what the model's `send_reply` call carries, or records silence |
+| study | **verify** | code | writes each intention's verdict from closed-by and the clock |
+| | **grade** | judge | an independent model grades claims and lessons against later evidence |
+| | **learn** | model → code | proposes lessons from verdicts or a correction; code admits them |
+| | **report** | code | writes operator-exposure counts and tensions |
 
-| field | states |
-|---|---|
-| trigger | what starts it |
-| input | what it comprehends, assembled by context assembly |
-| steps | what it runs, named once; a **cycle** only where the steps repeat |
-| writes | which kinds, in its own basis only |
-| check | what code measures before admission, failing closed |
-| hand-off | what the next stage or pass receives |
-| executor | what runs it, and on what timescale |
+Orient repeats prefetch → discover → link → rediscover until nothing new
+connects or a bound stops it. Study repeats on its timescales.
 
-## The steps
+## Stage rules
 
-### Observe — code only
+| stage | must | fails as |
+|---|---|---|
+| observe | never interpret meaning; record everything admitted | an unrecorded input stays pending |
+| orient | cite only observed or computed rows; search before creating | an unavailable read is unknown, never absence |
+| decide | give every intention a condition (an untyped one is counted loose) and its rests-on | a refused write returns a typed reason to repair |
+| act | deliver only through `send_reply` and the guards; treat silence as an outcome | any unknown in the guard means no delivery |
+| study | verify by code; grade by a judge that is not the writer | missing evidence is an error, never a pass |
 
-1. **receive** — a platform message, a watch result, a tool outcome, Nora's
-   own act, a clock edge.
-2. **resolve** — accounts to persons, rooms to units, links and references to
-   entities code can resolve.
-3. **record** — the item, observed, with its scope and provenance.
-4. **compute** — aggregates over what changed, including baselines, and
-   matching new items against open intentions' conditions: a match writes the
-   closed-by edge, computed.
-5. **stimulate** — make the change durable as a stimulus for the wake
-   evaluator.
+## Passes
 
-### Orient — a cycle
+| pass | trigger | purpose | stages | executor | delivers |
+|---|---|---|---|---|---|
+| **called** | a tag, mention or reply to Nora | answer when asked | orient, decide, act | conscious turn | yes; a reply is owed |
+| **ambient** | a room's conversation admitted as an offer, without a call | be present: join when welcome, otherwise listen | orient, decide, act | conscious turn | yes; never owed, silence by default |
+| **proactive** | an intention due for delivery | follow through on what Nora committed to | orient, decide, act, re-judged at delivery | fire path | yes; may stay silent |
+| **subconscious** | stimuli the wake evaluator claims | understand, keep concerns, commit intentions, learn | orient, decide, study's learn | Cognition session | never |
+| **review** | a schedule | verify, grade and report | study's verify, grade, report | verifier, judge | never |
 
-1. **prefetch** — code walks the graph from the agenda's anchors and pushes
-   that neighbourhood, including the held claims and open intentions it
-   touches.
-2. **discover** — the session reads further: transcripts, items, aggregates,
-   claims, media perception, permitted outside reads.
-3. **link** — it proposes entities, claims and edges the evidence supports;
-   code admits them and returns what was admitted with its neighbours.
-4. **rediscover** — discovery continues from the new neighbours.
+**Who starts it** separates the conversational passes: in a called pass
+someone addressed Nora; in an ambient pass the room is talking and she was not
+addressed; in a proactive pass Nora starts, from her own intention. Only the
+conscious passes act. The subconscious pass reaches a room only by committing
+an intention whose delivery a proactive pass carries out.
 
-The cycle stops when discovery adds nothing new to connect, or a bound stops
-it. Code makes saturation visible rather than imposing a quota.
-
-### Decide
-
-Its input is the open intentions, the ones due, the ones whose rests-on rows
-were revised, and the track records of comparable intentions.
-
-1. **deliberate** — the session weighs the situation against what it holds.
-2. **commit** — it proposes intentions with their form, conditions, rests-on,
-   watches and delivery; code admits them with a receipt. An untyped condition
-   is admitted and counted loose.
-3. **schedule** — code places the review times, due times and watches.
-
-### Act
-
-1. **compose** — the conscious turn drafts what would be said or done, at the
-   moment of delivery.
-2. **guard** — the send and disclosure guards run against the current room and
-   roster; any unknown fails closed.
-3. **perform** — only a `send_reply` call delivers; silence is a deliberate
-   outcome.
-
-Act writes nothing itself. What was performed, and what people did next,
-arrive as items through observe.
-
-### Study — a cycle
-
-1. **verify** — code writes each intention's verdict from its closed-by edge
-   and the clock: achieved, dropped, or leaked (its time passed with no
-   closing item).
-2. **grade** — a judge other than the writer grades claims and lessons against
-   their later evidence.
-3. **learn** — the session induces lessons from several verdicts, or from one
-   person's correction ([learning](learning.md)).
-4. **report** — the operator-exposure counts and tensions.
-
-It repeats per session, nightly and across days. Verify is code and grade is a
-separate judge: the writer never grades its own work.
-
-## Passes and executors
-
-One run of the loop is a **pass**: a **wake** (subconscious, a Cognition
-session) or a **turn** (conscious: a tagged or offered turn, or a fire turn).
-
-| executor | runs |
-|---|---|
-| ingest | observe for platform items |
-| watch poller | observe's receive for outside sources an intention watches |
-| wake evaluator | claims stimuli and admits a wake, with no model call |
-| Cognition session | orient, decide and study's learn, in one model context per unit per wake |
-| conscious turn | orient, decide and act for one room, under its own guards |
-| fire path | act for a due intention, re-judged at delivery |
-| verifier | study's verify |
-| judge | study's grade, on a model independent of the writer |
-
-One session holds orient and decide together: splitting them across agents
-discards the context that makes them coherent. A conscious turn may commit an
-intention too: "keep an eye on deals for us" is the same maintain intention
-whether it is committed in a turn or a wake.
+Admission is code: a call is admitted deterministically; an ambient offer is
+admitted by room policy and may never suppress a call; a proactive pass is
+admitted when its intention is due; a wake is admitted by the wake evaluator
+with no model call. A failed admission produces no pass and no fallback.
 
 ## The open loop
 
-The loop is open: it takes in any stimulus, keeps concerns that do not finish,
-reaches outward and takes its own results back in.
+The loop takes in any stimulus, keeps concerns that never finish, reaches
+outward and takes its results back in.
 
-**Stimuli** — what can start a pass:
+**Stimuli**: a platform item; a watched source changing; an aggregate crossing
+its baseline; the clock (an intention due, a review time, a valid-to time
+ending, a deadline passing); a verdict; a person's correction. Code surfaces a
+stimulus; the model decides whether it means anything. Nothing calls a model
+because a clock advanced.
 
-- a new item from a platform;
-- a watched source changing;
-- an aggregate crossing its baseline, such as a room's interest in something
-  rising well above normal;
-- the clock: an intention due, a review time, a valid-to time ending, a
-  deadline passing;
-- a verdict;
-- a person's correction.
+**Watches**: a maintain intention names outside sources; code polls them while
+it holds; results enter through observe.
 
-Code surfaces each stimulus; the model decides whether it means anything.
-Nothing calls a model merely because a clock advanced.
-
-**Watches** — a maintain intention can name outside sources to watch. The
-model chooses what is watched as part of the commitment; code polls it; what
-returns is an item through observe, citing the watch. A watch ends with its
-intention.
-
-**Bounds** — rounds, tokens and wall time bound a session; paid outside reads
-keep their own spend controls; the cap on unsolicited proposals and the fire
-path's re-judgement bound what reaches a room. If maintain intentions
-accumulate faster than people respond to them, a per-unit limit on held
-concerns is the next bound, set from the measured open count.
+**Bounds**: rounds, tokens and wall time per pass; spend controls on paid
+reads; the cap on unsolicited proposals; delivery re-judged at the moment it
+happens. A per-unit limit on held concerns follows only from a measured need.
