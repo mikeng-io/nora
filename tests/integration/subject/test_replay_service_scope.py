@@ -149,9 +149,23 @@ async def test_missing_replay_recording_stops_before_source_reads(tmp_path, monk
         calls.append(wake_id)
         return NOW + wake_id, SimpleNamespace(unit=case.unit, pending=())
 
+    async def reason(*args):
+        return "time"
+
+    async def session(*args):
+        return False
+
+    async def wakes(*args):
+        calls.append("dispatch")
+
     monkeypatch.setattr(module, "recorded_wake", recorded)
-    result = await module.run_case(SimpleNamespace(), case, None, None, None, None, tmp_path)
+    monkeypatch.setattr(module, "_wake_reason", reason)
+    monkeypatch.setattr(module, "_recorded_session", session)
+    monkeypatch.setattr(module, "_wakes", wakes)
+    policy = SimpleNamespace(rooms=lambda: [SimpleNamespace(
+        unit=case.unit, platform="signal", primary_id="g1")])
+    result = await module.run_case(SimpleNamespace(), case, None, None, policy, None, tmp_path)
+    assert calls == []
     assert result["status"] == "ERROR"
     assert result["errors"] == ["external_responses_missing: " + case.name]
     assert result["behavior"] == "UNMEASURED"
-    assert calls == []

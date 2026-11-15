@@ -472,8 +472,8 @@ async def test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge(
 
     from scripts.cognition_loop.verdicts import ExpectationVerdict
 
-    run_mod = _wake_seam(monkeypatch, tmp_path,
-                         _runner_subject(outcome=SimpleNamespace(status="ok")))
+    subject = _runner_subject(outcome=SimpleNamespace(status="ok"))
+    run_mod = _wake_seam(monkeypatch, tmp_path, subject)
     monkeypatch.setattr(run_mod, "_wake_outcome", _async_result({
         "session_id": 9, "outcome": "closed",
         "detail": "", "cause": "none"}))
@@ -506,7 +506,7 @@ async def test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge(
         SimpleNamespace(platform="signal", primary_id="r"),
         recorded_meta=_recorded_meta((1,), had_session=True),
         earlier_wakes=(prior,))
-    assert seen["judge"] is bound and "cfg" in seen
+    assert seen["judge"] is bound and seen["cfg"] is subject.cfg
     assert seen["earlier_wakes"] == (prior,)
     assert seen["trajectory"].get("at_ms") == NOW
     assert seen["trajectory"].get("unit") == "u"
