@@ -28,15 +28,17 @@ verb per basis the model may propose.
 
 | pass | reads | propose | commit | send_reply |
 |---|---|---|---|---|
-| called, ambient | yes | no | yes | yes |
+| called, ambient | yes | no | only what the reply promises | yes |
 | proactive | yes | no | no | yes |
-| subconscious | yes | yes | yes | no |
-| subconscious, over history | yes | yes, never lessons | no | no |
+| debrief, closing every engagement pass | its pass's items and the open intentions | no | yes, as its structured output | no |
+| wake | yes | yes | yes | no |
+| wake, over history | yes | yes, never lessons | no | no |
 | review (the judge) | the graded rows and their later evidence | grades only | no | no |
 
-Understanding from a conversation is written once, by a subconscious pass
-reading the recorded turn; conscious passes only read it. A proactive pass
-cannot commit, so a delivery cannot schedule another delivery.
+The engagement loop never proposes understanding; the reflection loop writes
+it from the recorded passes. A proactive pass cannot commit, so a delivery
+cannot schedule another delivery. The debrief has no tools: its output is a
+list of `commit` operations, admitted exactly as the tool's would be.
 
 ## Admission
 

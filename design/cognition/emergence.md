@@ -1,6 +1,6 @@
 # Emergence
 
-A capability is **emergent** when the generic loop produces it over the graph,
+A capability is **emergent** when the generic loops produce it over the graph,
 with no code path, store, prompt section or loop of its own. Recommendation,
 personalisation, follow-through and learning are emergent: they are semantic,
 so they must stay something Nora can learn.
@@ -13,7 +13,7 @@ the form is extended for every capability, or not at all.
 | | closed form | open content |
 |---|---|---|
 | **is** | axes, kinds, edge types, lifecycles, stages, admission, guards, doctrine | which entities exist, what Nora believes, which concerns she keeps, what she watches, what she has learned |
-| **changed by** | the operator, in this design and doctrine | evidence, through the loop |
+| **changed by** | the operator, in this design and doctrine | evidence, through the loops |
 
 Code can check only what it can name, so the form is fixed; capabilities come
 from combining content. Emergent never means unexplained: every concern Nora
@@ -37,9 +37,9 @@ recorded outcome.
 however much evidence accumulates; its vocabulary is then authored as doctrine
 Nora reads, never as code.
 
-## Capabilities through the generic loop
+## Capabilities through the generic loops
 
-| capability | how the generic loop produces it |
+| capability | how the generic loops produce it |
 |---|---|
 | **game recommendations** | items linking the same site rise above the room's baseline — a generic count over observed link metadata (stimulus); orient judges that the room is into those games and claims it; decide opens a maintain intention that watches those games' pages; a sale (watch item) leads to a child intention, "suggest it, done when picked up or replied", delivered by a proactive pass that may stay silent; verdicts build its track record and a lesson about which suggestions the room takes up |
 | **following through on a promise** | a called pass commits an achieve intention owed to the person, done when the booking is confirmed; the confirming item closes it, or its time passes and it leaks |

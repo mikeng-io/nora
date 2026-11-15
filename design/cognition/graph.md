@@ -142,7 +142,7 @@ A condition that code cannot evaluate is untyped: the intention may still be
 held, but it cannot close mechanically, and it is counted as loose.
 
 An intention has at most one scheduled delivery at a time, and every delivery
-passes the unit-wide arbitration in [the loop](loop.md). An intention grants
+passes the unit-wide arbitration in [the loops](loop.md). An intention grants
 no delivery authority: whatever it leads to still passes the fire path, the
 disclosure rules and the cap on unsolicited proposals.
 
@@ -154,8 +154,10 @@ presentation.
 - **profile** — the claims about one entity, in the parts [claims](claims.md)
   defines. A room's or unit's profile is its culture; Nora's is how she has
   come across.
-- **Standing** — Nora's open intentions toward a room, unit or person, with
-  their state, age and what they rest on.
+- **Standing** — Nora's current position in a room: what she holds open, owes
+  and has on offer, what was recently settled and how, and where the
+  conversation stands. It reads intentions and the reflection loop's claims;
+  nothing writes it.
 - **lessons** — the claims about Nora's own practice in a unit.
 - **likes** — the claims about what people enjoy, for a fixed destination
   audience.
@@ -177,5 +179,5 @@ presentation.
 | live thread | its state is a claim with a valid-to time; its question is an achieve intention |
 | Character, culture | profile presentation |
 | lesson | claim about Nora's practice |
-| Standing, Register | presentations of intentions |
+| Standing, Register | presentations over intentions and claims |
 | assess report, tension | aggregate or claim with operator exposure |

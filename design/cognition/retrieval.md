@@ -24,7 +24,8 @@ model-chosen anchors. Both return the same shape.
 | called | the addressing item, its room, its people |
 | ambient | the room's recent window and its people |
 | proactive | the due intention, what it rests on and serves, its room and people |
-| subconscious | the claimed stimuli's items, rooms, people and the intentions they touch |
+| wake | the claimed stimuli's items, rooms, people and the intentions they touch |
+| debrief | the pass's own items, its room, and the open intentions for the room and unit |
 | review | the intentions closing or past due |
 
 ## Rules

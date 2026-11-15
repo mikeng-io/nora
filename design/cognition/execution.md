@@ -9,15 +9,15 @@ is eligible, and what a pass's outcome settles.
 |---|---|
 | **ingest** | observe for platform events and Nora's own acts |
 | **watch poller** | observe's receive for watched sources |
-| **wake evaluator** | claiming stimuli and admitting a subconscious pass, with no model call |
-| **Dreamer runtime** | the subconscious pass: admission, single-flight per unit, global concurrency, cancellation, the model call, budgets |
-| **conscious turn** | the called and ambient passes for one room |
-| **fire path** | the proactive pass |
+| **wake evaluator** | claiming stimuli and admitting a wake pass, with no model call |
+| **Dreamer runtime** | the reflection loop's wake pass (the reflection session): admission, single-flight per unit, global concurrency, cancellation, the model call, budgets |
+| **conscious turn** | the engagement loop's called and ambient passes for one room, closed by the debrief |
+| **fire path** | the engagement loop's proactive pass, closed by the debrief |
 | **verifier** | study's verify and report |
 | **judge** | study's grade, on a model independent of the writer |
 
 No other launcher runs cognition. Collectors, reconnects and maintenance are
-plumbing, not executors of the loop.
+plumbing, not executors of the loops.
 
 ## Waking
 
@@ -40,7 +40,7 @@ is no separate self-wake.
 
 ## Replaying history
 
-A subconscious pass over history runs in source-time order with the instant of
+A wake pass over history runs in source-time order with the instant of
 its evidence as its clock. It reads only what existed then, proposes
 understanding only, and never creates present-day intentions, lessons or
 sends. A replay that closes records one receipt naming the exact inputs it

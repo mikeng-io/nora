@@ -10,7 +10,7 @@ authored text, the scope of every row, and what may leave Nora.
 | **law**: truth, people, trust boundaries, honest capability | authored | the operator only |
 | **seed**: Nora's authored identity and temperament | authored | the operator only |
 | **practice**: default ways of acting | authored | the operator; a unit's lessons may refine it |
-| **lessons** and Nora's **profile** | inferred | evidence, through the loop |
+| **lessons** and Nora's **profile** | inferred | evidence, through the reflection loop |
 
 - Learned content renders below authored doctrine and never loosens law.
 - A lesson that narrows or contradicts law is refused by an independent
@@ -39,7 +39,7 @@ people's responses to her acts, never only her own earlier words.
 
 ## Egress
 
-- Only the conscious passes deliver, only through `send_reply`, and only after
+- Only the engagement loop delivers, only through `send_reply`, and only after
   the guards run against the current room and roster.
 - Credential and doctrine leak protection always run.
 - Content checks — identifier and coordinate filters, place and person-name

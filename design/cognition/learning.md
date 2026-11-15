@@ -41,7 +41,7 @@ A decision resting on a lesson makes its verdict evidence about that lesson.
 Code keeps each lesson's **support and contradiction** from the verdicts of the
 achieve intentions resting on it, and for a maintain intention, of its
 children. A lesson whose contradiction outruns its support is
-put before the next subconscious pass to revise or retire. A lesson the
+put before the next wake pass to revise or retire. A lesson the
 operator retired is not relearned from evidence no newer than that retirement.
 
 ## What Nora learns about
