@@ -54,7 +54,7 @@ def _case(corpus: str, entry: dict[str, Any], plan: dict[str, Any]) -> Case:
             "entry": corpus,
             "expect": "either",
             "journey": dict(plan),
-            "snapshot": {},
+            "snapshot": entry.get("snapshot"),
             "parked": {},
             "counterfactual": {},
             "person": str(entry.get("person", "")),
@@ -93,7 +93,7 @@ def load_cohort(path: Path, *, corpus: str) -> JourneyCohort:
         if (not isinstance(entry, dict)
                 or not {"name", "plan"} <= set(entry)
                 or set(entry) - {"name", "plan", "input", "expected_output",
-                                 "person", "mention", "category"}):
+                                 "person", "mention", "category", "snapshot"}):
             raise ValueError(
                 f"journey cohort case {position} is not a declared entry")
         name = entry["name"]
