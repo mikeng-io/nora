@@ -189,8 +189,10 @@ def test_a_deployment_key_the_example_never_mentions_is_written_not_lost():
     assert _eval_config()["store.prune_enabled"] is False
 
 
-def test_an_enabled_adapter_is_adopted_but_its_credentials_are_not():
-    """Platform adapters stay ENABLED as the deployment has them.
+async def test_an_enabled_adapter_stays_enabled_and_its_endpoints_bind_to_the_case(tmp_path):
+    """Platform adapters stay ENABLED as the deployment has them, and declared
+    identity values (the account) are kept — what would dial out is the
+    ENDPOINT, which the case-owned environment rebinds at composition.
 
     Forcing every `platforms.*.enabled` OFF would give
     `StartupError: no platform adapter is enabled`, and it is wrong anyway: the
@@ -198,42 +200,78 @@ def test_an_enabled_adapter_is_adopted_but_its_credentials_are_not():
     and `self_ids` is what `MentionPolicy`/`ReplyToNoraPolicy` match on. With
     the deployment's text trigger off, mention-and-reply IS the engagement path,
     so a disabled adapter deletes it.
-
-    So the adapter is ENABLED as the deployment has it, and the NETWORK is
-    neutralised instead — `_baseline()` points the account at a placeholder.
     """
-    from evals.subject_config import SKIP_PREFIX, adopted
+    from aiohttp import web
 
-    taken = adopted(_DEPLOYMENT_FIXTURE)
-    assert taken["platforms.signal.enabled"] is True, (
-        "the deployment runs the adapter; disabling it removes the live "
-        "mention/reply engagement path"
+    from evals.subject_config import build
+    from nora.config import load
+    from nora.subject.environment import IsolatedServices
+
+    deployment = _DEPLOYMENT_FIXTURE.replace(
+        'mode = "bridge"', 'mode = "bridge"\naccount = "+85200000000"')
+    generated = build(
+        (_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8"), deployment)
+    target = tmp_path / "config.toml"
+    target.write_text(generated, encoding="utf-8")
+    cfg = load(target, require_secrets=False)
+    assert cfg.platforms.signal.enabled is True
+    assert cfg.platforms.signal.account == "+85200000000", (
+        "the account is declared deployment identity — parity keeps it; "
+        "it is not a dial path, the adapter's base_url is"
     )
-    assert "platforms.signal.account" in SKIP_PREFIX, (
-        "the ACCOUNT is what would dial out, and `_baseline()` overrides it "
-        "with a placeholder — adopting the real one would reach signal-cli"
-    )
-    assert _eval_config()["platforms.signal.enabled"] is True
+
+    def at(root: object, path: str) -> object:
+        node = root
+        for part in path.split("."):
+            node = node[part] if isinstance(node, dict) else getattr(node, part)
+        return node
+
+    applications = {
+        key: web.Application()
+        for key in ("llm.base_url", "platforms.signal.base_url", "social.bridge_url")
+    }
+    for name in cfg.providers:
+        applications[f"providers.{name}.base_url"] = web.Application()
+    async with IsolatedServices(
+        database_url="sqlite:///generated", applications=applications,
+    ) as environment:
+        bound = environment.bind_config(cfg)
+        for key in ("llm.base_url", "platforms.signal.base_url", "social.bridge_url"):
+            assert environment.owns(at(bound, key)), (
+                f"{key} must reach the case-owned listener, not the declared "
+                "deploy-network address"
+            )
+        assert not environment.owns("http://signal-bridge:18090"), (
+            "the declared deploy-network address is refused outside the case's "
+            "own services"
+        )
+        assert bound.platforms.signal.enabled is True
+        assert bound.platforms.signal.account == "+85200000000"
 
 
 def test_a_skipped_prefix_is_not_taken_from_the_deployment():
-    """Endpoints that resolve only inside the deploy network, and sinks a run
-    would write into beside real traffic.
+    """Measurement sinks (`obs.`, `evals.langfuse.`, `store.data_dir`) are not
+    adopted — a run writes its own private sinks, never beside real traffic.
 
-    The fixture uses NON-BOOLEAN `obs.` keys, which only `SKIP_PREFIX` can
-    exclude: a boolean `obs.` key would be forced False by `FORCE_OFF`
-    independently, so removing `"obs."` from `SKIP_PREFIX` — the exact thing the
-    test is named for — would still pass.
+    A declared deploy-network ENDPOINT is different: it is functional config,
+    adopted verbatim, and `bind_config` is what keeps it undialed (proved in
+    the binding test above). The fixture uses NON-BOOLEAN `obs.` keys, which
+    only `SKIP_PREFIX` can exclude: a boolean `obs.` key would be forced False
+    by `FORCE_OFF` independently, so removing `"obs."` from `SKIP_PREFIX` —
+    the exact thing the test is named for — would still pass.
     """
     from evals.subject_config import adopted
 
     taken = adopted(_DEPLOYMENT_FIXTURE)
-    for key in ("obs.tracing.endpoint", "obs.tracing.exporter",
-                "social.bridge_url"):
+    for key in ("obs.tracing.endpoint", "obs.tracing.exporter"):
         assert key not in taken, (
-            f"{key} is a deploy-network endpoint; adopting it points the "
-            "sandbox at the deployment's own infrastructure"
+            f"{key} is a measurement sink; adopting it writes a run beside "
+            "the deployment's real telemetry"
         )
+    assert taken["social.bridge_url"] == "http://bridge.internal:9000", (
+        "a declared endpoint is deployment config: parity keeps it, and the "
+        "environment rebinds it to the case-owned service at composition"
+    )
     # And the generated config must not carry the deployment's value either.
     assert _eval_config().get("obs.tracing.endpoint") != "http://collector.internal:4317"
 
@@ -363,27 +401,32 @@ def test_materialise_writes_when_the_result_agrees(tmp_path):
 def test_the_gate_looks_at_keys_the_deployment_never_states():
     """The half of the key space a deployment-keys-only gate is blind to.
 
-    `divergences()` must not iterate only DEPLOYMENT-stated keys on the
-    reasoning that a key the example carries and the deployment does not "is a
-    code default for both". False: it is the EXAMPLE's value for the subject and
-    `nora/config.py`'s default for production. Such keys agree only by
-    curation, so one tidied line in the example, or one new default in
-    `config.py`, would move production and leave the subject behind with the
-    gate green.
+    An example-stated, deployment-silent key is materialised at the CODE
+    DEFAULT, so a tidied or drifted EXAMPLE line cannot move the subject —
+    and `divergences()` still reports a generated config whose undeclared
+    value disagrees with `nora/config.py`, which is how a rewrite that
+    silently stops applying is caught.
     """
     from evals.subject_config import build, divergences
 
     example = (_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8")
-    # `participation.reasoning_effort` is example-stated, deployment-silent,
-    # and its code default is "none".
+    # `reasoning_effort` is example-stated in several sections; drift the first
+    # — the generated config must hold the code default anyway.
     drifted = example.replace('reasoning_effort = "none"', 'reasoning_effort = "high"', 1)
-
-    assert not divergences(build(example, _DEPLOYMENT_FIXTURE), _DEPLOYMENT_FIXTURE), (
-        "the undrifted example must be clean, or this test proves nothing"
+    generated = build(drifted, _DEPLOYMENT_FIXTURE)
+    assert dict(_flat(tomllib.loads(generated)))["participation.reasoning_effort"] == "none", (
+        "a drifted example line must not reach the subject: deployment-silent "
+        "keys are materialised at the production default"
     )
-    found = divergences(build(drifted, _DEPLOYMENT_FIXTURE), _DEPLOYMENT_FIXTURE)
-    assert found, (
-        "an example-only key drifting from nora/config.py's default is a "
+    assert not divergences(generated, _DEPLOYMENT_FIXTURE), (
+        "an example that drifts in an undeclared key is a clean build, not drift"
+    )
+    # The falsification: a generated config that DOES carry a wrong undeclared
+    # value — the rewrite having silently stopped — must be named.
+    tampered = _build_generated().replace(
+        "cadence_moving_seconds = 20.0", "cadence_moving_seconds = 5", 1)
+    assert "presence.cadence_moving_seconds" in divergences(tampered, _DEPLOYMENT_FIXTURE), (
+        "an undeclared key disagreeing with nora/config.py's default is a "
         "subject running settings production does not — the gate must see it"
     )
 
@@ -405,16 +448,22 @@ def test_a_key_whose_default_cannot_be_resolved_is_not_silently_passed():
 
 
 
-def test_a_deployment_with_compute_on_yields_a_subject_with_it_off():
-    """Without the sub-agent no backend is registered, so a deployment's
-    `[compute] enabled = true` would only make the subject log a boot warning
-    and run a poller with nothing behind it. The deployment's `true` must come
-    out of the rebuild as `false`, and the difference must be a declared one."""
-    from evals.subject_config import ALLOWED_TO_DIFFER, adopted
+def test_a_deployment_with_compute_on_keeps_the_subjects_compute_on():
+    """`[compute] enabled` is functional configuration, not telemetry: the
+    subject IS the deployment's Nora, so a declared `true` is kept verbatim.
+    What the computer can REACH is bounded by the case's services, not by
+    rewriting the deployment's declaration — `compute.enabled` is not and
+    must not be a silent `FORCE_OFF` rewrite."""
+    from evals.subject_config import ALLOWED_TO_DIFFER, adopted, build
 
     deployment = _DEPLOYMENT_FIXTURE + "\n[compute]\nenabled = true\n"
-    assert adopted(deployment)["compute.enabled"] is False
-    assert "compute.enabled" in ALLOWED_TO_DIFFER
+    assert adopted(deployment)["compute.enabled"] is True
+    assert "compute.enabled" not in ALLOWED_TO_DIFFER, (
+        "a preserved declared value is parity, not a difference to excuse"
+    )
+    generated = build(
+        (_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8"), deployment)
+    assert dict(_flat(tomllib.loads(generated)))["compute.enabled"] is True
 
 
 _SUBAGENT_DEPLOYMENT = (
@@ -450,13 +499,15 @@ def test_the_generated_subagent_config_loads_under_the_production_validators(tmp
     assert cfg.subagent.enabled and cfg.compute.enabled and cfg.dreamer.enabled
 
 
-def test_without_the_subagent_the_generated_config_is_unchanged_by_it():
-    """Byte-identical to the build that has no sub-agent code path at all."""
+def test_the_subagent_rewrite_changes_nothing_when_the_subagent_is_off():
+    """`forced_off` is FORCE_OFF verbatim without `[subagent] enabled`, and a
+    declared `compute.enabled` — the field the old rewrite used to force —
+    passes through as the deployment stated it."""
     from evals.subject_config import FORCE_OFF, adopted, forced_off
 
     assert forced_off({}) == FORCE_OFF
     assert forced_off({"subagent.enabled": False}) == FORCE_OFF
     deployment = _DEPLOYMENT_FIXTURE + "\n[compute]\nenabled = true\n"
     taken = adopted(deployment)
-    assert taken["compute.enabled"] is False
+    assert taken["compute.enabled"] is True
     assert all(taken[k] is False for k in FORCE_OFF)

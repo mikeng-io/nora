@@ -93,7 +93,13 @@ def memory_service(feeds: list) -> web.Application:
             return web.json_response({"error": "unrecorded peer model"}, status=422)
         return web.json_response({"representation": ""})
 
+    async def workspaces(request):
+        # `inspect_workspace`'s read: empty means every bound workspace is
+        # absent, so ownership is claimed by create, marked with Nora's key.
+        return web.json_response({"items": [], "total": 0})
+
     application.router.add_post("/v3/workspaces", create)
+    application.router.add_post("/v3/workspaces/list", workspaces)
     for resource in ("peers", "sessions", "scopes"):
         application.router.add_post(f"/v3/workspaces/{{workspace}}/{resource}", create)
     application.router.add_post("/v3/workspaces/{workspace}/sessions/{session}/peers", configure)

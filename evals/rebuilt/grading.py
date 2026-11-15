@@ -127,7 +127,13 @@ class Judge:
     def bind_evidence(self, effects: dict) -> Judge:
         if not observed_effects(effects):
             raise ValueError("canonical lifecycle evidence unavailable to judge")
-        return replace(self, lifecycle=json.dumps(effects, ensure_ascii=False, sort_keys=True))
+        from nora.domain.external_files import render_file_links
+
+        # The judge is a MODEL sink: effect rows carry stored message bodies,
+        # whose shared file links must reach it as handles (R-18). The raw
+        # canonical artifact is the capture's; only the bound projection renders.
+        lifecycle = json.dumps(effects, ensure_ascii=False, sort_keys=True)
+        return replace(self, lifecycle=render_file_links(lifecycle))
 
     def _with_effects(self, prompt: str) -> str:
         if self.lifecycle is None:

@@ -96,8 +96,18 @@ def build(example_toml: str, deployment_toml: str) -> str:
     are most of the file and the only documentation these settings have —
     survive into the thing an operator will actually read when a run surprises
     them.
+
+    An example line the DEPLOYMENT does not state is not a deployment value:
+    the example is a template for a new deployment, and production takes
+    `nora/config.py`'s default for a key it never reads. Such a line is
+    rewritten to that code default, so the subject runs the deployment's
+    EFFECTIVE config rather than decorative template values. Keys whose
+    default cannot be resolved (required fields, runtime-keyed containers)
+    keep the example's line — `config_default` returning None is "cannot
+    check", which `divergences()` already declines to call agreement.
     """
     take = adopted(deployment_toml)
+    example_values = dict(_flat(tomllib.loads(example_toml)))
 
     # A key the deployment SETS but the example never mentions has no line to
     # rewrite, and then silently falls back to the CODE default — which is not
@@ -148,6 +158,8 @@ def build(example_toml: str, deployment_toml: str) -> str:
             seen.add(full)
             if full in take:
                 line = f"{match.group(1)}{match.group(2)}{match.group(3)}{_fmt(take[full])}"
+            else:
+                line = _defaulted_line(match, full, example_values.get(full)) or line
         out.append(line)
     close(section)
 
@@ -158,6 +170,19 @@ def build(example_toml: str, deployment_toml: str) -> str:
                 out.append(f"{leaf} = {_fmt(value)}")
 
     return _HEADER + "\n".join(out) + "\n"
+
+
+def _defaulted_line(match: re.Match[str], key: str, stated: object) -> str | None:
+    """The example line rewritten to the production default, or None when the
+    key has no resolvable default (kept verbatim) or already states it."""
+    default = config_default(key)
+    if isinstance(default, Path):
+        default = str(default)
+    if default is None or not isinstance(default, (str, bool, int, float, list, tuple)):
+        return None
+    if default == stated:
+        return None
+    return f"{match.group(1)}{match.group(2)}{match.group(3)}{_fmt(default)}"
 
 
 ALLOWED_TO_DIFFER: dict[str, str] = dict.fromkeys(

@@ -1,36 +1,44 @@
-"""Every eval DRAW reads and writes a Honcho workspace of its own.
+"""Every eval DRAW composes against case-owned services of its own.
 
-A draw that fed one shared `<deployment>-eval` workspace would have the tag path
-read it back as the tagger card, so draw 3 of a case would read what draws 1
-and 2 had said and answer «third time you've asked». These tests
-drive the real `evals.backbone._drive` and the real workspace lifecycle against
-`tests.fakes.FakeHoncho`, a server shaped after Honcho's own OpenAPI (a 409 on
-deleting a workspace with an active session, a 404 under a workspace that
-does not exist), and the last one composes a real subject to show that none
-of its memory traffic leaves the draw's workspace.
+Draw isolation is the `IsolatedServices` each case opens — its own listeners,
+its own sockets, its own Redis — not a renamed Honcho namespace. These tests
+drive the real `evals.backbone._drive` against recorded or request-aware
+services: the deployment's configured workspace identity and routing are
+preserved verbatim on the wire, every request lands on the draw's own
+boundaries, success and failure both close the owned world, and a draw whose
+required service cannot answer refuses before the model is reached.
 """
 
 from __future__ import annotations
 
 import asyncio
-import gc
 import importlib
-import os
+import re
+import socket
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from aiohttp import web
+from opentelemetry import trace
 from strands_evals import Case
 
 from evals import backbone
-from evals.backbone import NORA_MEMORY_WORKSPACE
-from evals.reading import sampled
 from evals.rebuilt.domain import Outcome
 from evals.rebuilt.entry import ENTRY_POINTS, EntryPoint
-from nora.infra.honcho import HonchoClient
+from nora.domain.models import NormalizedMessage
+from nora.infra.sql.audit import SqlRecordStore
+from nora.infra.sql.engine import create_sql_engine
 from nora.subject import SubjectSpec, obtain
+from nora.subject.environment import IsolatedServices
+from nora.subject.eval_evidence import (
+    EvidenceError,
+    RunEvidence,
+    read_events,
+    validate_events,
+)
 from nora.subject.memory_workspace import (
     DRAW_MARKER,
     HonchoWorkspaces,
@@ -38,7 +46,10 @@ from nora.subject.memory_workspace import (
     draw_workspace,
     sweep_stale_draw_workspaces,
 )
-from nora.subject.sandbox import Sandboxed
+from nora.subject.recorded_services import RecordedServices
+from nora.subject.sandbox import eval_host_lock
+from nora.testing.journey_world import memory_service
+from scripts.memory_graph_spike import measured_run_budget
 from tests.fakes import FakeHoncho
 
 #: The MODULE: `nora.subject` re-exports the `obtain` function under the
@@ -46,7 +57,42 @@ from tests.fakes import FakeHoncho
 obtain_module = importlib.import_module("nora.subject.obtain")
 
 _DEPLOYMENT = "nora"
-_SHOT = {"platform": "signal", "conversation_id": "g-real", "before_ms": 1_752_000_000_000}
+_SHOT = {"platform": "signal", "conversation_id": "g1", "before_ms": 2_000_000_000_000}
+NOW = _SHOT["before_ms"]
+IDENTITY = '[persons.miles_novak]\nname="Miles"\n[[persons.miles_novak.signal]]\nphone="+852111"\n'
+_OVERRIDES = {"platforms.signal.enabled": True, "platforms.signal.mode": "bridge"}
+
+#: Generated policy/identity with TWO workspace bindings: unit `friends` is
+#: bound through Nora workspace `67` to the Honcho workspace `nora`, unit
+#: `ridgeline` to a Nora workspace with no Honcho binding (its own name).
+_MULTI_POLICY = """
+default = "deny"
+
+[[conversations]]
+platform = "signal"
+id = "g-friends"
+label = "Friends"
+persons = "*"
+unit = "friends"
+
+[[conversations]]
+platform = "signal"
+id = "g-ridgeline"
+label = "Ridgeline"
+persons = "*"
+unit = "ridgeline"
+
+[units.friends]
+workspace = "67"
+
+[units.ridgeline]
+workspace = "ridgeline"
+"""
+
+_MULTI_IDENTITY = (
+    '[persons.miles_novak]\nname="Miles"\n[[persons.miles_novak.signal]]\nphone="+852111"\n'
+    '[workspaces.67]\nhoncho_workspace = "nora"\n'
+)
 
 
 @pytest.fixture
@@ -60,6 +106,339 @@ async def honcho(monkeypatch):
     await fake.close()
 
 
+@pytest.fixture
+def run_evidence(tmp_path):
+    """An active `RunEvidence` — `_drive` refuses without canonical capture."""
+    backbone._prefill_capture()
+    budget = {}
+    with eval_host_lock() as lock_fd:
+        evidence = RunEvidence(
+            run_id="generated-draws", lock_fd=lock_fd,
+            private_root=tmp_path / "capture", metadata={"behavior": "UNMEASURED"})
+        try:
+            with evidence.capture(trace.get_tracer_provider()), measured_run_budget(
+                SimpleNamespace(stop_after_tokens=20000), evidence, tmp_path, budget,
+                max_requests=20, max_output_tokens=400000,
+            ):
+                yield evidence
+        except EvidenceError as exc:
+            assert str(exc) == "incomplete_record"
+            events = read_events(evidence.path)
+            assert any(e["kind"] == "expected_invalid_capture" for e in events)
+            assert validate_events(events)["causes"] == ["capture_interrupted"]
+        else:
+            assert validate_events(read_events(evidence.path))["status"] == "PASS"
+
+
+def _recording(cfg, *, workspace_create: bool = True, completion: bool = True):
+    """Finite external responses for one case's owned world, in protocol
+    order. The workspace row pins `cfg.honcho.workspace_id` on the wire: a
+    subject that renamed the workspace would mismatch and be refused."""
+    bindings = {"llm.base_url": "model", "honcho.base_url": "memory",
+                "platforms.signal.base_url": "bridge"}
+    bindings.update({f"providers.{name}.base_url": "model" for name in cfg.providers})
+    model = cfg.endpoint("relevance_gate", cfg.relevance_gate.model)[2]
+    memory = [
+        {"method": "POST", "path": "/v3/workspaces", "request_json": {
+            "id": cfg.honcho.workspace_id}, "response": {"status": 200, "json": {
+                "id": cfg.honcho.workspace_id}}},
+        {"method": "POST", "path": f"/v3/workspaces/{cfg.honcho.workspace_id}/peers",
+         "request_json": {"id": cfg.honcho.ai_peer}, "response": {"status": 200,
+             "json": {"id": cfg.honcho.ai_peer}}},
+    ]
+    if not workspace_create:
+        memory = memory[1:]
+    model_rows = [{
+        "method": "POST", "path": "/v1/chat/completions", "response": {"status": 200, "json": {
+            "id": "generated-completion", "model": model, "created": 1,
+            "object": "chat.completion", "choices": [{"index": 0,
+                "message": {"role": "assistant", "content": '{"verdict":"go"}'},
+                "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+        }},
+    }] if completion else []
+    return RecordedServices({"version": 1, "bindings": bindings, "services": {
+        "bridge": [{"method": "GET", "path": "/v1/self", "response": {"status": 200,
+                     "json": {"primary": "generated-self", "aliases": []}}}],
+        "memory": memory,
+        "model": model_rows,
+    }})
+
+
+def _watch(monkeypatch):
+    """`IsolatedServices._coverage` wrapped to record (env, service, method,
+    path, json) per request — the wire-traffic instrument."""
+    received: list[tuple[Any, str, str, str, Any]] = []
+    coverage = IsolatedServices._coverage
+
+    def observe(self, service):
+        original = coverage(self, service)
+
+        @web.middleware
+        async def capture(request, handler):
+            body = None
+            if request.method == "POST":
+                try:
+                    body = await request.json()
+                except (ValueError, UnicodeDecodeError):
+                    body = None
+            received.append((self, service, request.method, request.raw_path, body))
+            return await original(request, handler)
+
+        return capture
+
+    monkeypatch.setattr(IsolatedServices, "_coverage", observe)
+    return received
+
+
+async def _seed(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
+    try:
+        await SqlRecordStore(engine).append(message=NormalizedMessage(
+            "signal", "g1", "group", "+852111", "Miles", NOW - 1000,
+            "Generated earlier conversation", {}), person_id="miles_novak")
+    finally:
+        await engine.dispose()
+
+
+async def test_each_draw_composes_against_its_own_case_owned_services(
+    clean_pg_url, evaluation_config, tmp_path, monkeypatch, run_evidence,
+) -> None:
+    """Three draws of one case: three case-owned service environments, the
+    deployment's configured workspace created on each draw's OWN listener
+    before any memory traffic, every request inside the draw's owned world,
+    and every environment closed with nothing carried into the next draw."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    await _seed(clean_pg_url)
+    cfg = obtain_module.build_config(SubjectSpec(
+        database_url=clean_pg_url, workdir=tmp_path / "declared", overrides=_OVERRIDES))
+    received = _watch(monkeypatch)
+    subjects: list[Any] = []
+    real_obtain = backbone.obtain
+
+    async def compose(spec: Any) -> Any:
+        subject = await real_obtain(spec)
+        subjects.append(subject)
+        return subject
+
+    monkeypatch.setattr(backbone, "obtain", compose)
+    cases = [Case(name=f"generated-{index}", input="Generated question", metadata={
+        "expect": "go", "snapshot": dict(_SHOT)}) for index in range(3)]
+    spec = backbone.Spec(
+        source_url=clean_pg_url, entry="gate", identity=IDENTITY,
+        policy=obtain_module.default_policy(("signal", "g1")), overrides=_OVERRIDES,
+        services={case.name: _recording(cfg) for case in cases})
+    results = [await backbone._drive(case, spec) for case in cases]
+
+    assert len(subjects) == 3
+    environments = [subject.environment for subject in subjects]
+    assert len({id(env) for env in environments}) == 3, (
+        "each draw's services are its own — nothing shared between draws"
+    )
+    assert all(
+        subject.cfg.honcho.workspace_id == cfg.honcho.workspace_id
+        for subject in subjects
+    ), "the deployment's workspace identity is preserved, not renamed"
+    for env in environments:
+        calls = [row for row in received if row[0] is env]
+        memory_calls = [row for row in calls if row[1] == "honcho.base_url"]
+        assert memory_calls, "the draw's memory traffic stayed on its own listener"
+        assert memory_calls[0][2:4] == ("POST", "/v3/workspaces") and (
+            memory_calls[0][4] or {}).get("id") == cfg.honcho.workspace_id, (
+            "the workspace is created on the draw's own service, first, under "
+            "the deployment's configured name"
+        )
+        assert not env.active
+        assert not env.denied, f"requests outside the draw's owned world: {env.denied}"
+    assert all(not subject.deps.background._tasks for subject in subjects)
+    assert not getattr(socket.socket.connect, "_nora_eval_guard", False)
+    errors = [
+        {e.name: e.state for e in result["environment_state"]}[backbone.NORA_ERROR]
+        for result in results
+    ]
+    assert errors == [None, None, None], errors
+
+
+async def test_a_draw_whose_drive_fails_still_closes_its_case_owned_services(
+    clean_pg_url, evaluation_config, tmp_path, monkeypatch, run_evidence,
+) -> None:
+    """The drive raises after composition — real workspace traffic already on
+    the owned listener — and the draw's whole owned world is still closed,
+    subjects first, the error reaching the caller."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    await _seed(clean_pg_url)
+    cfg = obtain_module.build_config(SubjectSpec(
+        database_url=clean_pg_url, workdir=tmp_path / "declared", overrides=_OVERRIDES))
+    received = _watch(monkeypatch)
+    subjects: list[Any] = []
+    real_obtain = backbone.obtain
+
+    async def compose(spec: Any) -> Any:
+        subject = await real_obtain(spec)
+        subjects.append(subject)
+        return subject
+
+    async def drive(_subject: Any, _case: Any, *, now_ms: int) -> Outcome:
+        raise RuntimeError("the turn blew up")
+
+    monkeypatch.setattr(backbone, "obtain", compose)
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=drive))
+    case = Case(name="blows-up", input="x", metadata={"snapshot": dict(_SHOT)})
+    spec = backbone.Spec(
+        source_url=clean_pg_url, entry="dreamer", identity=IDENTITY,
+        policy=obtain_module.default_policy(("signal", "g1")), overrides=_OVERRIDES,
+        services={case.name: _recording(cfg, completion=False)})
+    with pytest.raises(RuntimeError, match="the turn blew up"):
+        await backbone._drive(case, spec)
+
+    [env] = [subject.environment for subject in subjects]
+    creates = [row for row in received
+               if row[0] is env and row[2:4] == ("POST", "/v3/workspaces")]
+    assert creates, "composition's workspace traffic did reach the owned service"
+    assert not env.active, "the draw's owned world is closed even on error"
+    assert not getattr(socket.socket.connect, "_nora_eval_guard", False)
+    run_evidence.record("expected_invalid_capture")
+
+
+async def test_a_draw_whose_service_cannot_answer_refuses_before_the_drive(
+    clean_pg_url, evaluation_config, tmp_path, monkeypatch, run_evidence,
+) -> None:
+    """Fail-closed: the recording holds no answer for the workspace create, so
+    composition is refused at the boundary and the drive never runs — the
+    refused call is recorded as denied evidence, not hidden."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    await _seed(clean_pg_url)
+    cfg = obtain_module.build_config(SubjectSpec(
+        database_url=clean_pg_url, workdir=tmp_path / "declared", overrides=_OVERRIDES))
+    _watch(monkeypatch)
+    ran: list[bool] = []
+    environments: list[IsolatedServices] = []
+
+    async def drive(_subject: Any, _case: Any, *, now_ms: int) -> Outcome:
+        ran.append(True)
+        return Outcome(admitted=None)
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=drive))
+    recording = _recording(cfg, workspace_create=False, completion=False)
+    real_open = recording.open
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def spy(*args: Any, **kwargs: Any):
+        async with real_open(*args, **kwargs) as env:
+            environments.append(env)
+            yield env
+
+    monkeypatch.setattr(recording, "open", spy)
+    case = Case(name="no-honcho", input="x", metadata={"snapshot": dict(_SHOT)})
+    spec = backbone.Spec(
+        source_url=clean_pg_url, entry="dreamer", identity=IDENTITY,
+        policy=obtain_module.default_policy(("signal", "g1")), overrides=_OVERRIDES,
+        services={case.name: recording})
+    with pytest.raises(EvidenceError, match="external_response_not_recorded"):
+        await backbone._drive(case, spec)
+
+    assert not ran, "a draw whose owned service cannot answer must not run"
+    [env] = environments
+    assert any(row["cause"] == "external_response_not_recorded" for row in env.denied), (
+        "the refusal is recorded as denied evidence, not swallowed"
+    )
+    assert not env.active
+    run_evidence.record("expected_invalid_capture")
+
+
+async def test_no_memory_call_of_a_composed_subject_escapes_its_case_owned_world(
+    clean_pg_url, evaluation_config, tmp_path, monkeypatch,
+) -> None:
+    """The real graph, composed for a case, against generated policy/identity
+    carrying TWO workspace bindings. Every workspace the router names is
+    created on the case's OWN listener; a feed to each room lands under its
+    bound workspace — routing preserved, nothing reaching outside the owned
+    world, and the deployment's default workspace kept as configured."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    feeds: list[Any] = []
+    received = _watch(monkeypatch)
+    bridge = web.Application()
+
+    async def self_rpc(request):
+        return web.json_response({"primary": "generated-self", "aliases": []})
+
+    bridge.router.add_get("/v1/self", self_rpc)
+    applications = {
+        "llm.base_url": web.Application(),
+        "honcho.base_url": memory_service(feeds),
+        "platforms.signal.base_url": bridge,
+    }
+    cfg = obtain_module.build_config(SubjectSpec(
+        database_url=clean_pg_url, workdir=tmp_path / "declared",
+        identity=_MULTI_IDENTITY, policy=_MULTI_POLICY,
+        room=("signal", "g-friends"), overrides=_OVERRIDES))
+    for name in cfg.providers:
+        applications[f"providers.{name}.base_url"] = web.Application()
+    async with IsolatedServices(
+        database_url=clean_pg_url, applications=applications, redis=True,
+    ) as env:
+        subject = await obtain(SubjectSpec(
+            database_url=clean_pg_url, workdir=tmp_path,
+            environment=env, identity=_MULTI_IDENTITY, policy=_MULTI_POLICY,
+            room=("signal", "g-friends"), overrides=_OVERRIDES))
+        memory = subject.deps.memory
+        peer = subject.cfg.honcho.ai_peer
+        assert subject.cfg.honcho.workspace_id == "nora", (
+            "the deployment's configured workspace is preserved — isolation "
+            "is the owned service, not a renamed namespace"
+        )
+        assert await memory.feed(
+            peer_id="miles_novak", text="hi", conversation_id="g-friends")
+        assert await memory.feed(
+            peer_id="miles_novak", text="hi again", conversation_id="g-ridgeline")
+        await memory.peer_card(peer_id="miles_novak", conversation_id="g-friends")
+        assert (await memory.representation(
+            peer_id=peer, target="miles_novak", search_query="tea",
+            conversation_id="g-friends")).reachable
+        unrouted = await memory.peer_card(peer_id="miles_novak")
+        assert unrouted == [], (
+            "a call naming no room or unit fails closed under declared units — "
+            "never widened to the default workspace"
+        )
+        calls = [row for row in received if row[0] is env]
+        memory_calls = [row for row in calls if row[1] == "honcho.base_url"]
+        created = {
+            (row[4] or {}).get("id") for row in memory_calls
+            if row[2:4] == ("POST", "/v3/workspaces")
+        }
+        assert {"nora", "ridgeline"} <= created, (
+            f"every bound workspace is created on the case's own service: {created}"
+        )
+        routed = {
+            match.group(1)
+            for _, _, _, path, _ in memory_calls
+            if (match := re.match(r"/v3/workspaces/([^/]+)/", path))
+        } - {"list"}
+        assert routed == {"nora", "ridgeline"}, (
+            f"each room's memory traffic lands under its own bound workspace: {routed}"
+        )
+        assert not env.denied, f"calls outside the owned world: {env.denied}"
+    assert not env.active
+    assert feeds, "a positive control: the feed calls really reached the service"
+
+
+async def test_the_subject_keeps_the_deployments_workspace_identity(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """`memory_endpoint()` reads the template every subject composes: the
+    subject keeps the deployment's configured workspace name — the draw's
+    isolation is the case-owned server it binds to, not a renamed workspace."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    base_url, deployment = obtain_module.memory_endpoint()
+    cfg = obtain_module.build_config(SubjectSpec(
+        database_url="postgresql+asyncpg://x/x", workdir=tmp_path,
+    ))
+    assert cfg.honcho.base_url == base_url
+    assert cfg.honcho.workspace_id == deployment
+
+
 class _Deps:
     class _Closable:
         async def cancel_all(self) -> None: ...
@@ -70,86 +449,6 @@ class _Deps:
     doctrine = SimpleNamespace(doctrine_text="doctrine")
 
 
-def _faked_seams(monkeypatch, *, drive) -> list[Any]:
-    """`obtain`, the sandbox database and the snapshot faked; `_drive` and
-    `draw_workspace` are real. Returns the SubjectSpecs `obtain` was given."""
-    specs: list[Any] = []
-
-    async def fake_obtain(spec: Any) -> Any:
-        specs.append(spec)
-        return SimpleNamespace(
-            deps=_Deps(), room=("signal", "g-real"),
-            cfg=SimpleNamespace(engagement=SimpleNamespace(trigger=SimpleNamespace(text="nora"))),
-        )
-
-    class _Sandbox:
-        def __init__(self, url: str, **_: Any) -> None:
-            self._url = url
-
-        async def __aenter__(self) -> str:
-            return f"{self._url}_sb"
-
-        async def __aexit__(self, *_: Any) -> None:
-            return None
-
-    async def fake_sandbox(_subject: Any, **kwargs: Any) -> Sandboxed:
-        return Sandboxed(now_ms=int(kwargs["before_ms"]), rows={}, transcript=())
-
-    monkeypatch.setattr(backbone, "obtain", fake_obtain)
-    monkeypatch.setattr(backbone, "sandbox_database", _Sandbox)
-    monkeypatch.setattr(backbone, "sandbox_from_snapshot", fake_sandbox)
-    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=drive))
-    return specs
-
-
-def _ws(spec: SubjectSpec) -> str:
-    """The Honcho workspace a SubjectSpec composes against."""
-    return (spec.overrides or {})["honcho.workspace_id"]
-
-
-def _spec() -> backbone.Spec:
-    return backbone.Spec(
-        source_url="postgresql://u:p@h/src_eval", entry="dreamer",
-        identity="[persons.miles_novak]\n", policy='default = "deny"\n',
-    )
-
-
-async def test_each_draw_gets_its_own_workspace_created_empty_and_deleted(
-    honcho, monkeypatch,
-) -> None:
-    """Three draws of one case: three workspaces, each existing and EMPTY
-    while its draw runs (peer cards empty),
-    each deleted afterwards, and each named on the draw's own reading."""
-    seen_during: list[tuple[str, bool, list, list]] = []
-
-    async def drive(_subject: Any, _case: Any, *, now_ms: int) -> Outcome:
-        workspace = _ws(specs[-1])
-        seen_during.append((
-            workspace, workspace in honcho.workspaces,
-            list(honcho.writes.get(workspace, [])), list(honcho.sessions.get(workspace, {})),
-        ))
-        return Outcome(admitted=None)
-
-    specs = _faked_seams(monkeypatch, drive=drive)
-    base = Case(name="asks-twice", input="x", metadata={"snapshot": dict(_SHOT)})
-    results = [await backbone._drive(draw, _spec()) for draw in sampled(base, 3)]
-
-    workspaces = [_ws(spec) for spec in specs]
-    assert len(set(workspaces)) == 3, workspaces
-    assert all(w.startswith(f"{_DEPLOYMENT}-eval-") for w in workspaces)
-    assert all(f"{backbone.RUN_ID}-asks-twice-{i}-" in w for i, w in enumerate(workspaces, 1))
-    assert [(w, True, [], []) for w in workspaces] == seen_during, (
-        "each draw's workspace must exist, and hold nothing, while the draw runs"
-    )
-    assert honcho.deleted == workspaces, "every draw's workspace is deleted when it ends"
-    assert not any(w in honcho.workspaces for w in workspaces)
-    created = [r for r in honcho.requests if r[0] == "POST" and r[1] == "/v3/workspaces"]
-    assert [r[2] for r in created] == workspaces
-    for result, workspace in zip(results, workspaces, strict=True):
-        state = {e.name: e.state for e in result["environment_state"]}
-        assert state[NORA_MEMORY_WORKSPACE] == workspace
-
-
 async def test_a_draw_workspace_is_created_with_derivation_off(honcho) -> None:
     """A draw can never read what the deriver derives from it (derivation
     lags tens of minutes), so the create asks Honcho for no reasoning and no
@@ -158,50 +457,6 @@ async def test_a_draw_workspace_is_created_with_derivation_off(honcho) -> None:
     async with draw_workspace("derive-probe#1", run_id="run-d", admin=admin) as draw:
         configuration = honcho.workspaces[draw.id]["configuration"]
     assert configuration == {"reasoning": {"enabled": False}, "summary": {"enabled": False}}
-
-
-async def test_a_draw_that_raises_still_deletes_its_workspace(honcho, monkeypatch) -> None:
-    """The draw fed a message (so its workspace holds an ACTIVE session,
-    which Honcho answers 409 to on a workspace delete) and then raised. The
-    workspace is still deleted, sessions first, and the error still reaches
-    the caller."""
-
-    async def drive(_subject: Any, _case: Any, *, now_ms: int) -> Outcome:
-        client = HonchoClient(honcho.url, _ws(specs[-1]))
-        assert await client.feed(peer_id="miles_novak", text="hi", conversation_id="g-real")
-        raise RuntimeError("the turn blew up")
-
-    specs = _faked_seams(monkeypatch, drive=drive)
-    case = Case(name="blows-up", input="x", metadata={"snapshot": dict(_SHOT)})
-    with pytest.raises(RuntimeError, match="the turn blew up"):
-        await backbone._drive(case, _spec())
-
-    [workspace] = [_ws(s) for s in specs]
-    assert honcho.deleted == [workspace]
-    session_deletes = [
-        r for r in honcho.requests
-        if r[0] == "DELETE" and r[2] == workspace and "/sessions/" in r[1]
-    ]
-    assert session_deletes, "the active session is deleted before the workspace"
-
-
-async def test_a_draw_whose_workspace_cannot_be_created_does_not_run(
-    honcho, monkeypatch,
-) -> None:
-    """Fail-closed: no workspace of its own, no draw. Otherwise composition's
-    best-effort get-or-create would hide that the draw was not isolated."""
-    ran: list[bool] = []
-
-    async def drive(_subject: Any, _case: Any, *, now_ms: int) -> Outcome:
-        ran.append(True)
-        return Outcome(admitted=None)
-
-    _faked_seams(monkeypatch, drive=drive)
-    await honcho.close()
-    case = Case(name="no-honcho", input="x", metadata={"snapshot": dict(_SHOT)})
-    with pytest.raises(Exception, match=r"unreachable|did not create"):
-        await backbone._drive(case, _spec())
-    assert not ran
 
 
 async def test_two_arms_in_parallel_never_share_a_workspace(honcho) -> None:
@@ -264,71 +519,3 @@ async def test_the_prefix_guard_refuses_before_any_honcho_call(honcho, workspace
         await admin.create(workspace, metadata={})
     assert honcho.requests == []
     assert workspace in honcho.workspaces
-
-
-@pytest.mark.asyncio
-async def test_no_memory_call_of_a_composed_subject_escapes_the_draws_workspace(
-    honcho, tmp_path: Path, clean_pg_url, monkeypatch,
-) -> None:
-    """The real graph, composed for a draw, with its memory pointed at the
-    fake. Every Honcho client alive afterwards is on the draw's workspace,
-    and every request any memory verb makes lands under it.
-
-    The composition root builds ONE `HonchoClient`, from
-    `cfg.honcho.workspace_id` with a router of no overrides, and no caller
-    passes `workspace_id=` to a verb.
-    So the workspace on the config IS every read and write, and this is the
-    reading that would move if a second client or an explicit workspace ever
-    appeared."""
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    admin = HonchoWorkspaces(honcho.url, deployment=_DEPLOYMENT)
-    async with draw_workspace("escape-probe#1", run_id="run-z", admin=admin) as draw:
-        before = {id(o) for o in gc.get_objects() if isinstance(o, HonchoClient)}
-        subject = await obtain(SubjectSpec(
-            database_url=os.environ["DATABASE_URL"], workdir=tmp_path,
-            overrides={"honcho.base_url": honcho.url, "honcho.workspace_id": draw.id},
-        ))
-        try:
-            clients = [
-                o for o in gc.get_objects()
-                if isinstance(o, HonchoClient) and id(o) not in before
-            ]
-            assert clients == [subject.deps.memory], "one memory client, the subject's own"
-            assert subject.cfg.honcho.workspace_id == draw.id
-            memory = subject.deps.memory
-            peer = subject.cfg.honcho.ai_peer
-            assert await memory.feed(peer_id="miles_novak", text="hi", conversation_id="g1")
-            assert await memory.feed(peer_id=peer, text="hello", conversation_id="g1")
-            assert await memory.conclude(peer_id=peer, content="likes tea", target="miles_novak")
-            assert (await memory.representation(
-                peer_id=peer, target="miles_novak", search_query="tea",
-            )).reachable
-            assert (await memory.representation(peer_id=peer, search_query="self")).reachable
-            await memory.chat(peer_id=peer, query="who", target="miles_novak")
-            assert (await memory.search(query="tea", conversation_id="g1")).reachable
-            assert (await memory.search(query="tea")).reachable
-            await memory.peer_card(peer_id="miles_novak")
-        finally:
-            await backbone._close(subject)
-
-        touched = [r for r in honcho.requests if r[2] is not None]
-        assert len(touched) >= 12, "a positive control: the verbs above did reach the fake"
-        assert {r[2] for r in touched} == {draw.id}, sorted({r[2] for r in touched})
-    assert honcho.deleted == [draw.id]
-
-
-async def test_the_draw_workspace_is_created_on_the_subjects_own_server(
-    tmp_path: Path, monkeypatch,
-) -> None:
-    """`memory_endpoint()` reads the template every subject composes, with
-    the same host-from-the-host rewrite `_baseline` applies, so the workspace
-    a draw creates is on the server its subject talks to."""
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    base_url, deployment = obtain_module.memory_endpoint()
-    cfg = obtain_module.build_config(SubjectSpec(
-        database_url="postgresql+asyncpg://x/x", workdir=tmp_path,
-    ))
-    assert cfg.honcho.base_url == base_url
-    assert cfg.honcho.workspace_id == f"{deployment}-eval"
-
-
