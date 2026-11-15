@@ -30,8 +30,9 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
    python -m scripts.pytest_gate --workers 0 <tests/…py::test_name> > /tmp/base.log 2>&1; echo "RC=$?"
    grep -E "passed|failed|error" /tmp/base.log
    ```
-   Check: `RC=0` and at least one `passed`. `RC=2` means the host lease is held —
-   wait and rerun; it is not a verdict.
+   Check: `RC=0` and at least one `passed`. `RC=2` carrying the gate's own
+   busy-lease message means the host lease is held — wait and rerun; it is
+   not a verdict.
 
 3. **Revert the fix, as its own command.** Never chain it behind anything that can
    fail: `&&` after a rejected commit once skipped the revert, and the green that
@@ -52,7 +53,8 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
    ```
    Check: `RC=1` and the failure is the reverted behaviour's assertion. A
    `NameError`, `ImportError` or collection error is a broken probe, not a catch —
-   and neither is any other nonzero exit.
+   and neither is a failure count beside any error count, nor any other
+   nonzero exit.
 
 5. **Restore and read it back.**
    ```bash
@@ -70,9 +72,10 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
    make mutate TABLE=scripts/mutations/<name>.json > /tmp/mutate.log 2>&1; echo "RC=$?"
    grep -E "RED|GREEN|BROKEN|restore|ALL MUTATIONS" /tmp/mutate.log
    ```
-   Check: `RC=0` and `ALL MUTATIONS CAUGHT`. `SURVIVED` is a survivor;
+   Check: `RC=0` and `ALL MUTATIONS RED AND RESTORED`. `SURVIVED` is a survivor;
    `BROKEN ENTRY` (empty selector, baseline red, anchor found 0 or 2+ times, mutant
-   errored or did not run) is a finding about your evidence, not noise to route
+   errored — a failed test beside any error count included — or did not run)
+   is a finding about your evidence, not noise to route
    around; `UNAVAILABLE` means the host lease never freed — wait and rerun. The
    runner keeps each phase's full output and a manifest (HEAD, hashes, restoration)
    under `~/.local/share/nora/mutation-proofs/` — keep that path with the claim.
@@ -139,8 +142,9 @@ merged PRs:
 
 ```
 Mutation: `make mutate TABLE=scripts/mutations/<name>.json` on <sha>, from a
-clean committed tree: N/N RED, ALL MUTATIONS CAUGHT, 0 BROKEN.
-Tables naming touched files: <table>: ALL MUTATIONS CAUGHT, 0 BROKEN; ...
+clean committed tree: N/N RED, ALL MUTATIONS RED AND RESTORED, 0 BROKEN —
+each RED confirmed to be its intended assertion.
+Tables naming touched files: <table>: ALL MUTATIONS RED AND RESTORED, 0 BROKEN; ...
 By hand: reverting <file>'s <clause> turns `<test_name>` red; restored, green.
 ```
 

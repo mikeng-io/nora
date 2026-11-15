@@ -61,18 +61,23 @@ Harness rules, baked into the verdict:
 * **pytest exit code 5 is «nothing collected», not «failed»**, and a run with
   no `failed` test is not red — an import, collection or setup error kills a
   mutant without proving the reverted behaviour was noticed. Only `rc=1` with
-  a real failure count is RED; a busy lease is UNAVAILABLE, a pytest error run
-  is BROKEN, and every other nonzero exit is an error, never a catch.
+  a real failure count and NO error count is RED: a failed test beside any
+  setup or teardown error is contaminated proof, never a catch. A busy lease —
+  the gate's own busy/stale-lease signal, never the bare exit code — is waited
+  out then reported UNAVAILABLE; a pytest error run, including a collection
+  exit 2, is BROKEN; every other nonzero exit is an error, never a catch.
 * **A mutant must die from the reverted BEHAVIOUR.** The mutant run must
   actually execute tests, and the restore is re-verified green afterwards,
   with the source's sha256 and git diff read back for byte-exact restoration.
 * Every phase writes its full stdout/stderr, command, exit code and counts to
-  a private proof directory outside git; `manifest.json` there records HEAD,
-  the table's hash, each entry's anchor count and restoration evidence.
+  a private proof directory outside git (dirs 0700, files 0600); each phase
+  receipt binds its actual HEAD and the mutated file's sha256, and
+  `manifest.json` records HEAD, the table's hash, each entry's anchor count
+  and restoration evidence.
 
-`ALL MUTATIONS CAUGHT` prints only when every selected entry is RED and
-byte-restored green — never because something merely failed. Exit status is
-0 only then.
+`ALL MUTATIONS RED AND RESTORED` prints only when every selected entry went
+RED and byte-restored green — observed failures, not proof; confirm each
+failure is its intended assertion. Exit status is 0 only then.
 """
 
 from __future__ import annotations
@@ -91,10 +96,18 @@ from typing import Any
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PROOFS = pathlib.Path.home() / ".local/share/nora/mutation-proofs"
 
-# pytest's summary counts, e.g. "3 passed", "1 failed, 2 passed", "1 error".
+# pytest's summary counts — "3 passed", "1 failed, 2 passed", "1 error" — read
+# only from its own summary line (bare or =-bordered): failure output echoes
+# test source, which can quote a fake count verbatim.
 _PASSED = re.compile(r"(\d+) passed")
 _FAILED = re.compile(r"(\d+) failed")
 _ERRORS = re.compile(r"(\d+) errors?")
+_SUMMARY_LINE = re.compile(
+    r"^\s*=*\s*"
+    r"(?:(?:\d+ (?:passed|failed|errors?|skipped|deselected|xfailed|xpassed|"
+    r"warnings?|reruns)),* +)*"
+    r"in \d+(?:\.\d+)?s"
+    r"\s*=*\s*$", re.MULTILINE)
 
 # `go test -v`'s per-test start line, e.g. "=== RUN   TestX".
 _GO_RAN = re.compile(r"^=== RUN\s", re.MULTILINE)
@@ -109,7 +122,10 @@ _BUSY = re.compile(r"Nora test host busy|Nora test lease changed")
 LEASE_RETRIES = 240
 LEASE_WAIT_S = 15
 
-CAUGHT = "RED (caught); byte-restored green"
+# The one "caught" disposition: only what the phases observed, never a claim
+# of semantic proof — the failing assertion still needs a human read.
+CAUGHT = ("baseline green, mutant RED, byte-restored green — "
+          "confirm the failure is the intended assertion")
 
 
 @dataclass(frozen=True)
@@ -139,21 +155,30 @@ class Phase:
 
 
 def _count(pattern: re.Pattern[str], out: str) -> int:
-    return sum(int(m.group(1)) for m in pattern.finditer(out))
+    return sum(
+        int(m.group(1))
+        for line in _SUMMARY_LINE.findall(out)
+        for m in pattern.finditer(line))
 
 
 def pytest_verdict(returncode: int, output: str) -> str:
-    """One pytest_gate run's verdict; only rc 1 with real failures is red."""
-    if returncode == 2 or _BUSY.search(output):
+    """One pytest_gate run's verdict; only rc 1 with real failures is red.
+
+    Red also requires NO error count: a failed test beside any setup or
+    teardown error is contaminated proof, not a catch. Busy is the gate's
+    own busy/stale-lease signal, never the bare exit code — a collection
+    exit 2 without that signal is an error run, not contention.
+    """
+    if _BUSY.search(output):
         return "busy"
     if returncode == 0:
         return "green"
     if returncode == 5:
         return "empty"
+    if _count(_ERRORS, output):
+        return "errored"
     if returncode == 1:
-        if _FAILED.search(output):
-            return "red"
-        return "errored" if _ERRORS.search(output) else "error"
+        return "red" if _count(_FAILED, output) else "error"
     return "error"
 
 
@@ -175,14 +200,26 @@ def _gate_command(target: str) -> list[str]:
             *target.split()]
 
 
+def _private_dir(path: pathlib.Path) -> None:
+    """A retained receipt directory no one else may read (0700)."""
+    path.mkdir(parents=True, exist_ok=True)
+    path.chmod(0o700)
+
+
+def _write_private(path: pathlib.Path, text: str) -> None:
+    """A retained receipt file no one else may read (0600)."""
+    path.write_text(text)
+    path.chmod(0o600)
+
+
 def _write_log(log: pathlib.Path | None, command: list[str], waits: int,
                proc: subprocess.CompletedProcess[str]) -> str | None:
     if log is None:
         return None
-    log.parent.mkdir(parents=True, exist_ok=True)
-    log.write_text(
+    _private_dir(log.parent)
+    _write_private(log, (
         f"$ {' '.join(command)}\nrc={proc.returncode} lease_waits={waits}\n"
-        f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}\n")
+        f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}\n"))
     return str(log)
 
 
@@ -195,7 +232,8 @@ def _phase(command: list[str], log: pathlib.Path | None) -> Phase:
                 command, cwd=ROOT, capture_output=True, text=True, check=False)
         except OSError as exc:
             if log is not None:
-                log.write_text(f"$ {' '.join(command)}\n{exc}\n")
+                _private_dir(log.parent)
+                _write_private(log, f"$ {' '.join(command)}\n{exc}\n")
             return Phase(command=command, rc=-1, waits=waits, verdict="error",
                          passed=0, failed=0, errors=0,
                          log=str(log) if log is not None else None)
@@ -222,7 +260,8 @@ def run(target: str, log: pathlib.Path | None = None) -> Phase:
                 check=False)
         except OSError as exc:
             if log is not None:
-                log.write_text(f"$ {' '.join(command)}\n{exc}\n")
+                _private_dir(log.parent)
+                _write_private(log, f"$ {' '.join(command)}\n{exc}\n")
             return Phase(command=command, rc=-1, waits=0, verdict="error",
                          passed=0, failed=0, errors=0,
                          log=str(log) if log is not None else None)
@@ -249,6 +288,7 @@ def _sha256(data: bytes) -> str:
 
 def prove(entry: dict[str, str], tag: str, logdir: pathlib.Path) -> dict[str, Any]:
     """Baseline → damaged → restored for one table entry, with custody receipts."""
+    path = ROOT / entry["file"]
     rec: dict[str, Any] = {
         "name": entry["name"], "file": entry["file"], "target": entry["target"],
         "head_at_start": _git("rev-parse", "HEAD").strip(),
@@ -256,7 +296,12 @@ def prove(entry: dict[str, str], tag: str, logdir: pathlib.Path) -> dict[str, An
 
     def phase(name: str) -> Phase:
         result = run(entry["target"], logdir / f"{tag}-{name}.log")
-        rec[name] = result.record()
+        rec[name] = {
+            "head": _git("rev-parse", "HEAD").strip(),
+            "source_sha256": (
+                _sha256(path.read_bytes()) if path.exists() else None),
+            **result.record(),
+        }
         return result
 
     baseline = phase("baseline")
@@ -276,7 +321,6 @@ def prove(entry: dict[str, str], tag: str, logdir: pathlib.Path) -> dict[str, An
         rec["disposition"] = "BROKEN ENTRY: baseline is already red"
         return rec
 
-    path = ROOT / entry["file"]
     src = path.read_bytes()
     rec["file_sha256_before"] = _sha256(src)
     rec["git_diff_before"] = _git("diff", "--", entry["file"])
@@ -308,7 +352,8 @@ def prove(entry: dict[str, str], tag: str, logdir: pathlib.Path) -> dict[str, An
     restored = phase("restored")
     if mutant.verdict == "errored":
         rec["disposition"] = (
-            "BROKEN ENTRY: mutant errored — a setup/collection failure is not proof")
+            "BROKEN ENTRY: mutant errored — a setup/teardown/collection "
+            "error is not proof")
     elif mutant.ran == 0:
         rec["disposition"] = "BROKEN ENTRY: mutant collected nothing (import error?)"
     elif mutant.verdict == "green":
@@ -330,7 +375,7 @@ def sweep(table: pathlib.Path, proof_dir: pathlib.Path | None = None,
     entries = json.loads(table.read_text())
     proof_dir = proof_dir or (
         PROOFS / f"{table.stem}-{head[:12]}-{now or time.strftime('%Y%m%d-%H%M%S')}")
-    proof_dir.mkdir(parents=True, exist_ok=True)
+    _private_dir(proof_dir)
 
     bad: list[str] = []
     results: list[dict[str, Any]] = []
@@ -344,11 +389,12 @@ def sweep(table: pathlib.Path, proof_dir: pathlib.Path | None = None,
         if disposition != CAUGHT:
             bad.append(f"{name} [{disposition}]")
 
-    (proof_dir / "manifest.json").write_text(json.dumps({
+    _write_private(proof_dir / "manifest.json", json.dumps({
         "head": head, "table": str(table.resolve()),
         "table_sha256": _sha256(table.read_bytes()), "results": results,
     }, indent=2) + "\n")
-    (proof_dir / "final-git-status.txt").write_text(_git("status", "--porcelain"))
+    _write_private(proof_dir / "final-git-status.txt",
+                   _git("status", "--porcelain"))
     print(f"receipts: {proof_dir}")
     return bad, proof_dir
 
@@ -362,9 +408,14 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv[1:])
     bad, _ = sweep(args.table, args.proof_dir)
     print()
-    print("UNGUARDED / BROKEN:" if bad else "ALL MUTATIONS CAUGHT")
-    for name in bad:
-        print(" -", name)
+    if bad:
+        print("UNGUARDED / BROKEN:")
+        for name in bad:
+            print(" -", name)
+    else:
+        print("ALL MUTATIONS RED AND RESTORED")
+        print("each RED is an observed test failure — "
+              "confirm it is the intended assertion")
     return 1 if bad else 0
 
 
