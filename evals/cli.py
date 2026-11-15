@@ -3,11 +3,46 @@
 import argparse
 import math
 import os
+import time
 from pathlib import Path
+from typing import Any
 
 from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES
 
 BUDGET_MINUTES = 60
+
+
+def run_budget_for(value: str | None) -> Any | None:
+    """The parsed `--run-budget` bound, or None when the flag was not given."""
+    if value is None:
+        return None
+    from nora.domain.run_budget import RunBudget
+
+    parts = value.split(",")
+    if not 1 <= len(parts) <= 4:
+        raise ValueError("--run-budget takes 1-4 fields")
+    defaults: list[int | None] = [40, None, 40000, 30]
+    vals: list[int | None] = []
+    bad = False
+    for i, p in enumerate(parts):
+        p = p.strip()
+        if not p or p.lower() in ("none", "-"):
+            vals.append(defaults[i])
+            continue
+        try:
+            vals.append(int(p))
+        except ValueError:
+            bad = True
+    if bad or any(v is not None and v <= 0 for v in vals):
+        raise ValueError(
+            "--run-budget fields must be positive integers "
+            "(empty or `none` IN = measured, not capped)")
+    vals += defaults[len(vals):]
+    return RunBudget(
+        max_requests=vals[0], max_input_tokens=vals[1],
+        max_output_tokens=vals[2],
+        deadline=time.monotonic() + vals[3] * 60,
+        output_reserve=4000)
 
 
 def judge_timeout(value: str) -> float:
@@ -27,6 +62,15 @@ def eval_parser() -> argparse.ArgumentParser:
     ap.add_argument("--list", action="store_true", help="list corpora and exit")
     ap.add_argument("--services", type=Path,
                     help="private per-corpus/draw HTTP recordings for protocol rehearsal")
+    ap.add_argument(
+        "--journey-cohort", type=Path, metavar="FILE",
+        help="the declared private journey cohort: a versioned file of "
+             "version-2 live-clock cases and the two judge aliases, "
+             "required by the autonomous_journey corpus (selected by name; "
+             "never part of --all or --class). Its plans are finite "
+             "generated worlds declared per case in --services, and the "
+             "run requires an explicit --run-budget. Generated-world input "
+             "is protocol evidence only — behavior stays UNMEASURED")
     ap.add_argument(
         "--case", action="append", dest="cases", metavar="NAME",
         help="run only these cases of the named corpus; repeatable. A "
