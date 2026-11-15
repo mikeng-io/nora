@@ -128,8 +128,8 @@
   {
     "name": "main: shutdown stops the cognition sessions first",
     "file": "nora/app/lifecycle.py",
-    "old": "            closing.push_async_callback(deps.cognition_shutdown)",
-    "new": "            pass",
+    "old": "        stack.push_async_callback(cognition_shutdown)",
+    "new": "        pass",
     "target": "tests/unit/test_cognition_wiring.py::test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_and_the_audit"
   },
   {

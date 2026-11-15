@@ -178,7 +178,7 @@ class AdaptersWiring:
 async def adapters(
     cfg: Any, discord_box: Any, discord_token: Any, metrics: Any,
     music_manager: Any, persons: Any, resolve_music_channel: Any, speaker: Any,
-    summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any,
+    summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any, owner: Any = None,
 ) -> AdaptersWiring:
     try:
         registry = await AdapterRegistry.from_config(
@@ -192,6 +192,7 @@ async def adapters(
             resolve_music_channel=resolve_music_channel,
             instagram_summons=summons_inbox,
             bridge_token=cfg.credentials.get(cfg.bridges.token_env, ""),
+            owner=owner,
             # A 1:1 message goes only to somebody in identity.toml; the
             # senders hold this set and refuse the rest.
             dm_recipients={
