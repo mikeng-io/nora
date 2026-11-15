@@ -23,6 +23,16 @@ duplicate credentials and service identities, and every response is private
 and non-cacheable. The use case returns the same four mutation outcomes; HTTP
 success means `complete`, not merely that a request reached an Ory endpoint.
 
+Bulk onboarding uses `POST /app/v1/management/rosters` under the same service
+credential and approved scope. A snapshot names its platform, collection,
+audience kind, completeness and explicitly classified accounts. Unknown account
+types make a claimed complete roster unavailable; bots are not registered as
+people. A collection audience cannot grant room membership. Each new account
+starts an independent person without a registration-sourced membership; the
+collection sync supplies its retractable support. The durable batch identity
+binds the exact effect, and a retry resumes unfinished account correlation and
+membership without recreating people or attaching accounts to existing people.
+
 Automated work carries its service identity and approved onboarding scope;
 human-triggered work also carries the verified human actor. Every operation
 therefore carries a typed actor — a service principal acting within its

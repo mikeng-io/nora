@@ -21,10 +21,12 @@ from nora.domain.management import (
     ActorKind,
     Operation,
     Scope,
+    ScopeKind,
 )
-from nora.people import HumanManagement, IdentityResolver
+from nora.people import HumanManagement, IdentityResolver, RosterProvisioning
 from nora.web.management_auth import AuthenticationRefusedError, AuthenticationVerifier
 from nora.web.management_request import ManagementRequestError, decode_management_request
+from nora.web.management_roster_request import RosterRequest
 
 
 @dataclass(frozen=True)
@@ -159,6 +161,28 @@ class _ManagementHTTP:
                                "unavailable": 503, "incomplete": 409}[status],
                       detail=outcome.detail)
 
+    async def provision_roster(self, request: web.Request) -> web.Response:
+        credential = self._credential(request)
+        if credential is None:
+            return _reply("denied", 401)
+        try:
+            roster = RosterRequest.model_validate_json(await request.read())
+        except (ValueError, TypeError):
+            return _reply("invalid_request", 400)
+        if (roster.scope not in credential.scopes or roster.platform not in credential.actor.sources
+                or (roster.audience == "collection" and roster.scope.kind is ScopeKind.ROOM)):
+            return _reply("denied", 403)
+        if roster.complete and any(m.classification == "unknown" for m in roster.members):
+            return _reply("unavailable", 503)
+        services = self._services
+        outcome = await RosterProvisioning(services.bindings, services.registry, services.topology,
+            services.registration, services.authority).apply(
+                operation_id=roster.operation_id, actor=credential.actor, scope=roster.scope,
+                collection=roster.collection, complete_roster=roster.complete,
+                members=(m.account for m in roster.members if m.classification == "person"))
+        return _reply(outcome.status.value, {"complete": 200, "denied": 403,
+            "unavailable": 503, "incomplete": 409}[outcome.status.value], detail=outcome.detail)
+
     async def resolve(self, request: web.Request) -> web.Response:
         credential = self._credential(request)
         if credential is None:
@@ -189,3 +213,4 @@ def register_management_routes(
     handlers = _ManagementHTTP(services, credentials, authentication)
     app.router.add_post("/app/v1/management/operations", handlers.execute)
     app.router.add_post("/app/v1/management/accounts/resolve", handlers.resolve)
+    app.router.add_post("/app/v1/management/rosters", handlers.provision_roster)

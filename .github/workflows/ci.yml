@@ -398,6 +398,9 @@ jobs:
           tests/web/test_management_sessions.py
           tests/web/test_management_operator.py
           tests/web/test_managed_otp_flow.py
+          tests/web/test_roster_provisioning.py
+          tests/infra/test_roster_provisioning_sql.py
+          tests/unit/test_roster_sources.py
           tests/infra/test_otp.py
           tests/web/test_otp.py
           tests/web/test_management_api.py

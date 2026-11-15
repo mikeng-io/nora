@@ -149,6 +149,12 @@ class RegistrationService:
         stale = await _revisions_fresh(self._bindings, op)
         if stale is not None:
             return stale
+        if op.kind == "observe_account":
+            recorded = await self._bindings.operation(op.operation_id)
+            if (recorded is not None and recorded.kind == op.kind
+                    and recorded.snapshot == _op_snapshot(op)
+                    and recorded.state is not OperationJournalState.COMPLETE):
+                return await self._observe(op)
         replay = await _recorded_replay(self._bindings, op)
         if replay is not None:
             return replay
@@ -196,7 +202,17 @@ class RegistrationService:
                 op.target.account.value,
             )
             if existing is not None:
-                return complete("already-observed")
+                recorded = await self._bindings.operation(op.operation_id)
+                if recorded is None or recorded.state is OperationJournalState.COMPLETE:
+                    return complete("already-observed")
+                person = await self._bindings.person(existing.person_id)
+                account = await self._bindings.record_for(account=op.target.account)
+                if (person is None or account is None
+                        or person.lifecycle is not PersonLifecycle.ACTIVE):
+                    return denied("observation-binding-changed")
+                return await self._register_effects(
+                    op, ("binding", "kratos", "correlation"),
+                    person=person, account=account, membership=None)
         person_id = f"person_{uuid4().hex[:20]}"
         account = ManagedAccount(
             account_id=str(uuid4()),

@@ -545,6 +545,9 @@ class AuthorityService:
                 ),
             ],
         )
+        if outcome.status is OutcomeStatus.COMPLETE:
+            outcome = await self._readback(scope, {("member", p) for p in joined},
+                                           {("member", p) for p in departed})
         if outcome.status is not OutcomeStatus.COMPLETE:
             # Revocation-first here too: a departed member whose drop could
             # not confirm is blocked until reconciliation clears it — a
