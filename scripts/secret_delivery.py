@@ -18,6 +18,7 @@ NATIVE_CREDENTIALS = {
     "NORA_REDIS_PRODUCER_PASSWORD", "NORA_REDIS_CONSUMER_PASSWORD",
     "NORA_REDIS_INSPECTOR_PASSWORD",
     "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "AUTH_SECRET", "DISCORD_BOT_TOKEN",
+    "AUTH_TELEGRAM_ID", "AUTH_TELEGRAM_SECRET",
     "NORA_OTP_SECRET", "NORA_OTP_API_TOKEN", "NORA_COMPUTER_TOKEN", "MEDIA_ENCRYPTION_KEY",
     "NORA_COMPUTER_REDIS_URL",
     "XAI_OAUTH_REFRESH_TOKEN", "OPENAI_CODEX_REFRESH_TOKEN", "GIPHY_API_KEY",
@@ -96,6 +97,26 @@ def service_references(config: dict) -> dict[str, set[str]]:
     }
 
 
+def _portal_environment(config: dict, values: dict[str, str]) -> dict[str, str]:
+    identity = config.get("identity", {})
+    backend = identity.get("backend", "file")
+    if backend not in {"file", "managed"}:
+        raise ValueError("invalid identity backend")
+    environment = {"NORA_IDENTITY_BACKEND": backend}
+    if backend == "managed":
+        issuer = values.get("NORA_AUTHENTICATION_ISSUER", "portal")
+        configured = identity.get("authentication", {}).get(issuer)
+        if not issuer.strip():
+            raise ValueError("invalid portal authentication issuer")
+        environment["NORA_AUTHENTICATION_ISSUER"] = issuer
+        if configured is not None:
+            key = values.get(configured["key_env"], "")
+            if not key:
+                raise ValueError("configured portal authentication key unavailable")
+            environment["NORA_AUTHENTICATION_KEY"] = key
+    return environment
+
+
 def projection(config: dict, values: dict[str, str]) -> dict:
     """Extra operator aliases only; existing Compose owns native image mappings."""
     scopes = service_references(config)
@@ -103,6 +124,7 @@ def projection(config: dict, values: dict[str, str]) -> dict:
         service: {"environment": {k: values[k] for k in sorted(keys) if k in values}}
         for service, keys in scopes.items()
     }
+    services["app"] = {"environment": _portal_environment(config, values)}
     native = {
         "app": {"NORA_OTP_API_TOKEN": config.get("otp", {}).get("api_token_env", "")},
         "voice-sidecar": {"DISCORD_BOT_TOKEN": config.get("platforms", {}).get(
@@ -111,7 +133,7 @@ def projection(config: dict, values: dict[str, str]) -> dict:
     for service, aliases in native.items():
         projected = {target: values[ref] for target, ref in aliases.items() if ref in values}
         if projected:
-            services[service] = {"environment": projected}
+            services.setdefault(service, {"environment": {}})["environment"].update(projected)
     return {"services": services}
 
 
@@ -141,7 +163,8 @@ def prepare(runtime: Path, environ: dict[str, str] | None = None,
     if signoz and not signoz_overlay.is_file():
         raise FileNotFoundError("install the SigNoz Compose overlay before enabling its endpoint")
     resolved = set().union(*service_references(config).values())
-    if not (runtime / "secret.toml").exists() and not resolved and not signoz:
+    managed = config.get("identity", {}).get("backend") == "managed"
+    if not (runtime / "secret.toml").exists() and not resolved and not signoz and not managed:
         return []
     values = source(runtime, environ)
     file_keys = set(dotenv(runtime / ".env"))
@@ -149,6 +172,8 @@ def prepare(runtime: Path, environ: dict[str, str] | None = None,
     if secret_path.exists():
         file_keys.update(tomllib.loads(secret_path.read_text()).get("credentials", {}))
     file_keys.update(resolved)
+    if config.get("identity", {}).get("backend") == "managed":
+        file_keys.add("NORA_AUTHENTICATION_ISSUER")
     values = {k: v for k, v in values.items() if k in file_keys}
     directory = output_directory if output_directory is not None else runtime / ".secret-delivery"
     directory.mkdir(mode=0o700, exist_ok=True)

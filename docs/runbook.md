@@ -1294,6 +1294,52 @@ for example `~/backups/signal-cli-<timestamp>/signal-cli-data.tar.gz`. Store
 migrations can be one-way: a backup taken before upgrading is required to return
 to the previous version.
 
+### Managed identity activation and recovery
+
+Managed authority activation is operator-controlled. Keep file mode selected
+until the integrated capability, data handoff and requested real-platform
+acceptance are approved. A merged image or passing health check alone does not
+switch authority or prove identity mapping. The
+[configuration contract](configuration.md#managed-identity-and-access) owns the
+backend and credential references; the
+[managed design](../design/managed-identity-access/README.md) owns identity,
+consent and scope semantics.
+
+Before activation, rehearse the handoff on isolated generated data: preserve
+canonical person IDs and retired aliases, exact account groups, memberships,
+grant/restriction scopes, historical authorship and privacy preferences. Resolve
+duplicates and incomplete operations before exposing dependent access. Validate
+the candidate configuration and private secret delivery through the installed
+procedure, then obtain operator approval for the concrete source/configuration,
+backup set and scope of the switch. Do not substitute manual account reassignment
+or stale file fallback for the handoff.
+
+The coordinated backup above must also include the installed Kratos and Keto
+stores, their configuration/schema/OPL revision and the matching Nora PostgreSQL
+state. Stop all identity-management writers, including provisioning and roster
+reconciliation, while capturing that set. Keep account bindings, alias revisions,
+consent decisions, operation journals and authority holds together. Ory data is
+not included in Nora's PostgreSQL dump when deployed in another database or
+volume. Record each store's actual backup location privately and prove a restore
+on isolated storage before relying on it.
+
+After the approved switch, verify the running backend and current private
+listener reachability in every reader. With approved accounts, exercise login
+and current session checks, independent bilateral consent, the intended room/unit
+permissions, rejection in a sibling scope, revocation and interrupted-operation
+recovery. Report unavailable checks as unavailable. Disposable Ory contract
+scripts write generated records and belong on isolated services, not production
+acceptance endpoints.
+
+Recovery restores a matching configuration and coordinated data set through the
+installed deployment procedure. An image rollback does not undo migrations or
+reconstruct older account ownership. Returning to file authority requires a
+validated export preserving stable references and private scopes; old TOML files
+are not evidence of current grants, revocations or consent. Keep writers stopped
+until the chosen authority and dependent sessions agree, then repeat the scoped
+read-back. Production activation, handoff and recovery require the operator's
+approval; this section does not authorize host actions.
+
 ### Facts that cost hours to learn
 
 - **`--receive-mode=on-start` is mandatory.** Without it signal-cli serves every
