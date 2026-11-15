@@ -60,8 +60,8 @@ part is [emergence](emergence.md).
 - An act counts only once observe records it; only a recorded outcome closes
   an intention.
 - Code names the form, never the content.
-- The unit is the read boundary; only the engagement loop delivers, through
-  the guards.
+- The unit is the read boundary. Only the engagement loop composes deliveries;
+  every delivery takes an admitted route through the common guards.
 - An unavailable read is unknown, never absence; a failed step fails closed and
   leaves its input pending.
 
