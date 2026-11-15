@@ -9,6 +9,7 @@ import pytest
 
 from nora.domain.identity import Identifier
 from nora.domain.management import (
+    AccountObservation,
     Actor,
     ActorKind,
     LinkApproval,
@@ -50,6 +51,30 @@ def test_request_uses_the_authenticated_actor_and_typed_domain_effect():
     assert operation.target.account == Identifier(**RECEIVER)
     assert operation.payload.surviving_person == "synthetic-person"
     assert operation.observed_revisions["ownership"] == "o-1"
+
+
+@pytest.mark.parametrize("sources,accepted", [({"signal"}, True), ({"discord"}, False)])
+def test_observation_retains_account_grouping_within_the_authenticated_service_source(
+    sources, accepted,
+):
+    actor = Actor(kind=ActorKind.SERVICE, service_id="synthetic-bridge", sources=sources)
+    alternate = {"platform": "signal", "kind": "phone", "value": "synthetic-phone-id"}
+    body = {
+        "operation_id": "synthetic-observation", "kind": "observe_account",
+        "target": {"kind": "account", "account": RECEIVER},
+        "payload": {"identifiers": [RECEIVER, alternate]},
+        "observed_revisions": {"ownership": "o-1"},
+    }
+    if not accepted:
+        with pytest.raises(ManagementRequestError):
+            decode(body, actor)
+        return
+    operation = decode(body, actor)
+    assert operation.actor is actor
+    assert isinstance(operation.payload, AccountObservation)
+    assert operation.payload.identifiers == frozenset({
+        Identifier(**RECEIVER), Identifier(**alternate),
+    })
 
 
 def test_an_explicit_approval_retains_exact_request_pair_and_side():
