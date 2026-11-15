@@ -7,9 +7,10 @@ That state is the **Cognitive Graph** — Nora's own term, not an industry
 category. Two loops work it: the **engagement loop** is Nora in a room; the
 **reflection loop** is Nora between conversations. Both share the OODAS stage
 model, and each runs a declared subset of its stages. Each pass is a controlled
-transition: from the graph as it stands, new observations and doctrine, it
-produces the next graph state and an act, or a deliberate silence. The graph
-alone does not think or act; cognition is the graph with its loops.
+transition: from the graph as it stands, new observations and doctrine, it runs
+its declared stages and records what was admitted and whether it completed or
+failed; an engagement pass also ends in an act or a deliberate silence. The
+graph alone does not think or act; cognition is the graph with its loops.
 
 The goal is **emergence**: recommendation, personalisation, follow-through and
 learning arise from the generic loops working the graph, never from a

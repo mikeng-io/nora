@@ -51,9 +51,11 @@ people's responses to her acts, never only her own earlier words.
 
 ## Egress
 
-- Only the engagement loop delivers to a room, through the tag pipeline or the
-  fire path, and only after the guards run against the current room and roster.
-  Every act passes the [act envelope](acts.md).
+- Model-composed deliveries come only from the engagement loop, through the
+  tag pipeline or the fire path, after the guards run against the current room
+  and roster. The one other route is a deterministic notification from a code
+  executor, through the same delivery guards ([acts](acts.md)). Every act passes
+  the act envelope.
 - Credential and doctrine leak protection always run.
 - Content checks — identifier and coordinate filters, place and person-name
   screens, the location audience subset and unknown-person checks — follow

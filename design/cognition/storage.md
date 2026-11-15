@@ -14,7 +14,7 @@ rebuildable; it is never the truth.
 | aggregates | one table per aggregate family | recomputable: dropping and rebuilding gives the same rows |
 | entities | one table | admitted, merged, retired |
 | claims | one table | revisions append; a stale base is refused |
-| intentions | one table | revisions append; ended only with a closed-by edge and its outcome |
+| intentions | one table | revisions append; ended with its outcome, and with a closed-by edge to its witness wherever its condition has one (a deadline ending has none: verify records the clock instant) |
 | registry | one row per graph row: its id, kind and unit | written with the row |
 | edges | **one table for every edge between any two rows**, citations included | revisions append |
 

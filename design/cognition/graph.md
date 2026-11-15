@@ -163,7 +163,7 @@ true, false or unknown:
 |---|---|---|
 | **event match** | an item of a given kind, from or about given entities, is recorded | that item |
 | **predicate** | an aggregate or current head meets a test, such as a poll having a winner | the aggregate revision that meets it |
-| **deadline** | a time has passed | none: verify reads the clock |
+| **deadline** | a time has passed | none: verify records the clock instant with the outcome |
 | **source health** | the sources the condition depends on were healthy; without it, absence is unknown, never false | the health items over the interval |
 
 A condition in none of these forms is **untyped** and cannot close

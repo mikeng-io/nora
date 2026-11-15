@@ -84,12 +84,16 @@ understanding.
 | **declared dependence** | the share of decisions resting on a lesson or track record | rests-on edges | a read over the graph |
 | **use** | the share of sampled decisions an independent judge finds were changed by what they rest on | sampled passes' inputs, decisions and acts | evaluation, by a judge |
 | **efficacy** | the achieved rate of intentions resting on a lesson against comparable ones resting on none — an association, never proof of cause | verdicts and rests-on edges | a read over the graph |
-| **adaptation** — the headline measure | the share of sampled passes whose decision changes when the same recorded pass is replayed without its learned rows (lessons, track records, verdicts) — what learning changed, as distinct from what retrieval found | recorded passes, replayed both ways | evaluation, by replay |
+| **adaptation** — the headline measure | the share of sampled passes whose decision changes, judged semantically, when the same recorded pass is replayed without its learned rows (lessons, track records, verdicts), beyond the variation of replaying it unchanged | recorded passes, replayed in matched repeated draws of both arms | evaluation, by replay |
 
-Adaptation is the line between memory retrieval and cognitive adaptation: a
-decision that changes only with its learned rows was changed by what Nora
-learned. A replay that cannot reproduce the original pass's input is
-unavailable, never a pass.
+Adaptation separates what Nora learned from what retrieval found. A change
+counts only when an independent semantic comparison finds the decisions differ
+and the difference exceeds the instability of replaying the pass unchanged,
+under otherwise matched conditions and evaluation's repeated-draw rules. Below
+that it is **sensitivity**, not learning. It measures the influence of learned
+rows at one recorded decision, not the whole journey from acquisition to
+correction. A replay that cannot reproduce the original input is unavailable,
+never a pass.
 
 A read over the graph reports unavailable when a source it needs is unhealthy.
 Counts of passes, admissions, refusals and debrief outcomes are instruments
