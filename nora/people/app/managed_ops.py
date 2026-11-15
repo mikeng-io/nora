@@ -70,6 +70,10 @@ async def _publication_refusal(
         subjects.add(payload.delegatee)
     elif isinstance(payload, Unlink):
         subjects.add(payload.expected_person)
+    elif isinstance(payload, AccountObservation):
+        # The group's claim: every identifier that already resolves names
+        # a person the observation could enrich — each must be hold-free.
+        accounts.update(payload.identifiers)
     elif isinstance(payload, RosterSync):
         accounts.update(payload.members)
         if payload.complete and scope is not None:

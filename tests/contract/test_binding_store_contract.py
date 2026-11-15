@@ -44,6 +44,7 @@ from nora.domain.managed import (
     OperationConflictError,
     OperationJournalState,
     OperationRecord,
+    Outcome,
     OutcomeStatus,
     PersonLifecycle,
 )
@@ -77,6 +78,7 @@ class _Store(Protocol):
     async def hold_identity(self, **kw: Any) -> Any: ...
     async def release_identity_hold(self, **kw: Any) -> Any: ...
     async def register(self, **kw: Any) -> Any: ...
+    async def bind_identifiers(self, **kw: Any) -> Any: ...
     async def person(self, person_id: str) -> Any: ...
     async def record_for(self, *, account: Identifier) -> Any: ...
     async def account_for(self, platform: str, kind: str, value: str) -> Any: ...
@@ -254,6 +256,140 @@ async def test_revoked_bindings_stop_resolving_and_never_rebind_elsewhere(
             ),
             membership=None,
         )
+
+
+async def test_bind_identifiers_enriches_one_account_atomically(store: _Store):
+    """The grouped-observation write: new identifiers join the ONE account
+    the group already names — same owner, one revision, nothing else."""
+    await store.register(
+        person=_person(), account=_account(ACCOUNT_1), membership=None
+    )
+    before = await store.record_for(account=ACCT)
+    outcome = await store.bind_identifiers(
+        account_id=ACCOUNT_1, identifiers=frozenset({ACCT, PHONE})
+    )
+    assert outcome.status is OutcomeStatus.COMPLETE
+    for ident in (ACCT, PHONE):
+        bound = await store.record_for(account=ident)
+        assert bound is not None and bound.account_id == ACCOUNT_1
+        assert bound.person_id == PERSON
+    after = await store.record_for(account=ACCT)
+    assert before is not None and after.revision > before.revision
+    # Enrichment is not registration — no second person, no second account.
+    assert len(await store.accounts_for(PERSON)) == 1
+
+
+async def test_bind_identifiers_replays_without_new_writes(store: _Store):
+    await store.register(
+        person=_person(), account=_account(ACCOUNT_1), membership=None
+    )
+    for _ in range(2):
+        outcome = await store.bind_identifiers(
+            account_id=ACCOUNT_1, identifiers=frozenset({ACCT, PHONE})
+        )
+        assert outcome.status is OutcomeStatus.COMPLETE
+    bound = await store.record_for(account=ACCT)
+    assert bound is not None
+    assert bound.identifiers == frozenset({ACCT, PHONE})
+    revision = bound.revision
+    # already-owned identifiers are a no-op — no second revision
+    outcome = await store.bind_identifiers(
+        account_id=ACCOUNT_1, identifiers=frozenset({PHONE})
+    )
+    assert outcome.status is OutcomeStatus.COMPLETE
+    settled = await store.record_for(account=ACCT)
+    assert settled is not None and settled.revision == revision
+
+
+async def test_bind_identifiers_never_claims_another_accounts_identifier(
+    store: _Store,
+):
+    """A pair spanning two accounts is refused atomically — the group's
+    first identifier is not widened and the second is not touched."""
+    await store.register(
+        person=_person(), account=_account(ACCOUNT_1), membership=None
+    )
+    await store.register(
+        person=_person("person_other"),
+        account=_account(
+            ACCOUNT_2, person_id="person_other",
+            identifiers=frozenset({PHONE}),
+        ),
+        membership=None,
+    )
+    with pytest.raises(IdentifierConflictError):
+        await store.bind_identifiers(
+            account_id=ACCOUNT_1, identifiers=frozenset({ACCT, PHONE})
+        )
+    phone = await store.record_for(account=PHONE)
+    assert phone is not None and phone.account_id == ACCOUNT_2
+    acct = await store.record_for(account=ACCT)
+    assert acct is not None and acct.identifiers == frozenset({ACCT})
+
+
+async def test_bind_identifiers_keeps_revoked_ownership_reserved(store: _Store):
+    """Revocation keeps the reservation: a retired identifier never
+    re-points, and a revoked account cannot be enriched."""
+    await store.register(
+        person=_person(), account=_account(ACCOUNT_1), membership=None
+    )
+    await store.revoke_binding(account=ACCT)
+    await store.register(
+        person=_person("person_other"),
+        account=_account(
+            ACCOUNT_2, person_id="person_other",
+            identifiers=frozenset({PHONE}),
+        ),
+        membership=None,
+    )
+    with pytest.raises(IdentifierConflictError):
+        await store.bind_identifiers(
+            account_id=ACCOUNT_2, identifiers=frozenset({PHONE, ACCT})
+        )
+    assert await store.record_for(account=ACCT) is None
+    phone = await store.record_for(account=PHONE)
+    assert phone is not None and phone.identifiers == frozenset({PHONE})
+    outcome = await store.bind_identifiers(
+        account_id=ACCOUNT_1, identifiers=frozenset({ACCT})
+    )
+    assert outcome.status is OutcomeStatus.DENIED
+
+
+async def test_concurrent_identifier_claims_have_exactly_one_winner(store: _Store):
+    """Two accounts racing for the same new identifier — the store's
+    unique ownership, not a pre-read, is the arbiter."""
+    await store.register(
+        person=_person(), account=_account(ACCOUNT_1), membership=None
+    )
+    await store.register(
+        person=_person("person_other"),
+        account=_account(
+            ACCOUNT_2, person_id="person_other",
+            identifiers=frozenset({ACCT_2}),
+        ),
+        membership=None,
+    )
+    results = await asyncio.gather(
+        store.bind_identifiers(
+            account_id=ACCOUNT_1, identifiers=frozenset({ACCT, PHONE})
+        ),
+        store.bind_identifiers(
+            account_id=ACCOUNT_2, identifiers=frozenset({ACCT_2, PHONE})
+        ),
+        return_exceptions=True,
+    )
+    completes = [
+        r for r in results
+        if isinstance(r, Outcome) and r.status is OutcomeStatus.COMPLETE
+    ]
+    conflicts = [r for r in results if isinstance(r, IdentifierConflictError)]
+    assert len(completes) == 1 and len(conflicts) == 1
+    owner = await store.record_for(account=PHONE)
+    assert owner is not None and owner.account_id in {ACCOUNT_1, ACCOUNT_2}
+    loser = next(a for a in (ACCOUNT_1, ACCOUNT_2) if a != owner.account_id)
+    losing_ident = ACCT if loser == ACCOUNT_1 else ACCT_2
+    record = await store.record_for(account=losing_ident)
+    assert record is not None and record.identifiers == frozenset({losing_ident})
 
 
 async def test_lifecycle_changes_revise_the_person(store: _Store):

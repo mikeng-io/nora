@@ -142,12 +142,22 @@ class RosterProvisioning:
             return denied("identifier-conflict")
         if outcome.status is not OutcomeStatus.COMPLETE:
             return outcome
-        bound = await self.bindings.account_for(account.platform, account.kind, account.value)
-        if bound is None:
-            return denied("unbound-account")
-        if await self.bindings.person_lifecycle(bound.person_id) is not PersonLifecycle.ACTIVE:
+        # Read back EVERY supplied identifier as the SAME exact account —
+        # the group the observation committed, not only the selected
+        # target. A group that resolves anywhere else, or nowhere, never
+        # reaches membership sync.
+        owners: dict[str, str] = {}
+        for ident in group:
+            record = await self.bindings.record_for(account=ident)
+            if record is None:
+                return denied("unbound-account")
+            owners[record.account_id] = record.person_id
+        if len(owners) != 1:
+            return denied("observation-accounts-conflict")
+        person_id = next(iter(owners.values()))
+        if await self.bindings.person_lifecycle(person_id) is not PersonLifecycle.ACTIVE:
             return denied("person-inactive")
-        state = await self.registry.identity_state(external_id=bound.person_id)
+        state = await self.registry.identity_state(external_id=person_id)
         if state.verdict is Verdict.ALLOWED:
             return complete()
         return unavailable("identity-unconfirmed")

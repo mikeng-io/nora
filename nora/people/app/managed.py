@@ -193,38 +193,54 @@ class RegistrationService:
 
     async def _observe(self, op: Operation) -> Outcome:
         payload = cast(AccountObservation, op.payload)
-        # The flat lookup first: an identifier that already resolves is a
-        # replayed observation, not a new person.
-        if op.target.account is not None:
-            existing = await self._bindings.account_for(
-                op.target.account.platform,
-                op.target.account.kind,
-                op.target.account.value,
-            )
-            if existing is not None:
-                recorded = await self._bindings.operation(op.operation_id)
-                if recorded is None or recorded.state is OperationJournalState.COMPLETE:
-                    return complete("already-observed")
-                person = await self._bindings.person(existing.person_id)
-                account = await self._bindings.record_for(account=op.target.account)
-                if (person is None or account is None
-                        or person.lifecycle is not PersonLifecycle.ACTIVE):
-                    return denied("observation-binding-changed")
-                return await self._register_effects(
-                    op, ("binding", "kratos", "correlation"),
-                    person=person, account=account, membership=None)
-        person_id = f"person_{uuid4().hex[:20]}"
-        account = ManagedAccount(
-            account_id=str(uuid4()),
-            person_id=person_id,
-            platform=next(iter(payload.identifiers)).platform,
-            identifiers=payload.identifiers,
-            state=AccountState.BOUND,
+        recorded = await self._bindings.operation(op.operation_id)
+        resuming = recorded is not None and (
+            recorded.state is not OperationJournalState.COMPLETE
         )
-        person = ManagedPerson(person_id=person_id, lifecycle=PersonLifecycle.ACTIVE)
+        # The group is the claim: EVERY supplied identifier resolves, and
+        # all of them must name ONE bound account — even under one
+        # canonical person, two accounts each owning part of the group is
+        # a link claim, never an observation.
+        resolved: dict[str, ManagedAccount] = {}
+        for ident in payload.identifiers:
+            record = await self._bindings.record_for(account=ident)
+            if record is not None:
+                resolved[record.account_id] = record
+        if len(resolved) > 1:
+            return denied("observation-accounts-conflict")
+        bound = next(iter(resolved.values()), None)
+        if bound is None:
+            person_id = f"person_{uuid4().hex[:20]}"
+            account = ManagedAccount(
+                account_id=str(uuid4()),
+                person_id=person_id,
+                platform=next(iter(payload.identifiers)).platform,
+                identifiers=payload.identifiers,
+                state=AccountState.BOUND,
+            )
+            person = ManagedPerson(
+                person_id=person_id, lifecycle=PersonLifecycle.ACTIVE
+            )
+            return await self._register_effects(
+                op, ("binding", "kratos", "correlation"),
+                person=person, membership=None,
+                binding=lambda: self._bindings.register(
+                    person=person, account=account, membership=None
+                ),
+            )
+        if not resuming and payload.identifiers <= bound.identifiers:
+            # The group already names this one account — a replayed
+            # observation widens nothing.
+            return complete("already-observed")
+        owner = await self._bindings.person(bound.person_id)
+        if owner is None or owner.lifecycle is not PersonLifecycle.ACTIVE:
+            return denied("observation-binding-changed")
         return await self._register_effects(
             op, ("binding", "kratos", "correlation"),
-            person=person, account=account, membership=None,
+            person=owner, membership=None,
+            binding=lambda: self._bindings.bind_identifiers(
+                account_id=bound.account_id, identifiers=payload.identifiers
+            ),
         )
 
     async def _register(self, op: Operation) -> Outcome:
@@ -257,7 +273,10 @@ class RegistrationService:
         )
         return await self._register_effects(
             op, ("binding", "membership", "kratos", "correlation"),
-            person=person, account=account, membership=membership,
+            person=person, membership=membership,
+            binding=lambda: self._bindings.register(
+                person=person, account=account, membership=membership
+            ),
         )
 
     async def _already_owned(
@@ -280,18 +299,13 @@ class RegistrationService:
         steps: tuple[str, ...],
         *,
         person: ManagedPerson,
-        account: ManagedAccount,
         membership: ManagedMembership | None,
+        binding: Effect,
     ) -> Outcome:
         record = await _record(self._bindings, op, steps)
         if isinstance(record, Outcome):
             return record
-        outcome = await self._run_binding(
-            record, "binding",
-            lambda: self._bindings.register(
-                person=person, account=account, membership=membership
-            ),
-        )
+        outcome = await self._run_binding(record, "binding", binding)
         if outcome.status is OutcomeStatus.COMPLETE and membership is not None:
             outcome = await self._run_binding(
                 record, "membership",
