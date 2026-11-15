@@ -11,9 +11,10 @@ from datetime import timedelta
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.domain.account_linking import LinkState, LinkStateError
-from nora.infra.sql.account_links import SqlLinkRequests
+from nora.infra.sql.account_links import SqlLinkRequests, _snapshot
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import MANAGED_LINK_DECISION, MANAGED_LINK_REQUEST
 from tests.unit.test_account_linking_state import (
@@ -80,6 +81,52 @@ async def test_concurrent_holders_do_not_overwrite_each_others_approval(store, d
         assert recovered is not None and recovered.approved == frozenset({LEFT, RIGHT})
     finally:
         await other_engine.dispose()
+
+
+async def test_waiting_approval_reads_the_snapshot_after_the_previous_writer_commits(
+    store, database,
+):
+    link = await store.create(pending())
+    engine = create_sql_engine(database)
+    writer = create_async_engine(database, connect_args={"server_settings": {
+        "application_name": "synthetic-link-decision-writer",
+    }})
+    task = None
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(sa.select(MANAGED_LINK_REQUEST).where(
+                MANAGED_LINK_REQUEST.c.request_id == link.request_id,
+            ).with_for_update())
+            task = asyncio.create_task(accept(SqlLinkRequests(writer), link, LEFT))
+            # Observe the actual server wait, rather than scheduling two coroutines
+            # and hoping their reads overlap. The competing writer remains locked.
+            async with asyncio.timeout(10):
+                while True:
+                    async with engine.connect() as observer:
+                        blocked = await observer.scalar(sa.text(
+                            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                            "WHERE application_name = :name AND wait_event_type = 'Lock' "
+                            "AND query LIKE '%managed_link_request%')"
+                        ), {"name": "synthetic-link-decision-writer"})
+                    if blocked:
+                        break
+                    await asyncio.sleep(0.01)
+            right_approved = link.decide(
+                decision(link, RIGHT), proof(RIGHT), now=NOW + timedelta(seconds=2),
+            )
+            await connection.execute(sa.update(MANAGED_LINK_REQUEST).where(
+                MANAGED_LINK_REQUEST.c.request_id == link.request_id,
+            ).values(snapshot=_snapshot(right_approved)))
+        result = await asyncio.wait_for(task, timeout=10)
+        assert result.ready
+        recovered = await store.get(link.request_id)
+        assert recovered is not None and recovered.approved == frozenset({LEFT, RIGHT})
+    finally:
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        await writer.dispose()
+        await engine.dispose()
 
 
 async def test_concurrent_retries_consume_one_approval_once(store, database):
