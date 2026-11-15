@@ -24,16 +24,27 @@ kind exists only for that kind's lifecycle, such as an intention's conditions
 or its verdict. Basis and scope are columns, never implied by which table a row
 is in.
 
-**Integrity.** Every kind table references the registry. Each edge references
-both endpoints by id and unit through the registry, so the database itself
-refuses a dangling edge and an edge across units. Edge types and legal endpoint
-kinds are checked by admission; concurrent revision is refused by base.
+**Integrity.**
+
+- **Database-enforced:** every edge references both endpoints by id and unit
+  through the registry, so the database refuses an edge to an id that was never
+  registered and an edge across units.
+- **Written together:** a registry row and its kind row are created, and later
+  tombstoned, in one transaction. No graph row is physically removed while
+  anything points at it.
+- **Admission-enforced:** edge types, legal endpoint kinds, and that each
+  registry row's kind row exists; concurrent revision is refused by base.
 
 ## Retention and forgetting
 
 - Each item source has a retention horizon, set in configuration. Past it the
-  item is deleted, and so are the edges that point at it; a claim that cited
-  it keeps its history with a deleted-source citation.
+  item's content is deleted and its row becomes a **tombstone**: id, kind,
+  unit, time and a content hash. Edges keep pointing at the tombstone, so a
+  citation becomes a deleted-source citation and a closed-by edge still proves
+  the intention was closed.
+- An aggregate rebuilt across expired input records that span as **expired
+  coverage**, never as observed absence; a condition over it evaluates
+  unknown.
 - A forget request from a person hides at once what it names from rendering and
   retrieval; physical deletion follows the source's horizon or the request's
   own terms.

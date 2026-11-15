@@ -75,7 +75,11 @@ endpoint kinds. A new meaning is a reviewed edge type, never a new store.
   render and where an act about it lands.
 - **persons** — the people it concerns, by id.
 - **excluded persons** — people it must not be revealed to or through.
-- **lineage** — the source restrictions inherited from what it cites.
+- **lineage** — the source restrictions inherited from what it cites: what a
+  row may be rendered as, where, and to whom. Exclusions and exposure always
+  inherit. For DM-origin evidence the raw items stay in the DM, while a claim
+  citing them may be shown to the model in any room of the primary unit, marked
+  with its DM origin ([boundaries](boundaries.md)).
 - **exposure** — **external** (may reach a room through the guards),
   **internal** (Nora reads it, it never egresses), or **operator** (Nora never
   reads it).
@@ -155,16 +159,18 @@ its children's verdicts.
 **Conditions** are one of a closed set of forms, each evaluated by code to
 true, false or unknown:
 
-| form | holds when |
-|---|---|
-| **event match** | an item of a given kind, from or about given entities, is recorded |
-| **predicate** | an aggregate or current head meets a test, such as a poll having a winner |
-| **deadline** | a time has passed |
-| **source health** | the sources the condition depends on were healthy; without it, absence is unknown, never false |
+| form | holds when | its witness, written as closed-by |
+|---|---|---|
+| **event match** | an item of a given kind, from or about given entities, is recorded | that item |
+| **predicate** | an aggregate or current head meets a test, such as a poll having a winner | the aggregate revision that meets it |
+| **deadline** | a time has passed | none: verify reads the clock |
+| **source health** | the sources the condition depends on were healthy; without it, absence is unknown, never false | the health items over the interval |
 
-A condition in none of these forms is **untyped**: the intention may be held
-but cannot close mechanically, it must carry a deadline or review time, and
-when that passes it ends unknown, never leaked. Untyped conditions are counted
+A condition in none of these forms is **untyped** and cannot close
+mechanically. An untyped achieve intention must carry a deadline; when it
+passes, the intention ends unknown, never leaked. An untyped maintain intention
+must carry a deadline in its drop-when; each review keeps or drops it
+explicitly, and at the deadline it ends dropped. Untyped conditions are counted
 as loose.
 
 An intention has at most one scheduled delivery at a time, and every delivery

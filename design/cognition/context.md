@@ -44,7 +44,7 @@ holds; Standing and related last.
 | floor | doctrine; the message and what it quotes, or the room window; transcript; members; clock and presence; spoken-turn framing; the tool catalogue; the room's computer, documents and sub-agent state | doctrine; the due intention, what it rests on and serves, and why now; transcript; members; clock and presence | the pass's items and recorded outcome; the room's messages since the last debrief | doctrine; the agenda; clock; members; transcript; rooms; read scope; the agenda rooms' document index; lesson evidence: corrections and closed response episodes past the lessons cursor | the rows due for verification or grading, their current revisions, later evidence and source health |
 | presentations | profile per subject, Standing, lessons, related | profile per subject, Standing, lessons, related | Standing | profile per subject, Standing, lessons with their handles, related | none |
 | pull | read tools | read tools | none | read tools | read tools |
-| closes with | the debrief | the debrief | its admitted operations | its own commits | its grades and verdicts |
+| settles on | its reply outcome; then the debrief | its reply outcome; then the debrief | its admitted operations | its own commits | its grades and verdicts |
 
 ## Choosing what is shown
 

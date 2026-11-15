@@ -11,8 +11,8 @@ is eligible, and what a pass's outcome settles.
 | **watch poller** | observe's receive for watched sources |
 | **wake evaluator** | claiming stimuli and admitting a wake pass, with no model call |
 | **Dreamer runtime** | the reflection loop's wake pass (the reflection session): admission, single-flight per unit, global concurrency, cancellation, the model call, budgets |
-| **conscious turn** | the engagement loop's called and ambient passes for one room, closed by the debrief |
-| **fire path** | the engagement loop's proactive pass, closed by the debrief |
+| **tag pipeline** | the engagement loop's called pass for one room, followed by its debrief |
+| **fire path** | the engagement loop's ambient and proactive passes for one room, each followed by its debrief |
 | **bridge work runner** | durable intake from transport bridges: owns each event before acknowledging it, and launches the pass |
 | **job executors** | delegated work: sub-agent jobs, computer and browser tasks ([acts](acts.md)) |
 | **verifier** | study's verify and report |
@@ -68,6 +68,8 @@ observed; a failed replay records none and never takes a live slot.
   the silence, recorded. The reply is never retried because its debrief failed.
 - A debrief that fails leaves a durable **debrief-pending** obligation for that
   pass, retried on its own: in the room's next slot first, otherwise by a wake.
+  A standalone retry takes the room's slot like any pass. The debrief settles
+  its own obligation, never the pass.
 - An inbound event is acknowledged only once its owner and work are durable.
   A started act whose outcome is uncertain is read back by identity, never
   replayed.

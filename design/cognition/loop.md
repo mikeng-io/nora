@@ -69,7 +69,7 @@ connects or a bound stops it. Study repeats on its timescales.
 | observe | never interpret meaning; record everything admitted | an unrecorded input stays pending |
 | orient | cite only observed or computed rows; search before creating | an unavailable read is unknown, never absence |
 | decide | give every intention a condition (an untyped one is counted loose) and its rests-on | a refused write returns a typed reason to repair |
-| act | deliver only through `send_reply` and the guards; treat silence as an outcome | any unknown in the guard means no delivery |
+| act | perform every act through the [act envelope](acts.md) and deliver only by its routes and guards; treat silence as an outcome | any unknown in the guard means no delivery |
 | study | verify by code; grade by a judge that is not the writer | missing evidence is an error, never a pass |
 
 ## Delivery arbitration
@@ -137,10 +137,11 @@ before the room's slot is released.
 - **Writes** only intentions and their edges, as `commit` operations through
   `commit`'s admission. Every citation is an item of this pass; a stale base is
   refused; deliveries pass the delivery arbitration.
-- **Proposes, never performs, a close.** A `close` names the successful outcome
-  item; admission routes it through observe's compute, the one writer of
-  closed-by, which accepts it only if that item meets the intention's
-  condition. Study's verify writes the verdict. Attempted is never closed.
+- **Proposes, never performs, a close.** A `close` names its witness — the
+  closing evidence its condition's form requires ([graph](graph.md)); admission
+  routes it through observe's compute, the one writer of closed-by, which
+  accepts it only if the witness meets the condition. Study's verify writes
+  the verdict. Attempted is never closed.
 - **Carries findings as findings.** A result the pass found but did not give —
   the third restaurant a search returned — becomes a child intention, "offer it
   when it comes up", citing its result item and serving the decision it bears

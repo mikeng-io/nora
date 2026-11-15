@@ -23,7 +23,7 @@ verb per basis the model may propose.
 | **propose** | orient, study's learn and grade | entities, claims, edges (inferred); lessons are claims about Nora's practice; a grade is a claim about the graded row, citing its later evidence |
 | **commit** | decide | intentions (committed): open, revise, drop, and close — a close names the successful outcome item, and observe's compute writes the closed-by edge |
 | **send_reply** | act | nothing; delivery is recorded by observe |
-| **act tools**: each area's effects and delegations (a reaction, music, a document, the computer, a sub-agent job) | act | nothing; each passes the [act envelope](acts.md) and its outcome is recorded by observe |
+| **act tools**: deliveries (a reaction, an image, a GIF), effects (music, a document, the computer) and delegations (a sub-agent job) | act | nothing; each passes the [act envelope](acts.md) and its outcome is recorded by observe |
 
 ## Surface per pass
 
@@ -51,7 +51,8 @@ Every write passes code before its table:
 - kind, edge type, endpoints and lifecycle transition are legal;
 - reasoning and confidence are representable, and nothing inferred is promoted
   to told;
-- its scope narrows but never widens beyond its evidence;
+- its scope narrows but never widens beyond its evidence, except the DM-origin
+  rule in [lineage](graph.md);
 - credential and doctrine protections run before storage, and the content
   checks too when their operating mode enables them ([boundaries](boundaries.md));
 - a lesson also passes the independent doctrine check, the citation floor and
@@ -66,5 +67,4 @@ uncertain is unavailable, never proof that nothing was written.
 
 - Told, deduced, induced and abduced are different promises; a routine or
   frequency rests on an aggregate, and an abduced value leaves as a question.
-- Third-party memory can suggest what to read; it is never evidence.
 - Nora's own words ground only that she said them.

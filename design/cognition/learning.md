@@ -56,7 +56,7 @@ operator retired is not relearned from evidence no newer than that retirement.
 
 | level | means | used for |
 |---|---|---|
-| **delivered** | the act's outcome item exists | delivery accounting |
+| **delivered** | the act's outcome item reports it done | delivery accounting |
 | **acknowledged** | any response | reception counts only |
 | **accepted** | an explicit pick, agreement or acceptance | the usual done-when of a suggestion |
 | **beneficial** | what it was for happened: they played it, they went | what learning ultimately grades, where it can be observed |

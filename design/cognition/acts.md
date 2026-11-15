@@ -9,29 +9,37 @@ recorded, and able to close an intention the same way.
 
 | field | states |
 |---|---|
-| **kind** | delivery (reaches a room), effect (changes something outside a room: a document, the computer, a queue, a network), or delegation (starts work another executor carries on) |
-| **executor** | what performs it: the engagement turn's `send_reply`, an area's tool, a deterministic notifier, a job runner |
+| **kind** | delivery (reaches a room or an output channel: a message, a reaction, an image, a GIF, an announcement), effect (changes something that is not a conversation: a document, the computer, a play queue, a network), or delegation (starts work another executor carries on) |
+| **executor** | what performs it: an engagement pass's delivery or act tool, a deterministic notifier, a job runner |
 | **destination** | the room, surface or system it affects |
 | **authority** | the pass and person on whose behalf it runs, and the intention it serves, if any |
 | **identity** | a stable id, so a retry recognises the same act |
-| **outcome** | an observed item: done, failed, or uncertain |
+| **outcome** | an observed item reporting **done**, **failed** or **uncertain** |
 
 **Rules**
 
 - An act's outcome is an item, recorded by observe; the act counts only once it
-  is recorded.
+  is recorded, and it counts as done only when that item reports done.
 - An uncertain outcome — the call timed out after it may have taken effect — is
   never replayed blindly. It is read back by its identity first; until then it
   is unknown.
-- Deliveries pass the delivery arbitration and the room's guards. Effects and
-  delegations pass their area's admission and the same identity check, so the
-  same act is never performed twice.
-- A deterministic notification — a song starting, a job finishing — is an act
-  with a code executor and no model. It is recorded like any other.
-- Only the tag pipeline and the fire path deliver to a room. An effect or
-  delegation reaches a room only through a later delivery.
-- An act closes an intention only through its outcome item and observe's
-  compute.
+- Every act carries a stable identity checked before it is performed, so the
+  same act is never performed twice. Deliveries also pass the delivery
+  arbitration; effects and delegations pass their area's admission.
+- An act closes an intention only through an outcome item that reports done,
+  matched by observe's compute. A failed outcome closes nothing: it is a
+  stimulus, and decide retries or drops the intention, citing the failure.
+
+**Who delivers**
+
+| delivery | route |
+|---|---|
+| composed by the model | an engagement pass's `send_reply` and delivery tools, through the tag pipeline or the fire path and the room's guards |
+| deterministic notification — a song advancing, a job finishing | a code executor and no model, through the same delivery guards, to its resolved room or output channel; an output channel is not a room and gains no ingest or trust meaning |
+| public publication on a surface without a unit | its own public ledger, not graph items ([boundaries](boundaries.md)) |
+
+Only engagement passes invoke act tools. The reflection loop acts only by
+committing an intention a proactive pass later carries out.
 
 ## Delegated work
 
@@ -39,8 +47,9 @@ Delegated work — a sub-agent job, a computer task, a long browser session —
 runs outside both loops under its own executor.
 
 - Starting it is a delegation act. The work is an achieve intention naming its
-  executor and the job's identity; it is done when the job's terminal outcome
-  item arrives.
+  executor and the job's identity; it is done when the job's outcome item
+  reports success. A failed or cancelled job closes nothing: decide retries or
+  drops the intention, citing that outcome.
 - The executor's own job state is authoritative for the job. Its events and
   results enter through observe as items.
 - Reporting the result is a separate child intention, delivered by a proactive
