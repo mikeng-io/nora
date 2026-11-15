@@ -26,6 +26,7 @@ from nora.testing.causal_protocol import (
     CORRECTION,
     FOLLOWUP,
     INITIAL,
+    QUESTION,
     TITLE,
 )
 from nora.testing.journey_world import JourneyServices
@@ -86,6 +87,14 @@ def case():
 # new way: the claims anchor the produced turns, not the state kind a
 # storage row landed in. `check` tokens are what the fixture itself
 # made observable — finite rehearsal binding, never a quality claim.
+#
+# Turn 0's claim is re-anchored: an earlier fixture asserted "the turn
+# asks which generated venue and time to select" while its window held
+# the reminder FIRE's delivery — a different occasion's work borrowing
+# this turn's observation. This input's own typed outcome is `recorded`
+# (admission declined); its own bound evidence is the settled session
+# SCHEDULING the question. The claim now names that. Identity changed,
+# denominators unchanged: 3 criteria, 6 judge answers.
 PLAN_V2 = {
     "version": 2,
     "steps": [
@@ -103,7 +112,8 @@ PLAN_V2 = {
     "expected_wakes": 2,
     "expectations": [
         {"turn": 0, "polarity": "must", "kind": "behavior",
-         "text": "the turn asks which generated venue and time to select",
+         "text": "the input's settled session schedules a reminder "
+                "asking which generated venue and time to select",
          "check": "Which generated venue and time"},
         {"turn": 2, "polarity": "must", "kind": "behavior",
          "text": "the later reply recalls the generated venue the "
@@ -307,6 +317,7 @@ async def test_sdk_autonomous_journey_version2_turns_through_real_app(
         task=nora_task(spec), max_workers=1)
 
     assert [rows[0].label for rows in report.detailed_results] == ["PASS"]
+    events = read_events(sdk_evidence.path)
     coverage, outcome = accounted(
         report, experiment, evidence=evidence_outcome(sdk_evidence))
     assert accepted(coverage, outcome), (coverage, outcome)
@@ -368,9 +379,64 @@ async def test_sdk_autonomous_journey_version2_turns_through_real_app(
         (outputs / "turn-0.json").read_text())
 
     protocol, judge = plan.protocol, plan.judge
-    assert protocol.phase >= 9 and not protocol.errors
+    # The exact served census: six session calls (three per wake), two
+    # turn calls (the reminder fire's and the follow-up's), the unit
+    # fold each session closes with and the room fold the durable turn
+    # closes with — every served request a production occasion raised,
+    # in production's own order, nothing skipped or invented.
+    assert protocol.phase == 11 and not protocol.errors
+    assert protocol.occasions == {
+        "cognition": 6, "turn": 2, "fold_unit": 2, "fold_room": 1}
+    assert len(protocol.requests) == 11 + protocol.background
+    # The later request carries its own recall source through the real
+    # context path: the turn call that names the follow-up (the one
+    # `send_reply`-carrying request whose messages contain it — the room
+    # fold's transcript renders it later but offers no tools) also
+    # carries the settled correction it answers on — nothing staged.
+    (followup_request,) = (
+        body for body in protocol.requests
+        if {t["function"]["name"] for t in body.get("tools", [])}
+        >= {"send_reply"}
+        and FOLLOWUP in json.dumps(body["messages"], ensure_ascii=False))
+    assert CORRECTION in json.dumps(
+        followup_request["messages"], ensure_ascii=False)
+    captured = [json.loads(e["attributes"]["nora.model.request.body"])
+                for e in events if e.get("name") == "nora.model.request"]
+    assert captured == plan.requests
     assert len(judge.requests) == 6 and not judge.errors
     assert {r["model"] for r in judge.requests} == set(JUDGES)
+
+    # The receipts stay the causal record — the fire's delivery and the
+    # follow-up's are two different works' confirmed actions, and only
+    # the follow-up's is its turn's own output.
+    receipts = retained["receipts"]
+    actions = receipts["actions"]
+    assert len(actions) == 2 and all(
+        row["state"] == "confirmed" for row in actions)
+    asked = next(a for a in actions if a["request"]["text"] == QUESTION)
+    answered = next(a for a in actions if a["request"]["text"] == ANSWER)
+    bound_owners = {row["owner"] for row in
+                    third["trajectory"]["turn_outcome"]["actions"]}
+    assert answered["owner_id"] in bound_owners
+    assert asked["owner_id"] != answered["owner_id"]
+    sends = [row for row in receipts["messages"] if row["is_nora"]]
+    assert len(sends) == 2 and all(
+        row["delivery_status"] == "sent" for row in sends)
+    assert {row["body"] for row in sends} == {QUESTION, ANSWER}
+    assert answered["message_id"] == next(
+        row["id"] for row in sends if row["body"] == ANSWER)
+    reminders = receipts["reminders"]
+    assert len(reminders) == 1 and reminders[0]["state"] == "done"
+    assert QUESTION in str(reminders[0])
+    # The fire's delivery is provenance inside turn 0's window — never
+    # the turn's own output: the typed outcome reads `recorded` with an
+    # empty `said`, while the receipt the claim no longer borrows sits
+    # plainly in the window's effects.
+    assert first["trajectory"]["turn_outcome"]["said"] == []
+    first_items = first["trajectory"]["effects"]["items"]
+    assert any(item["kind"] == "delivery" and
+               (item.get("row") or {}).get("action_id")
+               == asked["action_id"] for item in first_items)
     rendered = (outputs / "report.html").read_text()
     assert draw.name in rendered and "turn" in rendered
     sdk_evidence.record("protocol_assertions", status="PASS",
