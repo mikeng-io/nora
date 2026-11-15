@@ -239,6 +239,7 @@ class AdapterRegistry:
         instagram_summons: SummonsSink | None = None,
         dm_recipients: Mapping[str, Set[str]] | None = None,
         bridge_token: str = "",
+        owner: Any = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
     ) -> AdapterRegistry:
@@ -290,12 +291,27 @@ class AdapterRegistry:
         and WhatsApp's senders refuse a 1:1 message to any other address; a
         platform missing from it refuses every 1:1 message.
 
+        `owner` is the startup's acquisition register
+        (`nora.app.lifecycle.StartupOwner`, threaded structurally — this
+        layer does not import `nora.app`): each adapter is registered the
+        moment it exists, BEFORE the `resolve_identity` await that can
+        strand its session when resolution fails or is cancelled. A
+        successful return transfers ownership to the caller's registry;
+        a raise unwinds every adapter built so far, current first.
+
         `sleep`/`clock` are the time seam for `_resolve_bridge_identity`'s
         bounded wait — collaborators through construction, so a test can
         drive the bound without waiting in real time."""
         dms = dm_recipients or {}
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
+
+        def _register(adapter: Any) -> None:
+            if owner is None:
+                return
+            close = getattr(adapter, "close", None)
+            if close is not None:
+                owner.own_adapter(close)
 
         signal_cfg = platforms.signal
         if signal_cfg.enabled and getattr(signal_cfg, "mode", "direct") == "bridge":
@@ -305,6 +321,7 @@ class AdapterRegistry:
             adapter: PlatformAdapter = BridgeAdapter(
                 "signal", BridgeEndpoint(signal_cfg.base_url, bridge_token),
                 dm_recipients=dms.get("signal", frozenset()))
+            _register(adapter)
             try:
                 identity = await _resolve_bridge_identity(
                     adapter, sleep=sleep, clock=clock)
@@ -326,6 +343,7 @@ class AdapterRegistry:
                 signal_cfg.base_url, account, metrics=metrics,
                 dm_recipients=dms.get("signal", frozenset()),
             )
+            _register(adapter)
             try:
                 identity = await adapter.resolve_identity()
             except Exception as exc:
@@ -349,6 +367,7 @@ class AdapterRegistry:
                 delegate=BridgeAdapter("discord", endpoint),
                 control=BridgeControlClient(endpoint),
                 speaker=discord_speaker)
+            _register(discord_adapter)
             try:
                 discord_identity = await _resolve_bridge_identity(
                     discord_adapter, sleep=sleep, clock=clock)
@@ -372,6 +391,7 @@ class AdapterRegistry:
                 voice_guild_ids=voice_guild_ids,
                 resolve_music_channel=resolve_music_channel,
             )
+            _register(discord_adapter)
             try:
                 discord_identity = await discord_adapter.resolve_identity()
             except Exception as exc:
@@ -387,6 +407,7 @@ class AdapterRegistry:
             whatsapp_adapter: PlatformAdapter = BridgeAdapter(
                 "whatsapp", BridgeEndpoint(whatsapp_cfg.base_url, bridge_token),
                 dm_recipients=dms.get("whatsapp", frozenset()))
+            _register(whatsapp_adapter)
             try:
                 whatsapp_identity = await _resolve_bridge_identity(
                     whatsapp_adapter, sleep=sleep, clock=clock)
@@ -405,6 +426,7 @@ class AdapterRegistry:
             whatsapp_adapter = WhatsAppAdapter(
                 whatsapp_cfg.base_url, dm_recipients=dms.get("whatsapp", frozenset()),
             )
+            _register(whatsapp_adapter)
             try:
                 whatsapp_identity = await whatsapp_adapter.resolve_identity()
             except Exception as exc:
@@ -419,6 +441,7 @@ class AdapterRegistry:
         if instagram_cfg.enabled and getattr(instagram_cfg, "mode", "direct") == "bridge":
             instagram_adapter: BridgeAdapter | InstagramAdapter = BridgeAdapter(
                 "instagram", BridgeEndpoint(instagram_cfg.base_url, bridge_token))
+            _register(instagram_adapter)
             try:
                 instagram_identity = await instagram_adapter.resolve_identity()
             except Exception as exc:  # noqa: BLE001 — degrade, never refuse to start
@@ -434,6 +457,7 @@ class AdapterRegistry:
             instagram_adapter = InstagramAdapter(
                 instagram_cfg.base_url, summons=instagram_summons,
             )
+            _register(instagram_adapter)
             try:
                 instagram_identity = await instagram_adapter.resolve_identity()
             except Exception as exc:  # noqa: BLE001 — degrade, never refuse to start

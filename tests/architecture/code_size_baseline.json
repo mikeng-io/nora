@@ -436,9 +436,9 @@
  },
  "nora/app/composition.py": {
   "comment_blocks": 22,
-  "file_lines": 1484,
+  "file_lines": 1524,
   "functions": {
-   "build_dependencies": 1003
+   "_compose_dependencies": 988
   },
   "internal_docstrings": 1
  },
@@ -1810,7 +1810,7 @@
  "nora/platform/registry.py": {
   "comment_blocks": 4,
   "functions": {
-   "AdapterRegistry.from_config": 229
+   "AdapterRegistry.from_config": 253
   },
   "internal_docstrings": 1
  },

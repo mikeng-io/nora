@@ -155,6 +155,7 @@ async def scoped(
     computer_admission: Any, computer_dm_scope_for: Any, computer_events: Any,
     computer_metrics: Any, computer_probe: Any, computer_tasks: Any,
     computer_token: Any, engine: Any, metrics: Any, op_clock: Any,
+    owner: Any = None,
 ) -> ScopedWiring:
     browser_manager = computer_queue_runner = None
     computer_scope_for = computer_task_backend = None
@@ -163,6 +164,10 @@ async def scoped(
             cfg=cfg, computer_metrics=computer_metrics,
             computer_token=computer_token, engine=engine,
         )
+        if owner is not None:
+            # Redis, the journal flock and the lifecycle socket exist NOW —
+            # before the queue await; re-registered once the runner exists.
+            owner.own_computer(_close_scoped_acquisition(rt))
         computer = rt.computer
         computer_probe = rt.computer_probe
         computer_tasks = rt.computer_tasks
@@ -176,6 +181,8 @@ async def scoped(
             lifecycle=rt.lifecycle, metrics=metrics, op_clock=op_clock,
             scoped_cfg=cfg.computer.scoped, tabs=browser_tabs,
         )
+        if owner is not None:
+            owner.own_computer(_close_scoped_acquisition(rt, queues))
         browser_manager = queues.browser_manager
         computer_admission = queues.computer_admission
         computer_queue_runner = queues.computer_queue_runner
@@ -256,13 +263,29 @@ def _scoped_computer_runtime(
         ),
     )
 
-
 @dataclass(frozen=True)
 class ScopedQueuesWiring:
     browser_manager: Any
     computer_admission: Any
     computer_queue_runner: Any
     computer_task_backend: Any
+
+
+def _close_scoped_acquisition(
+    rt: ScopedRuntimeWiring, queues: ScopedQueuesWiring | None = None,
+) -> Any:
+    """A `ComputerLifecycle.close`-ordered close for before it exists."""
+    async def _close() -> None:
+        if queues is not None:
+            runner = queues.computer_queue_runner
+            await runner.stop()
+            await queues.browser_manager.aclose()
+            await runner.close()
+            return
+        await rt.computer_redis.aclose()
+        rt.computer_segments.close()
+
+    return _close
 
 
 async def _scoped_computer_queues(
