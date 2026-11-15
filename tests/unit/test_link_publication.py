@@ -119,7 +119,7 @@ async def _approved(svc, links, *, request_id="synthetic-request", now=NOW):
         initiating_nonce=NONCE[LinkSide.INITIATING],
         receiving_nonce=NONCE[LinkSide.RECEIVING],
         created_at=now, expires_at=now + timedelta(minutes=5),
-    ))
+    ), nonces=NONCE)
     for side, person in ((LinkSide.INITIATING, PERSON_A), (LinkSide.RECEIVING, PERSON_B)):
         decision = Operation(
             f"gen-approve-{side.value}", "approve_link", _actor(side, person),
@@ -197,7 +197,8 @@ async def test_commit_without_both_approvals_is_denied_and_nothing_changes():
         op, receiving_person=PERSON_B,
         initiating_nonce=NONCE[LinkSide.INITIATING],
         receiving_nonce=NONCE[LinkSide.RECEIVING],
-        created_at=NOW, expires_at=NOW + timedelta(minutes=5)))
+        created_at=NOW, expires_at=NOW + timedelta(minutes=5)),
+        nonces=NONCE)
     outcome = await svc.commit("synthetic-request", now=NOW + timedelta(seconds=3))
     assert outcome.status is OutcomeStatus.DENIED
     assert await store.person(PERSON_B) is not None and not store.aliases

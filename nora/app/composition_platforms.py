@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import importlib
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -168,6 +169,36 @@ def channels(cfg: Any, reload_files: Any)-> ChannelsWiring:
     )
 
 
+def signal_link_consent(cfg: Any, services: Any) -> Any:
+    """The private link-consent dispatch for a direct signal-cli daemon —
+    `None` when linking cannot run (the `file` backend honestly refuses
+    managed mutations) or Signal isn't a direct daemon (bridge mode has
+    no daemon envelopes to read).
+
+    Returns a FACTORY, not the dispatcher itself: `AdapterRegistry` calls
+    it with the DERIVED daemon account so the parser's provenance check
+    binds the account signal-cli actually serves, never the configured
+    claim.
+    """
+    signal = cfg.platforms.signal
+    if (cfg.identity.backend != "managed" or not signal.enabled
+            or getattr(signal, "mode", "direct") != "direct"):
+        return None
+    from nora.platform.signal.consent import SignalLinkConsent, SignalLinkDelivery
+
+    holder = importlib.import_module("nora.people").wire.holder_links(services)
+    delivery = SignalLinkDelivery(signal.base_url)
+
+    def build(account: str) -> Any:
+        return SignalLinkConsent(
+            own_account=account,
+            decide=holder.decide_from_transport,
+            delivery=delivery,
+        ).dispatch
+
+    return build
+
+
 @dataclass(frozen=True)
 class AdaptersWiring:
     account: Any
@@ -179,6 +210,7 @@ async def adapters(
     cfg: Any, discord_box: Any, discord_token: Any, metrics: Any,
     music_manager: Any, persons: Any, resolve_music_channel: Any, speaker: Any,
     summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any,
+    signal_consent: Any = None,
 ) -> AdaptersWiring:
     try:
         registry = await AdapterRegistry.from_config(
@@ -197,6 +229,10 @@ async def adapters(
             dm_recipients={
                 p: LiveSet(functools.partial(persons.direct_addresses, p)) for p in DIRECT_PLATFORMS
             },
+            # Private link consent, offered each raw envelope before the
+            # room parser would drop it — `None` unless the deployment can
+            # carry consent (see `signal_link_consent`).
+            signal_consent=signal_consent,
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc

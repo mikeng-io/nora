@@ -91,6 +91,9 @@ from nora.infra.sql.schema_managed import (
     MANAGED_LINK_DECISION as MANAGED_LINK_DECISION,
 )
 from nora.infra.sql.schema_managed import (
+    MANAGED_LINK_DELIVERY as MANAGED_LINK_DELIVERY,
+)
+from nora.infra.sql.schema_managed import (
     MANAGED_LINK_REQUEST as MANAGED_LINK_REQUEST,
 )
 

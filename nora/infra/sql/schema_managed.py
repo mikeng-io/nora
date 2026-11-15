@@ -216,3 +216,23 @@ MANAGED_LINK_DECISION = sa.Table(
 IDX_MANAGED_LINK_DECISION_REQUEST = sa.Index(
     "idx_managed_link_decision_request", MANAGED_LINK_DECISION.c.request_id,
 )
+
+# The private challenge each side was sent. Raw nonces live ONLY here —
+# the request snapshot and decision evidence carry digests — and reads are
+# single-side, so one holder's challenge can never reach the other.
+MANAGED_LINK_DELIVERY = sa.Table(
+    "managed_link_delivery", METADATA,
+    sa.Column("request_id", sa.Text, nullable=False),
+    sa.Column("side", sa.Text, nullable=False),
+    sa.Column("nonce", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.ForeignKeyConstraint(
+        ["request_id"], ["managed_link_request.request_id"],
+        name="managed_link_delivery_request_fkey", ondelete="RESTRICT"),
+    sa.PrimaryKeyConstraint("request_id", "side",
+                            name="pk_managed_link_delivery"),
+    sa.CheckConstraint(
+        "side IN ('initiating','receiving')",
+        name="ck_managed_link_delivery_side"),
+)

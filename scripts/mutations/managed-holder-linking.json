@@ -1,0 +1,30 @@
+[
+  {
+    "name": "a holder view resolves the caller's own side only",
+    "file": "nora/people/app/holder_link.py",
+    "old": "            (side for side in LinkSide if link.pair.account(side) == account),",
+    "new": "            (side for side in LinkSide if link.pair.account(side) != account),",
+    "target": "tests/unit/test_holder_link.py::test_view_is_per_side_and_never_shows_the_other_challenge"
+  },
+  {
+    "name": "a retained session is never consent",
+    "file": "nora/people/app/holder_link.py",
+    "old": "        if authentication.purpose != \"sign_in\":",
+    "new": "        if False:",
+    "target": "tests/unit/test_holder_link.py::test_a_session_or_code_authentication_can_never_be_consent"
+  },
+  {
+    "name": "a signal challenge is pushed to its own side's account only",
+    "file": "nora/people/app/holder_link.py",
+    "old": "                await self._signal_delivery.deliver(\n                    account=account, text=_challenge_text(link, side, nonce))",
+    "new": "                await self._signal_delivery.deliver(\n                    account=link.pair.account(LinkSide.INITIATING),\n                    text=_challenge_text(link, side, nonce))",
+    "target": "tests/unit/test_holder_link.py::test_request_persists_the_bound_request_and_pushes_the_signal_challenge"
+  },
+  {
+    "name": "conflicting sender aliases fail closed",
+    "file": "nora/people/app/holder_link.py",
+    "old": "        if not records or len({r.account_id for r in records}) != 1:",
+    "new": "        if not records:",
+    "target": "tests/unit/test_holder_link.py::test_conflicting_sender_aliases_fail_closed"
+  }
+]

@@ -1,7 +1,14 @@
+from __future__ import annotations
+
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nora.domain.managed_ports import LinkChallengeDelivery
+    from nora.people.app.holder_link import HolderLinkService
+    from nora.people.app.managed import ManagedServices
 
 from nora.app.assembler import lineage_policy
 from nora.domain.live import LiveMapping
@@ -216,4 +223,26 @@ def managed_services(*, managed, session, policy, engine, credentials):
         topology=FileTopologySource(policy),
         registry=KratosIdentityRegistry(kratos_client),
         links=SqlLinkRequests(engine=engine),
+    )
+
+
+def holder_links(
+    services: ManagedServices,
+    *,
+    signal_delivery: LinkChallengeDelivery | None = None,
+) -> HolderLinkService:
+    """The holder-facing link lifecycle (`account-linking.md`) over one
+    `ManagedServices` — request, private view, decision and holder-exact
+    unlink. `signal_delivery` (a `LinkChallengeDelivery`) is injected per
+    deployment: absent, no challenge is pushed and the holder's
+    authenticated view still carries their own side."""
+    from nora.people.app.holder_link import HolderLinkService
+
+    return HolderLinkService(
+        services.bindings,
+        services.registry,
+        services.links,
+        services.publication,
+        services.registration,
+        signal_delivery=signal_delivery,
     )

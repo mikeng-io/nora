@@ -63,7 +63,13 @@ from nora.app.composition_pipelines import (
     build_shared,
     standing,
 )
-from nora.app.composition_platforms import adapters, channels, policies, presence_preflight
+from nora.app.composition_platforms import (
+    adapters,
+    channels,
+    policies,
+    presence_preflight,
+    signal_link_consent,
+)
 from nora.app.composition_runtime import build_slots, stimulus, tasks
 from nora.app.composition_social import expiry, inbox, poller, summons
 from nora.app.composition_stores import (
@@ -680,6 +686,7 @@ async def build_dependencies(
         summons_inbox=summons_inbox,
         voice_guild_ids=voice_guild_ids,
         voice_hub=voice_hub,
+        signal_consent=signal_link_consent(cfg, _stores_managed.services),
     )
     account = _platforms_adapters.account
     adapter = _platforms_adapters.adapter

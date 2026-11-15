@@ -37,7 +37,8 @@ def database(pg_module_url):
 async def store(database):
     engine = create_sql_engine(database)
     async with engine.begin() as connection:
-        await connection.execute(sa.text("TRUNCATE managed_link_decision, managed_link_request"))
+        await connection.execute(sa.text(
+            "TRUNCATE managed_link_delivery, managed_link_decision, managed_link_request"))
     try:
         yield SqlLinkRequests(engine)
     finally:
@@ -50,7 +51,7 @@ async def accept(store, link, side):
 
 async def test_request_and_approval_evidence_survive_a_new_store_instance(store, database):
     link = pending()
-    await store.create(link)
+    await store.create(link, nonces=NONCES)
     await accept(store, link, LEFT)
     await accept(store, link, RIGHT)
     engine = create_sql_engine(database)
@@ -71,7 +72,7 @@ async def test_request_and_approval_evidence_survive_a_new_store_instance(store,
 
 
 async def test_concurrent_holders_do_not_overwrite_each_others_approval(store, database):
-    link = await store.create(pending())
+    link = await store.create(pending(), nonces=NONCES)
     other_engine = create_sql_engine(database)
     try:
         other = SqlLinkRequests(other_engine)
@@ -86,7 +87,7 @@ async def test_concurrent_holders_do_not_overwrite_each_others_approval(store, d
 async def test_waiting_approval_reads_the_snapshot_after_the_previous_writer_commits(
     store, database,
 ):
-    link = await store.create(pending())
+    link = await store.create(pending(), nonces=NONCES)
     engine = create_sql_engine(database)
     writer = create_async_engine(database, connect_args={"server_settings": {
         "application_name": "synthetic-link-decision-writer",
@@ -130,7 +131,7 @@ async def test_waiting_approval_reads_the_snapshot_after_the_previous_writer_com
 
 
 async def test_concurrent_retries_consume_one_approval_once(store, database):
-    link = await store.create(pending())
+    link = await store.create(pending(), nonces=NONCES)
     results = await asyncio.gather(*(accept(store, link, LEFT) for _ in range(5)))
     assert all(result.approved == frozenset({LEFT}) for result in results)
     engine = create_sql_engine(database)
@@ -145,23 +146,23 @@ async def test_concurrent_retries_consume_one_approval_once(store, database):
 
 
 async def test_retrying_request_creation_preserves_existing_approval(store):
-    link = await store.create(pending())
+    link = await store.create(pending(), nonces=NONCES)
     await accept(store, link, LEFT)
-    retry = await store.create(link)
+    retry = await store.create(link, nonces=NONCES)
     assert retry.approved == frozenset({LEFT})
     with pytest.raises(LinkStateError, match="different effect"):
-        await store.create(replace(link, surviving_person="synthetic-b"))
+        await store.create(replace(link, surviving_person="synthetic-b"), nonces=NONCES)
 
 
 async def test_decision_id_cannot_be_reused_for_a_different_effect_or_request(store):
-    link = await store.create(pending())
+    link = await store.create(pending(), nonces=NONCES)
     await accept(store, link, LEFT)
     changed = replace(decision(link, LEFT), observed_revisions={
         **link.revisions, "authority": "changed",
     })
     with pytest.raises(LinkStateError, match="different effect"):
         await store.decide(changed, proof(LEFT), now=NOW + timedelta(seconds=2))
-    second = await store.create(replace(link, request_id="another-request"))
+    second = await store.create(replace(link, request_id="another-request"), nonces=NONCES)
     changed = replace(decision(second, LEFT), operation_id=decision(link, LEFT).operation_id)
     with pytest.raises(LinkStateError, match="different effect"):
         await store.decide(changed, proof(LEFT, request_id=second.request_id),
@@ -170,17 +171,18 @@ async def test_decision_id_cannot_be_reused_for_a_different_effect_or_request(st
 
 
 async def test_request_and_decision_identifiers_share_a_namespace(store):
-    link = await store.create(pending())
+    link = await store.create(pending(), nonces=NONCES)
     op = replace(decision(link, LEFT), operation_id=link.request_id)
     with pytest.raises(LinkStateError, match="already names a request"):
         await store.decide(op, proof(LEFT), now=NOW + timedelta(seconds=2))
     await accept(store, link, LEFT)
     with pytest.raises(LinkStateError, match="already names a decision"):
-        await store.create(replace(link, request_id=decision(link, LEFT).operation_id))
+        await store.create(
+            replace(link, request_id=decision(link, LEFT).operation_id), nonces=NONCES)
 
 
 async def test_invalid_proof_rolls_back_and_does_not_poison_a_valid_retry(store):
-    link = await store.create(pending())
+    link = await store.create(pending(), nonces=NONCES)
     with pytest.raises(LinkStateError):
         await store.decide(decision(link, RIGHT), proof(RIGHT, nonce="wrong-proof"),
                            now=NOW + timedelta(seconds=2))
@@ -194,7 +196,7 @@ async def test_invalid_proof_rolls_back_and_does_not_poison_a_valid_retry(store)
     ("refuse_link", RIGHT, LinkState.REFUSED), ("cancel_link", LEFT, LinkState.CANCELLED),
 ])
 async def test_terminal_decision_and_its_retry_do_not_reopen_request(store, kind, side, state):
-    link = await store.create(pending())
+    link = await store.create(pending(), nonces=NONCES)
     op = decision(link, side, kind)
     first = await store.decide(op, proof(side), now=NOW + timedelta(seconds=2))
     repeated = await store.decide(op, proof(side), now=NOW + timedelta(seconds=3))

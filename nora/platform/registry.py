@@ -238,6 +238,9 @@ class AdapterRegistry:
         resolve_music_channel: ResolveMusicChannel = no_music_channel,
         instagram_summons: SummonsSink | None = None,
         dm_recipients: Mapping[str, Set[str]] | None = None,
+        signal_consent: Callable[
+            [str], Callable[[dict], Awaitable[bool]] | None
+        ] | None = None,
         bridge_token: str = "",
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
@@ -325,6 +328,11 @@ class AdapterRegistry:
             adapter = SignalAdapter(
                 signal_cfg.base_url, account, metrics=metrics,
                 dm_recipients=dms.get("signal", frozenset()),
+                # The private consent seam is bound to the DERIVED daemon
+                # account (never the configured claim), so provenance the
+                # parser checks is the account signal-cli actually serves.
+                on_consent=(
+                    signal_consent(account) if signal_consent else None),
             )
             try:
                 identity = await adapter.resolve_identity()
