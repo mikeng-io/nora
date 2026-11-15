@@ -11,10 +11,12 @@ relationships across wakes, not a separate composition or grading system.
 
 ## State carries forward
 
-A journey begins with grounded state and external events. Production ingestion
-records those events; production eligibility and admission determine when a
-Cognition session runs. The session uses its normal context, tools and reads,
-then production completion settles claims, lessons, Standing and pending work.
+A journey declares its initial state and semantic clock. Historical state is
+restored once at the declared cut; generated initial state is explicit.
+The source cut and the clock of a later observation remain distinct.
+Production ingestion records external events; eligibility and admission
+determine when a Cognition session runs. The session uses its normal context,
+tools and reads; production completion settles claims, lessons, Standing and pending work.
 Failure retains unprocessed input according to the runtime's own rules.
 
 Subsequent turns read what the candidate retained. Newly discovered relations
@@ -32,13 +34,14 @@ or measure the session and its downstream effects at that boundary, but forcing
 a wake cannot establish scheduling, and importing recorded conscious replies
 cannot establish candidate engagement. Those limits remain visible in its claim.
 
-An autonomous-live journey is the other claim: the case's services plan opens
-a request-aware generated world beside the case database, the composed subject
-runs its real `App`, generated input enters through real ingress and
-admission, and the deployment's own timers schedule cognition and fire —
-never a recorded wake and never a forced session. Per-wake evidence,
-finalization, the two judges and the retained JSON/HTML report use the same
-canonical pipeline a replay uses; the claim differs, not the measurement.
+An autonomous journey runs the composed subject's real `App`. Declared world
+input enters through production ingress and admission; production timers
+schedule cognition and fire without forced wakes. World responses and model
+routes follow the [execution mode](coverage.md), preserving composition and control flow.
+Per-wake evidence, finalization, both judges and retained JSON/HTML reports use
+the canonical pipeline shared with replay. Finite responses establish protocol
+coverage, not real-model behaviour; an unfulfilled dependency invalidates the
+affected claim.
 
 ## What the evidence must connect
 
@@ -71,9 +74,10 @@ independent of which store carried the state behind it.
 
 A version-2 turn is observed through real ingress and admission like any
 other send. The observation binds the declared input to its own session,
-model requests, tool calls, canonical effects and a typed outcome —
-confirmed delivery, intentional non-delivery, or the unconfirmed middle
-that is neither. A missing, foreign or unfinished window is a named
+model requests, tool calls, canonical effects and a typed outcome: confirmed
+delivery, intentional non-delivery, or admission without engagement. Otherwise
+the outcome is unconfirmed. Admission alone does not establish recall.
+A missing, foreign or unfinished window is a named
 observation error, never silence read as restraint; state kinds stay in
 the digest as provenance only. The recorded replay refuses a version-2
 claim rather than measuring it with the wrong instrument, and no version
