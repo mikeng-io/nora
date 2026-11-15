@@ -147,7 +147,7 @@ warn_unused_ignores = true
 # imported module and inflate the count (see the issue).
 [[tool.mypy.overrides]]
 module = [
-    "nora.domain.*", "nora.config", "nora.app.*", "nora.infra.*", "nora.presence.*",
+    "nora.domain.*", "nora.config", "nora.config_identity", "nora.app.*", "nora.infra.*", "nora.presence.*",
     "nora.ingest.*", "nora.analytics.*", "nora.doctrine.*", "nora.language.*",
     "nora.skills.*", "nora.instructions.*", "nora.engagement.*", "nora.web.*",
 ]
@@ -333,7 +333,7 @@ source_modules = [
     "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
     "nora.skills", "nora.instructions", "nora.documents",
 ]
-forbidden_modules = ["nora.config"]
+forbidden_modules = ["nora.config", "nora.config_identity"]
 
 [[tool.importlinter.contracts]]
 name = "the nora package's own __init__ does not read config either"
@@ -346,7 +346,7 @@ type = "forbidden"
 # `as_packages = false` treats both sides as single literal modules instead of
 # packages, which sidesteps that overlap rule and actually checks nora/__init__.py.
 source_modules = ["nora"]
-forbidden_modules = ["nora.config"]
+forbidden_modules = ["nora.config", "nora.config_identity"]
 as_packages = false
 
 [[tool.importlinter.contracts]]

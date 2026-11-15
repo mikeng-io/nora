@@ -5,8 +5,8 @@ import logging
 from nora.domain.identity import Identifier
 from nora.domain.identity_resolution import IdentityResolution, ResolutionStatus
 from nora.domain.managed import PersonLifecycle, Verdict
+from nora.domain.managed_ports import IdentityRegistry, PersonDirectory, TopologySource
 from nora.domain.management import Scope
-from nora.domain.ports import IdentityRegistry, PersonDirectory, TopologySource
 
 log = logging.getLogger("nora.people.identity_resolution")
 
