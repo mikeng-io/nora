@@ -14,6 +14,15 @@ privacy alone is not caller authentication. Ory administrative endpoints and
 credentials are accessible only to the management service and authorized
 installation administration; they are not model tools or public browser APIs.
 
+Service provisioning uses `POST /app/v1/management/operations`. Each configured
+credential identifies one service, its permitted platform sources and an exact
+set of approved scopes. Its JSON body supplies the typed operation, never the
+actor. This service entry point admits registration and roster synchronisation;
+it cannot supply holder consent or scoped human authority. The server refuses
+duplicate credentials and service identities, and every response is private
+and non-cacheable. The use case returns the same four mutation outcomes; HTTP
+success means `complete`, not merely that a request reached an Ory endpoint.
+
 Automated work carries its service identity and approved onboarding scope;
 human-triggered work also carries the verified human actor. Every operation
 therefore carries a typed actor — a service principal acting within its
