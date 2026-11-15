@@ -354,7 +354,7 @@ class OtpWiring:
 
 def build_otp(
     audit: Any, cfg: Any, doctrine_store: Any, engine: Any,
-    metrics: Any, persons: Any, registry: Any,
+    metrics: Any, persons: Any, registry: Any, identity_services: Any = None,
 ) -> OtpWiring:
 
 
@@ -364,6 +364,8 @@ def build_otp(
         otp_secret, otp_api_token = _otp_secrets(cfg)
         otp = OtpService(
             store=SqlOtpStore(engine),
+            bindings=(identity_services.bindings if cfg.identity.backend == "managed" else None),
+            registry=(identity_services.registry if cfg.identity.backend == "managed" else None),
             persons=persons,
             adapters=dict(registry.adapters),
             records=audit,

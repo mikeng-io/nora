@@ -4541,6 +4541,7 @@ OTP_CHALLENGE = sa.Table(
     sa.Column("person_id", sa.Text, nullable=False),
     sa.Column("purpose", sa.Text, nullable=False),
     sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("account_proof", pg.JSONB(none_as_null=True)),
     sa.Column("code_hash", sa.Text, nullable=False),
     sa.Column("issued_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),

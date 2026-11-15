@@ -5,6 +5,7 @@ import Credentials from "next-auth/providers/credentials";
 import { codeSignInEnabled, verifyCode } from "@/server/otp";
 import { captureManagedSession, identityBackend, managedSessionSchema } from "@/server/management-session";
 import { createTelegramProvider } from "./telegram";
+import { verifyManagedCode } from "@/server/managed-otp";
 
 // Development sign-in, for working on the portal without a Discord app:
 // pick a person from dev/identity.dev.toml and be them. It exists only when
@@ -42,6 +43,10 @@ if (codeSignInEnabled()) {
         const challengeId = String(credentials?.challengeId ?? "");
         const code = String(credentials?.code ?? "");
         if (!challengeId || !/^[0-9]{6}$/.test(code)) return null;
+        if (identityBackend() === "managed") {
+          const managedIdentity = await verifyManagedCode({ challengeId, code });
+          return managedIdentity ? { id: managedIdentity.binding.person_id, managedIdentity } : null;
+        }
         const personId = await verifyCode({ challengeId, code });
         return personId ? { id: personId } : null;
       },
@@ -83,6 +88,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         delete token.personId;
         if (identityBackend() === "managed") {
           const platform = account.provider;
+          if (platform === "otp") {
+            const managed = managedSessionSchema.safeParse(user?.managedIdentity);
+            if (!managed.success || !["signal_code", "whatsapp_code"].includes(
+              managed.data.authentication.method)) {
+              throw new Error("Managed sign-in requires account-exact authentication");
+            }
+            token.managedIdentity = managed.data;
+            token.sessionId = managed.data.authentication.sessionId;
+            return token;
+          }
           if (platform !== "discord" && platform !== "telegram") {
             throw new Error("Managed sign-in requires account-exact authentication");
           }

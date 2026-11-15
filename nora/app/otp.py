@@ -6,10 +6,10 @@ a challenge id; `verify` takes that id and the code back and answers who it was
 for. Nothing here knows about sessions or cookies; the caller decides what a
 verified person may do.
 
-**Only somebody in `identity.toml`.** The identifier
-a caller sends is resolved against the file, and the address is built from the
-same account (`direct_account_target`); there is no way to name a phone number that is
-not in it, and the senders refuse one anyway (`Persons.direct_addresses`).
+The selected backend resolves the exact account; delivery never selects another
+account of the same person. Managed challenges retain the original person/account
+revision and revalidate it at redemption and session exchange. File mode keeps
+its existing person-code response. A code proves account control, never link consent.
 
 **Through `deliver.build`, the fourth caller R-1b names.** The message is a
 fixed template and no model writes it, but sending it through the `Deliverer`
@@ -37,10 +37,12 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
+from nora.app.otp_identity import OtpIdentities
 from nora.domain.actions import ActionOwner
 from nora.domain.audience import ONE_TIME_CODE
-from nora.domain.identity import BoundAccount
-from nora.domain.otp import PURPOSES
+from nora.domain.managed_ports import BindingStore, IdentityRegistry
+from nora.domain.otp import PURPOSES, OtpUnavailableError
+from nora.domain.otp_account import VerifiedAccountCode
 from nora.engagement.stages import deliver
 from nora.infra.sql.otp import SqlOtpStore
 from nora.persons import DIRECT_PLATFORMS, Persons, direct_account_target
@@ -48,8 +50,6 @@ from nora.persons import DIRECT_PLATFORMS, Persons, direct_account_target
 log = logging.getLogger("nora.app.otp")
 
 _CODE = re.compile(r"[0-9]{6}")
-# What a person types for a phone number: spaces, dashes and brackets dropped.
-_PHONE_PUNCTUATION = re.compile(r"[\s\-().]")
 
 _MESSAGES = {
     "sign_in": "{code} is your Nora sign-in code. It expires in {lifetime}. "
@@ -65,9 +65,11 @@ class OtpService:
         records: Any, doctrine_store: Any, canary: str, metrics: Any, secret: bytes,
         ttl: timedelta, max_attempts: int, max_per_hour: int, max_per_day: int,
         clock: Callable[[], datetime],
+        bindings: BindingStore | None = None, registry: IdentityRegistry | None = None,
     ) -> None:
         self._store = store
         self._persons = persons
+        self._identities = OtpIdentities(persons, bindings, registry)
         self._adapters = adapters
         self._records = records
         self._doctrine_store = doctrine_store
@@ -91,13 +93,9 @@ class OtpService:
         message = f"{challenge_id}:{code}".encode()
         return hmac.new(self._secret, message, hashlib.sha256).hexdigest()
 
-    def _account_for(self, platform: str, identifier: str) -> BoundAccount | None:
-        """Resolve the exact account, allowing phone punctuation but no person-name inference."""
-        ident = identifier.strip()
-        for candidate in (ident, _PHONE_PUNCTUATION.sub("", ident)):
-            if account := self._persons.account_for(platform, candidate):
-                return account
-        return None
+    @property
+    def managed(self) -> bool:
+        return self._identities.managed
 
     async def request(self, *, identifier: str, platform: str, purpose: str) -> str:
         """Send a code to the person `identifier` names, on `platform`, and
@@ -107,16 +105,21 @@ class OtpService:
         if platform not in DIRECT_PLATFORMS or purpose not in PURPOSES:
             raise ValueError(f"unknown platform {platform!r} or purpose {purpose!r}")
         challenge_id = uuid.uuid4()
-        outcome = await self._request(challenge_id, identifier, platform, purpose)
+        try:
+            outcome = await self._request(challenge_id, identifier, platform, purpose)
+        except Exception as error:  # noqa: BLE001 — public requests never disclose the roster
+            log.error("OTP request unavailable: %s", type(error).__name__)
+            outcome = "unavailable"
         self._metrics.inc("nora_otp_requests_total", platform=platform, outcome=outcome)
         return str(challenge_id)
 
     async def _request(
         self, challenge_id: uuid.UUID, identifier: str, platform: str, purpose: str,
     ) -> str:
-        account = self._account_for(platform, identifier)
-        if account is None:
+        recipient = await self._identities.resolve(platform, identifier)
+        if recipient is None:
             return "unknown"
+        account = recipient.account
         person_id = account.person_id
         target = direct_account_target(account)
         if target is None:
@@ -146,6 +149,7 @@ class OtpService:
             challenge_id=challenge_id, person_id=person_id, purpose=purpose,
             platform=platform, code_hash=self._hash(challenge_id, code),
             issued_at=now, expires_at=now + self._ttl,
+            account=recipient.proof,
         )
         text = _MESSAGES[purpose].format(code=code, lifetime=self._lifetime())
         try:
@@ -199,3 +203,32 @@ class OtpService:
             "nora_otp_checks_total", outcome="ok" if person_id else "refused",
         )
         return person_id
+
+    async def verify_account(
+        self, *, challenge_id: str, code: str, purpose: str,
+    ) -> VerifiedAccountCode | None:
+        if purpose != "sign_in":
+            self._metrics.inc("nora_otp_checks_total", outcome="refused")
+            return None
+        receipt = None
+        try:
+            parsed = uuid.UUID(challenge_id)
+        except (ValueError, AttributeError, TypeError):
+            parsed = None
+        try:
+            if parsed is not None and isinstance(code, str) and _CODE.fullmatch(code):
+                receipt = await self._store.attempt_account(challenge_id=parsed, purpose=purpose,
+                    code_hash=self._hash(parsed, code), now=self._clock(),
+                    max_attempts=self._max_attempts)
+            proof = receipt.account if receipt is not None else None
+            binding = proof.binding if proof is not None else None
+            if (receipt is not None and proof is not None and binding is not None
+                    and await self._identities.current(receipt)):
+                self._metrics.inc("nora_otp_checks_total", outcome="ok")
+                return VerifiedAccountCode(challenge_id, receipt.person_id, proof.account,
+                                           binding, self._clock())
+        except Exception as error:
+            self._metrics.inc("nora_otp_checks_total", outcome="unavailable")
+            raise OtpUnavailableError("OTP identity verification unavailable") from error
+        self._metrics.inc("nora_otp_checks_total", outcome="refused")
+        return None

@@ -1327,7 +1327,7 @@ async def build_dependencies(
         engine=engine,
         metrics=metrics,
         persons=persons,
-        registry=registry,
+        registry=registry, identity_services=_stores_managed.services,
     )
     otp = _stores_otp.otp
     otp_api_token = _stores_otp.otp_api_token

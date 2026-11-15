@@ -93,3 +93,16 @@ def test_a_retained_session_requires_its_original_binding():
              "account_id": "generated-binding", "account_revision": "2"}
     authentication = verify(signed(claims(purpose="session", binding=bound)))
     assert asdict(authentication.binding) == bound
+
+
+def test_code_login_requires_the_original_account_binding():
+    verifier = AuthenticationVerifier([AuthenticationIssuer(
+        ISSUER.name, KEY, {"signal_code": "nora-otp"})])
+    value = claims(authentication_method="signal_code", proof_issuer="nora-otp",
+                   account={"platform": "signal", "kind": "phone", "value": "+85290000101"})
+    with pytest.raises(AuthenticationRefusedError):
+        verifier.verify(signed(value), method="POST", path=PATH, body=BODY)
+    value["binding"] = {"person_id": "generated-person", "person_revision": "0",
+                        "account_id": "generated-account", "account_revision": "0"}
+    proof = verifier.verify(signed(value), method="POST", path=PATH, body=BODY)
+    assert proof.binding.account_id == "generated-account"

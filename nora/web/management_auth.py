@@ -85,7 +85,9 @@ class _Claims(BaseModel):
         age = self.iat - self.authenticated_at
         if not 0 <= age <= (60 if self.purpose == "sign_in" else 30 * 86400):
             raise ValueError("authentication is not current for this purpose")
-        if (self.purpose == "session") != (self.binding is not None):
+        code = self.authentication_method in {"signal_code", "whatsapp_code"}
+        if (((self.purpose == "session" or code) and self.binding is None)
+                or (self.purpose == "sign_in" and not code and self.binding is not None)):
             raise ValueError("a session retains its original verified binding")
         if self.account.platform != _PLATFORMS[self.authentication_method]:
             raise ValueError("authentication method does not prove this account platform")

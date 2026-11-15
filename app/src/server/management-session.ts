@@ -52,7 +52,9 @@ export async function authenticationAssertion(
     || secret === process.env.NORA_OTP_API_TOKEN) {
     throw new Error("Authentication issuer is unavailable");
   }
-  if ((request.purpose === "session") !== (request.binding !== undefined)) {
+  const code = event.method === "signal_code" || event.method === "whatsapp_code";
+  if (((request.purpose === "session" || code) && request.binding === undefined)
+    || (request.purpose === "sign_in" && !code && request.binding !== undefined)) {
     throw new Error("A retained session requires its original binding");
   }
   const now = Math.floor(Date.now() / 1000);
@@ -100,8 +102,9 @@ async function call(
   return { status: "unavailable" };
 }
 
-export async function captureManagedSession(authentication: AuthenticationEvent): Promise<ManagedSession> {
-  const response = await call("sign_in", authentication);
+export async function captureManagedSession(authentication: AuthenticationEvent,
+  originalBinding?: ManagedSession["binding"]): Promise<ManagedSession> {
+  const response = await call("sign_in", authentication, originalBinding);
   if (response.status !== "ok") throw new Error("Managed identity authentication failed");
   return { authentication, binding: response.binding };
 }

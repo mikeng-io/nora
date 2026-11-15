@@ -29,12 +29,15 @@ from __future__ import annotations
 
 import hmac
 import uuid
+from dataclasses import asdict
 from datetime import datetime
 
 import sqlalchemy as sa
+from pydantic import TypeAdapter
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.otp_account import CodeAccount, CodeAttempt
 from nora.infra.sql.schema import OTP_ATTEMPT, OTP_CHALLENGE
 
 
@@ -47,6 +50,7 @@ class SqlOtpStore:
     async def issue(
         self, *, challenge_id: uuid.UUID, person_id: str, purpose: str, platform: str,
         code_hash: str, issued_at: datetime, expires_at: datetime,
+        account: CodeAccount | None = None,
     ) -> None:
         """Record a code. Any earlier code for this person and purpose is
         superseded by this row existing; nothing else is written."""
@@ -54,6 +58,7 @@ class SqlOtpStore:
             await conn.execute(sa.insert(OTP_CHALLENGE).values(
                 challenge_id=challenge_id, person_id=person_id, purpose=purpose,
                 platform=platform, code_hash=code_hash,
+                account_proof=asdict(account) if account is not None else None,
                 issued_at=issued_at, expires_at=expires_at,
             ))
 
@@ -71,6 +76,14 @@ class SqlOtpStore:
         self, *, challenge_id: uuid.UUID, purpose: str, code_hash: str, now: datetime,
         max_attempts: int,
     ) -> str | None:
+        receipt = await self.attempt_account(challenge_id=challenge_id, purpose=purpose,
+            code_hash=code_hash, now=now, max_attempts=max_attempts)
+        return receipt.person_id if receipt is not None else None
+
+    async def attempt_account(
+        self, *, challenge_id: uuid.UUID, purpose: str, code_hash: str, now: datetime,
+        max_attempts: int,
+    ) -> CodeAttempt | None:
         """Check one code. The person it was for when it matches a live code,
         else None — and None tells the caller nothing about why.
 
@@ -81,7 +94,7 @@ class SqlOtpStore:
         async with self._engine.begin() as conn:
             row = (await conn.execute(
                 sa.select(c.c.person_id, c.c.purpose, c.c.code_hash, c.c.recorded_at,
-                          c.c.expires_at)
+                          c.c.expires_at, c.c.platform, c.c.account_proof)
                 .where(c.c.challenge_id == challenge_id)
                 .with_for_update()
             )).one_or_none()
@@ -117,4 +130,8 @@ class SqlOtpStore:
                     index_elements=[a.c.challenge_id], index_where=a.c.ok,
                 )
             )
-        return row.person_id if ok and result.rowcount else None
+        if not ok or not result.rowcount:
+            return None
+        account = (None if row.account_proof is None else
+                   TypeAdapter(CodeAccount).validate_python(row.account_proof, extra="forbid"))
+        return CodeAttempt(row.person_id, row.platform, account)

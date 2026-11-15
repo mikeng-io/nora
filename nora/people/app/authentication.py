@@ -59,7 +59,7 @@ class AccountSessions:
                                         else Verdict.UNAVAILABLE)
         binding = SessionBinding(canonical, str(person.revision), account.account_id,
                                  str(account.revision))
-        if authentication.purpose != "sign_in" and authentication.binding != binding:
+        if authentication.binding is not None and authentication.binding != binding:
             return AuthenticationResult(Verdict.DENIED)
         if authentication.purpose == "sign_in":
             verdict = await self._capture(authentication, binding)
