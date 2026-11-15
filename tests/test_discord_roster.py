@@ -126,14 +126,9 @@ async def test_an_http_error_is_unavailable_not_an_empty_room(api):
     assert roster.members == ()
 
 
-async def test_a_guild_too_large_to_read_in_one_page_refuses_the_whole_read(api):
-    """The read does not paginate, so a full page means members were LEFT OUT.
-
-    Answering with the truncated set would UNDER-report the room — the one
-    direction this module must never fail in, since a roster that has quietly
-    forgotten people is a roster the disclosure gate will happily approve.
-    """
-    api.state["members"] = [{"user": {"id": str(i)}} for i in range(MAX_MEMBERS_PER_PAGE)]
+async def test_a_server_repeating_the_same_full_page_refuses_the_whole_read(api):
+    """A server ignoring the cursor cannot establish a complete roster."""
+    api.state["members"] = [{"user": {"id": str(i + 1)}} for i in range(MAX_MEMBERS_PER_PAGE)]
 
     roster = await _roster(api).roster(conversation_id=ROOM)
 
@@ -179,15 +174,7 @@ async def test_a_non_list_body_is_unavailable(api):
 
 
 async def test_a_member_row_with_no_usable_id_is_reported_not_silently_dropped(api, caplog):
-    """The one branch that can drop a REAL member.
-
-    Every other refusal here answers `available=False`, so the failure is
-    visible in the caller. This one keeps the roster and returns fewer people —
-    UNDER-reporting, which this module's docstring calls the unsafe direction,
-    because a roster that has quietly forgotten somebody is one the disclosure
-    gate will happily approve. It must therefore log what it drops: the only
-    branch capable of a silent wrong answer cannot be the one with no trace.
-    """
+    """Losing even one member cannot produce an available disclosure roster."""
     api.state["members"] = [
         {"user": {"id": "100000000000000001"}},
         {"user": {}},                      # no id at all
@@ -198,7 +185,6 @@ async def test_a_member_row_with_no_usable_id_is_reported_not_silently_dropped(a
     with caplog.at_level(logging.ERROR, logger="nora.discord.roster"):
         roster = await _roster(api).roster(conversation_id=ROOM)
 
-    assert roster.members == (frozenset({"100000000000000001"}),)
-    assert any("skipped 3 member row" in r.message for r in caplog.records), (
-        "an under-reported room must say so"
-    )
+    assert roster.available is False
+    assert roster.members == ()
+    assert any("malformed member rows" in r.message for r in caplog.records)
