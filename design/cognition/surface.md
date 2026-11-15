@@ -23,6 +23,7 @@ verb per basis the model may propose.
 | **propose** | orient, study's learn and grade | entities, claims, edges (inferred); lessons are claims about Nora's practice; a grade is a claim about the graded row, citing its later evidence |
 | **commit** | decide | intentions (committed): open, revise, drop, and close — a close names the successful outcome item, and observe's compute writes the closed-by edge |
 | **send_reply** | act | nothing; delivery is recorded by observe |
+| **act tools**: each area's effects and delegations (a reaction, music, a document, the computer, a sub-agent job) | act | nothing; each passes the [act envelope](acts.md) and its outcome is recorded by observe |
 
 ## Surface per pass
 

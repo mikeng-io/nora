@@ -15,6 +15,7 @@ rebuildable; it is never the truth.
 | entities | one table | admitted, merged, retired |
 | claims | one table | revisions append; a stale base is refused |
 | intentions | one table | revisions append; ended only with a closed-by edge and its outcome |
+| registry | one row per graph row: its id, kind and unit | written with the row |
 | edges | **one table for every edge between any two rows**, citations included | revisions append |
 
 Every table carries the planes under the same names and meanings: identity,
@@ -22,6 +23,23 @@ basis, scope, provenance, time, revision, lifecycle. A column specific to a
 kind exists only for that kind's lifecycle, such as an intention's conditions
 or its verdict. Basis and scope are columns, never implied by which table a row
 is in.
+
+**Integrity.** Every kind table references the registry. Each edge references
+both endpoints by id and unit through the registry, so the database itself
+refuses a dangling edge and an edge across units. Edge types and legal endpoint
+kinds are checked by admission; concurrent revision is refused by base.
+
+## Retention and forgetting
+
+- Each item source has a retention horizon, set in configuration. Past it the
+  item is deleted, and so are the edges that point at it; a claim that cited
+  it keeps its history with a deleted-source citation.
+- A forget request from a person hides at once what it names from rendering and
+  retrieval; physical deletion follows the source's horizon or the request's
+  own terms.
+- Aggregates rebuild from what remains, at their watermark.
+- Working state ends by its own conditions: an intention's drop-when, deadline
+  or review time, never by silent expiry.
 
 ## Access
 

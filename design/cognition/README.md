@@ -29,6 +29,7 @@ part is [emergence](emergence.md).
 |---|---|
 | [graph](graph.md) | basis and scope, the planes, five kinds, intentions, edges, presentations |
 | [claims](claims.md) | profile parts, support and precedence, likes and constraints, disputes and decay |
+| [acts](acts.md) | the act envelope; delegated work |
 | [storage](storage.md) | per-kind tables with shared planes and one edge table, as the truth |
 | [loops](loop.md) | OODAS, the engagement and reflection loops, actions, passes, the debrief, what keeps them open |
 | [context](context.md) | the four context layers and the presentation blocks for both loops |
@@ -66,6 +67,23 @@ the code that runs today; nothing new is built to them, and they leave with
 that code when this design is implemented. [Context
 assembly](../context-assembly/README.md) and [evaluation](../evaluation/README.md)
 stay their own subjects and follow this one.
+
+## Where it lives in the code
+
+Areas follow [ADR 0037](../../docs/adr/0037-code-is-grouped-by-area-and-depends-inward.md).
+
+| part | owner |
+|---|---|
+| the graph: registry, entities, claims, intentions, edges, admission, retrieval, presentations | `memory/`, which absorbs the Notebook, Standing, profiles, lessons and the account of herself |
+| items | the area of their source: `conversation/`, `location/`, `media/`, `social/`, `computer/`, `voice/` |
+| aggregates | `analytics/` for rollups; each area for its own current heads |
+| people, rooms, units, the primary unit | `people/` |
+| delivery triggers, schedules, watches | `agenda/` |
+| delegated work | `subagents/` and `computer/` |
+| the engagement loop and the debrief | `engagement/`, with the fire path in `app/` |
+| the reflection loop | `dreamer/` |
+| context assembly | `agent/` |
+| the act envelope | `domain/`, the shared kernel; each area's tools implement it |
 
 ## Why this shape
 

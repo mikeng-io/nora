@@ -53,7 +53,7 @@ poller. Every other stage runs inside a pass.
 | | **debrief** | model → code | engagement loop only: after act, a second, tools-less model reviews the pass's recorded execution and proposes the working state it left as `commit` operations; code admits them |
 | act | **compose** | model | drafts the act from the situation at that moment |
 | | **guard** | code | runs disclosure and send guards against the current room |
-| | **perform** | code | delivers what the model's `send_reply` call carries, or records silence |
+| | **perform** | code | performs the act through its [envelope](acts.md) — a delivery, an effect or a delegation — or records silence |
 | study | **verify** | code | writes each achieve intention's verdict, and each maintain intention's end, from closed-by, the clock and source health |
 | | **grade** | judge | an independent model grades claims and lessons against later evidence |
 | | **learn** | model → code | proposes lessons from verdicts or a correction; code admits them |
@@ -158,9 +158,9 @@ before admission changes nothing; an admitted operation stays admitted; a
 write whose commit state is uncertain is unavailable and is read back before
 anything retries it.
 
-**Settlement**: an engagement pass is complete only once its debrief's attempt
-and outcome are durably recorded. A failed debrief is not a normally closed
-pass.
+**Settlement**: the pass settles on its reply outcome; a failed debrief leaves
+a debrief-pending obligation retried on its own, and never retries the reply
+([execution](execution.md)).
 
 The pass commits only what its reply promises, so the reply never claims what
 was not written; the debrief commits everything else the pass left and does
@@ -169,12 +169,15 @@ not repeat what the pass committed.
 Admission is code: a call is admitted deterministically; an ambient offer is
 admitted by room policy and may never suppress a call; a proactive pass is
 admitted when its intention is due; a wake is admitted by the wake evaluator
-with no model call. A failed admission produces no pass and no fallback.
+with no model call. A failed admission produces no pass and no fallback. An
+optional relevance gate may stand in front of the ambient offer as a bounded,
+tools-less admission occasion: it writes nothing, its failure admits nothing,
+and it never replaces the ambient pass's own right to silence.
 
 ## Open loops
 
-Together the loops take in any stimulus, keeps concerns that never finish, reaches
-outward and takes its results back in.
+Together the loops take in any stimulus, keep concerns that never finish,
+reach outward and take their results back in.
 
 **Stimuli**: a platform item; a watched source changing; an aggregate crossing
 its baseline; the clock (an intention due, a review time, a valid-to time

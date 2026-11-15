@@ -36,11 +36,24 @@ people's responses to her acts, never only her own earlier words.
 - **Exposure**: external rows may reach a room through the guards; internal
   rows are read by Nora and never egress; operator rows are never read by Nora.
 - A person in two units has independent state in each.
+- **A DM is a room of the primary unit.** It reads that unit's understanding
+  through the ordinary disclosure rules and reads no affiliate unit. Its raw
+  items are never shown outside the DM. A claim citing DM items carries the DM
+  as its origin: it may be shown to the model in the unit's other rooms, marked
+  with that origin, and doctrine governs whether anything drawn from it is
+  said there. That rule is doctrine, not a code guarantee: code bounds what the
+  model is shown, never a paraphrase.
+- **Separate purposes are separate agents**, each with its own units — never a
+  private silo inside one Nora.
+- **Public surfaces without a unit** — a public comment summons — read and
+  write no graph state: no prefetch, no debrief, no claims. They keep their own
+  public ledger and an authored minimum of seed and practice.
 
 ## Egress
 
-- Only the engagement loop delivers, only through `send_reply`, and only after
-  the guards run against the current room and roster.
+- Only the engagement loop delivers to a room, through the tag pipeline or the
+  fire path, and only after the guards run against the current room and roster.
+  Every act passes the [act envelope](acts.md).
 - Credential and doctrine leak protection always run.
 - Content checks — identifier and coordinate filters, place and person-name
   screens, the location audience subset and unknown-person checks — follow
@@ -54,5 +67,5 @@ people's responses to her acts, never only her own earlier words.
 - A saved place is an entity. Its coordinate may serve a requested route
   inside code; it never reaches model prose or an outside query, and a
   person's live position is never a routing endpoint.
-- Third-party memory may be fed from items under Nora's own peer; it is read
-  only as a hint, never as evidence.
+- The Cognitive Graph is Nora's only memory. No third-party memory is fed or
+  read.
