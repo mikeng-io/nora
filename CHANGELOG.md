@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.19.5](https://github.com/mikeng-io/nora/compare/v7.19.4...v7.19.5) (2026-11-15)
+
+
+### Features
+
+* **identity:** pin the managed-mode operation contract and platform account proofs ([563d578](https://github.com/mikeng-io/nora/commit/563d57864be013dad4d713fe313a70286972c457))
+
+
+### Bug Fixes
+
+* **identity:** enforce revision and permission contract boundaries ([e46cf90](https://github.com/mikeng-io/nora/commit/e46cf9081a680f38129e7ae63a8bed444980cec0))
+* **identity:** repair the managed contract's invariants and consent semantics ([e80a23e](https://github.com/mikeng-io/nora/commit/e80a23e034175e4503a044daf69fff1eedc104ac))
+
 ## [7.19.4](https://github.com/mikeng-io/nora/compare/v7.19.3...v7.19.4) (2026-11-15)
 
 
