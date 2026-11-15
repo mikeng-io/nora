@@ -9,10 +9,9 @@ and refuse correctly, the OPL source declares the model
 development configs pin the v26.2.0 keys so later setup does not invent
 their shape.
 
-What is NOT proven: OPL compilation or runtime behaviour. No Keto/Kratos
-binary is installed for this check, so these tests assert source properties
-only — `opl/syntax/check` and effective-permission cases against a real
-service are the service-integration task's evidence. Instances are generated,
+What is NOT proven: OPL compilation or runtime behaviour. These tests assert source properties only.
+`scripts.check_ory_policy` checks effective permissions against a disposable
+local Keto; these string assertions do not replace that service check. Instances are generated,
 never copied from production.
 """
 
@@ -128,7 +127,10 @@ def test_opl_scope_relations_are_declared_on_every_scope():
     for scope in ("Workspace", "Unit", "Room"):
         body = _opl_class_body(scope)
         for rel in ("member", "admin", "restricted",
-                    "manage_members", "manage_grants", "delegate"):
+                    "grant_speak", "deny_speak", "grant_view", "deny_view",
+                    "grant_manage_members", "deny_manage_members",
+                    "grant_manage_grants", "deny_manage_grants",
+                    "grant_delegate", "deny_delegate"):
             assert re.search(rf"{rel}: Person\[\]", body), f"{scope}.{rel}"
 
 
@@ -144,24 +146,22 @@ def test_opl_containment_edges_are_the_topology_direction():
 
 def test_opl_permit_inventory_matches_the_declared_model():
     """Every declared permit exists with the scope the design assigns it —
-    room access permits on Room only, management permits on all three scopes,
-    and the deny evaluator `blocked` on all three."""
-    mgmt = {"manage_members", "manage_grants", "delegate"}
-    assert _permits_of("Room") == mgmt | {"speak", "view", "blocked"}
-    assert _permits_of("Unit") == mgmt | {"blocked"}
-    assert _permits_of("Workspace") == mgmt | {"blocked"}
+    all access and management permits on every scope, with matching
+    per-permit deny evaluators."""
+    permits = {"speak", "view", "manage_members", "manage_grants", "delegate"}
+    for scope in ("Room", "Unit", "Workspace"):
+        assert _permits_of(scope) == permits | {f"blocked_{p}" for p in permits}
     assert _permits_of("Person") == set()
 
 
-def test_opl_deny_wins_on_every_permit():
-    """Every named permit guards on `!this.permits.blocked(ctx)` before any
-    grant — deny cannot be bypassed by a positive tuple."""
+def test_opl_deny_relations_are_per_permit_and_distinct_from_grants():
     for scope in ("Workspace", "Unit", "Room"):
         body = _opl_class_body(scope)
-        guards = body.count("!this.permits.blocked(ctx)")
-        expected = len(_permits_of(scope) - {"blocked"})
-        assert guards == expected, (
-            f"{scope}: {guards} deny guards for {expected} permits")
+        for permit in ("speak", "view", "manage_members", "manage_grants", "delegate"):
+            assert f"!this.permits.blocked_{permit}(ctx)" in body
+            assert f"this.related.deny_{permit}.includes(ctx.subject)" in body
+            assert f"this.related.grant_{permit}.includes(ctx.subject)" in body
+            assert not re.search(rf"^    {permit}: Person\[\]", body, re.M)
 
 
 def test_opl_inheritance_flows_downward_through_containment():
@@ -171,9 +171,9 @@ def test_opl_inheritance_flows_downward_through_containment():
         _opl_class_body("Unit")
     assert "unit.traverse((u) => u.permits.manage_members(ctx))" in \
         _opl_class_body("Room")
-    assert "unit.traverse((u) => u.permits.blocked(ctx))" in \
+    assert "unit.traverse((u) => u.permits.blocked_speak(ctx))" in \
         _opl_class_body("Room")
-    assert "workspace.traverse((w) => w.permits.blocked(ctx))" in \
+    assert "workspace.traverse((w) => w.permits.blocked_speak(ctx))" in \
         _opl_class_body("Unit")
     assert "traverse" not in _opl_class_body("Workspace")
 
@@ -189,7 +189,8 @@ def test_opl_membership_confers_no_management_permit():
 
 def test_keto_dev_config_pins_the_v26_keys():
     assert KETO_CFG["namespaces"]["location"].startswith("file://")
-    assert "experimental_strict_mode" not in KETO_CFG["namespaces"]
+    assert KETO_CFG["namespaces"]["experimental_strict_mode"] is True
+    assert KETO_CFG["limit"]["max_read_depth"] == 16
     assert KETO_CFG["dsn"].startswith("sqlite://")
     assert KETO_CFG["serve"]["read"]["host"] == "127.0.0.1"
     assert KETO_CFG["serve"]["write"]["host"] == "127.0.0.1"
@@ -210,5 +211,6 @@ def test_domain_permit_vocabulary_matches_the_opl_model():
     from nora.domain.management import ACCESS_PERMITS, MANAGEMENT_PERMITS
     declared = (
         _permits_of("Room") | _permits_of("Unit") | _permits_of("Workspace")
-    ) - {"blocked"}
+    )
+    declared = {p for p in declared if not p.startswith("blocked_")}
     assert declared == ACCESS_PERMITS | MANAGEMENT_PERMITS

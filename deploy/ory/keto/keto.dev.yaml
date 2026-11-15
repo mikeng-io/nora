@@ -2,7 +2,7 @@
 # Prerequisite: `keto migrate up -c deploy/ory/keto/keto.dev.yaml` creates the
 # tables once, then `keto serve -c deploy/ory/keto/keto.dev.yaml`.
 # `namespaces.location` is the required v26.2.0 key holding the OPL source URI;
-# `experimental_strict_mode` is deliberately unset.
+# Strict mode prevents a direct permit tuple from bypassing a deny rewrite.
 dsn: sqlite:///var/lib/keto/keto.db?_fk=true
 serve:
   read:
@@ -11,5 +11,8 @@ serve:
   write:
     host: 127.0.0.1
     port: 4467
+limit:
+  max_read_depth: 16
 namespaces:
   location: file:///etc/keto/namespaces.ts
+  experimental_strict_mode: true

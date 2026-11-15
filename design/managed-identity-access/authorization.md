@@ -19,8 +19,12 @@ The namespace model Nora declares is small and fixed: `Workspace`, `Unit` and
 `Room` carry containment relations (`room` → `unit`, `unit` → `workspace` —
 written by Nora after it validates the real containment), and `Person` is the
 only subject. Relations: `member` on a scope, `admin` on a scope for the full
-delegated operator, `restricted` for an explicit deny, and one relation per
-management permit so a single power can be delegated without the rest. The
+delegated operator, `restricted` for an explicit deny, and separate
+`grant_<permit>` / `deny_<permit>` relations for every
+access and management permit. A speak-only restriction denies only speak;
+`restricted` is the explicit blanket deny. Grants and matching restrictions
+inherit downward from workspace to unit to room. Room membership grants
+speak/view only in that room; parent membership grants neither. The
 permits each consumer checks are `speak`, `view` and the scoped-management
 permits (`manage_members`, `manage_grants`, `delegate`). Inheritance is
 declared in OPL: a `member` of a `Room` may `speak`/`view` there, a `Unit`'s
@@ -62,7 +66,13 @@ never allow.
 The development service runs `keto serve` with a sqlite DSN and
 `namespaces.location` pointing at the OPL file — the config key whose URI
 holds the namespace source in the v26.2.0 schema, with
-`experimental_strict_mode` left unset. The pinned development config is
+`experimental_strict_mode: true`. Computed permits are authoritative: even a
+direct tuple named `manage_members` cannot bypass its restriction rewrite.
+Management writes the separate grant/deny relations, never computed permits.
+The pinned engine implements this mode; it is a required part of the model,
+not an optional availability choice. `limit.max_read_depth: 16` accommodates
+three-scope inheritance and the per-permit denial rewrites; the default depth
+of five cannot evaluate the complete declared hierarchy. The pinned development config is
 `deploy/ory/keto/keto.dev.yaml`; `keto migrate up` is the one-time
 prerequisite. The write and read APIs stay on private listeners; only
 Nora's service holds the write side.

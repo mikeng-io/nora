@@ -754,5 +754,7 @@ class Operation:
                 f"{self.kind!r} must observe {sorted(missing)} — an approval "
                 "cannot outlive the state it was given"
             )
+        for revision in spec.revisions:
+            _nonblank(f"{revision} revision", self.observed_revisions[revision])
         _nonblank("operation_id", self.operation_id)
         _cross_check(self)

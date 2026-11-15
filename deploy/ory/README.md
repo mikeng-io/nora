@@ -11,8 +11,20 @@ self-hosted Ory **v26.2.0** (OSS):
 - `keto/namespaces.ts` — the OPL permission model declared by
   `design/managed-identity-access/authorization.md`.
 - `keto/keto.dev.yaml` — development config: sqlite DSN, private read/write
-  listeners, `namespaces.location` pointing at the OPL source.
+  listeners, `namespaces.location` pointing at the OPL source and strict mode enabled.
+  Positive and negative per-permit tuples use `grant_<permit>` and
+  `deny_<permit>` respectively; `restricted` is a blanket denial.
 
-Status: source-verified against the pinned API/config/OPL references, not yet
-compiled or served by a running Keto/Kratos — image digests, live syntax
-checks and effective-permission cases are Task 2 obligations.
+The permission check uses a disposable local Keto with the committed namespace
+source, strict mode and read-depth setting. Publish its read/write ports on
+loopback, keep its store empty and temporary, then run:
+
+```bash
+uv run python -m scripts.check_ory_policy --read-url http://127.0.0.1:4466 --write-url http://127.0.0.1:4467
+```
+
+It creates generated relationships, checks all scope/permit pairs, conflicting
+direct grants, permit-specific and blanket denials, and parent inheritance,
+then removes those relationships. OPL source-content tests alone do not prove
+these outcomes. Image pinning and wired managed-backend integration remain
+service-integration obligations.

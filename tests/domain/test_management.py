@@ -444,3 +444,23 @@ def test_permit_vocabularies_match_the_declared_model():
     assert frozenset({"speak", "view"}) == ACCESS_PERMITS
     assert frozenset(
         {"manage_members", "manage_grants", "delegate"}) == MANAGEMENT_PERMITS
+
+
+@pytest.mark.parametrize("value", ["", " ", "\t", " \n\t"])
+def test_identifiers_reject_blank_values_at_the_shared_boundary(value):
+    with pytest.raises(ValueError, match="non-blank"):
+        Identifier("signal", "uuid", value)
+
+
+@pytest.mark.parametrize("revision", ["identity", "ownership", "authority"])
+@pytest.mark.parametrize("value", ["", " ", "\t", None, 1])
+def test_required_revisions_name_nonblank_snapshot_tokens(revision, value):
+    revisions = dict.fromkeys(_link_revisions(), "revision-1")
+    revisions[revision] = value
+    with pytest.raises(OperationError, match=r"revision.*non-blank"):
+        Operation(
+            operation_id="req-0001", kind="request_link", actor=HOLDER,
+            target=Target(kind=TargetKind.ACCOUNT, account=RECEIVING),
+            payload=LinkRequest(surviving_person="miles"),
+            observed_revisions=revisions,
+        )
