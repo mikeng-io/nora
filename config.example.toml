@@ -741,3 +741,7 @@ headers_env = ""                      # env var NAME holding auth headers; reuse
 # kratos_admin_key_env = ""      # env var NAME holding a bearer key, never the value
 # keto_key_env = ""
 # timeout_seconds = 5.0
+# [identity.provisioning.community_bridge]
+# token_env = "NORA_COMMUNITY_PROVISIONING_TOKEN"  # private secret reference
+# sources = ["discord"]
+# scopes = [{ kind = "room", id = "discord/guild/channel" }]  # exact policy room

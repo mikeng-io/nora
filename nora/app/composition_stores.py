@@ -414,10 +414,14 @@ async def managed_identity(
     from nora.domain.management import Scope, ScopeKind
 
     session = aiohttp.ClientSession()
-    services = _people_wire.managed_services(
-        managed=cfg.identity.managed, session=session,
-        policy=policy, engine=engine,
-    )
+    try:
+        services = _people_wire.managed_services(
+            managed=cfg.identity.managed, session=session,
+            policy=policy, engine=engine, credentials=cfg.credentials,
+        )
+    except ValueError:
+        await session.close()
+        raise StartupError("managed identity credentials are unavailable") from None
     # Probe through the ports themselves: Kratos answers `unknown_scope`
     # for an absent probe id when it is up; Keto answers a relation listing
     # (possibly empty) when it is up. `unavailable` either side is refused.

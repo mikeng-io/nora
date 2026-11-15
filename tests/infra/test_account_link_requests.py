@@ -1,8 +1,7 @@
 """Real PostgreSQL serializes private decisions and preserves their evidence.
 
-Schema is built once per module from the production table declarations. The
-integrated migration chain still needs the managed-core migration before this
-store can be activated; these tests prove persistence, not deployment readiness.
+One migrated database per module, truncated between tests. These tests prove
+durable consent and concurrency, not ownership publication or activation.
 """
 
 import asyncio
@@ -30,14 +29,7 @@ from tests.unit.test_account_linking_state import (
 
 @pytest.fixture(scope="module")
 def database(pg_module_url):
-    engine = sa.create_engine(pg_module_url.replace("postgresql+asyncpg:", "postgresql+psycopg:"))
-    try:
-        with engine.begin() as connection:
-            MANAGED_LINK_REQUEST.create(connection, checkfirst=True)
-            MANAGED_LINK_DECISION.create(connection, checkfirst=True)
-        yield pg_module_url
-    finally:
-        engine.dispose()
+    return pg_module_url
 
 
 @pytest.fixture

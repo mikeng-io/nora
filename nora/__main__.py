@@ -25,6 +25,7 @@ from . import config
 from .agent.telemetry import setup_agent_tracing
 from .app import adoption, cli, runtime, wake
 from .app.composition import Dependencies, StartupError, build_dependencies
+from .app.management import mount_management
 from .app.revisions import RevisionRecorder
 from .config import ConfigError
 from .obs.errors import setup_errors
@@ -175,6 +176,7 @@ class App:
         # without.
         if deps.otp is not None:
             register_otp_routes(health_app, otp=deps.otp, api_token=deps.otp_api_token)
+        await mount_management(health_app, cfg=self.cfg, services=deps.managed_services)
         # The voice channel's text entry point: the wake service POSTs transcripts
         # here, and they enter through the dispatcher exactly like a typed Discord
         # message (same adapter callback, ingest and reactive path). `on_voice_event`

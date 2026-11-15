@@ -26,6 +26,7 @@ from pydantic import (
 )
 
 from nora.domain.external_files import PROVIDERS as EXTERNAL_FILE_PROVIDERS
+from nora.domain.identity import id_kinds
 from nora.domain.ports import (
     DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
     DREAM_MAX_STORE_CALLS_PER_TICK,
@@ -4045,6 +4046,35 @@ class ManagedOryConfig(BaseModel):
     timeout_seconds: float = Field(default=5.0, gt=0, le=60)
 
 
+class ProvisioningScopeConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["workspace", "unit", "room"]
+    id: str = Field(min_length=1)
+
+    @field_validator("id")
+    @classmethod
+    def _named_scope(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("a provisioning scope requires an id")
+        return value
+
+
+class ProvisioningServiceConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    token_env: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    sources: frozenset[str] = Field(min_length=1)
+    scopes: tuple[ProvisioningScopeConfig, ...] = Field(min_length=1)
+
+    @field_validator("sources")
+    @classmethod
+    def _known_sources(cls, values: frozenset[str]) -> frozenset[str]:
+        if any(not id_kinds(value) for value in values):
+            raise ValueError("provisioning sources must name known identity platforms")
+        return values
+
+
 class IdentityBackendConfig(BaseModel):
     """`[identity]` — which backend owns person binding and scoped grants.
 
@@ -4060,9 +4090,12 @@ class IdentityBackendConfig(BaseModel):
 
     backend: Literal["file", "managed"] = "file"
     managed: ManagedOryConfig = ManagedOryConfig()
+    provisioning: dict[str, ProvisioningServiceConfig] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _managed_needs_its_services(self) -> IdentityBackendConfig:
+        if any(not name.strip() for name in self.provisioning):
+            raise ValueError("provisioning services require a nonblank identity")
         if self.backend != "managed":
             return self
         required = {

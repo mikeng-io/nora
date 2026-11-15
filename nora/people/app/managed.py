@@ -372,6 +372,10 @@ class RegistrationService:
             return unavailable("store-failure")
 
     async def _apply(self, op: Operation) -> Outcome:
+        if op.kind == "register_account":
+            replay = await self._completed_registration(op)
+            if replay is not None:
+                return replay
         stale = await _revisions_fresh(self._bindings, op)
         if stale is not None:
             return stale
@@ -388,6 +392,29 @@ class RegistrationService:
         if handler is None:
             return denied(_REFUSED)
         return await handler(op)
+
+    async def _completed_registration(self, op: Operation) -> Outcome | None:
+        """Creation consumed the absence precondition; a retry reads its
+        recorded result without creating another identity or membership.
+        Revoked/moved bindings and inactive people still refuse the replay.
+        """
+        recorded = await self._bindings.operation(op.operation_id)
+        if recorded is None or recorded.state is not OperationJournalState.COMPLETE:
+            return None
+        if recorded.kind != op.kind or recorded.snapshot != _op_snapshot(op):
+            return denied("operation-conflict")
+        payload = cast(AccountRegistration, op.payload)
+        account = op.target.account
+        if account is None:
+            return denied("missing-account")
+        binding = await self._bindings.account_for(account.platform, account.kind, account.value)
+        expected = await self._bindings.canonical_person(payload.person_id)
+        if (binding is None or expected is None or binding.person_id != expected
+                or binding.identifiers != payload.identifiers):
+            return denied("registration-binding-changed")
+        if await self._bindings.person_lifecycle(expected) is not PersonLifecycle.ACTIVE:
+            return denied("person-suspended")
+        return complete("replayed")
 
     # -- observe / register -------------------------------------------------
 
@@ -587,12 +614,11 @@ class RegistrationService:
 
     async def _unlink(self, op: Operation) -> Outcome:
         payload = cast(Unlink, op.payload)
-        if op.target.account is None:
+        account = op.target.account
+        if account is None:
             raise ManagedError("unlink_account carries no account target")
         bound = await self._bindings.account_for(
-            op.target.account.platform,
-            op.target.account.kind,
-            op.target.account.value,
+            account.platform, account.kind, account.value,
         )
         if bound is None or bound.person_id != payload.expected_person:
             return denied("binding-mismatch")
@@ -601,7 +627,7 @@ class RegistrationService:
             return record
         outcome = await self._run_binding(
             record, "binding",
-            lambda: self._bindings.revoke_binding(account=op.target.account),
+            lambda: self._bindings.revoke_binding(account=account),
         )
         if outcome.status is not OutcomeStatus.COMPLETE:
             await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,

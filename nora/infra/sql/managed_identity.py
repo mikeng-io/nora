@@ -327,7 +327,7 @@ class SqlBindingStore:
             )
             # 2. Current ownership of every claimed identifier, in this
             #    transaction so the writes below see the same state.
-            owners: dict[Identifier, Row[Any] | None] = {}
+            owners: dict[Identifier, Row[Any, Any, Any] | None] = {}
             for ident in account.identifiers:
                 owners[ident] = (
                     await conn.execute(

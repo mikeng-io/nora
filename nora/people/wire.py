@@ -171,18 +171,16 @@ def file_services(persons, policy):
     )
 
 
-def managed_services(*, managed, session, policy, engine):
+def managed_services(*, managed, session, policy, engine, credentials):
     """The `managed` backend's services: PostgreSQL bindings, the Keto
     authority engine, Kratos identity records — topology still read from the
     loaded `Policy`, because topology stays Nora configuration in every
     backend (`authorization.md`).
 
     `managed` is a validated `ManagedOryConfig`; `session` the shared
-    aiohttp session the runtime owns. Secrets are read from the env vars
-    the config NAMES — never from config values themselves.
+    aiohttp session the runtime owns. `credentials` is Config.credentials:
+    private secret values with explicit environment overrides.
     """
-    import os
-
     from nora.infra.ory import KetoClient, KratosClient
     from nora.infra.sql.managed_identity import SqlBindingStore
     from nora.people.adapters.file_backend import FileTopologySource
@@ -190,18 +188,26 @@ def managed_services(*, managed, session, policy, engine):
     from nora.people.adapters.kratos_registry import KratosIdentityRegistry
     from nora.people.app.managed import ManagedServices
 
+    def key(name):
+        if not name:
+            return None
+        value = credentials.get(name)
+        if not value:
+            raise ValueError("configured Ory credential is unavailable")
+        return value
+
     keto_client = KetoClient(
         session=session,
         read_url=managed.keto_read_url,
         write_url=managed.keto_write_url,
         timeout_seconds=managed.timeout_seconds,
-        api_key=os.environ.get(managed.keto_key_env) or None,
+        api_key=key(managed.keto_key_env),
     )
     kratos_client = KratosClient(
         session=session,
         admin_url=managed.kratos_admin_url,
         timeout_seconds=managed.timeout_seconds,
-        api_key=os.environ.get(managed.kratos_admin_key_env) or None,
+        api_key=key(managed.kratos_admin_key_env),
     )
     return ManagedServices(
         bindings=SqlBindingStore(engine=engine),
