@@ -313,11 +313,23 @@ async def test_sdk_autonomous_journey_version2_turns_through_real_app(
     spec = Spec(source_url=clean_pg_url, entry="autonomous_journey",
                 services={draw.name: plan})
     experiment = Experiment(cases=[draw], evaluators=[JourneyGrader()])
-    report = await experiment.run_evaluations_async(
-        task=nora_task(spec), max_workers=1)
+    # The mirror is unconditional: a failed run's evidence is the
+    # diagnosis, and pytest's basetemp does not outlive the next worker's
+    # rotation — evidence that only survives a PASS is evidence lost on
+    # exactly the runs that need it.
+    try:
+        report = await experiment.run_evaluations_async(
+            task=nora_task(spec), max_workers=1)
+        _assert_v2_report(
+            draw, report, experiment, sdk_evidence, plan)
+    finally:
+        _durable_mirror(sdk_evidence)
 
-    assert [rows[0].label for rows in report.detailed_results] == ["PASS"]
+
+def _assert_v2_report(draw: Any, report: Any, experiment: Any,
+                      sdk_evidence: Any, plan: Any) -> None:
     events = read_events(sdk_evidence.path)
+    assert [rows[0].label for rows in report.detailed_results] == ["PASS"]
     coverage, outcome = accounted(
         report, experiment, evidence=evidence_outcome(sdk_evidence))
     assert accepted(coverage, outcome), (coverage, outcome)
@@ -441,5 +453,3 @@ async def test_sdk_autonomous_journey_version2_turns_through_real_app(
     assert draw.name in rendered and "turn" in rendered
     sdk_evidence.record("protocol_assertions", status="PASS",
                         version=2, behavior="UNMEASURED")
-
-    _durable_mirror(sdk_evidence)
