@@ -61,7 +61,8 @@ observed; a failed replay records none and never takes a live slot.
 
 ## Settlement and failure
 
-- A pass is open until its first durable outcome; closing settles its claims
+- A pass is open until its outcome is durable — for an engagement pass, until
+  its debrief's attempt and outcome are recorded; closing settles its claims
   atomically. A late pass cannot close over work a later one has claimed.
 - Reaching a round, token or time bound is a failed pass, not a normal end.
   What was admitted stays durable and is safe to meet again on retry.

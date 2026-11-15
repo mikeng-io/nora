@@ -2,8 +2,8 @@
 
 Nora's cognition is one graph worked by two open loops. The **Cognitive
 Graph** is her state. The **engagement loop** is Nora in a room; the
-**reflection loop** is Nora between conversations. Both run the same five
-OODAS stages. The goal is **emergence**: recommendation, personalisation,
+**reflection loop** is Nora between conversations. Both share the OODAS stage
+model, and each runs a declared subset of its stages. The goal is **emergence**: recommendation, personalisation,
 follow-through and learning arise from the generic loops working the graph,
 never from a capability's own code, store, prompt or loop.
 

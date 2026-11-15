@@ -122,8 +122,10 @@ Either form carries:
 - **serves** — the parent intention a child advances;
 - **watches** — for a maintain intention, the outside sources code polls on its
   behalf for as long as it holds;
-- **delivery** — *choose a moment* (a scheduled act, re-judged at delivery) or
-  *when it comes up* (raised only in a natural opening);
+- **delivery** — *choose a moment*, re-judged at delivery, or *when it comes
+  up*, raised only in a natural opening. A chosen moment has a **trigger**: a
+  time, or a watched condition holding, such as an event starting. Moving a
+  trigger is a revision that cites the evidence that moved it;
 - **closed-by** — the item or aggregate that ended it, and its outcome.
 
 **Outcomes.** An achieve intention ends with a verdict: **achieved** (its done-when was
@@ -156,8 +158,9 @@ presentation.
   come across.
 - **Standing** — Nora's current position in a room: what she holds open, owes
   and has on offer, what was recently settled and how, and where the
-  conversation stands. It reads intentions and the reflection loop's claims;
-  nothing writes it.
+  conversation stands. It reads intentions and the reflection loop's claims,
+  showing each situation claim's age and how many items arrived since it was
+  asserted, so a stale claim reads as stale. Nothing writes it.
 - **lessons** — the claims about Nora's own practice in a unit.
 - **likes** — the claims about what people enjoy, for a fixed destination
   audience.

@@ -15,8 +15,9 @@ recorded.
 | source health | probes | items |
 
 Every item of Nora's own acts carries the pass that produced it, so her sent
-rows render with that pass and a pass's items can be opened whole. No pass
-keeps its reasoning; what it decided is an intention.
+rows render with that pass and a pass's items can be opened whole. What a pass
+expressed — the drafts and conclusions Nora wrote — is among its items; hidden
+reasoning is never kept, and what it decided is an intention.
 
 A fetched outside page is an item with its fetch provenance. It can support
 public attributes of a place, work, event or organisation, never a private
