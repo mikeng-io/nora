@@ -106,7 +106,7 @@ _SUMMARY_LINE = re.compile(
     r"^\s*=*\s*"
     r"(?:(?:\d+ (?:passed|failed|errors?|skipped|deselected|xfailed|xpassed|"
     r"warnings?|reruns)),* +)*"
-    r"in \d+(?:\.\d+)?s"
+    r"in \d+(?:\.\d+)?s(?: \(\d+:\d{2}:\d{2}\))?"
     r"\s*=*\s*$", re.MULTILINE)
 
 # `go test -v`'s per-test start line, e.g. "=== RUN   TestX".

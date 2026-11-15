@@ -68,7 +68,9 @@ def test_the_python_phase_runs_this_interpreters_pytest_gate():
 @pytest.mark.parametrize(("rc", "out", "err", "verdict"), [
     (0, "3 passed in 0.4s", "", "green"),
     (1, "1 failed, 2 passed in 0.5s", "", "red"),
+    (1, "1 failed in 95.12s (0:01:35)", "", "red"),
     (1, "1 failed, 1 error in 0.5s", "", "errored"),
+    (1, "1 failed, 1 error in 95.12s (0:01:35)", "", "errored"),
     (5, "no tests ran", "", "empty"),
     (2, "", _BUSY, "busy"),
     (4, "", "Nora test lease changed; refusing a stale worker/job", "busy"),
