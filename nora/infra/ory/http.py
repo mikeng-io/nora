@@ -14,6 +14,7 @@ from enum import Enum
 from typing import Any
 
 import aiohttp
+from yarl import URL
 
 
 class OryTransportError(Exception):
@@ -49,7 +50,7 @@ class HttpResult:
 async def request(
     session: aiohttp.ClientSession,
     method: str,
-    url: str,
+    url: str | URL,
     *,
     params: dict[str, str] | None = None,
     json_body: Any = None,

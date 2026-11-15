@@ -1,12 +1,16 @@
 """Private HTTP provisioning binds the configured service, source and scope."""
 
+from dataclasses import replace
 from enum import Enum
 from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
 
+from nora.domain.identity import Identifier
+from nora.domain.managed import AccountState, ManagedAccount, ManagedPerson, PersonLifecycle
 from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
+from nora.testing.managed import FakeBindingStore, FakeIdentityRegistry, FakeTopologySource
 from nora.web.management_api import ProvisioningCredential, register_management_routes
 
 TOKEN = "generated-provisioning-credential"  # noqa: S105
@@ -57,7 +61,9 @@ def credential(**changes):
 @pytest.fixture
 async def surface(aiohttp_client):
     services = SimpleNamespace(registration=_UseCase("register_account"),
-                               authority=_UseCase("sync_membership"))
+                               authority=_UseCase("sync_membership"),
+                               bindings=FakeBindingStore(), registry=FakeIdentityRegistry(),
+                               topology=FakeTopologySource(rooms={ROOM.id: ("unit", False)}))
     app = web.Application()
     register_management_routes(app, services=services, credentials=(credential(),))
     return await aiohttp_client(app), services
@@ -71,6 +77,94 @@ async def test_authenticated_registration_receives_the_server_actor(surface):
     assert response.headers["Cache-Control"] == "no-store"
     assert services.registration.calls[0].actor is ACTOR
     assert services.authority.calls == []
+
+
+async def seed_identity(services):
+    account = Identifier(platform="discord", kind="user_id", value="generated-holder")
+    await services.bindings.register(
+        person=ManagedPerson("generated-person", PersonLifecycle.ACTIVE),
+        account=ManagedAccount("generated-account", "generated-person", "discord",
+                               frozenset({account}), AccountState.BOUND),
+    )
+    await services.registry.ensure_identity(external_id="generated-person", traits={})
+    return {"account": {"platform": account.platform, "kind": account.kind, "value": account.value},
+            "scope": {"kind": ROOM.kind.value, "id": ROOM.id}}
+
+
+async def test_resolution_returns_only_the_active_canonical_person(surface):
+    client, services = surface
+    query = await seed_identity(services)
+    response = await client.post(PATH.replace("operations", "accounts/resolve"),
+                                 headers=AUTH, json=query)
+    assert response.status == 200
+    assert await response.json() == {"status": "ok", "person_id": "generated-person"}
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize("failure,status,result", [
+    ("unknown", 404, "nothing_found"), ("revoked", 404, "nothing_found"),
+    ("suspended", 403, "denied"), ("inactive", 403, "denied"),
+    ("bindings-down", 503, "unavailable"), ("registry-down", 503, "unavailable"),
+    ("registry-missing", 503, "unavailable"), ("topology-down", 503, "unavailable"),
+    ("scope-removed", 403, "denied"),
+])
+async def test_resolution_distinguishes_absence_refusal_and_failure(
+    surface, failure, status, result,
+):
+    client, services = surface
+    query = await seed_identity(services)
+    if failure == "unknown":
+        query["account"]["value"] = "generated-unknown"
+    elif failure == "revoked":
+        account = services.bindings.accounts["generated-account"]
+        services.bindings.accounts[account.account_id] = replace(
+            account, state=AccountState.REVOKED,
+        )
+    elif failure == "suspended":
+        person = services.bindings.persons["generated-person"]
+        services.bindings.persons[person.person_id] = replace(
+            person, lifecycle=PersonLifecycle.SUSPENDED,
+        )
+    elif failure == "inactive":
+        await services.registry.set_state(external_id="generated-person", active=False)
+    elif failure == "registry-missing":
+        services.registry.identities.clear()
+    elif failure == "scope-removed":
+        services.topology.rooms.clear()
+    else:
+        getattr(services, failure.removesuffix("-down")).down = True
+    response = await client.post(PATH.replace("operations", "accounts/resolve"),
+                                 headers=AUTH, json=query)
+    assert response.status == status
+    assert await response.json() == {"status": result}
+
+
+@pytest.mark.parametrize("change,status", [
+    ("auth", 401), ("source", 403), ("scope", 403), ("actor", 400),
+])
+async def test_resolution_cannot_supply_authority_or_escape_credential(surface, change, status):
+    client, services = surface
+    query = await seed_identity(services)
+    headers = AUTH
+    if change == "auth":
+        headers = {}
+    elif change == "source":
+        query["account"] = {"platform": "telegram", "kind": "user_id", "value": "other"}
+    elif change == "scope":
+        query["scope"]["id"] = "other-room"
+    else:
+        query["actor"] = {"kind": "installation"}
+    response = await client.post(PATH.replace("operations", "accounts/resolve"),
+                                 headers=headers, json=query)
+    assert response.status == status
+
+
+async def test_mutation_rechecks_scope_after_startup(surface):
+    client, services = surface
+    services.topology.rooms.clear()
+    response = await client.post(PATH, headers=AUTH, json=registration())
+    assert response.status == 403
+    assert not services.registration.calls
 
 
 async def test_bulk_roster_uses_one_typed_operation_and_preserves_completeness(surface):

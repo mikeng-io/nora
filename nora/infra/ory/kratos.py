@@ -15,8 +15,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
+from yarl import URL
 
 from nora.domain.managed import (
     CheckResult,
@@ -48,16 +50,27 @@ def _parse_identity(body: Any) -> KratosIdentity | None:
         return None
     identity_id = body.get("id")
     state = body.get("state")
-    if not isinstance(identity_id, str) or not isinstance(state, str):
+    if (not isinstance(identity_id, str) or not identity_id.strip()
+            or not isinstance(state, str) or state not in {"active", "inactive"}):
         return None
     traits = body.get("traits")
     external_id = body.get("external_id")
+    if not isinstance(traits, dict) or (
+        external_id is not None and not isinstance(external_id, str)
+    ):
+        return None
     return KratosIdentity(
         identity_id=identity_id,
         external_id=external_id if isinstance(external_id, str) else None,
         state=state,
-        traits=traits if isinstance(traits, dict) else {},
+        traits=traits,
     )
+
+
+def _path(base: str, *segments: str) -> URL:
+    url = URL(base)
+    encoded = "/".join(quote(segment, safe="").replace(".", "%2E") for segment in segments)
+    return url.with_path(url.raw_path.rstrip("/") + "/" + encoded, encoded=True)
 
 
 @dataclass(frozen=True)
@@ -95,7 +108,7 @@ class KratosClient:
         )
         if result.status is HttpStatus.OK:
             identity = _parse_identity(result.body)
-            if identity is None:
+            if identity is None or identity.external_id != external_id:
                 return unavailable("malformed-body"), None
             return complete(), identity
         if result.status is HttpStatus.CONFLICT:
@@ -107,14 +120,14 @@ class KratosClient:
         result = await request(
             self.session,
             "GET",
-            f"{self.admin_url}/admin/identities/{identity_id}",
+            _path(self.admin_url, "admin", "identities", identity_id),
             api_key=self.api_key,
             timeout_seconds=self.timeout_seconds,
             expected={200: HttpStatus.OK, 404: HttpStatus.ABSENT},
         )
         if result.status is HttpStatus.OK:
             identity = _parse_identity(result.body)
-            if identity is None:
+            if identity is None or identity.identity_id != identity_id:
                 return unavailable("malformed-body"), None
             return complete(), identity
         if result.status is HttpStatus.ABSENT:
@@ -129,14 +142,14 @@ class KratosClient:
         result = await request(
             self.session,
             "GET",
-            f"{self.admin_url}/admin/identities/by/external/{external_id}",
+            _path(self.admin_url, "admin", "identities", "by", "external", external_id),
             api_key=self.api_key,
             timeout_seconds=self.timeout_seconds,
             expected={200: HttpStatus.OK, 404: HttpStatus.ABSENT},
         )
         if result.status is HttpStatus.OK:
             identity = _parse_identity(result.body)
-            if identity is None:
+            if identity is None or identity.external_id != external_id:
                 return unavailable("malformed-body"), None
             return complete(), identity
         if result.status is HttpStatus.ABSENT:
@@ -161,7 +174,7 @@ class KratosClient:
         result = await request(
             self.session,
             "PATCH",
-            f"{self.admin_url}/admin/identities/{identity_id}",
+            _path(self.admin_url, "admin", "identities", identity_id),
             json_body=[
                 {
                     "op": "replace",
@@ -174,6 +187,10 @@ class KratosClient:
             expected={200: HttpStatus.OK, 404: HttpStatus.ABSENT},
         )
         if result.status is HttpStatus.OK:
+            identity = _parse_identity(result.body)
+            if (identity is None or identity.identity_id != identity_id
+                    or identity.state != ("active" if active else "inactive")):
+                return unavailable("state-readback-mismatch")
             return complete()
         if result.status is HttpStatus.ABSENT:
             return denied("absent")
@@ -186,7 +203,7 @@ class KratosClient:
         result = await request(
             self.session,
             "DELETE",
-            f"{self.admin_url}/admin/identities/{identity_id}/sessions",
+            _path(self.admin_url, "admin", "identities", identity_id, "sessions"),
             api_key=self.api_key,
             timeout_seconds=self.timeout_seconds,
             expected={204: HttpStatus.OK, 404: HttpStatus.ABSENT},

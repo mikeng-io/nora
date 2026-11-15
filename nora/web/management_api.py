@@ -11,7 +11,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from aiohttp import web
+from pydantic import BaseModel, ConfigDict, ValidationError
 
+from nora.domain.identity import Identifier
+from nora.domain.identity_resolution import ResolutionStatus
 from nora.domain.management import (
     AccountRegistration,
     Actor,
@@ -19,6 +22,7 @@ from nora.domain.management import (
     Operation,
     Scope,
 )
+from nora.people import IdentityResolver
 from nora.web.management_request import ManagementRequestError, decode_management_request
 
 
@@ -46,55 +50,109 @@ class ProvisioningCredential:
         return (operation.kind == "sync_membership"
                 and operation.target.scope in self.scopes)
 
+    def can_resolve(self, account: Identifier, scope: Scope) -> bool:
+        return account.platform in self.actor.sources and scope in self.scopes
 
-def register_management_routes(
-    app: web.Application, *, services: Any,
-    credentials: tuple[ProvisioningCredential, ...],
-) -> None:
-    """Add service-only provisioning; human endpoints require separate proofs.
 
-    `services` is the people area's ManagedServices, supplied by composition;
-    web does not import the area's protected application modules.
-    Exact scope allowlists are deliberate: topology containment and current
-    permission checks remain the actual services' responsibility. A shared
-    transport token or a claimed platform role never selects these credentials.
-    """
-    credentials = tuple(credentials)
-    if not credentials:
-        raise ValueError("management routes require provisioning credentials")
-    if len({c.token for c in credentials}) != len(credentials):
-        raise ValueError("provisioning credentials cannot share a token")
-    if len({c.actor.service_id for c in credentials}) != len(credentials):
-        raise ValueError("provisioning service identities must be unique")
+class _ResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    async def execute(request: web.Request) -> web.Response:
+    account: Identifier
+    scope: Scope
+
+
+def _reply(status: str, code: int, *, detail: str | None = None,
+           person_id: str | None = None) -> web.Response:
+    body = {"status": status}
+    if detail is not None:
+        body["detail"] = detail
+    if person_id is not None:
+        body["person_id"] = person_id
+    return web.json_response(body, status=code, headers={"Cache-Control": "no-store"})
+
+
+class _ManagementHTTP:
+    def __init__(self, services: Any, credentials: tuple[ProvisioningCredential, ...]) -> None:
+        self._credentials = tuple(credentials)
+        if not self._credentials:
+            raise ValueError("management routes require provisioning credentials")
+        if len({c.token for c in self._credentials}) != len(self._credentials):
+            raise ValueError("provisioning credentials cannot share a token")
+        if len({c.actor.service_id for c in self._credentials}) != len(self._credentials):
+            raise ValueError("provisioning service identities must be unique")
+        self._services = services
+        self._identity = IdentityResolver(services.bindings, services.registry, services.topology)
+
+    def _credential(self, request: web.Request) -> ProvisioningCredential | None:
         authorization = request.headers.get("Authorization", "").encode()
-        credential = next((
-            c for c in credentials
+        return next((
+            c for c in self._credentials
             if hmac.compare_digest(authorization, f"Bearer {c.token}".encode())
         ), None)
-        headers = {"Cache-Control": "no-store"}
+
+    async def _scope_refusal(self, scope: Scope) -> web.Response | None:
+        try:
+            exists = await self._services.topology.scope_exists(scope)
+        except Exception:  # noqa: BLE001 — no authority answer means unavailable
+            return _reply("unavailable", 503)
+        if not isinstance(exists, bool):
+            return _reply("unavailable", 503)
+        return None if exists else _reply("denied", 403)
+
+    async def execute(self, request: web.Request) -> web.Response:
+        credential = self._credential(request)
         if credential is None:
-            return web.json_response({"status": "denied"}, status=401, headers=headers)
+            return _reply("denied", 401)
         try:
             operation = decode_management_request(
                 await request.read(), actor=credential.actor,
             )
         except ManagementRequestError:
-            return web.json_response({"status": "invalid_request"}, status=400,
-                                     headers=headers)
+            return _reply("invalid_request", 400)
         if not credential.admits(operation):
-            return web.json_response({"status": "denied"}, status=403, headers=headers)
+            return _reply("denied", 403)
+        scope = (operation.payload.scope if isinstance(operation.payload, AccountRegistration)
+                 else operation.target.scope)
+        if scope is None:
+            return _reply("invalid_request", 400)
+        refusal = await self._scope_refusal(scope)
+        if refusal is not None:
+            return refusal
         if operation.kind == "register_account":
-            outcome = await services.registration.apply(operation)
+            outcome = await self._services.registration.apply(operation)
         else:
-            outcome = await services.authority.apply(operation)
+            outcome = await self._services.authority.apply(operation)
         status = outcome.status.value
-        return web.json_response(
-            {"status": status, "detail": outcome.detail},
-            status={"complete": 200, "denied": 403,
-                    "unavailable": 503, "incomplete": 409}[status],
-            headers=headers,
+        return _reply(status, {"complete": 200, "denied": 403,
+                               "unavailable": 503, "incomplete": 409}[status],
+                      detail=outcome.detail)
+
+    async def resolve(self, request: web.Request) -> web.Response:
+        credential = self._credential(request)
+        if credential is None:
+            return _reply("denied", 401)
+        try:
+            query = _ResolveRequest.model_validate_json(
+                await request.read(), strict=True, extra="forbid",
+            )
+        except (ValidationError, ValueError, TypeError):
+            return _reply("invalid_request", 400)
+        if not credential.can_resolve(query.account, query.scope):
+            return _reply("denied", 403)
+        result = await self._identity.resolve(query.account, scope=query.scope)
+        return _reply(
+            result.status.value,
+            {ResolutionStatus.OK: 200, ResolutionStatus.ABSENT: 404,
+             ResolutionStatus.DENIED: 403, ResolutionStatus.UNAVAILABLE: 503}[result.status],
+            person_id=result.person_id,
         )
 
-    app.router.add_post("/app/v1/management/operations", execute)
+
+def register_management_routes(
+    app: web.Application, *, services: Any,
+    credentials: tuple[ProvisioningCredential, ...],
+) -> None:
+    """Add the authenticated private boundary over the selected service graph."""
+    handlers = _ManagementHTTP(services, credentials)
+    app.router.add_post("/app/v1/management/operations", handlers.execute)
+    app.router.add_post("/app/v1/management/accounts/resolve", handlers.resolve)
