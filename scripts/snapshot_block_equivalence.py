@@ -54,12 +54,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import importlib
 import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
 
 import sqlalchemy as sa
 
@@ -161,28 +159,19 @@ async def _main(args: argparse.Namespace) -> int:
                           file=sys.stderr)
                     return 2
                 async with recording.open(url, redis=True) as environment:
-                    # `nora.subject.obtain` resolves to a function on the
-                    # package; the module is reached by name so the recorded
-                    # in-force config is the template composed FROM.
-                    obtain_module = cast(
-                        Any, importlib.import_module("nora.subject.obtain"))
-                    previous_template = obtain_module._TEMPLATE
-                    obtain_module._TEMPLATE = in_force / "config.toml"
-                    try:
-                        spec = SubjectSpec(
-                            database_url=url, workdir=subject_workdir,
-                            room=(row.platform, row.conversation_id),
-                            now=datetime.fromtimestamp(row.ts / 1000, tz=UTC),
-                            overrides=overrides,
-                            policy=(in_force / "policy.toml").read_text(
-                                encoding="utf-8"),
-                            identity=(in_force / "identity.toml").read_text(
-                                encoding="utf-8"),
-                            environment=environment,
-                        )
-                        subject = await obtain(spec)
-                    finally:
-                        obtain_module._TEMPLATE = previous_template
+                    spec = SubjectSpec(
+                        database_url=url, workdir=subject_workdir,
+                        room=(row.platform, row.conversation_id),
+                        now=datetime.fromtimestamp(row.ts / 1000, tz=UTC),
+                        config=in_force / "config.toml",
+                        overrides=overrides,
+                        policy=(in_force / "policy.toml").read_text(
+                            encoding="utf-8"),
+                        identity=(in_force / "identity.toml").read_text(
+                            encoding="utf-8"),
+                        environment=environment,
+                    )
+                    subject = await obtain(spec)
                     try:
                         restored = await render_tag_blocks(
                             subject, message=NormalizedMessage(

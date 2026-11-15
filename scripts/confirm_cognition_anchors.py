@@ -91,8 +91,12 @@ def load_recordings(path: Path) -> dict[int, RecordedServices]:
         raise ValueError("--services must map each wake id to its recorded services")
     recordings: dict[int, RecordedServices] = {}
     for key, value in data.items():
-        if not isinstance(key, str) or not key.isdigit():
-            raise ValueError("--services keys must be wake ids")
+        # One canonical ASCII decimal per wake: `int()` alone also accepts
+        # "0", "09" and Unicode digits, collapsing distinct strings onto one
+        # wake and silently replacing its recording.
+        if (not isinstance(key, str)
+                or not re.fullmatch(r"[1-9][0-9]*", key)):
+            raise ValueError("--services keys must be canonical wake ids")
         recordings[int(key)] = RecordedServices(value)
     return recordings
 
@@ -150,12 +154,14 @@ def _overrides(memory_index: bool) -> dict[str, object]:
     }
 
 
-async def wake_input(sandbox_url: str, at_ms: int, view, room: str, config_dir: Path,
-                     memory_index: bool, environment) -> tuple[dict, Config]:
+async def wake_input(sandbox_url: str, at_ms: int, view, room: str,
+                     config_dir: Path, subject_config: Path, memory_index: bool,
+                     environment) -> tuple[dict, Config]:
     """The session's model input for this room inside the restored sandbox,
     and the bound config a judge routes through. The subject is obtained
-    inside the case-owned environment: its identity, policy and workspace are
-    the deployment's own, and every external read is a recorded response."""
+    inside the case-owned environment: its configuration, identity, policy
+    and workspace are the deployment's own, and every external read is a
+    recorded response."""
     import tempfile
     from datetime import UTC, datetime
 
@@ -170,6 +176,7 @@ async def wake_input(sandbox_url: str, at_ms: int, view, room: str, config_dir: 
     with tempfile.TemporaryDirectory() as directory:
         subject = await obtain(SubjectSpec(
             database_url=sandbox_url, workdir=Path(directory), room=(platform, room),
+            config=subject_config,
             overrides=_overrides(memory_index), now=now,
             identity=(config_dir / "identity.toml").read_text(),
             policy=(config_dir / "policy.toml").read_text(),
@@ -231,6 +238,7 @@ async def confirm(source_url: str, config: Path, inputs: list[dict[str, object]]
                   aliases: dict[str, str], recordings: dict[int, RecordedServices],
                   ) -> list[dict[str, object]]:
     url = clone_url(source_url)  # same refusal as finder, before connecting
+    import tempfile
     from datetime import UTC, datetime
 
     from opentelemetry import trace
@@ -245,92 +253,97 @@ async def confirm(source_url: str, config: Path, inputs: list[dict[str, object]]
     from nora.subject.sandbox import eval_host_lock, sandbox_as_of
 
     # The file every subject composes, rebuilt and drift-checked against the
-    # deployment first — as `python -m evals` does before any case.
-    await asyncio.to_thread(materialise, example=ROOT / "config.example.toml",
-                            deployment=config, target=ROOT / "config.evaluation.toml")
-    cfg = await asyncio.to_thread(load, config, require_secrets=False)
-    llm = cfg.llm.model_dump()
-    memory_index = bool(cfg.memory.index.read)
-    descriptions = scenarios()
-    rooms = {alias: real for real, alias in aliases.items()}
-    # One restore per wake: every candidate on the same wake shares its sandbox
-    # and its recorded-services environment.
-    by_wake: dict[int, list[dict[str, object]]] = {}
-    for item in inputs:
-        by_wake.setdefault(cast(int, item["wake"]), []).append(item)
-    output = []
-    engine = create_async_engine(url)
-    try:
-        async with engine.connect() as conn, conn.begin():
-            await conn.execute(text("SET TRANSACTION READ ONLY"))
-            actual = await conn.scalar(text("SELECT current_database()"))
-            if not str(actual).endswith("_eval"):
-                raise ValueError("not an eval clone")
-        with eval_host_lock() as lock_fd:
-            evidence = RunEvidence(run_id="confirm-cognition-anchors",
-                                   metadata={"candidates": len(inputs),
-                                             "deployment_config_sha256": fingerprint(config),
-                                             **revision(ROOT)},
-                                   lock_fd=lock_fd)
-            _prefill_capture()
-            # One stated bound for the whole run: at most ONE judge call per
-            # candidate — an extra or oversized dispatch is a run error.
-            budget = RunBudget(
-                max_requests=len(inputs),
-                max_output_tokens=max(1, len(inputs)) * int(llm["max_tokens"]))
-            token = active_run_budget.set(budget)
-            try:
-                with evidence.capture(trace.get_tracer_provider()):
-                    evidence.record("run_budget_started", **budget.as_metadata())
-                    for wake_id, items in by_wake.items():
-                        # A wake-level failure — no recording, an unrestorable
-                        # snapshot or a violated boundary — makes the whole
-                        # wake unavailable, including any already judged.
-                        verdicts = []
-                        try:
-                            recording = recordings.get(wake_id)
-                            if recording is None:
-                                raise ValueError(
-                                    f"wake {wake_id} has no recorded services")
-                            at_ms, view = await wake_from_snapshot(url, wake_id)
-                            now = datetime.fromtimestamp(at_ms / 1000, UTC)
-                            async with (
-                                sandbox_as_of(url, now) as (sandbox_url, _),
-                                recording.open(
-                                    sandbox_url, redis=True) as environment,
-                            ):
-                                for item in items:
-                                    status = "unavailable"
-                                    try:
-                                        moment, bound_cfg = await wake_input(
-                                            sandbox_url, at_ms, view,
-                                            rooms[str(item["room"])],
-                                            config.parent, memory_index,
-                                            environment)
-                                        bound = Judge(
-                                            base_url="", model="",
-                                            timeout_seconds=float(
-                                                llm["timeout_seconds"]),
-                                        ).bind(bound_cfg)
-                                        status = await judge(
-                                            bound, llm,
-                                            descriptions[
-                                                int(str(item["scenario"]))],
-                                            moment)
-                                    except Exception:  # noqa: BLE001 -- private errors stay local
+    # deployment first — as `python -m evals` does before any case, but into
+    # this run's own directory: the checkout's shared `config.evaluation.toml`
+    # belongs to whatever eval harness is using it, never to one confirmation.
+    with tempfile.TemporaryDirectory() as private:
+        generated = Path(private) / "config.evaluation.toml"
+        await asyncio.to_thread(
+            materialise, example=ROOT / "config.example.toml",
+            deployment=config, target=generated)
+        cfg = await asyncio.to_thread(load, config, require_secrets=False)
+        llm = cfg.llm.model_dump()
+        memory_index = bool(cfg.memory.index.read)
+        descriptions = scenarios()
+        rooms = {alias: real for real, alias in aliases.items()}
+        # One restore per wake: every candidate on the same wake shares its
+        # sandbox and its recorded-services environment.
+        by_wake: dict[int, list[dict[str, object]]] = {}
+        for item in inputs:
+            by_wake.setdefault(cast(int, item["wake"]), []).append(item)
+        output = []
+        engine = create_async_engine(url)
+        try:
+            async with engine.connect() as conn, conn.begin():
+                await conn.execute(text("SET TRANSACTION READ ONLY"))
+                actual = await conn.scalar(text("SELECT current_database()"))
+                if not str(actual).endswith("_eval"):
+                    raise ValueError("not an eval clone")
+            with eval_host_lock() as lock_fd:
+                evidence = RunEvidence(run_id="confirm-cognition-anchors",
+                                       metadata={"candidates": len(inputs),
+                                                 "deployment_config_sha256": fingerprint(config),
+                                                 **revision(ROOT)},
+                                       lock_fd=lock_fd)
+                _prefill_capture()
+                # One stated bound for the whole run: at most ONE judge call per
+                # candidate — an extra or oversized dispatch is a run error.
+                budget = RunBudget(
+                    max_requests=len(inputs),
+                    max_output_tokens=max(1, len(inputs)) * int(llm["max_tokens"]))
+                token = active_run_budget.set(budget)
+                try:
+                    with evidence.capture(trace.get_tracer_provider()):
+                        evidence.record("run_budget_started", **budget.as_metadata())
+                        for wake_id, items in by_wake.items():
+                            # A wake-level failure — no recording, an unrestorable
+                            # snapshot or a violated boundary — makes the whole
+                            # wake unavailable, including any already judged.
+                            verdicts = []
+                            try:
+                                recording = recordings.get(wake_id)
+                                if recording is None:
+                                    raise ValueError(
+                                        f"wake {wake_id} has no recorded services")
+                                at_ms, view = await wake_from_snapshot(url, wake_id)
+                                now = datetime.fromtimestamp(at_ms / 1000, UTC)
+                                async with (
+                                    sandbox_as_of(url, now) as (sandbox_url, _),
+                                    recording.open(
+                                        sandbox_url, redis=True) as environment,
+                                ):
+                                    for item in items:
                                         status = "unavailable"
-                                    verdicts.append({**item, "result": status})
-                        except Exception:  # noqa: BLE001 -- an unrestorable wake is unavailable
-                            verdicts = [{**item, "result": "unavailable"}
-                                        for item in items]
-                        output.extend(verdicts)
-                    evidence.record("run_budget_final", **budget.as_metadata())
-                    budget.finished()
-            finally:
-                active_run_budget.reset(token)
-    finally:
-        await engine.dispose()
-    return output
+                                        try:
+                                            moment, bound_cfg = await wake_input(
+                                                sandbox_url, at_ms, view,
+                                                rooms[str(item["room"])],
+                                                config.parent, generated,
+                                                memory_index, environment)
+                                            bound = Judge(
+                                                base_url="", model="",
+                                                timeout_seconds=float(
+                                                    llm["timeout_seconds"]),
+                                            ).bind(bound_cfg)
+                                            status = await judge(
+                                                bound, llm,
+                                                descriptions[
+                                                    int(str(item["scenario"]))],
+                                                moment)
+                                        except Exception:  # noqa: BLE001 -- private errors stay local
+                                            status = "unavailable"
+                                        verdicts.append({**item, "result": status})
+                            except Exception:  # noqa: BLE001 -- an unrestorable wake is unavailable
+                                verdicts = [{**item, "result": "unavailable"}
+                                            for item in items]
+                            output.extend(verdicts)
+                        evidence.record("run_budget_final", **budget.as_metadata())
+                        budget.finished()
+                finally:
+                    active_run_budget.reset(token)
+        finally:
+            await engine.dispose()
+        return output
 
 
 def main() -> int:

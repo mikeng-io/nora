@@ -232,8 +232,12 @@ async def _run_confirmation(
     config.write_text(evaluation_config.read_text())
     (config.parent / "identity.toml").write_text(IDENTITY)
     (config.parent / "policy.toml").write_text(POLICY)
-    monkeypatch.setattr(
-        evals.subject_config, "materialise", lambda **kw: None)
+    # The confirmer's private rebuild: the fake writes the deployment's own
+    # config where the run asked for it, as the real materialise would.
+    def materialise(*, example, deployment, target):
+        Path(target).write_text(evaluation_config.read_text())
+        return target
+    monkeypatch.setattr(evals.subject_config, "materialise", materialise)
     monkeypatch.setattr(
         nora.subject.sandbox, "sandbox_as_of",
         functools.partial(sandbox_as_of, template=pg_template))

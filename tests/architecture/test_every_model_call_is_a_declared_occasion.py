@@ -16,8 +16,9 @@ of occasions:
   1. every module that calls a model: `create_agent`, `create_dream_agent`,
      `ask_text`, `ask_structured`, `invoke_async`, `.invoke` on a runner or
      factory, `invoke.run`, a raw `completions.create`, a `.post(...)` whose
-     call spells `chat/completions`, or a `.complete(system=, prompt=)`,
-     under the name it was imported by;
+     call spells `chat/completions`, a `.complete(system=, prompt=)`, or a
+     bound collaborator's `._complete(client, request)` — the eval `Judge`'s
+     door — under the name it was imported by;
   2. every class that defines `inputs`, which is how a Dreamer adaptor hands
      its prompt to a runtime that calls the model for it.
 
@@ -236,6 +237,13 @@ def calls_a_model(tree: ast.Module) -> bool:
         ):
             return True
         if tail == "complete" and keywords & {"system", "prompt"}:
+            return True
+        # A bound collaborator's own complete: the eval `Judge` binds a
+        # config and answers through `._complete(client, request)` — the
+        # receiver's spelling is the caller's choice, so any attribute call
+        # of that name counts. A BARE `_complete(...)` is a local helper
+        # (the debrief fold's own), not this door.
+        if tail == "_complete" and len(chain) >= 2:
             return True
         if (
             tail == "invoke" and len(chain) >= 2
@@ -572,12 +580,15 @@ def test_the_net_follows_an_alias_and_a_wider_receiver(source):
     "client.messages.create(model='m', messages=[])\n",
     "client.responses.create(model='m', input='p')\n",
     "client.complete(system='s', prompt='p')\n",
+    "bound._complete(client, request)\n",
+    "self.judge._complete(client, request)\n",
 ], ids=[
     "create_agent", "factory.create_agent", "create_dream_agent",
     "factory.create_dream_agent", "ask_text", "ask_structured", "invoke_async",
     "run_agent",
     "stream_async", "structured_output", "structured_output_async",
     "completions.create", "messages.create", "responses.create", "complete",
+    "bound-complete", "self-judge-complete",
 ])
 def test_every_known_model_door_is_seen(source):
     assert calls_a_model(_tree(source))
@@ -589,7 +600,9 @@ def test_every_known_model_door_is_seen(source):
     "client.complete(1)\n",
     "runner.run(x)\n",
     "other.invoke(x)\n",
-], ids=["plain-create", "messages-append", "complete-no-kwargs", "run", "other-invoke"])
+    "_complete(client, request)\n",
+], ids=["plain-create", "messages-append", "complete-no-kwargs", "run",
+        "other-invoke", "bare-complete"])
 def test_an_ordinary_call_is_not_a_model_door(source):
     assert not calls_a_model(_tree(source))
 

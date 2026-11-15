@@ -105,6 +105,42 @@ def test_subject_consumers_read_the_pytest_owned_config(
     assert module.memory_endpoint()[1] == stated["honcho"]["workspace_id"]
 
 
+def test_each_spec_composes_its_own_declared_config(
+    evaluation_config, tmp_path, monkeypatch,
+) -> None:
+    """`spec.config` binds THAT file, per spec: two distinguishable recorded
+    configs compose two distinguishable subjects while the module template
+    and a caller that declares nothing are untouched."""
+    import importlib
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    module = importlib.import_module("nora.subject.obtain")
+    template_text = evaluation_config.read_text(encoding="utf-8")
+    first_path = tmp_path / "in_force_first" / "config.toml"
+    second_path = tmp_path / "in_force_second" / "config.toml"
+    first_path.parent.mkdir()
+    second_path.parent.mkdir()
+    first_path.write_text(template_text.replace(
+        'model = "nora"', 'model = "recorded-first"', 1), encoding="utf-8")
+    second_path.write_text(template_text.replace(
+        'model = "nora"', 'model = "recorded-second"', 1), encoding="utf-8")
+
+    first = build_config(_spec(tmp_path / "first", config=first_path))
+    second = build_config(_spec(tmp_path / "second", config=second_path))
+    assert first.llm.model == "recorded-first"
+    assert second.llm.model == "recorded-second"
+    # Each subject owns its copy in ITS workdir.
+    assert tomllib.loads((tmp_path / "first" / "config.toml").read_text(
+        encoding="utf-8"))["llm"]["model"] == "recorded-first"
+    # The module template never moved, and a spec that declares nothing
+    # still composes it.
+    assert evaluation_config == module._TEMPLATE
+    assert build_config(_spec(tmp_path / "third")).llm.model == "nora"
+    # Credential custody stays with the deployment's secret file wherever
+    # the declared config lives — a recorded `in_force/` holds none.
+    assert first._secret_path == module._TEMPLATE.parent / "secret.toml"
+
+
 @pytest.mark.parametrize("ambient", ["absent", "home", "deployment_env"])
 def test_evaluation_config_ignores_ambient_deployments(
     ambient, evaluation_config, tmp_path_factory, tmp_path, monkeypatch,

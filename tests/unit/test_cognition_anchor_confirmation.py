@@ -160,7 +160,15 @@ def test_load_recordings_validates_the_whole_manifest(tmp_path: Any) -> None:
     path.write_text(json.dumps({"nine": _RECORDING}))
     with pytest.raises(ValueError):
         confirm.load_recordings(path)
-    path.write_text(json.dumps({"+9": _RECORDING}))
+    # Every alias `int()` would collapse onto a wake is refused before any
+    # document is read: zero, leading zeros, signs, whitespace and Unicode
+    # digits are not canonical wake ids.
+    for alias in ("+9", "0", "09", "007", "٩", "9 ", " 9"):
+        path.write_text(json.dumps({alias: _RECORDING}))
+        with pytest.raises(ValueError):
+            confirm.load_recordings(path)
+    # Distinct manifest keys cannot collapse onto one wake's recording.
+    path.write_text(json.dumps({"9": _RECORDING, "09": _RECORDING}))
     with pytest.raises(ValueError):
         confirm.load_recordings(path)
     path.write_text(json.dumps(
@@ -209,12 +217,16 @@ async def test_wake_input_composes_the_production_spec(
             connect=lambda: _Context(object()),
             dispose=AsyncMock()))
 
+    subject_config = tmp_path / "private" / "config.evaluation.toml"
     moment, cfg = await confirm.wake_input(
         "postgresql:///generated_sandbox", 90_000, view,
-        "generated-room", cfg_dir, True, environment)
+        "generated-room", cfg_dir, subject_config, True, environment)
     assert cfg == "generated-cfg"
     spec = seen["spec"]
     assert spec.database_url == "postgresql:///generated_sandbox"
+    # The deployment's rebuilt config binds through the declared spec field,
+    # not a mutated module template.
+    assert spec.config == subject_config
     assert spec.environment is environment
     assert spec.room == ("signal", "generated-room")
     assert spec.policy == 'default = "deny"'
@@ -240,7 +252,8 @@ class _Context:
         return None
 
 
-def _patched_outer_loop(monkeypatch: Any, tmp_path: Any) -> Path:
+def _patched_outer_loop(
+        monkeypatch: Any, tmp_path: Any) -> tuple[Path, SimpleNamespace]:
     """Every seam of ``confirm`` that touches the outside — except the
     eval lock, the evidence capture and the run budget, which stay REAL."""
     cfg_dir = tmp_path / "cfg"
@@ -249,6 +262,7 @@ def _patched_outer_loop(monkeypatch: Any, tmp_path: Any) -> Path:
     (cfg_dir / "policy.toml").write_text('default = "deny"')
     config = cfg_dir / "config.toml"
     config.write_text('[llm]\nmodel = "nora"\n')
+    state = SimpleNamespace(materialise_target=None)
 
     conn = SimpleNamespace(
         begin=lambda: _Context(None),
@@ -261,6 +275,7 @@ def _patched_outer_loop(monkeypatch: Any, tmp_path: Any) -> Path:
         lambda url: engine)
 
     def materialise(*, example: Any, deployment: Any, target: Any) -> Path:
+        state.materialise_target = Path(target)
         return target
 
     def load(path: Any, require_secrets: bool = True) -> Any:
@@ -287,7 +302,7 @@ def _patched_outer_loop(monkeypatch: Any, tmp_path: Any) -> Path:
         "nora.subject.cognition.wake_from_snapshot", wake_from_snapshot)
     monkeypatch.setattr(
         "nora.subject.sandbox.sandbox_as_of", sandbox_as_of)
-    return config
+    return config, state
 
 
 class _Recording:
@@ -307,17 +322,20 @@ async def test_confirm_restores_once_per_wake(
     """The outer loop restores once per wake, keeps every item on the one
     wake input, and runs each verdict through the bound ``Judge`` — the
     eval route resolved from the obtained subject config."""
-    config = _patched_outer_loop(monkeypatch, tmp_path)
+    config, state = _patched_outer_loop(monkeypatch, tmp_path)
     inputs = [{"room": "room_a", "wake": 9, "scenario": s}
               for s in (3, 4)] + [
         {"room": "room_b", "wake": 10, "scenario": 6}]
     checked: list[str] = []
 
     async def wake_input(sandbox_url: Any, at_ms: Any, view: Any, room: Any,
-                         config_dir: Any, memory_index: Any,
+                         config_dir: Any, subject_config: Any,
+                         memory_index: Any,
                          environment: Any) -> tuple[dict, Any]:
         assert environment in {"generated-environment-9",
                                "generated-environment-10"}
+        # The subject composes the file this run materialised privately.
+        assert subject_config == state.materialise_target
         return {"agenda": "generated"}, "generated-cfg"
 
     async def judge(bound: Any, llm: Any, scenario: Any, moment: Any) -> str:
@@ -337,6 +355,11 @@ async def test_confirm_restores_once_per_wake(
         recordings)
     assert len(checked) == 3
     assert [row["result"] for row in result] == ["match"] * 3
+    # The deployment's rebuilt config lands in this run's own directory,
+    # never the checkout's shared `config.evaluation.toml`.
+    assert state.materialise_target is not None
+    assert state.materialise_target.name == "config.evaluation.toml"
+    assert confirm.ROOT not in state.materialise_target.parents
     # One environment per wake, opened on the restored sandbox URL with
     # redis for the bridge workers' composition parity.
     for wake_id, recording in recordings.items():
@@ -350,11 +373,12 @@ async def test_per_item_errors_are_unavailable_never_negative(
         monkeypatch: Any, tmp_path: Any) -> None:
     """A failure composing or judging one candidate names that item
     `unavailable`; the other item on the wake is unaffected."""
-    config = _patched_outer_loop(monkeypatch, tmp_path)
+    config, _ = _patched_outer_loop(monkeypatch, tmp_path)
     calls: list[str] = []
 
     async def wake_input(sandbox_url: Any, at_ms: Any, view: Any, room: Any,
-                         config_dir: Any, memory_index: Any,
+                         config_dir: Any, subject_config: Any,
+                         memory_index: Any,
                          environment: Any) -> tuple[dict, Any]:
         if calls:
             raise RuntimeError("generated inspection failure")
@@ -383,7 +407,7 @@ async def test_a_violated_boundary_makes_judged_items_unavailable(
     """When the recorded-services environment reports an unrecorded call at
     close, the wake's evidence is incomplete: even an already-judged item on
     that wake is `unavailable`, never `match`."""
-    config = _patched_outer_loop(monkeypatch, tmp_path)
+    config, _ = _patched_outer_loop(monkeypatch, tmp_path)
 
     class _Violated(_Recording):
         @asynccontextmanager
@@ -410,7 +434,7 @@ async def test_a_violated_boundary_makes_judged_items_unavailable(
 @pytest.mark.asyncio
 async def test_missing_recording_makes_the_whole_wake_unavailable(
         monkeypatch: Any, tmp_path: Any) -> None:
-    config = _patched_outer_loop(monkeypatch, tmp_path)
+    config, _ = _patched_outer_loop(monkeypatch, tmp_path)
     inputs = [{"room": "room_a", "wake": 7, "scenario": 3},
               {"room": "room_a", "wake": 7, "scenario": 4}]
     wake_input = AsyncMock()

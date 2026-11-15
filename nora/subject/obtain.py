@@ -193,6 +193,17 @@ class SubjectSpec:
     #: file-backed. Never a shared location.
     workdir: Path
 
+    #: WHICH CONFIGURATION she composes FROM — a recorded `config.toml` in
+    #: force at the case's instant, or the deployment's eval rebuild. `None`
+    #: means the committed template (`config.evaluation.toml`), which is what
+    #: every ordinary caller composes. A seam because WHICH settings were in
+    #: force is part of the moment being measured, not part of her — a
+    #: recorded load and the live template differ exactly where a deployment
+    #: changed over time. Only the source file changes: it is still copied
+    #: into `spec.workdir` and baselined, so relative loads and credentials
+    #: resolve exactly as the template's do.
+    config: Path | None = None
+
     #: Overrides onto the committed template, as dotted paths. This is the seam
     #: for "which doctrine", "which model", "how many samples" — configuration,
     #: which is what a deployment differs from another deployment by.
@@ -378,8 +389,11 @@ def build_config(spec: SubjectSpec) -> Config:
     # hardcoded `"nora"` fallback would pass whenever three literals in three
     # files happened to coincide — convention, not construction.
     cfg_path = spec.workdir / "config.toml"
-    shutil.copy(_TEMPLATE, cfg_path)
+    shutil.copy(spec.config or _TEMPLATE, cfg_path)
     loaded = _load_config(cfg_path, require_secrets=False)
+    # Credential custody stays with the DEPLOYMENT's `secret.toml`, wherever
+    # the declared configuration came from: a recorded `in_force/` directory
+    # holds none, and pointing resolution at it would silently lose them.
     loaded._secret_path = _TEMPLATE.parent / "secret.toml"
     cfg = _baseline(loaded, spec.workdir)
     for path, value in (spec.overrides or {}).items():

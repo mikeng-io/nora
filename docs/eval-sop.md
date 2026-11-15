@@ -388,7 +388,9 @@ echo "RC=$?" > /tmp/cognition-eval.rc
 
 `--config` is the deployment's own `config.toml`, verbatim: the confirmer
 rebuilds `config.evaluation.toml` against it (the same drift-checked
-`materialise` `python -m evals` runs) and resolves the `eval_judge` route
+`materialise` `python -m evals` runs) into its own private run directory —
+never the checkout's shared file — and binds it to each subject through
+`SubjectSpec.config`. It resolves the `eval_judge` route
 through `nora.subject.obtain.model_endpoint`, so a `host.docker.internal` or
 `honcho` name is rewritten to loopback exactly as a subject's own endpoints
 are. The production route gets one plain POST at temperature zero, without
