@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import AsyncExitStack
-from typing import Any
+from typing import Any, TypeVar
+
+log = logging.getLogger(__name__)
 
 CloseFn = Callable[[], Awaitable[None]]
+_T = TypeVar("_T")
 
 
 def _push_close_order(
@@ -108,6 +112,27 @@ class StartupOwner:
     through a failing close, so one bad resource never strands the ones
     pushed after it.
     """
+
+    @classmethod
+    async def run(
+        cls, build: Callable[..., Awaitable[_T]], /, *args: Any, **kwargs: Any
+    ) -> _T:
+        """`await build(*args, owner=<fresh owner>, **kwargs)`, unwinding on failure.
+
+        A raise OR a cancellation anywhere below runs `aclose`, then the
+        ORIGINAL exception propagates — even when the unwind itself raises
+        or is cancelled: the cleanup failure is logged, never substituted
+        for what the caller must see.
+        """
+        owner = cls()
+        try:
+            return await build(*args, owner=owner, **kwargs)
+        except BaseException:
+            try:
+                await owner.aclose()
+            except BaseException:
+                log.exception("startup unwind failed alongside the build failure")
+            raise
 
     def __init__(self) -> None:
         self._audit: Any = None

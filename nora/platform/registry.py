@@ -142,6 +142,26 @@ async def _resolve_bridge_identity(
         return identity
 
 
+async def _resolve_or_refuse(
+    adapter: PlatformAdapter,
+    platform: str,
+    *,
+    bridge: bool,
+    sleep: Callable[[float], Awaitable[None]],
+    clock: Callable[[], float],
+) -> PlatformIdentity:
+    """Resolve one adapter's identity, refusing startup when it cannot."""
+    try:
+        if bridge:
+            return await _resolve_bridge_identity(adapter, sleep=sleep, clock=clock)
+        return await adapter.resolve_identity()
+    except Exception as exc:
+        kind = "bridge" if bridge else "adapter"
+        raise AdapterRegistryError(
+            f"{platform} {kind} could not resolve its own identity: {exc}"
+        ) from exc
+
+
 class _SignalPlatformConfig(Protocol):
     @property
     def base_url(self) -> str: ...
@@ -291,13 +311,10 @@ class AdapterRegistry:
         and WhatsApp's senders refuse a 1:1 message to any other address; a
         platform missing from it refuses every 1:1 message.
 
-        `owner` is the startup's acquisition register
-        (`nora.app.lifecycle.StartupOwner`, threaded structurally — this
-        layer does not import `nora.app`): each adapter is registered the
-        moment it exists, BEFORE the `resolve_identity` await that can
-        strand its session when resolution fails or is cancelled. A
-        successful return transfers ownership to the caller's registry;
-        a raise unwinds every adapter built so far, current first.
+        `owner` is the startup's acquisition register (structural — this
+        layer does not import `nora.app`): each adapter is owned the moment
+        it exists, BEFORE the `resolve_identity` await that can strand its
+        session; a raise unwinds every adapter built so far.
 
         `sleep`/`clock` are the time seam for `_resolve_bridge_identity`'s
         bounded wait — collaborators through construction, so a test can
@@ -322,13 +339,8 @@ class AdapterRegistry:
                 "signal", BridgeEndpoint(signal_cfg.base_url, bridge_token),
                 dm_recipients=dms.get("signal", frozenset()))
             _register(adapter)
-            try:
-                identity = await _resolve_bridge_identity(
-                    adapter, sleep=sleep, clock=clock)
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"signal bridge could not resolve its own identity: {exc}"
-                ) from exc
+            identity = await _resolve_or_refuse(
+                adapter, "signal", bridge=True, sleep=sleep, clock=clock)
             adapters["signal"] = adapter
             identities["signal"] = identity
         elif signal_cfg.enabled:
@@ -344,12 +356,8 @@ class AdapterRegistry:
                 dm_recipients=dms.get("signal", frozenset()),
             )
             _register(adapter)
-            try:
-                identity = await adapter.resolve_identity()
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"signal adapter could not resolve its own identity: {exc}"
-                ) from exc
+            identity = await _resolve_or_refuse(
+                adapter, "signal", bridge=False, sleep=sleep, clock=clock)
 
             adapters["signal"] = adapter
             identities["signal"] = identity
@@ -368,13 +376,8 @@ class AdapterRegistry:
                 control=BridgeControlClient(endpoint),
                 speaker=discord_speaker)
             _register(discord_adapter)
-            try:
-                discord_identity = await _resolve_bridge_identity(
-                    discord_adapter, sleep=sleep, clock=clock)
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"discord bridge could not resolve its own identity: {exc}"
-                ) from exc
+            discord_identity = await _resolve_or_refuse(
+                discord_adapter, "discord", bridge=True, sleep=sleep, clock=clock)
             adapters["discord"] = discord_adapter
             identities["discord"] = discord_identity
         elif discord_cfg.enabled:
@@ -392,12 +395,8 @@ class AdapterRegistry:
                 resolve_music_channel=resolve_music_channel,
             )
             _register(discord_adapter)
-            try:
-                discord_identity = await discord_adapter.resolve_identity()
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"discord adapter could not resolve its own identity: {exc}"
-                ) from exc
+            discord_identity = await _resolve_or_refuse(
+                discord_adapter, "discord", bridge=False, sleep=sleep, clock=clock)
 
             adapters["discord"] = discord_adapter
             identities["discord"] = discord_identity
@@ -408,13 +407,8 @@ class AdapterRegistry:
                 "whatsapp", BridgeEndpoint(whatsapp_cfg.base_url, bridge_token),
                 dm_recipients=dms.get("whatsapp", frozenset()))
             _register(whatsapp_adapter)
-            try:
-                whatsapp_identity = await _resolve_bridge_identity(
-                    whatsapp_adapter, sleep=sleep, clock=clock)
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"whatsapp bridge could not resolve its own identity: {exc}"
-                ) from exc
+            whatsapp_identity = await _resolve_or_refuse(
+                whatsapp_adapter, "whatsapp", bridge=True, sleep=sleep, clock=clock)
             adapters["whatsapp"] = whatsapp_adapter
             identities["whatsapp"] = whatsapp_identity
         elif whatsapp_cfg.enabled:
@@ -427,12 +421,8 @@ class AdapterRegistry:
                 whatsapp_cfg.base_url, dm_recipients=dms.get("whatsapp", frozenset()),
             )
             _register(whatsapp_adapter)
-            try:
-                whatsapp_identity = await whatsapp_adapter.resolve_identity()
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"whatsapp adapter could not resolve its own identity: {exc}"
-                ) from exc
+            whatsapp_identity = await _resolve_or_refuse(
+                whatsapp_adapter, "whatsapp", bridge=False, sleep=sleep, clock=clock)
 
             adapters["whatsapp"] = whatsapp_adapter
             identities["whatsapp"] = whatsapp_identity

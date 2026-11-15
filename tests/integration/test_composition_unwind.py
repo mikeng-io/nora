@@ -28,11 +28,13 @@ from openai import AsyncOpenAI
 
 import nora.app.composition as composition
 import nora.app.composition_bridge as composition_bridge
+import nora.computer.wire as computer_wire
 from nora.agent import factory
-from nora.app.computer_queue import SegmentRegistry
+from nora.app.computer_queue import ComputerQueueRunner, SegmentRegistry
 from nora.app.lifecycle import StartupOwner, close_dependencies
 from nora.config import load
 from nora.config_reload import ReloadFiles
+from nora.infra.computer.manager import ScopeBrowserManager
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql.audit import SqlRecordStore
 from nora.obs.metrics import Metrics
@@ -591,3 +593,197 @@ async def test_a_scoped_computer_acquisition_unwinds_redis_and_journal(
 
     # The engine and everything before it unwound too.
     assert unwind_spies.audit
+
+
+# ------------------------------------------------- the wrapper's promise
+
+
+async def test_a_cleanup_cancellation_preserves_the_build_error(
+    cfg, monkeypatch, unwind_spies, track_bridge_sessions,
+):
+    """A cancellation landing INSIDE the unwind — a close raising
+    `CancelledError` — must not substitute for the build's own error: the
+    RuntimeError propagates and the closes after the cancelled one ran."""
+    state = _state("signal")
+    async with _bridge_cfg(cfg, state, monkeypatch) as bridge:
+        async def hydrate_fails(self):
+            await asyncio.sleep(0)  # let the spawned reload task run once
+            raise RuntimeError("hydrate broke")
+        monkeypatch.setattr(Debounce, "hydrate", hydrate_fails)
+
+        async def memory_close_cancels(self):
+            unwind_spies.memory.append(self)
+            raise asyncio.CancelledError()
+        monkeypatch.setattr(HonchoClient, "aclose", memory_close_cancels)
+
+        with pytest.raises(RuntimeError, match="hydrate broke"):
+            await composition.build_dependencies(bridge)
+
+    assert unwind_spies.memory, "the cancelled close itself ran"
+    # Both sides of it kept unwinding: the adapter session before it and
+    # the audit engine after it.
+    assert track_bridge_sessions.sessions
+    assert all(s.closed for s in track_bridge_sessions.sessions)
+    assert unwind_spies.audit
+
+
+async def test_a_close_failure_during_cancellation_keeps_the_cancellation(
+    cfg, monkeypatch, unwind_spies, track_bridge_sessions,
+):
+    """Cancelled mid-build, an ordinary close failure must not replace the
+    `CancelledError` — the cancellation is what escapes, the close failure
+    is what gets logged."""
+    state = _state("signal")
+    async with _bridge_cfg(cfg, state, monkeypatch) as bridge:
+        reached = asyncio.Event()
+
+        async def hydrate_hangs(self):
+            reached.set()
+            await asyncio.Event().wait()
+        monkeypatch.setattr(Debounce, "hydrate", hydrate_hangs)
+
+        attempts: list[Any] = []
+        async def audit_close_fails(self):
+            attempts.append(self)
+            raise RuntimeError("audit close broke")
+        monkeypatch.setattr(SqlRecordStore, "aclose", audit_close_fails)
+
+        task = asyncio.create_task(composition.build_dependencies(bridge))
+        await asyncio.wait_for(reached.wait(), timeout=60)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert attempts, "the audit close ran and failed — the swallowed error"
+    # Everything before it in the unwind still ran.
+    assert unwind_spies.memory
+    assert track_bridge_sessions.sessions
+    assert all(s.closed for s in track_bridge_sessions.sessions)
+
+
+# ------------------------------------------- the scoped computer's nested unwind
+
+
+async def test_a_scoped_computer_close_unwinds_past_a_failing_manager_close(
+    cfg, monkeypatch, unwind_spies, tmp_path, _redis_container,
+):
+    """`browser_manager.aclose` failing inside the one outer close callback
+    must not strand `runner.close` — the inner unwind keeps drain order and
+    still releases Redis and the journal flock."""
+    redis_url = (
+        f"redis://{_redis_container.get_container_host_ip()}:"
+        f"{_redis_container.get_exposed_port(6379)}/0"
+    )
+    monkeypatch.setenv("NORA_COMPUTER_TOKEN", "test-token")
+    monkeypatch.setenv("NORA_COMPUTER_REDIS_URL", redis_url)
+    scoped_cfg = override_config(cfg, {
+        "computer.enabled": True,
+        "computer.base_url": "http://127.0.0.1:1",
+        "computer.state_dir": str(tmp_path),
+        "computer.scoped.enabled": True,
+        "computer.scoped.registry": str(tmp_path / "scopes"),
+    })
+
+    stops: list[int] = []
+    orig_stop = ComputerQueueRunner.stop
+    async def stop_spy(self, **kwargs):
+        # Basis for draining at all: the queue loop only starts in
+        # `ComputerLifecycle.start`, which runs post-build — no owned
+        # worker can exist here, so the drain must find it empty.
+        stops.append(len(self._executors._tasks))
+        await orig_stop(self, **kwargs)
+    monkeypatch.setattr(ComputerQueueRunner, "stop", stop_spy)
+
+    manager_closes: list[Any] = []
+    async def manager_close_fails(self):
+        manager_closes.append(self)
+        raise RuntimeError("manager close broke")
+    monkeypatch.setattr(ScopeBrowserManager, "aclose", manager_close_fails)
+
+    async def adapters_fail(**kwargs):
+        raise RuntimeError("adapters broke")
+    monkeypatch.setattr(composition, "adapters", adapters_fail)
+
+    with pytest.raises(RuntimeError, match="adapters broke"):
+        await composition.build_dependencies(scoped_cfg)
+
+    assert stops == [0], "no executor had started — the drain was trivially empty"
+    assert len(manager_closes) == 1
+    assert len(unwind_spies.created_redis) == 1
+    assert unwind_spies.created_redis[0] in unwind_spies.closed_redis
+    second = SegmentRegistry(pending_dir=tmp_path / "computer")
+    second.close()
+
+
+async def test_a_scoped_computer_early_close_releases_the_journal_past_a_redis_failure(
+    cfg, monkeypatch, tmp_path, _redis_container,
+):
+    """Before the queue wiring finishes the close owns only Redis + the
+    journal flock: a `redis.aclose` failure must not keep the flock held."""
+    redis_url = (
+        f"redis://{_redis_container.get_container_host_ip()}:"
+        f"{_redis_container.get_exposed_port(6379)}/0"
+    )
+    monkeypatch.setenv("NORA_COMPUTER_TOKEN", "test-token")
+    monkeypatch.setenv("NORA_COMPUTER_REDIS_URL", redis_url)
+    scoped_cfg = override_config(cfg, {
+        "computer.enabled": True,
+        "computer.base_url": "http://127.0.0.1:1",
+        "computer.state_dir": str(tmp_path),
+        "computer.scoped.enabled": True,
+        "computer.scoped.registry": str(tmp_path / "scopes"),
+    })
+
+    attempts: list[Any] = []
+    async def redis_close_fails(self, *args, **kwargs):
+        attempts.append(self)
+        raise RuntimeError("redis close broke")
+    monkeypatch.setattr(aioredis.Redis, "aclose", redis_close_fails)
+
+    async def queues_fail(**kwargs):
+        raise RuntimeError("queues broke")
+    monkeypatch.setattr(computer_wire, "_scoped_computer_queues", queues_fail)
+
+    with pytest.raises(RuntimeError, match="queues broke"):
+        await composition.build_dependencies(scoped_cfg)
+
+    assert len(attempts) == 1, "the redis close ran and failed"
+    # The flock was still released — a second owner takes it.
+    second = SegmentRegistry(pending_dir=tmp_path / "computer")
+    second.close()
+
+
+# ----------------------------------------------------- adjacent acquisitions
+
+
+async def test_a_late_build_failure_unwinds_direct_describer_clients(
+    cfg, monkeypatch, unwind_spies, track_bridge_sessions, _redis_container,
+):
+    """A direct describer lane's `AsyncOpenAI` is folded into the model
+    lane's client list — a late build failure closes it like the rest."""
+    redis_url = (
+        f"redis://{_redis_container.get_container_host_ip()}:"
+        f"{_redis_container.get_exposed_port(6379)}/0"
+    )
+    monkeypatch.setenv("NORA_REDIS_URL", redis_url)
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "test-kimi-key")
+    state = _state("signal")
+    async with _bridge_cfg(cfg, state, monkeypatch) as bridge:
+        describer_cfg = override_config(bridge, {
+            "media.describe.video.enabled": True,
+            "media.describe.video.provider": "kimi",
+            "media.describe.video.model": "kimi-for-coding/k2p5",
+        })
+
+        def otp_fails(**kwargs):
+            raise RuntimeError("otp broke")
+        monkeypatch.setattr(composition, "build_otp", otp_fails)
+
+        with pytest.raises(RuntimeError, match="otp broke"):
+            await composition.build_dependencies(describer_cfg)
+
+    kimi = [
+        c for c in unwind_spies.created_clients
+        if "kimi" in str(c.base_url)]
+    assert len(kimi) == 1, "the direct lane built one real client"
+    assert kimi[0] in unwind_spies.closed_clients

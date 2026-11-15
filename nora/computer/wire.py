@@ -98,44 +98,6 @@ def stores(cfg: Any, engine: Any, metrics: Any)-> StoresWiring:
 
 
 @dataclass(frozen=True)
-class QueueWiring:
-    browser_manager: Any
-    browser_tabs: Any
-    computer_admission: Any
-    computer_dm_scope_for: Any
-    computer_queue_runner: Any
-    computer_scope_for: Any
-    computer_task_backend: Any
-    computer_tasks: Any
-
-
-def queue() -> QueueWiring:
-    # The scoped computer ([computer.scoped], design/browser-runtime): one microVM per
-    # computer scope, resolved through the `nora-computer scope provision` registry — built
-    # INSTEAD of the shared-VM client, so a call for a scope with no record answers…
-    computer_admission: Any = None
-    browser_manager: Any = None
-    computer_queue_runner: Any = None
-    computer_task_backend: Any = None
-    computer_tasks: Any = None
-    browser_tabs: Any = None
-    #: The canonical scope resolvers ([computer.scoped]); `None` in the
-    #: shared-VM shape, where nothing scoped may resolve.
-    computer_scope_for: Any = None
-    computer_dm_scope_for: Any = None
-    return QueueWiring(
-        browser_manager=browser_manager,
-        browser_tabs=browser_tabs,
-        computer_admission=computer_admission,
-        computer_dm_scope_for=computer_dm_scope_for,
-        computer_queue_runner=computer_queue_runner,
-        computer_scope_for=computer_scope_for,
-        computer_task_backend=computer_task_backend,
-        computer_tasks=computer_tasks,
-    )
-
-
-@dataclass(frozen=True)
 class ScopedWiring:
     browser_manager: Any
     browser_tabs: Any
@@ -150,15 +112,16 @@ class ScopedWiring:
 
 
 async def scoped(
-    allowlist: Any, background: Any, browser_tabs: Any, computer_context: Any,
+    allowlist: Any, background: Any, computer_context: Any,
     cfg: Any, clock: Any, compute_jobs: Any, computer: Any,
-    computer_admission: Any, computer_dm_scope_for: Any, computer_events: Any,
-    computer_metrics: Any, computer_probe: Any, computer_tasks: Any,
+    computer_events: Any, computer_metrics: Any, computer_probe: Any,
     computer_token: Any, engine: Any, metrics: Any, op_clock: Any,
     owner: Any = None,
 ) -> ScopedWiring:
+    """The scoped computer's wiring — every queue field empty while it is off."""
     browser_manager = computer_queue_runner = None
-    computer_scope_for = computer_task_backend = None
+    browser_tabs = computer_admission = computer_tasks = None
+    computer_scope_for = computer_task_backend = computer_dm_scope_for = None
     if cfg.computer.enabled and cfg.computer.scoped.enabled:
         rt = _scoped_computer_runtime(
             cfg=cfg, computer_metrics=computer_metrics,
@@ -276,14 +239,17 @@ def _close_scoped_acquisition(
 ) -> Any:
     """A `ComputerLifecycle.close`-ordered close for before it exists."""
     async def _close() -> None:
-        if queues is not None:
-            runner = queues.computer_queue_runner
-            await runner.stop()
-            await queues.browser_manager.aclose()
-            await runner.close()
-            return
-        await rt.computer_redis.aclose()
-        rt.computer_segments.close()
+        # One outer-stack entry hiding several closes: the inner stack keeps
+        # drain order and unwinds each; `runner.close` itself still refuses
+        # to release Redis/journal under an undrained executor.
+        async with contextlib.AsyncExitStack() as closing:
+            if queues is not None:
+                closing.push_async_callback(queues.computer_queue_runner.close)
+                closing.push_async_callback(queues.browser_manager.aclose)
+                await queues.computer_queue_runner.stop()
+            else:
+                closing.callback(rt.computer_segments.close)
+                closing.push_async_callback(rt.computer_redis.aclose)
 
     return _close
 

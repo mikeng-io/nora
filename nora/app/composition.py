@@ -22,7 +22,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from openai import AsyncOpenAI
 
@@ -154,18 +154,7 @@ from .participation import ParticipationTrigger
 from .proactive_screen import ProactiveScreen
 from .runtime import BackgroundTasks, ComputerLifecycle
 
-if TYPE_CHECKING:
-    pass
-
 log = logging.getLogger("nora.app.composition")
-
-
-# Provider name (`DescriberConfig.provider`) → its direct lane. `"omniroute"`
-# is NOT here: it is the process-wide gateway client, built once above for
-# every model call, not a describer lane.
-
-
-#: Every Character adaptor that is not the room fold, by name (budgets, grants).
 
 
 @dataclass(frozen=True)
@@ -472,52 +461,35 @@ async def build_dependencies(
     shape (besides `nora.__main__` itself, which only ever passes `cfg`
     straight through here). Everything downstream takes a `Dependencies`.
 
-    **`clock` names a dependency the graph shares.** Many components take
-    `clock: Callable[[], datetime]` — `FirePath`, `HeartbeatLoop`,
-    `ComputePoller` and the rest — each for the reason `FirePath`'s own
-    docstring gives: *"a module that read the wall clock itself could not be
-    tested at a fixed instant."* This function states the clock once and hands
-    it to all of them; the default is `wall_clock`.
-
-    A caller can therefore say WHAT TIME IT IS. The proactive adaptor's whole
-    judgement is about time (is this note due, has this position gone stale,
-    is now the moment), and a harness asks it a question at a fixed instant by
-    passing a clock.
+    **`clock` names a dependency the graph shares** — `FirePath`,
+    `HeartbeatLoop`, `ComputePoller` and the rest each take one for the
+    reason `FirePath`'s own docstring gives; stating it once here is what
+    lets a harness say WHAT TIME IT IS — the proactive adaptor's whole
+    judgement (is this note due, has this position gone stale, is now the
+    moment) answers at a fixed instant. The default is `wall_clock`.
 
     **`operational_clock` is the maintenance clock.** A frozen `clock` is a
-    semantic statement («the turn sees this instant»); it must not freeze the
-    queue's deadline, lease and idle arithmetic — under a frozen snapshot the
-    scoped computer's tasks would never time out and its tabs never idle.
-    The scoped-computer machinery (`ComputerAdmission`, `ComputerQueueRunner`,
-    `ScopeBrowserManager`, the deferred outbox's stamp) reads
-    `operational_clock`, which defaults to `clock`; the eval subject passes
-    the wall clock so maintenance keeps moving while the block's time stands
-    still.
+    semantic statement («the turn sees this instant»); it must not freeze
+    the queue's deadline, lease and idle arithmetic — under a frozen
+    snapshot the scoped computer's tasks would never time out and its tabs
+    never idle. The scoped-computer machinery (`ComputerAdmission`,
+    `ComputerQueueRunner`, `ScopeBrowserManager`, the deferred outbox's
+    stamp) reads `operational_clock`, which defaults to `clock`; the eval
+    subject passes the wall clock so maintenance keeps moving while the
+    block's time stands still.
 
-    **Startup failure closes what it built.** Every resource a step
-    acquires is registered with a `StartupOwner` before the next `await`
-    that could strand it; a raise or a cancellation anywhere below unwinds
-    those resources in normal shutdown order, and the ORIGINAL exception
-    propagates even if a close itself fails. A returned `Dependencies`
-    is the transfer of ownership — `close_dependencies` closes it through
-    the same order, and nothing registered was closed early.
+    **Startup failure closes what it built.** Each acquisition registers
+    with the `StartupOwner` before the next `await`; a raise or a cancel
+    unwinds it in shutdown order and the ORIGINAL error propagates. A
+    returned `Dependencies` transfers ownership to `close_dependencies`.
     """
-    owner = StartupOwner()
-    try:
-        return await _compose_dependencies(
-            cfg, clock=clock, operational_clock=operational_clock, owner=owner)
-    except BaseException:
-        try:
-            await owner.aclose()
-        except Exception:
-            log.exception("startup unwind failed alongside the build failure")
-        raise
+    return await StartupOwner.run(
+        _compose_dependencies, cfg,
+        clock=clock, operational_clock=operational_clock)
 
 
 async def _compose_dependencies(
-    cfg: Config,
-    *,
-    clock: Callable[[], datetime],
+    cfg: Config, *, clock: Callable[[], datetime],
     operational_clock: Callable[[], datetime] | None,
     owner: StartupOwner,
 ) -> Dependencies:
@@ -565,31 +537,18 @@ async def _compose_dependencies(
     computer_probe = _computer_stores.computer_probe
     computer_sessions = _computer_stores.computer_sessions
     computer_token = _computer_stores.computer_token
-    _computer_queue = _computer_wire.queue()
-    browser_manager = _computer_queue.browser_manager
-    browser_tabs = _computer_queue.browser_tabs
-    computer_admission = _computer_queue.computer_admission
-    computer_dm_scope_for = _computer_queue.computer_dm_scope_for
-    computer_queue_runner = _computer_queue.computer_queue_runner
-    computer_scope_for = _computer_queue.computer_scope_for
-    computer_task_backend = _computer_queue.computer_task_backend
-    computer_tasks = _computer_queue.computer_tasks
     # Forward declarations: the thunks below resolve these at use time.
     background: BackgroundTasks
     computer_context: Any
     fire_path: FirePath | None
     _computer_scoped = await _computer_wire.scoped(
-        allowlist=allowlist, background=lambda: background, browser_tabs=browser_tabs,
+        allowlist=allowlist, background=lambda: background,
         cfg=cfg, clock=clock,
         compute_jobs=compute_jobs, computer=computer,
-        computer_admission=computer_admission,
-        computer_context=lambda: computer_context, computer_dm_scope_for=computer_dm_scope_for,
+        computer_context=lambda: computer_context,
         computer_events=computer_events, computer_metrics=computer_metrics,
-        computer_probe=computer_probe, computer_tasks=computer_tasks,
-        computer_token=computer_token,
-        engine=engine, metrics=metrics,
-        op_clock=op_clock,
-        owner=owner,
+        computer_probe=computer_probe, computer_token=computer_token,
+        engine=engine, metrics=metrics, op_clock=op_clock, owner=owner,
     )
     browser_manager = _computer_scoped.browser_manager
     browser_tabs = _computer_scoped.browser_tabs
