@@ -69,19 +69,19 @@ delegate, reconcile evidence, triage, land and report.
 
 ## The lifecycle
 
-Every change passes these stages; a small one passes several in one sitting.
+Stages apply as a change needs them; a small one passes several in one sitting.
 
 | stage | answers | owner | produces | exits when |
 |---|---|---|---|---|
 | **intake** | is this architecture or code, and where does it belong? | `nora-design` §1; `nora-decision` for issues | an issue, or a direct brief recorded in the PR | outcome, scope and non-goals are pinned to a revision |
-| **design** | what is the system? | `nora-design` | a bundle edit | the bundle change is merged, reviewed per its tier |
+| **design** (architecture changes only) | what is the system? | `nora-design` | a bundle edit, before or with the code | the bundle change is reviewed per its tier |
 | **decide** | does this need a ruling on record? | `nora-decision` | a DEC row or ADR | numbered at merge |
 | **dispatch** | how is it cut, briefed and assigned? | `nora-dispatch` | units, briefs, acceptance in the issue or design | every acceptance statement is covered by a unit |
 | **build** | — | the builder, with `nora-land`, `nora-structure`, `nora-test`, `nora-tool`, `nora-runtime-skill` | commits on a branch | the brief's named checks ran once |
 | **verify** | does it do what it claims? | `nora-prove-fix`, `nora-eval`, the gate in `nora-land` | evidence | each obligation is met, unmet or unavailable, with evidence |
 | **review** | does it hold up to someone else? | `nora-review`, `REVIEW.md` | findings and a verdict | no BLOCKER, within two rounds |
 | **land** | — | `nora-land` | a merge commit | on master and read back |
-| **release and deploy** | — | `nora-release`, `nora-deploy`, `nora-readback` | a release; the live service | live state is read back |
+| **release and deploy** | — | `nora-release`, `nora-deploy`, `nora-readback` | a release; the live service | released; live state read back when acceptance requires it |
 | **close and learn** | is the outcome delivered, and did the process itself fail anywhere? | the orchestrator | the issue updated; the owning skill or root document edited | obligations reconciled; a process failure (an unreadable brief, a skipped rehearsal, a rule nobody loaded) fixed in its owner in the same arc |
 
 ## Execution tier
@@ -167,7 +167,7 @@ block or get the operator's waiver.
 **A brief** follows `nora-dispatch`: one bounded outcome a reviewer can read in
 one sitting, in complete sentences a fresh agent can follow, linking what the
 repo holds instead of pasting or abbreviating it. It names acceptance (in the
-issue, design or brief, never only a temporary file), input revisions, allowed
+issue or the PR-recorded brief, never only a temporary file), input revisions, allowed
 paths, non-goals, worktree/base/branch, skills, named checks and the stop
 point. Builders run the named checks once and stop at the handoff; the
 orchestrator owns acceptance. No extra handling, tests, reviewers or scope:

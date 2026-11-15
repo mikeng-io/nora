@@ -24,8 +24,9 @@ A test must exist for:
 
 No test is written for:
 
-- pass-through wiring, plain data classes, or what the type checker already
-  proves;
+- redundant pass-through code, plain data classes, or what the type checker
+  already proves — composition, configuration reaching its consumer and
+  pipeline order are properties of the wiring and do get tests;
 - the framework's or a library's own behaviour;
 - implementation shape — which helper was called with which arguments —
   instead of the result;
@@ -83,7 +84,7 @@ Search before creating any helper:
 | a `Config` | `example_config` / `example_config_path`, or `tests/builders.py` |
 | a fake for a port in `nora/domain/ports.py` | `nora/testing/`; a new one goes there with its `contract/` suite |
 | a double that is not a port: a clock, a sender, a model source | `tests/fakes.py` |
-| a database | the `pg_*` fixtures in `tests/conftest.py`, module-scoped and truncated |
+| a database | `clean_pg_url` for ordinary SQL tests; `pg_url` and `pg_module_url` only for the cases `tests/README.md` names |
 | data | generated values, or placeholders from `identity.example.toml`; files in `tests/fixtures/` |
 
 - Never paste production rows, even "just six people"; the hooks refuse them.

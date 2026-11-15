@@ -36,8 +36,8 @@ Three rules, each with a gate under `architecture/`:
 **When a test exists, and how it is written** — `.agents/skills/nora-test/SKILL.md`
 is the procedure. A test exists for a fix (red when reverted), a behavioural
 rule, a trust boundary's negative case, a port's contract, or non-trivial logic
-— at the cheapest level that can prove it — and not for wiring, framework
-behaviour, implementation shape, duplicates or speculation. Then: name the
+— at the cheapest level that can prove it — and not for redundant pass-through
+code, framework behaviour, implementation shape, duplicates or speculation. Then: name the
 property and prove the test can fail; reuse the
 shared fakes, builders and fixtures; one behaviour per test, named as a
 sentence; collaborators through `__init__`, with `monkeypatch` only at the

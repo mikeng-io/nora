@@ -17,12 +17,16 @@ measured against the wrong thing.
 
 ## 1. Bind the source
 
-Read the design bundle subject and the issue that own the work. Pin their
-revisions (`git rev-parse origin/master`). Write the acceptance down as
-checkable statements, each tied to a line of the design or the issue.
+Read the design bundle subject and the issue, or the operator's direct brief,
+that own the work. Pin what you actually read: the design's commit and path
+(which may be on the change's own branch), the issue body or brief as of now,
+and `origin/master`'s SHA as the code base. Write the acceptance down as
+checkable statements, each tied to the design invariant or brief line it
+serves.
 
-- Acceptance lives in the issue or the design. Never only in a temporary file
-  or in chat.
+- Acceptance lives in the issue, or in the brief recorded in the PR for direct
+  work. The design holds the invariants acceptance links to, never the task's
+  acceptance itself (`nora-design`). Never only in a temporary file or chat.
 - A statement nobody can check ("works well", "robust") is not acceptance;
   restate it as an observable result, or ask the operator.
 
@@ -114,16 +118,18 @@ only the repair delta.
 
 ## 7. Integrate and measure
 
-Land each unit per `nora-land`. For an integrated change, merge the units onto
-the integration branch and measure the whole once — the eval harness or
-snapshot replay the design names — before the integration reaches master.
+A standalone unit lands per `nora-land`. **Units of one integrated change stop
+at the integration branch**: each is reviewed on its own diff and merged there,
+never opened against master. Measure the integrated head once — the eval
+harness or snapshot replay the design names — then land the integration branch
+per `nora-land`, once.
 
 - **No "ready" without a rehearsal.** Before any claim that a paid run, eval or
   deploy is ready, run its exact path at zero cost: the real SDK path, budgets,
   judges and report, end to end.
 
 Check: the final measurement ran on the integrated head, and its result is
-recorded in the issue with the run's evidence.
+recorded in the issue, or the PR for direct work, with the run's evidence.
 
 ## Signs the loop is failing
 
@@ -132,5 +138,5 @@ recorded in the issue with the run's evidence.
 | the builder asks what the brief means, or guesses | the brief failed step 3 | rewrite it in full sentences |
 | one PR grows past what a reviewer can read | units were cut too large | split at step 2 |
 | review finds blockers every round | the unit or its acceptance was unclear | stop at round two; re-cut the unit |
-| acceptance exists only in `/tmp` or chat | step 1 skipped | move it to the issue or design |
+| acceptance exists only in `/tmp` or chat | step 1 skipped | move it to the issue or the PR's recorded brief |
 | "ready" claimed, then the paid run errors | no rehearsal | step 7's rehearsal before any claim |

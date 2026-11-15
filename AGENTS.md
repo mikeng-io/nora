@@ -119,8 +119,8 @@ only the operator holds. Merges deploy through the release pipeline; deploy by
 hand only on request, for host config, or to recover.
 
 **Decisions change on evidence, not argument**: a measurement, read-back or probe
-changes one in a line; a better-argued restatement does not, so hold and name the
-reading that would overturn it. A decision the operator locked is closed.
+changes one in a line; a better-argued restatement does not, so hold. Write the
+reading that would overturn it when you decide. A decision the operator locked is closed.
 
 ## Never
 
