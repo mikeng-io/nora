@@ -294,7 +294,7 @@ def test_a_denominator_error_fails_the_run_even_when_verdicts_pass(
         return experiment, _answered
 
     monkeypatch.setattr(cli, "experiment_for", experiment_for)
-    monkeypatch.setattr(cli, "census", lambda name: "1 case")
+    monkeypatch.setattr(cli, "census", lambda name, *, cohort=None: "1 case")
     evidence = _evidence(tmp_path, _settled("generated-draw"))
     monkeypatch.setattr(
         "nora.subject.eval_evidence.current", lambda: evidence)
@@ -321,7 +321,7 @@ def test_an_unestablished_axis_fails_the_run_even_when_verdicts_pass(
     experiment = _experiment([Case(name="generated-draw", input="x")], [_Verdict()])
     monkeypatch.setattr(cli, "experiment_for",
                         lambda name, **kwargs: (experiment, _answered))
-    monkeypatch.setattr(cli, "census", lambda name: "1 case")
+    monkeypatch.setattr(cli, "census", lambda name, *, cohort=None: "1 case")
     # A capture that validates but never recorded this case's completion.
     evidence = _evidence(tmp_path, [])
     monkeypatch.setattr(
