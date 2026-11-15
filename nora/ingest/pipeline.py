@@ -29,6 +29,8 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
+from nora.access import IdentityAccess
+from nora.domain.managed import Verdict
 from nora.domain.models import EditedMessage, NormalizedMessage, PersonRef, Touch
 from nora.domain.ports import (
     BlobStore,
@@ -41,8 +43,6 @@ from nora.domain.ports import (
 )
 from nora.ingest.comprehension import MediaComprehension
 from nora.ingest.stickers import StickerReader
-from nora.access import IdentityAccess
-from nora.domain.managed import Verdict
 from nora.obs.tracing import TRACE_KIND, annotate, span
 from nora.platform.registry import MediaSourceRegistry
 from nora.policy import Policy
@@ -82,7 +82,7 @@ IngestOutcome = Literal[
     "scope_refused",        # the room is not allowlisted; nothing was recorded
     "audit_refused",        # the audit write failed; the message was dropped
     "sender_not_allowed",   # recorded, and deliberately not answered
-    "sender_unavailable",   # recorded; the authority could not answer — refused
+    "sender_unavailable",   # authority unreadable; durable admission stays pending
     "engaged",              # recorded, and handed to the engagement path
     "recorded",             # recorded, and that is all — the ambient majority
     # The EDIT path. An edit is not a message, so
@@ -366,19 +366,12 @@ class IngestPipeline:
         if message.touch is not None:
             return await self._run_touch(message=message, touch=message.touch)
 
-        # Identity first, so the resolved person_id lands in the audit INSERT
-        # instead of a second write. `Persons.resolve` is two dict lookups on a
-        # startup-built frozen mapping — no I/O, so nothing fallible moved
-        # ahead of the record.
+        # Resolve once through the selected backend before the audit INSERT.
         with span("ingest.identity"):
             person = await identity_stage.run(
                 message=message, access=self._access, metrics=m
             )
-        # A BOOL, never the person_id (R-73). Whether the sender is somebody
-        # `identity.toml` knows is the fact that explains the rest of the trace —
-        # an unmapped sender is never fed to Honcho (D6) and is refused by an
-        # explicit `persons` list — and it is the one thing `nora_unmapped_
-        # senders_total` cannot tell you about THIS message.
+        # R-73 records resolution as a boolean, never as a person identifier.
         annotate(**{"nora.person_known": person is not None})
         # Custody BEFORE the record, not after it (A9, DEC-43). This is the one
         # stage that returns a new message: the body gains the durable handle
@@ -419,6 +412,9 @@ class IngestPipeline:
             # function of the message and policy — nothing it reads exists
             # only after the row — so the order is interchangeable here.
             decision = await self._decide(message=message, person=person, m=m)
+            if decision.reason == "sender_unavailable":
+                return IngestResult(message=None, decision=decision,
+                                    outcome="sender_unavailable")
         with span("ingest.audit"):
             row_id = await audit_stage.run(
                 message=message, audit=self._audit, metrics=m, person=person,
@@ -454,7 +450,8 @@ class IngestPipeline:
         if decision is None:
             raise AssertionError("gate did not run before the outcome")
         return IngestResult(message=message, decision=decision,
-                            outcome="engaged" if decision.engage else "recorded",
+                            outcome=("sender_unavailable" if decision.reason == "sender_unavailable"
+                                     else "engaged" if decision.engage else "recorded"),
                             row_id=row_id, person=person, absorbed=absorbed,
                             unit=room.unit if room is not None else None)
 
@@ -495,12 +492,12 @@ class IngestPipeline:
             m.inc("nora_denied_senders_total", platform=message.platform)
             log.warning(
                 "tagged by a sender who is not allowed in this conversation "
-                "(platform=%s person=%s verdict=%s) — recorded, not answered",
+                "(platform=%s person=%s verdict=%s) — not answered",
                 message.platform,
                 person.person_id if person else "<unmapped>",
                 verdict.verdict.value,
             )
-            reason = "sender_unavailable" if unavailable else "sender_not_allowed"
+            reason: IngestOutcome = "sender_unavailable" if unavailable else "sender_not_allowed"
             decision = EngageDecision(engage=False, reason=reason)
             _outcome(m, message, reason)
         else:
