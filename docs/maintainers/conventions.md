@@ -103,8 +103,8 @@ unavailable, never a pass. `nora-prove-fix` owns the bounded table procedure.
 ## Issues
 
 GitHub Issues hold repository defect/problem reports and community requests.
-They are not the engineering execution queue or roadmap. Linear owns work,
-priorities, dependencies and outcomes; a report can link its Linear work without
+They are not the engineering execution queue. GitHub Project owns roadmap;
+Linear owns execution priorities, dependencies and completion; a report can link its Linear work without
 copying the task description or status back and forth. Small direct changes
 need no ticket: the PR records the operator's intent and result.
 
@@ -195,8 +195,8 @@ not proof of whole-outcome acceptance.
 For a real GitHub report, use `Closes #N` only when the PR fully resolves that
 report; otherwise link it without closing. Close superseded/not-planned reports
 with their reason and successor when present. Do not close retained planning
-issues during migration until their Linear successors, obligations and active
-owners have been read back. Never delete issue/PR history to reset a board.
+issues during migration until roadmap/report identity and any Linear execution
+successors, obligations and active owners have been read back. Never delete issue/PR history to reset a board.
 
 Branches remain `<type>/<slug>`; link Linear by PR URL/body rather than requiring
 a ticket-shaped branch name. ADRs link the relevant work/report; decision rows
@@ -258,23 +258,67 @@ their existing validated reload.
 
 ## Roadmap
 
-Linear owns the organization roadmap and engineering work. Use a project for a
-substantial outcome spanning independently deliverable work; use an initiative
-only for useful cross-project grouping. Smaller outcomes remain issues or
-parent/sub-issues. Do not introduce every hierarchy level for every change.
-Project overviews state intent and design links; work briefs own bounded
-completion conditions. Milestones are optional real checkpoints, not mandatory
-SDLC documents. Dates stay empty until committed.
+GitHub Universal Roadmap owns capability outcomes and sequence. Each item keeps
+only intent, a high-level success signal, product, horizon and Linear execution
+links. It contains no worker assignments, repair queue or copied task checklist.
+Reuse existing outcome items; new outcomes may be Project draft items rather
+than repository issues. Drafts need a product field and views that include them:
+repository filters alone omit drafts. Verify this before any cutover.
 
-Use `nora-work` for lifecycle routing and `nora-decision` for work records.
-Read actual team states rather than assuming particular names or automations.
+Use the board's existing outcome states (Proposed, Planned, In progress,
+Validating, Achieved, On hold) and Now/Next/Later horizons. They describe the
+capability, not individual task status. Dates are optional committed dates.
+An outcome links zero or more Linear projects/issues; routine fixes need no
+roadmap item. Linear projects group bounded delivery work, not portfolio intent;
+do not mirror this board as Linear initiatives or permanent product projects.
 
-GitHub Projects are not a parallel roadmap or execution queue. Reset obsolete
-Nora planning views by archiving/closing them after the selected unfinished work
-has read-back-verified Linear successors. Preserve reports, PRs, evidence and
-running owners; do not bulk-import historical comments or close unrelated work.
-An unavailable Linear connector blocks cutover, not ongoing work already owned
-by a session. Existing work retains its current authority until linked cutover.
-MCP access is not automatic dispatch; native agent integrations or an explicitly
-configured adapter own event-driven starts. No new paid coding, Loops, retry,
-merge or deploy authority follows from planning, migration or status changes.
+Reconcile at execution start, a material blocker/scope change, delivery or
+handoff. Keep outcome state unchanged unless new evidence changes it. Achieved
+requires the roadmap success signal, not a count of Done tasks or merged PRs.
+The orchestrator updates it through `nora-decision`; no status-sync daemon.
+
+Existing issue-backed outcomes and Deliverable cards remain historical/current
+anchors until their successor links and view visibility are verified. Do not
+reset Universal Roadmap, close its backing issues, or import every bug/PR/task.
+Retire only obsolete execution views after preserving owners, holds and evidence.
+
+## Linear execution
+
+One issue is one bounded executable outcome, not a roadmap capability or copied
+GitHub report. Title the concrete result, not a phase or label. Its description
+is the short work brief from `nora-dispatch`:
+Intent, Done when, Boundaries, References. Keep current acceptance in that body;
+put progress/evidence links in a short handoff rather than a comment log.
+
+| property | convention |
+|---|---|
+| team | use the owning domain; Nora execution uses the existing `nora` / `NOR` team |
+| owner | one accountable assignee; a delegate or T3 thread is the executor |
+| status | Backlog: deferred; Todo: bounded/ready; In Progress: executing, reviewing or blocked with cause; Done: evidenced completion; Canceled/Duplicate: reason/canonical link |
+| priority | native urgency, distinct from roadmap horizon; No priority is valid when undecided |
+| type | at most one existing Bug, Feature or Improvement when applicable; investigation may have none |
+| area | optional, only when useful for retrieval/routing; reuse an existing area label rather than creating a taxonomy upfront |
+| relations | parent for decomposition; blocks for dependencies; project only for a bounded multi-issue delivery |
+| references | roadmap item and GitHub report when applicable; repository/base, T3 thread, PR and evidence as execution produces them |
+
+Do not duplicate team, status, priority, worker or roadmap horizon as labels.
+The current Nora team has no separate review/blocked state; use its existing
+workflow and a concise next action/blocker, not an invented state or label.
+Sub-issues have independently verifiable outcomes; do not ticket every test,
+commit or review finding. Update the parent outcome after accepting results.
+
+## Cross-service links
+
+A GitHub report owns the problem/request, reproduction and public disposition.
+Linear owns implementation intent, acceptance, assignment and execution. Link
+both ways when work is admitted; several reports may share work and one report
+may require several work items. Keep unselected reports in GitHub, not in a
+bulk-synced Linear backlog. Internal work need not create a GitHub report.
+
+A PR links its Linear work and any actual GitHub report. Until PR status rules
+are verified, use `Related to NOR-123` for a Linear relation without status
+changes. Reserve `Closes #N` for a fully resolved GitHub report. Do not treat
+`Refs NOR-123` as status-neutral or assume merge satisfies runtime acceptance.
+Use PR linkage without GitHub Issue sync; Project custom fields are not an
+execution sync channel. Read back links after writes. Configure no automation,
+label sync or trigger merely because these conventions describe a relationship.

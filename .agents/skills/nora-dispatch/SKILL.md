@@ -10,6 +10,7 @@ resume from current evidence rather than restarting the whole procedure.
 
 ## 1. Read or refine the work
 
+For new Linear work, use the [execution convention](../../../docs/maintainers/conventions.md#linear-execution).
 Read the current description, parent outcome and unresolved blockers. Capture
 only what the next actor needs; follow design and evidence links on demand.
 

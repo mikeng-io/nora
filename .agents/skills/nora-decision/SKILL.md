@@ -1,6 +1,6 @@
 ---
 name: nora-decision
-description: Records Nora decisions, ADRs, GitHub defect reports and Linear work/roadmap directions. Allocates DEC/R/ADR numbers from git history at merge time and checks duplicates. Load for filing, planning, citing or reversing them; nora-design owns design bundles, nora-land owns landing and nora-tool owns tool text.
+description: Records Nora decisions, ADRs, GitHub reports/roadmap and Linear execution work. Allocates DEC/R/ADR numbers from git history at merge time and checks duplicates. Load for filing, planning, citing or reversing them; nora-design owns design bundles, nora-land owns landing and nora-tool owns tool text.
 ---
 
 # Recording a decision
@@ -17,7 +17,8 @@ branch's worktree.
 |---|---|
 | a defect you can fix in this session | nothing new: fix it; the PR is the record |
 | a change to the system's design | the bundle, rewritten in place (`nora-design`) |
-| work, an open question or a roadmap outcome | a Linear work brief, reusing its existing home (`nora-dispatch`) |
+| executable work or a bounded investigation | a Linear work brief, reusing its existing home (`nora-dispatch`) |
+| capability direction or roadmap outcome | a GitHub Project roadmap item linking execution |
 | a repository defect/problem report | a GitHub issue; link any implementation work in Linear |
 | a decision that will look wrong to someone who does not know what it replaced | an ADR |
 | a landed rule and the test that enforces it | a decision-index row |
@@ -27,13 +28,12 @@ branch's worktree.
 1. **Can you finish it within the agreed slice?** Then do it (`nora-land`,
    `nora-prove-fix`); a small direct change uses its PR as the record. Creating
    a ticket is not delivery. Tiny residues belong in PR limitations.
-2. **Look for a home first.** Search Linear for work/roadmap and GitHub Issues
-   for an existing defect report. Keep one work identity; do not create a
+2. **Look for a home first.** Search Linear for execution, GitHub Project for roadmap
+   outcomes, and GitHub Issues for reports. Keep one work identity; do not create a
    GitHub Issue to make a Linear task eligible for execution.
 3. **Select the destination.** GitHub reports use `.github/ISSUE_TEMPLATE/`
-   and the form conventions. Linear work uses the short work brief in
-   `nora-dispatch`: intent, done when, boundaries, references. Use native
-   ownership, dependencies and necessary sub-issues; never a second spec/plan.
+   and the form conventions. Linear execution follows the [issue convention](../../../docs/maintainers/conventions.md#linear-execution).
+   Use the work brief in `nora-dispatch` and native properties; no second spec/plan.
 4. **Scrub before writing.** No private conversations, identities, credentials
    or production rows in either service. Link permitted source/evidence rather
    than copying logs. Read the actual draft for private values.
@@ -54,11 +54,14 @@ back; preserve history and use a cross-link instead of bulk-copying comments.
 ## Roadmap planning
 
 Follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap).
-Use Linear projects for substantial outcomes and initiatives only when useful
-across projects. Read design/current code before calling work unbuilt. Link work
-briefs and native dependencies, not a copied task table or GitHub Project view.
-Read back actual states and ownership. Planning grants no spending, new worker,
-merge or deployment authority; integrations and automation need actual read-back.
+Read the design and current implementation before changing an outcome. Reuse
+its GitHub Project item; keep only capability intent, success signal, horizon
+and Linear execution links. New outcomes can use Project draft items without
+creating repository issues. Verify product/view routing before adding drafts.
+Update outcome progress only on evidence; Linear Done or merged children alone
+cannot mark it Achieved. Do not migrate the roadmap into Linear or create a
+parallel initiative. Read back changed fields and links. Planning grants no
+execution, spending or deployment authority.
 
 ## 2. Writing an ADR
 

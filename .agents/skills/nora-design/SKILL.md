@@ -91,8 +91,9 @@ design/<topic>/
    section or file only for a subject nothing covers. Check: `git diff --stat -- design` shows edits and deletions,
    not only additions; a purely additive diff needs a new subject to justify it.
 3. **Abandoned design is deleted**, not marked. The commit says what replaced it.
-4. **Move non-design content out** as you meet it: work and open items to
-   Linear (`nora-decision` §1), detail the code already holds to nothing.
+4. **Move non-design content out** as you meet it: execution work to
+   Linear and roadmap outcomes to GitHub Project (`nora-decision`);
+   delete detail the code already holds.
 5. **Design behind the code** (the code changed the architecture without the
    bundle): bring the bundle up to the code in the same PR, or record the gap
    in its Linear work brief.

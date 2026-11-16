@@ -126,7 +126,7 @@ needs checks on what the upstream change touches.
 
 ## Intent, evidence and completion
 
-- Linear owns roadmap and execution. A **work brief** in its issue description
+- GitHub Project owns roadmap; Linear owns execution. A **work brief** in its issue description
   combines intent, observable completion conditions and boundaries, with design
   links as needed. The model chooses implementation details; no separate plan,
   spec or PRD is required. Small direct work may use the PR-recorded brief.
@@ -219,13 +219,17 @@ most six into the PR, most severe first.
 | Design bundle | The high-level architecture and its rationale (`nora-design`); never a plan or a status report |
 | ADR | One decision, its alternatives and what it cost |
 | Linear issue | One work brief: intent, completion conditions and boundaries; native ownership/dependencies |
-| Linear project / initiative | Capability outcomes, grouping and roadmap; links work instead of copying it |
-| GitHub issue | Defect/problem reports and their resolution; never the execution queue or roadmap |
+| Linear project | Optional bounded delivery grouping; not a second roadmap |
+| GitHub Project roadmap item | Capability outcome, horizon and outcome-level progress; links Linear execution |
+| GitHub issue | Defect/problem or community request reports and their disposition; not execution tasks |
 | Run / review receipt | Actual provider, model, toolset, options, fit reason, run reference, input revision and evidence |
 
 - Use native ownership/dependencies and link evidence; do not copy plans,
   receipts or tracker state into parallel files. Preserve existing work IDs,
   owners and holds until verified successors are linked during migration.
+- Roadmap outcomes, report disposition and execution status are separate. Link
+  them; do not mirror their descriptions or statuses. Roadmap changes follow
+  [roadmap conventions](docs/maintainers/conventions.md#roadmap).
 - AgentSession completion, PR merge and child closure are not whole-outcome
   acceptance. A skill or MCP connection does not install unattended execution
   or grant spending authority.
