@@ -40,5 +40,12 @@
   "old": "            social_off_ids=persons.social_off_ids() if access is None else frozenset(),",
   "new": "            social_off_ids=frozenset(),",
   "target": "tests/unit/test_managed_memory_scope.py::test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied"
+ },
+ {
+  "name": "managed external reads screen the actual source names before egress",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "private_names = await self._private_names()",
+  "new": "private_names = state.private_names",
+  "target": "tests/unit/test_managed_memory_scope.py::test_managed_source_names_are_screened_live_before_external_reads"
  }
 ]

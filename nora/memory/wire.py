@@ -174,7 +174,7 @@ class GraphWiring:
 
 
 def _private_names(persons: Any, access: Any) -> tuple[str, ...]:
-    """File-mode names/handles for WakeMemory's screen; managed has no file name data."""
+    """File names/handles; managed source names resolve before each screened read."""
     if access is not None and not access.is_file_backend:
         return ()
     return tuple(

@@ -225,6 +225,64 @@ async def test_graph_composition_wires_and_starts_under_the_managed_backend(exam
     assert wired.cognition_memory is not None
 
 
+@pytest.mark.parametrize("provider", ["web_search", "instagram_search", "x_search"])
+async def test_managed_source_names_are_screened_live_before_external_reads(
+    example_config, provider,
+):
+    from dataclasses import replace
+
+    from nora.access import EMPTY_PERSONS
+    from nora.agent.comprehend_tools import ComprehendRead, LookupState
+    from nora.agent.fetch_watch import GraphFetched, _result_of
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.testing.comprehend import InMemoryComprehendRecords
+
+    class ManagedRecords(InMemoryComprehendRecords):
+        def __init__(self, access):
+            super().__init__()
+            self.access = access
+
+    bindings, access, _ = await _world()
+    bindings.people[PERSON] = replace(bindings.people[PERSON], display_name="Generated Person")
+    memory = _graph_composition(EMPTY_PERSONS, access, example_config).cognition_memory
+    records = ManagedRecords(memory.records.access)
+    state = LookupState(
+        GraphFetched(), HERE.unit, 1, records, Metrics(), memory.private_names,
+        persons=(PERSON,),
+    )
+    calls = []
+
+    async def outbound(query: str) -> dict:
+        calls.append(query)
+        return {"status": "ok", "text": query}
+
+    tool = ComprehendRead(adapt(ToolSpec(
+        name=provider, description="", schema={}, call=outbound,
+    )), state)
+
+    async def call(query):
+        events = [event async for event in tool.stream({
+            "toolUseId": "generated-lookup", "name": provider, "input": {"query": query},
+        }, {})]
+        return _result_of(events[-1])
+
+    assert (await call("Generated Person news"))["reason"] == "private_person"
+    assert calls == []
+    assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news"]
+    bindings.people[PERSON] = replace(bindings.people[PERSON], display_name="Generated Renamed")
+    assert (await call("Generated Renamed news"))["reason"] == "private_person"
+    bindings.down = True
+    assert (await call("volleyball news"))["status"] == "unavailable"
+    bindings.down = False
+    state.persons = ("generated-unknown-person",)
+    assert (await call("volleyball news"))["status"] == "unavailable"
+    assert calls == ["volleyball news"]
+    state.persons = (PERSON,)
+    assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news", "volleyball news"]
+
+
 async def test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied(example_config):
     from nora.domain.models import PersonRef
     from nora.persons import Persons
