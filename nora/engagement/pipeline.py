@@ -280,58 +280,19 @@ class EngagementPipeline:
         # all. Delivering to the wrong platform is catastrophic; failing to
         # read a roster is merely blind, and blind-but-saying-so is allowed.
         self._rosters: Mapping[str, RosterSource] = rosters or {}
-        # The OpenGraph fetcher behind an outbound link-preview card. `None`
-        # whenever `[preview].enabled` is false and in every offline
-        # composition, which is why it defaults rather than being required: a
-        # missing preview is a message without a card, and nothing about it is a
-        # wrong claim. (`composer` on `deliver.build` is required for the opposite
-        # reason; the split is argued there.)
+        # Optional outbound preview fetcher; absent when previews are disabled or offline.
         self._preview_source = preview_source
-        # The tool-recall log's write-path store (R-48). `None` in every
-        # offline/eval composition and any deployment that has not wired it —
-        # `deliver.build`'s `ToolCallLog` treats a `None` store as fully inert,
-        # same shape as `roster_source`/`preview_source` above.
+        # R-48: an absent tool-recall store leaves ToolCallLog inert.
         self._tool_call_log_store = tool_call_log_store
-        # The durable half of the reasoning-strip watch (`reasoning_strip_log`).
-        # Same optional-collaborator shape as `tool_call_log_store` above:
-        # `None` leaves `deliver.build`'s `ReasoningStripWatch` counting in
-        # Prometheus and writing no row, which is what every offline/eval
-        # composition gets.
+        # Without persistence, ReasoningStripWatch still counts its Prometheus metrics.
         self._reasoning_strip_store = reasoning_strip_store
-        # The reasoning-continuity retention store. `None` in every offline/eval composition and any
-        # deployment that has not wired it — the SAME optional-collaborator
-        # shape `preview_source`/`tool_call_log_store` already have above:
-        # `_run_admitted`'s `finally` treats a `None` store as fully inert
-        # (nothing to save into), never a reason to fail the turn. Production
-        # wiring (`composition.py`) is unconditional: retention must exist before
-        # the `[debrief]` flag has anything to gate.
+        # Production retention is unconditional; absent offline stores skip writes in finally.
         self._tag_trace_store = tag_trace_store
-        # The debrief stage's collaborators, as ONE object
-        # rather than four optional parameters — see `debrief.Wiring`. `None`
-        # is `[standing] enabled = false`, the shipped default, and in every
-        # offline/eval composition: `_debrief` below returns without awaiting
-        # anything, so a deployment that has not wired it pays nothing and
-        # holds the slot for no longer than it otherwise would.
-        #
-        # Unlike `tag_trace_store` above, this one IS gated on its flag: retention
-        # exists unconditionally because a lossy fold is only recoverable from
-        # traces that were already being kept, and the fold is the part an
-        # operator turns on.
+        # debrief.Wiring is flag-gated; absence runs no fold or extra await, unlike retention.
         self._debrief_wiring = debrief_wiring
-        # R-10's single-in-flight lock and R-30's per-conversation FIFO queue,
-        # both keyed by (platform, conversation_id), as one INJECTED
-        # collaborator. The queue feeds the lock's one slot in order as each
-        # turn finishes — it never widens it. Both are per-CONVERSATION and
-        # self-draining: `release_and_dispatch` on every exit path, and
-        # `ConversationQueues.dequeue` deletes a key once its last waiting tag
-        # is gone. Neither retains anything per-tag. It is injected rather than
-        # constructed here because the heartbeat fire path holds the SAME
-        # instance — see `nora.engagement.slots`.
+        # R-10/R-30: shared with FirePath, keyed by platform/room; every exit releases and drains.
         self._slots = slots
-        # The people area's in-room management invocation (`!!!member`) —
-        # an object with `parse`/`invoke`, `None` where the area was never
-        # wired. Kept opaque (`Any`) like the other collaborators: the
-        # engagement package imports no area.
+        # Opaque area collaborator; absent where room management is not wired.
         self._room_commands = room_commands
 
     def _adapter_for(self, platform: str) -> Any:

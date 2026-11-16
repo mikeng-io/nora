@@ -885,7 +885,6 @@
   "comment_blocks": 58,
   "file_lines": 1426,
   "functions": {
-   "EngagementPipeline.__init__": 145,
    "EngagementPipeline._run_turn": 776
   },
   "internal_docstrings": 8

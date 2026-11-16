@@ -59,11 +59,7 @@ class Dispatcher:
         self._ingest = ingest
         self._engagement = engagement
         self._background = background
-        # The `!!!member` predicate — None only in compositions that never
-        # built the people area's room-management invocation. A command is
-        # still ingested first (the audit row is what the journal pins),
-        # then routed to the room_command occasion regardless of the
-        # engage verdict: a bare `!!!member` is nobody's tag.
+        # After ingest, explicit commands bypass engagement selection; no predicate means unwired.
         self._room_command = room_command
         # The participation occasion's trigger, None unless
         # `[participation] enabled`. It is NOT a third pipeline: it only NOTES
