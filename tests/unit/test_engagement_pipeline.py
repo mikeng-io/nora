@@ -317,7 +317,7 @@ def _build_pipeline(
     debrief_wiring=None,
     decisions=None,
     defer_tools: bool = False,
-    turn_clock=None,
+    turn_clock=None, room_commands=None,
 ):
     # Always a real (fake) store, never `None`: every scenario below can read
     # `pipeline._tag_trace_store.saved` (mirroring how `pipeline._slots` is
@@ -360,7 +360,7 @@ def _build_pipeline(
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
         decisions=decisions,
-        clock=turn_clock,
+        clock=turn_clock, room_commands=room_commands,
         **extra,
     )
     return pipeline, metrics, audit, memory, background

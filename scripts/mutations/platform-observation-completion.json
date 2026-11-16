@@ -29,9 +29,9 @@
   },
   {
     "name": "message and sidecar own one durable stimulus obligation",
-    "file": "nora/app/bridge_queue.py",
-    "old": "                        and not source_owned):",
-    "new": "                        and True):",
+    "file": "nora/app/bridge_obligations.py",
+    "old": "    if stimulus is not None and row_id is not None and not source_owned:",
+    "new": "    if stimulus is not None and row_id is not None and True:",
     "target": "tests/integration/test_platform_observation_ingest.py::test_message_sidecar_is_one_source_obligation_with_both_refs"
   },
   {

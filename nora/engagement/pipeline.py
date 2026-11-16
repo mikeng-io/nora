@@ -123,7 +123,7 @@ from nora.tag import Debounce
 
 from .mentions import MentionRenderer
 from .slots import ConversationSlots
-from .stages import admission, debrief, deliver, feedback, indicate, invoke
+from .stages import admission, command, debrief, deliver, feedback, indicate, invoke
 from .stages.admission import Admission
 from .stages.indicate import Indicator
 from .stages.invoke import AgentRunner
@@ -649,69 +649,34 @@ class EngagementPipeline:
             "engagement.turn",
             **{"nora.tag_id": request.tag_id,
                "nora.platform": request.message.platform,
+               "nora.occasion": request.occasion,
                "nora.conversation_id": request.message.conversation_id},
         ):
             if request.occasion == "room_command":
                 await self._run_room_command(request, identity, indicator,
-                                             adapter=adapter)
+                                             adapter=adapter,
+                                             disposition=disposition)
             else:
                 await self._run_turn(request, identity, indicator, adapter=adapter,
                                      disposition=disposition)
 
     async def _run_room_command(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
-        adapter: Any = None,
+        adapter: Any = None, disposition: dict[str, str] | None = None,
     ) -> None:
-        """The `!!!member` occasion: parse, invoke, reply — no model, no
-        tools, the same audit-first `Deliverer` a tag's reply takes.
-
-        The dispatcher admitted this as `occasion="room_command"` off the
-        verified `NormalizedMessage`; that same object is what
-        `RoomManagement.invoke` authenticates — actor, scope and
-        provenance can never arrive as text. A `None` command object is a
-        composition that never wired the people area; the message was
-        already ingested, so the honest thing is silence, not a wrong
-        reply.
-        """
-        msg = request.message
-        commands = self._room_commands
-        if commands is None:
-            return
-        parsed = commands.parse(msg)
-        if parsed is None:
-            return
-        convo = self._policy.conversation(msg.platform, msg.conversation_id)
-        allowed_mcp = convo.tools if convo is not None else frozenset()
-        handle = deliver.build(
-            store=self._audit, adapter=adapter or self._adapter_for(msg.platform),
-            target=msg.target(),
-            doctrine=self._doctrine_store.get(applies_to="tag"),
-            canary=self._canary, tag_id=request.tag_id,
-            nora_sender_id=identity.primary,
-            conversation_id=msg.conversation_id,
-            budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
-            terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
-            param_names=self._tool_registry.tool_param_names(),
-            audience=audience_names.TAG,
-            cacheable_tools=self._tool_registry.cacheable_tools(),
-            tool_call_log_store=self._tool_call_log_store,
+        """The `!!!member` occasion — its body is `stages/command.py`."""
+        await command.run(
+            request=request, identity=identity, indicator=indicator,
+            adapter=adapter, disposition=disposition,
+            commands=self._room_commands, policy=self._policy,
+            audit=self._audit, adapter_for=self._adapter_for,
+            doctrine_store=self._doctrine_store, canary=self._canary,
+            tool_registry=self._tool_registry, metrics=self._metrics,
+            access=self._access, rosters=self._rosters,
+            preview_source=self._preview_source, spawn=self._spawn,
             reasoning_strip_store=self._reasoning_strip_store,
-            composer=OutboundComposer(
-                platform=msg.platform, conversation_id=msg.conversation_id,
-                metrics=self._metrics, access=self._access,
-                roster_source=self._rosters.get(msg.platform),
-                preview_source=self._preview_source,
-                content_checks=self._tool_registry.content_checks,
-            ),
-            on_delivered=indicate.DeliverySettler(
-                indicator=indicator, spawn=self._spawn,
-            ),
-            content_checks=self._tool_registry.content_checks,
-        )
-        reply = parsed if isinstance(parsed, str) else commands.render(
-            await commands.invoke(msg, parsed)
-        )
-        await handle.deliverer.deliver(reply, source="command")
+            tool_call_log_store=self._tool_call_log_store,
+            slots=self._slots)
 
     async def _run_turn(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
