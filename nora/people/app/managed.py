@@ -211,14 +211,15 @@ class RegistrationService:
             return denied("operation-conflict")
         payload = cast(AccountRegistration, op.payload)
         bound = await self._already_owned(payload)
-        if not _pending(recorded, "binding"):
-            if bound is None or bound.identifiers != payload.identifiers:
+        person = await self._bindings.person(payload.person_id)
+        if person is not None or not _pending(recorded, "binding"):
+            if (person is None or bound is None
+                    or bound.identifiers != payload.identifiers):
                 return denied("registration-binding-changed")
-            lifecycle = await self._bindings.person_lifecycle(payload.person_id)
-            if lifecycle is not PersonLifecycle.ACTIVE:
+            if person.lifecycle is not PersonLifecycle.ACTIVE:
                 return denied("person-suspended")
-        person = ManagedPerson(person_id=payload.person_id,
-                               lifecycle=PersonLifecycle.ACTIVE)
+        person = person or ManagedPerson(person_id=payload.person_id,
+                                         lifecycle=PersonLifecycle.ACTIVE)
         account = bound or ManagedAccount(
             account_id=str(uuid4()),
             person_id=payload.person_id,

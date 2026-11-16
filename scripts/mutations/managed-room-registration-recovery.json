@@ -16,7 +16,7 @@
  {
   "name": "an interrupted registration cannot outlive binding revocation or suspension",
   "file": "nora/people/app/managed.py",
-  "old": "        if not _pending(recorded, \"binding\"):\n            if bound is None or bound.identifiers != payload.identifiers:\n                return denied(\"registration-binding-changed\")\n            lifecycle = await self._bindings.person_lifecycle(payload.person_id)\n            if lifecycle is not PersonLifecycle.ACTIVE:\n                return denied(\"person-suspended\")\n",
+  "old": "        if person is not None or not _pending(recorded, \"binding\"):\n            if (person is None or bound is None\n                    or bound.identifiers != payload.identifiers):\n                return denied(\"registration-binding-changed\")\n            if person.lifecycle is not PersonLifecycle.ACTIVE:\n                return denied(\"person-suspended\")\n",
   "new": "",
   "target": "tests/unit/test_managed_registration.py::test_an_interrupted_registration_refuses_changed_binding_or_lifecycle"
  }

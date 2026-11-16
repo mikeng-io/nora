@@ -17,6 +17,8 @@ managed backend's binding half owns (`management.md`):
 
 from __future__ import annotations
 
+from dataclasses import replace
+from types import MappingProxyType
 from uuid import uuid4
 
 import pytest
@@ -641,12 +643,21 @@ async def test_a_retry_while_the_outage_continues_stays_incomplete():
 
 
 @pytest.mark.parametrize("target_change", ["revoke", "suspend"])
-async def test_an_interrupted_registration_refuses_changed_binding_or_lifecycle(target_change):
+@pytest.mark.parametrize("checkpoint_written", [False, True])
+async def test_an_interrupted_registration_refuses_changed_binding_or_lifecycle(
+    target_change, checkpoint_written
+):
     store, registry, svc = _service()
     registry.down = True
     interrupted = await _register(svc, "op-1")
     assert interrupted.status is OutcomeStatus.UNAVAILABLE
     assert await store.record_for(account=ACCT) is not None
+    record = await store.operation("op-1")
+    assert record is not None
+    if not checkpoint_written:
+        record = replace(record, state=OperationJournalState.PENDING,
+                         steps=MappingProxyType(dict.fromkeys(record.steps, "pending")))
+        await store.update_operation(record)
     if target_change == "revoke":
         await store.revoke_binding(account=ACCT)
     else:
@@ -660,7 +671,7 @@ async def test_an_interrupted_registration_refuses_changed_binding_or_lifecycle(
         assert await store.person_lifecycle(PERSON) is PersonLifecycle.SUSPENDED
     assert (await store.person(PERSON)).kratos_identity_id is None
     assert PERSON not in registry.identities
-    assert (await store.operation("op-1")).state is OperationJournalState.INCOMPLETE
+    assert (await store.operation("op-1")).state is record.state
 
 
 async def test_the_journaled_snapshot_lists_identifiers_in_canonical_order():
