@@ -2,13 +2,13 @@
 
 ## Identity is shared; authority is scoped
 
-A person may belong to several units and rooms within the existing
+An identity may belong to several units and rooms within the existing
 [workspace/unit/room topology](../room-topology/10-topology.md). Canonical identity
 does not imply a shared transcript, a cross-unit memory read or universal access.
 Management reads are scoped too: recognising a known account must not reveal
 its other platform accounts, private memberships or another unit's profile.
 
-Keto models the canonical person, the workspace, the unit and the room as
+Keto models the canonical identity, the workspace, the unit and the room as
 distinct subjects/resources. Membership and management authority are distinct
 relationships. Permission rules state which authority inherits to which
 contained resources; membership alone never inherits operator powers. The
@@ -17,8 +17,8 @@ caller-supplied unit or workspace name.
 
 The namespace model Nora declares is small and fixed: `Workspace`, `Unit` and
 `Room` carry containment relations (`room` → `unit`, `unit` → `workspace` —
-written by Nora after it validates the real containment), and `Person` is the
-only subject. Relations: `member` on a scope, `admin` on a scope for the full
+written by Nora after it validates the real containment). The canonical identity
+is the permission subject. Relations: `member` on a scope, `admin` on a scope for the full
 delegated operator, `restricted` for an explicit deny, and separate
 `grant_<permit>` / `deny_<permit>` relations for every
 access and management permit. A speak-only restriction denies only speak;
@@ -92,7 +92,7 @@ Registration, granting access and delegating administrative power are separate
 operations. Permission to add a member is not permission to appoint an operator,
 edit the operator's own authority or change the global owner of an account.
 Global profile changes require holder authority. A local nickname is descriptive
-metadata Nora owns for a canonical person inside a room, unit or workspace;
+metadata Nora owns for a canonical identity inside a room, unit or workspace;
 it never proves account ownership or changes the global Kratos profile.
 Scoped operators update it through the same authenticated management boundary.
 A scoped name view uses the nearest nickname on its room-to-workspace ancestry,
@@ -102,7 +102,7 @@ Local names follow the same disclosure boundary as the context that uses them.
 Authority handoff includes this state or refuses an unrepresentable transfer.
 
 Initial installation authority is established out of band, never by the first
-person to issue an in-room command.
+identity to issue an in-room command.
 
 Platform roles and rosters are observations. An installation may explicitly
 delegate bounded authority to a platform role; no such delegation is inferred

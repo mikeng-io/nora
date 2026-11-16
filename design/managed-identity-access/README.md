@@ -1,7 +1,8 @@
 # Managed identity and access
 
-Nora recognises one person across platforms, rooms and units. Small installations
-can maintain identity and grants in private TOML files; managed installations use
+Nora recognises one [identity](identity.md#one-identity-many-accounts) across
+platforms, rooms and units. Small installations can maintain identity and grants
+in private TOML files; managed installations use
 Ory and a private management API to register accounts, synchronise membership and
 administer scoped access. Managed identity is an alternative backend, not a
 replacement for the file backend.
@@ -14,7 +15,7 @@ construction.
 
 ## Parts
 
-- [Identity](identity.md) defines the canonical person, platform-account bindings,
+- [Identity](identity.md) defines the canonical identity, platform-account bindings,
   the two backends and their sources of authority.
 - [Account linking](account-linking.md) defines authenticated, bilateral consent
   and what changes when independently registered accounts become one identity.
@@ -26,8 +27,8 @@ construction.
 ## Architecture
 
 Platform bridges supply authenticated account observations. Nora's identity
-service resolves them to a canonical person; its authorization service evaluates
-the person's rights within the requested scope. Management callers use the same
+service resolves them to a canonical identity; its authorization service evaluates
+the identity's rights within the requested scope. Management callers use the same
 application operations, independent of whether the request arrived as an explicit
 command, natural language, a Web App action or a platform synchronisation.
 
@@ -38,7 +39,7 @@ require separate Nora processes. Ory administration credentials remain behind
 the private service boundary.
 
 The difficult boundary is evidence of common ownership: discovering an account
-does not prove it belongs to an existing person. A platform account may be
+does not prove it belongs to an existing identity. A platform account may be
 registered without a browser login, but linking it to another identity requires
 authenticated approval from both sides. Administrative authority is not a
 substitute for either holder's consent.
@@ -46,7 +47,7 @@ substitute for either holder's consent.
 ## Relationship to existing design
 
 The [identity and policy schema](../10-identity-and-policy-schema.md) owns the
-file representation and its many-accounts-per-person semantics. The
+file representation and its many-accounts-per-identity semantics. The
 [reload contract](../policy-reload/README.md) owns validated file publication.
 The [room topology](../room-topology/10-topology.md) owns workspace, unit and
 room containment. This bundle adds managed authority and lifecycle while keeping
@@ -62,7 +63,7 @@ when they do not traverse an HTTP proxy.
 Pairwise platform mappings grow a second identity model for every integration.
 One canonical identity with many account bindings makes a new platform an
 additional binding rather than another user database. Scoped membership avoids
-creating another person whenever someone joins a room or unit.
+creating another identity whenever someone joins a room or unit.
 
 Keeping TOML available preserves the low-operation-cost installation. Keeping
 one managed write boundary avoids file edits, platform events and model-generated

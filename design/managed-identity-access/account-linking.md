@@ -2,22 +2,24 @@
 
 ## Authentication, authorization and consent
 
-Linking asserts that two platform accounts belong to one person. Both holders
+Linking asserts that two platform accounts belong to one identity. Both holders
 authenticate, are authorized to act for their respective accounts and explicitly
 approve the same link. Authentication proves account control; consent approves
-the identity change. Completing a login or observing an account does not itself
-approve a link.
+the identity change. Accounts under a common controller may still represent
+different identities. Linking approves a same-identity association; it does not
+represent delegation or attribute an agent's acts to its controller. Completing
+a login or observing an account does not itself approve a link.
 
 The initiating side approves the exact target account and intended canonical
-person. The receiving side independently authenticates and approves that same
+identity. The receiving side independently authenticates and approves that same
 association. A scoped operator may facilitate a request, but cannot supply
 either holder's approval or use registration to attach an account to an existing
-person. Imported, operator-maintained file bindings are an explicit backend
+identity. Imported, operator-maintained file bindings are an explicit backend
 handoff, not a bypass offered by the managed linking API.
 
 The request binds the exact initiating and receiving accounts — platform and
 matchable identifier, never a display name or handle — the surviving canonical
-person, the approved effect, and the identity, ownership and authority
+identity, the approved effect, and the identity, ownership and authority
 revisions observed at approval. Changing any of these invalidates the
 approvals. Approval is short-lived, single-use and bound to the specific
 request. Refusal, cancellation or expiry leaves the accounts unlinked; a
@@ -37,7 +39,7 @@ the providers do:
 - **Signal** has no OIDC or OAuth, and on Signal account proof and consent
   stay two separate acts. A challenge delivered privately to the exact
   account's own direct address — the bound matchable identifier (`phone`
-  or `uuid`), never the person's preferred direct target — proves control
+  or `uuid`), never the identity's preferred direct target — proves control
   of that account only. It is proof, not authority: redeeming it cannot
   mint an approval-capable session, and a code forwarded to the initiator
   gives the initiator nothing the receiver did not perform — a forwarded
@@ -49,7 +51,7 @@ the providers do:
   account the request names to Nora's service account, authenticated by
   signal-cli's transport provenance (the envelope's source identity, never
   quoted body or claimed sender text) and bound to the request nonce
-  delivered with the challenge plus the visible pair, surviving person and
+  delivered with the challenge plus the visible pair, surviving identity and
   effect. Group, quoted, forwarded-content and reaction messages are not
   approvals; a mismatched account, a replayed, expired or changed request
   refuses; an unavailable transport fails closed. This is a narrow
@@ -94,11 +96,11 @@ and room admission never double as ownership proof.
 Whatever supplies the proof, the approval records which exact account —
 platform, identifier kind, value and issuer scope — proved control, and
 which authenticated surface carried the consent. Today's OTP challenge
-retains only a person and platform and targets the person's preferred
-direct address; it cannot name which account of that person proved
+retains only an identity and platform and targets the identity's preferred
+direct address; it cannot name which account of that identity proved
 control, so it grounds neither a session nor a message-bound approval
 under this contract. Link consent therefore requires account-exact
-provenance the current person-level challenge does not carry: the
+provenance the current identity-level challenge does not carry: the
 challenge, its delivery and every holder-visible approval name the exact
 account, and the surface that carries consent — provider session or
 transport-authenticated message — binds that same account.
@@ -108,7 +110,7 @@ transport-authenticated message — binds that same account.
 The link service owns the pending association. Neither a partial approval nor an
 Ory callback publishes ownership. At commitment it revalidates account control,
 current ownership, identity state, approvals and caller authority. Conflicting
-requests cannot move one account between people: the binding store serializes
+requests cannot move one account between identities: the binding store serializes
 the ownership change and rejects a candidate whose approved inputs have changed.
 A reused `operation_id` carrying a different effect is a conflict, not a retry;
 a competing ownership change invalidates approvals observed before it. Repeating
@@ -132,16 +134,16 @@ committed a distributed transaction.
 
 ## Independently registered identities
 
-Two accounts may already have separate canonical people. Linking then unifies
-their account ownership under the explicitly approved surviving person. References
-to the other person remain resolvable through a canonical alias; they are not
+Two accounts may already have separate canonical identities. Linking then unifies
+their account ownership under the explicitly approved surviving identity. References
+to the other identity remain resolvable through a canonical alias; they are not
 silently discarded, rewritten as new historical authors or duplicated into a
 second set of records. New writes use the surviving identity.
 
 The same consent covers the resulting ability to act through either account
 within existing grants. The link service reconciles grants and canonical
 resolution before enabling that access: each side's positive grants normalize
-to the surviving person inside the exact scopes they were granted in, carrying
+to the surviving identity inside the exact scopes they were granted in, carrying
 their provenance, and explicit restrictions normalize the same way — deny
 always wins. Neither union expands a grant's scope, containment or audience.
 Where both sides held the same grant the surviving record keeps both
@@ -164,14 +166,14 @@ authority suspends a global identity, but never asserts account ownership. It
 detaches the account binding and revokes the sessions and account-derived
 access the binding carried. The canonical alias and historical author
 references remain — unlink restores no arbitrary pre-link permission snapshot
-and performs no implicit split — while the person's remaining verified
+and performs no implicit split — while the identity's remaining verified
 accounts keep the current canonical grants and restrictions. Splitting
 historical data ownership is a separate, explicitly scoped operation, not an
 incidental effect of removing a login method.
 
 ## Why discovery is insufficient
 
-A platform authenticates an account on that platform, not a person across all
+A platform authenticates an account on that platform, not an identity across all
 platforms. Matching names, entering a phone number, sharing a server or accepting
 an operator's suggestion does not prove joint ownership. Ory's social-login
 linking is useful authentication machinery, but it does not provide Nora's

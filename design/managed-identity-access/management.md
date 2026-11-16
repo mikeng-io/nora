@@ -18,33 +18,33 @@ Service provisioning uses `POST /app/v1/management/operations`. Each configured
 credential identifies one service, its permitted platform sources and an exact
 set of approved scopes. Its JSON body supplies the typed operation, never the
 actor. This service entry point admits registration and roster synchronisation;
-it cannot supply holder consent or scoped human authority. The server refuses
+it cannot supply holder consent or scoped operator authority. The server refuses
 duplicate credentials and service identities, and every response is private
 and non-cacheable. The use case returns the same four mutation outcomes; HTTP
 success means `complete`, not merely that a request reached an Ory endpoint.
 
 Bulk onboarding uses `POST /app/v1/management/rosters` under the same service
 credential and approved scope. A snapshot names its platform, collection,
-audience kind, completeness and explicitly classified accounts. Unknown account
-types make a claimed complete roster unavailable; bots are not registered as
-people. A collection audience cannot grant room membership. Each new account
-starts an independent person without a registration-sourced membership; the
-collection sync supplies its retractable support. The durable batch identity
+audience kind, completeness and account identifiers with their source evidence.
+A missing or unprovable identifier makes the affected observation unavailable;
+unknown human or machine nature does not. A collection audience cannot grant room
+membership. Each new account starts an independent identity without a
+registration-sourced membership; collection sync supplies its retractable support. The durable batch identity
 binds the exact effect, and a retry resumes unfinished account correlation and
-membership without recreating people or attaching accounts to existing people.
+membership without recreating identities or attaching accounts to existing identities.
 
 Automated work carries its service identity and approved onboarding scope;
-human-triggered work also carries the verified human actor. Every operation
+account-authenticated work also carries the verified account actor. Every operation
 therefore carries a typed actor — a service principal acting within its
 approved sources, or an authenticated holder — resolved once from the
 authenticated invocation; neither a model argument nor a quoted message can
 nominate another actor or enlarge the service's scope. Registration of an
-observed account is not permission to claim it for an existing person. Repeated
+observed account is not permission to claim it for an existing identity. Repeated
 events and retried requests reuse the same registration and operation identity.
 
 The shared contract lives in `nora/domain/management.py`: the closed operation
 vocabulary, the four actor kinds (`service`, `holder`, `operator`,
-`installation`), the typed targets (account, person, membership, scope) and the
+`installation`), the typed targets (account, canonical identity, membership, scope) and the
 outcome set — `complete`, `denied`, `unavailable`, `incomplete`. Every
 operation carries an idempotency `operation_id`, the actor, the target, a
 per-kind typed payload — never an arbitrary mapping — and the
@@ -94,7 +94,8 @@ An initial roster supports bulk registration. Join, leave and role events keep
 membership current, and reconciliation repairs missed events after reconnects.
 An authenticated newly observed sender can be registered under the same approved
 rule without waiting for a full roster. Neither route guesses a cross-platform
-link. Bots and other non-person accounts are not silently classified as humans.
+link. An account's human or machine nature is not an admission requirement;
+registration depends on trusted account evidence and the approved source/scope.
 
 Roster completeness is explicit. Only a successful, complete observation of the
 relevant collection can establish absence from it; a partial page, lost intent,
@@ -127,7 +128,7 @@ operator restrictions remain effective when automatic synchronisation runs.
 ## Web App
 
 Discord authentication and the existing Signal/WhatsApp code flow resolve to the
-same canonical person as messaging. Possession of a phone-number string is not
+same canonical identity as messaging. Possession of a phone-number string is not
 authentication; the delivered challenge must prove control of the account.
 The Web App can initiate and present linking, but both sides approve the exact
 association independently. An existing Web App session is not consent to a new
@@ -143,14 +144,14 @@ surface.
 
 Session identity, account ownership and permissions are checked against current
 state. Disabled identities, revoked bindings and canonical aliases cannot leave
-a session acting as an obsolete independent person. The portal's pages and API
+a session acting as an obsolete independent identity. The portal's pages and API
 routes share this enforcement rather than relying on a page-level login gate.
 
 The Web App acts as a configured authentication gateway after verifying provider
 login. A separate private key signs short-lived assertions bound to the exact
 HTTP method, path and body; provisioning and OTP bearers cannot sign them. The
-assertion retains the original account/person binding and revisions, not roles
-or an actor chosen by request JSON. Scoped human mutations revalidate that
+assertion retains the original account/identity binding and revisions, not roles
+or an actor chosen by request JSON. Scoped operator mutations revalidate that
 binding and current permission inside the same write gate as their effects.
 Portal data and document/media requests carry the same request-bound retained
 identity assertion. The private API rechecks the session and refuses a query
@@ -166,7 +167,7 @@ supplies bilateral consent or installation authority.
 The design uses the provisioning pattern of a stable application principal and
 shared registration logic, rather than copying an application's user/tenant
 schema. Financial-account provisioning, single-default-tenant constraints and
-wildcard capability grants are not Nora's person/unit/room model.
+wildcard capability grants are not Nora's identity/unit/room model.
 
 The existing [platform bridge architecture](../platform-bridges/00-contract.md) owns
 authenticated event handoff, and [file reload](../policy-reload/README.md) owns
