@@ -54,5 +54,26 @@
     "old": "            for scope in sorted(wanted, key=_scope_key):\n                room = prepared.room_scopes.get(scope)",
     "new": "            for scope in sorted(prepared.room_scopes, key=_scope_key):\n                room = prepared.room_scopes.get(scope)",
     "target": "tests/unit/test_managed_admission.py::test_readback_refuses_access_outside_the_file_predicate[ancestor]"
+  },
+  {
+    "name": "the default workspace is inspected even without a mapped unit",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "        wanted: dict[Scope, set[ScopedRelation]] = {\n            Scope(ScopeKind.WORKSPACE, DEFAULT_WORKSPACE): set()}",
+    "new": "        wanted: dict[Scope, set[ScopedRelation]] = {}",
+    "target": "tests/unit/test_managed_admission.py::test_foreign_containment_on_every_scope_refuses_fresh_and_resume[scope3-False]"
+  },
+  {
+    "name": "resumed claims inspect the unmapped default workspace",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "        wanted: dict[Scope, set[ScopedRelation]] = {\n            Scope(ScopeKind.WORKSPACE, DEFAULT_WORKSPACE): set()}",
+    "new": "        wanted: dict[Scope, set[ScopedRelation]] = {}",
+    "target": "tests/unit/test_managed_admission.py::test_foreign_containment_on_every_scope_refuses_fresh_and_resume[scope3-True]"
+  },
+  {
+    "name": "readback checks access on the unmapped default workspace",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "        wanted: dict[Scope, set[ScopedRelation]] = {\n            Scope(ScopeKind.WORKSPACE, DEFAULT_WORKSPACE): set()}",
+    "new": "        wanted: dict[Scope, set[ScopedRelation]] = {}",
+    "target": "tests/unit/test_managed_admission.py::test_readback_refuses_access_outside_the_file_predicate[default-workspace]"
   }
 ]
