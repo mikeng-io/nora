@@ -90,6 +90,14 @@ identity by `external_id` and never assumes a colliding registration intended
 the same person. Nora's own person id survives as the canonical key; the Kratos
 identity id is stored as a binding, not substituted into historical references.
 
+The initial file admission goes further: each identity it creates carries
+`metadata_admin` naming the import and its intended effect, stamped on the
+create call itself. That admin-only marker is the durable command evidence an
+interrupted import recovers through — a collision whose record lacks it is
+foreign and refused untouched, and neither `external_id` equality nor
+holder-editable traits substitute for it. It marks which command created the
+identity; it never decides account ownership.
+
 A Nora person schema carries descriptive traits only — a display name, the
 social-memory opt-out and the non-matchable labels — because a
 platform-originated person may have no email, password or OIDC credential at

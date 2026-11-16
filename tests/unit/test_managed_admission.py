@@ -44,6 +44,7 @@ from nora.testing.managed import (
     FakeIdentityRegistry,
     FakeLinkRequests,
 )
+from tests.fakes import FakeAdmissionKratos
 
 IDENTITY = """\
 [persons.miles]
@@ -163,7 +164,8 @@ def graph():
     backend = FakeAuthorityBackend()
     registry = FakeIdentityRegistry()
     return store, backend, registry, FileAdmission(
-        bindings=store, backend=backend, registry=registry, probe=_Probe(store),
+        bindings=store, backend=backend,
+        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
     )
 
 
@@ -386,7 +388,8 @@ async def test_interrupted_import_resumes_without_duplicate_effects(tmp_path, gr
     store, _, registry, _ = graph
     backend = _NoWrites()
     admission = FileAdmission(
-        bindings=store, backend=backend, registry=registry, probe=_Probe(store),
+        bindings=store, backend=backend,
+        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
     )
     identity_path, policy_path = _sources(tmp_path)
     first = await admission.apply(identity_path, policy_path)
@@ -399,7 +402,8 @@ async def test_interrupted_import_resumes_without_duplicate_effects(tmp_path, gr
     people_before = len(store.people)
     backend.writes_ok = True
     restarted = FileAdmission(
-        bindings=store, backend=backend, registry=registry, probe=_Probe(store),
+        bindings=store, backend=backend,
+        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
     )
     outcome = await restarted.apply(identity_path, policy_path)
     assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
@@ -419,7 +423,8 @@ async def test_dependent_access_is_unavailable_until_publication_completes(
     store, _, registry, _ = graph
     backend = _NoWrites()
     admission = FileAdmission(
-        bindings=store, backend=backend, registry=registry, probe=_Probe(store),
+        bindings=store, backend=backend,
+        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
     )
     identity_path, policy_path = _sources(tmp_path)
     await admission.apply(identity_path, policy_path)
@@ -457,7 +462,8 @@ async def test_readback_fails_closed_on_a_mismatched_verdict(tmp_path, graph):
     store, _, registry, _ = graph
     backend = _DropOne()
     admission = FileAdmission(
-        bindings=store, backend=backend, registry=registry, probe=_Probe(store),
+        bindings=store, backend=backend,
+        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
     )
     identity_path, policy_path = _sources(tmp_path)
     outcome = await admission.apply(identity_path, policy_path)
@@ -635,7 +641,8 @@ async def test_readback_fails_closed_on_a_missing_containment_link(
     store, _, registry, _ = graph
     backend = _DropContainment()
     admission = FileAdmission(
-        bindings=store, backend=backend, registry=registry, probe=_Probe(store),
+        bindings=store, backend=backend,
+        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
     )
     identity_path, policy_path = _sources(tmp_path)
     outcome = await admission.apply(identity_path, policy_path)
@@ -700,7 +707,8 @@ async def test_readback_refuses_access_outside_the_file_predicate(tmp_path, grap
     store, _, registry, _ = graph
     backend = _OvergrantOutsideFile(leak)
     admission = FileAdmission(
-        bindings=store, backend=backend, registry=registry, probe=_Probe(store))
+        bindings=store, backend=backend,
+        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store))
     identity, policy = _sources(tmp_path)
     outcome = await admission.apply(identity, policy)
     assert outcome.status is OutcomeStatus.UNAVAILABLE

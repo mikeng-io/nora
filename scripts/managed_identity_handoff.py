@@ -72,9 +72,18 @@ async def _target_services(args: argparse.Namespace) -> AsyncIterator[FileAdmiss
     """The real managed wiring plus the SQL-aware probe — lazy imports keep `plan` managed-free."""
     import aiohttp
 
+    from nora.infra.ory import KratosClient
     from nora.infra.sql.engine import create_sql_engine
-    from nora.people.adapters.managed_handoff import SqlAdmissionProbe
+    from nora.people.adapters.managed_handoff import KratosAdmission, SqlAdmissionProbe
     from nora.people.wire import managed_services
+
+    def api_key(name: str) -> str | None:
+        if not name:
+            return None
+        value = os.environ.get(name)
+        if not value:
+            raise ValueError("configured Ory credential is unavailable")
+        return value
 
     policy = load_policy(Path(args.policy))
     managed = ManagedOryConfig(
@@ -96,7 +105,12 @@ async def _target_services(args: argparse.Namespace) -> AsyncIterator[FileAdmiss
                 yield FileAdmission(
                     bindings=services.bindings,
                     backend=services.backend,
-                    registry=services.registry,
+                    kratos=KratosAdmission(KratosClient(
+                        session=session,
+                        admin_url=args.kratos_admin_url,
+                        timeout_seconds=args.timeout_seconds,
+                        api_key=api_key(args.kratos_admin_key_env),
+                    )),
                     probe=SqlAdmissionProbe(engine),
                 )
             finally:

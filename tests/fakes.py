@@ -12,12 +12,14 @@ from typing import Any
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
+from nora.domain.managed import Outcome, complete, denied, unavailable
 from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.domain.ports import (
     AdapterHealth,
     PlatformIdentity,
     SendResult,
 )
+from nora.people.app.managed_admission_identity import AdmissionIdentity
 
 
 class SinkSender:
@@ -463,3 +465,52 @@ class FakeHoncho:
         if rest == ["peers"]:
             return web.json_response({"id": (body or {}).get("id"), "workspace_id": workspace})
         return web.json_response({"ok": True})
+
+
+class FakeAdmissionKratos:
+    """The `AdmissionKratos` seam over the same record shape
+    `FakeIdentityRegistry` keeps — one identity per `external_id`, the
+    create carrying its owner marker into `metadata_admin`, `down` the
+    outage. Pass a `FakeIdentityRegistry.identities` dict to share one
+    Kratos world; the records stay readable by both fakes."""
+
+    def __init__(
+        self, identities: dict[str, dict[str, Any]] | None = None
+    ) -> None:
+        self.identities = identities if identities is not None else {}
+        self.down = False
+
+    @staticmethod
+    def _view(external_id: str, record: dict[str, Any]) -> AdmissionIdentity:
+        return AdmissionIdentity(
+            identity_id=record["id"],
+            external_id=external_id,
+            state=record["state"],
+            traits=dict(record["traits"]),
+            metadata_admin=copy.deepcopy(record.get("metadata_admin")),
+        )
+
+    async def create(
+        self, *, external_id: str, traits: dict[str, Any], owner: dict[str, Any]
+    ) -> tuple[Outcome, AdmissionIdentity | None]:
+        if self.down:
+            return unavailable("down"), None
+        if external_id in self.identities:
+            return denied("external-id-conflict"), None
+        self.identities[external_id] = {
+            "id": f"kratos-admission-{len(self.identities) + 1}",
+            "state": "active",
+            "traits": dict(traits),
+            "metadata_admin": copy.deepcopy(owner),
+        }
+        return complete(), self._view(external_id, self.identities[external_id])
+
+    async def read(
+        self, *, external_id: str
+    ) -> tuple[Outcome, AdmissionIdentity | None]:
+        if self.down:
+            return unavailable("down"), None
+        record = self.identities.get(external_id)
+        if record is None:
+            return denied("absent"), None
+        return complete(), self._view(external_id, record)

@@ -37,12 +37,13 @@ from nora.infra.ory.http import HttpStatus, request
 @dataclass(frozen=True)
 class KratosIdentity:
     """The parts of a Kratos identity Nora reads — id, correlation key,
-    state and the descriptive traits."""
+    state, the descriptive traits and the admin-only metadata."""
 
     identity_id: str
     external_id: str | None
     state: str
     traits: dict[str, Any]
+    metadata_admin: dict[str, Any] | None = None
 
 
 def _parse_identity(body: Any) -> KratosIdentity | None:
@@ -55,8 +56,11 @@ def _parse_identity(body: Any) -> KratosIdentity | None:
         return None
     traits = body.get("traits")
     external_id = body.get("external_id")
+    metadata_admin = body.get("metadata_admin")
     if not isinstance(traits, dict) or (
         external_id is not None and not isinstance(external_id, str)
+    ) or (
+        metadata_admin is not None and not isinstance(metadata_admin, dict)
     ):
         return None
     return KratosIdentity(
@@ -64,6 +68,7 @@ def _parse_identity(body: Any) -> KratosIdentity | None:
         external_id=external_id if isinstance(external_id, str) else None,
         state=state,
         traits=traits,
+        metadata_admin=metadata_admin if isinstance(metadata_admin, dict) else None,
     )
 
 
@@ -87,21 +92,27 @@ class KratosClient:
     schema_id: str = "nora_person"
 
     async def create_identity(
-        self, *, external_id: str, traits: dict[str, Any]
+        self, *, external_id: str, traits: dict[str, Any],
+        metadata_admin: dict[str, Any] | None = None,
     ) -> tuple[Outcome, KratosIdentity | None]:
         """`POST /admin/identities`. A 409 is `denied` ("conflict") — the
         caller then reads the identity back by `external_id` rather than
-        trusting the create path's failure shape."""
+        trusting the create path's failure shape. `metadata_admin` rides the
+        same write when given: admin-only metadata, durable at create time,
+        never a holder-editable trait."""
+        body: dict[str, Any] = {
+            "schema_id": self.schema_id,
+            "traits": traits,
+            "external_id": external_id,
+            "state": "active",
+        }
+        if metadata_admin is not None:
+            body["metadata_admin"] = metadata_admin
         result = await request(
             self.session,
             "POST",
             f"{self.admin_url}/admin/identities",
-            json_body={
-                "schema_id": self.schema_id,
-                "traits": traits,
-                "external_id": external_id,
-                "state": "active",
-            },
+            json_body=body,
             api_key=self.api_key,
             timeout_seconds=self.timeout_seconds,
             expected={201: HttpStatus.OK, 409: HttpStatus.CONFLICT},
