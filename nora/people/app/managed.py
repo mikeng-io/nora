@@ -65,7 +65,9 @@ from nora.people.app.link_publication import LinkPublicationService
 from nora.people.app.managed_authority import AuthorityService
 from nora.people.app.managed_ops import (
     Effect,
+    _fail,
     _finish,
+    _journal_after_failure,
     _op_snapshot,
     _pending,
     _publication_refusal,
@@ -143,7 +145,11 @@ class RegistrationService:
             raise  # a violated invariant is a bug, not an outage
         except Exception:
             log.exception("binding store failed")
-            return unavailable("store-failure")
+            # A store exception mid-run is not automatically a clean
+            # outage — the journal, not the exception, says whether part
+            # of the recorded effect already committed.
+            admitted = await _journal_after_failure(self._bindings, op)
+            return admitted if admitted is not None else unavailable("store-failure")
 
     async def _apply(self, op: Operation) -> Outcome:
         if op.kind != "suspend_identity":
@@ -375,9 +381,7 @@ class RegistrationService:
                     )
                 )
         if outcome.status is not OutcomeStatus.COMPLETE:
-            await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,
-                          outcome.status.value, outcome.detail)
-            return outcome
+            return await _fail(self._bindings, record, outcome)
         await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                       "complete", person.person_id)
         return complete(person.person_id)
@@ -436,9 +440,7 @@ class RegistrationService:
                     lambda: self._registry.drop_sessions(external_id=person.person_id),
                 )
         if outcome.status is not OutcomeStatus.COMPLETE:
-            await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,
-                          outcome.status.value, outcome.detail)
-            return outcome
+            return await _fail(self._bindings, record, outcome)
         await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                       "complete")
         return complete()
@@ -478,9 +480,7 @@ class RegistrationService:
                 lambda: self._binding_absent(account),
             )
         if outcome.status is not OutcomeStatus.COMPLETE:
-            await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,
-                          outcome.status.value, outcome.detail)
-            return outcome
+            return await _fail(self._bindings, record, outcome)
         await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                       "complete")
         return complete()

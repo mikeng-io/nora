@@ -383,7 +383,9 @@ async def test_an_interrupted_register_redelivery_resumes_the_recorded_effect():
     )
     registry.ensures_down = True
     interrupted = await management.invoke(message, RoomRequest(kind="register"))
-    assert interrupted.status is OutcomeStatus.UNAVAILABLE
+    # The binding committed before Kratos refused — the caller hears the
+    # partial write named, not a clean outage.
+    assert interrupted.status is OutcomeStatus.INCOMPLETE
     record = await bindings.operation("room:signal:conv-1:m-1")
     assert record is not None
     assert record.state is OperationJournalState.INCOMPLETE
@@ -458,7 +460,7 @@ async def test_a_revoked_operator_cannot_resume_through_the_journal():
     )
     registry.ensures_down = True
     interrupted = await management.invoke(message, RoomRequest(kind="register"))
-    assert interrupted.status is OutcomeStatus.UNAVAILABLE
+    assert interrupted.status is OutcomeStatus.INCOMPLETE
     registry.ensures_down = False
     await backend.drop_relation(
         scope=ROOM, relation="grant_manage_members", person_id=OP_PERSON
@@ -676,8 +678,10 @@ async def test_a_lost_registration_response_does_not_claim_nothing_applied():
     assert bound is not None and await _member_phone(bindings, bound.person_id)
     person = await bindings.person(bound.person_id)
     assert person is not None and person.kratos_identity_id
-    assert result["status"] == "unavailable"
-    assert "couldn't confirm what applied" in result["note"]
+    # Steps the journal marks done committed before the response was lost —
+    # the tool's `partial` axis names exactly that, never a clean outage.
+    assert result["status"] == "partial"
+    assert "only partly applied" in result["note"]
     assert "nothing applied" not in result["note"]
 
 

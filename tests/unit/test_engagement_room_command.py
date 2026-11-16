@@ -29,6 +29,7 @@ from nora.domain.managed import (
 from nora.domain.management import Scope, ScopeKind
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import EngageDecision, EngagementRequest, SendResult
+from nora.domain.tag_trace import TagTrace
 from nora.people import RoomManagement
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
@@ -45,7 +46,9 @@ from tests.unit.test_engagement_pipeline import (
     _drain,
     _FakeAdapter,
     _held,
+    _invoke_tool,
     _reply_turns,
+    _req,
     _request,
 )
 
@@ -129,6 +132,24 @@ class _ExplodingAdapter(_FakeAdapter):
         raise RuntimeError("transport blew up mid-send")
 
 
+class _BodyEcho:
+    """Replies `reply-to-<body>` through the real `send_reply` tool — one
+    reply per model invoke, derived from the tag's own message so two
+    queued tags stay distinguishable in delivery order."""
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def invoke(self, **kwargs):
+        self.calls += 1
+        body = kwargs["ctx"].message.body
+        tools = {t.tool_name: t for t in kwargs["tools"]}
+        await _invoke_tool(tools["send_reply"], text=f"reply-to-{body}")
+        return "end_turn", "", TagTrace(
+            tag_id=kwargs["ctx"].tag_id,
+            conversation_id=kwargs["ctx"].message.conversation_id,
+            messages=(), transcript=(), outcome="send_reply", created_at=0)
+
+
 async def test_an_admitted_room_command_releases_its_slot_and_runs_what_queued_behind_it():
     """The queued-followup guard: revert the command path's `finally`
     release and this goes red — the held slot strands the queued tag."""
@@ -205,6 +226,46 @@ async def test_a_faulting_room_command_is_silent_and_still_releases_the_slot():
     await _drain(background)
     assert adapter.texts == []
     assert len(runner.calls) == 1
+    assert not _held(pipeline) and _depth(pipeline) == 0
+
+
+async def test_a_durable_room_command_leaves_the_release_to_its_worker():
+    """The durable half of the slot contract: `run_durable` hands the stage
+    a `disposition` — the marker that the CALLER already holds the slot
+    (`WorkRunner._dispatch`'s `try_acquire`) and owns its release. A stage
+    that ALSO released would pop one queued tag AND free the slot it
+    believes held; the worker's matching `finally` would then pop a SECOND
+    — two follow-ups overlapped. Revert the `if disposition is None` guard
+    and `run_durable` returns with the queue already drained."""
+    management, bindings, backend, registry = _room_management()
+    await _room_operator(bindings, backend, registry)
+    adapter = _FakeAdapter()
+    runner = _BodyEcho()
+    pipeline, _, _, _, background = _build_pipeline(
+        adapter=adapter, runner=runner, room_commands=management)
+    key = ("signal", "g1")
+
+    # The worker's side of the seam: `_dispatch` try_acquires the slot
+    # before `run_durable`, and its own finally owns the one release.
+    pipeline._slots.acquire(key)
+    await pipeline.run(_req(body="first tag", tag_id="queued-1"))
+    await pipeline.run(_req(body="second tag", tag_id="queued-2"))
+    assert _depth(pipeline) == 2
+
+    disposition = await pipeline.run_durable(_command())
+    assert disposition == "send_reply"
+    assert adapter.texts == ["registered — they're a member of this room now"]
+    # The stage did NOT release: the slot is still held and BOTH queued
+    # tags still wait — nothing dispatched mid-run.
+    assert _held(pipeline) and _depth(pipeline) == 2
+    assert runner.calls == 0
+
+    # The worker's single release hands the slot to exactly one follow-up;
+    # its own stage release dispatches the next — never overlapping.
+    pipeline._slots.release_and_dispatch(key)
+    await _drain(background)
+    assert adapter.texts[-2:] == ["reply-to-first tag", "reply-to-second tag"]
+    assert runner.calls == 2
     assert not _held(pipeline) and _depth(pipeline) == 0
 
 

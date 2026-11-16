@@ -303,7 +303,7 @@ class RoomManagement:
         context = await self._authorized_actor(message, request)
         if isinstance(context, Outcome):
             return context
-        actor, sender_account, scope, digest, operation_id = context
+        actor, authentication, scope, digest, operation_id = context
 
         target: ResolvedTarget | None = None
         if request.kind == "register":
@@ -346,22 +346,14 @@ class RoomManagement:
                 observed_revisions={"authority": digest,
                                     "identity": person_revision},
             )
-        authentication = RoomAuthentication(
-            issuer=message.platform,
-            message_key=operation_id,
-            account=sender_account,
-            authenticated_at=datetime.fromtimestamp(
-                message.timestamp / 1000, tz=UTC
-            ),
-        )
         return await self._human.apply(operation, authentication, target=target)
 
     async def _authorized_actor(
         self, message: NormalizedMessage, request: RoomRequest
-    ) -> tuple[Actor, Identifier, Scope, str, str] | Outcome:
-        """The verified operator's actor/account/scope/digest/operation id, or the refusal."""
+    ) -> tuple[Actor, RoomAuthentication, Scope, str, str] | Outcome:
+        """The verified operator's context for apply, or the refusal."""
         services = self._services
-        if services is None:  # unreachable — invoke denies file mode first
+        if services is None or self._human is None:  # unreachable — file mode denied first
             return unavailable("bindings-unavailable")
         # The scope is the room the message actually arrived in — topology
         # must confirm it exists, never a caller-supplied value.
@@ -376,8 +368,8 @@ class RoomManagement:
         if not exists:
             return denied("unknown-scope")
 
-        # The actor is the transport-verified sender, resolved live to the
-        # canonical person — never a name, mention or body assertion.
+        # The actor is the transport-verified sender, resolved live — never
+        # a name, mention or body assertion.
         try:
             bound = await services.bindings.resolve(
                 message.platform, message.sender_id
@@ -386,16 +378,30 @@ class RoomManagement:
             return unavailable("bindings-unavailable")
         if bound is None:
             return denied("sender-unregistered")
-        try:
-            person_id = await services.bindings.canonical_person(bound.person_id)
-        except Exception:  # noqa: BLE001
-            return unavailable("bindings-unavailable")
-        if person_id is None:
-            return denied("sender-unregistered")
         sender_account = next(
             (i for i in bound.identifiers if i.value == message.sender_id),
             min(bound.identifiers, key=lambda i: (i.kind, i.value)),
         )
+        key = message.message_id or f"{message.sender_id}:{message.timestamp}"
+        operation_id = f"room:{message.platform}:{message.conversation_id}:{key}"
+        authentication = RoomAuthentication(
+            issuer=message.platform,
+            message_key=operation_id,
+            account=sender_account,
+            authenticated_at=datetime.fromtimestamp(
+                message.timestamp / 1000, tz=UTC
+            ),
+        )
+        # Full registry-backed authentication precedes EVERY target read:
+        # an inactive or unverifiable identity with a retained grant gets
+        # this refusal, never a resolution it could read as an oracle.
+        # `apply` re-runs the same check inside the mutation gate.
+        verified = await self._human.authenticate(authentication)
+        if verified.verdict is Verdict.UNAVAILABLE:
+            return unavailable("authentication-unavailable")
+        if verified.principal is None:
+            return denied("authentication-changed")
+        person_id = verified.principal.binding.person_id
 
         # A live scoped check precedes EVERY target read — otherwise an
         # unauthorized operator could probe bindings by naming them. The
@@ -419,9 +425,7 @@ class RoomManagement:
             return unavailable(digest.detail or "authority-unavailable")
 
         actor = Actor(ActorKind.OPERATOR, person_id=person_id, scope=scope)
-        key = message.message_id or f"{message.sender_id}:{message.timestamp}"
-        operation_id = f"room:{message.platform}:{message.conversation_id}:{key}"
-        return actor, sender_account, scope, digest, operation_id
+        return actor, authentication, scope, digest, operation_id
 
     # -- target resolution -------------------------------------------------
 
@@ -457,35 +461,39 @@ class RoomManagement:
         services = self._services
         if services is None:  # unreachable — invoke denies file mode first
             return unavailable("bindings-unavailable")
-        if request.reference_kind == "mention":
-            forms, unresolved = await self._account_forms(message)
-            if unresolved:
-                return Clarify(
-                    "I couldn't read every account you named — @-mention "
-                    "them or give the exact platform id",
-                    status="nothing_found",
-                )
-            if not forms:
-                return Clarify(
-                    "which account should I register — @-mention them, or "
-                    "give me their exact platform id?"
-                )
-            if len(forms) > 1:
-                return Clarify(
-                    "that mentions more than one account — one at a time, "
-                    "please"
-                )
-            identifiers = forms[0]
-        else:
+        # EVERY reference the request carries is reconciled as one set: the
+        # message's own mentions AND an explicit account the caller named.
+        # A repeated identifier deduplicates to the one intended target; a
+        # second distinct account or an unreadable reference asks, never picks.
+        forms, unresolved = await self._account_forms(message)
+        if unresolved:
+            return Clarify(
+                "I couldn't read every account you named — @-mention "
+                "them or give the exact platform id",
+                status="nothing_found",
+            )
+        if request.reference_kind != "mention" and request.reference is not None:
             typed = _typed_forms(
-                message.platform, frozenset({request.reference or ""})
+                message.platform, frozenset({request.reference})
             )
             if not typed:
                 return Clarify(
                     "I can't read that as a platform account — @-mention "
                     "them or give the exact platform id"
                 )
-            identifiers = typed
+            if not any(typed & form for form in forms):
+                forms = (*forms, typed)
+        if not forms:
+            return Clarify(
+                "which account should I register — @-mention them, or "
+                "give me their exact platform id?"
+            )
+        if len(forms) > 1:
+            return Clarify(
+                "that names more than one account — one at a time, "
+                "please"
+            )
+        identifiers = forms[0]
         try:
             bound = False
             for ident in identifiers:
@@ -517,39 +525,39 @@ class RoomManagement:
             return unavailable("bindings-unavailable")
         people: set[str] = set()
         refs: set[tuple[str, str]] = set()
-        if request.reference_kind in ("mention", "account"):
-            values = (
-                message.mentions
-                if request.reference_kind == "mention"
-                else frozenset({request.reference or ""})
-            )
-            unresolved: list[str] = []
-            try:
-                for value in sorted(values):
-                    bound = await services.bindings.resolve(
-                        message.platform, value
-                    )
-                    if bound is None:
-                        unresolved.append(value)
-                        continue
-                    canonical = await services.bindings.canonical_person(
-                        bound.person_id
-                    )
-                    if canonical is None:
-                        unresolved.append(value)
-                        continue
-                    people.add(canonical)
-                    refs.add((message.platform, value))
-            except Exception:  # noqa: BLE001
-                return unavailable("bindings-unavailable")
-            if unresolved or not people:
-                return Clarify(
-                    "I couldn't find every account you named — @-mention "
-                    "them or give their exact platform id (if the account "
-                    "is new here, register it first)",
-                    status="nothing_found",
+        # EVERY reference the request carries is reconciled as one set: the
+        # message's own mentions AND the explicit target. Unresolved or
+        # disagreeing references ask before any mutation, never pick one.
+        values = set(message.mentions)
+        if request.reference_kind == "account" and request.reference is not None:
+            values.add(request.reference)
+        unresolved: list[str] = []
+        try:
+            for value in sorted(values):
+                bound = await services.bindings.resolve(
+                    message.platform, value
                 )
-        else:
+                if bound is None:
+                    unresolved.append(value)
+                    continue
+                canonical = await services.bindings.canonical_person(
+                    bound.person_id
+                )
+                if canonical is None:
+                    unresolved.append(value)
+                    continue
+                people.add(canonical)
+                refs.add((message.platform, value))
+        except Exception:  # noqa: BLE001
+            return unavailable("bindings-unavailable")
+        if unresolved:
+            return Clarify(
+                "I couldn't find every account you named — @-mention "
+                "them or give their exact platform id (if the account "
+                "is new here, register it first)",
+                status="nothing_found",
+            )
+        if request.reference_kind == "name":
             try:
                 named = await services.access.room_refs(
                     message.platform, message.conversation_id
@@ -574,7 +582,16 @@ class RoomManagement:
                     + " or ".join(r.name or r.person_id for r in partial)
                     + " — which one?"
                 )
-            people = {partial[0].person_id}
+            # A name and a mention naming the same person deduplicate; a
+            # disagreement meets the `len(people) > 1` clarify below.
+            people.add(partial[0].person_id)
+        if not people:
+            return Clarify(
+                "I couldn't find every account you named — @-mention "
+                "them or give their exact platform id (if the account "
+                "is new here, register it first)",
+                status="nothing_found",
+            )
         if len(people) > 1:
             return Clarify(
                 "that refers to more than one person — one at a time, please"

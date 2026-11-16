@@ -142,6 +142,56 @@ async def test_an_unauthorized_sender_gets_one_refusal_and_no_target_read():
     assert TARGET_ID in probing.target_reads
 
 
+async def test_an_unverifiable_identity_gets_one_refusal_and_no_target_read():
+    """Full authentication, not just a live grant: a sender whose Kratos
+    identity is inactive — or whose registry cannot answer — meets the
+    SAME refusal whether the named target is bound, unbound or unknown,
+    and resolution never runs. Revert the `authenticate` call and every
+    one of these probes reaches a target read the grant still allows."""
+    probing = _ProbingStore()
+    bindings, backend, _, registry, services = _services(probing)
+    await _operator(bindings, backend, registry)
+    await _person(bindings, registry, TARGET_PERSON, TARGET_ID)
+    management = RoomManagement(services)
+    # The scoped grant stands — only the identity fails to authenticate.
+    registry.identities[OP_PERSON]["state"] = "inactive"
+    cases = (
+        (_message("!!!member add", mentions=frozenset({TARGET_ID})),
+         RoomRequest(kind="add")),
+        (_message("!!!member add", mentions=frozenset({ALICE_ID})),
+         RoomRequest(kind="add")),
+        (_message("!!!member add alice"),
+         RoomRequest(kind="add", reference="alice",
+                     reference_kind="name")),
+        (_message("!!!member register", mentions=frozenset({ALICE_ID})),
+         RoomRequest(kind="register")),
+    )
+    refusal = None
+    for message, request in cases:
+        probing.target_reads.clear()
+        outcome = await management.invoke(message, request)
+        assert outcome.status is OutcomeStatus.DENIED
+        assert outcome.detail == "authentication-changed"
+        assert probing.target_reads == []
+        text = management.render(outcome)
+        refusal = text if refusal is None else refusal
+        assert text == refusal
+    # And a registry that cannot answer is unavailable, never a guess.
+    registry.identities[OP_PERSON]["state"] = "active"
+    registry.down = True
+    probing.target_reads.clear()
+    outcome = await management.invoke(cases[0][0], cases[0][1])
+    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert outcome.detail == "authentication-unavailable"
+    assert probing.target_reads == []
+    registry.down = False
+    # Positive control: the SAME sender, authenticated and authorized,
+    # reaches the effect — the refusal was authentication, not the room.
+    outcome = await management.invoke(cases[0][0], cases[0][1])
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert await _member_phone(bindings, TARGET_PERSON)
+
+
 # -- every supplied reference resolves -----------------------------------
 
 
@@ -197,6 +247,133 @@ async def test_a_register_mention_that_wont_type_clarifies_instead_of_skipping()
     )
     assert outcome.status is OutcomeStatus.COMPLETE
     assert await bindings.resolve("signal", TARGET_ID) is not None
+
+
+async def test_an_explicit_account_and_mentions_resolve_as_one_set():
+    """The explicit `account` a caller names and the message's own
+    @-mentions are reconciled TOGETHER before any mutation: a repeated
+    identifier deduplicates to the one intended target, a second distinct
+    account clarifies rather than being picked over the mention, and an
+    unknown mention beside a valid explicit account still asks."""
+    bindings, backend, _, registry, services = _services()
+    await _operator(bindings, backend, registry)
+    management = RoomManagement(services)
+
+    # Explicit account + a DIFFERENT mention: two named accounts, no pick.
+    result = await management.invoke(
+        _message(
+            "!!!member register " + TARGET_ID,
+            mentions=frozenset({ALICE_ID}),
+        ),
+        RoomRequest(
+            kind="register", reference=TARGET_ID,
+            reference_kind="account",
+        ),
+    )
+    assert isinstance(result, Clarify)
+    assert result.status == "ambiguous"
+    assert await bindings.resolve("signal", TARGET_ID) is None
+    assert await bindings.resolve("signal", ALICE_ID) is None
+
+    # A mention that cannot type at all beside a VALID explicit account
+    # still asks — the explicit reference does not carry the request past
+    # the unreadable one.
+    result = await management.invoke(
+        _message(
+            "!!!member register " + TARGET_ID,
+            mentions=frozenset({"not-an-account"}),
+        ),
+        RoomRequest(
+            kind="register", reference=TARGET_ID,
+            reference_kind="account",
+        ),
+    )
+    assert isinstance(result, Clarify)
+    assert result.status == "nothing_found"
+    assert await bindings.resolve("signal", TARGET_ID) is None
+
+    # The same account named twice — explicit AND mention — deduplicates
+    # to the one intended target and registers it.
+    outcome = await management.invoke(
+        _message(
+            "!!!member register " + TARGET_ID,
+            mentions=frozenset({TARGET_ID}),
+            timestamp=1_700_000_001_000,
+        ),
+        RoomRequest(
+            kind="register", reference=TARGET_ID,
+            reference_kind="account",
+        ),
+    )
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert await bindings.resolve("signal", TARGET_ID) is not None
+
+
+async def test_an_explicit_target_and_mentions_resolve_as_one_set():
+    """The membership path reconciles the same way: a mention and an
+    explicit account naming DIFFERENT people clarify, a name and a
+    mention naming the same person deduplicate, and an unknown mention
+    beside a resolving name asks before any membership moves."""
+    bindings, backend, _, registry, services = _services()
+    await _operator(bindings, backend, registry)
+    await _person(bindings, registry, TARGET_PERSON, TARGET_ID)
+    await _person(
+        bindings, registry, ALICE_PERSON, ALICE_ID,
+        display_name="Alice",
+    )
+    await bindings.set_membership(
+        person_id=ALICE_PERSON, scope=ROOM, member=True, source="delegation"
+    )
+    management = RoomManagement(services)
+
+    # Explicit account + a mention naming ANOTHER person: clarify, never pick.
+    result = await management.invoke(
+        _message(
+            "!!!member remove " + TARGET_ID,
+            mentions=frozenset({ALICE_ID}),
+        ),
+        RoomRequest(
+            kind="remove", reference=TARGET_ID,
+            reference_kind="account",
+        ),
+    )
+    assert isinstance(result, Clarify)
+    assert result.status == "ambiguous"
+    assert await _member_phone(bindings, ALICE_PERSON)
+
+    # A name and a mention for the SAME person deduplicate to one target.
+    outcome = await management.invoke(
+        _message(
+            "!!!member remove alice",
+            mentions=frozenset({ALICE_ID}),
+            timestamp=1_700_000_001_000,
+        ),
+        RoomRequest(
+            kind="remove", reference="alice",
+            reference_kind="name",
+        ),
+    )
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert not await _member_phone(bindings, ALICE_PERSON)
+
+    # An unknown mention beside a valid name still asks — nothing mutates.
+    await bindings.set_membership(
+        person_id=ALICE_PERSON, scope=ROOM, member=True, source="delegation"
+    )
+    result = await management.invoke(
+        _message(
+            "!!!member remove alice",
+            mentions=frozenset({"+85299999990"}),
+            timestamp=1_700_000_002_000,
+        ),
+        RoomRequest(
+            kind="remove", reference="alice",
+            reference_kind="name",
+        ),
+    )
+    assert isinstance(result, Clarify)
+    assert result.status == "nothing_found"
+    assert await _member_phone(bindings, ALICE_PERSON)
 
 
 # -- the resolved target is re-read at commitment -------------------------

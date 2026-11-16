@@ -1,23 +1,44 @@
 [
- {
-  "name": "authorization precedes every target read",
-  "file": "nora/people/app/room_invocation.py",
-  "old": "        check = await services.authority.check(\n            scope=scope, person_id=person_id, permit=permit\n        )\n        if check.verdict is Verdict.UNAVAILABLE:\n            return unavailable(\"authority-unavailable\")\n        if not check.allowed:\n            return denied(\"operator-not-authorized\")\n",
-  "new": "",
-  "target": "tests/unit/test_room_target_resolution.py::test_an_unauthorized_sender_gets_one_refusal_and_no_target_read"
- },
- {
-  "name": "a moved target binding is refused inside the mutation gate",
-  "file": "nora/people/app/management_invocation.py",
-  "old": "                if target is not None:\n                    refused = await self._target_current(operation, target)\n                    if refused is not None:\n                        return refused\n",
-  "new": "",
-  "target": "tests/unit/test_room_target_resolution.py::test_a_target_binding_moved_while_waiting_for_the_gate_refuses"
- },
- {
-  "name": "an unknown mention cannot be skipped past clarification",
-  "file": "nora/people/app/room_invocation.py",
-  "old": "                    if bound is None:\n                        unresolved.append(value)\n                        continue\n",
-  "new": "                    if bound is None:\n                        continue\n",
-  "target": "tests/unit/test_room_target_resolution.py::test_a_mixed_known_and_unknown_mention_clarifies_with_no_mutation"
- }
+  {
+    "name": "full authentication precedes every target read",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "        verified = await self._human.authenticate(authentication)\n        if verified.verdict is Verdict.UNAVAILABLE:\n            return unavailable(\"authentication-unavailable\")\n        if verified.principal is None:\n            return denied(\"authentication-changed\")\n        person_id = verified.principal.binding.person_id\n",
+    "new": "        person_id = bound.person_id\n",
+    "target": "tests/unit/test_room_target_resolution.py::test_an_unverifiable_identity_gets_one_refusal_and_no_target_read"
+  },
+  {
+    "name": "authorization precedes every target read",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "        check = await services.authority.check(\n            scope=scope, person_id=person_id, permit=permit\n        )\n        if check.verdict is Verdict.UNAVAILABLE:\n            return unavailable(\"authority-unavailable\")\n        if not check.allowed:\n            return denied(\"operator-not-authorized\")\n",
+    "new": "",
+    "target": "tests/unit/test_room_target_resolution.py::test_an_unauthorized_sender_gets_one_refusal_and_no_target_read"
+  },
+  {
+    "name": "an explicit account and the message mentions resolve as one set",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "        if request.reference_kind != \"mention\" and request.reference is not None:\n            typed = _typed_forms(\n                message.platform, frozenset({request.reference})\n            )\n            if not typed:\n                return Clarify(\n                    \"I can't read that as a platform account — @-mention \"\n                    \"them or give the exact platform id\"\n                )\n            if not any(typed & form for form in forms):\n                forms = (*forms, typed)\n",
+    "new": "",
+    "target": "tests/unit/test_room_target_resolution.py::test_an_explicit_account_and_mentions_resolve_as_one_set"
+  },
+  {
+    "name": "an explicit target and the message mentions resolve as one set",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "        values = set(message.mentions)\n        if request.reference_kind == \"account\" and request.reference is not None:\n            values.add(request.reference)\n",
+    "new": "        values = set(message.mentions)\n",
+    "target": "tests/unit/test_room_target_resolution.py::test_an_explicit_target_and_mentions_resolve_as_one_set"
+  },
+  {
+    "name": "a moved target binding is refused inside the mutation gate",
+    "file": "nora/people/app/management_invocation.py",
+    "old": "                if target is not None:\n                    refused = await self._target_current(operation, target)\n                    if refused is not None:\n                        return refused\n",
+    "new": "",
+    "target": "tests/unit/test_room_target_resolution.py::test_a_target_binding_moved_while_waiting_for_the_gate_refuses"
+  },
+  {
+    "name": "an unknown mention cannot be skipped past clarification",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "                if bound is None:\n                    unresolved.append(value)\n                    continue\n",
+    "new": "                if bound is None:\n                    continue\n",
+    "target": "tests/unit/test_room_target_resolution.py::test_a_mixed_known_and_unknown_mention_clarifies_with_no_mutation"
+  }
 ]

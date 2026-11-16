@@ -4,13 +4,17 @@ collaborator arrives explicitly (the pipeline's own fields), so this is the
 pipeline's body split along a responsibility boundary, not a second
 command path or a new port.
 
-The occasion's contract is `_run_turn`'s own. The caller ACQUIRED the
-conversation slot before this ran — admission's RUN_NOW acquire, a queued
-dispatch's re-acquire inside `release_and_dispatch`, or the durable
-worker's `try_acquire` — so the `finally` releases it on EVERY exit:
-complete, refused, malformed, faulted or cancelled. A release that skips
-any one of those strands whatever queued behind the command on a held
-slot, which is exactly the failure the first review found.
+The occasion's contract is `_run_turn`'s own. ONE owner releases the
+conversation slot on every exit — complete, refused, malformed, faulted
+or cancelled. On the direct path that owner is this stage's `finally`:
+the caller acquired the slot via admission's RUN_NOW acquire or a queued
+dispatch's re-acquire inside `release_and_dispatch`. On the durable path
+(`disposition` set) the WORKER owns it: `WorkRunner._dispatch` acquired
+via `try_acquire` and its `finally` releases — a second release here
+would discard the slot a just-dispatched queued turn believes it holds
+and pop a SECOND factory behind it, overlapping two follow-ups. A
+release that skips any exit strands whatever queued behind the command
+on a held slot, which is exactly the failure the first review found.
 
 `disposition` is the durable worker's terminal record. Delivered and
 refused answers map onto the existing done vocabulary; a
@@ -129,10 +133,14 @@ async def run(
         indicate.resolve(
             indicator=indicator, delivered=delivered, spawn=spawn,
         )
-        # Released on every exit for the reason the module docstring gives —
-        # the same ONE call the tag path's `finally` makes: the release and
-        # the queued request's dispatch are not separable.
-        slots.release_and_dispatch(key)
+        # Released on every DIRECT-path exit for the reason the module
+        # docstring gives — the same ONE call the tag path's `finally`
+        # makes: the release and the queued request's dispatch are not
+        # separable. The durable caller (`disposition`) already acquired
+        # the slot its own `finally` releases; releasing here too is the
+        # double-release the second review found.
+        if disposition is None:
+            slots.release_and_dispatch(key)
         annotate(**{
             "nora.outcome": outcome,
             "nora.delivered": delivered,

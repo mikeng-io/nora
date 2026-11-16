@@ -194,6 +194,47 @@ def _pending(record: OperationRecord, step: str) -> bool:
     return record.steps.get(step) != "done"
 
 
+async def _fail(
+    store: BindingStore, record: OperationRecord, outcome: Outcome
+) -> Outcome:
+    """Finish a journaled effect that stopped mid-run — honestly.
+
+    A step marked `done` means the operation COMMITTED part of its
+    recorded effect before the failing step refused. Reporting that as a
+    bare store outage would describe a partial write as "nothing applied",
+    so the caller gets `incomplete` carrying the failing step's detail;
+    when nothing committed, the step's own outcome answers. Either way the
+    journal stays INCOMPLETE so an exact-id redelivery resumes what is
+    still owed.
+    """
+    await _finish(store, record, OperationJournalState.INCOMPLETE,
+                  outcome.status.value, outcome.detail)
+    if any(done == "done" for done in record.steps.values()):
+        return incomplete(outcome.detail)
+    return outcome
+
+
+async def _journal_after_failure(
+    store: BindingStore, op: Operation
+) -> Outcome | None:
+    """What the journal admits about a crashed operation — `None` when it
+    cannot answer, so the caller's outage-vs-partial split is read back,
+    never guessed. Steps marked `done` mean part of the recorded effect
+    committed; a COMPLETE record means it finished before the failure was
+    reported — a retry would have replayed that result anyway."""
+    try:
+        record = await store.operation(op.operation_id)
+    except Exception:  # noqa: BLE001 — an unreadable journal is a clean outage
+        return None
+    if record is None or record.kind != op.kind:
+        return None
+    if record.state is OperationJournalState.COMPLETE:
+        return complete(record.detail or "replayed")
+    if any(done == "done" for done in record.steps.values()):
+        return incomplete("store-failure")
+    return None
+
+
 async def _recorded_replay(store: BindingStore, op: Operation) -> Outcome | None:
     """A journaled op id replays its recorded state; a different effect conflicts."""
     recorded = await store.operation(op.operation_id)

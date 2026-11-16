@@ -459,14 +459,14 @@ async def test_a_down_store_is_unavailable_never_denied():
 
 
 async def test_a_down_registry_leaves_the_operation_incomplete_not_complete():
-    """A Kratos outage mid-registration is `unavailable` to the caller and
-    `incomplete` in the journal — part of the effect committed (the
-    binding), the rest is owed, and the journal says so instead of
-    claiming a distributed transaction."""
+    """A Kratos outage mid-registration is `incomplete` to the caller and
+    `incomplete` in the journal — the binding already committed, the rest
+    is owed, and the caller hears the partial write instead of a clean
+    outage that says nothing applied."""
     store, registry, svc = _service()
     registry.down = True
     outcome = await _register(svc, "op-1")
-    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert outcome.status is OutcomeStatus.INCOMPLETE
     record = await store.operation("op-1")
     assert record is not None
     assert record.state is OperationJournalState.INCOMPLETE
@@ -530,7 +530,7 @@ async def test_an_interrupted_registration_resumes_only_the_owed_steps():
     store, registry, svc = _service()
     registry.down = True
     outcome = await _register(svc, "op-1")
-    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert outcome.status is OutcomeStatus.INCOMPLETE
     record = await store.operation("op-1")
     assert record is not None
     assert record.state is OperationJournalState.INCOMPLETE
@@ -576,7 +576,12 @@ async def test_an_interrupted_registration_resumes_each_boundary(
     store = _CrashAtStep(step)
     svc = RegistrationService(store, registry)
     outcome = await _register(svc, "op-1")
-    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    # A crash before ANY step committed is the clean outage; a crash after
+    # one is the partial write the caller must hear named.
+    assert outcome.status is (
+        OutcomeStatus.UNAVAILABLE if step == "binding"
+        else OutcomeStatus.INCOMPLETE
+    )
     record = await store.operation("op-1")
     assert record is not None
     assert record.state is state
@@ -629,13 +634,13 @@ async def test_a_conflicting_retry_on_an_unfinished_operation_refuses():
 
 
 async def test_a_retry_while_the_outage_continues_stays_incomplete():
-    """The owed remainder is `unavailable` while the outage stands —
+    """The owed remainder stays `incomplete` while the outage stands —
     never `complete` before the persisted result is read back."""
     store, registry, svc = _service()
     registry.down = True
     await _register(svc, "op-1")
     again = await _register(svc, "op-1")
-    assert again.status is OutcomeStatus.UNAVAILABLE
+    assert again.status is OutcomeStatus.INCOMPLETE
     record = await store.operation("op-1")
     assert record is not None
     assert record.state is OperationJournalState.INCOMPLETE
@@ -650,7 +655,7 @@ async def test_an_interrupted_registration_refuses_changed_binding_or_lifecycle(
     store, registry, svc = _service()
     registry.down = True
     interrupted = await _register(svc, "op-1")
-    assert interrupted.status is OutcomeStatus.UNAVAILABLE
+    assert interrupted.status is OutcomeStatus.INCOMPLETE
     assert await store.record_for(account=ACCT) is not None
     record = await store.operation("op-1")
     assert record is not None

@@ -1346,7 +1346,12 @@ class EngagementPipeline:
                                 "tag trace save failed (tag=%s)", request.tag_id,
                             )
                 finally:
-                    self._slots.release_and_dispatch(key)
+                    # The durable worker owns the release for the slot it
+                    # `try_acquire`d — `disposition` marks that path; a
+                    # second release here would dispatch a queued turn
+                    # under the slot the worker then releases anyway.
+                    if disposition is None:
+                        self._slots.release_and_dispatch(key)
             # `total` was read BEFORE the debrief, above — see the comment
             # there. Observed here so the two histograms below stay adjacent
             # and keep reading off one number.
