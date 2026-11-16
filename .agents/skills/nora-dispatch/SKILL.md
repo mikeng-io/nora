@@ -1,142 +1,114 @@
 ---
 name: nora-dispatch
-description: Turns a design bundle or issue into bounded work units and builder briefs, launches the builder, reads its result back and routes it to independent review. Load before delegating any build, before writing a brief, or when a delegated build drifts. Not for writing the design (nora-design), reviewing (nora-review) or landing a PR (nora-land).
+description: Shape a bounded Nora work brief, do or delegate execution, reconcile results, and hand over or close the outcome. Load for work refinement, dispatch, result intake or session handoff; nora-work routes the lifecycle.
 ---
 
-# nora-dispatch
+# Dispatch and execution
 
-The orchestrator's loop from design to delivered work: **design → units →
-brief → launch → read back → review → integrate**. `ORCHESTRATION.md` owns the
-policy (tiers, worker choice, independence, the two-round limit); this skill is
-the order of the steps and the check after each one.
+Policy: [ORCHESTRATION.md](../../../ORCHESTRATION.md). Use the relevant step;
+resume from current evidence rather than restarting the whole procedure.
 
-A brief is the builder's whole understanding of the task. A brief the builder
-must decode, or whose acceptance it cannot see, produces work no reviewer can
-judge: comprehension fails at the first step, and everything after it is
-measured against the wrong thing.
+## 1. Read or refine the work
 
-## 1. Bind the source
+For new Linear work, use the [execution convention](../../../docs/maintainers/conventions.md#linear-execution).
+Read the current description, parent outcome and unresolved blockers. Capture
+only what the next actor needs; follow design and evidence links on demand.
 
-Read the design bundle subject and the issue, or the operator's direct brief,
-that own the work. Pin what you actually read: the design's commit and path
-(which may be on the change's own branch), the issue body or brief as of now,
-and `origin/master`'s SHA as the code base. Write the acceptance down as
-checkable statements, each tied to the design invariant or brief line it
-serves.
+| work brief | contains |
+|---|---|
+| Intent | the outcome and why |
+| Done when | observable completion conditions |
+| Boundaries | non-goals, holds and relevant design constraints |
+| References | necessary sources and evidence links |
 
-- Acceptance lives in the issue, or in the brief recorded in the PR for direct
-  work. The design holds the invariants acceptance links to, never the task's
-  acceptance itself (`nora-design`). Never only in a temporary file or chat.
-- A statement nobody can check ("works well", "robust") is not acceptance;
-  restate it as an observable result, or ask the operator.
+Keep one current brief in Linear, or in the PR for small direct work. Preserve
+existing work authority until its successor and owner are verified and linked.
+Record its link and source revision or update time read; code base and design revision are
+separate facts. Keep current completion conditions and amendments understandable
+without reconstructing archived discussion. Update authorized scope changes in
+place, naming what changed and any evidence invalidated, not in a comment queue.
+Before splitting implementation, compare each relevant design promise with
+actual entry/wiring and evidence at a named head. Summarize promise → observed
+implementation/evidence → met/unmet/unavailable → remaining work in the current
+brief/run, not a new inventory document. Implement only the actual remaining gap.
+Check: a fresh agent can state the outcome, completion conditions and known gap.
 
-Check: every acceptance statement names where it comes from and how it will be
-shown — a named test, a read-back, an eval case.
+## 2. Choose the next unit
 
-## 2. Cut work units
+Do small work directly. Split only independently assignable/verifiable outcomes
+or real dependencies into sub-issues; each states its delta and links its parent.
+Use native ownership and blocking relations instead of a copied task table.
+Sequence shared write ownership. For an integrated change, units are review
+slices on its integration branch, not separate master releases. Use
+`nora-land`'s stacked-delivery path when dependent PR layers are useful; a child
+work item, PR layer and T3 worker need not have one-to-one identities.
+Check: the remaining completion conditions, including integration, have owners.
 
-A unit is one bounded outcome a reviewer can read in one sitting.
+For cross-session work, first follow linked related work/threads; use T3's
+project thread search/list (or the host's equivalent session store) to find
+missing relevant owners, then read their actual checkout/head and latest handoff. Check neighboring bundles when
+they share an interface/invariant. Do not preload all sessions or infer ownership
+from titles. Record the related work/thread links and shared seam in References.
+Agree with its active owner on who changes that seam and the dependency/base;
+sequence overlapping writes, parallelize independent work. Coordinate again at
+interface/base changes, blockers, restacks and handoff. Update the owning brief
+and notify affected sessions within the task's authority; read acknowledgments
+before dependent writes. Unavailable coordination blocks that seam, not all work.
 
-- One subsystem or one problem class per unit. Split independent problem
-  classes into separate units, even when one branch carries them all.
-- Order units by dependency. Units that run at the same time must not touch
-  the same files or claim the same migration number.
-- **Units are review slices, not separate releases.** When the design is one
-  integrated change, the units land on one integration branch, each reviewed
-  on its own diff, and the whole is measured once at the end.
+## 3. Execute or delegate
 
-Check: each unit states its outcome in one sentence, its files or area, what
-it depends on, and which acceptance statements it satisfies. Every acceptance
-statement is covered by some unit.
+For direct work, load `nora-land` and the relevant specialist procedure.
+For delegation, follow the policy's worker selection. Link the work brief and
+add only execution context: base/head, prepared checkout, allowed area, skills,
+named checks and worker stop point. Respect dependent bases; do not silently
+restart a repair on master. Read back the actual provider/model/options and
+checkout. The worker does the assigned work without launching other workers.
+Check: the execution has started on the intended input, with a finite boundary.
 
-## 3. Write the brief
+## 4. Reconcile and continue
 
-Use this shape, in complete sentences a fresh agent can follow without the
-conversation that produced it:
+Read the actual diff and named checks with exit codes. Mark required results
+met, unmet or unavailable, with evidence locators and their limits. Before the
+next dispatch, reconcile each result against the original parent outcome in the
+current brief: what is now evidenced at the integrated/candidate head, what
+remains, and which condition the next action advances. Repair findings and review
+rounds never replace that outcome. Carry forward still-valid evidence; do not
+rerun settled checks unless the change affects their basis.
 
-```
-Outcome      one sentence: what is true when this unit is done
-Why          the design or issue it serves, with revision; the decisions it
-             must respect, as links
-Acceptance   the checkable statements from step 1 that this unit owns
-Inputs       base SHA, branch, worktree; the design files and code paths to
-             read; prior findings, if this is a repair
-Allowed      the paths and areas it may change
-Non-goals    what it must not do, including adjacent fixes
-Rules        the skills to load and repo rules that bite here
-Checks       the named commands to run once, with what PASS looks like
-Stop         where to stop, and the report: head SHA, checks and their rc,
-             unmet acceptance, limits
-```
+- Before authorizing a repair, check the finding's requirement, real trigger,
+  harm and relation to the candidate. Repair only an admitted in-scope defect
+  or unmet original condition; choose the smallest correction and proving check.
+  Distinguish an amended requirement, implementation defect, unfinished wiring
+  and unavailable proof before choosing the action; a probe alone adds no goal.
+- Keep adjacent improvements outside it; defer once under the Linear convention:
+  owner, next action and revisit trigger, otherwise a review limitation.
+- Resolve unknowns with the smallest useful check; they are not new requirements.
+  Incomplete reviews retain exact unanswered conditions and round limits.
+- Apply a hold only to the action it restricts; continue other authorized work.
+  A reviewer exception wait is not automatically an implementation-wide hold.
+- For repeated blockers in the same seam, revisit the intent and real flow
+  before another repair. Preserve review limits; scope changes need authority.
 
-**The inclusion rule.** Anything a fresh agent can recover from the repo — file
-contents, history, a design section — is an anchor: a path, a revision, a link.
-Write out only what it cannot recover: the intent, the decisions and their
-reasons, the deltas from the design, the traps already found. A brief that
-pastes the design is long; a brief that compresses its own sentences is
-unreadable. Neither helps.
+Before review, supply [REVIEW.md](../../../REVIEW.md#scope-and-inputs)'s short brief,
+including risk lenses and exclusions. `nora-review` performs the review at the
+applicable tier. Integrate and measure where required, then use `nora-land`. Before claiming an eval, paid run or deploy
+ready, use its authorized zero-cost rehearsal of the actual path, not a proxy.
+Check: after each worker result, the parent resumes the whole outcome and selects
+its next action; a green test or merged child alone is not completion.
 
-Check: read the brief cold. Can someone with only the repo restate the outcome,
-the acceptance and the stop point in their own words? Is any sentence
-shorthand ("localFFauthorized", run-together words, private abbreviations)?
-Rewrite until the answer is yes and no.
+## 5. Close or hand over
 
-## 4. Launch
+Close only when the agreed results, including delivery where required, have
+actual evidence. Update the owning Linear item: current status, outcome/evidence,
+remaining work and next owner/action if any; read back the write. Update parent
+acceptance separately. Report the result, material limits and next action to the
+operator. Link receipts instead of copying logs into Linear.
 
-Follow `ORCHESTRATION.md` «Choosing a worker»: pass provider, model and options
-explicitly, and read back what actually launched. One unit per launch. A
-builder never starts review, other builders or a wider audit.
-
-Check: the launched model and options match the ones chosen.
-
-## 5. Read back the result
-
-Never accept the builder's report as the result.
-
-- Check out the reported head. Read the diff against the brief's base.
-- Confirm the diff stays inside the unit's allowed paths and outcome. Work
-  outside it is a finding, not a bonus.
-- Read each named check's output and exit code yourself.
-- Map every acceptance statement to met, unmet or unavailable, with evidence.
-
-Check: no statement is marked met on the builder's word alone. A clean exit
-with no diff, or a diff with no checks run, is not delivered work.
-
-## 6. Review
-
-Route the unit to an independent reviewer under `ORCHESTRATION.md`: a fresh
-session on a different vendor from the builder, with the brief, the acceptance,
-the base and head, and the diff command. The reviewer loads `nora-review`.
-
-- Triage findings by the policy's verdicts. A repair gets its own brief, built
-  the same way, naming the findings it fixes.
-- **Two rounds at most.** After round two, report to the operator with what is
-  fixed and what is not; only the operator authorises another round.
-
-Check: the repair brief names each finding it addresses, and round two reviews
-only the repair delta.
-
-## 7. Integrate and measure
-
-A standalone unit lands per `nora-land`. **Units of one integrated change stop
-at the integration branch**: each is reviewed on its own diff and merged there,
-never opened against master. Measure the integrated head once — the eval
-harness or snapshot replay the design names — then land the integration branch
-per `nora-land`, once.
-
-- **No "ready" without a rehearsal.** Before any claim that a paid run, eval or
-  deploy is ready, run its exact path at zero cost: the real SDK path, budgets,
-  judges and report, end to end.
-
-Check: the final measurement ran on the integrated head, and its result is
-recorded in the issue, or the PR for direct work, with the run's evidence.
-
-## Signs the loop is failing
-
-| sign | what it means | fix |
-|---|---|---|
-| the builder asks what the brief means, or guesses | the brief failed step 3 | rewrite it in full sentences |
-| one PR grows past what a reviewer can read | units were cut too large | split at step 2 |
-| review finds blockers every round | the unit or its acceptance was unclear | stop at round two; re-cut the unit |
-| acceptance exists only in `/tmp` or chat | step 1 skipped | move it to the issue or the PR's recorded brief |
-| "ready" claimed, then the paid run errors | no rehearsal | step 7's rehearsal before any claim |
+At pause, blocker or session replacement, update a short current handoff:
+**where now, what remains, next action, active holds**, plus necessary decisions
+and why. Link the work, T3 thread, checkout/head and evidence. Preserve context
+that cannot be recovered from those links; do not repeat the code or transcript.
+On resume, read it and verify the anchors before returning to the relevant step.
+If tracker access is unavailable, retain the handoff in the session and disclose
+the unsynchronized update; do not invent another task store or lose progress.
+Check: either the whole outcome is evidenced, or its continuation is actionable.
