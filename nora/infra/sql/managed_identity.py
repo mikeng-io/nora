@@ -21,7 +21,6 @@ from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.managed import (
     AccountState,
     AuthorityBlock,
-    IdentifierConflictError,
     ManagedAccount,
     ManagedError,
     ManagedMembership,
@@ -45,11 +44,9 @@ from nora.infra.sql.managed_publication import (
     supports_for,
 )
 from nora.infra.sql.managed_registration import (
-    _check_ownership,
-    _identifier_owners,
-    _insert_account,
+    _PG_UNIQUE_VIOLATION,
+    _bind_account,
     _insert_person,
-    _rebind_revoked,
     bind_identifiers,
 )
 from nora.infra.sql.managed_rows import (
@@ -70,10 +67,6 @@ from nora.infra.sql.schema_managed import (
     MANAGED_PERSON,
 )
 
-# PostgreSQL SQLSTATE 23505, unique_violation — matched EXACTLY, the same
-# rule `nora.infra.sql.reminders` applies: a CHECK violation is also an
-# IntegrityError and must not be misread as a duplicate.
-_PG_UNIQUE_VIOLATION = "23505"
 MANAGED_MUTATION_LOCK = "nora-managed-identity-writer"
 
 
@@ -334,17 +327,7 @@ class SqlBindingStore:
         """
         async with self._engine.begin() as conn:
             await _insert_person(conn, person)
-            owners = await _identifier_owners(conn, account.identifiers)
-            _check_ownership(owners, person, account)
-            await _rebind_revoked(conn, owners, account)
-            try:
-                await _insert_account(conn, account, owners)
-            except IntegrityError as exc:
-                if _PG_UNIQUE_VIOLATION in str(getattr(exc, "orig", exc)):
-                    raise IdentifierConflictError(
-                        "an identifier is owned by another account"
-                    ) from exc
-                raise
+            await _bind_account(conn, person=person, account=account)
             if membership is not None:
                 outcome = await self._set_membership(
                     conn,

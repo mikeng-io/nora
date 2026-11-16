@@ -9,11 +9,16 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.managed import ManagedPerson, Outcome
+from nora.domain.managed import (
+    ManagedAccount,
+    ManagedPerson,
+    OperationRecord,
+    Outcome,
+)
 from nora.infra.ory import KratosClient, KratosIdentity
 from nora.infra.sql import managed_handoff
-from nora.people.app.managed_admission import AdmissionFacts
 from nora.people.app.managed_admission_identity import AdmissionIdentity
+from nora.people.app.managed_admission_probe import AdmissionFacts
 
 
 class SqlAdmissionProbe:
@@ -37,8 +42,19 @@ class SqlAdmissionProbe:
             link_rows=rows["link_rows"],
         )
 
-    async def insert_person(self, person: ManagedPerson) -> Outcome:
-        return await managed_handoff.insert_person(self._engine, person)
+    async def publish_held_person(
+        self, *, person: ManagedPerson, accounts: tuple[ManagedAccount, ...],
+        operation_id: str,
+    ) -> Outcome:
+        return await managed_handoff.publish_held_person(
+            self._engine, person=person, accounts=accounts,
+            operation_id=operation_id)
+
+    async def complete_import(
+        self, record: OperationRecord, *, person_ids: tuple[str, ...]
+    ) -> Outcome:
+        return await managed_handoff.complete_import(
+            self._engine, record=record, person_ids=person_ids)
 
 
 def _view(identity: KratosIdentity | None) -> AdmissionIdentity | None:

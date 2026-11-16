@@ -9,15 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from nora.domain.managed import OperationJournalState, complete, unavailable
-from nora.people.app.managed_admission import AdmissionFacts, FileAdmission
+from nora.domain.managed import OperationJournalState, unavailable
+from nora.people.app.managed_admission import FileAdmission
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
 )
 from scripts.managed_identity_handoff import COMPLETE, REFUSED, RETRYABLE, run
-from tests.fakes import FakeAdmissionKratos
+from tests.fakes import FakeAdmissionKratos, FakeAdmissionProbe
 
 IDENTITY = """\
 [persons.miles]
@@ -52,41 +52,6 @@ def sources(tmp_path):
     return identity_path, policy_path
 
 
-class _Probe:
-    def __init__(self, store: FakeBindingStore) -> None:
-        self._store = store
-
-    async def facts(self) -> AdmissionFacts:
-        store = self._store
-        return AdmissionFacts(
-            persons=frozenset(
-                (p.person_id, p.lifecycle.value, p.kratos_identity_id is not None)
-                for p in store.people.values()),
-            accounts=frozenset(
-                (a.account_id, a.person_id, a.state.value)
-                for a in store.accounts.values()),
-            identifiers=frozenset(
-                (i.platform, i.kind, i.value) for i in store.owners),
-            aliases=frozenset(store.aliases.items()),
-            memberships=frozenset(
-                (pid, s.kind.value, s.id, m.state.value)
-                for (pid, s), m in store.memberships.items()),
-            supports=frozenset(
-                (pid, s.kind.value, s.id, src)
-                for (pid, s), srcs in store.supports.items() for src in srcs),
-            operations=frozenset(
-                (r.operation_id, r.kind, r.state.value)
-                for r in store.operations.values()),
-            holds=frozenset(store.identity_holds),
-            blocks=len(store.blocks),
-            link_rows=0,
-        )
-
-    async def insert_person(self, person):
-        self._store.people.setdefault(person.person_id, person)
-        return complete()
-
-
 def _services(store=None, backend=None, registry=None):
     store = store or FakeBindingStore()
     backend = backend or FakeAuthorityBackend()
@@ -97,7 +62,7 @@ def _services(store=None, backend=None, registry=None):
         yield FileAdmission(
             bindings=store, backend=backend,
             kratos=FakeAdmissionKratos(registry.identities),
-            probe=_Probe(store),
+            probe=FakeAdmissionProbe(store),
         )
     return factory, store, backend
 

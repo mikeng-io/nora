@@ -31,7 +31,6 @@ from nora.people.app.managed import ManagedServices
 from nora.people.app.managed_admission import (
     ADMISSION_SOURCE,
     IMPORT_KIND,
-    AdmissionFacts,
     FileAdmission,
     _prepare,
     plan,
@@ -44,7 +43,7 @@ from nora.testing.managed import (
     FakeIdentityRegistry,
     FakeLinkRequests,
 )
-from tests.fakes import FakeAdmissionKratos
+from tests.fakes import FakeAdmissionKratos, FakeAdmissionProbe
 
 IDENTITY = """\
 [persons.miles]
@@ -113,51 +112,6 @@ def _sources(tmp_path, identity=IDENTITY, policy=POLICY):
     return identity_path, policy_path
 
 
-class _Probe:
-    """The AdmissionProbe seam over `FakeBindingStore`'s internals — including
-    the rows the port reads hide (holds, journals, revoked, suspended)."""
-
-    def __init__(self, store: FakeBindingStore) -> None:
-        self._store = store
-
-    async def facts(self) -> AdmissionFacts:
-        store = self._store
-        return AdmissionFacts(
-            persons=frozenset(
-                (p.person_id, p.lifecycle.value, p.kratos_identity_id is not None)
-                for p in store.people.values()
-            ),
-            accounts=frozenset(
-                (a.account_id, a.person_id, a.state.value)
-                for a in store.accounts.values()
-            ),
-            identifiers=frozenset(
-                (i.platform, i.kind, i.value) for i in store.owners
-            ),
-            aliases=frozenset(store.aliases.items()),
-            memberships=frozenset(
-                (pid, scope.kind.value, scope.id, m.state.value)
-                for (pid, scope), m in store.memberships.items()
-            ),
-            supports=frozenset(
-                (pid, scope.kind.value, scope.id, source)
-                for (pid, scope), sources in store.supports.items()
-                for source in sources
-            ),
-            operations=frozenset(
-                (r.operation_id, r.kind, r.state.value)
-                for r in store.operations.values()
-            ),
-            holds=frozenset(store.identity_holds),
-            blocks=len(store.blocks),
-            link_rows=0,
-        )
-
-    async def insert_person(self, person):
-        self._store.people.setdefault(person.person_id, person)
-        return complete()
-
-
 @pytest.fixture
 def graph():
     store = FakeBindingStore()
@@ -165,7 +119,7 @@ def graph():
     registry = FakeIdentityRegistry()
     return store, backend, registry, FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
+        kratos=FakeAdmissionKratos(registry.identities), probe=FakeAdmissionProbe(store),
     )
 
 
@@ -389,7 +343,7 @@ async def test_interrupted_import_resumes_without_duplicate_effects(tmp_path, gr
     backend = _NoWrites()
     admission = FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
+        kratos=FakeAdmissionKratos(registry.identities), probe=FakeAdmissionProbe(store),
     )
     identity_path, policy_path = _sources(tmp_path)
     first = await admission.apply(identity_path, policy_path)
@@ -403,7 +357,7 @@ async def test_interrupted_import_resumes_without_duplicate_effects(tmp_path, gr
     backend.writes_ok = True
     restarted = FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
+        kratos=FakeAdmissionKratos(registry.identities), probe=FakeAdmissionProbe(store),
     )
     outcome = await restarted.apply(identity_path, policy_path)
     assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
@@ -424,7 +378,7 @@ async def test_dependent_access_is_unavailable_until_publication_completes(
     backend = _NoWrites()
     admission = FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
+        kratos=FakeAdmissionKratos(registry.identities), probe=FakeAdmissionProbe(store),
     )
     identity_path, policy_path = _sources(tmp_path)
     await admission.apply(identity_path, policy_path)
@@ -463,7 +417,7 @@ async def test_readback_fails_closed_on_a_mismatched_verdict(tmp_path, graph):
     backend = _DropOne()
     admission = FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
+        kratos=FakeAdmissionKratos(registry.identities), probe=FakeAdmissionProbe(store),
     )
     identity_path, policy_path = _sources(tmp_path)
     outcome = await admission.apply(identity_path, policy_path)
@@ -642,7 +596,7 @@ async def test_readback_fails_closed_on_a_missing_containment_link(
     backend = _DropContainment()
     admission = FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store),
+        kratos=FakeAdmissionKratos(registry.identities), probe=FakeAdmissionProbe(store),
     )
     identity_path, policy_path = _sources(tmp_path)
     outcome = await admission.apply(identity_path, policy_path)
@@ -708,7 +662,7 @@ async def test_readback_refuses_access_outside_the_file_predicate(tmp_path, grap
     backend = _OvergrantOutsideFile(leak)
     admission = FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(registry.identities), probe=_Probe(store))
+        kratos=FakeAdmissionKratos(registry.identities), probe=FakeAdmissionProbe(store))
     identity, policy = _sources(tmp_path)
     outcome = await admission.apply(identity, policy)
     assert outcome.status is OutcomeStatus.UNAVAILABLE

@@ -9,11 +9,13 @@ Two things the port reads cannot give the initial claim:
   reads holds, authority blocks, link rows or foreign journals — every one
   of them is non-empty evidence that refuses an initial import. The probe
   reads all of it directly.
-- the person-only insert. `BindingStore.register` writes person+account
-  together; a person the policy names but `identity.toml` gives no account
-  yet is still a grant subject, so the admission needs the same idempotent
-  `_insert_person` the registration path uses — reused here, not
-  re-implemented.
+- the durable publication boundaries. `publish_held_person` commits the
+  person, its accounts (the same registration helpers `register` uses — a
+  listed person may hold no account yet) and THIS import's identity hold in
+  one transaction, so no imported row is ever readable unprotected.
+  `complete_import` flips the journal COMPLETE and releases all and only
+  this import's holds in one transaction, so an outside reader sees the
+  proven-complete outcome and the unprotected person together.
 """
 
 from __future__ import annotations
@@ -21,10 +23,19 @@ from __future__ import annotations
 from typing import TypedDict
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.managed import ManagedPerson, Outcome, complete
-from nora.infra.sql.managed_registration import _insert_person
+from nora.domain.managed import (
+    ManagedAccount,
+    ManagedError,
+    ManagedPerson,
+    OperationRecord,
+    Outcome,
+    complete,
+    denied,
+)
+from nora.infra.sql.managed_registration import _bind_account, _insert_person
 from nora.infra.sql.schema_managed import (
     MANAGED_ACCOUNT,
     MANAGED_ALIAS,
@@ -141,9 +152,52 @@ async def admission_facts(engine: AsyncEngine) -> AdmissionRows:
         }
 
 
-async def insert_person(engine: AsyncEngine, person: ManagedPerson) -> Outcome:
-    """The account-less person row — the registration helper itself, so the
-    insert stays idempotent and lifecycle-preserving like every other write."""
+async def publish_held_person(
+    engine: AsyncEngine, *, person: ManagedPerson,
+    accounts: tuple[ManagedAccount, ...], operation_id: str,
+) -> Outcome:
+    """The import's protected publication: the person, every one of its
+    accounts and THIS import's identity hold commit in ONE transaction —
+    an imported row is never externally readable unheld, and a failure
+    before the commit leaves no part of that person behind."""
+    if not operation_id.strip():
+        raise ManagedError("an identity hold requires an owning operation")
     async with engine.begin() as conn:
         await _insert_person(conn, person)
+        for account in accounts:
+            await _bind_account(conn, person=person, account=account)
+        await conn.execute(pg_insert(MANAGED_IDENTITY_HOLD).values(
+            person_id=person.person_id, operation_id=operation_id,
+        ).on_conflict_do_nothing())
+    return complete()
+
+
+async def complete_import(
+    engine: AsyncEngine, *, record: OperationRecord,
+    person_ids: tuple[str, ...],
+) -> Outcome:
+    """The completion commit: the journal flips COMPLETE and all and only
+    this import's holds release in ONE transaction — an outside reader sees
+    "complete and unheld" together, or keeps "incomplete and held"; never
+    one without the other. The journal update's rowcount is checked, so an
+    absent operation is refused rather than reported complete."""
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            sa.update(MANAGED_OPERATION)
+            .where(MANAGED_OPERATION.c.operation_id == record.operation_id)
+            .values(
+                state=record.state.value,
+                steps=dict(record.steps),
+                outcome=record.outcome,
+                detail=record.detail,
+                updated_at=sa.func.now(),
+            )
+        )
+        if not result.rowcount:
+            return denied("absent-operation")
+        if person_ids:
+            await conn.execute(sa.delete(MANAGED_IDENTITY_HOLD).where(
+                MANAGED_IDENTITY_HOLD.c.operation_id == record.operation_id,
+                MANAGED_IDENTITY_HOLD.c.person_id.in_(person_ids),
+            ))
     return complete()

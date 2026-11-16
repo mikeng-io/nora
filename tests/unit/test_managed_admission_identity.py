@@ -24,8 +24,8 @@ from nora.people.app.managed_admission_identity import (
     ensure_owned,
 )
 from nora.testing.managed import FakeAuthorityBackend, FakeBindingStore
-from tests.fakes import FakeAdmissionKratos
-from tests.unit.test_managed_admission import _Probe, _sources
+from tests.fakes import FakeAdmissionKratos, FakeAdmissionProbe
+from tests.unit.test_managed_admission import _sources
 
 
 class _ForeignOnCreate(FakeAdmissionKratos):
@@ -86,7 +86,7 @@ async def test_a_collision_landing_mid_apply_refuses_without_adopting(tmp_path):
     store, backend = FakeBindingStore(), FakeAuthorityBackend()
     kratos = _ForeignOnCreate()
     admission = FileAdmission(
-        bindings=store, backend=backend, kratos=kratos, probe=_Probe(store))
+        bindings=store, backend=backend, kratos=kratos, probe=FakeAdmissionProbe(store))
     identity_path, policy_path = _sources(tmp_path)
     outcome = await admission.apply(identity_path, policy_path)
     assert outcome.status is OutcomeStatus.DENIED
@@ -108,7 +108,7 @@ async def test_an_owned_create_recovers_under_a_new_service_and_stays_single(
     identities: dict = {}
     admission = FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(identities), probe=_Probe(store))
+        kratos=FakeAdmissionKratos(identities), probe=FakeAdmissionProbe(store))
     identity_path, policy_path = _sources(tmp_path)
     first = await admission.apply(identity_path, policy_path)
     assert first.status is OutcomeStatus.UNAVAILABLE
@@ -130,7 +130,7 @@ async def test_an_owned_create_recovers_under_a_new_service_and_stays_single(
     # New process: a new seam object over the same remote world, same store.
     resumed = FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(identities), probe=_Probe(store))
+        kratos=FakeAdmissionKratos(identities), probe=FakeAdmissionProbe(store))
     outcome = await resumed.apply(identity_path, policy_path)
     assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
     ada = await store.person("ada")
@@ -161,7 +161,7 @@ async def test_resume_refuses_a_collision_without_this_imports_marker(
     identities: dict = {}
     admission = FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(identities), probe=_Probe(store))
+        kratos=FakeAdmissionKratos(identities), probe=FakeAdmissionProbe(store))
     identity_path, policy_path = _sources(tmp_path)
     first = await admission.apply(identity_path, policy_path)
     assert first.status is OutcomeStatus.UNAVAILABLE
@@ -170,7 +170,7 @@ async def test_resume_refuses_a_collision_without_this_imports_marker(
     identities["ada"] = foreign
     resumed = FileAdmission(
         bindings=store, backend=backend,
-        kratos=FakeAdmissionKratos(identities), probe=_Probe(store))
+        kratos=FakeAdmissionKratos(identities), probe=FakeAdmissionProbe(store))
     outcome = await resumed.apply(identity_path, policy_path)
     assert outcome.status is OutcomeStatus.DENIED
     assert outcome.detail == "kratos-foreign-identity"
@@ -200,7 +200,7 @@ async def test_readback_fails_closed_when_the_owned_record_drifted(
     store = _Tamper(kratos, target, mutate)
     admission = FileAdmission(
         bindings=store, backend=FakeAuthorityBackend(),
-        kratos=kratos, probe=_Probe(store))
+        kratos=kratos, probe=FakeAdmissionProbe(store))
     identity_path, policy_path = _sources(tmp_path)
     outcome = await admission.apply(identity_path, policy_path)
     assert outcome.status is OutcomeStatus.UNAVAILABLE
@@ -229,7 +229,7 @@ async def test_a_create_response_without_the_marker_fails_closed(tmp_path):
     store, backend = FakeBindingStore(), FakeAuthorityBackend()
     kratos = _DropMarkerEcho()
     admission = FileAdmission(
-        bindings=store, backend=backend, kratos=kratos, probe=_Probe(store))
+        bindings=store, backend=backend, kratos=kratos, probe=FakeAdmissionProbe(store))
     identity_path, policy_path = _sources(tmp_path)
     outcome = await admission.apply(identity_path, policy_path)
     assert outcome.status is OutcomeStatus.UNAVAILABLE
@@ -247,7 +247,7 @@ async def test_a_kratos_outage_on_the_fresh_claim_is_unavailable(tmp_path):
     kratos = FakeAdmissionKratos()
     kratos.down = True
     admission = FileAdmission(
-        bindings=store, backend=backend, kratos=kratos, probe=_Probe(store))
+        bindings=store, backend=backend, kratos=kratos, probe=FakeAdmissionProbe(store))
     identity_path, policy_path = _sources(tmp_path)
     outcome = await admission.apply(identity_path, policy_path)
     assert outcome.status is OutcomeStatus.UNAVAILABLE

@@ -15,9 +15,11 @@ that admission:
 - `FileAdmission.apply` claims an EMPTY-or-this-import's target under the
   shared mutation gate, journals the effect BEFORE any write, then runs
   journaled steps: people -> holds -> identities -> aliases -> memberships
-  -> authority -> read-back. Identity holds keep every imported person
-  `unavailable` to dependent managed access until read-back proves the whole
-  published state; only this import's holds are released.
+  -> authority -> read-back. Each imported person publishes WITH this
+  import's identity hold in one durable commit — `unavailable` to
+  dependent managed access from its first readable row — and the
+  proven-complete journal outcome commits together with the release of
+  all and only this import's holds.
 - An interrupted import resumes on an EXACT retry (same files -> same import
   identity -> same journaled steps). Changed files name a different import
   and are refused by the target probe, as is any managed row the intended
@@ -35,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import MappingProxyType
-from typing import Any, Protocol
+from typing import Any
 
 from nora.domain.identity import BoundAccount
 from nora.domain.managed import (
@@ -69,6 +71,10 @@ from nora.people.app.managed_admission_identity import (
     identity_owned,
     initial_traits_match,
 )
+from nora.people.app.managed_admission_probe import (
+    AdmissionFacts,
+    AdmissionProbe,
+)
 from nora.people.app.managed_ops import _finish, _pending, _step_done
 from nora.persons import Persons, PersonsError, load_persons
 from nora.policy import Policy, PolicyError, load_policy
@@ -82,36 +88,6 @@ IMPORT_KIND = "file_admission"
 ADMISSION_SOURCE = "admission"
 
 _STEPS = ("people", "holds", "identities", "aliases", "memberships", "authority", "readback")
-
-
-@dataclass(frozen=True)
-class AdmissionFacts:
-    """Every managed row the target holds, projected for the emptiness/resume
-    proof — including rows the port reads hide (suspended people, revoked
-    accounts, holds, foreign journals, link state)."""
-    persons: frozenset[tuple[str, str, bool]]      # (id, lifecycle, kratos-correlated)
-    accounts: frozenset[tuple[str, str, str]]      # (account_id, person_id, state)
-    identifiers: frozenset[tuple[str, str, str]]   # (platform, kind, value)
-    aliases: frozenset[tuple[str, str]]            # (former_id, person_id)
-    memberships: frozenset[tuple[str, str, str, str]]  # (person, kind, scope_id, state)
-    supports: frozenset[tuple[str, str, str, str]]     # (person, kind, scope_id, source)
-    operations: frozenset[tuple[str, str, str]]        # (operation_id, kind, state)
-    holds: frozenset[tuple[str, str]]                  # (person_id, operation_id)
-    blocks: int
-    link_rows: int
-
-
-class AdmissionProbe(Protocol):
-    """The concrete installation-target seam — the empty-or-owned proof no
-    port read can give, plus the person-only insert `BindingStore.register`
-    cannot express (a listed person may hold no account yet)."""
-
-    async def facts(self) -> AdmissionFacts:
-        """The target's full managed row projection."""
-
-    async def insert_person(self, person: ManagedPerson) -> Outcome:
-        """An account-less person row, committed independently like every
-        other binding write in this flow."""
 
 
 @dataclass(frozen=True)
@@ -450,15 +426,24 @@ class FileAdmission:
             await _finish(self.bindings, record, OperationJournalState.INCOMPLETE,
                           outcome.status.value, outcome.detail)
             return outcome
-        released = await self._release(record, prepared)
-        if released.status is not OutcomeStatus.COMPLETE:
-            await _finish(self.bindings, record, OperationJournalState.INCOMPLETE,
-                          released.status.value, released.detail)
-            return released
         counts = prepared.snapshot["counts"]
         detail = " ".join(f"{k}={counts[k]}" for k in sorted(counts))
-        await _finish(self.bindings, record, OperationJournalState.COMPLETE,
-                      "complete", detail)
+        finished = await self.probe.complete_import(
+            OperationRecord(
+                operation_id=record.operation_id,
+                kind=record.kind,
+                state=OperationJournalState.COMPLETE,
+                steps=record.steps,
+                outcome="complete",
+                detail=detail,
+                snapshot=record.snapshot,
+            ),
+            person_ids=tuple(sorted(prepared.people)),
+        )
+        if finished.status is not OutcomeStatus.COMPLETE:
+            await _finish(self.bindings, record, OperationJournalState.INCOMPLETE,
+                          finished.status.value, finished.detail)
+            return finished
         return complete(detail)
 
     def _claim(self, facts: AdmissionFacts, prepared: _Prepared) -> str | Outcome:
@@ -573,7 +558,7 @@ class FileAdmission:
 
     async def _run_steps(self, record: OperationRecord, prepared: _Prepared) -> Outcome:
         for step, effect in (
-            ("people", lambda: self._people_step(prepared)),
+            ("people", lambda: self._people_step(record, prepared)),
             ("holds", lambda: self._holds_step(record, prepared)),
             ("identities", lambda: self._identities_step(prepared)),
             ("aliases", lambda: self._aliases_step(prepared)),
@@ -589,38 +574,35 @@ class FileAdmission:
             await _step_done(self.bindings, record, step)
         return complete()
 
-    async def _people_step(self, prepared: _Prepared) -> Outcome:
+    async def _people_step(self, record: OperationRecord, prepared: _Prepared) -> Outcome:
+        """Each person commits WITH this import's hold — never readable unprotected."""
         for person_id in sorted(prepared.people):
             plan = prepared.people[person_id]
-            person = ManagedPerson(
-                person_id=person_id,
-                lifecycle=PersonLifecycle.ACTIVE,
-                display_name=plan.display_name,
-            )
-            rows = prepared.accounts[person_id]
-            if not rows:
-                outcome = await self.probe.insert_person(person)
-                if outcome.status is not OutcomeStatus.COMPLETE:
-                    return outcome
-                continue
-            for account in rows:
-                outcome = await self.bindings.register(
-                    person=person,
-                    account=ManagedAccount(
+            outcome = await self.probe.publish_held_person(
+                person=ManagedPerson(
+                    person_id=person_id,
+                    lifecycle=PersonLifecycle.ACTIVE,
+                    display_name=plan.display_name,
+                ),
+                accounts=tuple(
+                    ManagedAccount(
                         account_id=_account_id(person_id, account),
                         person_id=person_id,
                         platform=account.platform,
                         identifiers=account.identifiers,
                         state=AccountState.BOUND,
                         label=account.label,
-                    ),
-                )
-                if outcome.status is not OutcomeStatus.COMPLETE:
-                    return outcome
+                    )
+                    for account in prepared.accounts[person_id]
+                ),
+                operation_id=record.operation_id,
+            )
+            if outcome.status is not OutcomeStatus.COMPLETE:
+                return outcome
         return complete()
 
     async def _holds_step(self, record: OperationRecord, prepared: _Prepared) -> Outcome:
-        """Hold every imported person — dependent access stays `unavailable` until read-back."""
+        """Re-assert each hold — a resume re-protects rows older sequencing left exposed."""
         for person_id in sorted(prepared.people):
             outcome = await self.bindings.hold_identity(
                 person_id=person_id, operation_id=record.operation_id)
@@ -783,13 +765,4 @@ class FileAdmission:
                         # File mode delegates no management — a grant here is
                         # authority the source never authorized.
                         return unavailable("read-back-mismatch")
-        return complete()
-
-    async def _release(self, record: OperationRecord, prepared: _Prepared) -> Outcome:
-        """Release ONLY this import's holds, at the proven-complete boundary."""
-        for person_id in sorted(prepared.people):
-            outcome = await self.bindings.release_identity_hold(
-                person_id=person_id, operation_id=record.operation_id)
-            if outcome.status is not OutcomeStatus.COMPLETE:
-                return outcome
         return complete()
