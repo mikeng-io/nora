@@ -6,8 +6,9 @@ managed backend's binding half owns (`management.md`):
   bilateral link can), and an exact already-owned replay under a different
   `operation_id` completes without widening;
 - the journal is the idempotency authority: the same `operation_id`
-  replays the recorded outcome, and a reused id carrying a different
-  effect is an authoritative conflict, never a replay;
+  replays the recorded outcome, a non-complete journal row resumes its
+  owed steps on an authenticated retry, and a reused id carrying a
+  different effect is an authoritative conflict, never a replay;
 - observed revisions are revalidated at commitment — a stale identity or
   ownership revision denies;
 - a store that cannot answer is `unavailable`, not a crash and never a
@@ -16,10 +17,14 @@ managed backend's binding half owns (`management.md`):
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import UTC, datetime
+from types import MappingProxyType
 from uuid import uuid4
 
 import pytest
 
+from nora.domain.authentication import RoomAuthentication
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
@@ -43,7 +48,8 @@ from nora.domain.management import (
     Unlink,
 )
 from nora.people.app.link_publication import LinkPublicationService
-from nora.people.app.managed import RegistrationService
+from nora.people.app.managed import ManagedServices, RegistrationService
+from nora.people.app.management_invocation import HumanManagement
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
@@ -135,6 +141,65 @@ async def test_a_reused_operation_id_with_a_different_effect_conflicts():
     # And nothing was widened under the cover of a replay.
     assert len(store.accounts) == 1
     assert len(store.people) == 1
+
+
+@pytest.mark.parametrize("caller", ["registration", "human"])
+@pytest.mark.parametrize("partial", [False, True])
+async def test_exception_recovery_attributes_only_the_exact_recorded_effect(caller, partial):
+    class FailedGate(FakeBindingStore):
+        gate_down = False
+        journal_down = False
+
+        def mutation(self):
+            if self.gate_down:
+                raise ConnectionError("generated gate failure")
+            return super().mutation()
+
+        async def operation(self, operation_id):
+            if self.journal_down:
+                raise ConnectionError("generated journal failure")
+            return await super().operation(operation_id)
+
+    store = FailedGate()
+    registry = FakeIdentityRegistry()
+    services = ManagedServices(store, FakeAuthorityBackend(), FakeTopologySource(),
+                               registry, FakeLinkRequests())
+    registration = RegistrationService(store, registry)
+    original = _register_op("op-recovery")
+    assert (await registration.apply(original)).status is OutcomeStatus.COMPLETE
+    recorded = await store.operation(original.operation_id)
+    assert recorded is not None
+    if partial:
+        store.operations[original.operation_id] = replace(
+            recorded, state=OperationJournalState.INCOMPLETE)
+    human = HumanManagement(store, registry, registration, services.authority)
+    authentication = RoomAuthentication(
+        issuer="signal", message_key=original.operation_id, account=ACCT,
+        authenticated_at=datetime(2026, 1, 1, tzinfo=UTC))
+
+    async def invoke(op):
+        if caller == "human":
+            op = replace(op, actor=Actor(ActorKind.OPERATOR, person_id=PERSON,
+                                         scope=op.payload.scope))
+            return await human.apply(op, authentication)
+        return await registration.apply(op)
+
+    store.gate_down = True
+    exact = await invoke(original)
+    assert exact.status is (OutcomeStatus.INCOMPLETE if partial else OutcomeStatus.COMPLETE)
+    for changed in (
+        _register_op(original.operation_id, person_id="generated-other"),
+        _register_op(original.operation_id, identifiers=frozenset({ACCT_2})),
+        replace(original, payload=replace(original.payload,
+                                         scope=Scope(ScopeKind.ROOM, "signal/other"))),
+    ):
+        outcome = await invoke(changed)
+        assert outcome.status is OutcomeStatus.DENIED
+        assert outcome.detail == "operation-conflict"
+    store.journal_down = True
+    assert (await invoke(original)).status is OutcomeStatus.UNAVAILABLE
+    assert len(store.people) == len(store.accounts) == 1
+    assert store.operations[original.operation_id].snapshot == recorded.snapshot
 
 
 async def test_registration_never_attaches_an_account_to_an_existing_person():
@@ -504,16 +569,238 @@ async def test_a_down_store_is_unavailable_never_denied():
 
 
 async def test_a_down_registry_leaves_the_operation_incomplete_not_complete():
-    """A Kratos outage mid-registration is `unavailable` to the caller and
-    `incomplete` in the journal — part of the effect committed (the
-    binding), the rest is owed, and the journal says so instead of
-    claiming a distributed transaction."""
+    """A Kratos outage mid-registration is `incomplete` to the caller and
+    `incomplete` in the journal — the binding already committed, the rest
+    is owed, and the caller hears the partial write instead of a clean
+    outage that says nothing applied."""
     store, registry, svc = _service()
     registry.down = True
     outcome = await _register(svc, "op-1")
-    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert outcome.status is OutcomeStatus.INCOMPLETE
     record = await store.operation("op-1")
     assert record is not None
     assert record.state is OperationJournalState.INCOMPLETE
     assert record.steps["binding"] == "done"
     assert record.steps["kratos"] == "pending"
+
+
+# -- journal recovery: an authenticated retry finishes what is owed --------
+
+
+class _CrashAtStep(FakeBindingStore):
+    """A crash at exactly one journaled boundary — the named step raises
+    once before it applies (or once while the `complete` state is being
+    written for `finish`), then the store behaves. `calls` counts each
+    store effect so a resume's skipped steps stay observable."""
+
+    def __init__(self, step: str) -> None:
+        super().__init__()
+        self._step = step
+        self._fired = False
+        self.calls: dict[str, int] = {}
+
+    def _count(self, step: str) -> None:
+        self.calls[step] = self.calls.get(step, 0) + 1
+
+    async def register(self, **kwargs):
+        self._count("binding")
+        if self._step == "binding" and not self._fired:
+            self._fired = True
+            raise ConnectionError("generated crash at binding")
+        return await super().register(**kwargs)
+
+    async def set_membership(self, **kwargs):
+        self._count("membership")
+        if self._step == "membership" and not self._fired:
+            self._fired = True
+            raise ConnectionError("generated crash at membership")
+        return await super().set_membership(**kwargs)
+
+    async def correlate_kratos(self, **kwargs):
+        self._count("correlation")
+        if self._step == "correlation" and not self._fired:
+            self._fired = True
+            raise ConnectionError("generated crash at correlation")
+        return await super().correlate_kratos(**kwargs)
+
+    async def update_operation(self, record):
+        if (
+            self._step == "finish"
+            and not self._fired
+            and record.state is OperationJournalState.COMPLETE
+        ):
+            self._fired = True
+            raise ConnectionError("generated crash at finish")
+        return await super().update_operation(record)
+
+
+async def test_an_interrupted_registration_resumes_only_the_owed_steps():
+    """A Kratos outage leaves binding+membership done; the same operation
+    retried finishes the owed steps, then replays the recorded result."""
+    store, registry, svc = _service()
+    registry.down = True
+    outcome = await _register(svc, "op-1")
+    assert outcome.status is OutcomeStatus.INCOMPLETE
+    record = await store.operation("op-1")
+    assert record is not None
+    assert record.state is OperationJournalState.INCOMPLETE
+    assert record.steps["binding"] == "done"
+    assert record.steps["membership"] == "done"
+    assert record.steps["kratos"] == "pending"
+    registry.down = False
+    outcome = await _register(svc, "op-1")
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert outcome.detail == PERSON
+    record = await store.operation("op-1")
+    assert record is not None
+    assert record.state is OperationJournalState.COMPLETE
+    person = await store.person(PERSON)
+    assert person is not None
+    assert person.kratos_identity_id == registry.identities[PERSON]["id"]
+    assert len(store.people) == 1 and len(store.accounts) == 1
+    again = await _register(svc, "op-1")
+    assert again.status is OutcomeStatus.COMPLETE
+    assert again.detail == "replayed"
+
+
+@pytest.mark.parametrize(
+    ("step", "state", "done_steps", "pending_steps"),
+    [
+        ("binding", OperationJournalState.PENDING,
+         (), ("binding", "membership", "kratos", "correlation")),
+        ("membership", OperationJournalState.INCOMPLETE,
+         ("binding",), ("membership", "kratos", "correlation")),
+        ("correlation", OperationJournalState.INCOMPLETE,
+         ("binding", "membership", "kratos"), ("correlation",)),
+        ("finish", OperationJournalState.INCOMPLETE,
+         ("binding", "membership", "kratos", "correlation"), ()),
+    ],
+)
+async def test_an_interrupted_registration_resumes_each_boundary(
+    step, state, done_steps, pending_steps
+):
+    """A crash at every journaled boundary resumes the remaining steps
+    only — steps already done are never re-run, so the one person, one
+    account and one Kratos identity the journal recorded stay singular."""
+    store, registry, svc = _service()
+    store = _CrashAtStep(step)
+    svc = RegistrationService(store, registry)
+    outcome = await _register(svc, "op-1")
+    # A crash before ANY step committed is the clean outage; a crash after
+    # one is the partial write the caller must hear named.
+    assert outcome.status is (
+        OutcomeStatus.UNAVAILABLE if step == "binding"
+        else OutcomeStatus.INCOMPLETE
+    )
+    record = await store.operation("op-1")
+    assert record is not None
+    assert record.state is state
+    for done in done_steps:
+        assert record.steps[done] == "done"
+    for pending in pending_steps:
+        assert record.steps[pending] == "pending"
+    bound_before = await store.record_for(account=ACCT)
+    outcome = await _register(svc, "op-1")
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert outcome.detail == PERSON
+    record = await store.operation("op-1")
+    assert record is not None
+    assert record.state is OperationJournalState.COMPLETE
+    person = await store.person(PERSON)
+    assert person is not None and person.kratos_identity_id
+    # Only the owed steps ran again: the crashed step was retried once,
+    # done steps never re-ran (the finish crash re-runs nothing).
+    assert store.calls["binding"] == (2 if step == "binding" else 1)
+    assert store.calls["membership"] == (2 if step == "membership" else 1)
+    assert store.calls["correlation"] == (2 if step == "correlation" else 1)
+    assert len(store.people) == 1 and len(store.accounts) == 1
+    assert len(registry.identities) == 1
+    if bound_before is not None:
+        bound_after = await store.record_for(account=ACCT)
+        assert bound_after is not None
+        assert bound_after.account_id == bound_before.account_id
+
+
+async def test_a_conflicting_retry_on_an_unfinished_operation_refuses():
+    """A same-id retry carrying a different effect is a conflict while
+    the journal is still owed — the recorded effect stays resumable."""
+    store, registry, svc = _service()
+    registry.down = True
+    await _register(svc, "op-1")
+    registry.down = False
+    for kwargs in (
+        {"person_id": "person_other"},
+        {"identifiers": frozenset({ACCT_2})},
+    ):
+        outcome = await _register(svc, "op-1", **kwargs)
+        assert outcome.status is OutcomeStatus.DENIED
+        assert outcome.detail == "operation-conflict"
+    record = await store.operation("op-1")
+    assert record is not None
+    assert record.state is OperationJournalState.INCOMPLETE
+    assert await store.record_for(account=ACCT_2) is None
+    outcome = await _register(svc, "op-1")
+    assert outcome.status is OutcomeStatus.COMPLETE
+
+
+async def test_a_retry_while_the_outage_continues_stays_incomplete():
+    """The owed remainder stays `incomplete` while the outage stands —
+    never `complete` before the persisted result is read back."""
+    store, registry, svc = _service()
+    registry.down = True
+    await _register(svc, "op-1")
+    again = await _register(svc, "op-1")
+    assert again.status is OutcomeStatus.INCOMPLETE
+    record = await store.operation("op-1")
+    assert record is not None
+    assert record.state is OperationJournalState.INCOMPLETE
+    assert record.steps["kratos"] == "pending"
+
+
+@pytest.mark.parametrize("target_change", ["revoke", "suspend"])
+@pytest.mark.parametrize("checkpoint_written", [False, True])
+async def test_an_interrupted_registration_refuses_changed_binding_or_lifecycle(
+    target_change, checkpoint_written
+):
+    store, registry, svc = _service()
+    registry.down = True
+    interrupted = await _register(svc, "op-1")
+    assert interrupted.status is OutcomeStatus.INCOMPLETE
+    assert await store.record_for(account=ACCT) is not None
+    record = await store.operation("op-1")
+    assert record is not None
+    if not checkpoint_written:
+        record = replace(record, state=OperationJournalState.PENDING,
+                         steps=MappingProxyType(dict.fromkeys(record.steps, "pending")))
+        await store.update_operation(record)
+    if target_change == "revoke":
+        await store.revoke_binding(account=ACCT)
+    else:
+        await store.set_lifecycle(person_id=PERSON, lifecycle=PersonLifecycle.SUSPENDED)
+    registry.down = False
+    retried = await _register(svc, "op-1")
+    assert retried.status is OutcomeStatus.DENIED
+    if target_change == "revoke":
+        assert await store.record_for(account=ACCT) is None
+    else:
+        assert await store.person_lifecycle(PERSON) is PersonLifecycle.SUSPENDED
+    assert (await store.person(PERSON)).kratos_identity_id is None
+    assert PERSON not in registry.identities
+    assert (await store.operation("op-1")).state is record.state
+
+
+async def test_the_journaled_snapshot_lists_identifiers_in_canonical_order():
+    """The journaled effect survives process reconstruction — frozenset
+    order is process luck, so the snapshot records identifiers sorted."""
+    store, _, svc = _service()
+    identifiers = frozenset({ACCT, PHONE, ACCT_2})
+    outcome = await _register(svc, "op-1", identifiers=identifiers)
+    assert outcome.status is OutcomeStatus.COMPLETE
+    record = await store.operation("op-1")
+    assert record is not None
+    assert record.snapshot["identifiers"] == [
+        {"platform": i.platform, "kind": i.kind, "value": i.value}
+        for i in sorted(
+            identifiers, key=lambda i: (i.platform, i.kind, i.value)
+        )
+    ]

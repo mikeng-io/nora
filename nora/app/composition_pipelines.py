@@ -224,7 +224,8 @@ def build_engagement(
     cfg: Any, clock: Any, debounce: Any, debrief_wiring: Any,
     decision_log: Any, doctrine_store: Any, limits: Any, llm_state: Any,
     memory: Any, metrics: Any, persons: Any, preview_source: Any,
-    reasoning_strip_store: Any, registry: Any, rosters: Any, runner: Any,
+    reasoning_strip_store: Any, registry: Any, room_commands: Any,
+    rosters: Any, runner: Any,
     slots: Any, tag_trace_store: Any, tier: Any, tool_call_log_store: Any,
     tool_registry: Any,
 ) -> EngagementWiring:
@@ -270,6 +271,10 @@ def build_engagement(
         # never in doubt about whether to speak. What it writes is what the other two deciders
         # could not see.
         decisions=decision_log,
+        # The `!!!member` invocation — the SAME object the tool registry's
+        # `member_update` calls, so command and semantic tool share one
+        # authenticated path.
+        room_commands=room_commands,
     )
     return EngagementWiring(engagement=engagement)
 
@@ -281,6 +286,7 @@ class DispatcherWiring:
 
 def build_dispatcher(
     background: Any, engagement: Any, ingest: Any, participation_trigger: Any,
+    room_command: Any = None,
 ) -> DispatcherWiring:
 
     dispatcher = Dispatcher(
@@ -288,5 +294,6 @@ def build_dispatcher(
         engagement=engagement,
         background=background,
         participation=participation_trigger,
+        room_command=room_command,
     )
     return DispatcherWiring(dispatcher=dispatcher)

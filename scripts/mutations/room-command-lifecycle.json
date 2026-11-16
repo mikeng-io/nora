@@ -1,0 +1,30 @@
+[
+  {
+    "name": "an admitted room command releases the conversation slot on every exit",
+    "file": "nora/engagement/stages/command.py",
+    "old": "        if disposition is None:\n            slots.release_and_dispatch(key)\n",
+    "new": "",
+    "target": "tests/unit/test_engagement_room_command.py::test_an_admitted_room_command_releases_its_slot_and_runs_what_queued_behind_it"
+  },
+  {
+    "name": "a durable room command's slot release belongs to the worker not the stage",
+    "file": "nora/engagement/stages/command.py",
+    "old": "        if disposition is None:\n            slots.release_and_dispatch(key)\n",
+    "new": "        slots.release_and_dispatch(key)\n",
+    "target": "tests/unit/test_engagement_room_command.py::test_a_durable_room_command_leaves_the_release_to_its_worker"
+  },
+  {
+    "name": "a durable tag's slot release belongs to the worker not the stage",
+    "file": "nora/engagement/pipeline.py",
+    "old": "                    if disposition is None:\n                        self._slots.release_and_dispatch(key)\n",
+    "new": "                    self._slots.release_and_dispatch(key)\n",
+    "target": "tests/unit/test_engagement_pipeline.py::test_a_durable_tag_leaves_the_slot_release_to_its_worker"
+  },
+  {
+    "name": "a bare room command is enqueued as durable command work off the verified message",
+    "file": "nora/app/bridge_obligations.py",
+    "old": "    if command or decision.engage:",
+    "new": "    if decision.engage:",
+    "target": "tests/integration/test_bridge_queue.py::test_a_bare_room_command_is_bridged_as_command_work_and_replies"
+  }
+]

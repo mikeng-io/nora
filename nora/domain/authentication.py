@@ -33,8 +33,39 @@ class AccountAuthentication:
 
 
 @dataclass(frozen=True)
+class RoomAuthentication:
+    """Transport provenance for one fresh room message (`management.md`
+    «In-room management»): the trusted ingress path's assertion of WHICH
+    account sent it, created only by code that owns the normalized message.
+
+    It is not an `AccountAuthentication`: a platform message carries no
+    session and no login method, so none is modelled. `binding` is a fixed
+    `None` property — a message can never carry a binding claim, and the
+    current binding is what the mutation gate resolves live. The check is
+    the same `AccountSessions.check` the session path takes: account →
+    canonical person → hold → lifecycle → identity registry, revalidated
+    under the writer's lock at invocation time.
+
+    `issuer` names the trusted ingress that built it (for audit), never the
+    sender; `message_key` is the message's own durable identity, so the
+    journal entry is pinned to the message that raised it.
+    """
+
+    issuer: str
+    message_key: str
+    account: Identifier
+    authenticated_at: datetime
+    purpose: Literal["message"] = "message"
+
+    @property
+    def binding(self) -> SessionBinding | None:
+        """Always `None` — a room message never carries a binding claim."""
+        return None
+
+
+@dataclass(frozen=True)
 class AuthenticatedPrincipal:
-    authentication: AccountAuthentication
+    authentication: AccountAuthentication | RoomAuthentication
     binding: SessionBinding
     display_name: str
 

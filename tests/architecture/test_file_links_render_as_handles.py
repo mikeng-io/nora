@@ -236,7 +236,7 @@ HAND_BUILT = {
         "load_transcript / room_read / record_query results",
     ("nora/conversation/adapters/tools/record.py", "who_said"): "who_said hits",
     ("nora/agent/toolkit/results.py", "_memory_hits_result"): "search_memory(_workspace) hits",
-    ("nora/people/adapters/tools.py", "about"): "about's Honcho conclusions and card",
+    ("nora/people/adapters/tools/__init__.py", "about"): "about's Honcho conclusions and card",
     ("nora/memory/adapters/tools/search.py", "ask_memory"): "ask_memory's Honcho answer",
     ("nora/ingest/stages/memory_feed.py", "run"): "the live Honcho feed",
     ("nora/app/adoption.py", "backfill"): "adoption's Honcho back-feed",

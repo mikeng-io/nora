@@ -18,6 +18,16 @@ from nora.people.adapters.tools import build as _build
 """Compose this area's tool adapters from shared dependencies."""
 
 
+def room_management(services, *, rosters=None):
+    """The in-room management invocation (`!!!member`, `member_update`)
+    over ONE services graph — file services answer `denied` inside
+    `invoke`, which is why composition always builds this rather than
+    branching on the backend."""
+    from nora.people.app.room_invocation import RoomManagement
+
+    return RoomManagement(services, rosters=dict(rosters or {}))
+
+
 def tool_specs(deps):
     return _build(deps)
 

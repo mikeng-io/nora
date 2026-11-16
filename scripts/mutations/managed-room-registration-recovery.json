@@ -1,0 +1,51 @@
+[
+  {
+    "name": "a non-complete registration journal row is resumed on the same operation",
+    "file": "nora/people/app/managed.py",
+    "old": "            resumed = await self._resume_registration(op)\n            if resumed is not None:\n                return resumed\n",
+    "new": "",
+    "target": "tests/unit/test_room_management.py::test_an_interrupted_register_redelivery_resumes_the_recorded_effect"
+  },
+  {
+    "name": "a partial write reports incomplete never a bare outage",
+    "file": "nora/people/app/managed_ops.py",
+    "old": "    if any(done == \"done\" for done in record.steps.values()):\n        return incomplete(outcome.detail)\n    return outcome\n",
+    "new": "    return outcome\n",
+    "target": "tests/unit/test_managed_registration.py::test_a_down_registry_leaves_the_operation_incomplete_not_complete"
+  },
+  {
+    "name": "a store exception consults the journal before claiming a clean outage",
+    "file": "nora/people/app/managed.py",
+    "old": "            admitted = await _journal_after_failure(self._bindings, op)\n            return admitted if admitted is not None else unavailable(\"store-failure\")\n",
+    "new": "            return unavailable(\"store-failure\")\n",
+    "target": "tests/unit/test_managed_registration.py::test_an_interrupted_registration_resumes_each_boundary"
+  },
+  {
+    "name": "a management-gate exception consults the journal before claiming a clean outage",
+    "file": "nora/people/app/management_invocation.py",
+    "old": "            admitted = await _journal_after_failure(self._bindings, operation)\n            return admitted if admitted is not None else unavailable(\"store-failure\")\n",
+    "new": "            return unavailable(\"store-failure\")\n",
+    "target": "tests/unit/test_room_management.py::test_a_lost_registration_response_does_not_claim_nothing_applied"
+  },
+  {
+    "name": "the bound-account refusal consults this message's own journal row first",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "            if bound:\n                # A bound account is accepted only for this message's exact journaled effect.\n                record = await services.bindings.operation(operation_id)\n                if record is None:\n                    return denied(\"account-already-registered\")\n                if record.kind != \"register_account\" or frozenset(\n                    _ident_from(i)\n                    for i in record.snapshot.get(\"identifiers\", ())\n                ) != identifiers:\n                    return denied(\"operation-conflict\")\n",
+    "new": "            if bound:\n                return denied(\"account-already-registered\")\n",
+    "target": "tests/unit/test_room_management.py::test_an_interrupted_register_redelivery_resumes_the_recorded_effect"
+  },
+  {
+    "name": "an interrupted registration cannot outlive binding revocation or suspension",
+    "file": "nora/people/app/managed.py",
+    "old": "        if person is not None or not _pending(recorded, \"binding\"):\n            if (person is None or bound is None\n                    or bound.identifiers != payload.identifiers):\n                return denied(\"registration-binding-changed\")\n            if person.lifecycle is not PersonLifecycle.ACTIVE:\n                return denied(\"person-suspended\")\n",
+    "new": "",
+    "target": "tests/unit/test_managed_registration.py::test_an_interrupted_registration_refuses_changed_binding_or_lifecycle"
+  },
+  {
+    "name": "exception recovery attributes only the exact journaled effect",
+    "file": "nora/people/app/managed_ops.py",
+    "old": "    if record.kind != op.kind or record.snapshot != _op_snapshot(op):\n        return denied(\"operation-conflict\")\n",
+    "new": "",
+    "target": "tests/unit/test_managed_registration.py::test_exception_recovery_attributes_only_the_exact_recorded_effect"
+  }
+]

@@ -65,7 +65,9 @@ from nora.people.app.link_publication import LinkPublicationService
 from nora.people.app.managed_authority import AuthorityService
 from nora.people.app.managed_ops import (
     Effect,
+    _fail,
     _finish,
+    _journal_after_failure,
     _op_snapshot,
     _pending,
     _publication_refusal,
@@ -147,7 +149,11 @@ class RegistrationService:
             raise  # a violated invariant is a bug, not an outage
         except Exception:
             log.exception("binding store failed")
-            return unavailable("store-failure")
+            # A store exception mid-run is not automatically a clean
+            # outage — the journal, not the exception, says whether part
+            # of the recorded effect already committed.
+            admitted = await _journal_after_failure(self._bindings, op)
+            return admitted if admitted is not None else unavailable("store-failure")
 
     async def _apply(self, op: Operation) -> Outcome:
         if op.kind != "suspend_identity":
@@ -160,6 +166,9 @@ class RegistrationService:
             replay = await self._completed_registration(op)
             if replay is not None:
                 return replay
+            resumed = await self._resume_registration(op)
+            if resumed is not None:
+                return resumed
         stale = await _revisions_fresh(self._bindings, op)
         if stale is not None:
             return stale
@@ -202,6 +211,41 @@ class RegistrationService:
         if await self._bindings.person_lifecycle(expected) is not PersonLifecycle.ACTIVE:
             return denied("person-suspended")
         return complete("replayed")
+
+    async def _resume_registration(self, op: Operation) -> Outcome | None:
+        """Resume only the still-owned effect recorded by this unfinished registration."""
+        recorded = await self._bindings.operation(op.operation_id)
+        if recorded is None or recorded.state is OperationJournalState.COMPLETE:
+            return None
+        if recorded.kind != op.kind or recorded.snapshot != _op_snapshot(op):
+            return denied("operation-conflict")
+        payload = cast(AccountRegistration, op.payload)
+        bound = await self._already_owned(payload)
+        person = await self._bindings.person(payload.person_id)
+        if person is not None or not _pending(recorded, "binding"):
+            if (person is None or bound is None
+                    or bound.identifiers != payload.identifiers):
+                return denied("registration-binding-changed")
+            if person.lifecycle is not PersonLifecycle.ACTIVE:
+                return denied("person-suspended")
+        person = person or ManagedPerson(person_id=payload.person_id,
+                                         lifecycle=PersonLifecycle.ACTIVE)
+        account = bound or ManagedAccount(
+            account_id=str(uuid4()),
+            person_id=payload.person_id,
+            platform=next(iter(payload.identifiers)).platform,
+            identifiers=payload.identifiers,
+            state=AccountState.BOUND,
+        )
+        membership = ManagedMembership(
+            person_id=payload.person_id,
+            scope=payload.scope,
+            state=MembershipState.MEMBER,
+            source="registration",
+        )
+        return await self._run_registration(
+            recorded, person=person, account=account, membership=membership,
+        )
 
     # -- observe / register -------------------------------------------------
 
@@ -300,6 +344,17 @@ class RegistrationService:
         record = await _record(self._bindings, op, steps)
         if isinstance(record, Outcome):
             return record
+        return await self._run_registration(
+            record, person=person, account=account, membership=membership)
+
+    async def _run_registration(
+        self,
+        record: OperationRecord,
+        *,
+        person: ManagedPerson,
+        account: ManagedAccount,
+        membership: ManagedMembership | None,
+    ) -> Outcome:
         outcome = await self._run_binding(
             record, "binding",
             lambda: self._bindings.register(
@@ -314,7 +369,7 @@ class RegistrationService:
                     member=True, source=membership.source,
                 ),
             )
-        if outcome.status is OutcomeStatus.COMPLETE and "kratos" in steps:
+        if outcome.status is OutcomeStatus.COMPLETE and "kratos" in record.steps:
             outcome, identity_id = await self._registry.ensure_identity(
                 # Ownership is external_id, never a descriptive trait.
                 # Persist the file social default; conflict read-back preserves preferences.
@@ -329,9 +384,7 @@ class RegistrationService:
                     )
                 )
         if outcome.status is not OutcomeStatus.COMPLETE:
-            await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,
-                          outcome.status.value, outcome.detail)
-            return outcome
+            return await _fail(self._bindings, record, outcome)
         await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                       "complete", person.person_id)
         return complete(person.person_id)
@@ -390,9 +443,7 @@ class RegistrationService:
                     lambda: self._registry.drop_sessions(external_id=person.person_id),
                 )
         if outcome.status is not OutcomeStatus.COMPLETE:
-            await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,
-                          outcome.status.value, outcome.detail)
-            return outcome
+            return await _fail(self._bindings, record, outcome)
         await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                       "complete")
         return complete()
@@ -432,9 +483,7 @@ class RegistrationService:
                 lambda: self._binding_absent(account),
             )
         if outcome.status is not OutcomeStatus.COMPLETE:
-            await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,
-                          outcome.status.value, outcome.detail)
-            return outcome
+            return await _fail(self._bindings, record, outcome)
         await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                       "complete")
         return complete()

@@ -264,8 +264,7 @@
   "comment_blocks": 40,
   "file_lines": 1405,
   "functions": {
-   "ToolRegistry.__init__": 453,
-   "ToolRegistry.specs": 149
+   "ToolRegistry.__init__": 453
   },
   "internal_docstrings": 5
  },
@@ -886,7 +885,6 @@
   "comment_blocks": 58,
   "file_lines": 1426,
   "functions": {
-   "EngagementPipeline.__init__": 145,
    "EngagementPipeline._run_turn": 776
   },
   "internal_docstrings": 8

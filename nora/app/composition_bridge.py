@@ -25,6 +25,7 @@ async def runtime(
     fire_path: Any, ingest: Any, memory: Any, metrics: Any,
     observation_store: Any, participation_trigger: Any, persons: Any, policy: Any,
     registry: Any, slots: Any, stimulus_wiring: Any, access: Any = None,
+    room_command: Any = None,
 ) -> RuntimeWiring:
 
     # ---- platform bridges (design/platform-bridges) ------------------------- Any platform
@@ -83,6 +84,8 @@ async def runtime(
             fire_speak=fire_path.speak if fire_path else None,
             participation_state=SqlParticipationStateStore(engine),
             observations=observation_store,
+            # The SAME predicate the live dispatcher holds — one command rule.
+            room_command=room_command,
         )
         # The inspector reads the REAL redis client + engine the runtime
         # runs on — a second connection would measure a different world.

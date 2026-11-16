@@ -476,33 +476,12 @@ async def build_dependencies(
     clock: Callable[[], datetime] = wall_clock,
     operational_clock: Callable[[], datetime] | None = None,
 ) -> Dependencies:
-    """Build the object graph from `cfg`.
+    """Build the process graph from cfg and return its runtime Dependencies.
 
-    This function is the only place in the codebase allowed to know `Config`'s
-    shape (besides `nora.__main__` itself, which only ever passes `cfg`
-    straight through here). Everything downstream takes a `Dependencies`.
-
-    **`clock` names a dependency the graph shares.** Many components take
-    `clock: Callable[[], datetime]` — `FirePath`, `HeartbeatLoop`,
-    `ComputePoller` and the rest — each for the reason `FirePath`'s own
-    docstring gives: *"a module that read the wall clock itself could not be
-    tested at a fixed instant."* This function states the clock once and hands
-    it to all of them; the default is `wall_clock`.
-
-    A caller can therefore say WHAT TIME IT IS. The proactive adaptor's whole
-    judgement is about time (is this note due, has this position gone stale,
-    is now the moment), and a harness asks it a question at a fixed instant by
-    passing a clock.
-
-    **`operational_clock` is the maintenance clock.** A frozen `clock` is a
-    semantic statement («the turn sees this instant»); it must not freeze the
-    queue's deadline, lease and idle arithmetic — under a frozen snapshot the
-    scoped computer's tasks would never time out and its tabs never idle.
-    The scoped-computer machinery (`ComputerAdmission`, `ComputerQueueRunner`,
-    `ScopeBrowserManager`, the deferred outbox's stamp) reads
-    `operational_clock`, which defaults to `clock`; the eval subject passes
-    the wall clock so maintenance keeps moving while the block's time stands
-    still.
+    Share clock (wall_clock by default) so replay can set a fixed semantic instant.
+    Queue deadlines, leases, computer idle expiry and outbox timestamps instead use
+    operational_clock, which defaults to clock. Replay supplies wall time there so
+    maintenance keeps progressing while the turn observes its fixed instant.
     """
     op_clock = operational_clock or clock
     content_checks = cfg.content_checks.enabled
@@ -684,6 +663,12 @@ async def build_dependencies(
     policy = _platforms_policies.policy
     presence_reader = _platforms_policies.presence_reader
     rosters = _platforms_policies.rosters
+    # The ONE in-room management invocation: the `!!!member` command's
+    # occasion path and the `member_update` tool share this object, so both
+    # entries authenticate through `HumanManagement` identically.
+    room_commands = _people_wire.room_management(
+        _stores_managed.services, rosters=rosters
+    )
     _stores_readers = readers(cfg=cfg, content_checks=content_checks, engine=engine)
     culture_reader = _stores_readers.culture_reader
     lessons_reader = _stores_readers.lessons_reader
@@ -949,6 +934,7 @@ async def build_dependencies(
         reminder_caps=reminder_caps,
         reminders=reminders,
         route_client=route_client,
+        room_management=room_commands,
         search_client=search_client,
         social_client=social_client,
         standing_store=standing_store,
@@ -1047,6 +1033,7 @@ async def build_dependencies(
         preview_source=preview_source,
         reasoning_strip_store=reasoning_strip_store,
         registry=registry,
+        room_commands=room_commands,
         rosters=rosters,
         runner=runner,
         slots=slots,
@@ -1191,6 +1178,7 @@ async def build_dependencies(
         engagement=engagement,
         ingest=ingest,
         participation_trigger=participation_trigger,
+        room_command=room_commands.is_command,
     )
     dispatcher = _pipelines_dispatcher.dispatcher
     _bridge_runtime = await runtime(
@@ -1209,7 +1197,7 @@ async def build_dependencies(
         policy=policy,
         registry=registry,
         slots=slots,
-        stimulus_wiring=stimulus_wiring,
+        stimulus_wiring=stimulus_wiring, room_command=room_commands.is_command,
     )
     bridge_runtime = _bridge_runtime.bridge_runtime
     _dreamer_preamble = preamble(engine=engine)

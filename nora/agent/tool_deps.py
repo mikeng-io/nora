@@ -213,6 +213,9 @@ class ToolDeps:
     video: VideoDesk | None = None
     video_ref_kinds: frozenset[str] = frozenset()
     external_files: ExternalFilesSource | None = None
+    # Both the shared management invocation and verified trigger message are required.
+    room_management: Any = None
+    message: Any = None
     # `[google] account`: Nora's own Google mailbox, named in the NOT_SHARED
     # note so the owner knows who to share with. "" → a generic phrasing.
     google_account: str = ""

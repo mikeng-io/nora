@@ -35,6 +35,7 @@ import sqlalchemy as sa
 from opentelemetry.trace import Link
 
 from nora.access import IdentityAccess
+from nora.app.bridge_obligations import enqueue_downstream
 from nora.app.bridge_payloads import (
     _decision_dict,
     _link,
@@ -405,11 +406,13 @@ class WorkRunner:
                  instance: str | None = None, lease_seconds: int = 300,
                  allowlist: Any = None, persons: Any = None,
                  fire_speak: Any = None, participation_state: Any = None,
-                 observations: Any = None, access: Any = None) -> None:
+                 observations: Any = None, access: Any = None,
+                 room_command: Any = None) -> None:
         self._store = store
         self._redis = redis
         self._ingest = ingest
         self._engagement = engagement
+        self._room_command = room_command  # the SAME predicate the dispatcher holds
         self._slots = slots            # the SHARED in-memory ConversationSlots
         self._db_locks = db_locks      # the cross-process speaking half
         self._adapters = adapters
@@ -970,82 +973,15 @@ class WorkRunner:
                         payload=self._obligation_payload(
                             work, envelope, part="observation"),
                         result={"reason": observation_status})
-                ordinal = 1
-                if decision.engage:
-                    tag_id = uuid.uuid4().hex[:12]
-                    await self._store.set_event_state(
-                        conn, envelope.event_id, "done", tag_id=tag_id)
-                    await self._store.enqueue_work(
-                        conn, event_id=envelope.event_id, kind="turn",
-                        ordinal=ordinal, platform=work.platform,
-                        account_key=work.account_key,
-                        conversation_id=work.conversation_id,
-                        payload={
-                            "tag_id": tag_id,
-                            "stream": work.payload.get("stream"),
-                            "stream_id": work.payload.get("stream_id"),
-                            "message": message_to_dict(result_message),
-                            "decision": {
-                                "engage": decision.engage,
-                                "reason": decision.reason,
-                                "rationale": decision.rationale,
-                                "confidence": decision.confidence,
-                                "threshold": decision.threshold,
-                                "allow_episode": decision.allow_episode,
-                                "relevance_gate": decision.relevance_gate,
-                            },
-                            "admission": None,
-                            **downstream,
-                        })
-                    ordinal += 1
-                if decision.relevance_gate and self._participation is not None:
-                    # The dispatcher's `note_message` never fires under bridge
-                    # mode (no live listener), so the durable obligation owns it.
-                    await self._store.enqueue_work(
-                        conn, event_id=envelope.event_id,
-                        kind="participation", ordinal=ordinal,
-                        platform=work.platform,
-                        account_key=work.account_key,
-                        conversation_id=work.conversation_id,
-                        payload={"note_message": message_to_dict(result_message),
-                                 **downstream})
-                    ordinal += 1
-                if self._memory_feed is not None and person is not None:
-                    await self._store.enqueue_work(
-                        conn, event_id=envelope.event_id,
-                        kind="memory_feed", ordinal=ordinal,
-                        platform=work.platform,
-                        account_key=work.account_key,
-                        conversation_id=work.conversation_id,
-                        payload={"message": message_to_dict(result_message),
-                                 "person": _person_dict(person),
-                                 "absorbed": absorbed, "unit": unit,
-                                 **downstream})
-                    ordinal += 1
-                # A committed sidecar made its ordinal-90 obligation the ONE
-                # stimulus obligation for the whole source event — the hook
-                # enqueued it inside the observation's own transaction with
-                # both refs — so raising a second, ordinary message stimulus
-                # here would give one source event two independent wakes. A
-                # refused or unscoped sidecar committed no merged
-                # obligation: the utterance's own stimulus is enqueued as
-                # always.
-                source_owned = observation_status == "ok" and bool(unit)
-                if (self._stimulus is not None and row_id is not None
-                        and not source_owned):
-                    await self._store.enqueue_work(
-                        conn, event_id=envelope.event_id,
-                        kind="stimulus", ordinal=ordinal,
-                        platform=work.platform,
-                        account_key=work.account_key,
-                        conversation_id=work.conversation_id,
-                        payload={"message": message_to_dict(result_message),
-                                 "row_id": row_id,
-                                 "person_id": person.person_id
-                                 if person else None,
-                                 "absorbed": absorbed, "unit": unit,
-                                 **downstream})
-                    ordinal += 1
+                command = await enqueue_downstream(
+                    conn, store=self._store, work=work, envelope=envelope,
+                    message=result_message, decision=decision, person=person,
+                    row_id=row_id, absorbed=absorbed, unit=unit,
+                    observation_status=observation_status,
+                    room_command=self._room_command,
+                    participation=self._participation,
+                    memory_feed=self._memory_feed, stimulus=self._stimulus,
+                    downstream=downstream)
                 # The queued receipt is BRIDGE-owned: the producer emits it
                 # once per canonical event at enqueue, so the app never
                 # enqueues a second receipt workflow. A terminal-phase
@@ -1055,7 +991,8 @@ class WorkRunner:
                 ok = await self._store.finish_work(
                     conn, work.id, generation=work.generation,
                     state="done", result=self._attempt_patch(work, "done", {
-                        "outcome": "engaged" if decision.engage else "recorded",
+                        "outcome": ("command" if command else "engaged"
+                                    if decision.engage else "recorded"),
                         "reason": decision.reason,
                         "observation": observation_status}))
         if ok:
@@ -1371,6 +1308,9 @@ class WorkRunner:
             message=message_from_dict(payload["message"]),
             decision=EngageDecision(**payload["decision"]),
             tag_id=payload["tag_id"],
+            # The explicit-command occasion survives durable rehydration —
+            # older rows carry no key and are the tag turns they always were.
+            occasion=payload.get("occasion", "tag"),
         )
         adapter = self._adapters.get(work.platform)
         bound = (adapter.bind_owner(owner)
