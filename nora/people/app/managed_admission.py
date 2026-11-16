@@ -12,6 +12,11 @@ that admission:
   the managed model cannot represent exactly (guild-expanded conversations,
   DM admission lists), and binds source content + the intended effect to a
   durable import identity derived from both files' digests.
+- `prepare` reads each source file ONCE into an immutable `PreparedImport`:
+  the validated loaders' model, the journaled effect snapshot and the
+  retained private source text. One invocation plans, wires and applies
+  from that single capture — a later file change names another import and
+  can never swap the in-flight effect behind the plan it reported.
 - `FileAdmission.apply` claims an EMPTY-or-this-import's target under the
   shared mutation gate, journals the effect BEFORE any write, then runs
   journaled steps: people -> holds -> identities -> aliases -> memberships
@@ -25,6 +30,11 @@ that admission:
   and are refused by the target probe, as is any managed row the intended
   effect does not own — suspended people, revoked accounts, foreign journals
   and link state are all non-empty evidence.
+- A journaled row under this import's identity is bound by kind and the
+  complete effect snapshot: a mismatch refuses as a conflict, and an EXACT
+  completed match returns the recorded historical receipt as-is — it
+  asserts that this import completed, never that current state still
+  equals it, so it neither revalidates the target nor reasserts a thing.
 """
 
 from __future__ import annotations
@@ -109,17 +119,22 @@ class _PersonPlan:
 
 
 @dataclass(frozen=True)
-class _Prepared:
-    """The exact intended effect — computed once per call, bound by digest."""
+class PreparedImport:
+    """The exact intended effect — captured and validated ONCE per
+    invocation, immutable for every consumer. The loaders' model, the
+    journaled snapshot, the retained private source text and the derived
+    effect rows all describe the same read: a source change during setup
+    either keeps this captured effect or never reaches a write — it never
+    substitutes a second read behind the plan the first one reported."""
     import_id: str
     snapshot: MappingProxyType[str, Any]
     persons: Persons
     policy: Policy
-    people: dict[str, _PersonPlan]
-    accounts: dict[str, tuple[BoundAccount, ...]]      # person_id -> accounts
-    aliases: dict[str, tuple[str, ...]]               # person_id -> former ids
+    people: MappingProxyType[str, _PersonPlan]
+    accounts: MappingProxyType[str, tuple[BoundAccount, ...]]   # person_id -> accounts
+    aliases: MappingProxyType[str, tuple[str, ...]]            # person_id -> former ids
     memberships: frozenset[tuple[str, Scope]]         # (person_id, room scope)
-    room_scopes: dict[Scope, tuple[str, str]]         # scope -> (platform, conversation_id)
+    room_scopes: MappingProxyType[Scope, tuple[str, str]]       # scope -> (platform, conv_id)
     containment: frozenset[tuple[Scope, Scope]]       # (child, parent)
 
 
@@ -173,7 +188,7 @@ def _read_sources(
     return persons, policy, identity_source, policy_source
 
 
-def _prepare(identity_path: Path, policy_path: Path) -> _Prepared | Outcome:
+def prepare(identity_path: Path, policy_path: Path) -> PreparedImport | Outcome:
     """Load + validate the sources and compute the effect — refusals end here, pre-write."""
     sources = _read_sources(identity_path, policy_path)
     if isinstance(sources, Outcome):
@@ -246,16 +261,16 @@ def _prepare(identity_path: Path, policy_path: Path) -> _Prepared | Outcome:
         identity_source=identity_source.decode("utf-8"),
         policy_source=policy_source.decode("utf-8"),
     )
-    return _Prepared(
+    return PreparedImport(
         import_id=_import_id(identity_sha, policy_sha),
         snapshot=snapshot,
         persons=persons,
         policy=policy,
-        people=people,
-        accounts=accounts,
-        aliases=aliases,
+        people=MappingProxyType(people),
+        accounts=MappingProxyType(accounts),
+        aliases=MappingProxyType(aliases),
         memberships=frozenset(pairs),
-        room_scopes=room_scopes,
+        room_scopes=MappingProxyType(room_scopes),
         containment=frozenset(containment),
     )
 
@@ -335,13 +350,18 @@ def _snapshot(
 
 def plan(identity_path: Path, policy_path: Path) -> AdmissionPlan:
     """Non-mutating preflight: the loaders' verdict and the bounded counts."""
-    prepared = _prepare(identity_path, policy_path)
+    prepared = prepare(identity_path, policy_path)
     if isinstance(prepared, Outcome):
         return AdmissionPlan(import_id="", refused=(prepared.detail,))
     return AdmissionPlan(
         import_id=prepared.import_id,
         counts=MappingProxyType(dict(prepared.snapshot["counts"])),
     )
+
+
+def _receipt(record: OperationRecord) -> Outcome:
+    """The journaled outcome of an exact completed match — a receipt, not revalidation."""
+    return Outcome(OutcomeStatus(record.outcome or "complete"), record.detail)
 
 
 @dataclass(frozen=True)
@@ -356,21 +376,22 @@ class FileAdmission:
     probe: AdmissionProbe
 
     async def assess(self, identity_path: Path, policy_path: Path) -> Outcome:
-        """Read-only target assessment for `plan` against a target: fresh,
-        resumable, replayed or refused — never a write."""
-        prepared = _prepare(identity_path, policy_path)
+        """Path wrapper: prepares once, then assesses that one capture."""
+        prepared = prepare(identity_path, policy_path)
         if isinstance(prepared, Outcome):
             return prepared
+        return await self.assess_prepared(prepared)
+
+    async def assess_prepared(self, prepared: PreparedImport) -> Outcome:
+        """Read-only target assessment for `plan` against a target: fresh,
+        resumable, replayed or refused — never a write. The same attribution
+        rule as `apply_prepared`: the durable journal is bound by kind and
+        full snapshot, and an exact completed match is its own receipt."""
         facts = await self.probe.facts()
-        claim = self._claim(facts, prepared)
+        record = await self.bindings.operation(prepared.import_id)
+        claim = self._claim(facts, prepared, record)
         if isinstance(claim, Outcome):
             return claim
-        if claim == "replayed":
-            record = await self.bindings.operation(prepared.import_id)
-            if record is None:
-                return unavailable("journal-missing")
-            return Outcome(
-                OutcomeStatus(record.outcome or "complete"), record.detail)
         residual = await self._authority_residual(
             prepared, fresh=(claim == "fresh"))
         if residual is not None:
@@ -378,10 +399,14 @@ class FileAdmission:
         return complete(claim)
 
     async def apply(self, identity_path: Path, policy_path: Path) -> Outcome:
-        """Claim + journal + journaled effect, under the shared mutation gate."""
-        prepared = _prepare(identity_path, policy_path)
+        """Path wrapper: prepares once, then applies that one capture."""
+        prepared = prepare(identity_path, policy_path)
         if isinstance(prepared, Outcome):
             return prepared
+        return await self.apply_prepared(prepared)
+
+    async def apply_prepared(self, prepared: PreparedImport) -> Outcome:
+        """Claim + journal + journaled effect, under the shared mutation gate."""
         try:
             async with self.bindings.mutation():
                 return await self._apply(prepared)
@@ -389,21 +414,16 @@ class FileAdmission:
             log.exception("file admission failed")
             return unavailable("store-failure")
 
-    async def _apply(self, prepared: _Prepared) -> Outcome:
+    async def _apply(self, prepared: PreparedImport) -> Outcome:
         facts = await self.probe.facts()
-        claim = self._claim(facts, prepared)
+        record = await self.bindings.operation(prepared.import_id)
+        claim = self._claim(facts, prepared, record)
         if isinstance(claim, Outcome):
             return claim
         authority = await self._authority_residual(
             prepared, fresh=(claim == "fresh"))
         if authority is not None:
             return authority
-        record = await self.bindings.operation(prepared.import_id)
-        if claim == "replayed":
-            if record is None:
-                return unavailable("journal-missing")
-            return Outcome(
-                OutcomeStatus(record.outcome or "complete"), record.detail)
         if record is None:
             if claim == "fresh":
                 collision = await self._kratos_fresh(prepared)
@@ -419,8 +439,6 @@ class FileAdmission:
             recorded = await self.bindings.record_operation(record)
             if recorded.status is not OutcomeStatus.COMPLETE:
                 return recorded
-        elif record.snapshot != prepared.snapshot:
-            return denied("effect-conflict")
         outcome = await self._run_steps(record, prepared)
         if outcome.status is not OutcomeStatus.COMPLETE:
             await _finish(self.bindings, record, OperationJournalState.INCOMPLETE,
@@ -446,29 +464,33 @@ class FileAdmission:
             return finished
         return complete(detail)
 
-    def _claim(self, facts: AdmissionFacts, prepared: _Prepared) -> str | Outcome:
-        """The installation-only claim: "fresh", "resume", "replayed" — or a refusal."""
+    def _claim(
+        self, facts: AdmissionFacts, prepared: PreparedImport,
+        record: OperationRecord | None,
+    ) -> str | Outcome:
+        """The claim — "fresh"/"resume" or a refusal; an exact COMPLETE record is its receipt."""
+        if record is not None:
+            if record.kind != IMPORT_KIND or record.snapshot != prepared.snapshot:
+                return denied("effect-conflict")
+            if record.state is OperationJournalState.COMPLETE:
+                return _receipt(record)
+        elif any(o == prepared.import_id for o, _, _ in facts.operations):
+            return unavailable("journal-missing")
         imports = [o for o, kind, _ in facts.operations if kind == IMPORT_KIND]
         if [o for o in imports if o != prepared.import_id]:
             return denied("different-import")
         if [o for o, _, _ in facts.operations if o != prepared.import_id]:
             return denied("foreign-journal")
-        if prepared.import_id not in imports:
+        if record is None:
             if (facts.persons or facts.accounts or facts.identifiers
                     or facts.aliases or facts.memberships or facts.supports
                     or facts.holds or facts.blocks or facts.link_rows):
                 return denied("foreign-target-state")
             return "fresh"
-        state = next(
-            state for o, _, state in facts.operations
-            if o == prepared.import_id
-        )
-        if state == OperationJournalState.COMPLETE.value:
-            return "replayed"
         return self._residual(facts, prepared) or "resume"
 
     def _residual(
-        self, facts: AdmissionFacts, prepared: _Prepared
+        self, facts: AdmissionFacts, prepared: PreparedImport
     ) -> Outcome | None:
         """On resume every managed row must be a subset of this import's intended effect."""
         people = set(prepared.people)
@@ -517,7 +539,7 @@ class FileAdmission:
         return None
 
     def _authority_allowed(
-        self, prepared: _Prepared
+        self, prepared: PreparedImport
     ) -> dict[Scope, set[ScopedRelation]]:
         """This import's own authority rows per scope: members + containment."""
         wanted: dict[Scope, set[ScopedRelation]] = {}
@@ -532,7 +554,7 @@ class FileAdmission:
         return wanted
 
     async def _authority_residual(
-        self, prepared: _Prepared, *, fresh: bool
+        self, prepared: PreparedImport, *, fresh: bool
     ) -> Outcome | None:
         """Fresh claims need empty scopes; resume allows only this import's own rows."""
         wanted = self._authority_allowed(prepared)
@@ -544,7 +566,7 @@ class FileAdmission:
                 return denied("foreign-authority-state")
         return None
 
-    async def _kratos_fresh(self, prepared: _Prepared) -> Outcome | None:
+    async def _kratos_fresh(self, prepared: PreparedImport) -> Outcome | None:
         """A fresh claim refuses a held external_id — every record there is foreign."""
         for person_id in sorted(prepared.people):
             outcome, view = await self.kratos.read(external_id=person_id)
@@ -556,7 +578,7 @@ class FileAdmission:
 
     # -- the journaled steps ----------------------------------------------------
 
-    async def _run_steps(self, record: OperationRecord, prepared: _Prepared) -> Outcome:
+    async def _run_steps(self, record: OperationRecord, prepared: PreparedImport) -> Outcome:
         for step, effect in (
             ("people", lambda: self._people_step(record, prepared)),
             ("holds", lambda: self._holds_step(record, prepared)),
@@ -574,7 +596,7 @@ class FileAdmission:
             await _step_done(self.bindings, record, step)
         return complete()
 
-    async def _people_step(self, record: OperationRecord, prepared: _Prepared) -> Outcome:
+    async def _people_step(self, record: OperationRecord, prepared: PreparedImport) -> Outcome:
         """Each person commits WITH this import's hold — never readable unprotected."""
         for person_id in sorted(prepared.people):
             plan = prepared.people[person_id]
@@ -601,7 +623,7 @@ class FileAdmission:
                 return outcome
         return complete()
 
-    async def _holds_step(self, record: OperationRecord, prepared: _Prepared) -> Outcome:
+    async def _holds_step(self, record: OperationRecord, prepared: PreparedImport) -> Outcome:
         """Re-assert each hold — a resume re-protects rows older sequencing left exposed."""
         for person_id in sorted(prepared.people):
             outcome = await self.bindings.hold_identity(
@@ -610,7 +632,7 @@ class FileAdmission:
                 return outcome
         return complete()
 
-    async def _identities_step(self, prepared: _Prepared) -> Outcome:
+    async def _identities_step(self, prepared: PreparedImport) -> Outcome:
         """Create each identity stamped with this import's durable marker."""
         marker = admission_marker(
             import_id=prepared.import_id,
@@ -631,7 +653,7 @@ class FileAdmission:
                 return outcome
         return complete()
 
-    async def _aliases_step(self, prepared: _Prepared) -> Outcome:
+    async def _aliases_step(self, prepared: PreparedImport) -> Outcome:
         for person_id in sorted(prepared.aliases):
             for former in sorted(prepared.aliases[person_id]):
                 outcome = await self.bindings.add_alias(
@@ -640,7 +662,7 @@ class FileAdmission:
                     return outcome
         return complete()
 
-    async def _memberships_step(self, prepared: _Prepared) -> Outcome:
+    async def _memberships_step(self, prepared: PreparedImport) -> Outcome:
         for person_id, scope in sorted(
             prepared.memberships, key=lambda m: (m[0], _scope_key(m[1]))
         ):
@@ -651,7 +673,7 @@ class FileAdmission:
                 return outcome
         return complete()
 
-    async def _authority_step(self, prepared: _Prepared) -> Outcome:
+    async def _authority_step(self, prepared: PreparedImport) -> Outcome:
         """Containment first, then room `member` facts — the file's speak/view grants."""
         for child, parent in sorted(
             prepared.containment,
@@ -676,7 +698,7 @@ class FileAdmission:
                     return outcome
         return complete()
 
-    async def _readback_step(self, prepared: _Prepared) -> Outcome:
+    async def _readback_step(self, prepared: PreparedImport) -> Outcome:
         """Fail-closed agreement: bindings, owned Kratos records, memberships, Keto."""
         marker = admission_marker(
             import_id=prepared.import_id,

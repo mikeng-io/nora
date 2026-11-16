@@ -21,7 +21,7 @@ from nora.people.app.managed_admission import (
     IMPORT_KIND,
     FileAdmission,
     _account_id,
-    _prepare,
+    prepare,
 )
 from nora.testing.managed import (
     FakeAuthorityBackend,
@@ -85,7 +85,7 @@ async def test_a_resume_reprotects_its_owned_rows_before_publishing_more(
         probe=FakeAdmissionProbe(store),
     )
     identity_path, policy_path = _sources(tmp_path)
-    prepared = _prepare(identity_path, policy_path)
+    prepared = prepare(identity_path, policy_path)
     assert not isinstance(prepared, Outcome)
     # The old shape: people committed unprotected, holds still pending.
     for person_id, plan_people in prepared.people.items():

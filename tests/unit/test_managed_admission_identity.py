@@ -17,7 +17,7 @@ from nora.domain.managed import (
     OutcomeStatus,
     unavailable,
 )
-from nora.people.app.managed_admission import FileAdmission, _prepare
+from nora.people.app.managed_admission import FileAdmission, prepare
 from nora.people.app.managed_admission_identity import (
     AdmissionIdentity,
     admission_marker,
@@ -119,7 +119,7 @@ async def test_an_owned_create_recovers_under_a_new_service_and_stays_single(
     ada = await store.person("ada")
     assert ada is not None and ada.kratos_identity_id is None
     created = identities["ada"]
-    prepared = _prepare(identity_path, policy_path)
+    prepared = prepare(identity_path, policy_path)
     assert not isinstance(prepared, Outcome)
     assert created["metadata_admin"] == {
         "nora_admission": {

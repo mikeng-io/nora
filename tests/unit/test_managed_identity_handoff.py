@@ -1,6 +1,7 @@
 """The `managed_identity_handoff` command — plan/apply/refusal/exit codes —
 through the real `run` entry point over the managed fakes."""
 
+import argparse
 import os
 import subprocess
 import sys
@@ -9,14 +10,23 @@ from pathlib import Path
 
 import pytest
 
-from nora.domain.managed import OperationJournalState, unavailable
-from nora.people.app.managed_admission import FileAdmission
+from nora.domain.managed import OperationJournalState, Outcome, unavailable
+from nora.infra.sql.managed_identity import SqlBindingStore
+from nora.people.adapters.keto_authority import KetoAuthorityBackend
+from nora.people.adapters.managed_handoff import KratosAdmission, SqlAdmissionProbe
+from nora.people.app.managed_admission import FileAdmission, prepare
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
 )
-from scripts.managed_identity_handoff import COMPLETE, REFUSED, RETRYABLE, run
+from scripts.managed_identity_handoff import (
+    COMPLETE,
+    REFUSED,
+    RETRYABLE,
+    _target_services,
+    run,
+)
 from tests.fakes import FakeAdmissionKratos, FakeAdmissionProbe
 
 IDENTITY = """\
@@ -140,6 +150,63 @@ async def test_apply_resume_reports_complete(sources):
     assert rc == COMPLETE
     journal = next(iter(store.operations.values()))
     assert journal.state is OperationJournalState.COMPLETE
+
+
+async def test_apply_binds_the_effect_captured_before_setup(sources, capsys):
+    """A source file changed between the plan-time capture and service
+    setup cannot swap the effect — the durable archive, digests and
+    memberships all describe the FIRST capture, and the next run simply
+    names a different import."""
+    identity_path, policy_path = sources
+    factory, store, _ = _services()
+    expected = prepare(identity_path, policy_path)
+    assert not isinstance(expected, Outcome)
+
+    @asynccontextmanager
+    async def setup_time_change():
+        policy_path.write_text(POLICY.replace(
+            'persons = ["miles"]', 'persons = ["miles", "ada"]'))
+        identity_path.write_text(IDENTITY.replace(
+            'name = "Miles"', 'name = "Changed"'))
+        async with factory() as admission:
+            yield admission
+
+    argv = [
+        "apply", "--identity", str(identity_path), "--policy", str(policy_path),
+        "--database-url", "generated", "--kratos-admin-url", "generated",
+        "--keto-read-url", "generated", "--keto-write-url", "generated",
+    ]
+    assert await run(argv, services=setup_time_change) == COMPLETE
+    journal = next(iter(store.operations.values()))
+    assert journal.operation_id == expected.import_id
+    assert dict(journal.snapshot) == dict(expected.snapshot)
+    assert journal.snapshot["sources"] == {
+        "identity_toml": IDENTITY, "policy_toml": POLICY}
+    assert f"plan {journal.operation_id}" in capsys.readouterr().out
+    # The changed files now name a DIFFERENT import — refused, not applied over.
+    assert await run(argv, services=factory) == REFUSED
+    assert len(store.operations) == 1
+
+
+async def test_default_composition_never_reopens_the_source_paths(sources):
+    """The real `_target_services` factory wires entirely from the captured
+    effect — files destroyed after prepare cannot break or re-plan setup."""
+    identity_path, policy_path = sources
+    prepared = prepare(identity_path, policy_path)
+    assert not isinstance(prepared, Outcome)
+    identity_path.write_text("[[[ unparseable")
+    policy_path.write_text("[[[ unparseable")
+    args = argparse.Namespace(
+        database_url="postgresql+asyncpg://generated.invalid/generated",
+        kratos_admin_url="http://generated.invalid",
+        keto_read_url="http://generated.invalid",
+        keto_write_url="http://generated.invalid",
+        kratos_admin_key_env="", keto_key_env="", timeout_seconds=5.0)
+    async with _target_services(args, prepared) as admission:
+        assert isinstance(admission.bindings, SqlBindingStore)
+        assert isinstance(admission.backend, KetoAuthorityBackend)
+        assert isinstance(admission.kratos, KratosAdmission)
+        assert isinstance(admission.probe, SqlAdmissionProbe)
 
 
 def test_plan_subprocess_uses_the_real_loaders(tmp_path):

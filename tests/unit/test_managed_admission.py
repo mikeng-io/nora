@@ -32,8 +32,8 @@ from nora.people.app.managed_admission import (
     ADMISSION_SOURCE,
     IMPORT_KIND,
     FileAdmission,
-    _prepare,
     plan,
+    prepare,
 )
 from nora.persons import load_persons
 from nora.policy import load_policy
@@ -163,7 +163,7 @@ def test_admission_hashes_the_same_source_bytes_the_loaders_parse(tmp_path):
             self.write_text(changed)
             return super().read_bytes()
 
-    prepared = _prepare(ChangingPath(identity_path), policy_path)
+    prepared = prepare(ChangingPath(identity_path), policy_path)
     assert not isinstance(prepared, Outcome)
     source = Path(identity_path).read_bytes()
     assert prepared.snapshot["identity_sha256"] == hashlib.sha256(source).hexdigest()
@@ -617,7 +617,7 @@ async def test_foreign_containment_on_every_scope_refuses_fresh_and_resume(
 ):
     store, backend, registry, admission = graph
     identity, policy = _sources(tmp_path)
-    prepared = _prepare(identity, policy)
+    prepared = prepare(identity, policy)
     assert not isinstance(prepared, Outcome)
     if resume:
         await store.record_operation(OperationRecord(
