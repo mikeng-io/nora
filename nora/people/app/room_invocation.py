@@ -27,7 +27,12 @@ The invocation authenticates through the one existing gate —
 method, no binding claim (a platform message is not an OAuth or code
 login); the gate resolves the current binding, lifecycle, holds and scoped
 authority live inside `mutation()` at commitment, so a delegation revoked
-between the message and the write refuses there, not here.
+between the message and the write refuses there, not here. A live scoped
+check also precedes target resolution itself — an unauthorized sender
+meets one refusal for every target state and cannot use resolution as an
+oracle — and the resolved target's provenance is re-read inside the gate,
+so a binding or identity that moved while the invocation waited refuses
+rather than mutating the stale person.
 
 Nothing here falls back to file mode: without a managed service graph the
 invocation is an authoritative `denied`, matching `IdentityAccess` mode
@@ -48,6 +53,7 @@ from nora.domain.managed import (
     CheckResult,
     Outcome,
     OutcomeStatus,
+    Verdict,
     denied,
     room_scope_id,
     unavailable,
@@ -66,8 +72,12 @@ from nora.domain.management import (
 from nora.domain.models import MENTION_PLACEHOLDER, NormalizedMessage
 from nora.domain.ports import RosterSource
 from nora.people.app.managed import ManagedServices
+from nora.people.app.managed_authority import _REQUIRED_PERMIT
 from nora.people.app.managed_ops import _scope_authority
-from nora.people.app.management_invocation import HumanManagement
+from nora.people.app.management_invocation import (
+    HumanManagement,
+    ResolvedTarget,
+)
 
 #: The room-management command verb — `!!!member <verb> [reference]`.
 ROOM_COMMAND = "!!!member"
@@ -96,6 +106,8 @@ _DENIED_REPLIES = {
     "identifier-conflict": "that account is already bound — nothing applied",
     "operation-conflict": "that message already did something else — nothing applied",
     "stale-ownership-revision": "the account's binding moved under me — try again",
+    "stale-identity-revision": "that person changed under me — try again",
+    "target-binding-changed": "that account moved under me — nothing applied",
 }
 
 _UNAVAILABLE_REPLIES = {
@@ -290,6 +302,69 @@ class RoomManagement:
         if message.edit_of is not None or message.touch is not None:
             return denied("not-a-fresh-message")
 
+        context = await self._authorized_actor(message, request)
+        if isinstance(context, Outcome):
+            return context
+        actor, sender_account, scope, digest, operation_id = context
+
+        target: ResolvedTarget | None = None
+        if request.kind == "register":
+            resolved = await self._account_target(message, request)
+            if isinstance(resolved, (Outcome, Clarify)):
+                return resolved
+            identifiers = resolved
+            new_person = "person_" + hashlib.sha256(
+                "\n".join(sorted(f"{i.platform}:{i.kind}:{i.value}" for i in identifiers))
+                .encode()
+            ).hexdigest()[:20]
+            target_id = next(
+                (i for i in identifiers if request.reference
+                 and i.value == request.reference),
+                min(identifiers, key=lambda i: (i.kind, i.value)),
+            )
+            operation = Operation(
+                operation_id=operation_id,
+                kind="register_account",
+                actor=actor,
+                target=Target(TargetKind.ACCOUNT, account=target_id),
+                payload=AccountRegistration(
+                    person_id=new_person, scope=scope, identifiers=identifiers,
+                ),
+                observed_revisions={"ownership": "unbound",
+                                    "authority": digest},
+            )
+        else:
+            picked = await self._person_target(message, request)
+            if isinstance(picked, (Outcome, Clarify)):
+                return picked
+            person_id, person_revision, target = picked
+            operation = Operation(
+                operation_id=operation_id,
+                kind="set_membership",
+                actor=actor,
+                target=Target(TargetKind.MEMBERSHIP,
+                              person_id=person_id, scope=scope),
+                payload=MembershipStanding(member=request.kind == "add"),
+                observed_revisions={"authority": digest,
+                                    "identity": person_revision},
+            )
+        authentication = RoomAuthentication(
+            issuer=message.platform,
+            message_key=operation_id,
+            account=sender_account,
+            authenticated_at=datetime.fromtimestamp(
+                message.timestamp / 1000, tz=UTC
+            ),
+        )
+        return await self._human.apply(operation, authentication, target=target)
+
+    async def _authorized_actor(
+        self, message: NormalizedMessage, request: RoomRequest
+    ) -> tuple[Actor, Identifier, Scope, str, str] | Outcome:
+        """The verified operator's actor/account/scope/digest/operation id, or the refusal."""
+        services = self._services
+        if services is None:  # unreachable — invoke denies file mode first
+            return unavailable("bindings-unavailable")
         # The scope is the room the message actually arrived in — topology
         # must confirm it exists, never a caller-supplied value.
         scope = Scope(
@@ -324,6 +399,20 @@ class RoomManagement:
             min(bound.identifiers, key=lambda i: (i.kind, i.value)),
         )
 
+        # A live scoped check precedes EVERY target read — otherwise an
+        # unauthorized operator could probe bindings by naming them. The
+        # gate re-runs it at commitment regardless (acceptance 2).
+        permit = _REQUIRED_PERMIT[
+            "register_account" if request.kind == "register" else "set_membership"
+        ]
+        check = await services.authority.check(
+            scope=scope, person_id=person_id, permit=permit
+        )
+        if check.verdict is Verdict.UNAVAILABLE:
+            return unavailable("authority-unavailable")
+        if not check.allowed:
+            return denied("operator-not-authorized")
+
         # The honest `authority` observation the operation carries — the
         # live `check` inside the gate is the enforcement; this pins the
         # digest the journal re-reads.
@@ -334,62 +423,14 @@ class RoomManagement:
         actor = Actor(ActorKind.OPERATOR, person_id=person_id, scope=scope)
         key = message.message_id or f"{message.sender_id}:{message.timestamp}"
         operation_id = f"room:{message.platform}:{message.conversation_id}:{key}"
-
-        if request.kind == "register":
-            resolved = await self._account_target(message, request)
-            if isinstance(resolved, (Outcome, Clarify)):
-                return resolved
-            identifiers = resolved
-            new_person = "person_" + hashlib.sha256(
-                "\n".join(sorted(f"{i.platform}:{i.kind}:{i.value}" for i in identifiers))
-                .encode()
-            ).hexdigest()[:20]
-            target_id = next(
-                (i for i in identifiers if request.reference
-                 and i.value == request.reference),
-                min(identifiers, key=lambda i: (i.kind, i.value)),
-            )
-            operation = Operation(
-                operation_id=operation_id,
-                kind="register_account",
-                actor=actor,
-                target=Target(TargetKind.ACCOUNT, account=target_id),
-                payload=AccountRegistration(
-                    person_id=new_person, scope=scope, identifiers=identifiers,
-                ),
-                observed_revisions={"ownership": "unbound",
-                                    "authority": digest},
-            )
-        else:
-            target_person = await self._person_target(message, request)
-            if isinstance(target_person, (Outcome, Clarify)):
-                return target_person
-            operation = Operation(
-                operation_id=operation_id,
-                kind="set_membership",
-                actor=actor,
-                target=Target(TargetKind.MEMBERSHIP,
-                              person_id=target_person, scope=scope),
-                payload=MembershipStanding(member=request.kind == "add"),
-                observed_revisions={"authority": digest},
-            )
-        authentication = RoomAuthentication(
-            issuer=message.platform,
-            message_key=operation_id,
-            account=sender_account,
-            authenticated_at=datetime.fromtimestamp(
-                message.timestamp / 1000, tz=UTC
-            ),
-        )
-        return await self._human.apply(operation, authentication)
+        return actor, sender_account, scope, digest, operation_id
 
     # -- target resolution -------------------------------------------------
 
     async def _account_forms(
         self, message: NormalizedMessage
-    ) -> tuple[frozenset[Identifier], ...]:
-        """Each `mentions` value widened to its account's full id forms
-        when the roster can say which ids are one account."""
+    ) -> tuple[tuple[frozenset[Identifier], ...], tuple[str, ...]]:
+        """Each mention's id forms deduplicated, plus the mention values none could type."""
         members: tuple[frozenset[str], ...] = ()
         roster = self._rosters.get(message.platform)
         if roster is not None:
@@ -400,19 +441,31 @@ class RoomManagement:
             except Exception:  # noqa: BLE001 — pairing is best-effort
                 members = ()
         forms: list[frozenset[Identifier]] = []
+        unresolved: list[str] = []
         for value in sorted(message.mentions):
             grouped = next((m for m in members if value in m), frozenset({value}))
             typed = _typed_forms(message.platform, grouped)
-            if typed:
+            if not typed:
+                unresolved.append(value)
+            elif typed not in forms:
                 forms.append(typed)
-        return tuple(forms)
+        return tuple(forms), tuple(unresolved)
 
     async def _account_target(
         self, message: NormalizedMessage, request: RoomRequest
     ) -> frozenset[Identifier] | Outcome | Clarify:
         """The one unbound account a register targets, or why it cannot."""
+        services = self._services
+        if services is None:  # unreachable — invoke denies file mode first
+            return unavailable("bindings-unavailable")
         if request.reference_kind == "mention":
-            forms = await self._account_forms(message)
+            forms, unresolved = await self._account_forms(message)
+            if unresolved:
+                return Clarify(
+                    "I couldn't read every account you named — @-mention "
+                    "them or give the exact platform id",
+                    status="nothing_found",
+                )
             if not forms:
                 return Clarify(
                     "which account should I register — @-mention them, or "
@@ -436,7 +489,7 @@ class RoomManagement:
             identifiers = typed
         try:
             for ident in identifiers:
-                if await self._services.bindings.resolve(
+                if await services.bindings.resolve(
                     ident.platform, ident.value
                 ) is not None:
                     return denied("account-already-registered")
@@ -446,50 +499,56 @@ class RoomManagement:
 
     async def _person_target(
         self, message: NormalizedMessage, request: RoomRequest
-    ) -> str | Outcome | Clarify:
-        """The one canonical person a membership change targets."""
+    ) -> tuple[str, str, ResolvedTarget] | Outcome | Clarify:
+        """The one canonical person a membership change targets, its revision and provenance."""
         services = self._services
         if services is None:  # unreachable — invoke denies file mode first
             return unavailable("bindings-unavailable")
         people: set[str] = set()
+        refs: set[tuple[str, str]] = set()
         if request.reference_kind in ("mention", "account"):
             values = (
                 message.mentions
                 if request.reference_kind == "mention"
                 else frozenset({request.reference or ""})
             )
+            unresolved: list[str] = []
             try:
                 for value in sorted(values):
                     bound = await services.bindings.resolve(
                         message.platform, value
                     )
                     if bound is None:
+                        unresolved.append(value)
                         continue
                     canonical = await services.bindings.canonical_person(
                         bound.person_id
                     )
-                    if canonical is not None:
-                        people.add(canonical)
+                    if canonical is None:
+                        unresolved.append(value)
+                        continue
+                    people.add(canonical)
+                    refs.add((message.platform, value))
             except Exception:  # noqa: BLE001
                 return unavailable("bindings-unavailable")
-            if not people:
+            if unresolved or not people:
                 return Clarify(
-                    "I couldn't find that person in the room — @-mention "
+                    "I couldn't find every account you named — @-mention "
                     "them or give their exact platform id (if the account "
                     "is new here, register it first)",
                     status="nothing_found",
                 )
         else:
             try:
-                refs = await services.access.room_refs(
+                named = await services.access.room_refs(
                     message.platform, message.conversation_id
                 )
             except Exception:  # noqa: BLE001
                 return unavailable("bindings-unavailable")
             name = (request.reference or "").strip().lower()
-            exact = [r for r in refs if (r.name or "").lower() == name]
+            exact = [r for r in named if (r.name or "").lower() == name]
             partial = exact or [
-                r for r in refs
+                r for r in named
                 if name and name in (r.name or "").lower()
             ]
             if len(partial) == 0:
@@ -509,4 +568,13 @@ class RoomManagement:
             return Clarify(
                 "that refers to more than one person — one at a time, please"
             )
-        return next(iter(people))
+        person_id = next(iter(people))
+        try:
+            person = await services.bindings.person(person_id)
+        except Exception:  # noqa: BLE001
+            return unavailable("bindings-unavailable")
+        if person is None:
+            return unavailable("bindings-unavailable")
+        return person_id, str(person.revision), ResolvedTarget(
+            refs=frozenset(refs)
+        )

@@ -103,14 +103,16 @@ def _message(
     )
 
 
-def _services() -> tuple[
+def _services(
+    bindings: FakeBindingStore | None = None,
+) -> tuple[
     FakeBindingStore,
     FakeAuthorityBackend,
     FakeTopologySource,
     FakeIdentityRegistry,
     ManagedServices,
 ]:
-    bindings = FakeBindingStore()
+    bindings = bindings or FakeBindingStore()
     backend = FakeAuthorityBackend()
     topology = FakeTopologySource(
         rooms={ROOM_ID: (UNIT_ID, False)},
@@ -586,7 +588,7 @@ async def test_the_tool_lands_the_same_effect_as_the_command():
 
 
 async def test_the_tool_maps_refusal_clarify_and_unavailable():
-    bindings, _, _, registry, services = _services()
+    bindings, backend, _, registry, services = _services()
     await _person(bindings, registry, OP_PERSON, OP_ID)  # no permit
     await _person(bindings, registry, TARGET_PERSON, TARGET_ID)
     await _person(bindings, registry, ALICE_PERSON, ALICE_ID)
@@ -596,6 +598,9 @@ async def test_the_tool_maps_refusal_clarify_and_unavailable():
     )
     refused = await _tool(_tool_deps(management, message), action="add")
     assert refused["status"] == "refused"
+    await backend.put_relation(
+        scope=ROOM, relation="grant_manage_members", person_id=OP_PERSON
+    )
     ambiguous = await _tool(
         _tool_deps(
             management,
