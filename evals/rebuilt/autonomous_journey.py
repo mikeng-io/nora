@@ -39,6 +39,7 @@ from nora.subject.eval_evidence import current, read_events, validate_events
 from nora.subject.journey import (
     JourneyDriver,
     declared_envelope,
+    declared_source,
     message_from_dict,
 )
 from scripts.cognition_loop import html as report_html
@@ -58,7 +59,7 @@ from .journey_manifest import (
     _plan_error,
     _wake_census,
 )
-from .journey_turns import _turn_error, declared_source, observed_turn
+from .journey_turns import _turn_error, observed_turn
 from .journey_wakes import _await_wake, _finalize, _wake_error
 
 _MODE = "autonomous-live-journey"
@@ -136,6 +137,16 @@ async def _admit_input(driver: JourneyDriver, ctx: dict[str, Any], *,
         "at_ms": (int(incoming.sent_ms or _now_ms()) if declared is None
                   else int(declared.sent_ms)),
         "event": event, "work": work})
+
+
+def _expected_turns(steps: list[dict[str, Any]]) -> list[Any]:
+    """The manifest's turn declarations: generated text, or the declared
+    envelope's wire fields verbatim — the original input the frozen
+    artifact and the report row each answer to, never to each other."""
+    return [
+        str(step["send"]) if "send" in step else {"envelope": step["envelope"]}
+        for step in steps
+        if isinstance(step, dict) and ("send" in step or "envelope" in step)]
 
 
 async def _drive(subject: Any, *, world: Any, steps: list[dict[str, Any]],
@@ -383,18 +394,13 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
                 else [w.get("recorded_wake_id") for w in wakes_report])
     bound = _bind_declared_wakes(plan.get("expected_wakes"), produced, roll)
     version = plan.get("version", 1)
-    sends = [
-        str(step["send"]) if "send" in step
-        else message_from_dict(declared_envelope(step["envelope"]).message).body
-        for step in plan.get("steps") or []
-        if isinstance(step, dict) and ("send" in step or "envelope" in step)]
     case_report = _report(case, subject.unit, roll, wakes_report,
                           turns_report, version)
     expected = {
         "name": case.name or "unnamed",
         "unit": subject.unit,
         "wakes": bound,
-        "turns": sends,
+        "turns": _expected_turns(plan.get("steps") or []),
         "expectations": [asdict(e) for e in _expectations(plan, version)],
         "read_probes": [],
         "version": version,

@@ -17,6 +17,8 @@ from nora.domain.stimuli import Stimulus, UnitView, Verdict
 from nora.subject.eval_evidence import EvidenceError
 from scripts.cognition_loop.__main__ import token_budget
 from scripts.cognition_loop.cases import (
+    Case,
+    DeclaredTurn,
     Expectation,
     generated_behavior_case,
     generated_case,
@@ -40,6 +42,7 @@ from tests.unit.test_cognition_session_runner import (
     _pending,
     _runner,
 )
+from tests.unit.test_journey_inputs import ACTOR, SENT, _fields
 
 NOW = 1_800_000_000_000
 
@@ -186,6 +189,46 @@ def test_a_version1_case_declares_no_turns_and_no_behavior():
         Case(name="x", unit="u", wakes=(1,), expectations=(
             Expectation(wake=0, polarity="must", kind="behavior",
                         text="t"),))
+
+
+def test_a_declared_turn_round_trips_its_envelope(tmp_path):
+    """The case file's declared turn keeps the original `Envelope`'s actor,
+    source identity and source clock — never the derived body text."""
+    case = Case(name="generated-declared", unit="u", wakes=(), version=2,
+                turns=(DeclaredTurn(envelope=_fields()),))
+    path = tmp_path / "declared.json"
+    write_case(case, path)
+    loaded = load_case(path)
+    assert loaded == case
+    (turn,) = loaded.turns
+    assert isinstance(turn, DeclaredTurn)
+    projection = turn.declared_input()
+    assert projection["source"]["actor"] == ACTOR
+    assert projection["source"]["event_id"] == "v1:declared-42"
+    assert projection["at_ms"] == SENT
+
+
+def test_a_version2_case_turn_is_typed():
+    """The case's own turns are generated text or a `DeclaredTurn` — an
+    untyped later input never silently becomes a declaration."""
+    with pytest.raises(EvidenceError):
+        Case(name="x", unit="u", wakes=(), turns=(42,), version=2)
+
+
+@pytest.mark.parametrize("raw_turn", [
+    42,                        # neither text nor a declared envelope
+    {"not_envelope": {}},      # an untyped dict is not a declaration
+    {"envelope": {"v": 99}},   # a declaration that is not an Envelope
+    {"envelope": "text"},      # an envelope that is not a field object
+])
+def test_a_version2_turn_is_generated_text_or_a_declared_envelope(
+        tmp_path, raw_turn):
+    raw = {"version": 2, "name": "x", "unit": "u",
+           "turns": [raw_turn], "expectations": []}
+    path = tmp_path / "case.json"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(EvidenceError):
+        load_case(path)
 
 
 # --------------------------------------------------------------------------

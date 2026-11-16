@@ -35,7 +35,11 @@ from nora.subject.effects import (
     read_effects,
     stimulus_session,
 )
-from nora.subject.journey import Envelope, message_from_dict
+from nora.subject.journey import (
+    declared_envelope,
+    declared_source,
+    message_from_dict,
+)
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.availability import availability
 from scripts.cognition_loop.judges import (
@@ -59,32 +63,6 @@ def _now_ms() -> int:
 #: The `turn` work dispositions that explicitly record "no delivery".
 _NO_DELIVERY = ("silent", "vetoed")
 _SKIP = ("rejected", "queue_full")
-
-
-def declared_source(declared: Envelope) -> dict[str, Any]:
-    """The actor/source/clock facts a declared input binds downstream.
-
-    The judge digests and the frozen identity compare both read this
-    projection: the same text from a different actor, event, room or
-    source instant is a different input, never equal body text.
-    """
-    message = message_from_dict(declared.message or {})
-    return {
-        "platform": declared.platform,
-        "account_key": declared.account_key,
-        "conversation_id": declared.conversation_id,
-        "conversation_type": declared.conversation_type,
-        "actor": declared.sender_id,
-        "handle": declared.sender_name,
-        "event_id": declared.event_id,
-        "source_key": declared.source_key,
-        "sent_ms": declared.sent_ms,
-        "received_ms": declared.received_ms,
-        "queued_ms": declared.queued_ms,
-        "time_quality": declared.time_quality,
-        "message_id": message.message_id,
-        "mention_names": sorted(message.mentions),
-    }
 
 
 def _declared_input(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -173,6 +151,28 @@ def _turn_outcome(ctx: dict[str, Any], actions: list[dict[str, Any]],
                      "admission decision to name"}
 
 
+def _admission_declared(ctx: dict[str, Any], event: dict[str, Any]) -> str | None:
+    """None when the admitted event's own payload carries this ctx's
+    declared envelope; the fixed cause otherwise. The declaration and
+    the settled admission are two independent witnesses — a missing
+    payload, an unreadable one, or one whose actor, source identity,
+    clock or body is not the declaration's is refused before any judge.
+    """
+    payload = event.get("payload")
+    fields = payload.get("envelope") if isinstance(payload, dict) else None
+    if not isinstance(fields, dict):
+        return "admission_declared_missing"
+    try:
+        admitted = declared_envelope(fields)
+    except (TypeError, ValueError):
+        return "admission_declared_foreign"
+    if (declared_source(admitted) != ctx.get("source")
+            or message_from_dict(admitted.message or {}).body
+            != ctx.get("input")):
+        return "admission_declared_foreign"
+    return None
+
+
 def _turn_causes(ctx: dict[str, Any], trajectory: dict[str, Any],
                  earlier_wakes: tuple) -> list[str]:
     """Invalidations for one turn's observation, before any judge request."""
@@ -185,6 +185,10 @@ def _turn_causes(ctx: dict[str, Any], trajectory: dict[str, Any],
         # different canonical id: the settled rows then belong to another
         # occasion, never to this declared input.
         causes.append("admission_identity_foreign")
+    elif ctx.get("envelope") is not None:
+        cause = _admission_declared(ctx, event)
+        if cause is not None:
+            causes.append(cause)
     work = ctx.get("work")
     if (not isinstance(work, list) or not work
             or any(not isinstance(w, dict) or w.get("state")
@@ -372,7 +376,6 @@ __all__ = [
     "_turn_causes",
     "_turn_error",
     "_turn_outcome",
-    "declared_source",
     "observed_turn",
     "turn_events",
 ]

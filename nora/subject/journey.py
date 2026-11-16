@@ -112,6 +112,32 @@ def declared_envelope(fields: Any) -> Envelope:
     return declared
 
 
+def declared_source(declared: Envelope) -> dict[str, Any]:
+    """The actor/source/clock facts a declared input binds downstream.
+
+    The judge digests and the frozen identity compare both read this
+    projection: the same text from a different actor, event, room or
+    source instant is a different input, never equal body text.
+    """
+    message = message_from_dict(declared.message or {})
+    return {
+        "platform": declared.platform,
+        "account_key": declared.account_key,
+        "conversation_id": declared.conversation_id,
+        "conversation_type": declared.conversation_type,
+        "actor": declared.sender_id,
+        "handle": declared.sender_name,
+        "event_id": declared.event_id,
+        "source_key": declared.source_key,
+        "sent_ms": declared.sent_ms,
+        "received_ms": declared.received_ms,
+        "queued_ms": declared.queued_ms,
+        "time_quality": declared.time_quality,
+        "message_id": message.message_id,
+        "mention_names": sorted(message.mentions),
+    }
+
+
 async def settled_event(engine: Any, canonical: Any, task: asyncio.Task) -> tuple[Any, Any]:
     """The bridge event plus its work rows once admission settles — every
     `failed_retained`/`uncertain` state is an error, never a wait-through.
