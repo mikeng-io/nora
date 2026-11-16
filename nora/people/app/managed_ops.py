@@ -71,6 +71,10 @@ async def _publication_refusal(
         subjects.add(payload.delegatee)
     elif isinstance(payload, Unlink):
         subjects.add(payload.expected_person)
+    elif isinstance(payload, AccountObservation):
+        # The group's claim: every identifier that already resolves names
+        # a person the observation could enrich — each must be hold-free.
+        accounts.update(payload.identifiers)
     elif isinstance(payload, RosterSync):
         accounts.update(payload.members)
         if payload.complete and scope is not None:
@@ -119,6 +123,8 @@ def _op_snapshot(op: Operation) -> MappingProxyType[str, Any]:
             payload.members, key=lambda i: (i.platform, i.kind, i.value))]
         snap["complete"] = payload.complete
         snap["collection"] = payload.collection
+        snap["observed_ms"] = payload.observed_ms
+        snap["service"] = op.actor.service_id
         snap["sync_source"] = "sync:" + json.dumps(
             [op.actor.service_id, payload.collection], separators=(",", ":"))
     elif isinstance(payload, MembershipStanding):
@@ -285,6 +291,13 @@ def _digest_lines(lines: Iterable[str]) -> str:
     return hashlib.sha256("\n".join(sorted(lines)).encode()).hexdigest()
 
 
+def _effect_digest(snapshot: MappingProxyType[str, Any]) -> str:
+    """The journaled effect's fingerprint — a same-instant replay must match it."""
+    return hashlib.sha256(json.dumps(
+        dict(snapshot), sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 async def _scope_authority(
     backend: AuthorityBackend, scope: Scope
 ) -> CheckResult | str:
@@ -348,6 +361,7 @@ class _ReplayOp:
     scope: Scope
     payload: object
     sync_source: str = "sync"
+    service: str = ""
 
 
 def _rebuild(record: OperationRecord) -> _ReplayOp | None:
@@ -379,6 +393,7 @@ def _rebuild(record: OperationRecord) -> _ReplayOp | None:
                 ),
                 complete=bool(snap["complete"]),
                 collection=snap.get("collection", ""),
+                observed_ms=int(snap.get("observed_ms", 0)),
             )
         else:
             return None
@@ -389,6 +404,7 @@ def _rebuild(record: OperationRecord) -> _ReplayOp | None:
             scope=scope,
             payload=payload,
             sync_source=snap.get("sync_source", "sync"),
+            service=str(snap.get("service") or ""),
         )
     except (KeyError, ValueError, TypeError):
         return None

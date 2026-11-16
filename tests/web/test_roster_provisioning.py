@@ -1,5 +1,7 @@
 """Bulk onboarding through real HTTP and managed services, with generated accounts."""
 
+import time
+
 import pytest
 from aiohttp import web
 
@@ -25,11 +27,16 @@ def account(number, classification="person"):
             "classification": classification}
 
 
+#: One producer instant for every default roster — a retry must carry the
+#: SAME stamp, not a fresh receipt time, or it stops being a retry.
+NOW_MS = int(time.time() * 1000)
+
+
 def roster(key="generated-snapshot", members=None, **kwargs):
     return {"operation_id": key, "collection": "generated-guild", "platform": "discord",
         "scope": {"kind": "unit", "id": UNIT.id}, "audience": "collection",
         "members": [account(n) for n in range(150)] if members is None else members,
-        "complete": True, **kwargs}
+        "complete": True, "observed_ms": NOW_MS, **kwargs}
 
 
 @pytest.fixture
@@ -67,17 +74,78 @@ async def test_partial_roster_bots_unknowns_and_complete_departure_are_distinct(
     assert (await client.post(PATH, json=roster(members=[account(1), account(2, "bot")]),
                               headers=AUTH)).status == 200
     assert len(services.bindings.people) == 1
-    partial = roster("generated-partial", [account(3, "unknown")], complete=False)
+    # Each DISTINCT observation carries its own later producer instant —
+    # the same instant with different content is a conflict, not a sync.
+    partial = roster("generated-partial", [account(3, "unknown")], complete=False,
+                     observed_ms=NOW_MS + 1_000)
     assert (await client.post(PATH, json=partial, headers=AUTH)).status == 200
     member = (await services.bindings.members_of(UNIT))[0]
     assert member.state.value == "member"
-    unknown = roster("generated-unknown", [account(4, "unknown")])
+    unknown = roster("generated-unknown", [account(4, "unknown")],
+                     observed_ms=NOW_MS + 2_000)
     assert (await client.post(PATH, json=unknown, headers=AUTH)).status == 503
     assert (await services.bindings.members_of(UNIT))[0].state.value == "member"
-    departed = await client.post(PATH, json=roster("generated-departure", []), headers=AUTH)
+    departed = await client.post(PATH, json=roster(
+        "generated-departure", [], observed_ms=NOW_MS + 3_000), headers=AUTH)
     assert departed.status == 200
     assert await services.bindings.members_of(UNIT) == ()
     assert (await services.bindings.memberships_for(member.person_id))[0].state.value == "left"
+
+
+async def test_an_undated_or_stale_complete_roster_preserves_membership(surface):
+    """The old wrongful-departure regression, inverted: a complete roster
+    whose producer instant is absent, stale or future-dated is
+    `unavailable` and moves NO membership — never an empty sync."""
+    client, services = surface
+    assert (await client.post(PATH, json=roster(members=[account(1)]), headers=AUTH)).status == 200
+    assert len(await services.bindings.members_of(UNIT)) == 1
+    person = (await services.bindings.members_of(UNIT))[0].person_id
+    undated = roster("generated-undated", [])
+    del undated["observed_ms"]
+    for key, bad in (("generated-undated", None),
+                     ("generated-stale", int(time.time() * 1000) - 600_000),
+                     ("generated-future", int(time.time() * 1000) + 600_000)):
+        body = roster(key, [])
+        if bad is None:
+            del body["observed_ms"]
+        else:
+            body["observed_ms"] = bad
+        response = await client.post(PATH, json=body, headers=AUTH)
+        assert response.status == 503, await response.text()
+        members = await services.bindings.members_of(UNIT)
+        assert [m.person_id for m in members] == [person]
+        assert members[0].state.value == "member"
+
+
+async def test_an_older_snapshot_never_supersedes_a_newer_one(surface):
+    """A complete roster older than the accepted mark is refused — and a
+    newer PARTIAL observation advances the mark that refuses it."""
+    client, services = surface
+    now = int(time.time() * 1000)
+    assert (await client.post(PATH, json=roster(
+        "generated-newer", [account(1), account(2)],
+        observed_ms=now), headers=AUTH)).status == 200
+    # The same instant carrying different content is refused; an exact
+    # retry of the recorded effect returns its recorded outcome.
+    conflicting = roster("generated-conflict", [account(1)], observed_ms=now)
+    assert (await client.post(PATH, json=conflicting, headers=AUTH)).status == 503
+    assert (await client.post(PATH, json=roster(
+        "generated-newer", [account(1), account(2)],
+        observed_ms=now), headers=AUTH)).status == 200
+    newer_partial = roster("generated-partial", [account(1)],
+        complete=False, observed_ms=now + 1_000)
+    assert (await client.post(PATH, json=newer_partial, headers=AUTH)).status == 200
+    older_complete = roster("generated-older", [], observed_ms=now - 1_000)
+    response = await client.post(PATH, json=older_complete, headers=AUTH)
+    assert response.status == 503
+    assert len(await services.bindings.members_of(UNIT)) == 2
+    # The earlier accepted roster's own instant is now superseded — but an
+    # exact replay of its journaled op still answers its recorded outcome
+    # without reapplying anything.
+    assert (await client.post(PATH, json=roster(
+        "generated-newer", [account(1), account(2)],
+        observed_ms=now), headers=AUTH)).status == 200
+    assert len(await services.bindings.members_of(UNIT)) == 2
 
 
 async def test_registry_failure_leaves_no_membership_and_retry_repairs_original_person(surface):

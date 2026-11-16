@@ -19,12 +19,15 @@ from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.managed import (
     AuthorityBlock,
     CheckResult,
+    CollectionSnapshot,
+    DiscoveryCapabilities,
     ManagedAccount,
     ManagedMembership,
     ManagedPerson,
     OperationRecord,
     Outcome,
     PersonLifecycle,
+    SourceObservation,
 )
 from nora.domain.management import LinkSide, Operation, Scope
 
@@ -149,6 +152,24 @@ class BindingStore(PersonDirectory, Protocol):
         """
         ...
 
+    async def bind_identifiers(
+        self, *, account_id: str, identifiers: frozenset[Identifier]
+    ) -> Outcome:
+        """Atomically bind matchable identifiers onto ONE existing bound
+        account — the grouped-observation enrichment: a provider proved
+        these identifiers name ONE account, so an identifier the account
+        does not yet hold joins it (`identity.md` «several identifiers of
+        one account», never several accounts folded together).
+
+        Idempotent: an identifier the account already owns is a no-op. An
+        identifier owned by a DIFFERENT account raises
+        `IdentifierConflictError`, whether that owner is bound or revoked —
+        a revoked binding keeps its ownership reserved and is never
+        re-pointed here. `denied` when the named account is absent or not
+        bound. Creates no person, account or membership, and removes
+        nothing the account already holds."""
+        ...
+
     async def correlate_kratos(
         self, *, person_id: str, kratos_identity_id: str
     ) -> Outcome:
@@ -246,6 +267,22 @@ class BindingStore(PersonDirectory, Protocol):
         its state. The journal's order is the intents' order: a replay may
         re-apply its recorded name ONLY while it is still the newest —
         anything later owns the name and the replay closes superseded."""
+        ...
+
+    # --- per-source observation ordering ------------------------------------
+
+    async def observation_for(
+        self, *, service: str, collection: str, scope: Scope
+    ) -> SourceObservation | None:
+        """The newest roster observation this (service, collection, scope)
+        accepted — the durable ordering mark every sync re-validates
+        against. `None` means none recorded."""
+        ...
+
+    async def record_observation(self, observation: SourceObservation) -> Outcome:
+        """Persist `observation` as this source's newest accepted mark —
+        ordering is decided by the caller under `mutation()`; this write
+        is the durable half of that decision."""
         ...
 
     # --- revocation-first authority blocks -------------------------------------
@@ -414,6 +451,50 @@ class LinkChallengeDelivery(Protocol):
     """
 
     async def deliver(self, *, account: Identifier, text: str) -> bool:
+        ...
+
+
+@runtime_checkable
+class CollectionDiscovery(Protocol):
+    """A platform's roster/proof capability for managed onboarding
+    (`identity.md` «Platform discovery and membership»).
+
+    One adapter per platform, capability-declared — platforms do NOT share
+    one discovery API, so what each can prove is explicit on the adapter,
+    never assumed. `members` is the complete-or-unavailable read: an
+    error, a partial page, an empty member list, or a capability the
+    platform lacks is `available=False`, never an empty roster that would
+    read as mass departure. `collection_of`/`collection_ref` map the
+    platform's own id shapes to the collection a rule names — a guild's
+    member set is a different object than a channel's audience and can
+    never stand in for it. `sender_identifiers` types one observed
+    sender's platform value into matchable identifiers — `None` when the
+    platform cannot prove the value's kind; a sender is never guessed.
+    """
+
+    platform: str
+    capabilities: DiscoveryCapabilities
+
+    def collection_of(self, *, conversation_id: str) -> str | None:
+        """The collection a conversation belongs to (a Discord room's
+        guild), or `None` when the id names no collection."""
+        ...
+
+    def collection_ref(self, *, object_ref: str) -> str | None:
+        """The collection an observation's `object_ref` names
+        (`guild:G` → `G`), or `None` when it is not a member-set object."""
+        ...
+
+    async def members(self, *, collection: str) -> CollectionSnapshot:
+        """The collection's current member set — `available=False` when the
+        read cannot complete."""
+        ...
+
+    async def sender_identifiers(
+        self, *, collection: str, value: str
+    ) -> frozenset[Identifier] | None:
+        """The matchable identifiers the account `value` presents inside
+        `collection`, or `None` when the platform cannot prove them."""
         ...
 
 

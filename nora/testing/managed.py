@@ -1,19 +1,6 @@
-"""In-memory second implementations of the managed ports — the fake half of
-the binding-store contract suite
-(`tests/contract/test_binding_store_contract.py`) and the stand-in the unit
-services run against. The Keto/Kratos halves are covered live:
-`scripts.check_ory_policy` probes the real OPL engine and the deployed
-adapters answer to the real admin APIs.
+"""Managed-port fakes for the shared contracts in `tests/contract/`.
 
-These are REAL implementations, not answer stubs: `FakeAuthorityBackend`
-evaluates the committed OPL semantics (`deploy/ory/keto/namespaces.ts`) —
-deny wins at the scope and down every ancestor, `restricted` denies
-everything on its scope, `member` confers speak+view on a Room only,
-management permits inherit downward while parent membership confers
-nothing. `FakeBindingStore` enforces the same one-owner-per-identifier and
-journal-conflict rules the SQL store does. `down` flips each fake into the
-unavailable path a real outage produces, so fail-closed tests don't need a
-socket.
+Authority evaluation follows `deploy/ory/keto/namespaces.ts`.
 """
 
 from __future__ import annotations
@@ -40,6 +27,7 @@ from nora.domain.managed import (
     OperationRecord,
     Outcome,
     PersonLifecycle,
+    SourceObservation,
     allowed,
     check_denied,
     check_unavailable,
@@ -68,8 +56,7 @@ from nora.testing.managed_registry import (
 
 
 class FakeBindingStore(BindingStore):
-    """In-memory bindings. `down=True` makes every call raise — the
-    service maps a genuine store failure to `unavailable`."""
+    """In-memory bindings with switchable outages."""
 
     def __init__(self) -> None:
         self._mutation_lock = asyncio.Lock()
@@ -82,6 +69,7 @@ class FakeBindingStore(BindingStore):
         self.aliases: dict[str, str] = {}
         self.operations: dict[str, OperationRecord] = {}
         self.blocks: dict[tuple[str, Scope], AuthorityBlock] = {}
+        self.observations: dict[tuple[str, str, Scope], SourceObservation] = {}
         self.down = False
 
     def mutation(self) -> AbstractAsyncContextManager[None]:
@@ -250,6 +238,40 @@ class FakeBindingStore(BindingStore):
             self.supports.setdefault(
                 (membership.person_id, membership.scope), set()
             ).add(membership.source)
+        return complete()
+
+    async def bind_identifiers(
+        self, *, account_id: str, identifiers: frozenset[Identifier]
+    ) -> Outcome:
+        self._up()
+        held = self.accounts.get(account_id)
+        if held is None or held.state is not AccountState.BOUND:
+            return denied("account-not-bound")
+        wanted = frozenset(identifiers)
+        for ident in wanted:
+            if ident.platform != held.platform:
+                raise ManagedError(
+                    "an identifier disagrees with the account's platform"
+                )
+        for ident in wanted:
+            owner = self.owners.get(ident)
+            if owner is not None and owner != account_id:
+                # bound or revoked — a revoked binding keeps its ownership
+                # reserved; nothing here re-points it.
+                raise IdentifierConflictError(
+                    f"{ident} is owned by a different account"
+                )
+        added = False
+        for ident in wanted:
+            if ident not in self.owners:
+                self.owners[ident] = account_id
+                added = True
+        if added:
+            self.accounts[account_id] = replace(
+                held,
+                identifiers=held.identifiers | wanted,
+                revision=held.revision + 1,
+            )
         return complete()
 
     async def correlate_kratos(
@@ -495,6 +517,18 @@ class FakeBindingStore(BindingStore):
                     and record.snapshot.get("target_person") == person_id):
                 return record
         return None
+
+    async def observation_for(
+            self, *, service: str, collection: str,
+            scope: Scope) -> SourceObservation | None:
+        self._up()
+        return self.observations.get((service, collection, scope))
+
+    async def record_observation(self, observation: SourceObservation) -> Outcome:
+        self._up()
+        o = observation
+        self.observations[(o.service, o.collection, o.scope)] = o
+        return complete()
 
     async def block_authority(self, block: AuthorityBlock) -> Outcome:
         self._up()

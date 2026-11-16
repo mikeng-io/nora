@@ -1,5 +1,6 @@
 """A complete collection snapshot retracts only its own authenticated support."""
 
+import time
 from dataclasses import replace
 
 import pytest
@@ -15,11 +16,18 @@ from tests.unit.test_managed_authority import (
     _service,
 )
 
+_read = 0
+
 
 def snapshot(key, *, service="bridge", collection="guild-a", members=(), complete=True):
+    # Every call is a new read, stamped strictly later — a real producer's
+    # successive observations never share one instant.
+    global _read
+    _read += 1
     operation = _op(key, "sync_membership", actor_kind=ActorKind.SERVICE,
         target=Target(TargetKind.SCOPE, scope=ROOM),
-        payload=RosterSync(frozenset(members), complete, collection))
+        payload=RosterSync(frozenset(members), complete, collection,
+                           int(time.time() * 1000) + _read))
     return replace(operation, actor=replace(operation.actor, service_id=service))
 
 

@@ -1,33 +1,7 @@
-"""`BindingStore` over SQLAlchemy Core — the managed backend's Postgres
-record (`design/managed-identity-access/identity.md`, `management.md`).
+"""SQL BindingStore with individually committed reads/writes.
 
-Shaped like `nora.infra.sql.reminders`: the engine comes through `__init__`,
-every write is one transaction inside `async with self._engine.begin()`,
-every read is one statement inside `async with self._engine.connect()`.
-
-THE RULES THIS STORE ENFORCES, NOT DESCRIBES
---------------------------------------------
-- **One matchable identifier, one owner.** `managed_identifier`'s primary
-  key is (platform, kind, value); a second account claiming it is an
-  `IdentifierConflictError` read back from the unique violation — Postgres
-  decides the race, so concurrent discovery cannot fork a person.
-- **Discovery never merges.** `register` creates an INDEPENDENT person per
-  unclaimed account; nothing here groups by name, number or heuristic.
-- **Lifecycle facts stay distinct.** A suspended person (`managed_person.
-  lifecycle`), a revoked binding (`managed_account.state`) and a left room
-  (`managed_membership.state`) are three rows, not one flag.
-- **Retired ids keep resolving.** `managed_alias` folds a former person_id
-  into the survivor so `canonical_person` answers before any read.
-- **The journal is the restart boundary.** `managed_operation` records the
-  intended effect and each step's state BEFORE the first store write;
-  `incomplete`/`blocked` rows are the reconciler's queue and persist a
-  crash. `managed_authority_block` is the local block a failed revocation
-  raises — check consults it before trusting a grant.
-
-Revisions: `person.revision` bumps on lifecycle/correlation writes,
-`account.revision` on state changes, `membership.revision` on standing
-changes — the values `identity`/`ownership`/`authority` observed revisions
-compare against when the service revalidates at commitment.
+Ownership, lifecycle, aliases and recovery contracts are declared in
+`design/managed-identity-access/` and the shared binding-store contract suite.
 """
 
 from __future__ import annotations
@@ -58,10 +32,12 @@ from nora.domain.managed import (
     OperationRecord,
     Outcome,
     PersonLifecycle,
+    SourceObservation,
     complete,
     denied,
 )
 from nora.domain.management import Scope
+from nora.infra.sql import managed_observations
 from nora.infra.sql.managed_publication import (
     consolidate_people,
     drop_membership_support,
@@ -384,6 +360,73 @@ class SqlBindingStore:
                     raise ManagedError(
                         "the onboarding membership names an absent person"
                     )
+        return complete()
+
+    async def bind_identifiers(
+        self, *, account_id: str, identifiers: frozenset[Identifier]
+    ) -> Outcome:
+        """Enrich ONE bound account with more of its own matchable
+        identifiers, atomically — the grouped-observation write.
+
+        One owner, ever: an identifier row naming a DIFFERENT account is an
+        `IdentifierConflictError`, bound owner or revoked — a revoked
+        binding keeps its ownership reserved; nothing here re-points it.
+        An identifier the account already holds is a no-op, and a
+        concurrent claim surfaces through the identifier primary key as the
+        same conflict."""
+        wanted = frozenset(identifiers)
+        if not wanted:
+            return complete()
+        async with self._engine.begin() as conn:
+            row = (
+                await conn.execute(
+                    sa.select(
+                        MANAGED_ACCOUNT.c.platform,
+                        MANAGED_ACCOUNT.c.state,
+                    ).where(MANAGED_ACCOUNT.c.account_id == account_id)
+                )
+            ).fetchone()
+            if row is None or row.state != AccountState.BOUND.value:
+                return denied("account-not-bound")
+            for ident in wanted:
+                if ident.platform != row.platform:
+                    raise ManagedError(
+                        "an identifier disagrees with the account's platform"
+                    )
+            owners = await _identifier_owners(conn, wanted)
+            if any(
+                owner is not None and str(owner.account_id) != account_id
+                for owner in owners.values()
+            ):
+                raise IdentifierConflictError(
+                    "an identifier is owned by another account"
+                )
+            added = False
+            try:
+                for ident, owner in owners.items():
+                    if owner is not None:
+                        continue
+                    await conn.execute(
+                        sa.insert(MANAGED_IDENTIFIER).values(
+                            platform=ident.platform,
+                            kind=ident.kind,
+                            value=ident.value,
+                            account_id=account_id,
+                        )
+                    )
+                    added = True
+            except IntegrityError as exc:
+                if _PG_UNIQUE_VIOLATION in str(getattr(exc, "orig", exc)):
+                    raise IdentifierConflictError(
+                        "an identifier is owned by another account"
+                    ) from exc
+                raise
+            if added:
+                await conn.execute(
+                    sa.update(MANAGED_ACCOUNT)
+                    .where(MANAGED_ACCOUNT.c.account_id == account_id)
+                    .values(revision=MANAGED_ACCOUNT.c.revision + 1)
+                )
         return complete()
 
     async def correlate_kratos(
@@ -768,6 +811,17 @@ class SqlBindingStore:
                 )
             ).fetchone()
             return None if row is None else _operation_from(row)
+
+    # per-source observation ordering: `managed_observations`
+
+    async def observation_for(
+            self, *, service: str, collection: str,
+            scope: Scope) -> SourceObservation | None:
+        return await managed_observations.observation_for(
+            self._engine, service=service, collection=collection, scope=scope)
+
+    async def record_observation(self, observation: SourceObservation) -> Outcome:
+        return await managed_observations.record_observation(self._engine, observation)
 
     # ------------------------------------------------------------------
     # revocation-first authority blocks

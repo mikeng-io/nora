@@ -745,6 +745,24 @@ headers_env = ""                      # env var NAME holding auth headers; reuse
 # token_env = "NORA_COMMUNITY_PROVISIONING_TOKEN"  # private secret reference
 # sources = ["discord"]
 # scopes = [{ kind = "room", id = "discord/guild/channel" }]  # exact policy room
+# [identity.onboarding] — automatic collection discovery for managed mode
+# (issue #528 Task 8): each [[identity.onboarding.collections]] rule feeds
+# ONE platform collection's member set into ONE scope, under a provisioning
+# service's own identity — its `service`/`platform`/`scope` must already be
+# admitted by [identity.provisioning.<service>] above. Nothing onboards
+# implicitly: no collections means no discovery runs at all, and every
+# rule is operator-declared. Only platforms that can enumerate a member
+# set can carry a rule (discord guilds, signal groups); a platform that
+# cannot is refused at boot rather than fabricating a roster.
+# interval_seconds = 300   # full reconciliation cadence per collection
+# retry_seconds = 60       # linear backoff base after a failed/unavailable read
+# [[identity.onboarding.collections]]
+# name = "community-guild"
+# service = "community_bridge"
+# platform = "discord"
+# collection = "123456789012345678"   # the guild id, not a channel
+# scope = { kind = "unit", id = "generated-unit" }
+# audience = "collection"             # a collection roster can never name a room
 # [identity.authentication.portal]
 # key_env = "NORA_AUTHENTICATION_KEY"  # distinct private key, at least 32 bytes
 # methods = { discord_oauth = "your-discord-client-id", telegram_oidc = "your-telegram-client-id" }

@@ -15,10 +15,12 @@ HTTP, TOML) belongs to the adapters.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.management import (
@@ -363,3 +365,172 @@ class IdentifierConflictError(ManagedError):
 class OperationConflictError(ManagedError):
     """An `operation_id` replayed with a different effect — a conflict, not
     a retry (`management.md`)."""
+
+
+# ---------------------------------------------------------------------------
+# Platform discovery (`identity.md` «Platform discovery and membership»).
+# ---------------------------------------------------------------------------
+
+MemberClassification = Literal["person", "bot", "unknown"]
+
+
+@dataclass(frozen=True)
+class ObservedMember:
+    """One observed platform account inside a collection roster.
+
+    `identifiers` carries EVERY matchable identifier that ONE account
+    presented — a Signal member's `number`+`uuid` pair is one member, never
+    two — and all of one platform. A member the source cannot type down to
+    a matchable identifier is `unknown`: representable so a complete roster
+    can refuse rather than pretend it knows everyone, and never syncable
+    as a person (a classification the source did not make is never "person"
+    — that is how a bot can never ride in as a human).
+    """
+
+    identifiers: frozenset[Identifier]
+    classification: MemberClassification = "person"
+
+    def __post_init__(self) -> None:
+        typed = frozenset(self.identifiers)
+        if not typed and self.classification != "unknown":
+            raise ManagedError(
+                "a roster member carries at least one identifier unless "
+                "it is unclassifiable"
+            )
+        platforms = {i.platform for i in typed}
+        if len(platforms) > 1:
+            raise ManagedError(
+                f"a roster member cannot mix platforms {sorted(platforms)}"
+            )
+        object.__setattr__(self, "identifiers", typed)
+
+
+@dataclass(frozen=True)
+class DiscoveryCapabilities:
+    """What one platform's collection discovery can honestly supply —
+    declared per adapter, never assumed equal across platforms.
+
+    `roster`: the platform can enumerate a collection's member set.
+    `member_events`: membership deltas stream as observations.
+    `sender_typing`: an observed sender's value can be typed to matchable
+    identifiers. `room_audience`: a collection IS one room's audience —
+    False wherever the only roster is a superset (a guild's members are
+    never a channel's audience), so an `audience="room"` rule refuses to
+    build rather than silently over-grant.
+    """
+
+    roster: bool
+    member_events: bool
+    sender_typing: bool
+    room_audience: bool
+
+
+@dataclass(frozen=True)
+class ObservedRows:
+    """The producer read seam's raw answer: the member rows AND when the
+    upstream read actually finished, on the producer's own clock —
+    `observed_ms=None` when the transport cannot establish it, because an
+    unavailable timestamp is never guessed. Whoever performs the read
+    supplies the stamp: a direct REST/RPC answer's own completion, or a
+    bridge envelope's `observed_ms`. A cached or delayed answer keeps its
+    real observation time instead of wearing the consumer's delivery
+    time, and an undated one stays undated.
+    """
+
+    rows: tuple[dict[str, Any], ...] = ()
+    observed_ms: int | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "rows", tuple(self.rows))
+
+
+@dataclass(frozen=True)
+class CollectionSnapshot:
+    """One roster read's answer — the fail-closed rule `Roster` carries,
+    kept for the management path: `available` distinguishes "the source
+    could not answer" from "the collection is empty", and only a complete,
+    available snapshot may establish departures. `complete` is the source's
+    own completeness claim (a paginated read that finished is complete; a
+    capability returning a subset is not). `observed_ms` stamps when the
+    upstream read happened — freshness a caller compares without inventing
+    a clock of its own. `0` means the transport could not establish it:
+    undated evidence, never a claim of the epoch.
+    """
+
+    available: bool
+    members: tuple[ObservedMember, ...] = ()
+    complete: bool = False
+    observed_ms: int = 0
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "members", tuple(self.members))
+
+
+# ---------------------------------------------------------------------------
+# Observation ordering: one producer-time policy, one durable per-source mark.
+# ---------------------------------------------------------------------------
+
+#: Clock disagreement bound on `observed_ms`: a stamp further into the
+#: future than one transport timeout is a read that never happened.
+_OBSERVATION_FUTURE_SKEW_MS = 30_000
+
+#: The default departure window — one default onboarding interval.
+_DEFAULT_OBSERVATION_MAX_AGE_MS = 300_000
+
+
+@dataclass(frozen=True)
+class ObservationFreshness:
+    """The ONE producer-time admission policy every roster path shares —
+    a read may only act on the instant the producer stamped itself:
+    `observed_ms` must be a real positive instant, never absent and never
+    further into the future than bridge↔app clock disagreement allows.
+    A COMPLETE roster — the only shape that can establish absence — must
+    additionally sit within one sync interval of now (`departure`).
+    `wall_clock` is the constructor clock seam tests pin."""
+
+    max_age_ms: int = _DEFAULT_OBSERVATION_MAX_AGE_MS
+    future_skew_ms: int = _OBSERVATION_FUTURE_SKEW_MS
+    wall_clock: Callable[[], float] = time.time
+
+    def instant(self, observed_ms: int) -> bool:
+        """The stamp is usable at all: a real positive instant, never
+        absent or future-dated beyond skew."""
+        return (
+            isinstance(observed_ms, int)
+            and not isinstance(observed_ms, bool)
+            and 0 < observed_ms <= self.wall_clock() * 1000 + self.future_skew_ms
+        )
+
+    def departure(self, observed_ms: int) -> bool:
+        """`instant` AND fresh enough to establish absence."""
+        return self.instant(observed_ms) and (
+            self.wall_clock() * 1000 - observed_ms <= self.max_age_ms
+        )
+
+
+@dataclass(frozen=True)
+class SourceObservation:
+    """The newest roster observation a (service, collection, scope)
+    accepted — the durable ordering mark each sync re-validates against.
+    `effect` is the journaled effect digest: an exact replay carries the
+    same instant AND the same effect; a same-instant DIFFERENT effect is
+    conflicting evidence that can never replace the accepted one."""
+
+    service: str
+    collection: str
+    scope: Scope
+    observed_ms: int
+    operation_id: str
+    effect: str
+
+    def __post_init__(self) -> None:
+        _nonblank("service", self.service)
+        if not isinstance(self.collection, str):
+            raise ManagedError("an observation mark requires a collection")
+        _nonblank("operation_id", self.operation_id)
+        _nonblank("effect", self.effect)
+        if (not isinstance(self.observed_ms, int)
+                or isinstance(self.observed_ms, bool)
+                or self.observed_ms <= 0):
+            raise ManagedError("an observation mark requires a positive instant")

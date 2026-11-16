@@ -87,7 +87,7 @@ class DiscordRoster:
         not addressable here — see the module docstring.
         """
         guild_id, _, _channel_id = conversation_id.partition("/")
-        if not (guild_id.isascii() and guild_id.isdigit()) or not _channel_id:
+        if not _channel_id:
             # Not the documented shape. Unavailable, not empty: a malformed id
             # is a wiring fault, and answering "nobody is here" would hide it.
             # Only a snowflake reaches the request path.
@@ -97,8 +97,28 @@ class DiscordRoster:
             )
             return Roster(available=False)
 
+        rows = await self.guild_members(guild_id)
+        if rows is None:
+            return Roster(available=False)
+        return Roster(
+            available=True,
+            members=tuple(frozenset({row["user"]["id"]}) for row in rows),
+        )
+
+    async def guild_members(self, guild_id: str) -> list[dict] | None:
+        """The guild's raw member rows — `roster`'s read minus the id
+        projection, for callers that need the provider fields the `Roster`
+        shape drops (`user.bot`/`user.system` classify the account; the
+        members list is the guild's, never a channel's audience). `None` on
+        any read failure under exactly `roster`'s rules — a partial page
+        set is never an answer.
+        """
+        if not (guild_id.isascii() and guild_id.isdigit()):
+            log.warning("guild_id %r is not a snowflake; member read refused", guild_id)
+            return None
+
         headers = {"Authorization": f"Bot {self._token}"}
-        members: list[frozenset[str]] = []
+        rows: list[dict] = []
         after = 0
         try:
             async with (
@@ -120,26 +140,27 @@ class DiscordRoster:
                                 "room-scoped tools stay unavailable until it is enabled",
                                 guild_id,
                             )
-                            return Roster(available=False)
+                            return None
                         if resp.status != 200:
                             log.warning("roster read returned HTTP %s", resp.status)
-                            return Roster(available=False)
-                        ids = _member_ids(await resp.json())
+                            return None
+                        body = await resp.json()
+                        ids = _member_ids(body)
                     if ids is None:
                         log.error("roster read has malformed member rows; refusing partial roster")
-                        return Roster(available=False)
+                        return None
                     numeric = [int(value) for value in ids]
                     if len(set(numeric)) != len(numeric) or any(i <= after for i in numeric):
                         log.error(
                             "roster pagination repeated or regressed; refusing partial roster"
                         )
-                        return Roster(available=False)
-                    members.extend(frozenset({value}) for value in ids)
+                        return None
+                    rows.extend(body)
                     if len(ids) < MAX_MEMBERS_PER_PAGE:
-                        return Roster(available=True, members=tuple(members))
+                        return rows
                     after = max(numeric)
         except (TimeoutError, aiohttp.ClientError, ValueError, TypeError):
             # The total timeout covers ALL pages. A failed later page cannot
             # turn the already read prefix into a complete disclosure roster.
             log.warning("roster read failed; refusing partial roster")
-            return Roster(available=False)
+            return None

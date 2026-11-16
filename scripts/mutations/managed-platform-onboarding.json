@@ -1,0 +1,30 @@
+[
+  {
+    "name": "unclassified members refuse a complete roster",
+    "file": "nora/people/app/roster_provisioning.py",
+    "old": "        if complete_roster and any(\n                member.classification == \"unknown\" for member in roster):\n            return unavailable(\"unclassified-member\")",
+    "new": "        if False:\n            return unavailable(\"unclassified-member\")",
+    "target": "tests/unit/test_platform_onboarding.py::TestOnboarding::test_bots_are_excluded_and_unknown_refuses_a_complete_roster"
+  },
+  {
+    "name": "bots never register as people",
+    "file": "nora/people/app/roster_provisioning.py",
+    "old": "        groups = tuple(frozenset(member.identifiers) for member in roster\n                       if member.classification == \"person\")",
+    "new": "        groups = tuple(frozenset(member.identifiers) for member in roster)",
+    "target": "tests/unit/test_platform_onboarding.py::TestOnboarding::test_bots_are_excluded_and_unknown_refuses_a_complete_roster"
+  },
+  {
+    "name": "an empty guild read is unavailable, never a mass departure",
+    "file": "nora/platform/discord/discovery.py",
+    "old": "        if not result.rows:\n            # A guild can never enumerate to zero members — the application\n            # itself is one. An empty answer is a broken read, not proof\n            # everyone left, so it cannot stand in as a complete roster.\n            return CollectionSnapshot(\n                available=False, detail=\"empty-roster\")",
+    "new": "        if False:\n            return CollectionSnapshot(\n                available=False, detail=\"empty-roster\")",
+    "target": "tests/unit/test_platform_onboarding.py::TestDiscoveryAdapters::test_discord_unavailable_and_empty_never_read_as_empty_roster"
+  },
+  {
+    "name": "an unavailable read cannot sync at all",
+    "file": "nora/people/app/onboarding.py",
+    "old": "            if not snapshot.available:\n                log.info(\n                    \"onboarding %s: roster unavailable (%s)\",\n                    rule.name, snapshot.detail or \"read failed\")\n                return None",
+    "new": "            if False:\n                return None",
+    "target": "tests/unit/test_platform_onboarding.py::TestOnboarding::test_unavailable_sync_does_not_extend_the_interval"
+  }
+]

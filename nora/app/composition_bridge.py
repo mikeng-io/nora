@@ -23,9 +23,9 @@ class RuntimeWiring:
 async def runtime(
     allowlist: Any, cfg: Any, engagement: Any, engine: Any,
     fire_path: Any, ingest: Any, memory: Any, metrics: Any,
-    observation_store: Any, participation_trigger: Any, persons: Any, policy: Any,
-    registry: Any, slots: Any, stimulus_wiring: Any, access: Any = None,
-    room_command: Any = None,
+    observation_store: Any, onboarding: Any, participation_trigger: Any,
+    persons: Any, policy: Any, registry: Any, slots: Any, stimulus_wiring: Any,
+    access: Any = None, room_command: Any = None,
 ) -> RuntimeWiring:
 
     # ---- platform bridges (design/platform-bridges) ------------------------- Any platform
@@ -86,6 +86,8 @@ async def runtime(
             observations=observation_store,
             # The SAME predicate the live dispatcher holds — one command rule.
             room_command=room_command,
+
+            onboarding=onboarding,
         )
         # The inspector reads the REAL redis client + engine the runtime
         # runs on — a second connection would measure a different world.

@@ -57,6 +57,7 @@ from nora.app.composition_fire import (
     trigger,
 )
 from nora.app.composition_models import build_runner, lane, runners, source
+from nora.app.composition_onboarding import onboarding
 from nora.app.composition_pipelines import (
     build_dispatcher,
     build_engagement,
@@ -265,6 +266,8 @@ class Dependencies:
     #: The elected stream readers + work runner when any platform runs
     #: `mode = "bridge"`; `nora/__main__.py` spawns it like every other loop.
     bridge_runtime: BridgeRuntime | None
+    #: Managed-identity reconciler — None unless managed + collections declared.
+    onboarding: Any
     # The participation occasion's quiescence trigger, None unless
     # `[participation] enabled` AND a fire path was
     # built. `nora/__main__.py` spawns `runtime.participation_loop` on it —
@@ -565,8 +568,7 @@ async def build_dependencies(
         cfg=cfg,
         content_checks=content_checks,
         doctrine_store=lambda: doctrine_store,
-        persons=persons,
-    )
+        persons=persons)
     cognition_context_screen = _documents_ground.cognition_context_screen
     cognition_shared_document_room = _documents_ground.cognition_shared_document_room
     _documents_service = service(
@@ -582,8 +584,7 @@ async def build_dependencies(
         media_objects=media_objects,
         metrics=metrics,
         persons=persons,
-        route_client=route_client,
-    )
+        route_client=route_client)
     document_service = _documents_service.document_service
     documents_context = _documents_service.documents_context
     _subagents_subjects = _subagents_wire.subjects(
@@ -605,8 +606,7 @@ async def build_dependencies(
     note_store, entry_store = _memory_notes.note_store, _memory_notes.entry_store
     _voice_speech = _voice_wire.speech(
         _discord_bridge=_discord_bridge, allowlist=allowlist, cfg=cfg,
-        engine=engine, metrics=metrics,
-    )
+        engine=engine, metrics=metrics)
     discord_token = _voice_speech.discord_token
     music_manager = _voice_speech.music_manager
     voice_hub = _voice_speech.voice_hub
@@ -617,8 +617,7 @@ async def build_dependencies(
     speaker = _voice_speaker.speaker
     _voice_rooms = _voice_wire.rooms(
         _discord_bridge=_discord_bridge, allowlist=allowlist, music_manager=music_manager,
-        voice_hub=voice_hub,
-    )
+        voice_hub=voice_hub)
     resolve_music_channel = _voice_rooms.resolve_music_channel
     voice_event_consumer = _voice_rooms.voice_event_consumer
     voice_guild_ids = _voice_rooms.voice_guild_ids
@@ -669,6 +668,10 @@ async def build_dependencies(
     room_commands = _people_wire.room_management(
         _stores_managed.services, rosters=rosters
     )
+
+    onboarding_runner = onboarding(
+        cfg=cfg, managed_services=_stores_managed.services,
+        discord_control=discord_control, discord_token=discord_token).onboarding
     _stores_readers = readers(cfg=cfg, content_checks=content_checks, engine=engine)
     culture_reader = _stores_readers.culture_reader
     lessons_reader = _stores_readers.lessons_reader
@@ -1192,6 +1195,7 @@ async def build_dependencies(
         memory=memory,
         metrics=metrics,
         observation_store=observation_store,
+        onboarding=onboarding_runner,
         participation_trigger=participation_trigger,
         persons=persons,
         policy=policy,
@@ -1359,6 +1363,7 @@ async def build_dependencies(
         adapter=adapter,
         registry=registry,
         bridge_runtime=bridge_runtime,
+        onboarding=onboarding_runner,
         participation_trigger=participation_trigger,
         relevance_gate=gate,
         fire_path=fire_path,

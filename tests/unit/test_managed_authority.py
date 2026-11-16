@@ -18,6 +18,7 @@ managed backend's scoped-authority half owns (`authorization.md`):
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 from uuid import uuid4
 
@@ -532,7 +533,8 @@ async def test_sync_membership_removes_departed_and_keeps_joined():
             actor_kind=ActorKind.SERVICE,
             target=Target(kind=TargetKind.SCOPE, scope=ROOM),
             payload=RosterSync(
-                members=frozenset({MEMBER_ID}), complete=True
+                members=frozenset({MEMBER_ID}), complete=True,
+                observed_ms=int(time.time() * 1000),
             ),
         )
     )
@@ -566,7 +568,8 @@ async def test_an_incomplete_roster_never_removes():
             "op-1", "sync_membership",
             actor_kind=ActorKind.SERVICE,
             target=Target(kind=TargetKind.SCOPE, scope=ROOM),
-            payload=RosterSync(members=frozenset(), complete=False),
+            payload=RosterSync(members=frozenset(), complete=False,
+                               observed_ms=int(time.time() * 1000)),
         )
     )
     assert outcome.status is OutcomeStatus.COMPLETE

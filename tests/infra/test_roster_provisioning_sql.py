@@ -1,20 +1,42 @@
 """A new process graph resumes a bulk roster from its durable PostgreSQL journal."""
 
+import asyncio
+import time
+from uuid import uuid4
+
 import pytest
 import sqlalchemy as sa
 
 from nora.domain.identity import Identifier
-from nora.domain.managed import OutcomeStatus
-from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
+from nora.domain.managed import (
+    AccountState,
+    ManagedAccount,
+    ManagedPerson,
+    ObservedMember,
+    OutcomeStatus,
+    PersonLifecycle,
+)
+from nora.domain.management import (
+    Actor,
+    ActorKind,
+    Operation,
+    RosterSync,
+    Scope,
+    ScopeKind,
+    Target,
+    TargetKind,
+)
 from nora.infra.sql.account_links import SqlLinkRequests
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people import RosterProvisioning
 from nora.people.app.managed import ManagedServices
+from nora.people.app.managed_authority import AuthorityService
 from nora.testing.managed import FakeAuthorityBackend, FakeIdentityRegistry, FakeTopologySource
 
 UNIT = Scope(ScopeKind.UNIT, "generated-unit")
 ACTOR = Actor(ActorKind.SERVICE, service_id="generated-bridge", sources={"discord"})
+MEMBER = Identifier("discord", "user_id", "generated-member")
 
 
 @pytest.fixture(scope="module")
@@ -30,7 +52,8 @@ async def engine(database):
             "TRUNCATE managed_membership_support, managed_membership, managed_alias,"
             " managed_identifier, managed_account, managed_identity_hold,"
             " managed_authority_block, managed_operation, managed_person,"
-            " managed_link_decision, managed_link_request CASCADE"))
+            " managed_link_decision, managed_link_request,"
+            " managed_observation CASCADE"))
     yield engine
     await engine.dispose()
 
@@ -51,7 +74,10 @@ async def test_fresh_engine_resumes_bulk_registration_without_duplicate_or_regis
     graph, application = services(engine, registry, backend)
     account = Identifier("discord", "user_id", "generated-account")
     request = {"operation_id": "generated-snapshot", "actor": ACTOR, "scope": UNIT,
-               "collection": "generated-guild", "members": {account}, "complete_roster": True}
+               "collection": "generated-guild",
+               "members": (ObservedMember(frozenset({account})),),
+               "complete_roster": True,
+               "observed_ms": int(time.time() * 1000)}
     registry.down = True
     assert (await application.apply(**request)).status is OutcomeStatus.INCOMPLETE
     before = await graph.bindings.record_for(account=account)
@@ -69,9 +95,135 @@ async def test_fresh_engine_resumes_bulk_registration_without_duplicate_or_regis
         assert len(members) == 1
         assert members[0].sources == {'sync:["generated-bridge","generated-guild"]'}
         assert (await fresh.apply(**request)).status is OutcomeStatus.COMPLETE
-        left = await fresh.apply(**{**request, "operation_id": "generated-leave", "members": set()})
+        left = await fresh.apply(**{**request,
+            "operation_id": "generated-leave", "members": set(),
+            # A real producer stamps each fresh read — reusing the earlier
+            # instant with different content is a conflict, not a leave.
+            "observed_ms": request["observed_ms"] + 1})
         assert left.status is OutcomeStatus.COMPLETE
         historical = await fresh_graph.bindings.memberships_for(before.person_id)
         assert historical[0].state.value == "left"
     finally:
         await restarted.dispose()
+
+
+def _sync(operation_id: str, observed_ms: int, members=(), *, complete=True):
+    return Operation(
+        operation_id=operation_id, kind="sync_membership", actor=ACTOR,
+        target=Target(kind=TargetKind.SCOPE, scope=UNIT),
+        payload=RosterSync(
+            members=frozenset(members), complete=complete,
+            collection="generated-guild", observed_ms=observed_ms),
+        observed_revisions={"authority": "0"})
+
+
+async def _seed_member(graph):
+    person_id = "person_generated"
+    await graph.bindings.register(
+        person=ManagedPerson(
+            person_id=person_id, lifecycle=PersonLifecycle.ACTIVE),
+        account=ManagedAccount(
+            account_id=str(uuid4()), person_id=person_id,
+            platform="discord", identifiers=frozenset({MEMBER}),
+            state=AccountState.BOUND),
+        membership=None)
+    return person_id
+
+
+async def test_the_observation_mark_orders_across_a_fresh_engine(engine, database):
+    """The accepted instant is durable state: a brand-new engine and
+    service graph read the same mark, so an older complete roster cannot
+    depart after a process restart — and concurrent submissions serialize
+    to exactly one accepted instant."""
+    graph, _ = services(engine, FakeIdentityRegistry(), FakeAuthorityBackend())
+    person_id = await _seed_member(graph)
+    now = int(time.time() * 1000)
+    assert (await graph.authority.apply(
+        _sync("generated-newer", now, {MEMBER}))).status is OutcomeStatus.COMPLETE
+    restarted = create_sql_engine(database)
+    try:
+        fresh, _ = services(restarted, FakeIdentityRegistry(),
+                            FakeAuthorityBackend())
+        older = await fresh.authority.apply(
+            _sync("generated-older", now - 1_000))
+        assert older.status is OutcomeStatus.UNAVAILABLE
+        assert older.detail == "observation-superseded"
+        members = await fresh.bindings.members_of(UNIT)
+        assert [m.person_id for m in members] == [person_id]
+        # Two submissions racing different instants under the store's
+        # serialization: both complete honestly — the newer marks, the
+        # older one is refused by it, in whichever order they land.
+        first, second = await asyncio.gather(
+            fresh.authority.apply(
+                _sync("generated-race-new", now + 2_000, {MEMBER})),
+            fresh.authority.apply(
+                _sync("generated-race-old", now + 1_000, {MEMBER})),
+        )
+        outcomes = {first.status, second.status}
+        assert first.status is not OutcomeStatus.INCOMPLETE
+        assert second.status is not OutcomeStatus.INCOMPLETE
+        assert OutcomeStatus.COMPLETE in outcomes
+        mark = await fresh.bindings.observation_for(
+            service="generated-bridge", collection="generated-guild",
+            scope=UNIT)
+        assert mark is not None and mark.observed_ms == now + 2_000
+    finally:
+        await restarted.dispose()
+
+
+async def test_independent_stores_arbitrate_observations_with_the_postgres_lock(engine, database):
+    marked, release, attempted = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class PausedMark(SqlBindingStore):
+        async def record_observation(self, observation):
+            result = await super().record_observation(observation)
+            marked.set()
+            await release.wait()
+            return result
+
+    graph, _ = services(engine, FakeIdentityRegistry(), FakeAuthorityBackend())
+    person_id = await _seed_member(graph)
+    newer = AuthorityService(PausedMark(engine), graph.backend, graph.topology)
+    other_engine = create_sql_engine(database)
+    older, _ = services(other_engine, FakeIdentityRegistry(), graph.backend)
+    waiter_pids = []
+
+    def before_execute(connection, cursor, statement, parameters, context, executemany):
+        if "pg_advisory_xact_lock" in statement:
+            waiter_pids.append(connection.exec_driver_sql("SELECT pg_backend_pid()").scalar_one())
+            attempted.set()
+
+    sa.event.listen(other_engine.sync_engine, "before_cursor_execute", before_execute)
+    now = int(time.time() * 1000)
+    new_task = asyncio.create_task(newer.apply(_sync("two-store-new", now, {MEMBER})))
+    old_task = None
+    try:
+        await asyncio.wait_for(marked.wait(), timeout=10)
+        old_task = asyncio.create_task(older.authority.apply(_sync("two-store-old", now - 1)))
+        await asyncio.wait_for(attempted.wait(), timeout=10)
+        async with engine.connect() as observer:
+            for _ in range(100):
+                blocked = await observer.scalar(sa.text(
+                    "SELECT EXISTS (SELECT 1 FROM pg_locks "
+                    "WHERE pid = :pid AND locktype = 'advisory' AND NOT granted)"
+                ), {"pid": waiter_pids[0]})
+                if blocked:
+                    break
+            assert blocked, "the independent store never contended on the database lock"
+        assert not old_task.done()
+        release.set()
+        assert (await new_task).status is OutcomeStatus.COMPLETE
+        refused = await old_task
+        assert refused.status is OutcomeStatus.UNAVAILABLE
+        assert refused.detail == "observation-superseded"
+        assert await older.bindings.operation("two-store-old") is None
+        mark = await older.bindings.observation_for(
+            service="generated-bridge", collection="generated-guild", scope=UNIT)
+        assert mark is not None and mark.operation_id == "two-store-new"
+        assert [m.person_id for m in await older.bindings.members_of(UNIT)] == [person_id]
+    finally:
+        release.set()
+        await asyncio.gather(new_task, *([old_task] if old_task is not None else []),
+                             return_exceptions=True)
+        sa.event.remove(other_engine.sync_engine, "before_cursor_execute", before_execute)
+        await other_engine.dispose()

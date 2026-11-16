@@ -175,6 +175,28 @@ async def list_groups(
     ]
 
 
+async def group_members(
+    *,
+    base_url: str,
+    account: str,
+    timeout: float = 10.0,  # noqa: ASYNC109 -- caller budget, matching send.py
+) -> dict[str, tuple[dict[str, Any], ...]]:
+    """`listGroups` reduced to `{group id: raw member rows}` — the
+    per-member dicts BEFORE `_ids_of` flattens them, for a caller that must
+    type `number`/`uuid` into identifier kinds. The daemon's own field
+    names are the only honest proof of which string is which; an
+    unflattened row keeps the `number`+`uuid` pairing one member carries.
+    Never writes.
+    """
+    return {
+        str(g["id"]): tuple(
+            m for m in (g.get("members") or []) if isinstance(m, dict))
+        for g in await _rpc(base_url=base_url, method="listGroups",
+                            account=account, timeout=timeout)
+        if g.get("id")
+    }
+
+
 async def list_contacts(
     *,
     base_url: str,

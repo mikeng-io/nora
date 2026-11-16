@@ -32,6 +32,7 @@ from nora.domain.managed import (
     OperationRecord,
     Outcome,
     PersonLifecycle,
+    SourceObservation,
     allowed,
     check_denied,
     denied,
@@ -139,6 +140,11 @@ class FileBindingStore(BindingStore):
     ) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
 
+    async def bind_identifiers(
+        self, *, account_id: str, identifiers: frozenset[Identifier]
+    ) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
     async def correlate_kratos(
         self, *, person_id: str, kratos_identity_id: str
     ) -> Outcome:
@@ -198,6 +204,16 @@ class FileBindingStore(BindingStore):
         self, person_id: str
     ) -> OperationRecord | None:
         return None
+
+
+    async def observation_for(
+        self, *, service: str, collection: str, scope: Scope
+    ) -> SourceObservation | None:
+        # File mode records no managed observation marks.
+        return None
+
+    async def record_observation(self, observation: SourceObservation) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
 
     async def block_authority(self, block: AuthorityBlock) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
