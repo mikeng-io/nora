@@ -196,3 +196,61 @@ async def test_a_journal_the_completion_cannot_land_is_refused(seam):
     assert outcome.status is OutcomeStatus.DENIED
     assert outcome.detail == "absent-operation"
     assert await store.identity_held("held")
+
+
+async def test_a_completion_bound_to_a_different_effect_is_refused(seam):
+    """The completion commit is conditional on the durable kind and full
+    snapshot — a journal carrying another effect refuses `effect-conflict`,
+    releases no hold and is never stamped complete."""
+    store, probe = seam
+    record = OperationRecord(
+        OPERATION, "import", OperationJournalState.INCOMPLETE,
+        MappingProxyType({"people": "done"}),
+        snapshot=MappingProxyType({"effect": "recorded"}))
+    assert (await store.record_operation(record)).status is OutcomeStatus.COMPLETE
+    assert (await probe.publish_held_person(
+        person=_person("held"), accounts=(),
+        operation_id=OPERATION)).status is OutcomeStatus.COMPLETE
+    mismatched = OperationRecord(
+        OPERATION, "import", OperationJournalState.COMPLETE, record.steps,
+        outcome="complete", detail="people=1",
+        snapshot=MappingProxyType({"effect": "different"}))
+    outcome = await probe.complete_import(mismatched, person_ids=("held",))
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "effect-conflict"
+    journal = await store.operation(OPERATION)
+    assert journal is not None
+    assert journal.state is OperationJournalState.INCOMPLETE
+    assert journal.outcome == ""
+    assert await store.identity_held("held")
+    # Positive control: the matching effect completes and releases.
+    finished = OperationRecord(
+        OPERATION, "import", OperationJournalState.COMPLETE, record.steps,
+        outcome="complete", detail="people=1", snapshot=record.snapshot)
+    outcome = await probe.complete_import(finished, person_ids=("held",))
+    assert outcome.status is OutcomeStatus.COMPLETE
+    journal = await store.operation(OPERATION)
+    assert journal is not None and journal.state is OperationJournalState.COMPLETE
+    assert not await store.identity_held("held")
+
+
+async def test_a_completion_bound_to_a_different_kind_is_refused(seam):
+    """The same journal id carrying another operation kind refuses the
+    completion stamp too — `operation_id` alone never releases a hold."""
+    store, probe = seam
+    record = OperationRecord(
+        OPERATION, "import", OperationJournalState.INCOMPLETE,
+        MappingProxyType({}), snapshot=MappingProxyType({"effect": "recorded"}))
+    assert (await store.record_operation(record)).status is OutcomeStatus.COMPLETE
+    assert (await probe.publish_held_person(
+        person=_person("held"), accounts=(),
+        operation_id=OPERATION)).status is OutcomeStatus.COMPLETE
+    other_kind = OperationRecord(
+        OPERATION, "other-kind", OperationJournalState.COMPLETE, record.steps,
+        outcome="complete", snapshot=record.snapshot)
+    outcome = await probe.complete_import(other_kind, person_ids=("held",))
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "effect-conflict"
+    journal = await store.operation(OPERATION)
+    assert journal is not None and journal.state is OperationJournalState.INCOMPLETE
+    assert await store.identity_held("held")

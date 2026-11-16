@@ -54,6 +54,18 @@ and workspace bindings, for faithful export after the source paths change.
    import identity and are refused (`different-import`), so a successful
    import is never overwritten.
 
+One invocation reads the files **once**: the printed plan, the target
+policy wiring and the applied import all bind that single captured
+effect — a file changed during setup cannot swap the effect behind the
+plan it reported. A durable journal row under the same import identity
+is bound by operation kind and the full effect snapshot; a mismatch
+refuses as a conflict (`effect-conflict`), it is never read as the old
+import's outcome. An **exact completed retry** returns the recorded
+historical receipt as-is: it asserts that this import completed, never
+that current state still equals the original file — so it succeeds after
+later legitimate management changes and unrelated journals, writes
+nothing, and does not restore initial traits or grants.
+
 ## Usage
 
 ```
@@ -100,6 +112,8 @@ Refused before any write — the whole plan fails, naming the limit:
 - a non-empty `[dm]` admission list,
 - any file the loaders reject (invalid shapes, ambiguous identifier
   ownership), or a changed source on retry,
+- a durable journal under the same import id with a different operation
+  kind or effect snapshot (`effect-conflict`),
 - a target that holds anything the import does not own.
 
 Managed-to-file export and initial administrative delegation are separate

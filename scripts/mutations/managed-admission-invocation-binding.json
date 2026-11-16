@@ -1,0 +1,72 @@
+[
+  {
+    "name": "the command binds one captured effect through setup",
+    "file": "scripts/managed_identity_handoff.py",
+    "old": "            outcome = await admission.apply_prepared(prepared)",
+    "new": "            outcome = await admission.apply(Path(args.identity), Path(args.policy))",
+    "target": "tests/unit/test_managed_identity_handoff.py::test_apply_binds_the_effect_captured_before_setup"
+  },
+  {
+    "name": "the durable journal is bound by kind and full snapshot",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "            if record.kind != IMPORT_KIND or record.snapshot != prepared.snapshot:\n                return denied(\"effect-conflict\")",
+    "new": "",
+    "target": "tests/unit/test_managed_admission_binding.py::test_the_same_import_id_with_a_different_snapshot_refuses"
+  },
+  {
+    "name": "an exact completed match is a receipt not a revalidation",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "            if record.state is OperationJournalState.COMPLETE:\n                return _receipt(record)",
+    "new": "",
+    "target": "tests/unit/test_managed_admission_binding.py::test_a_completed_replay_is_a_historical_receipt_with_no_effects"
+  },
+  {
+    "name": "the completion commit is conditional on kind and snapshot",
+    "file": "nora/infra/sql/managed_handoff.py",
+    "old": "                MANAGED_OPERATION.c.kind == record.kind,\n                MANAGED_OPERATION.c.snapshot == dict(record.snapshot),\n",
+    "new": "",
+    "target": "tests/contract/test_admission_probe_contract.py::test_a_completion_bound_to_a_different_effect_is_refused[sql]"
+  },
+  {
+    "name": "the fake models the same effect-bound completion",
+    "file": "tests/fakes.py",
+    "old": "        if stored.kind != record.kind or stored.snapshot != record.snapshot:\n            return denied(\"effect-conflict\")",
+    "new": "",
+    "target": "tests/contract/test_admission_probe_contract.py::test_a_completion_bound_to_a_different_effect_is_refused[fake]"
+  },
+  {
+    "name": "a completed receipt requires an explicit valid recorded outcome",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "    try:\n        status = OutcomeStatus(record.outcome)\n    except (ValueError, TypeError):\n        return unavailable(\"receipt-unconfirmed\")\n    return Outcome(status, record.detail)",
+    "new": "    return Outcome(OutcomeStatus(record.outcome or \"complete\"), record.detail)",
+    "target": "tests/unit/test_managed_admission_binding.py::test_a_completed_record_without_an_explicit_valid_outcome_is_unavailable"
+  },
+  {
+    "name": "snapshot views cannot rewrite the captured effect",
+    "file": "nora/people/app/managed_admission_capture.py",
+    "old": "        return MappingProxyType(json.loads(self._snapshot_json))",
+    "new": "        if not hasattr(self, \"_snapshot_cache\"):\n            object.__setattr__(self, \"_snapshot_cache\", MappingProxyType(json.loads(self._snapshot_json)))\n        return self._snapshot_cache",
+    "target": "tests/unit/test_managed_admission_binding.py::test_capture_cannot_be_rewritten_through_nested_views_or_loader_indexes"
+  },
+  {
+    "name": "loader indexes are read only inside the captured invocation",
+    "file": "nora/people/app/managed_admission_capture.py",
+    "old": "            object.__setattr__(self, name, replace(model, **indexes))\n",
+    "new": "",
+    "target": "tests/unit/test_managed_admission_binding.py::test_capture_cannot_be_rewritten_through_nested_views_or_loader_indexes"
+  },
+  {
+    "name": "assessment failure cannot fabricate success",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "        except Exception:  # noqa: BLE001 \u2014 port errors must stay unavailable\n            return unavailable(\"store-failure\")",
+    "new": "        except Exception:\n            return complete()",
+    "target": "tests/unit/test_managed_admission_binding.py::test_assess_reports_an_unreadable_store_as_unavailable"
+  },
+  {
+    "name": "exact completed receipt does not read current inventory",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "    async def _apply(self, prepared: PreparedImport) -> Outcome:\n        record = await self.bindings.operation(prepared.import_id)",
+    "new": "    async def _apply(self, prepared: PreparedImport) -> Outcome:\n        await self.probe.facts()\n        record = await self.bindings.operation(prepared.import_id)",
+    "target": "tests/unit/test_managed_admission_binding.py::test_an_exact_receipt_does_not_require_the_current_target_inventory"
+  }
+]

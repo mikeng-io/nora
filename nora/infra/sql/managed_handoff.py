@@ -179,12 +179,18 @@ async def complete_import(
     """The completion commit: the journal flips COMPLETE and all and only
     this import's holds release in ONE transaction — an outside reader sees
     "complete and unheld" together, or keeps "incomplete and held"; never
-    one without the other. The journal update's rowcount is checked, so an
-    absent operation is refused rather than reported complete."""
+    one without the other. The update is conditional on the durable row's
+    operation kind and full effect snapshot, so an absent or mismatched
+    journal refuses rather than stamping another effect complete — and
+    releases no hold."""
     async with engine.begin() as conn:
         result = await conn.execute(
             sa.update(MANAGED_OPERATION)
-            .where(MANAGED_OPERATION.c.operation_id == record.operation_id)
+            .where(
+                MANAGED_OPERATION.c.operation_id == record.operation_id,
+                MANAGED_OPERATION.c.kind == record.kind,
+                MANAGED_OPERATION.c.snapshot == dict(record.snapshot),
+            )
             .values(
                 state=record.state.value,
                 steps=dict(record.steps),
@@ -194,7 +200,13 @@ async def complete_import(
             )
         )
         if not result.rowcount:
-            return denied("absent-operation")
+            present = await conn.scalar(
+                sa.select(MANAGED_OPERATION.c.operation_id).where(
+                    MANAGED_OPERATION.c.operation_id == record.operation_id
+                )
+            )
+            return denied(
+                "effect-conflict" if present is not None else "absent-operation")
         if person_ids:
             await conn.execute(sa.delete(MANAGED_IDENTITY_HOLD).where(
                 MANAGED_IDENTITY_HOLD.c.operation_id == record.operation_id,

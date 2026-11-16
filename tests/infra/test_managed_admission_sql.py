@@ -27,6 +27,10 @@ from nora.domain.managed import (
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
+from nora.infra.sql.schema_managed import (
+    MANAGED_IDENTITY_HOLD,
+    MANAGED_OPERATION,
+)
 from nora.people.adapters.file_backend import FileTopologySource
 from nora.people.adapters.managed_handoff import SqlAdmissionProbe
 from nora.people.app.managed_admission import FileAdmission, plan
@@ -501,3 +505,127 @@ async def test_a_hold_insert_failure_never_publishes_the_person(engine, database
         assert not await store.identity_held("ada")
     finally:
         await reader.dispose()
+
+
+class _SwapJournal(SqlAdmissionProbe):
+    """A journal row rewritten underneath the completion commit — the
+    conditional update must refuse rather than stamp another effect."""
+
+    def __init__(self, engine):
+        super().__init__(engine)
+        self._engine = engine
+
+    async def complete_import(self, record, *, person_ids):
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                sa.update(MANAGED_OPERATION)
+                .where(MANAGED_OPERATION.c.operation_id == record.operation_id)
+                .values(snapshot={"swapped": True}))
+        return await super().complete_import(record, person_ids=person_ids)
+
+
+async def test_a_journal_rebound_under_completion_never_completes(engine, sources):
+    """Positive control first: an undisturbed apply completes and releases.
+    With the durable journal then swapped underneath the completion commit,
+    the conditional update refuses `effect-conflict`, keeps every hold and
+    stamps nothing — the row is never another effect's completion."""
+    identity_path, policy_path = sources
+    import_id = plan(identity_path, policy_path).import_id
+    store = SqlBindingStore(engine)
+    outcome = await admission(engine).apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+    journal = await store.operation(import_id)
+    assert journal is not None and journal.state is OperationJournalState.COMPLETE
+    assert not await store.identity_held("miles")
+    async with engine.begin() as connection:
+        await connection.execute(sa.text(
+            "TRUNCATE managed_membership_support, managed_membership, managed_alias,"
+            " managed_identifier, managed_account, managed_identity_hold,"
+            " managed_authority_block, managed_operation, managed_person,"
+            " managed_link_decision, managed_link_request, managed_link_delivery"
+            " CASCADE"))
+    swapped = FileAdmission(
+        bindings=SqlBindingStore(engine), backend=FakeAuthorityBackend(),
+        kratos=FakeAdmissionKratos(), probe=_SwapJournal(engine))
+    outcome = await swapped.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "effect-conflict"
+    journal = await store.operation(import_id)
+    assert journal is not None
+    assert journal.state is OperationJournalState.INCOMPLETE
+    assert all([
+        await store.identity_held(pid)
+        for pid in ("miles", "ada", "listed_only")
+    ])
+
+
+@pytest.mark.parametrize("field", ["kind", "snapshot"])
+async def test_a_durable_record_rebound_under_the_same_id_refuses(
+    engine, sources, field,
+):
+    """The durable journal is bound by kind AND full snapshot — either one
+    changed under the same import id refuses `effect-conflict` on assess
+    and apply, never returning the old complete and never writing."""
+    identity_path, policy_path = sources
+    service = admission(engine)
+    outcome = await service.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+    import_id = plan(identity_path, policy_path).import_id
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.update(MANAGED_OPERATION)
+            .where(MANAGED_OPERATION.c.operation_id == import_id)
+            .values(
+                **({"kind": "grant_access"} if field == "kind"
+                   else {"snapshot": {"swapped": True}})
+            ))
+    outcome = await service.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "effect-conflict"
+    assessed = await service.assess(identity_path, policy_path)
+    assert assessed.status is OutcomeStatus.DENIED
+    store = SqlBindingStore(engine)
+    journal = await store.operation(import_id)
+    assert journal is not None and journal.state is OperationJournalState.COMPLETE
+    assert not await store.identity_held("miles")
+
+
+async def test_an_exact_completed_replay_after_later_changes_is_a_receipt(
+    engine, database, sources,
+):
+    """Real PostgreSQL plus a restarted service: after later legitimate
+    management — a suspended person, an unrelated journal, a foreign hold —
+    the exact retry returns the recorded receipt and writes nothing: no
+    hold re-asserted, no state restored, the other rows untouched."""
+    identity_path, policy_path = sources
+    service = admission(engine)
+    outcome = await service.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+    import_id = plan(identity_path, policy_path).import_id
+    await engine.dispose()
+    restarted = create_sql_engine(database)
+    try:
+        store = SqlBindingStore(restarted)
+        await store.set_lifecycle(
+            person_id="ada", lifecycle=PersonLifecycle.SUSPENDED)
+        await store.record_operation(OperationRecord(
+            "grant-9", "grant_access", OperationJournalState.COMPLETE,
+            MappingProxyType({}), snapshot=MappingProxyType({"kind": "grant_access"})))
+        await store.hold_identity(person_id="miles", operation_id="other-op")
+        receipt = await admission(restarted).apply(identity_path, policy_path)
+        assert receipt.status is OutcomeStatus.COMPLETE
+        journal = await store.operation(import_id)
+        assert journal is not None
+        assert journal.state is OperationJournalState.COMPLETE
+        assert receipt.detail == journal.detail
+        ada = await store.person("ada")
+        assert ada is not None and ada.lifecycle is PersonLifecycle.SUSPENDED
+        async with restarted.connect() as conn:
+            rows = (await conn.execute(sa.select(
+                MANAGED_IDENTITY_HOLD.c.person_id,
+                MANAGED_IDENTITY_HOLD.c.operation_id,
+            ))).all()
+        assert {(row.person_id, row.operation_id) for row in rows} == {
+            ("miles", "other-op")}
+    finally:
+        await restarted.dispose()

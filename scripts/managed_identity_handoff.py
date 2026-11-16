@@ -21,6 +21,14 @@ configuration change.
           derived from the file contents, so changed files are a different
           import and are refused.
 
+One invocation reads the files ONCE into a validated immutable effect:
+the printed plan, the target composition and the applied import all bind
+that single capture, so a file changed during setup cannot swap the
+effect behind the plan it reported — the next run simply names a
+different import. An exact completed retry returns the recorded
+historical receipt; it asserts prior completion, never that current
+state still equals the original file.
+
 Exit codes: 0 complete/ok · 2 refused (source invalid, unsupported input,
 foreign or occupied target) · 3 incomplete/unavailable (retryable).
 """
@@ -36,9 +44,12 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 
 from nora.config_identity import ManagedOryConfig
-from nora.domain.managed import OutcomeStatus
-from nora.people.app.managed_admission import FileAdmission, plan
-from nora.policy import load_policy
+from nora.domain.managed import Outcome, OutcomeStatus
+from nora.people.app.managed_admission import (
+    FileAdmission,
+    PreparedImport,
+    prepare,
+)
 
 COMPLETE = 0
 REFUSED = 2
@@ -68,8 +79,10 @@ def _parser() -> argparse.ArgumentParser:
 
 
 @asynccontextmanager
-async def _target_services(args: argparse.Namespace) -> AsyncIterator[FileAdmission]:
-    """The real managed wiring plus the SQL-aware probe — lazy imports keep `plan` managed-free."""
+async def _target_services(
+    args: argparse.Namespace, prepared: PreparedImport,
+) -> AsyncIterator[FileAdmission]:
+    """The real managed wiring plus the SQL-aware probe, fed by `prepared.policy` alone."""
     import aiohttp
 
     from nora.infra.ory import KratosClient
@@ -85,7 +98,6 @@ async def _target_services(args: argparse.Namespace) -> AsyncIterator[FileAdmiss
             raise ValueError("configured Ory credential is unavailable")
         return value
 
-    policy = load_policy(Path(args.policy))
     managed = ManagedOryConfig(
         kratos_admin_url=args.kratos_admin_url,
         keto_read_url=args.keto_read_url,
@@ -98,7 +110,7 @@ async def _target_services(args: argparse.Namespace) -> AsyncIterator[FileAdmiss
     try:
         async with aiohttp.ClientSession() as session:
             services = managed_services(
-                managed=managed, session=session, policy=policy,
+                managed=managed, session=session, policy=prepared.policy,
                 engine=engine, credentials=os.environ,
             )
             try:
@@ -128,14 +140,15 @@ async def run(
     services: RuntimeFactory | None = None,
 ) -> int:
     args = _parser().parse_args(argv)
-    identity_path, policy_path = Path(args.identity), Path(args.policy)
-    result = plan(identity_path, policy_path)
-    if result.refused:
-        for reason in result.refused:
-            print(f"refused: {reason}")
+    prepared = prepare(Path(args.identity), Path(args.policy))
+    if isinstance(prepared, Outcome):
+        print(f"refused: {prepared.detail}")
         return REFUSED
-    counts = " ".join(f"{k}={result.counts[k]}" for k in sorted(result.counts))
-    print(f"plan {result.import_id} {counts}")
+    counts = prepared.snapshot["counts"]
+    print(
+        f"plan {prepared.import_id} "
+        + " ".join(f"{key}={counts[key]}" for key in sorted(counts))
+    )
     need_target = args.command == "apply" or bool(args.database_url)
     if not need_target:
         return COMPLETE
@@ -147,13 +160,13 @@ async def run(
     if missing:
         print(f"refused: the managed target needs {', '.join(missing)}")
         return REFUSED
-    factory = services or (lambda: _target_services(args))
+    factory = services or (lambda: _target_services(args, prepared))
     async with factory() as admission:
         if args.command == "plan":
-            outcome = await admission.assess(identity_path, policy_path)
+            outcome = await admission.assess_prepared(prepared)
             prefix = "target"
         else:
-            outcome = await admission.apply(identity_path, policy_path)
+            outcome = await admission.apply_prepared(prepared)
             prefix = "import"
     if outcome.status is OutcomeStatus.COMPLETE:
         print(f"{prefix}: {outcome.detail or 'complete'}")

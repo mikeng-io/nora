@@ -557,8 +557,11 @@ class FakeAdmissionProbe:
     ) -> Outcome:
         store = self._store
         store._up()
-        if record.operation_id not in store.operations:
+        stored = store.operations.get(record.operation_id)
+        if stored is None:
             return denied("absent-operation")
+        if stored.kind != record.kind or stored.snapshot != record.snapshot:
+            return denied("effect-conflict")
         if self.fail_finish:
             raise RuntimeError("injected finish failure")
         store.operations[record.operation_id] = record
