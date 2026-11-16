@@ -6,6 +6,7 @@ in this checkout — so the registry proves the projection ordering, not
 Kratos itself.
 """
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -237,29 +238,14 @@ async def test_a_reconstructed_service_resumes_the_journaled_scoped_edit(
 ):
     registry = FakeIdentityRegistry()
     backend = FakeAuthorityBackend()
-    services = _scoped_services(store, registry, backend)
     await _enroll(store, registry)
     await _enroll_operator(store)
     await backend.put_relation(scope=ROOM, relation="admin",
                                person_id=OPERATOR)
 
-    # The store write dies once — a crash between journal and effect.
-    original = SqlBindingStore.set_scoped_name
-    calls = {"n": 0}
-
-    async def fail_once(self, **kwargs):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise RuntimeError("generated store outage")
-        return await original(self, **kwargs)
-
     person = await store.person(PERSON)
-    try:
-        SqlBindingStore.set_scoped_name = fail_once
-        outcome = await services.scoped_profile.apply(
-            _profile_op(str(person.revision)))
-    finally:
-        SqlBindingStore.set_scoped_name = original
+    flaky = _scoped_services(_FailOnceScopedStore(store._engine), registry, backend)
+    outcome = await flaky.scoped_profile.apply(_profile_op(str(person.revision)))
     assert outcome.status is OutcomeStatus.UNAVAILABLE
     record = await store.operation("generated-sql-op-3")
     assert record is not None
@@ -281,3 +267,49 @@ async def test_a_reconstructed_service_resumes_the_journaled_scoped_edit(
     assert person is not None and person.display_name == OLDER_NAME
     record = await store.operation("generated-sql-op-3")
     assert record.state is OperationJournalState.COMPLETE
+
+
+class _FailOnceScopedStore(SqlBindingStore):
+    def __init__(self, engine):
+        super().__init__(engine)
+        self.fail_write = True
+
+    async def set_scoped_name(self, **kwargs):
+        if self.fail_write:
+            self.fail_write = False
+            raise RuntimeError("generated scoped write outage")
+        return await super().set_scoped_name(**kwargs)
+
+
+async def test_sql_restart_does_not_retarget_a_pending_former_person_edit(store, database):
+    registry = FakeIdentityRegistry()
+    backend = FakeAuthorityBackend()
+    await _enroll(store, registry)
+    await _enroll_operator(store)
+    await backend.put_relation(scope=ROOM, relation="admin", person_id=OPERATOR)
+    services = _scoped_services(_FailOnceScopedStore(store._engine), registry, backend)
+    person = await store.person(PERSON)
+    pending = await services.scoped_profile.apply(_profile_op(str(person.revision)))
+    assert pending.status is OutcomeStatus.UNAVAILABLE
+    survivor = "generated-sql-survivor"
+    await store.register(person=ManagedPerson(survivor, PersonLifecycle.ACTIVE),
+        account=ManagedAccount(str(uuid4()), survivor, "discord", frozenset({
+            Identifier("discord", "user_id", "generated-survivor-account")}), AccountState.BOUND))
+    merged = await store.consolidate(survivor=survivor, former=PERSON)
+    assert merged.status is OutcomeStatus.COMPLETE
+    current = await store.person(survivor)
+    newer = replace(_profile_op(
+        str(current.revision), "generated-sql-newer", nickname="Generated Newer"),
+        target=Target(TargetKind.PERSON, person_id=survivor))
+    active = _scoped_services(store, registry, backend)
+    assert (await active.scoped_profile.apply(newer)).status is OutcomeStatus.COMPLETE
+    engine2 = create_sql_engine(database)
+    try:
+        recovered = _scoped_services(SqlBindingStore(engine2), registry, backend)
+        finished = await recovered.scoped_profile.reconcile()
+    finally:
+        await engine2.dispose()
+    assert await store.scoped_name_for(person_id=survivor, scope=ROOM) == "Generated Newer"
+    assert finished == ()
+    record = await store.operation("generated-sql-op-3")
+    assert record.outcome == "denied" and record.detail == "profile-target-changed"

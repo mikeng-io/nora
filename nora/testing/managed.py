@@ -71,7 +71,6 @@ class FakeBindingStore(BindingStore):
         self.aliases: dict[str, str] = {}
         self.operations: dict[str, OperationRecord] = {}
         self.blocks: dict[tuple[str, Scope], AuthorityBlock] = {}
-        # (canonical person, exact scope) -> (nickname, owning operation)
         self.scoped_names: dict[tuple[str, Scope], tuple[str, str]] = {}
         self.observations: dict[tuple[str, str, Scope], SourceObservation] = {}
         self.down = False
@@ -338,6 +337,8 @@ class FakeBindingStore(BindingStore):
         operation_id: str
     ) -> Outcome:
         self._up()
+        if not nickname.strip():
+            raise ManagedError("a scoped nickname cannot be blank")
         canonical = self._canonical(person_id)
         person = self.people.get(canonical)
         if person is None:
@@ -479,8 +480,7 @@ class FakeBindingStore(BindingStore):
                 self.blocks[(survivor, scope)] = replace(block, person_id=survivor)
             if pid == former:
                 del self.blocks[(pid, scope)]
-        # Scoped nicknames follow the canonical person; the survivor's own
-        # same-scope name wins on a collision.
+        # The survivor's own same-scope nickname wins on a collision.
         for (pid, scope), row in list(self.scoped_names.items()):
             if pid == former:
                 self.scoped_names.setdefault((survivor, scope), row)

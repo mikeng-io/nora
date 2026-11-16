@@ -207,6 +207,8 @@ $_$;
 );
 );
 );
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -297,6 +299,7 @@ ADD CONSTRAINT managed_identity_hold_person_fkey FOREIGN KEY (person_id) REFEREN
 ADD CONSTRAINT managed_identity_hold_pkey PRIMARY KEY (person_id, operation_id);
 ADD CONSTRAINT managed_link_decision_pkey PRIMARY KEY (operation_id);
 ADD CONSTRAINT managed_link_decision_request_fkey FOREIGN KEY (request_id) REFERENCES public.managed_link_request(request_id) ON DELETE RESTRICT;
+ADD CONSTRAINT managed_link_delivery_request_fkey FOREIGN KEY (request_id) REFERENCES public.managed_link_request(request_id) ON DELETE RESTRICT;
 ADD CONSTRAINT managed_link_request_pkey PRIMARY KEY (request_id);
 ADD CONSTRAINT managed_membership_person_fkey FOREIGN KEY (person_id) REFERENCES public.managed_person(person_id) ON DELETE RESTRICT;
 ADD CONSTRAINT managed_membership_support_person_fkey FOREIGN KEY (person_id) REFERENCES public.managed_person(person_id) ON DELETE RESTRICT;
@@ -305,6 +308,8 @@ ADD CONSTRAINT managed_observation_pkey PRIMARY KEY (service, collection, scope_
 ADD CONSTRAINT managed_operation_pkey PRIMARY KEY (operation_id);
 ADD CONSTRAINT managed_person_kratos_identity_id_key UNIQUE (kratos_identity_id);
 ADD CONSTRAINT managed_person_pkey PRIMARY KEY (person_id);
+ADD CONSTRAINT managed_scoped_name_operation_fkey FOREIGN KEY (operation_id) REFERENCES public.managed_operation(operation_id) ON DELETE RESTRICT;
+ADD CONSTRAINT managed_scoped_name_person_fkey FOREIGN KEY (person_id) REFERENCES public.managed_person(person_id) ON DELETE CASCADE;
 ADD CONSTRAINT media_objects_pkey PRIMARY KEY (sha256);
 ADD CONSTRAINT memo_pkey PRIMARY KEY (id);
 ADD CONSTRAINT memo_revision_pkey PRIMARY KEY (id);
@@ -345,7 +350,9 @@ ADD CONSTRAINT participation_window_state_pkey PRIMARY KEY (platform, conversati
 ADD CONSTRAINT pk_document_revision PRIMARY KEY (document_id, revision);
 ADD CONSTRAINT pk_managed_authority_block PRIMARY KEY (person_id, scope_kind, scope_id);
 ADD CONSTRAINT pk_managed_identifier PRIMARY KEY (platform, kind, value);
+ADD CONSTRAINT pk_managed_link_delivery PRIMARY KEY (request_id, side);
 ADD CONSTRAINT pk_managed_membership PRIMARY KEY (person_id, scope_kind, scope_id);
+ADD CONSTRAINT pk_managed_scoped_name PRIMARY KEY (person_id, scope_kind, scope_id);
 ADD CONSTRAINT platform_object_state_pkey PRIMARY KEY (id);
 ADD CONSTRAINT platform_observation_delivered_fkey FOREIGN KEY (delivered_message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
 ADD CONSTRAINT platform_observation_pkey PRIMARY KEY (id);
@@ -524,6 +531,8 @@ ALTER TABLE ONLY public.managed_identity_hold
 ALTER TABLE ONLY public.managed_identity_hold
 ALTER TABLE ONLY public.managed_link_decision
 ALTER TABLE ONLY public.managed_link_decision
+ALTER TABLE ONLY public.managed_link_delivery
+ALTER TABLE ONLY public.managed_link_delivery
 ALTER TABLE ONLY public.managed_link_request
 ALTER TABLE ONLY public.managed_membership
 ALTER TABLE ONLY public.managed_membership
@@ -533,6 +542,9 @@ ALTER TABLE ONLY public.managed_observation
 ALTER TABLE ONLY public.managed_operation
 ALTER TABLE ONLY public.managed_person
 ALTER TABLE ONLY public.managed_person
+ALTER TABLE ONLY public.managed_scoped_name
+ALTER TABLE ONLY public.managed_scoped_name
+ALTER TABLE ONLY public.managed_scoped_name
 ALTER TABLE ONLY public.media_objects
 ALTER TABLE ONLY public.memo
 ALTER TABLE ONLY public.memo_revision
@@ -830,11 +842,13 @@ CONSTRAINT ck_lesson_revision_retired_by_who CHECK (((retired_by IS NULL) OR (re
 CONSTRAINT ck_lesson_revision_seq CHECK ((seq >= 1)),
 CONSTRAINT ck_lesson_revision_state CHECK ((state = ANY (ARRAY['active'::text, 'retired'::text])))
 CONSTRAINT ck_managed_account_state CHECK ((state = ANY (ARRAY['bound'::text, 'revoked'::text])))
+CONSTRAINT ck_managed_link_delivery_side CHECK ((side = ANY (ARRAY['initiating'::text, 'receiving'::text])))
 CONSTRAINT ck_managed_membership_scope_kind CHECK ((scope_kind = ANY (ARRAY['workspace'::text, 'unit'::text, 'room'::text]))),
 CONSTRAINT ck_managed_membership_state CHECK ((state = ANY (ARRAY['member'::text, 'left'::text])))
 CONSTRAINT ck_managed_observation_scope_kind CHECK ((scope_kind = ANY (ARRAY['workspace'::text, 'unit'::text, 'room'::text])))
 CONSTRAINT ck_managed_operation_state CHECK ((state = ANY (ARRAY['pending'::text, 'incomplete'::text, 'complete'::text, 'blocked'::text])))
 CONSTRAINT ck_managed_person_lifecycle CHECK ((lifecycle = ANY (ARRAY['active'::text, 'suspended'::text])))
+CONSTRAINT ck_managed_scoped_name_scope_kind CHECK ((scope_kind = ANY (ARRAY['workspace'::text, 'unit'::text, 'room'::text])))
 CONSTRAINT ck_memo_has_a_unit CHECK ((length(btrim(unit)) > 0))
 CONSTRAINT ck_memo_revision_body_ceiling CHECK ((length(body) <= 4000)),
 CONSTRAINT ck_memo_revision_cites_something CHECK ((cardinality(citations) >= 1)),
@@ -1287,12 +1301,14 @@ CREATE TABLE public.managed_authority_block (
 CREATE TABLE public.managed_identifier (
 CREATE TABLE public.managed_identity_hold (
 CREATE TABLE public.managed_link_decision (
+CREATE TABLE public.managed_link_delivery (
 CREATE TABLE public.managed_link_request (
 CREATE TABLE public.managed_membership (
 CREATE TABLE public.managed_membership_support (
 CREATE TABLE public.managed_observation (
 CREATE TABLE public.managed_operation (
 CREATE TABLE public.managed_person (
+CREATE TABLE public.managed_scoped_name (
 CREATE TABLE public.media_objects (
 CREATE TABLE public.memo (
 CREATE TABLE public.memo_revision (
@@ -2145,6 +2161,8 @@ created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
+created_at timestamp with time zone DEFAULT now() NOT NULL,
+created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone NOT NULL,
 created_at timestamp with time zone NOT NULL,
 created_at timestamp with time zone NOT NULL,
@@ -2678,6 +2696,8 @@ new_image := to_jsonb(NEW);
 new_image jsonb;
 new_key := new_key || jsonb_build_object(col, new_image -> col);
 new_key jsonb := '{}'::jsonb;
+nickname text NOT NULL,
+nonce text NOT NULL,
 note text,
 note_id text,
 note_id text,
@@ -2726,6 +2746,7 @@ opened_at bigint NOT NULL,
 opened_at bigint NOT NULL,
 opened_at bigint NOT NULL,
 operation text NOT NULL,
+operation_id text NOT NULL,
 operation_id text NOT NULL,
 operation_id text NOT NULL,
 operation_id text NOT NULL,
@@ -2803,6 +2824,7 @@ person text NOT NULL,
 person text NOT NULL,
 person_a text NOT NULL,
 person_b text NOT NULL,
+person_id text NOT NULL,
 person_id text NOT NULL,
 person_id text NOT NULL,
 person_id text NOT NULL,
@@ -3035,6 +3057,7 @@ request jsonb NOT NULL,
 request_hash text NOT NULL,
 request_id text NOT NULL,
 request_id text NOT NULL,
+request_id text NOT NULL,
 requester_person_id text NOT NULL,
 requester_person_id text NOT NULL,
 requester_person_id text,
@@ -3109,6 +3132,8 @@ scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
+scope_id text NOT NULL,
+scope_kind text NOT NULL,
 scope_kind text NOT NULL,
 scope_kind text NOT NULL,
 scope_kind text NOT NULL,
@@ -3153,6 +3178,7 @@ sha256 text NOT NULL,
 sha256 text NOT NULL,
 sha256 text,
 shortcode text NOT NULL,
+side text NOT NULL,
 situation jsonb NOT NULL,
 size bigint DEFAULT '0'::bigint NOT NULL,
 size integer DEFAULT 0 NOT NULL,
@@ -3429,6 +3455,7 @@ updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
+updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL,

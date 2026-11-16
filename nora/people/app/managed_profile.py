@@ -37,12 +37,7 @@ from nora.domain.managed import (
     denied,
     unavailable,
 )
-from nora.domain.managed_ports import (
-    AuthorityBackend,
-    BindingStore,
-    IdentityRegistry,
-    TopologySource,
-)
+from nora.domain.managed_ports import BindingStore, IdentityRegistry
 from nora.domain.management import (
     Actor,
     ActorKind,
@@ -56,6 +51,7 @@ from nora.domain.management import (
 )
 from nora.people.app.authentication import AccountSessions
 from nora.people.app.link_publication import LinkPublicationService
+from nora.people.app.managed_authority import AuthorityService
 from nora.people.app.managed_ops import (
     _finish,
     _pending,
@@ -333,12 +329,10 @@ class ScopedProfileService:
     def __init__(
         self,
         bindings: BindingStore,
-        backend: AuthorityBackend,
-        topology: TopologySource,
+        authority: AuthorityService,
     ) -> None:
         self._bindings = bindings
-        self._backend = backend
-        self._topology = topology
+        self._authority = authority
 
     async def apply(self, op: Operation) -> Outcome:
         try:
@@ -362,6 +356,8 @@ class ScopedProfileService:
                 or not isinstance(payload, ProfileEdit)
                 or payload.scope is None):
             return denied(_REFUSED)
+        if payload.nickname is None or not payload.nickname.strip():
+            return denied("nickname-required")
         people = tuple(
             pid for pid in (op.actor.person_id, op.target.person_id)
             if pid is not None
@@ -377,8 +373,6 @@ class ScopedProfileService:
         if replay is not None:
             return replay
         scope = payload.scope
-        if not await self._topology.scope_exists(scope):
-            return denied("unknown-scope")
         allowed = await self._actor_allowed(scope, op.actor)
         if allowed is not None:
             return allowed
@@ -396,14 +390,13 @@ class ScopedProfileService:
     async def _actor_allowed(
         self, scope: Scope, actor: Actor
     ) -> Outcome | None:
-        person = await self._bindings.person(cast(str, actor.person_id))
-        if person is None or person.lifecycle is not PersonLifecycle.ACTIVE:
-            return denied("actor-suspended")
-        verdict = await self._backend.check(
+        verdict = await self._authority.check(
             scope=scope, person_id=cast(str, actor.person_id),
             permit="manage_members")
         if verdict.verdict is Verdict.UNAVAILABLE:
             return unavailable("actor-check-unavailable")
+        if verdict.verdict is Verdict.UNKNOWN_SCOPE:
+            return denied("unknown-scope")
         if not verdict.allowed:
             return denied(
                 f"actor-lacks-manage_members:{verdict.detail or verdict.verdict.value}")
@@ -416,6 +409,10 @@ class ScopedProfileService:
         nickname = snapshot["nickname"]
         scope_row = snapshot["profile_scope"]
         scope = Scope(ScopeKind(scope_row["kind"]), scope_row["id"])
+        if await self._bindings.canonical_person(person_id) != person_id:
+            await _finish(self._bindings, record, OperationJournalState.COMPLETE,
+                          "denied", "profile-target-changed")
+            return denied("profile-target-changed")
         newest = await self._bindings.latest_profile_operation(
             person_id, scope=scope)
         if newest is not None and newest.operation_id != record.operation_id:

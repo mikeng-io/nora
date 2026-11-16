@@ -114,7 +114,7 @@ class ManagedServices:
             bindings, backend, topology, registry, links,
         )
         self.profile = ProfileService(bindings, registry, self.publication)
-        self.scoped_profile = ScopedProfileService(bindings, backend, topology)
+        self.scoped_profile = ScopedProfileService(bindings, self.authority)
         # Consumer reads use these same authorities; managed reads never fall back to files.
         self.access = access or IdentityAccess(
             bindings=bindings, authority=self.authority, topology=topology,

@@ -32,6 +32,7 @@ from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
     ManagedAccount,
+    ManagedError,
     ManagedPerson,
     OperationJournalState,
     OperationRecord,
@@ -267,3 +268,20 @@ async def test_scoped_names_fold_through_consolidation(store: _Store):
         survivor=PERSON, former="person_late")).status is OutcomeStatus.COMPLETE
     assert (await store.scoped_name_for(person_id="person_late", scope=unit)
             == "Generated unit name")
+
+
+async def test_a_blank_scoped_name_is_an_invalid_write(store):
+    await store.register(person=_person(), account=_account())
+    await _journal(store, "generated-blank-write")
+    caught = False
+    try:
+        await store.set_scoped_name(person_id=PERSON, scope=ROOM,
+            nickname="   ", operation_id="generated-blank-write")
+    except ManagedError:
+        caught = True
+    assert caught, "a blank nickname must be rejected"
+    assert await store.scoped_name_for(person_id=PERSON, scope=ROOM) is None
+    result = await store.set_scoped_name(person_id=PERSON, scope=ROOM,
+        nickname="Generated Valid", operation_id="generated-blank-write")
+    assert result.status is OutcomeStatus.COMPLETE
+    assert await store.scoped_name_for(person_id=PERSON, scope=ROOM) == "Generated Valid"

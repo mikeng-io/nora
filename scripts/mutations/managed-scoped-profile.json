@@ -30,8 +30,8 @@
   {
     "name": "a scoped profile write reaches only a declared scope",
     "file": "nora/people/app/managed_profile.py",
-    "old": "        if not await self._topology.scope_exists(scope):",
-    "new": "        if False:",
+    "old": "        verdict = await self._authority.check(\n            scope=scope, person_id=cast(str, actor.person_id),\n            permit=\"manage_members\")",
+    "new": "        verdict = await self._authority._backend.check(\n            scope=scope, person_id=cast(str, actor.person_id),\n            permit=\"manage_members\")",
     "target": "tests/unit/test_scoped_profile.py::test_the_service_alone_refuses_an_undeclared_scope"
   },
   {
@@ -68,5 +68,40 @@
     "old": "    if lifecycle != PersonLifecycle.ACTIVE.value:",
     "new": "    if False:",
     "target": "tests/contract/test_binding_store_scoped_contract.py::test_scoped_name_refuses_absent_and_suspended_persons"
+  },
+  {
+    "name": "scoped service uses revocation-first shared authority",
+    "file": "nora/people/app/managed_profile.py",
+    "old": "        verdict = await self._authority.check(\n            scope=scope, person_id=cast(str, actor.person_id),\n            permit=\"manage_members\")",
+    "new": "        verdict = await self._authority._backend.check(\n            scope=scope, person_id=cast(str, actor.person_id),\n            permit=\"manage_members\")",
+    "target": "tests/unit/test_scoped_profile.py::test_the_direct_scoped_service_honors_a_pending_authority_revocation"
+  },
+  {
+    "name": "a former target is never replayed onto its survivor",
+    "file": "nora/people/app/managed_profile.py",
+    "old": "        if await self._bindings.canonical_person(person_id) != person_id:",
+    "new": "        if False:",
+    "target": "tests/unit/test_scoped_profile.py::test_a_pending_former_person_edit_cannot_overwrite_the_survivor"
+  },
+  {
+    "name": "blank nicknames refuse before journaling",
+    "file": "nora/people/app/managed_profile.py",
+    "old": "        if payload.nickname is None or not payload.nickname.strip():\n            return denied(\"nickname-required\")\n",
+    "new": "",
+    "target": "tests/unit/test_scoped_profile.py::test_blank_scoped_names_refuse_before_journaling"
+  },
+  {
+    "name": "fake rejects invalid blank nicknames like SQL",
+    "file": "nora/testing/managed.py",
+    "old": "        if not nickname.strip():\n            raise ManagedError(\"a scoped nickname cannot be blank\")\n",
+    "new": "",
+    "target": "tests/contract/test_binding_store_scoped_contract.py::test_a_blank_scoped_name_is_an_invalid_write"
+  },
+  {
+    "name": "SQL restart cannot retarget a pending former-person edit",
+    "file": "nora/people/app/managed_profile.py",
+    "old": "        if await self._bindings.canonical_person(person_id) != person_id:",
+    "new": "        if False:",
+    "target": "tests/infra/test_managed_profile_sql.py::test_sql_restart_does_not_retarget_a_pending_former_person_edit"
   }
 ]

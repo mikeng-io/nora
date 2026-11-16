@@ -27,6 +27,7 @@ from nora.domain.authentication import AccountAuthentication, SessionBinding
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
+    AuthorityBlock,
     ManagedAccount,
     ManagedPerson,
     OperationJournalState,
@@ -422,3 +423,54 @@ async def test_the_file_backend_refuses_the_write_and_reads_absent():
         operation_id="generated-op-1")
     assert outcome.status is OutcomeStatus.DENIED
     assert await store.scoped_name_for(person_id=PERSON, scope=ROOM) is None
+
+
+async def test_the_direct_scoped_service_honors_a_pending_authority_revocation():
+    services = _services()
+    store = services.bindings
+    await _person(services)
+    await _operator(services, services.backend)
+    await store.block_authority(AuthorityBlock(
+        OPERATOR, ROOM, "generated-revocation", "generated-revoke-op"))
+    result = await services.scoped_profile.apply(_operation())
+    assert result.status is OutcomeStatus.UNAVAILABLE
+    assert not store.scoped_names and not store.operations
+    await store.clear_block(person_id=OPERATOR, scope=ROOM)
+    recovered = await services.scoped_profile.apply(_operation())
+    assert recovered.status is OutcomeStatus.COMPLETE
+    assert await store.scoped_name_for(person_id=PERSON, scope=ROOM) == NICK
+
+
+async def test_a_pending_former_person_edit_cannot_overwrite_the_survivor():
+    store = _FailOnceStore()
+    services = _services(store)
+    await _person(services)
+    survivor = "generated-survivor"
+    await _person(services, survivor)
+    await _operator(services, services.backend)
+    pending = await _apply(services, store, _operation())
+    assert pending.status is OutcomeStatus.UNAVAILABLE
+    merged = await store.consolidate(survivor=survivor, former=PERSON)
+    assert merged.status is OutcomeStatus.COMPLETE
+    current = await store.person(survivor)
+    newer = await _apply(services, store, _operation(str(current.revision),
+        op_id="generated-survivor-edit", person_id=survivor, nickname="Generated Newer"))
+    assert newer.status is OutcomeStatus.COMPLETE
+    finished = await services.scoped_profile.reconcile()
+    assert await store.scoped_name_for(person_id=survivor, scope=ROOM) == "Generated Newer"
+    assert finished == ()
+    original = await store.operation("generated-op-1")
+    assert original.outcome == "denied" and original.detail == "profile-target-changed"
+    assert (await services.access.person_ref(PERSON, scope=ROOM)).name == "Generated Newer"
+
+
+@pytest.mark.parametrize("nickname", ["", "   "])
+async def test_blank_scoped_names_refuse_before_journaling(nickname):
+    services = _services()
+    store = services.bindings
+    await _person(services)
+    await _operator(services, services.backend)
+    result = await _apply(services, store, _operation(nickname=nickname))
+    assert result.status is OutcomeStatus.DENIED
+    assert not store.scoped_names and not store.operations
+    assert (await _apply(services, store, _operation())).status is OutcomeStatus.COMPLETE
