@@ -417,8 +417,7 @@ def test_a_foreign_or_unproven_turn_artifact_is_named(damage, expect):
 
 
 def _declared_report(output):
-    """A complete declared-turn report: the manifest carries the original
-    declaration, the row and the frozen artifact its one projection."""
+    """A declared-turn report and freeze bound to the original envelope."""
     declared = _recorded_input()
     (output / "turn-0.json").write_text(json.dumps({
         "turn": 0, "unit": "generated-unit", "error": None, "diff": {},

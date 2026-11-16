@@ -56,7 +56,7 @@
     "target": "tests/unit/test_journey_inputs.py::test_turn_gap_rejects_an_unbound_declared_source"
   },
   {
-    "name": "a missing admitted envelope is refused before the judges",
+    "name": "a missing admitted envelope has its distinct named cause",
     "file": "evals/rebuilt/journey_turns.py",
     "old": "    if not isinstance(fields, dict):\n        return \"admission_declared_missing\"",
     "new": "    if not isinstance(fields, dict):\n        fields = {}",
@@ -65,8 +65,8 @@
   {
     "name": "a foreign admitted envelope is refused before the judges",
     "file": "evals/rebuilt/journey_turns.py",
-    "old": "    if (declared_source(admitted) != ctx.get(\"source\")\n            or message_from_dict(admitted.message or {}).body\n            != ctx.get(\"input\")):\n        return \"admission_declared_foreign\"\n    return None",
-    "new": "    return None",
+    "old": "    if (json.dumps(admitted.to_fields(), sort_keys=True, allow_nan=False)\n            != json.dumps(ctx[\"envelope\"].to_fields(), sort_keys=True, allow_nan=False)\n            or declared_source(admitted) != ctx.get(\"source\")\n            or message_from_dict(admitted.message or {}).body\n            != ctx.get(\"input\")):",
+    "new": "    if False:",
     "target": "tests/unit/test_journey_inputs.py::test_a_foreign_admitted_payload_is_named"
   },
   {
@@ -79,8 +79,8 @@
   {
     "name": "a shared foreign projection is caught by the declaration",
     "file": "scripts/cognition_loop/accounting.py",
-    "old": "            elif not _input_same(declared, expected_input):\n                foreign.append(\"declared_input\")",
-    "new": "            elif not _input_same(declared, recorded_input):\n                foreign.append(\"declared_input\")",
+    "old": "            elif not _input_same(declared, expected_input):\n                foreign.append(\"declared_input\")\n            if not isinstance(recorded_input, dict):\n                missing.append(\"recorded_input\")\n            elif not _input_same(recorded_input, expected_input):\n                foreign.append(\"recorded_input\")",
+    "new": "            elif not _input_same(declared, recorded_input):\n                foreign.append(\"declared_input\")\n            if not isinstance(recorded_input, dict):\n                missing.append(\"recorded_input\")\n            elif not _input_same(recorded_input, declared):\n                foreign.append(\"recorded_input\")",
     "target": "tests/unit/test_journey_inputs.py::test_a_declared_turn_rejects_a_projection_the_envelope_disproves"
   },
   {
@@ -91,7 +91,7 @@
     "target": "tests/unit/test_journey_inputs.py::test_the_manifest_keeps_the_original_declaration"
   },
   {
-    "name": "rejudge compares the frozen turn to the original declaration",
+    "name": "rejudge forwards a valid declared anchor in its wire shape",
     "file": "scripts/cognition_loop/rejudge.py",
     "old": "                declared_input=(anchor if isinstance(anchor, str)\n                                else asdict(anchor)),",
     "new": "                declared_input=anchor,",
@@ -110,5 +110,12 @@
     "old": "            for turn in self.turns:\n                if not isinstance(turn, (str, DeclaredTurn)):\n                    raise EvidenceError(\n                        \"a version-2 turn is generated text or a declared \"\n                        \"envelope\")",
     "new": "            for turn in self.turns:\n                pass",
     "target": "tests/unit/test_cognition_loop_eval.py::test_a_version2_case_turn_is_typed"
+  },
+  {
+    "name": "same-body quote and media substitution cannot borrow an admission",
+    "file": "evals/rebuilt/journey_turns.py",
+    "old": "    if (json.dumps(admitted.to_fields(), sort_keys=True, allow_nan=False)\n            != json.dumps(ctx[\"envelope\"].to_fields(), sort_keys=True, allow_nan=False)\n            or declared_source(admitted) != ctx.get(\"source\")",
+    "new": "    if (declared_source(admitted) != ctx.get(\"source\")",
+    "target": "tests/unit/test_journey_inputs.py::test_same_body_cannot_hide_a_substituted_quote_or_media"
   }
 ]

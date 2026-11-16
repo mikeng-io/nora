@@ -140,9 +140,7 @@ async def _admit_input(driver: JourneyDriver, ctx: dict[str, Any], *,
 
 
 def _expected_turns(steps: list[dict[str, Any]]) -> list[Any]:
-    """The manifest's turn declarations: generated text, or the declared
-    envelope's wire fields verbatim — the original input the frozen
-    artifact and the report row each answer to, never to each other."""
+    """The original turn declarations, preserving each envelope's wire fields."""
     return [
         str(step["send"]) if "send" in step else {"envelope": step["envelope"]}
         for step in steps

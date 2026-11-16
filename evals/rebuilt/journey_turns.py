@@ -23,6 +23,7 @@ else is `unconfirmed` and fails closed before any judge.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -152,12 +153,7 @@ def _turn_outcome(ctx: dict[str, Any], actions: list[dict[str, Any]],
 
 
 def _admission_declared(ctx: dict[str, Any], event: dict[str, Any]) -> str | None:
-    """None when the admitted event's own payload carries this ctx's
-    declared envelope; the fixed cause otherwise. The declaration and
-    the settled admission are two independent witnesses — a missing
-    payload, an unreadable one, or one whose actor, source identity,
-    clock or body is not the declaration's is refused before any judge.
-    """
+    """The admitted payload matches the complete declared input, or a fixed cause."""
     payload = event.get("payload")
     fields = payload.get("envelope") if isinstance(payload, dict) else None
     if not isinstance(fields, dict):
@@ -166,7 +162,9 @@ def _admission_declared(ctx: dict[str, Any], event: dict[str, Any]) -> str | Non
         admitted = declared_envelope(fields)
     except (TypeError, ValueError):
         return "admission_declared_foreign"
-    if (declared_source(admitted) != ctx.get("source")
+    if (json.dumps(admitted.to_fields(), sort_keys=True, allow_nan=False)
+            != json.dumps(ctx["envelope"].to_fields(), sort_keys=True, allow_nan=False)
+            or declared_source(admitted) != ctx.get("source")
             or message_from_dict(admitted.message or {}).body
             != ctx.get("input")):
         return "admission_declared_foreign"

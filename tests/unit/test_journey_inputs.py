@@ -306,6 +306,7 @@ def test_a_declared_turn_rejects_a_projection_the_envelope_disproves():
         frozen, unit="generated-unit", turn=0,
         declared_input={"envelope": _fields()},
         recorded_input=dict(foreign))
+    assert cause is not None
     assert "declared_input" in cause
 
 
@@ -392,5 +393,20 @@ def test_a_foreign_admitted_body_is_named():
                          "body": "a different declared body"}
     ctx = _declared_ctx({"id": "v1:declared-42", "state": "done",
                          "payload": {"envelope": fields}})
+    causes = _turn_causes(ctx, _trajectory(_recorded_input()), ())
+    assert "admission_declared_foreign" in causes
+
+
+@pytest.mark.parametrize("message_fields", [
+    {"quote": {"quoted_ts": SENT - 1000, "author_id": ACTOR,
+               "text": "a substituted quoted message"}},
+    {"media": [{"platform_id": "generated-image", "media_type": "image/jpeg"}]},
+])
+def test_same_body_cannot_hide_a_substituted_quote_or_media(message_fields):
+    fields = _fields()
+    fields["message"] = {**fields["message"], **message_fields}
+    ctx = _declared_ctx({"id": "v1:declared-42", "state": "done",
+                         "payload": {"envelope": fields}})
+    assert declared_source(declared_envelope(fields)) == ctx["source"]
     causes = _turn_causes(ctx, _trajectory(_recorded_input()), ())
     assert "admission_declared_foreign" in causes
