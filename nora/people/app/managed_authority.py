@@ -330,7 +330,7 @@ class AuthorityService:
         if outcome.status is OutcomeStatus.COMPLETE:
             outcome = await self._effects(effect, record, scope)
         if outcome.status is OutcomeStatus.COMPLETE:
-            want, unwant = self._readback_terms(effect)
+            want, unwant = await self._readback_terms(effect)
             outcome = await self._run_step(
                 record, "readback", lambda: self._readback(scope, want, unwant)
             )
@@ -423,13 +423,14 @@ class AuthorityService:
         if not isinstance(payload, MembershipStanding):
             raise ManagedError(f"{kind} payload is {type(payload).__name__}")
         person_id = effect.person_id or ""
+        member = await self._membership_after_direct(effect)
         outcome = await self._run_step(
             record, "authority",
             lambda: (
                 self._backend.put_relation(
                     scope=scope, relation="member", person_id=person_id
                 )
-                if payload.member
+                if member
                 else self._backend.drop_relation(
                     scope=scope, relation="member", person_id=person_id
                 )
@@ -439,10 +440,22 @@ class AuthorityService:
             return outcome
         return await self._run_step(
             record, "binding",
-            lambda: self._bindings.set_membership(
-                person_id=person_id, scope=scope,
-                member=payload.member, source="delegation",
+            lambda: (
+                self._bindings.set_membership(
+                    person_id=person_id, scope=scope, member=True, source="delegation"
+                ) if payload.member else self._bindings.drop_membership_support(
+                    person_id=person_id, scope=scope, source="delegation"
+                )
             ),
+        )
+
+    async def _membership_after_direct(self, effect: _ReplayOp) -> bool:
+        if isinstance(effect.payload, MembershipStanding) and effect.payload.member:
+            return True
+        return any(
+            row.scope == effect.scope and row.state is MembershipState.MEMBER
+            and bool(row.sources - {"delegation"})
+            for row in await self._bindings.memberships_for(effect.person_id or "")
         )
 
     async def _access_effects(
@@ -579,7 +592,7 @@ class AuthorityService:
             ],
         )
 
-    def _readback_terms(
+    async def _readback_terms(
         self, effect: _ReplayOp
     ) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
         """The (relation, person) pairs that must be present and absent after the effect."""
@@ -589,8 +602,8 @@ class AuthorityService:
             pair = ("member", effect.person_id or "")
             if not isinstance(payload, MembershipStanding):
                 raise ManagedError(f"{kind} payload is {type(payload).__name__}")
-            return ({pair} if payload.member else set(),
-                    set() if payload.member else {pair})
+            member = await self._membership_after_direct(effect)
+            return ({pair} if member else set(), set() if member else {pair})
         if kind in ("grant_access", "revoke_access"):
             if not isinstance(payload, AccessChange):
                 raise ManagedError(f"{kind} payload is {type(payload).__name__}")
