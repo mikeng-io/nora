@@ -22,6 +22,7 @@ import pytest
 import sqlalchemy as sa
 from aiohttp import web
 
+from evals.rebuilt.journey_turns import _admission_declared
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql.schema import BRIDGE_EVENT
 from nora.platform.bridge.envelope import Envelope, canonical_source_key
@@ -29,7 +30,11 @@ from nora.platform.bridge.rehydrate import message_to_dict
 from nora.platform.bridge.service import action_http_status, action_response
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError
-from nora.subject.journey import JourneyDriver, declared_envelope
+from nora.subject.journey import (
+    JourneyDriver,
+    declared_envelope,
+    declared_source,
+)
 from nora.subject.journey_world import action_service, memory_service
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 from nora.testing.signal_daemon import FakeSignalDaemon
@@ -199,3 +204,34 @@ async def test_generated_input_still_crosses_the_same_boundary(
             rows = (await conn.execute(sa.select(BRIDGE_EVENT).where(
                 BRIDGE_EVENT.c.id == "generated-control"))).mappings().all()
         assert len(rows) == 1
+
+
+async def test_a_deduped_declaration_cannot_borrow_the_firsts_payload(
+        clean_pg_url, evaluation_config, tmp_path, monkeypatch):
+    """Production dedupe aliases a second declaration to the first's
+    canonical event: the settled row's payload stays the FIRST envelope's
+    while the declared input is the second's. The turn's admission check
+    compares the declaration to the admitted payload, never to the
+    shared alias — the foreign body is a named refusal before any judge.
+    """
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    async with _world(clean_pg_url, tmp_path, "deduped") as subject:
+        driver = JourneyDriver(subject)
+        async with _running(driver):
+            first = declared_envelope(_declaration())
+            await driver.ingress_declared(first)
+            fields = _declaration()
+            fields["message"] = {
+                **fields["message"],
+                "body": "the second declared body",
+                "raw": {"dataMessage": {
+                    "message": "the second declared body"}}}
+            second = declared_envelope(fields)
+            incoming, event, _work = await driver.ingress_declared(second)
+        assert incoming is second
+        wire = (event["payload"] or {}).get("envelope") or {}
+        assert (wire.get("message") or {}).get("body") == "the declared body"
+        ctx = {"envelope": second, "source": declared_source(second),
+               "input": "the second declared body",
+               "event_id": second.event_id}
+        assert _admission_declared(ctx, event) == "admission_declared_foreign"

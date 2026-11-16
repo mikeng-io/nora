@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from evals.outcome import UNKNOWN, UNMEASURED, axis
-from scripts.cognition_loop.cases import Case
+from nora.subject.eval_evidence import EvidenceError
+from scripts.cognition_loop.cases import Case, DeclaredTurn
 
 
 def manifest(cases: list[Case]) -> list[dict[str, Any]]:
@@ -121,13 +122,18 @@ def frozen_turn_identity(frozen: dict[str, Any], *, unit: Any, turn: Any,
                          recorded_input: Any = None) -> str | None:
     """Why a frozen artifact cannot stand in for this case/unit/turn, else
     None. The artifact proves it belongs by content: its own turn index,
-    unit and declared input text under typed identity, its error step
+    unit and declared input under typed identity, its error step
     equal to the row's, and its trajectory's `session_id` equal to the
     row's — None for an input that bound no session, the bound session's
-    own identity when its stimulus settled to one. A declared-envelope
-    input proves its actor, source event, room and source clock too: the
-    frozen `declared_input` must equal the report row's exactly, and a
-    source-bearing artifact the row never recorded is foreign.
+    own identity when its stimulus settled to one. A generated input's
+    manifest declaration is its text: the frozen `declared_input` must
+    equal the report row's exactly, and a source-bearing artifact the row
+    never recorded is foreign. A declared-envelope input's manifest
+    declaration is the original `Envelope` itself: the frozen
+    `declared_envelope` must parse to it, and the artifact's and the
+    row's projections must each equal the declaration's — a foreign
+    actor, event or clock the two artifacts share still disagrees with
+    the original case.
     """
     if not isinstance(frozen, dict):
         return "frozen turn is not an object"
@@ -143,16 +149,41 @@ def frozen_turn_identity(frozen: dict[str, Any], *, unit: Any, turn: Any,
     required(frozen.get("turn"), turn, "turn")
     required(frozen.get("unit"), unit, "unit")
     declared = frozen.get("declared_input")
-    required(declared.get("text") if isinstance(declared, dict) else None,
-             declared_input, "declared_input")
-    frozen_source = (isinstance(declared, dict)
-                     and declared.get("source") is not None)
-    if isinstance(recorded_input, dict):
-        if (not isinstance(declared, dict)
-                or not _input_same(declared, recorded_input)):
+    if isinstance(declared_input, dict):
+        original: DeclaredTurn | None = None
+        expected_input: dict[str, Any] | None = None
+        try:
+            original = DeclaredTurn(**declared_input)
+            expected_input = original.declared_input()
+        except (TypeError, ValueError, EvidenceError):
+            pass
+        if expected_input is None or original is None:
+            missing.append("declared_input")
+        else:
+            envelope = frozen.get("declared_envelope")
+            if envelope is None:
+                missing.append("declared_envelope")
+            elif not original.same_envelope(envelope):
+                foreign.append("declared_envelope")
+            if not isinstance(declared, dict):
+                missing.append("declared_input")
+            elif not _input_same(declared, expected_input):
+                foreign.append("declared_input")
+            if not isinstance(recorded_input, dict):
+                missing.append("recorded_input")
+            elif not _input_same(recorded_input, expected_input):
+                foreign.append("recorded_input")
+    else:
+        required(declared.get("text") if isinstance(declared, dict) else None,
+                 declared_input, "declared_input")
+        frozen_source = (isinstance(declared, dict)
+                         and declared.get("source") is not None)
+        if isinstance(recorded_input, dict):
+            if (not isinstance(declared, dict)
+                    or not _input_same(declared, recorded_input)):
+                foreign.append("declared_input")
+        elif frozen_source:
             foreign.append("declared_input")
-    elif frozen_source:
-        foreign.append("declared_input")
     error = frozen.get("error")
     raw_step = error.get("step") if isinstance(error, dict) else None
     if ((error is not None and not isinstance(error, dict))

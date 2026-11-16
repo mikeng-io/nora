@@ -388,3 +388,103 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(
     assert prior_traj.get("unit") == case.unit
     assert prior_traj.get("unit_rooms") is None
     assert isinstance(prior_diff.kinds, dict)
+
+
+def _turn_trajectory(declared_input):
+    """A complete turn observation the judges may read."""
+    return {"turn": 0, "unit": "generated-unit",
+            "effects": {"status": "observed", "items": [], "tools": []},
+            "declared_input": declared_input, "session_id": None,
+            "bound": {"event_id": declared_input["event_id"],
+                      "session_id": None, "session_conflict": None},
+            "turn_outcome": {"status": "recorded"},
+            "settlement": {"status": "observed"}}
+
+
+@pytest.mark.parametrize("damage", [None, "actor", "clock", "envelope"])
+async def test_a_declared_turn_is_judged_against_the_original_declaration(
+    monkeypatch, tmp_path, example_config, damage,
+):
+    """The matching declaration reaches the valid path. A foreign actor,
+    event or clock the frozen artifact AND the report row share — with
+    the same body text — fails reconciliation and actual rejudge with
+    zero judge traffic: two derived artifacts agreeing with each other
+    cannot substitute for agreement with the original case."""
+    import json
+
+    from scripts.cognition_loop import rejudge as module
+    from scripts.cognition_loop.cases import (
+        Case,
+        DeclaredTurn,
+        Expectation,
+        write_case,
+    )
+    from scripts.cognition_loop.verdicts import ExpectationVerdict
+    from tests.unit.test_journey_inputs import (
+        SENT,
+        _fields,
+        _foreign_fields,
+        _foreign_input,
+        _recorded_input,
+    )
+
+    case = Case(name="generated-declared-turn", unit="generated-unit",
+                wakes=(), version=2,
+                turns=(DeclaredTurn(envelope=_fields()),),
+                expectations=(Expectation(
+                    wake=None, turn=0, polarity="must", kind="behavior",
+                    text="the generated behavior claim",
+                    check="generated"),))
+    case_path = tmp_path / "case.json"
+    write_case(case, case_path)
+    declared = _recorded_input()
+    if damage in ("actor", "clock"):
+        declared = _foreign_input(**{damage: True})
+    frozen = {
+        "turn": 0, "unit": case.unit, "error": None, "diff": {},
+        "declared_envelope": (_fields() if damage != "envelope"
+                              else _foreign_fields()),
+        "declared_input": dict(declared),
+        "trajectory": _turn_trajectory(declared)}
+    (tmp_path / "turn-0.json").write_text(json.dumps(frozen))
+    (tmp_path / "report.json").write_text(json.dumps({
+        "status": "PASS", "expected_cases": manifest([case]),
+        "evidence": {"status": "PASS"},
+        "cases": [{"case": case.name, "unit": case.unit, "wakes": [],
+                   "turns": [{"turn": 0, "at_ms": SENT, "session_id": None,
+                              "status": "PASS",
+                              "declared_input": dict(declared),
+                              "expectations": []}]}]}))
+    bindings = {"llm.base_url": "judge"}
+    bindings.update({f"providers.{name}.base_url": "judge"
+                     for name in example_config.providers})
+    services = tmp_path / "services.json"
+    services.write_text(json.dumps({"version": 1, "corpora": {
+        "cognition-rejudge": {case.name: {
+            "version": 1, "bindings": bindings,
+            "services": {"judge": []}}}}}))
+    originals = {p.name: p.read_bytes()
+                 for p in tmp_path.glob("*.json")}
+    calls = []
+
+    async def judge(*args):
+        calls.append(1)
+        return ExpectationVerdict(verdict="PASS", answers=(
+            JudgeAnswer("met", model="a"), JudgeAnswer("met", model="b")))
+
+    monkeypatch.setattr(module, "load", lambda *a, **k: example_config)
+    monkeypatch.setattr(module, "Judges", lambda *_: object())
+    monkeypatch.setattr(module, "judge_expectation", judge)
+    monkeypatch.setattr(module, "render", lambda _: None)
+    result = await module.rejudge(tmp_path, case_path, tmp_path / "config",
+                                  "a", "b", services=services)
+    if damage is None:
+        assert result["status"] == "PASS"
+        assert calls == [1]
+        return
+    assert result["status"] == "ERROR"
+    assert calls == []
+    named = "declared_envelope" if damage == "envelope" else "declared_input"
+    assert any(named in e for e in result["errors"])
+    assert {name: (tmp_path / name).read_bytes() for name in originals} \
+        == originals

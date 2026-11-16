@@ -44,8 +44,8 @@
   {
     "name": "a frozen turn's declared input is compared, not text-matched",
     "file": "scripts/cognition_loop/accounting.py",
-    "old": "    frozen_source = (isinstance(declared, dict)\n                     and declared.get(\"source\") is not None)\n    if isinstance(recorded_input, dict):\n        if (not isinstance(declared, dict)\n                or not _input_same(declared, recorded_input)):\n            foreign.append(\"declared_input\")\n    elif frozen_source:\n        foreign.append(\"declared_input\")",
-    "new": "    pass",
+    "old": "        frozen_source = (isinstance(declared, dict)\n                         and declared.get(\"source\") is not None)\n        if isinstance(recorded_input, dict):\n            if (not isinstance(declared, dict)\n                    or not _input_same(declared, recorded_input)):\n                foreign.append(\"declared_input\")\n        elif frozen_source:\n            foreign.append(\"declared_input\")",
+    "new": "        pass",
     "target": "tests/unit/test_journey_inputs.py::test_frozen_turn_identity_rejects_a_foreign_declared_input"
   },
   {
@@ -54,5 +54,61 @@
     "old": "    elif \"source\" in declared:",
     "new": "    elif False:",
     "target": "tests/unit/test_journey_inputs.py::test_turn_gap_rejects_an_unbound_declared_source"
+  },
+  {
+    "name": "a missing admitted envelope is refused before the judges",
+    "file": "evals/rebuilt/journey_turns.py",
+    "old": "    if not isinstance(fields, dict):\n        return \"admission_declared_missing\"",
+    "new": "    if not isinstance(fields, dict):\n        fields = {}",
+    "target": "tests/unit/test_journey_inputs.py::test_a_missing_or_unreadable_admitted_payload_is_named"
+  },
+  {
+    "name": "a foreign admitted envelope is refused before the judges",
+    "file": "evals/rebuilt/journey_turns.py",
+    "old": "    if (declared_source(admitted) != ctx.get(\"source\")\n            or message_from_dict(admitted.message or {}).body\n            != ctx.get(\"input\")):\n        return \"admission_declared_foreign\"\n    return None",
+    "new": "    return None",
+    "target": "tests/unit/test_journey_inputs.py::test_a_foreign_admitted_payload_is_named"
+  },
+  {
+    "name": "a frozen declared envelope answers to the original declaration",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "            elif not original.same_envelope(envelope):\n                foreign.append(\"declared_envelope\")",
+    "new": "            elif not original.same_envelope(envelope):\n                pass",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_declared_turns_identity_fails_against_the_declaration"
+  },
+  {
+    "name": "a shared foreign projection is caught by the declaration",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "            elif not _input_same(declared, expected_input):\n                foreign.append(\"declared_input\")",
+    "new": "            elif not _input_same(declared, recorded_input):\n                foreign.append(\"declared_input\")",
+    "target": "tests/unit/test_journey_inputs.py::test_a_declared_turn_rejects_a_projection_the_envelope_disproves"
+  },
+  {
+    "name": "the manifest carries the declared envelope, not its body text",
+    "file": "evals/rebuilt/autonomous_journey.py",
+    "old": "        str(step[\"send\"]) if \"send\" in step else {\"envelope\": step[\"envelope\"]}",
+    "new": "        str(step[\"send\"]) if \"send\" in step else str(step[\"envelope\"])",
+    "target": "tests/unit/test_journey_inputs.py::test_the_manifest_keeps_the_original_declaration"
+  },
+  {
+    "name": "rejudge compares the frozen turn to the original declaration",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "                declared_input=(anchor if isinstance(anchor, str)\n                                else asdict(anchor)),",
+    "new": "                declared_input=anchor,",
+    "target": "tests/unit/test_cognition_loop_rejudge.py::test_a_declared_turn_is_judged_against_the_original_declaration"
+  },
+  {
+    "name": "a declared case turn keeps its envelope, not its string",
+    "file": "scripts/cognition_loop/cases.py",
+    "old": "                return DeclaredTurn(**raw_turn)",
+    "new": "                return str(raw_turn)",
+    "target": "tests/unit/test_cognition_loop_eval.py::test_a_declared_turn_round_trips_its_envelope"
+  },
+  {
+    "name": "a version-2 turn is generated text or a declared envelope",
+    "file": "scripts/cognition_loop/cases.py",
+    "old": "            for turn in self.turns:\n                if not isinstance(turn, (str, DeclaredTurn)):\n                    raise EvidenceError(\n                        \"a version-2 turn is generated text or a declared \"\n                        \"envelope\")",
+    "new": "            for turn in self.turns:\n                pass",
+    "target": "tests/unit/test_cognition_loop_eval.py::test_a_version2_case_turn_is_typed"
   }
 ]

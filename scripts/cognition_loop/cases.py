@@ -22,7 +22,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from nora.platform.bridge.envelope import Envelope
+from nora.platform.bridge.rehydrate import message_from_dict
 from nora.subject.eval_evidence import EvidenceError
+from nora.subject.journey import declared_envelope, declared_source
 
 #: The stores a version-1 expectation's `kind` names; the diff kinds it is
 #: judged against (`scripts.cognition_loop.state`).
@@ -82,13 +85,48 @@ class ReadProbe:
 
 
 @dataclass(frozen=True, slots=True)
+class DeclaredTurn:
+    """A version-2 later input declared as a production `Envelope`'s wire
+    fields. Construction proves the declaration parses; `declared_input`
+    is the one observed projection the frozen artifact and the report row
+    each answer to — never to each other."""
+
+    envelope: dict[str, Any]
+
+    def __post_init__(self) -> None:
+        try:
+            declared_envelope(self.envelope)
+        except (TypeError, ValueError) as exc:
+            raise EvidenceError(str(exc)) from exc
+
+    def parsed(self) -> Envelope:
+        return declared_envelope(self.envelope)
+
+    def declared_input(self) -> dict[str, Any]:
+        declared = self.parsed()
+        return {
+            "text": message_from_dict(declared.message or {}).body,
+            "event_id": declared.event_id,
+            "at_ms": int(declared.sent_ms),
+            "source": declared_source(declared),
+        }
+
+    def same_envelope(self, fields: Any) -> bool:
+        """`fields` parses to this exact declared envelope, else False."""
+        try:
+            return declared_envelope(fields) == self.parsed()
+        except (TypeError, ValueError):
+            return False
+
+
+@dataclass(frozen=True, slots=True)
 class Case:
     name: str
     unit: str
     wakes: tuple[int, ...]
     expectations: tuple[Expectation, ...] = field(default_factory=tuple)
     read_probes: tuple[ReadProbe, ...] = ()
-    turns: tuple[str, ...] = ()
+    turns: tuple[str | DeclaredTurn, ...] = ()
     version: int = 1
 
     def __post_init__(self) -> None:
@@ -114,6 +152,11 @@ class Case:
         if self.version == 2:
             if self.read_probes:
                 raise EvidenceError("a version-2 case declares no read probes")
+            for turn in self.turns:
+                if not isinstance(turn, (str, DeclaredTurn)):
+                    raise EvidenceError(
+                        "a version-2 turn is generated text or a declared "
+                        "envelope")
             if self.expectations and not self.turns:
                 raise EvidenceError(
                     "a version-2 case declares the later inputs its "
@@ -158,12 +201,25 @@ def load_case(path: Path) -> Case:
             kind=str(e["kind"]), text=str(e["text"]),
             check=e.get("check"))
 
+    def turn(raw_turn: Any) -> str | DeclaredTurn:
+        if isinstance(raw_turn, str):
+            return raw_turn
+        if isinstance(raw_turn, dict):
+            try:
+                return DeclaredTurn(**raw_turn)
+            except (TypeError, EvidenceError) as exc:
+                raise EvidenceError(
+                    f"{path}: a declared case turn is not a declared "
+                    f"envelope: {exc}") from exc
+        raise EvidenceError(
+            f"{path}: a case turn is generated text or a declared envelope")
+
     return Case(
         name=str(raw["name"]), unit=str(raw["unit"]),
         wakes=tuple(int(w) for w in raw.get("wakes") or ()),
         expectations=tuple(expectation(e) for e in raw.get("expectations", [])),
         read_probes=tuple(ReadProbe(**p) for p in raw.get("read_probes", [])),
-        turns=tuple(str(t) for t in raw.get("turns") or ()),
+        turns=tuple(turn(t) for t in raw.get("turns") or ()),
         version=version,
     )
 
@@ -172,7 +228,9 @@ def write_case(case: Case, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
         "version": case.version, "name": case.name, "unit": case.unit,
-        "wakes": list(case.wakes), "turns": list(case.turns),
+        "wakes": list(case.wakes), "turns": [
+            asdict(t) if isinstance(t, DeclaredTurn) else t
+            for t in case.turns],
         "expectations": [
             {k: v for k, v in {
                 "wake": e.wake, "turn": e.turn, "polarity": e.polarity,

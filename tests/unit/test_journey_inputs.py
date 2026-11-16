@@ -3,13 +3,13 @@ frozen-identity damage — pure controls, no App, no store."""
 
 import pytest
 
-from evals.rebuilt.autonomous_journey import _input_ctx
+from evals.rebuilt.autonomous_journey import _expected_turns, _input_ctx
 from evals.rebuilt.journey_manifest import _plan_error
-from evals.rebuilt.journey_turns import _declared_input, declared_source
+from evals.rebuilt.journey_turns import _declared_input, _turn_causes
 from nora.domain.models import NormalizedMessage
 from nora.platform.bridge.envelope import Envelope, canonical_source_key
 from nora.platform.bridge.rehydrate import message_to_dict
-from nora.subject.journey import declared_envelope
+from nora.subject.journey import declared_envelope, declared_source
 from scripts.cognition_loop.accounting import frozen_turn_identity
 from scripts.cognition_loop.judges import turn_gap
 
@@ -160,7 +160,7 @@ def test_input_ctx_binds_the_declared_declaration_and_instant():
 def test_declared_input_carries_source_only_for_declared_envelopes():
     ctx = {"input": "the declared body", "event_id": "v1:declared-42",
            "at_ms": SENT, "source": {"actor": ACTOR}}
-    assert _declared_input(ctx)["source"] == {"actor": ACTOR}
+    assert _declared_input(ctx).get("source") == {"actor": ACTOR}
     generated = {"input": "generated", "event_id": "g", "at_ms": 1,
                  "source": None}
     assert "source" not in _declared_input(generated)
@@ -212,7 +212,7 @@ def test_frozen_turn_identity_keeps_generated_inputs_unchanged():
 
 
 def _trajectory(declared_input):
-    return {"effects": {"status": "observed"},
+    return {"effects": {"status": "observed", "items": [], "tools": []},
             "declared_input": declared_input, "session_id": None,
             "bound": {"event_id": declared_input["event_id"],
                       "session_id": None},
@@ -236,3 +236,161 @@ def test_turn_gap_rejects_an_unbound_declared_source(key):
 def test_turn_gap_keeps_generated_inputs_unchanged():
     declared = {"text": "generated", "event_id": "g", "at_ms": 1}
     assert "declared_input_unbound" not in turn_gap(_trajectory(declared))
+
+
+def _declared_frozen(fields=None, declared=None):
+    """The frozen turn artifact a declared input leaves."""
+    return {"turn": 0, "unit": "generated-unit",
+            "declared_envelope": _fields() if fields is None else fields,
+            "declared_input": (_recorded_input() if declared is None
+                               else declared),
+            "trajectory": {"session_id": None, "unit": "generated-unit"}}
+
+
+def _foreign_fields(*, actor=False, clock=False):
+    """A foreign but still-valid declaration's wire fields, same body text."""
+    fields = _fields(event_id="v1:foreign-99")
+    message = dict(fields["message"])
+    if actor:
+        fields["sender_id"] = "+85290000111"
+        fields["sender_name"] = "Rex"
+        message["sender_id"] = "+85290000111"
+        message["sender_name"] = "Rex"
+    if clock:
+        fields["sent_ms"] = SENT + 1
+        message["timestamp"] = SENT + 1
+    fields["message"] = message
+    return fields
+
+
+def _foreign_input(**overrides):
+    foreign = declared_envelope(_foreign_fields(**overrides))
+    return {"text": "the declared body",
+            "event_id": foreign.event_id,
+            "at_ms": int(foreign.sent_ms),
+            "source": declared_source(foreign)}
+
+
+def test_a_declared_turns_identity_answers_to_the_original_declaration():
+    declared = _recorded_input()
+    assert frozen_turn_identity(
+        _declared_frozen(), unit="generated-unit", turn=0,
+        declared_input={"envelope": _fields()},
+        recorded_input=dict(declared)) is None
+
+
+@pytest.mark.parametrize("damage", ["actor", "event", "clock"])
+def test_a_declared_turn_rejects_a_foreign_identity_in_both_artifacts(damage):
+    """The row and the frozen artifact agreeing on a foreign actor, event
+    or clock — with the same body text — cannot stand in for the original
+    declaration: agreement between two derived artifacts is not identity."""
+    foreign = _foreign_input(
+        actor=(damage == "actor"), clock=(damage == "clock"))
+    frozen = _declared_frozen(fields=_foreign_fields(
+        actor=(damage == "actor"), clock=(damage == "clock")),
+        declared=foreign)
+    cause = frozen_turn_identity(
+        frozen, unit="generated-unit", turn=0,
+        declared_input={"envelope": _fields()},
+        recorded_input=dict(foreign))
+    assert cause is not None
+
+
+def test_a_declared_turn_rejects_a_projection_the_envelope_disproves():
+    """The frozen envelope carries the original declaration but the
+    artifacts' shared projection drifted: the projection answers to the
+    declaration, not to the artifacts' agreement."""
+    foreign = _foreign_input()
+    frozen = _declared_frozen(declared=foreign)
+    cause = frozen_turn_identity(
+        frozen, unit="generated-unit", turn=0,
+        declared_input={"envelope": _fields()},
+        recorded_input=dict(foreign))
+    assert "declared_input" in cause
+
+
+def test_a_declared_turn_needs_its_frozen_envelope():
+    frozen = _declared_frozen()
+    frozen.pop("declared_envelope")
+    cause = frozen_turn_identity(
+        frozen, unit="generated-unit", turn=0,
+        declared_input={"envelope": _fields()},
+        recorded_input=_recorded_input())
+    assert "declared_envelope" in cause
+
+
+def test_a_declared_turn_needs_a_legible_declaration():
+    cause = frozen_turn_identity(
+        _declared_frozen(), unit="generated-unit", turn=0,
+        declared_input={"envelope": {"v": 99}},
+        recorded_input=_recorded_input())
+    assert "unknown" in cause and "declared_input" in cause
+
+
+def test_a_declared_turn_rejects_a_foreign_report_projection():
+    cause = frozen_turn_identity(
+        _declared_frozen(), unit="generated-unit", turn=0,
+        declared_input={"envelope": _fields()},
+        recorded_input=_foreign_input())
+    assert "recorded_input" in cause
+
+
+def test_a_declared_turn_needs_the_report_projection():
+    cause = frozen_turn_identity(
+        _declared_frozen(), unit="generated-unit", turn=0,
+        declared_input={"envelope": _fields()}, recorded_input=None)
+    assert "recorded_input" in cause
+
+
+def test_the_manifest_keeps_the_original_declaration():
+    fields = _fields()
+    turns = _expected_turns(
+        [{"send": "generated"}, {"envelope": fields}, {"skip": True}])
+    assert turns == ["generated", {"envelope": fields}]
+    declared = declared_envelope(turns[1]["envelope"])
+    assert declared_source(declared)["actor"] == ACTOR
+    assert declared_source(declared)["sent_ms"] == SENT
+
+
+def _declared_ctx(event):
+    declared = declared_envelope(_fields())
+    return {"index": 0, "input": "the declared body",
+            "event_id": "v1:declared-42", "at_ms": SENT,
+            "envelope": declared, "source": declared_source(declared),
+            "event": event,
+            "work": [{"kind": "ingest", "state": "done"}]}
+
+
+def test_the_matching_admitted_payload_clears_the_turn():
+    ctx = _declared_ctx({"id": "v1:declared-42", "state": "done",
+                         "payload": {"envelope": _fields()}})
+    assert _turn_causes(ctx, _trajectory(_recorded_input()), ()) == []
+
+
+@pytest.mark.parametrize("payload,cause", [
+    (None, "admission_declared_missing"),
+    ({}, "admission_declared_missing"),
+    ({"envelope": "the declared body"}, "admission_declared_missing"),
+    ({"envelope": {"v": 99}}, "admission_declared_foreign"),
+])
+def test_a_missing_or_unreadable_admitted_payload_is_named(payload, cause):
+    ctx = _declared_ctx({"id": "v1:declared-42", "state": "done",
+                         "payload": payload})
+    assert cause in _turn_causes(ctx, _trajectory(_recorded_input()), ())
+
+
+def test_a_foreign_admitted_payload_is_named():
+    ctx = _declared_ctx({"id": "v1:declared-42", "state": "done",
+                         "payload": {"envelope": _foreign_fields()}})
+    causes = _turn_causes(ctx, _trajectory(_recorded_input()), ())
+    assert "admission_declared_foreign" in causes
+
+
+def test_a_foreign_admitted_body_is_named():
+    fields = _fields()
+    fields["message"] = {**fields["message"],
+                         "body": "a different declared body"}
+    ctx = _declared_ctx({"id": "v1:declared-42", "state": "done",
+                         "payload": {"envelope": fields}})
+    causes = _turn_causes(ctx, _trajectory(_recorded_input()), ())
+    assert "admission_declared_foreign" in causes

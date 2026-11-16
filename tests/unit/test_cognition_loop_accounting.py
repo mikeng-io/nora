@@ -6,8 +6,19 @@ from dataclasses import asdict, replace
 import pytest
 
 from scripts.cognition_loop.accounting import manifest, reconcile, write_report
-from scripts.cognition_loop.cases import generated_case
+from scripts.cognition_loop.cases import (
+    Case,
+    DeclaredTurn,
+    generated_case,
+)
 from scripts.cognition_loop.html import render
+from tests.unit.test_journey_inputs import (
+    SENT,
+    _fields,
+    _foreign_fields,
+    _foreign_input,
+    _recorded_input,
+)
 
 
 def _outcome_item(unit, wake_id, session_id, *, outcome="closed", at_ms,
@@ -403,3 +414,60 @@ def test_a_foreign_or_unproven_turn_artifact_is_named(damage, expect):
         frozen, unit="generated-unit", turn=1,
         declared_input="the generated correction")
     assert verdict is not None and expect in verdict
+
+
+def _declared_report(output):
+    """A complete declared-turn report: the manifest carries the original
+    declaration, the row and the frozen artifact its one projection."""
+    declared = _recorded_input()
+    (output / "turn-0.json").write_text(json.dumps({
+        "turn": 0, "unit": "generated-unit", "error": None, "diff": {},
+        "declared_envelope": _fields(), "declared_input": dict(declared),
+        "trajectory": {"turn": 0, "unit": "generated-unit",
+                       "session_id": None}}))
+    return {
+        "status": "PASS", "evidence": {"status": "PASS", "causes": []},
+        "expected_cases": manifest([Case(
+            name="generated-declared", unit="generated-unit", wakes=(),
+            turns=(DeclaredTurn(envelope=_fields()),), version=2)]),
+        "cases": [{"case": "generated-declared", "unit": "generated-unit",
+                   "wakes": [], "turns": [{
+                       "turn": 0, "at_ms": SENT, "session_id": None,
+                       "declared_input": dict(declared),
+                       "expectations": []}]}],
+    }
+
+
+def test_a_declared_turn_reconciles_against_the_original_declaration(tmp_path):
+    coverage = reconcile(_declared_report(tmp_path), tmp_path)
+    assert coverage["status"] == "PASS"
+    assert coverage["expected"]["turns"] == 1
+
+
+@pytest.mark.parametrize("damage", [
+    "foreign_both", "foreign_frozen", "foreign_recorded",
+    "missing_envelope", "foreign_envelope",
+])
+def test_a_declared_turns_identity_fails_against_the_declaration(
+        tmp_path, damage):
+    """A foreign actor, event or clock the frozen artifact and the report
+    row share — with the same body text — is not identity: each answers to
+    the original case declaration, never to each other."""
+    report = _declared_report(tmp_path)
+    frozen = json.loads((tmp_path / "turn-0.json").read_text())
+    if damage == "foreign_both":
+        foreign = _foreign_input()
+        frozen["declared_input"] = dict(foreign)
+        report["cases"][0]["turns"][0]["declared_input"] = dict(foreign)
+    elif damage == "foreign_frozen":
+        frozen["declared_input"] = _foreign_input()
+    elif damage == "foreign_recorded":
+        report["cases"][0]["turns"][0]["declared_input"] = _foreign_input()
+    elif damage == "missing_envelope":
+        frozen.pop("declared_envelope")
+    else:
+        frozen["declared_envelope"] = _foreign_fields()
+    (tmp_path / "turn-0.json").write_text(json.dumps(frozen))
+    coverage = reconcile(report, tmp_path)
+    assert coverage["status"] == "ERROR"
+    assert coverage["errors"]
