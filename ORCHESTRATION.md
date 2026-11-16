@@ -69,20 +69,23 @@ delegate, reconcile evidence, triage, land and report.
 
 ## The lifecycle
 
-Stages apply as a change needs them; a small one passes several in one sitting.
+The operator-facing orchestrator owns the whole outcome across workers and
+sessions. `nora-work` is the entry router; it loads the procedure for the next
+action. These are responsibilities, not mandatory documents or approval gates.
+A small change can cover several stages in one turn.
 
-| stage | answers | owner | produces | exits when |
-|---|---|---|---|---|
-| **intake** | what outcome is wanted, and is it architecture or code? | `nora-design` §1; `nora-decision` | a Linear work brief, or a direct brief in the PR | intent, completion conditions and boundaries are explicit |
-| **design** (architecture changes only) | what is the system? | `nora-design` | a bundle edit, before or with the code | the bundle change is reviewed per its tier |
-| **decide** | does this need a ruling on record? | `nora-decision` | a DEC row or ADR | numbered at merge |
-| **dispatch** | what is the next bounded outcome and who owns it? | `nora-dispatch` | native Linear ownership, dependencies and necessary sub-issues | completion conditions and integration have owners |
-| **build** | — | the builder, with `nora-land`, `nora-structure`, `nora-test`, `nora-tool`, `nora-runtime-skill` | commits on a branch | the brief's named checks ran once |
-| **verify** | does it do what it claims? | `nora-prove-fix`, `nora-eval`, the gate in `nora-land` | evidence | each obligation is met, unmet or unavailable, with evidence |
-| **review** | does it hold up to someone else? | `nora-review`, `REVIEW.md` | findings and a verdict | no BLOCKER, within two rounds |
-| **land** | — | `nora-land` | a merge commit | on master and read back |
-| **release and deploy** | — | `nora-release`, `nora-deploy`, `nora-readback` | a release; the live service | released; live state read back when acceptance requires it |
-| **close and learn** | is the outcome delivered, and did the process itself fail anywhere? | the orchestrator | Linear work reconciled; the owning skill or root document edited | completion conditions evidenced; process failures corrected in their owner |
+| stage | responsibility | procedure | sufficient result |
+|---|---|---|---|
+| **triage** | understand the request and current position | `nora-work` | outcome, authority and missing context understood |
+| **shape** | define intent, completion and boundaries | `nora-dispatch`; `nora-design` for architecture; `nora-decision` for records | one current work brief, with design links as needed |
+| **execute** | do or delegate the next bounded work | `nora-dispatch`, `nora-land`; specialist skills as needed | inspectable work and remaining obligations |
+| **verify** | compare the result with the brief | `nora-test`, `nora-prove-fix`, `nora-eval`, `nora-review`, `nora-readback` as applicable | each required result met, unmet or unavailable with evidence |
+| **deliver** | land and deliver to the agreed boundary | `nora-land`, `nora-release`, `nora-deploy` as applicable | merge/publication/live evidence only where required |
+| **resolve or resume** | close the outcome or preserve its continuation | `nora-dispatch` | evidenced completion, or a short handoff with remaining work |
+
+This is skill-guided reinforcement. Existing tools perform the operations;
+there is no lifecycle engine, phase lock or automatic session wakeup. Scripts
+are for useful repeated reads/writes, not for deciding scope or completion.
 
 ## Execution tier
 
@@ -128,7 +131,7 @@ needs checks on what the upstream change touches.
   links as needed. The model chooses implementation details; no separate plan,
   spec or PRD is required. Small direct work may use the PR-recorded brief.
 - Read the current brief, parent intent and actual blockers before launch,
-  intake and handoff; bind the intent/completion-condition digest in the run.
+  intake and handoff; record the work link and the source revision or update time read.
   Keep the description concise and current. Comments hold discussion and
   precise evidence, not the only current acceptance or another live queue.
 - Agreement to a concrete proposed fix means implement it. File only work
@@ -172,18 +175,11 @@ endpoint for the same vendor is not independence. An orchestrator that
 implements directly is the builder. If no independent reviewer is available,
 block or get the operator's waiver.
 
-**A brief** follows `nora-dispatch`: one bounded outcome a reviewer can read in
-one sitting, in complete sentences a fresh agent can follow, linking what the
-repo holds instead of pasting or abbreviating it. It links the Linear work
-brief (or direct-work PR), input revisions, allowed
-paths, non-goals, worktree/base/branch, skills, named checks and the stop
-point. Builders run the named checks once and stop at the handoff; the
-orchestrator owns acceptance. No extra handling, tests, reviewers or scope:
-report an adjacent concern instead.
-Review briefs include the claims, the diff command and **do not spawn
-sub-agents; do the work yourself**. In a T3 delegated worktree start with
-`git fetch origin && git switch -c <type>/<slug> origin/master`; never create a
-second worktree. Reviews check out the exact review head.
+**Execution briefs and handoffs** follow `nora-dispatch`. The worker owns its
+assigned slice; the orchestrator owns integration and final acceptance. Reviews
+run on the assigned base/head and do not spawn agents. Prepared worktrees keep
+their assigned base; do not create a second worktree or restart dependent work
+from master.
 
 ## Bounded independent review
 
@@ -227,19 +223,12 @@ most six into the PR, most severe first.
 | GitHub issue | Defect/problem reports and their resolution; never the execution queue or roadmap |
 | Run / review receipt | Actual provider, model, toolset, options, fit reason, run reference, input revision and evidence |
 
-- A work brief links the design; native Linear ownership, blocking relations
-  and necessary sub-issues express the execution plan. Split independently
-  assignable/verifiable outcomes, not every code step or review finding. Each
-  child inherits the parent's boundaries and names only its own outcome.
-- PRs and run receipts own evidence; Linear links them. No GitHub Issue mirror,
-  duplicate board prose, committed run database or new plan/spec files. During
-  migration, preserve each existing work ID, holds, evidence and active owner
-  until its Linear successor is read back and linked; then archive the obsolete
-  board view without deleting reports, PRs or historical evidence.
-- Agent session state is not work acceptance. PR merge and child closure do
-  not automatically close an outcome. MCP is access, not a scheduler; native
-  integrations or a configured adapter own unattended starts. Policy adoption
-  does not install that wiring, enable Loops or authorize model spending.
+- Use native ownership/dependencies and link evidence; do not copy plans,
+  receipts or tracker state into parallel files. Preserve existing work IDs,
+  owners and holds until verified successors are linked during migration.
+- AgentSession completion, PR merge and child closure are not whole-outcome
+  acceptance. A skill or MCP connection does not install unattended execution
+  or grant spending authority.
 
 Task states describe work and run readiness, not agent session states:
 **Inbox** may be incomplete (blank tiers mean unclassified); **Ready** has a
@@ -254,9 +243,10 @@ workflow names are read back rather than assumed to match these labels.
 
 ## Interchange shape
 
-`.agents/orchestration.schema.json` (JSON Schema 2020-12) owns the status,
-priority and tier vocabularies and validates policy, task and run shapes; the
-`kind` field selects which. It checks shape only, not link resolution, worker
+The optional `.agents/orchestration.schema.json` interchange describes policy,
+task and run records for consumers that use it; it does not govern live Linear
+states or require agents to produce a record at each stage. The `kind` field
+selects the shape. It checks shape only, not link resolution, worker
 competence, independence or acceptance: read those back. Task metadata is a small
 projection, not a tracker API payload. `issue_ref` accepts the owning Linear
 work URL; the schema does not install a tracker integration. Unknown properties are rejected except in

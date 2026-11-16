@@ -108,12 +108,9 @@ priorities, dependencies and outcomes; a report can link its Linear work without
 copying the task description or status back and forth. Small direct changes
 need no ticket: the PR records the operator's intent and result.
 
-[ORCHESTRATION.md](../../ORCHESTRATION.md) owns assignment and artifact boundaries.
-Design bundles hold architecture, invariants and rationale. A Linear **work
-brief** combines intent, completion conditions and boundaries in one current
-issue description. Native owners, delegates, dependencies and necessary children
-express execution; no separate plan/spec documents or GitHub Issue mirror.
-PRs and run receipts own measured results; Linear links that evidence.
+[ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership) defines artifact
+ownership; `nora-work` routes the lifecycle and `nora-decision` records reports
+or deferred work. Follow the relevant procedure rather than copying it here.
 
 Use **Bug report** for a reproducible problem: Description, Steps to reproduce,
 Expected behavior, Actual behavior, and Version and environment. Use **Feature
@@ -191,23 +188,9 @@ architecture change updates its design owner first or in the same PR. The PR
 links the work; review/CI and the authored merge establish source delivery.
 The outcome owner then reads back the required completion conditions.
 
-Refine in place. Use sub-issues for independently assignable/verifiable results
-or real dependencies, not every implementation step or finding. A child states
-its own outcome and inherits the parent's boundaries; the parent retains
-integration/completion ownership. In-scope defects stay with their unit;
-adjacent improvements enter backlog without becoming blockers. Repeated defects
-at one seam require reconsidering the approach before another repair dispatch.
-
-Keep the current brief readable without historical comments. Incorporate
-operator-authorized scope changes before the next dispatch; link precise
-supporting evidence. Do not grow descriptions into run logs or archive the only
-current acceptance. A session handoff carries the work URL, checkout/head,
-remaining work, next action and holds, not another planning document.
-
-Use Linear's native PR integration without GitHub Issue sync. Configure workflow
-states from the actual team: PR merge may mean source delivered but not outcome
-accepted. Avoid parent/child auto-close where integrated or runtime acceptance
-is still required. A completed agent session is separate from issue completion.
+Use `nora-dispatch` for refinement, scope changes and session handoff; its
+procedure owns those steps. Tracker integrations reflect delivery progress,
+not proof of whole-outcome acceptance.
 
 For a real GitHub report, use `Closes #N` only when the PR fully resolves that
 report; otherwise link it without closing. Close superseded/not-planned reports
@@ -283,11 +266,8 @@ Project overviews state intent and design links; work briefs own bounded
 completion conditions. Milestones are optional real checkpoints, not mandatory
 SDLC documents. Dates stay empty until committed.
 
-`nora-decision` admits/updates work; `nora-dispatch` refines, assigns and intakes;
-`nora-land` reconciles delivery evidence. Native status/ownership/dependency views
-replace manually maintained task tables. Child counts, PR merge and agent session
-completion do not prove whole-outcome acceptance. Read the actual Linear team
-workflow; no particular status names or automations are presumed configured.
+Use `nora-work` for lifecycle routing and `nora-decision` for work records.
+Read actual team states rather than assuming particular names or automations.
 
 GitHub Projects are not a parallel roadmap or execution queue. Reset obsolete
 Nora planning views by archiving/closing them after the selected unfinished work

@@ -7,21 +7,22 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 
 Worktree → impact-based validation → PR → applicable review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
 Read logs/state after each step, not just its exit code; proceed unless blocked or missing an operator-only fact.
-The orchestrator, of any vendor, makes small changes itself and delegates
-substantial work only when the benefit outweighs context loss, or the operator
-asks; Claude is never a delegated builder or independent reviewer
-(`ORCHESTRATION.md`). Review depth follows what the change can break. Delegated builders run named checks, commit/push/open PR and
-stop; the parent owns final validation, review, merge and read-back.
+`ORCHESTRATION.md` owns assignment/review policy; `nora-dispatch` owns worker
+handoffs. Workers stop at their assigned boundary; the parent owns acceptance.
 
 ```bash
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
 LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 ```
 
-## 1. Start: intent, then a new worktree on a new branch
+## 1. Start: intent and the assigned checkout
 
-Read `ORCHESTRATION.md` «Intent, evidence and completion»: pin the brief/design's
-outcome, scope, obligations and stopping boundary; inspect existing code and carry that intent.
+Use `nora-work` to recover the outcome and choose the next action;
+`nora-dispatch` owns execution and handoff. This skill owns the source-control
+and validation steps below. Respect the assigned base and stopping boundary.
+If a delegated checkout is already prepared, verify it and skip worktree creation.
+For new independent work, create the worktree below; dependent work uses its
+assigned base instead of `origin/master`.
 An operator agreeing to the proposed fix means implement it, not create a
 planning ticket and stop. Deferred execution work belongs in Linear.
 
@@ -33,9 +34,11 @@ uv sync --extra evals        # only when selected Python checks need it
 git status -sb; git config core.hooksPath
 ```
 
-Check: `## <type>/<slug>...origin/master`, no ahead/behind; hooksPath ends `.githooks` (empty: `make hooks`).
+Check: branch/head matches the assigned base (fetched `origin/master` for new
+independent work); preserve existing changes. hooksPath ends `.githooks`
+(empty: `make hooks`).
 
-- Cut from fetched `origin/master`, never stale local `master`; inspect the final diff.
+- New independent work starts at fetched `origin/master`; inspect the final diff.
 - One committing agent per worktree; never edit the primary checkout.
 - Never hide a failed `cd`; stop rather than run in the wrong directory.
 
@@ -194,8 +197,6 @@ make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must 
 
 Fix a process failure found on the way in its owning skill or root document now
 (`ORCHESTRATION.md` «The lifecycle»). Reconcile the Linear work brief with met/unmet/unavailable evidence and remaining scope. Link the PR/result; close only a fully satisfied outcome. GitHub defect reports keep their separate resolution.
-For a linked outcome, follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap): reconcile remaining acceptance,
-read back Linear state, ownership and remaining completion conditions. A merged child or completed agent session is not an accepted parent; routine direct work needs no ticket.
 Report completed/unmet obligations separately; keep required read-back, add no extra
 research/deployment, and stop when the completion rule holds.
 The next change starts in a new worktree; cleanup: `docs/maintainers/conventions.md`. Deploying: nora-deploy.

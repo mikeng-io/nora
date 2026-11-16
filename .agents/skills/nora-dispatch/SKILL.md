@@ -1,138 +1,77 @@
 ---
 name: nora-dispatch
-description: Turns a Linear work brief into bounded execution, delegates only when useful, reads results back and carries the whole outcome through review and integration. Load before dispatch, intake or handoff. Not for design (nora-design), review (nora-review) or landing (nora-land).
+description: Shape a bounded Nora work brief, do or delegate execution, reconcile results, and hand over or close the outcome. Load for work refinement, dispatch, result intake or session handoff; nora-work routes the lifecycle.
 ---
 
-# nora-dispatch
+# Dispatch and execution
 
-Linear owns work; the repository owns design and code; GitHub owns defect
-reports and PRs. `ORCHESTRATION.md` owns policy, tiers and review limits.
-This skill is a procedure, not runtime enforcement or an installed scheduler.
+Policy: [ORCHESTRATION.md](../../../ORCHESTRATION.md). Use the relevant step;
+resume from current evidence rather than restarting the whole procedure.
 
-## 1. Read the current work brief
+## 1. Read or refine the work
 
-Read the Linear issue description first. Its **work brief** combines intent,
-completion conditions and scope; there are no separate plan/spec documents.
-For a small direct change, the PR can record the operator's brief without a
-new ticket. Read linked design subjects and evidence only as needed.
+Read the current description, parent outcome and unresolved blockers. Capture
+only what the next actor needs; follow design and evidence links on demand.
 
-```
-Intent       the outcome and why it matters
-Done when    observable results that establish completion
-Boundaries   non-goals, active holds and applicable design links
-References   only necessary source, dependency or evidence links
-```
+| work brief | contains |
+|---|---|
+| Intent | the outcome and why |
+| Done when | observable completion conditions |
+| Boundaries | non-goals, holds and relevant design constraints |
+| References | necessary sources and evidence links |
 
-- The model chooses implementation details; the brief need not enumerate files,
-  functions or every scenario. Missing material intent remains missing: resolve
-  it before building instead of guessing or writing a PRD.
-- Keep current intent and completion conditions directly readable. Comments
-  hold discussion or precise evidence, never the only current acceptance or a
-  second queue. Incorporate an authorized amendment into the description.
-- Read the selected work, its parent intent and actual blockers; do not preload
-  every project issue, all comments or historical repair receipts. If the brief
-  is too broad to understand in one read, split the outcome, not its sentences.
-- Pin the work URL and intent/completion-condition digest in the run, plus the
-  design commit/path and code base separately. Existing GitHub work keeps its
-  authority until a read-back-verified Linear successor is linked; never lose
-  obligations, holds or a running owner during migration.
+Keep one current brief in Linear, or in the PR for small direct work. Preserve
+existing work authority until its successor and owner are verified and linked.
+Record its link and source revision or update time read; code base and design revision are
+separate facts. Update authorized scope changes in place, not in a comment queue.
+Check: a fresh agent can state the outcome and completion conditions in one read.
 
-Check: a fresh agent can state the outcome, completion conditions and boundary
-without reconstructing the conversation.
+## 2. Choose the next unit
 
-## 2. Refine only enough to execute
+Do small work directly. Split only independently assignable/verifiable outcomes
+or real dependencies into sub-issues; each states its delta and links its parent.
+Use native ownership and blocking relations instead of a copied task table.
+Sequence shared write ownership. For an integrated change, units are review
+slices on its integration branch, not separate master releases.
+Check: the remaining completion conditions, including integration, have owners.
 
-One work item is one bounded outcome. Use Linear's owner, delegate, parent,
-blocking relations and status rather than copying them into prose.
+## 3. Execute or delegate
 
-- Create sub-issues only for independently assignable or verifiable outcomes,
-  work with its own dependency, or work that must survive a session. A function,
-  test command or every review finding does not need a ticket.
-- Each child inherits the parent's intent and boundaries; state only its own
-  outcome/delta and link the parent. Every parent completion condition must
-  have an owner, including integration. Do not copy the parent brief.
-- Parallelize only independent write ownership. Shared seams are sequenced;
-  one committing agent per isolated worktree. The dependency view is the plan.
-- Units of one integrated change are review slices, not separate releases:
-  review and integrate each on the integration branch, then measure the whole.
+For direct work, load `nora-land` and the relevant specialist procedure.
+For delegation, follow the policy's worker selection. Link the work brief and
+add only execution context: base/head, prepared checkout, allowed area, skills,
+named checks and worker stop point. Respect dependent bases; do not silently
+restart a repair on master. Read back the actual provider/model/options and
+checkout. The worker does the assigned work without launching other workers.
+Check: the execution has started on the intended input, with a finite boundary.
 
-Check: prerequisites have evidence, every remaining obligation has an owner,
-and the next unit advances the agreed outcome rather than a repair queue alone.
+## 4. Reconcile and continue
 
-## 3. Launch bounded work
+Read the actual diff and named checks with exit codes. Mark required results
+met, unmet or unavailable, with evidence locators and their limits.
 
-Do small changes yourself. For delegation, follow the worker selection and
-independence rules in `ORCHESTRATION.md`. The launch prompt links the current
-work brief and adds only execution context: base/head, prepared checkout,
-allowed area, applicable skills, named checks and worker stop point. Do not
-paste another spec, generic repo policy or history into the prompt.
+- Repair defects that defeat the existing completion conditions in this work.
+- Keep adjacent improvements outside it; record actionable deferred work once.
+- Resolve unknowns with the smallest useful check; they are not new requirements.
+- For repeated blockers in the same seam, revisit the intent and real flow
+  before another repair. Preserve review limits; scope changes need authority.
 
-Before launching, confirm intent still matches the pinned input, the owner and
-prerequisites are known, and the stop point is finite. Check unknown dependencies
-before dispatching implementation. Read back the actual provider/model/options,
-checkout and head; choosing a delegate is not evidence that it started.
+Route review through `nora-review` at the applicable tier; integrate and measure
+where required, then use `nora-land`. Before claiming an eval, paid run or deploy
+ready, use its authorized zero-cost rehearsal of the actual path, not a proxy.
+Check: after each worker result, the parent resumes the whole outcome and selects
+its next action; a green test or merged child alone is not completion.
 
-Check: one outcome per launch. The worker does the work itself, launches no
-reviewers/children, and stops at the brief's boundary.
+## 5. Close or hand over
 
-## 4. Intake and route new findings
+Close only when the agreed results, including delivery where required, have
+actual evidence. Link receipts instead of copying logs into Linear.
 
-Read the actual diff against the assigned base and each named check's output
-and exit code. Map completion conditions to met, unmet or unavailable with
-locators; a local or synthetic probe proves only its exercised path.
-
-- An implementation defect stays in the same unit for bounded repair. A new
-  finding is included only if it defeats an existing completion condition.
-- An adjacent improvement becomes separate backlog work when actionable; it
-  does not block this outcome. An unknown needs the smallest discriminating
-  check, not automatic implementation. A changed outcome/boundary requires an
-  explicit operator amendment; a reviewer cannot add requirements.
-- Repeated blockers in the same seam mean the model of the work needs revision:
-  stop another repair launch, reread the intent and actual flow, then refine
-  the existing work. Do not reset review limits or manufacture new task IDs.
-- Update remaining work and next action in place. Put a short result with head
-  and evidence links in the run/PR; do not duplicate full receipts in Linear.
-  Preserve applicable checks and rerun only changed or unproved obligations
-  under repository validation rules.
-
-Check: a worker report or green test count alone cannot mark acceptance met.
-
-## 5. Review and integrate
-
-Route the actual base/head and work brief to independent review per
-`nora-review`. Triage under `ORCHESTRATION.md`; only a BLOCKER buys a repair
-round, with two rounds at most unless the operator explicitly authorizes more.
-An invalid plan returns to refinement, not a wider review.
-
-Integrate accepted units, resolve shared seams, and measure the integrated
-head on the required path. No ready claim for an eval, paid run or deploy
-without an authorized zero-cost rehearsal of that exact path, including SDK,
-budgets, judges and reports. Existing holds still apply. Land via `nora-land`.
-
-Check: unit acceptance, integrated acceptance, merge and runtime acceptance
-remain distinct, each with its actual evidence.
-
-## 6. Close or hand over the outcome
-
-Use Linear's workflow for ready, running, review, blocked and done; these are
-work states, separate from an agent session's pending/active/complete state.
-A session response, merged PR or all children closed is not parent acceptance.
-The outcome owner closes only after all required completion conditions hold.
-
-A worker stops; the orchestrator continues authorized next work. A replacement
-operator-facing session inherits the whole outcome, current work URL, active
-holds, checkout/head and next action. Keep that handoff short and linked, not
-another planning document. A limit on one action does not stop unrelated
-authorized progress. Error/blocked retains the cause and unblock condition.
-
-Check: no runnable outcome is abandoned at a local checkpoint and no blocked
-or partially delivered outcome is relabeled done.
-
-## 7. Automation boundary
-
-Use native PR links, delegation and status views. MCP access lets a running
-agent read/write Linear; it does not start a dormant T3 session. Native agent
-integrations or an explicitly configured event adapter own unattended starts.
-Do not enable a second dispatcher, implicit retries or paid coding/Loops merely
-because a work item exists or changes status. Read back actual wiring first.
-No GitHub Issue mirror or parallel execution board is required.
+At pause, blocker or session replacement, update a short current handoff:
+**where now, what remains, next action, active holds**, plus necessary decisions
+and why. Link the work, T3 thread, checkout/head and evidence. Preserve context
+that cannot be recovered from those links; do not repeat the code or transcript.
+On resume, read it and verify the anchors before returning to the relevant step.
+If tracker access is unavailable, retain the handoff in the session and disclose
+the unsynchronized update; do not invent another task store or lose progress.
+Check: either the whole outcome is evidenced, or its continuation is actionable.
