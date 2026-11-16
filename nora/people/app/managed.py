@@ -104,11 +104,13 @@ class ManagedServices:
             bindings, backend, topology, registry, links,
         )
         # The consumer read surface (`nora.access`): the SAME bindings/
-        # authority/topology. `file_services` passes the file-backed form;
-        # managed mode leaves file people/grants unattached — never a
-        # fallback for descriptive reads, which answer an honest absence.
+        # authority/topology/registry. `file_services` passes the
+        # file-backed form; managed mode leaves file people/grants
+        # unattached — never a fallback for descriptive reads, which
+        # answer an honest absence.
         self.access = access or IdentityAccess(
             bindings=bindings, authority=self.authority, topology=topology,
+            registry=registry,
         )
 
     async def aclose(self) -> None:
@@ -312,11 +314,10 @@ class RegistrationService:
             )
         if outcome.status is OutcomeStatus.COMPLETE and "kratos" in steps:
             outcome, identity_id = await self._registry.ensure_identity(
-                # The person id is `external_id`, never a trait — the
-                # nora_person schema carries descriptive fields only and
-                # holds no ownership evidence.
+                # Ownership is external_id, never a descriptive trait.
+                # Persist the file social default; conflict read-back preserves preferences.
                 external_id=person.person_id,
-                traits={"display_name": person.display_name},
+                traits={"display_name": person.display_name, "social": True},
             )
             if outcome.status is OutcomeStatus.COMPLETE and identity_id:
                 await self._mark(record, "kratos")

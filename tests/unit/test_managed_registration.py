@@ -391,6 +391,54 @@ async def test_unlink_requires_confirmed_session_revocation_and_reconciles(failu
     assert registry.sessions.get(PERSON, 0) == 0
 
 
+async def test_registration_writes_the_social_default_explicitly():
+    """The file default — social enabled — lands on the new identity as an
+    explicit `social` trait, so a reader never infers an absent preference."""
+    _, registry, svc = _service()
+    assert (await _register(svc, "op-1")).status is OutcomeStatus.COMPLETE
+    outcome, traits = await registry.identity_traits(external_id=PERSON)
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert traits is not None and traits["social"] is True
+
+
+async def test_an_observation_retry_keeps_the_recorded_social_preference():
+    """An incomplete observe replay reaches the kratos step and reads the
+    existing identity back — the preference it already holds is never
+    overwritten by the retry's default."""
+    store, registry, svc = _service()
+
+    def observe(ownership: str) -> Operation:
+        return Operation(
+            operation_id="op-1",
+            kind="observe_account",
+            actor=Actor(
+                kind=ActorKind.SERVICE, service_id="bridge",
+                sources=frozenset({"signal"}),
+            ),
+            target=Target(kind=TargetKind.ACCOUNT, account=ACCT),
+            payload=AccountObservation(identifiers=frozenset({ACCT})),
+            observed_revisions={"ownership": ownership},
+        )
+
+    registry.down = True
+    assert (await svc.apply(observe("0"))).status is OutcomeStatus.UNAVAILABLE
+    (person_id,) = store.people
+    bound = await store.record_for(account=ACCT)
+    assert bound is not None
+    # The create DID land before the unavailable answer — the identity
+    # exists carrying the preference it recorded.
+    registry.identities[person_id] = {
+        "id": "kratos-1", "state": "active",
+        "traits": {"display_name": person_id, "social": False},
+    }
+    registry.down = False
+    retried = await svc.apply(observe(str(bound.revision)))
+    assert retried.status is OutcomeStatus.COMPLETE
+    outcome, traits = await registry.identity_traits(external_id=person_id)
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert traits is not None and traits["social"] is False
+
+
 async def test_observation_of_an_unclaimed_account_creates_an_independent_person():
     store, _, svc = _service()
     op = Operation(

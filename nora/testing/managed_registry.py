@@ -77,6 +77,16 @@ class FakeIdentityRegistry(IdentityRegistry):
             return unknown_scope("absent")
         return allowed() if ident["state"] == "active" else check_denied("inactive")
 
+    async def identity_traits(
+        self, *, external_id: str
+    ) -> tuple[Outcome, dict[str, Any] | None]:
+        if self.down:
+            return unavailable_outcome(), None
+        ident = self.identities.get(external_id)
+        if ident is None:
+            return denied("absent"), None
+        return complete(), dict(ident["traits"])
+
     async def set_state(self, *, external_id: str, active: bool) -> Outcome:
         if self.down:
             return unavailable_outcome()

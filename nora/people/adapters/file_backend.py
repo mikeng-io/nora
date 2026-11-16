@@ -330,6 +330,11 @@ class FileIdentityRegistry:
     async def identity_state(self, *, external_id: str) -> CheckResult:
         return unknown_scope("file mode holds no identity record")
 
+    async def identity_traits(
+        self, *, external_id: str
+    ) -> tuple[Outcome, dict[str, Any] | None]:
+        return denied(_OPERATOR_MAINTAINED), None
+
     async def set_state(self, *, external_id: str, active: bool) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
 

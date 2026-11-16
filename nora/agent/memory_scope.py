@@ -120,4 +120,5 @@ async def scope_for_async(
         people_here=listed | (live.person_ids if live is not None else frozenset()),
         presence_persons=presence,
         room_persons=room_persons,
+        social_off=await access.social_off_ids(listed),
     )

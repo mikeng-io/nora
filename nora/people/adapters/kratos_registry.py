@@ -42,6 +42,14 @@ class KratosIdentityRegistry(IdentityRegistry):
     async def identity_state(self, *, external_id: str) -> CheckResult:
         return await self._client.state_of(external_id)
 
+    async def identity_traits(
+        self, *, external_id: str
+    ) -> tuple[Outcome, dict[str, Any] | None]:
+        outcome, identity = await self._client.get_by_external_id(external_id)
+        if identity is None:
+            return outcome, None
+        return complete(), identity.traits
+
     async def set_state(self, *, external_id: str, active: bool) -> Outcome:
         outcome, identity = await self._client.get_by_external_id(external_id)
         if identity is None:

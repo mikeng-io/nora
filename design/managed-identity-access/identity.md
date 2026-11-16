@@ -90,13 +90,26 @@ identity by `external_id` and never assumes a colliding registration intended
 the same person. Nora's own person id survives as the canonical key; the Kratos
 identity id is stored as a binding, not substituted into historical references.
 
-A Nora person schema carries descriptive traits only — a display name and the
-non-matchable labels — because a platform-originated person may have no email,
-password or OIDC credential at all. The declared schema source lives at
+A Nora person schema carries descriptive traits only — a display name, the
+social-memory opt-out and the non-matchable labels — because a
+platform-originated person may have no email, password or OIDC credential at
+all. The declared schema source lives at
 `deploy/ory/kratos/person.schema.json`: credentialless, closed to additional
 properties and carrying no account ownership in mutable traits. No fake email
 is manufactured to satisfy a schema; batch upsert and credential attachment
 are not part of this integration.
+
+The `social` trait is the managed source for the social opt-out file mode
+declares on a person block. Registration writes `social = true` explicitly —
+the existing file default — so a new identity never relies on a reader
+inferring an absent value, and a registration retry reads the identity back
+rather than overwriting a stored preference. The read folds the canonical
+person with every retired identity an alias preserves: an opt-out recorded on
+either independently registered identity applies after linking, and a retired
+(inactive) identity's traits still answer without reactivation. An identity
+whose trait is absent or malformed is unavailable to the reader — never
+inferred enabled — and no path grants authority to clear another holder's
+preference.
 
 Identity `state` is `active` or `inactive`. The v26.2.0 specification text
 claims the value "has currently no effect", but the v26.2.0 source enforces it:
