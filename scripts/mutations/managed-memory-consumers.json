@@ -1,0 +1,86 @@
+[
+ {
+  "name": "graph boot: no synchronous global preference read under managed",
+  "file": "nora/memory/wire.py",
+  "old": "            social_off_ids=persons.social_off_ids() if access is None else frozenset(),",
+  "new": "            social_off_ids=persons.social_off_ids(),",
+  "target": "tests/unit/test_managed_memory_scope.py::test_graph_composition_wires_and_starts_under_the_managed_backend"
+ },
+ {
+  "name": "source admission reads current managed room membership",
+  "file": "nora/infra/sql/comprehend.py",
+  "old": "or await self._persons_in_unit(node[\"persons\"], work.unit)",
+  "new": "or (\n                    node[\"persons\"]\n                    and set(node[\"persons\"]) <= self.persons_by_unit.get(work.unit, set())\n                )",
+  "target": "tests/contract/test_comprehend_records_contract.py::test_managed_source_admission_uses_current_room_membership[sql]"
+ },
+ {
+  "name": "social preference is read for the source's people at read time",
+  "file": "nora/infra/sql/comprehend.py",
+  "old": "set(node[\"persons\"]) & await self._social_off(node[\"persons\"])",
+  "new": "set(node[\"persons\"]) & self.social_off_ids",
+  "target": "tests/contract/test_comprehend_records_contract.py::test_managed_social_read_checks_the_live_preference_at_read_time[sql]"
+ },
+ {
+  "name": "a retired alias folds for the permission question only",
+  "file": "nora/infra/sql/comprehend.py",
+  "old": "        return await self.access.canonical_person(person_id) or person_id",
+  "new": "        return person_id",
+  "target": "tests/contract/test_comprehend_records_contract.py::test_managed_admission_folds_a_retired_alias_for_permission[sql]"
+ },
+ {
+  "name": "the memory tool person filter reads managed room membership",
+  "file": "nora/memory/adapters/tools/search.py",
+  "old": "            listed = scope.listed_here if scope is not None else None",
+  "new": "            listed = target.room.persons if target.room is not None else None",
+  "target": "tests/unit/test_memory_search_tool.py::test_memory_search_admits_a_managed_member_the_stale_roster_omits"
+ },
+ {
+  "name": "file graph keeps its opt-outs without a selected access facade",
+  "file": "nora/memory/wire.py",
+  "old": "            social_off_ids=persons.social_off_ids() if access is None else frozenset(),",
+  "new": "            social_off_ids=frozenset(),",
+  "target": "tests/unit/test_managed_memory_scope.py::test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied"
+ },
+ {
+  "name": "managed external reads screen the actual source names before egress",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "private_names = await self._private_names()",
+  "new": "private_names = state.private_names",
+  "target": "tests/unit/test_managed_memory_scope.py::test_managed_source_names_are_screened_live_before_external_reads"
+ },
+ {
+  "name": "later transcript sources contribute their private person names before egress",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "        for source in self._state.fetched.sources.values():\n            people.update(source.persons)\n",
+  "new": "        people.update(())\n",
+  "target": "tests/unit/test_managed_memory_scope.py::test_managed_source_names_are_screened_live_before_external_reads"
+ },
+ {
+  "name": "a blank authoritative display name makes the screened read unavailable",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "            if person is None or not person.display_name.strip():",
+  "new": "            if person is None:",
+  "target": "tests/unit/test_managed_memory_scope.py::test_a_blank_managed_source_name_makes_screened_reads_unavailable"
+ },
+ {
+  "name": "retired managed ids of each source person are screened before egress",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "                *await access.former_persons(person.person_id),",
+  "new": "                *(),",
+  "target": "tests/unit/test_managed_memory_scope.py::test_a_retired_id_of_a_source_person_is_screened_before_external_reads"
+ },
+ {
+  "name": "an alias read outage is unavailable, never silently omitted",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "                *await access.former_persons(person.person_id),",
+  "new": "                *(),",
+  "target": "tests/unit/test_managed_memory_scope.py::test_an_alias_read_outage_makes_the_screen_unavailable_not_partial"
+ },
+ {
+  "name": "source growth during identity reads refuses external execution",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "        if self._source_people() - person_ids:\n            raise LookupError(\"source people changed during identity reads\")",
+  "new": "        if False:\n            raise LookupError(\"source people changed during identity reads\")",
+  "target": "tests/unit/test_managed_memory_scope.py::test_a_source_person_exposed_mid_lookup_is_screened_before_the_provider_runs"
+ }
+]

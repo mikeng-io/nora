@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -20,6 +21,8 @@ from nora.agent.egress import _canonical
 from nora.agent.fetch_watch import GraphFetched, _result_of
 from nora.domain.comprehend import EGRESS_REASONS
 from nora.domain.memory_graph import Source
+
+log = logging.getLogger(__name__)
 
 READ_NAMES = frozenset(
     {
@@ -122,18 +125,52 @@ class ComprehendRead(AgentTool):
         envelope["status"] = "success"
         return ToolResultEvent(envelope)  # type: ignore[arg-type]
 
+    def _source_people(self) -> set[str]:
+        people = set(self._state.persons)
+        for source in self._state.fetched.sources.values():
+            people.update(source.persons)
+        return people
+
+    async def _private_names(self) -> tuple[str, ...]:
+        state = self._state
+        access = getattr(state.records, "access", None)
+        if access is None or access.is_file_backend:
+            return state.private_names
+        names = set(state.private_names)
+        person_ids = self._source_people()
+        for person_id in sorted(person_ids):
+            person = await access.person(person_id)
+            if person is None or not person.display_name.strip():
+                raise LookupError("source person name unavailable")
+            names.update(name for name in (
+                person_id, person.person_id, person.display_name,
+                *await access.former_persons(person.person_id),
+            ) if name)
+        if self._source_people() - person_ids:
+            raise LookupError("source people changed during identity reads")
+        return tuple(names)
+
     async def stream(
         self, tool_use: ToolUse, invocation_state: dict[str, Any], **kwargs: Any
     ) -> AsyncGenerator[Any, None]:
         state, name = self._state, self.tool_name
         args = tool_use.get("input") or {}
         if name in SCREENED_ARGS:
+            try:
+                private_names = await self._private_names()
+            except Exception:
+                log.exception("Source identity lookup failed before egress")
+                yield self._event(tool_use, {
+                    "status": "unavailable",
+                    "note": "The source identities could not be checked before egress.",
+                })
+                return
             reason = None
             for arg in SCREENED_ARGS[name]:
                 value = args.get(arg)
                 if not isinstance(value, str) or not value.strip():
                     continue
-                reason = egress_reason(value, state.private_names)
+                reason = egress_reason(value, private_names)
                 if reason is not None:
                     break
             if reason is None and name in state.limits:

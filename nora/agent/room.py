@@ -211,6 +211,19 @@ class Room:
         return self._platform
 
     @property
+    def access(self) -> Any:
+        """The selected identity backend this room resolves accounts
+        through, or `None` where none was wired (the Dreamer and other
+        compositions that construct a `Room` without one keep their
+        file-`Persons` reads — callers must not substitute another
+        authority for an absent one).
+
+        Read-only on purpose: the backend is fixed for the life of the turn,
+        and this object is constructed fresh per turn.
+        """
+        return self._access
+
+    @property
     def trigger_message_ids(self) -> tuple[int, ...]:
         """The Record ids of the message(s) that raised this turn (`messages.id`),
         read by the event verbs so an event a tag turn writes cites what it rests
