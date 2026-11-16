@@ -16,6 +16,9 @@ from typing import Any
 
 AXES = ("execution", "validity", "behavior")
 
+PASS = "PASS"  # noqa: S105 — an axis status, not a credential
+FAIL = "FAIL"
+ERROR = "ERROR"
 UNKNOWN = "UNKNOWN"
 UNMEASURED = "UNMEASURED"
 REVIEW = "REVIEW"

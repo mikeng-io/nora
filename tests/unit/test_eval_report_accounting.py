@@ -411,3 +411,143 @@ def test_the_manifest_is_required_not_inferred():
     assert axes["validity"]["status"] == "UNKNOWN"
     # Without a manifest and without settlement evidence nothing ran.
     assert axes["execution"]["status"] == "UNKNOWN"
+
+
+def test_protocol_axes_keep_behavior_unmeasured_even_with_verdicts():
+    """The default claim: verdict counts are retained as protocol
+    evidence, and behavior can never promote to a verdict under a
+    rehearsal."""
+    experiment, report = _journey_report("PASS")
+    coverage = reconcile_report(experiment, report)
+    axes = report_outcome(
+        report, coverage, experiment=experiment,
+        evidence={"receipt": {"status": "PASS"},
+                  "settlement": {"generated-draw": "settled"}})
+    assert axes["behavior"]["status"] == "UNMEASURED"
+    assert axes["behavior"]["verdicts"] == {
+        "PASS": 1, "FAIL": 0, "REVIEW": 0, "ERROR": 0}
+    assert axes["behavior"]["scope"] == "protocol-rehearsal"
+    assert axes["validity"]["scope"] == "protocol-rehearsal"
+
+
+@pytest.mark.parametrize("status,expected", [
+    ("PASS", "PASS"), ("FAIL", "FAIL"), ("REVIEW", "REVIEW"),
+    ("ERROR", "ERROR"),
+])
+def test_a_behavioral_measurement_reports_the_evaluators_axis(status, expected):
+    """Execution and validity stay their own axes; the evaluator's own
+    PASS/FAIL/REVIEW/ERROR is the behavior status — a quality FAIL or
+    REVIEW never demotes the execution that carried it."""
+    from evals.measurement import BEHAVIORAL
+
+    experiment, report = _journey_report(status)
+    coverage = reconcile_report(experiment, report)
+    axes = report_outcome(
+        report, coverage, experiment=experiment,
+        measurement=BEHAVIORAL,
+        evidence={"receipt": {"status": "PASS"},
+                  "settlement": {"generated-draw": "settled"}})
+    assert axes["execution"]["status"] == "PASS"
+    assert axes["validity"]["status"] == "PASS"
+    assert axes["behavior"]["status"] == expected
+    assert axes["behavior"]["scope"] == "behavioral-evaluation"
+
+
+def test_a_behavioral_pass_cannot_stand_on_an_unestablished_measurement():
+    """Verdicts alone are not a claim: a missing settlement or an
+    unvalidated capture keeps behavior UNKNOWN — never PASS on a
+    measurement that did not run cleanly."""
+    from evals.measurement import BEHAVIORAL
+
+    experiment, report = _journey_report("PASS")
+    coverage = reconcile_report(experiment, report)
+    axes = report_outcome(
+        report, coverage, experiment=experiment, measurement=BEHAVIORAL)
+    assert axes["execution"]["status"] == "UNKNOWN"
+    assert axes["behavior"]["status"] == "UNKNOWN"
+
+
+def test_an_unanswered_row_can_never_become_a_behavioral_pass():
+    """A draw whose evaluator produced no verdict is a measurement ERROR
+    — an unanswered measurement is not a quality score."""
+    from evals.measurement import BEHAVIORAL
+
+    def _raise(case):
+        raise RuntimeError("generated task failure")
+
+    experiment, report = _run(
+        [Case(name="generated-crash", input="x")], [_Verdict()], task=_raise)
+    coverage = reconcile_report(experiment, report)
+    axes = report_outcome(report, coverage, experiment=experiment,
+                          measurement=BEHAVIORAL)
+    assert axes["execution"]["status"] == "ERROR"
+    assert axes["behavior"]["status"] == "ERROR"
+    assert axes["behavior"]["unanswered"] == 1
+
+
+def test_the_retained_report_carries_the_bound_measurement(tmp_path):
+    """The retained corpus JSON reports the SAME claim the run bound —
+    its mode and the honest behavior status, not a pair of literals."""
+    from evals.backbone import retain_report
+    from evals.measurement import BEHAVIORAL
+
+    experiment, report = _run(
+        [Case(name="generated-draw", input="x")], [_Verdict(label="FAIL")])
+    evidence = _evidence(tmp_path, _settled("generated-draw"))
+    payload = retain_report(
+        evidence, "generated-corpus", report, experiment=experiment,
+        measurement=BEHAVIORAL)
+    assert payload["mode"] == "behavioral-evaluation"
+    assert payload["behavior"] == "FAIL"
+    assert payload["outcome"]["execution"]["status"] == "PASS"
+    retained = json.loads((tmp_path / "evidence-record" /
+                           "corpus-generated-corpus.json").read_text())
+    assert retained["mode"] == payload["mode"]
+    assert retained["behavior"] == payload["behavior"]
+    assert retained["outcome"] == payload["outcome"]
+
+    # The default claim still reads protocol rehearsal and UNMEASURED.
+    payload = retain_report(
+        evidence, "generated-corpus", report, experiment=experiment)
+    assert payload["mode"] == "protocol-rehearsal"
+    assert payload["behavior"] == "UNMEASURED"
+
+
+def test_the_draw_state_stamps_the_bound_measurement_not_a_literal():
+    """`Spec.measurement` reaches every SDK row: protocol stays
+    UNMEASURED, a behavioral draw stamps its own retained verdict, and an
+    errored draw can never read as a measured verdict."""
+    from evals.backbone import (
+        NORA_BEHAVIOR,
+        NORA_ERROR,
+        NORA_JOURNEY,
+        NORA_MODE,
+        Spec,
+        _measured_result,
+    )
+    from evals.measurement import BEHAVIORAL
+
+    def states(result):
+        return {e.name: e.state for e in result["environment_state"]}
+
+    assert Spec(source_url="postgresql://u@h/eval").measurement.mode \
+        == "protocol-rehearsal"
+    spec = Spec(source_url="postgresql://u@h/eval", measurement=BEHAVIORAL)
+
+    row = {"environment_state": [
+        EnvironmentState(name=NORA_JOURNEY, state="REVIEW"),
+        EnvironmentState(name=NORA_ERROR, state=None)]}
+    stamped = states(_measured_result(row, spec.measurement))
+    assert stamped[NORA_MODE] == "behavioral-evaluation"
+    assert stamped[NORA_BEHAVIOR] == "REVIEW"
+
+    errored = {"environment_state": [
+        EnvironmentState(name=NORA_ERROR, state="generated task failure")]}
+    stamped = states(_measured_result(errored, spec.measurement))
+    assert stamped[NORA_MODE] == "behavioral-evaluation"
+    assert stamped[NORA_BEHAVIOR] == "ERROR"
+
+    stamped = states(_measured_result(
+        row, Spec(source_url="postgresql://u@h/eval").measurement))
+    assert stamped[NORA_MODE] == "protocol-rehearsal"
+    assert stamped[NORA_BEHAVIOR] == "UNMEASURED"

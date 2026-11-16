@@ -123,16 +123,20 @@ def load_cohort(path: Path, *, corpus: str) -> JourneyCohort:
 
 def bound_journey_services(
     corpus: str, cases: Any, plans: Any, *, judges: tuple[str, str],
+    measurement: Any = None,
 ) -> dict[str, Any]:
     """Every selected case's declared finite world, judge-bound, else a refusal.
 
     A case with no plan, a plan that is not a finite journey world (a
-    positional `RecordedServices` can never stand in for it), or a world
-    bound to aliases the cohort did not declare all refuse before any
-    case composes or a model is dispatched.
+    positional `RecordedServices` can never stand in for it), a world
+    bound to aliases the cohort did not declare, or a world whose shape
+    disagrees with the bound measurement all refuse before any case
+    composes or a model is dispatched.
     """
+    from evals.measurement import PROTOCOL
     from nora.subject.journey_world import JourneyServices
-
+    if measurement is None:
+        measurement = PROTOCOL
     declared = dict(plans or {})
     bound: dict[str, Any] = {}
     for case in cases:
@@ -150,6 +154,17 @@ def bound_journey_services(
                 f"{corpus}: journey case {case.name!r}'s world binds "
                 f"undeclared judge aliases {list(plan.judge_models)!r}; "
                 f"the cohort declares {list(judges)!r}")
+        if (plan.model_gateway is not None) != measurement.behavioral:
+            if measurement.behavioral:
+                raise ValueError(
+                    f"{corpus}: journey case {case.name!r} declares no "
+                    "model gateway — a behavioral measurement cannot "
+                    "promote the generated world's "
+                    "CausalProtocol/GeneratedJudge")
+            raise ValueError(
+                f"{corpus}: journey case {case.name!r} declares a model "
+                "gateway — a protocol rehearsal cannot silently spend "
+                "the live boundary")
         if (plan.model_gateway is not None
                 and not set(judges) <= set(plan.model_gateway.models)):
             raise ValueError(
@@ -165,19 +180,29 @@ def bound_selection(
 ) -> JourneyCohort | None:
     """The selected journey corpora's bound cohort; refusals raise ValueError.
 
-    Runs before any case composes or a model is dispatched: the cohort file
-    itself, every selected case's finite world under `--services`, the two
-    judge aliases agreeing everywhere they are declared, and the explicit
-    budget — anything missing, empty, malformed, legacy or undeclared is a
-    refusal, never a guess. No flag promotes the generated world into a
-    real-model baseline.
+    Binds `args.bound_measurement` (the `--measure` claim) alongside the
+    cohort, before any case composes or a model is dispatched: the cohort
+    file itself, every selected case's finite world under `--services`,
+    the two judge aliases agreeing everywhere they are declared, the
+    explicit budget, and the bound measurement's claim agreeing with every
+    case's world — anything missing, empty, malformed, legacy, undeclared
+    or promoted is a refusal, never a guess. The generated world stays a
+    protocol rehearsal unless `--measure behavioral` meets a world that
+    declares its own live model gateway.
     """
+    from evals.measurement import for_measure
     from evals.scenarios import JOURNEY_CORPORA, selected_cases
 
+    measurement = args.bound_measurement = for_measure(
+        getattr(args, "measure", "protocol"))
     journey = [n for n in names if n in JOURNEY_CORPORA]
     if args.journey_cohort and not journey:
         raise ValueError("--journey-cohort applies to no selected corpus")
     if not journey:
+        if measurement.behavioral:
+            raise ValueError(
+                f"--measure behavioral binds {sorted(JOURNEY_CORPORA)} "
+                "only; no journey corpus is selected")
         return None
     if len(journey) > 1:
         raise ValueError("each journey corpus declares its own cohort")
@@ -206,5 +231,6 @@ def bound_selection(
         raise ValueError(
             f"the services manifest declares no plans for {journey[0]!r}")
     cases = selected_cases(journey[0], only=only, cohort=cohort)
-    bound_journey_services(journey[0], cases, plans, judges=cohort.judges)
+    bound_journey_services(journey[0], cases, plans, judges=cohort.judges,
+                           measurement=args.bound_measurement)
     return cohort

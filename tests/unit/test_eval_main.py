@@ -278,7 +278,8 @@ def _journey_inputs(tmp_path):
     return argparse.Namespace(
         journey_cohort=cohort_path, services=services_path,
         service_inputs=load_services(services_path), run_budget="10",
-        sample=1, memory_index=False, subject_overrides=None, judge=None)
+        sample=1, memory_index=False, subject_overrides=None, judge=None,
+        measure="protocol")
 
 
 def test_the_journey_corpus_is_selectable_by_name_never_by_class_or_all():
@@ -354,6 +355,93 @@ def test_an_ordinary_selection_binds_no_cohort(tmp_path):
     args = _journey_inputs(tmp_path)
     args.journey_cohort = None
     assert bound_selection(args, ["standing"], None) is None
+
+
+# --------------------------------------------------------------------------
+# --measure: the off-default behavioral claim for the journey corpus.
+# --------------------------------------------------------------------------
+
+
+def test_the_measure_flag_is_off_default_and_refuses_an_unknown_claim():
+    from evals.cli import eval_parser
+
+    assert eval_parser().parse_args(
+        ["autonomous_journey"]).measure == "protocol"
+    assert eval_parser().parse_args(
+        ["autonomous_journey", "--measure", "behavioral"]
+    ).measure == "behavioral"
+    with pytest.raises(SystemExit):
+        eval_parser().parse_args(
+            ["autonomous_journey", "--measure", "live"])
+
+
+_GATEWAY = {"upstream": "http://127.0.0.1:9/v1",
+            "models": ["nora", "alpha", "beta"]}
+
+
+def _gateway_manifest(tmp_path):
+    """A manifest whose journey world declares the gateway `behavioral` needs."""
+    import json
+
+    from evals.services import load_services
+
+    path = tmp_path / "services-gateway.json"
+    path.write_text(json.dumps({"version": 1, "corpora": {
+        "autonomous_journey": {"the_outing": {
+            "kind": "journey_world", "policy": "[rooms]\nallow = []",
+            "judges": ["alpha", "beta"],
+            "model_gateway": dict(_GATEWAY)}}}}))
+    return path, load_services(path)
+
+
+def test_a_behavioral_selection_binds_the_declared_live_world(tmp_path):
+    """`--measure behavioral` meeting a per-case plan that declares its
+    own model gateway is the only way the journey's claim changes."""
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    args.measure = "behavioral"
+    args.services, args.service_inputs = _gateway_manifest(tmp_path)
+    cohort = bound_selection(args, ["autonomous_journey"], None)
+    assert cohort.judges == ("alpha", "beta")
+    assert [c.name for c in cohort.cases] == ["the_outing"]
+
+
+def test_a_behavioral_selection_cannot_promote_a_generated_world(tmp_path):
+    """A plan with no model gateway answers every request through
+    CausalProtocol/GeneratedJudge — finite responses, never model
+    behavior — so `--measure behavioral` refuses before any case
+    composes or a model is dispatched."""
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    args.measure = "behavioral"
+    with pytest.raises(ValueError, match="cannot promote"):
+        bound_selection(args, ["autonomous_journey"], None)
+
+
+def test_a_protocol_selection_cannot_silently_spend_a_declared_gateway(
+        tmp_path):
+    """A plan naming a live boundary under the default claim would run
+    real inference while reporting a rehearsal — refused, not mislabeled."""
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    args.services, args.service_inputs = _gateway_manifest(tmp_path)
+    with pytest.raises(ValueError, match="protocol rehearsal"):
+        bound_selection(args, ["autonomous_journey"], None)
+
+
+def test_a_behavioral_measurement_binds_the_journey_only(tmp_path):
+    """The off-default choice names the journey corpus: a behavioral
+    claim on an ordinary corpus refuses rather than silently bind."""
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    args.measure = "behavioral"
+    args.journey_cohort = None
+    with pytest.raises(ValueError, match="no journey corpus"):
+        bound_selection(args, ["standing"], None)
 
 
 # --------------------------------------------------------------------------

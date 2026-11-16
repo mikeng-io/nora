@@ -57,7 +57,8 @@ from strands_evals.types.evaluation import (
 )
 
 from evals import pseudonyms
-from evals.outcome import REVIEW
+from evals.measurement import PROTOCOL, Measurement
+from evals.outcome import ERROR, FAIL, PASS, REVIEW
 from evals.recall import recall_facts
 from evals.situation import (
     deployment_handles,
@@ -268,8 +269,6 @@ RUN_ID = new_run_id()
 #: MUST read `label` and MUST NOT read `test_pass` alone: an ERROR sets
 #: `test_pass=False` only because the field is not optional, and counting it as
 #: a failure is the substitution this whole bundle exists to refuse.
-PASS, FAIL, ERROR = "PASS", "FAIL", "ERROR"
-
 
 def state_of(data: EvaluationData, name: str) -> Any:
     """One named value off `actual_environment_state`, or `None`."""
@@ -1104,6 +1103,8 @@ class Spec:
     #: refused per case, never graded: the case filter and the config would
     #: be measuring two different Noras.
     memory_surface: str | None = None
+    #: The measurement claim bound before dispatch — stamped on every draw.
+    measurement: Measurement = PROTOCOL
 
 
 def refuse_a_memory_surface_mismatch(selected: str | None, enabled: bool) -> None:
@@ -1559,17 +1560,19 @@ async def _sandbox_for(spec: Spec, now: datetime) -> AsyncIterator[str]:
             yield url
 
 
-def _protocol_result(result: dict[str, Any]) -> dict[str, Any]:
-    return {**result, "environment_state": [
-        *result.get("environment_state", []),
-        EnvironmentState(name=NORA_MODE, state="protocol-rehearsal"),
-        EnvironmentState(name=NORA_BEHAVIOR, state="UNMEASURED"),
-    ]}
+def _measured_result(result: dict[str, Any], measurement: Measurement) -> dict[str, Any]:
+    """Stamp the bound measurement's claim onto the draw's native state."""
+    states = {e.name: e.state for e in result.get("environment_state", [])}
+    stamped = [EnvironmentState(name=NORA_MODE, state=measurement.mode),
+               EnvironmentState(name=NORA_BEHAVIOR, state=measurement.per_draw(
+                   error=states.get(NORA_ERROR),
+                   judged=states.get(NORA_JOURNEY) or states.get(NORA_JUDGED)))]
+    return {**result, "environment_state": [*result.get("environment_state", []), *stamped]}
 
 
-def retain_report(evidence: Any, corpus: str, report: Any, *,
-                  experiment: Any = None,
-                  coverage: dict[str, Any] | None = None) -> dict[str, Any]:
+def retain_report(evidence: Any, corpus: str, report: Any, *, experiment: Any = None,
+                  coverage: dict[str, Any] | None = None,
+                  measurement: Measurement = PROTOCOL) -> dict[str, Any]:
     """Retain the SDK's own report beside its expected-row accounting and
     the three result axes — the same rows every consumer reads."""
     from evals.accounting import evidence_outcome, reconcile_report, report_outcome
@@ -1579,10 +1582,11 @@ def retain_report(evidence: Any, corpus: str, report: Any, *,
             "status": "UNKNOWN", "expected": None, "observed": None,
             "errors": ["expected manifest unavailable"]}
     ev = evidence_outcome(evidence)
-    outcome = report_outcome(report, coverage, experiment=experiment, evidence=ev)
+    outcome = report_outcome(report, coverage, experiment=experiment,
+                             evidence=ev, measurement=measurement)
     payload = {"corpus": corpus, "report": report.model_dump(mode="json"),
-               "mode": "protocol-rehearsal", "behavior": "UNMEASURED",
-               "coverage": coverage, "outcome": outcome}
+               "mode": measurement.mode, "coverage": coverage,
+               "behavior": outcome["behavior"]["status"], "outcome": outcome}
     retained = {**payload, "evidence": {
         **ev["receipt"], "scope": "validated prefix; run terminal pending"}}
     evidence.retain(f"corpus-{corpus}.json", json.dumps(retained, ensure_ascii=False).encode())
@@ -1592,19 +1596,19 @@ def retain_report(evidence: Any, corpus: str, report: Any, *,
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     from nora.subject.eval_evidence import current
 
-    evidence = current()
-    if evidence is None:
-        return _protocol_result(await _drive_uncaptured(case, spec))
+    if (evidence := current()) is None:
+        return _measured_result(await _drive_uncaptured(case, spec), spec.measurement)
     with evidence.case(
             case.name or "unnamed", input=case.input,
             metadata={"case": case.model_dump(mode="json"), "entry": spec.entry}):
         try:
-            result = _protocol_result(await _drive_uncaptured(case, spec))
+            result = _measured_result(await _drive_uncaptured(case, spec), spec.measurement)
         except Exception as exc:
             from evals.results import task_error
 
             if evidence.failure is None:
-                evidence.result(_protocol_result(task_error(exc, spec.source_url)))
+                evidence.result(_measured_result(
+                    task_error(exc, spec.source_url), spec.measurement))
             raise
         evidence.result(result)
         return result
@@ -2225,7 +2229,7 @@ def nora_task(spec: Spec):
         except Exception as exc:                      # noqa: BLE001 — see module docstring
             from evals.results import task_error
 
-            return _protocol_result(task_error(exc, spec.source_url))
+            return _measured_result(task_error(exc, spec.source_url), spec.measurement)
 
     return task
 
