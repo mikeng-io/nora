@@ -5,5 +5,12 @@
     "old": "    r\"in \\d+(?:\\.\\d+)?s(?: \\(\\d+:\\d{2}:\\d{2}\\))?\"\n",
     "new": "    r\"in \\d+(?:\\.\\d+)?s\"\n",
     "target": "tests/unit/test_mutate_gate_phases.py::test_pytest_verdict_keeps_proof_apart_from_noise"
+  },
+  {
+    "name": "quoted contention text never retries a completed test failure",
+    "file": "scripts/mutate.py",
+    "old": "    r\"^(?:ERROR: )?(?:Nora test host busy|Nora test lease changed)(?:;[^\\r\\n]*)?\\r?$\",\n    re.MULTILINE)",
+    "new": "    r\"Nora test host busy|Nora test lease changed\")",
+    "target": "tests/unit/test_mutate_gate_phases.py::test_an_echoed_busy_message_is_not_contention"
   }
 ]

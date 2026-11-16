@@ -108,6 +108,16 @@ def test_an_echoed_fake_count_is_not_the_summary():
     assert mutate.pytest_verdict(1, out) == "red"
 
 
+@pytest.mark.parametrize("message", [
+    "Nora test host busy; wait for the current job to finish",
+    "Nora test lease changed; refusing a stale worker/job",
+])
+def test_an_echoed_busy_message_is_not_contention(message):
+    out = (f'        (4, "", "{message}", "busy"),\n'
+           "2 failed, 13 passed, 2 warnings in 0.40s\n")
+    assert mutate.pytest_verdict(1, out) == "red"
+
+
 def test_a_held_lease_is_waited_out_then_counted(monkeypatch):
     monkeypatch.setattr(mutate, "LEASE_WAIT_S", 0)
     calls = [_proc([], 2, err=_BUSY), _proc([], 2, err=_BUSY),

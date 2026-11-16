@@ -115,9 +115,10 @@ _GO_RAN = re.compile(r"^=== RUN\s", re.MULTILINE)
 # A package that did not compile, or whose test binary could not be set up.
 _GO_BROKEN = re.compile(r"\[(?:build|setup) failed\]")
 
-# The gate's non-verdict outcomes (scripts/pytest_gate.py's own wording): the
-# shared host lease is held, or a carried generation went stale mid-run.
-_BUSY = re.compile(r"Nora test host busy|Nora test lease changed")
+# Only the gate's own line is contention; pytest failures also quote test source.
+_BUSY = re.compile(
+    r"^(?:ERROR: )?(?:Nora test host busy|Nora test lease changed)(?:;[^\r\n]*)?\r?$",
+    re.MULTILINE)
 
 LEASE_RETRIES = 240
 LEASE_WAIT_S = 15
