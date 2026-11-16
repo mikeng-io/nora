@@ -186,6 +186,16 @@ class BindingStore(PersonDirectory, Protocol):
         support is gone."""
         ...
 
+    async def set_display_name(
+        self, *, person_id: str, display_name: str
+    ) -> Outcome:
+        """Update the managed person's projected display name — the SQL
+        copy consumers read (`identity.md`: Kratos stays authoritative;
+        this row is the projection that follows it). Descriptive, not
+        identity evidence, so it does not bump the person revision.
+        `denied` when the person is absent; idempotent on replay."""
+        ...
+
     async def memberships_for(
         self, person_id: str
     ) -> tuple[ManagedMembership, ...]:
@@ -227,6 +237,15 @@ class BindingStore(PersonDirectory, Protocol):
     async def incomplete_operations(self) -> tuple[OperationRecord, ...]:
         """Every `pending`/`incomplete`/`blocked` operation — the
         reconciler's queue, and the restart recovery set."""
+        ...
+
+    async def latest_profile_operation(
+        self, person_id: str
+    ) -> OperationRecord | None:
+        """The newest journaled `update_profile` for this person, whatever
+        its state. The journal's order is the intents' order: a replay may
+        re-apply its recorded name ONLY while it is still the newest —
+        anything later owns the name and the replay closes superseded."""
         ...
 
     # --- revocation-first authority blocks -------------------------------------
@@ -363,6 +382,15 @@ class IdentityRegistry(Protocol):
     async def set_state(
         self, *, external_id: str, active: bool
     ) -> Outcome:
+        ...
+
+    async def set_display_name(
+        self, *, external_id: str, display_name: str
+    ) -> Outcome:
+        """Patch the identity's `traits/display_name` in place — one
+        descriptive trait; every other trait, credential and the identity
+        record itself is preserved. `denied` when the identity is absent,
+        `unavailable` when the service cannot answer or read back."""
         ...
 
     async def drop_sessions(self, *, external_id: str) -> Outcome:

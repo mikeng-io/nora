@@ -16,6 +16,7 @@ from types import MappingProxyType
 from typing import Literal
 
 import jwt
+from aiohttp import web
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from nora.domain.authentication import (
@@ -123,3 +124,28 @@ class AuthenticationVerifier:
                 datetime.fromtimestamp(claims.authenticated_at, UTC), claims.purpose, binding)
         except (jwt.PyJWTError, KeyError, ValueError, TypeError, OverflowError) as error:
             raise AuthenticationRefusedError("authentication assertion refused") from error
+
+
+async def verified_authentication(
+    request: web.Request,
+    *,
+    verifier: AuthenticationVerifier,
+    purposes: frozenset[str],
+    headers: Mapping[str, str],
+) -> tuple[AccountAuthentication, bytes] | web.Response:
+    """The request-bound assertion check every private holder route shares —
+    a 401 when the `Nora-Authentication` credential is absent, unverifiable
+    or issued for a purpose this route does not accept."""
+    authorization = request.headers.get("Authorization", "")
+    raw = await request.read()
+    if not authorization.startswith("Nora-Authentication "):
+        return web.json_response({"status": "denied"}, status=401, headers=headers)
+    try:
+        authentication = verifier.verify(
+            authorization.removeprefix("Nora-Authentication "),
+            method=request.method, path=request.raw_path, body=raw)
+        if authentication.purpose not in purposes:
+            raise AuthenticationRefusedError("unexpected authentication purpose")
+    except AuthenticationRefusedError:
+        return web.json_response({"status": "denied"}, status=401, headers=headers)
+    return authentication, raw

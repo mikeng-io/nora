@@ -124,8 +124,10 @@ for the receiving holder's explicit approval — on Signal no challenge mints an
 approval-capable session at all: consent there is the request-bound private
 message the link contract describes. The holder surface is
 `/app/v1/holder/link-requests` (create, per-side view with the caller's own
-challenge only, decisions) and `/app/v1/holder/unlink`; decisions accept only a
-`sign_in` assertion whose method is the account's consent surface.
+challenge only, decisions), `/app/v1/holder/unlink` and
+`/app/v1/holder/profile` (the holder's own global display name); decisions
+accept only a `sign_in` assertion whose method is the account's consent
+surface.
 
 Session identity, account ownership and permissions are checked against current
 state. Disabled identities, revoked bindings and canonical aliases cannot leave

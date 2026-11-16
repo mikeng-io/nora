@@ -445,6 +445,24 @@ class SqlBindingStore:
             )
             return complete() if result.rowcount else denied("absent-person")
 
+    async def set_display_name(
+        self, *, person_id: str, display_name: str
+    ) -> Outcome:
+        """The projected display name — written only after the
+        authoritative profile mutation. Descriptive, not identity
+        evidence, so the person revision does NOT bump and sessions keep
+        their binding; idempotent on replay."""
+        async with self._engine.begin() as conn:
+            canonical = await self._canonical(conn, person_id)
+            if canonical is None:
+                return denied("absent-person")
+            result = await conn.execute(
+                sa.update(MANAGED_PERSON)
+                .where(MANAGED_PERSON.c.person_id == canonical)
+                .values(display_name=display_name, updated_at=sa.func.now())
+            )
+            return complete() if result.rowcount else denied("absent-person")
+
     async def revoke_binding(self, *, account: Identifier) -> Outcome:
         """End one binding — the identifiers stay owned (one owner, ever);
         resolution stops because `state` is no longer `bound`."""
@@ -729,6 +747,27 @@ class SqlBindingStore:
                 )
             ).fetchall()
             return tuple(_operation_from(r) for r in rows)
+
+    async def latest_profile_operation(
+        self, person_id: str
+    ) -> OperationRecord | None:
+        async with self._engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    sa.select(MANAGED_OPERATION)
+                    .where(MANAGED_OPERATION.c.kind == "update_profile")
+                    .where(
+                        MANAGED_OPERATION.c.snapshot["target_person"].astext
+                        == person_id
+                    )
+                    .order_by(
+                        MANAGED_OPERATION.c.created_at.desc(),
+                        MANAGED_OPERATION.c.operation_id.desc(),
+                    )
+                    .limit(1)
+                )
+            ).fetchone()
+            return None if row is None else _operation_from(row)
 
     # ------------------------------------------------------------------
     # revocation-first authority blocks
