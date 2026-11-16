@@ -156,6 +156,9 @@ class RegistrationService:
             replay = await self._completed_registration(op)
             if replay is not None:
                 return replay
+            resumed = await self._resume_registration(op)
+            if resumed is not None:
+                return resumed
         stale = await _revisions_fresh(self._bindings, op)
         if stale is not None:
             return stale
@@ -198,6 +201,43 @@ class RegistrationService:
         if await self._bindings.person_lifecycle(expected) is not PersonLifecycle.ACTIVE:
             return denied("person-suspended")
         return complete("replayed")
+
+    async def _resume_registration(self, op: Operation) -> Outcome | None:
+        """A non-complete journal row for THIS operation resumes its exact
+        recorded effect: the journal is the warrant — authority was proved at
+        first commitment and an authenticated retry re-proves it at the gate —
+        so only unfinished steps run, against the persisted record.
+        """
+        recorded = await self._bindings.operation(op.operation_id)
+        if recorded is None or recorded.state is OperationJournalState.COMPLETE:
+            return None
+        if recorded.kind != op.kind or recorded.snapshot != _op_snapshot(op):
+            return denied("operation-conflict")
+        payload = cast(AccountRegistration, op.payload)
+        bound: ManagedAccount | None = None
+        for ident in payload.identifiers:
+            found = await self._bindings.record_for(account=ident)
+            if found is not None and found.person_id == payload.person_id:
+                bound = found
+                break
+        person = ManagedPerson(person_id=payload.person_id,
+                               lifecycle=PersonLifecycle.ACTIVE)
+        account = bound or ManagedAccount(
+            account_id=str(uuid4()),
+            person_id=payload.person_id,
+            platform=next(iter(payload.identifiers)).platform,
+            identifiers=payload.identifiers,
+            state=AccountState.BOUND,
+        )
+        membership = ManagedMembership(
+            person_id=payload.person_id,
+            scope=payload.scope,
+            state=MembershipState.MEMBER,
+            source="registration",
+        )
+        return await self._run_registration(
+            recorded, person=person, account=account, membership=membership,
+        )
 
     # -- observe / register -------------------------------------------------
 
@@ -296,6 +336,17 @@ class RegistrationService:
         record = await _record(self._bindings, op, steps)
         if isinstance(record, Outcome):
             return record
+        return await self._run_registration(
+            record, person=person, account=account, membership=membership)
+
+    async def _run_registration(
+        self,
+        record: OperationRecord,
+        *,
+        person: ManagedPerson,
+        account: ManagedAccount,
+        membership: ManagedMembership | None,
+    ) -> Outcome:
         outcome = await self._run_binding(
             record, "binding",
             lambda: self._bindings.register(
@@ -310,7 +361,7 @@ class RegistrationService:
                     member=True, source=membership.source,
                 ),
             )
-        if outcome.status is OutcomeStatus.COMPLETE and "kratos" in steps:
+        if outcome.status is OutcomeStatus.COMPLETE and "kratos" in record.steps:
             outcome, identity_id = await self._registry.ensure_identity(
                 # The person id is `external_id`, never a trait — the
                 # nora_person schema carries descriptive fields only and

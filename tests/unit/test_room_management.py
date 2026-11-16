@@ -32,6 +32,7 @@ from nora.domain.managed import (
     ManagedMembership,
     ManagedPerson,
     MembershipState,
+    OperationJournalState,
     OutcomeStatus,
     PersonLifecycle,
     room_scope_id,
@@ -57,6 +58,7 @@ from nora.testing.managed import (
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
+    unavailable_outcome,
 )
 
 WS_ID = "ws-main"
@@ -105,6 +107,7 @@ def _message(
 
 def _services(
     bindings: FakeBindingStore | None = None,
+    registry: FakeIdentityRegistry | None = None,
 ) -> tuple[
     FakeBindingStore,
     FakeAuthorityBackend,
@@ -119,7 +122,7 @@ def _services(
         units={UNIT_ID: WS_ID},
         workspaces={WS_ID},
     )
-    registry = FakeIdentityRegistry()
+    registry = registry or FakeIdentityRegistry()
     services = ManagedServices(
         bindings, backend, topology, registry, FakeLinkRequests()
     )
@@ -330,8 +333,8 @@ async def test_a_redelivered_message_never_applies_twice():
     assert first.status is OutcomeStatus.COMPLETE
     assert again.status is OutcomeStatus.COMPLETE
     assert again.detail in ("replayed", "already-observed")
-    # A redelivered register finds the account it itself bound — the
-    # honest `denied`, never a second person.
+    # A redelivered register replays its journaled effect — the recorded
+    # result, never a second person.
     register_message = _message(
         "!!!member register",
         mentions=frozenset({ALICE_ID}),
@@ -344,9 +347,137 @@ async def test_a_redelivered_message_never_applies_twice():
         register_message, RoomRequest(kind="register")
     )
     assert first.status is OutcomeStatus.COMPLETE
-    assert again.status is OutcomeStatus.DENIED
-    assert again.detail == "account-already-registered"
+    assert again.status is OutcomeStatus.COMPLETE
+    assert again.detail == "replayed"
     assert len(bindings.people) == 3
+
+
+class _EnsuresDown(FakeIdentityRegistry):
+    """`ensure_identity` answers unavailable while `identity_state` still
+    works — a Kratos write outage that does not block the sender's own
+    session check (the registry's full `down` would fail that first)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.ensures_down = False
+
+    async def ensure_identity(self, **kwargs):
+        if self.ensures_down:
+            return unavailable_outcome(), None
+        return await super().ensure_identity(**kwargs)
+
+
+async def test_an_interrupted_register_redelivery_resumes_the_recorded_effect():
+    """The same message retried after a Kratos outage finishes only the
+    steps the journal still owes — the binding it wrote stands, the owed
+    Kratos correlation completes, and a third delivery replays."""
+    bindings, backend, _, registry, services = _services(
+        registry=_EnsuresDown()
+    )
+    await _operator(bindings, backend, registry)
+    management = RoomManagement(services)
+    message = _message(
+        "!!!member register",
+        mentions=frozenset({TARGET_ID}),
+        message_id="m-1",
+    )
+    registry.ensures_down = True
+    interrupted = await management.invoke(message, RoomRequest(kind="register"))
+    assert interrupted.status is OutcomeStatus.UNAVAILABLE
+    record = await bindings.operation("room:signal:conv-1:m-1")
+    assert record is not None
+    assert record.state is OperationJournalState.INCOMPLETE
+    assert record.steps["binding"] == "done"
+    assert record.steps["kratos"] == "pending"
+    bound = await bindings.resolve("signal", TARGET_ID)
+    assert bound is not None
+    registry.ensures_down = False
+    resumed = await management.invoke(message, RoomRequest(kind="register"))
+    assert resumed.status is OutcomeStatus.COMPLETE
+    again = await management.invoke(message, RoomRequest(kind="register"))
+    assert again.status is OutcomeStatus.COMPLETE
+    assert again.detail == "replayed"
+    assert len(bindings.people) == 2
+    assert len(bindings.accounts) == 2
+    person = await bindings.person(bound.person_id)
+    assert person is not None and person.kratos_identity_id
+    assert await _member_phone(bindings, bound.person_id)
+
+
+async def test_a_conflicting_redelivery_under_the_same_message_key_refuses():
+    """One message key is bound to one effect: a different account under
+    the same message_id is a conflict, never a second registration."""
+    bindings, backend, _, registry, services = _services()
+    await _operator(bindings, backend, registry)
+    management = RoomManagement(services)
+    first = await management.invoke(
+        _message("!!!member register", mentions=frozenset({ALICE_ID}),
+                 message_id="m-1"),
+        RoomRequest(kind="register"),
+    )
+    assert first.status is OutcomeStatus.COMPLETE
+    # An unbound account under a journaled-different effect: conflict.
+    conflict = await management.invoke(
+        _message("!!!member register", mentions=frozenset({TARGET_ID}),
+                 message_id="m-1"),
+        RoomRequest(kind="register"),
+    )
+    assert conflict.status is OutcomeStatus.DENIED
+    assert conflict.detail == "operation-conflict"
+    assert await bindings.resolve("signal", TARGET_ID) is None
+    # And a bound account named by a different journaled effect — same answer.
+    second = await management.invoke(
+        _message("!!!member register", mentions=frozenset({TARGET_ID}),
+                 message_id="m-2"),
+        RoomRequest(kind="register"),
+    )
+    assert second.status is OutcomeStatus.COMPLETE
+    swapped = await management.invoke(
+        _message("!!!member register", mentions=frozenset({TARGET_ID}),
+                 message_id="m-1"),
+        RoomRequest(kind="register"),
+    )
+    assert swapped.status is OutcomeStatus.DENIED
+    assert swapped.detail == "operation-conflict"
+    assert len(bindings.people) == 3
+
+
+async def test_a_revoked_operator_cannot_resume_through_the_journal():
+    """A revoked delegation refuses the retry BEFORE the journal is
+    consulted — a journaled effect is never present authority. With the
+    grant restored, the same message finishes what it owes."""
+    bindings, backend, _, registry, services = _services(
+        registry=_EnsuresDown()
+    )
+    await _operator(bindings, backend, registry)
+    management = RoomManagement(services)
+    message = _message(
+        "!!!member register",
+        mentions=frozenset({TARGET_ID}),
+        message_id="m-1",
+    )
+    registry.ensures_down = True
+    interrupted = await management.invoke(message, RoomRequest(kind="register"))
+    assert interrupted.status is OutcomeStatus.UNAVAILABLE
+    registry.ensures_down = False
+    await backend.drop_relation(
+        scope=ROOM, relation="grant_manage_members", person_id=OP_PERSON
+    )
+    refused = await management.invoke(message, RoomRequest(kind="register"))
+    assert refused.status is OutcomeStatus.DENIED
+    assert refused.detail == "operator-not-authorized"
+    record = await bindings.operation("room:signal:conv-1:m-1")
+    assert record is not None
+    assert record.state is OperationJournalState.INCOMPLETE
+    bound = await bindings.resolve("signal", TARGET_ID)
+    assert bound is not None
+    person = await bindings.person(bound.person_id)
+    assert person is not None and person.kratos_identity_id is None
+    await backend.put_relation(
+        scope=ROOM, relation="grant_manage_members", person_id=OP_PERSON
+    )
+    resumed = await management.invoke(message, RoomRequest(kind="register"))
+    assert resumed.status is OutcomeStatus.COMPLETE
 
 
 # -- authority: nobody but the verified sender can act --------------------
