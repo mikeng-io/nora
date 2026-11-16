@@ -1,0 +1,44 @@
+[
+  {
+    "name": "the authored allowlist is never canonicalized into a grant",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "            else {\n                # The file predicate answers on the CHECKED person's\n                # canonical id against the AUTHORED list — a retired-only\n                # entry therefore denies the survivor, never grants it.\n                pid for pid in people\n                if policy.is_allowed(\n                    platform=convo.platform,\n                    conversation_id=sorted(convo.ids)[0],\n                    person_id=pid,\n                )\n            }",
+    "new": "            else {persons.subject_id_for(pid) for pid in convo.persons}",
+    "target": "tests/unit/test_managed_admission.py::test_apply_preserves_the_file_predicates_retired_id_semantics"
+  },
+  {
+    "name": "the empty-or-owned proof reads every subject-set row",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "            rows = await self.backend.scope_relations_on(scope=scope)\n            if isinstance(rows, CheckResult):\n                return unavailable(rows.detail)\n            if (fresh and rows) or not set(rows) <= wanted[scope]:",
+    "new": "            rows = await self.backend.relations_on(scope=scope)\n            if isinstance(rows, CheckResult):\n                return unavailable(rows.detail)\n            if (fresh and rows) or not set(rows) <= wanted[scope]:",
+    "target": "tests/unit/test_managed_admission.py::test_apply_refuses_foreign_subject_set_containment_before_writes"
+  },
+  {
+    "name": "the read-back compares the complete published shape",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "            if set(rows) != wanted[scope]:\n                return unavailable(\"read-back-mismatch\")",
+    "new": "            persons_only = {(r.relation, r.subject) for r in rows if isinstance(r.subject, str)}\n            expected_persons = {(r.relation, r.subject) for r in wanted[scope] if isinstance(r.subject, str)}\n            if persons_only != expected_persons:\n                return unavailable(\"read-back-mismatch\")",
+    "target": "tests/unit/test_managed_admission.py::test_readback_fails_closed_on_a_missing_containment_link"
+  },
+  {
+    "name": "a userset subject_set row is unavailable not dropped",
+    "file": "nora/infra/ory/keto.py",
+    "old": "                or subject_set.get(\"relation\") not in (None, \"\")\n",
+    "new": "",
+    "target": "tests/integration/test_managed_admission_ory.py::test_the_real_adapter_returns_every_subject_set_scope_relation"
+  },
+  {
+    "name": "an unsupported subject-set namespace is unavailable not mapped",
+    "file": "nora/people/adapters/keto_authority.py",
+    "old": "            kind = _SCOPE_KIND.get(row.subject_set[0])\n            if kind is None:\n                return check_unavailable(\n                    f\"unsupported subject-set namespace:{row.subject_set[0]}\"\n                )",
+    "new": "            kind = _SCOPE_KIND.get(row.subject_set[0], ScopeKind.ROOM)",
+    "target": "tests/unit/test_managed_admission.py::test_the_adapter_refuses_a_tuple_whose_subject_it_cannot_name"
+  },
+  {
+    "name": "an unrepresentable subject shape is unavailable not skipped",
+    "file": "nora/testing/managed.py",
+    "old": "            return check_unavailable(\"unsupported subject shape\")",
+    "new": "            continue",
+    "target": "tests/unit/test_managed_admission.py::test_apply_reports_unavailable_for_a_subject_shape_it_cannot_name"
+  }
+]

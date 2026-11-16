@@ -13,6 +13,7 @@ from typing import Any
 from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.managed import (
     CONTAINMENT_RELATIONS,
+    KETO_NAMESPACES,
     AccountState,
     AuthorityBlock,
     CheckResult,
@@ -38,6 +39,7 @@ from nora.domain.managed import (
 from nora.domain.managed_ports import (
     AuthorityBackend,
     BindingStore,
+    ScopedRelation,
     TopologySource,
 )
 from nora.domain.management import (
@@ -662,6 +664,30 @@ class FakeAuthorityBackend(AuthorityBackend):
             (rel, s) for (ns_, ob, rel, s) in self.tuples
             if ns_ == ns and ob == scope.id and isinstance(s, str)
         )
+
+    async def scope_relations_on(
+        self, *, scope: Scope
+    ) -> CheckResult | frozenset[ScopedRelation]:
+        if self.down:
+            return check_unavailable("down")
+        ns = keto_namespace(scope.kind)
+        kinds = {name: kind for kind, name in KETO_NAMESPACES.items()}
+        out: set[ScopedRelation] = set()
+        for ns_, ob, rel, subject in self.tuples:
+            if (ns_, ob) != (ns, scope.id):
+                continue
+            if isinstance(subject, str):
+                out.add(ScopedRelation(rel, subject))
+                continue
+            if (
+                isinstance(subject, tuple) and len(subject) == 3
+                and subject[0] == "subjectset" and subject[1] in kinds
+            ):
+                out.add(ScopedRelation(
+                    rel, Scope(kinds[subject[1]], subject[2])))
+                continue
+            return check_unavailable("unsupported subject shape")
+        return frozenset(out)
 
     async def aclose(self) -> None:
         ...

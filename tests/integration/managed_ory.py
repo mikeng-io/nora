@@ -160,3 +160,39 @@ def ory() -> Iterator[_Ory]:
         left = _docker("volume", "ls", "-q", "--filter", f"name={tag}-")
         assert not left.stdout.split(), (
             f"journey teardown left volumes behind: {left.stdout!r}")
+
+
+@pytest.fixture
+def keto() -> Iterator[tuple[str, str]]:
+    """The pinned Keto half of `ory` alone — adapter/tuple reads that need
+    the real service but not Kratos. Yields (read_url, write_url)."""
+    tag = f"nora-mit-{uuid.uuid4().hex[:10]}"
+    name = f"{tag}-keto"
+    root = Path(__file__).resolve().parents[2]
+    keto_cfg = f"{root}/deploy/ory/keto"
+    _docker("image", "inspect", KETO_IMAGE)
+    try:
+        _docker("volume", "create", name)
+        _docker("run", "--pull=never", "--rm", "--user", "0:0",
+                "--entrypoint", "chown", "-v", f"{name}:/home/ory/data",
+                KETO_IMAGE, "ory:ory", "/home/ory/data")
+        _docker("run", "--pull=never", "--rm",
+                "-v", f"{keto_cfg}:/etc/keto:ro", "-v", f"{name}:/home/ory/data",
+                "-e", "DSN=sqlite:///home/ory/data/keto.db?_fk=true",
+                "--entrypoint", "keto", KETO_IMAGE,
+                "migrate", "up", "-c", "/etc/keto/keto.dev.yaml", "--yes")
+        _docker("run", "--pull=never", "-d", "--name", name,
+                "-v", f"{keto_cfg}:/etc/keto:ro", "-v", f"{name}:/home/ory/data",
+                "-e", "DSN=sqlite:///home/ory/data/keto.db?_fk=true",
+                "-e", "SERVE_READ_HOST=0.0.0.0", "-e", "SERVE_WRITE_HOST=0.0.0.0",
+                "-p", "127.0.0.1:0:4466", "-p", "127.0.0.1:0:4467",
+                KETO_IMAGE, "serve", "-c", "/etc/keto/keto.dev.yaml")
+        read_port, write_port = _mapped_port(name, 4466), _mapped_port(name, 4467)
+        _wait_ready(
+            {"keto": f"http://127.0.0.1:{read_port}/health/ready"}, {"keto": name})
+        yield f"http://127.0.0.1:{read_port}", f"http://127.0.0.1:{write_port}"
+    finally:
+        subprocess.run(  # noqa: S603 — exact owned container name
+            ["docker", "rm", "-f", name], capture_output=True, timeout=60)
+        subprocess.run(  # noqa: S603 — the journey's own volume name
+            ["docker", "volume", "rm", name], capture_output=True, timeout=60)

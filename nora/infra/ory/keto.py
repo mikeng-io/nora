@@ -189,7 +189,10 @@ class KetoClient:
                 or not subject_set["namespace"]
                 or not isinstance(subject_set.get("object"), str)
                 or not subject_set["object"]
+                or subject_set.get("relation") not in (None, "")
             ):
+                # A userset `subject_set` is a shape `RelationTuple` cannot
+                # represent — dropping it reads foreign authority as own.
                 return None
             return RelationTuple(
                 namespace=namespace, object=object_id,

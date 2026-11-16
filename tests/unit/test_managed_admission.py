@@ -9,6 +9,7 @@ from types import MappingProxyType
 import pytest
 
 from nora.domain.managed import (
+    CheckResult,
     ManagedPerson,
     OperationJournalState,
     OperationRecord,
@@ -20,8 +21,11 @@ from nora.domain.managed import (
     room_scope_id,
     unavailable,
 )
-from nora.domain.management import Scope, ScopeKind
+from nora.domain.managed_ports import ScopedRelation
+from nora.domain.management import MANAGEMENT_PERMITS, Scope, ScopeKind
+from nora.infra.ory.keto import RelationTuple
 from nora.people.adapters.file_backend import FileTopologySource
+from nora.people.adapters.keto_authority import KetoAuthorityBackend
 from nora.people.app.managed import ManagedServices
 from nora.people.app.managed_admission import (
     ADMISSION_SOURCE,
@@ -31,6 +35,7 @@ from nora.people.app.managed_admission import (
     _prepare,
     plan,
 )
+from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.testing.managed import (
     FakeAuthorityBackend,
@@ -450,6 +455,184 @@ async def test_readback_fails_closed_on_a_mismatched_verdict(tmp_path, graph):
     import reports unavailable and stays incomplete — never complete."""
     store, _, registry, _ = graph
     backend = _DropOne()
+    admission = FileAdmission(
+        bindings=store, backend=backend, registry=registry, probe=_Probe(store),
+    )
+    identity_path, policy_path = _sources(tmp_path)
+    outcome = await admission.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert outcome.detail == "read-back-mismatch"
+    journal = next(iter(store.operations.values()))
+    assert journal.state is OperationJournalState.INCOMPLETE
+
+
+async def test_apply_preserves_the_file_predicates_retired_id_semantics(
+    tmp_path, graph,
+):
+    """A room listing ONLY a retired id denies the canonical person in file
+    mode — `is_allowed` checks the canonical sender against the AUTHORED
+    list, so the import must not canonicalize that list into a grant."""
+    _, backend, _, admission = graph
+    retired_only = POLICY.replace(
+        'persons = ["miles"]', 'persons = ["miles_old"]')
+    identity_path, policy_path = _sources(tmp_path, policy=retired_only)
+    outcome = await admission.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+    room_a = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+    room_b = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-b"))
+    for checked in ("miles", "miles_old"):
+        for permit in ("speak", "view"):
+            verdict = await backend.check(
+                scope=room_a, person_id=checked, permit=permit)
+            assert verdict.verdict is Verdict.DENIED
+    # Positive control: the authored-canonical room-b grant still lands.
+    allowed = await backend.check(scope=room_b, person_id="miles", permit="speak")
+    assert allowed.verdict is Verdict.ALLOWED
+
+
+async def test_resulting_verdicts_equal_the_file_predicate_id_by_id(
+    tmp_path, graph,
+):
+    """Every checked id — canonical, retired, listed-only, unmapped — gets
+    the managed answer `is_allowed` gives the file, in every room."""
+    store, backend, _, admission = graph
+    retired_mixed = POLICY.replace(
+        'persons = ["miles"]', 'persons = ["miles_old", "miles"]')
+    identity_path, policy_path = _sources(tmp_path, policy=retired_mixed)
+    outcome = await admission.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+    persons = load_persons(identity_path)
+    policy = load_policy(policy_path)
+    for convo in policy.rooms():
+        for cid in convo.ids:
+            scope = Scope(ScopeKind.ROOM, room_scope_id(convo.platform, cid))
+            for checked in ("miles", "miles_old", "ada", "listed_only", "unmapped"):
+                expected = policy.is_allowed(
+                    platform=convo.platform, conversation_id=cid,
+                    person_id=persons.subject_id_for(checked))
+                canonical = await store.canonical_person(checked) or checked
+                for permit in ("speak", "view"):
+                    verdict = await backend.check(
+                        scope=scope, person_id=canonical, permit=permit)
+                    assert (verdict.verdict is Verdict.ALLOWED) == expected, (
+                        checked, scope, permit)
+                for permit in MANAGEMENT_PERMITS:
+                    verdict = await backend.check(
+                        scope=scope, person_id=canonical, permit=permit)
+                    assert verdict.verdict is Verdict.DENIED, (
+                        checked, scope, permit)
+
+
+async def test_apply_publishes_the_intended_containment_and_nothing_else(
+    tmp_path, graph,
+):
+    """The complete typed read on a declared room shows this import's member
+    plus its authored parent link — the same proof the read-back runs."""
+    _, backend, _, admission = graph
+    identity_path, policy_path = _sources(tmp_path)
+    outcome = await admission.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+    room_a = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+    unit = Scope(ScopeKind.UNIT, "family")
+    assert await backend.scope_relations_on(scope=room_a) == frozenset({
+        ScopedRelation("member", "miles"),
+        ScopedRelation("unit", unit),
+    })
+    assert await backend.scope_relations_on(scope=unit) == frozenset({
+        ScopedRelation("workspace", Scope(ScopeKind.WORKSPACE, "home")),
+    })
+
+
+async def test_apply_refuses_foreign_subject_set_containment_before_writes(
+    tmp_path, graph,
+):
+    """A parent link the import does not own is invisible to `relations_on`'s
+    person-only view — the complete read refuses it before any journal,
+    person, hold or Kratos/Keto write, on assess and apply alike."""
+    store, backend, registry, admission = graph
+    room_a = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+    await backend.publish_containment(
+        scope=room_a, parent=Scope(ScopeKind.UNIT, "generated-foreign-unit"))
+    identity_path, policy_path = _sources(tmp_path)
+    assert (await admission.assess(identity_path, policy_path)).detail == (
+        "foreign-authority-state")
+    outcome = await admission.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "foreign-authority-state"
+    assert not store.operations and not store.people
+    assert not registry.identities and not store.identity_holds
+
+
+async def test_apply_reports_unavailable_for_a_subject_shape_it_cannot_name(
+    tmp_path, graph,
+):
+    """A row whose subject names a namespace outside the scope vocabulary is
+    unrepresentable — unavailable before any write, never silently skipped."""
+    store, backend, registry, admission = graph
+    room_a = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+    backend.tuples.add(
+        ("Room", room_a.id, "member", ("subjectset", "Foreign", "x")))
+    identity_path, policy_path = _sources(tmp_path)
+    outcome = await admission.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert not store.operations and not store.people and not registry.identities
+
+
+class _StubKeto:
+    """A `KetoClient` stub answering `tuples_on` from canned rows — the
+    adapter's typed-subject refusal paths without a live service."""
+
+    def __init__(self, rows) -> None:
+        self._rows = rows
+
+    async def tuples_on(self, *, namespace, object_id):
+        return self._rows
+
+
+async def test_the_adapter_refuses_a_tuple_whose_subject_it_cannot_name():
+    """A subject-set naming a namespace outside the scope vocabulary, and a
+    row with no subject at all, are `unavailable` — never silently dropped."""
+    room = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+    foreign = RelationTuple(
+        namespace="Room", object=room.id, relation="member",
+        subject_set=("Foreign", "x"))
+    subjectless = RelationTuple(
+        namespace="Room", object=room.id, relation="member")
+    for rows in ((foreign,), (subjectless,)):
+        backend = KetoAuthorityBackend(_StubKeto(list(rows)))
+        result = await backend.scope_relations_on(scope=room)
+        assert isinstance(result, CheckResult)
+        assert result.verdict is Verdict.UNAVAILABLE
+
+
+async def test_apply_reports_unavailable_when_the_authority_read_cannot_answer(
+    tmp_path, graph,
+):
+    """An outage on the empty-or-owned proof is unavailable before the
+    journal exists — nothing is claimed and nothing is written."""
+    store, backend, registry, admission = graph
+    backend.down = True
+    identity_path, policy_path = _sources(tmp_path)
+    outcome = await admission.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert not store.operations and not store.people and not registry.identities
+
+
+class _DropContainment(FakeAuthorityBackend):
+    """A backend whose containment publish silently never lands — the member
+    rows agree but the intended parent link is missing."""
+
+    async def publish_containment(self, *, scope, parent):
+        return complete()
+
+
+async def test_readback_fails_closed_on_a_missing_containment_link(
+    tmp_path, graph,
+):
+    """Person-only `relations_on` cannot see containment at all; the complete
+    read-back catches the missing parent row instead of passing the import."""
+    store, _, registry, _ = graph
+    backend = _DropContainment()
     admission = FileAdmission(
         bindings=store, backend=backend, registry=registry, probe=_Probe(store),
     )

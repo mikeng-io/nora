@@ -3,15 +3,24 @@
 import aiohttp
 
 from nora.config_identity import ManagedOryConfig
-from nora.domain.managed import OutcomeStatus, Verdict, room_scope_id
+from nora.domain.managed import (
+    CheckResult,
+    OutcomeStatus,
+    Verdict,
+    room_scope_id,
+)
+from nora.domain.managed_ports import ScopedRelation
 from nora.domain.management import Scope, ScopeKind
+from nora.infra.ory.keto import KetoClient
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
+from nora.people.adapters.keto_authority import KetoAuthorityBackend
 from nora.people.app.managed_admission import plan
 from nora.people.wire import managed_services
 from nora.persons import load_persons
 from nora.policy import load_policy
-from scripts.managed_identity_handoff import COMPLETE, REFUSED, run
+from scripts.managed_identity_handoff import COMPLETE, REFUSED, RETRYABLE, run
+from tests.integration.managed_ory import keto as keto
 from tests.integration.managed_ory import ory as ory
 from tests.unit.test_managed_admission import IDENTITY, POLICY
 
@@ -103,3 +112,97 @@ async def test_initial_admission_uses_real_ory_and_retains_the_exact_source(
         assert "+852" not in output and "generated-room-a" not in output
     finally:
         await engine.dispose()
+
+
+async def test_admission_refuses_a_foreign_subject_set_the_real_adapter_sees(
+    clean_pg_url, tmp_path, ory,
+):
+    """Real Keto: a containment row the import does not own is INVISIBLE to
+    `relations_on`'s person-only view — the complete read must refuse the
+    claim before any write, and a userset subject_set shape is unavailable,
+    never a silently dropped row."""
+    identity = tmp_path / "identity.toml"
+    policy = tmp_path / "policy.toml"
+    identity.write_text(IDENTITY)
+    policy.write_text(EXPLICIT_POLICY)
+    engine = create_sql_engine(clean_pg_url)
+    store = SqlBindingStore(engine)
+    room_a = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+    arguments = _arguments("apply", identity, policy, clean_pg_url, ory)
+    try:
+        async with aiohttp.ClientSession() as session:
+            backend = KetoAuthorityBackend(KetoClient(
+                session=session,
+                read_url=ory.keto_read, write_url=ory.keto_write,
+            ))
+            # A foreign parent on a declared room: grants on that parent
+            # would flow down to every member the import writes.
+            outcome = await backend.publish_containment(
+                scope=room_a,
+                parent=Scope(ScopeKind.UNIT, "generated-foreign-unit"))
+            assert outcome.status is OutcomeStatus.COMPLETE
+            # The REAL adapter's complete read returns the subject-set row
+            # its person-only view cannot show.
+            rows = await backend.scope_relations_on(scope=room_a)
+            assert not isinstance(rows, CheckResult)
+            assert ScopedRelation(
+                "unit", Scope(ScopeKind.UNIT, "generated-foreign-unit")) in rows
+            assert await backend.relations_on(scope=room_a) == frozenset()
+        assert await run(arguments) == REFUSED
+        assert not await store.persons()
+        # A `subject_set` carrying its own relation (userset "members of")
+        # cannot be represented — the read is unavailable, never subset.
+        async with aiohttp.ClientSession() as session:
+            response = await session.put(
+                f"{ory.keto_write}/admin/relation-tuples",
+                json={
+                    "namespace": "Room", "object": room_a.id,
+                    "relation": "member",
+                    "subject_set": {
+                        "namespace": "Unit", "object": "family",
+                        "relation": "member",
+                    },
+                })
+            assert response.status == 201
+        assert await run(arguments) == RETRYABLE
+        assert not await store.persons()
+    finally:
+        await engine.dispose()
+
+
+async def test_the_real_adapter_returns_every_subject_set_scope_relation(keto):
+    """Real Keto: `scope_relations_on` returns member AND subject-set rows
+    `relations_on` cannot show — and a userset `subject_set` (a relation
+    carried inside it) is `unavailable`, never a silently dropped row."""
+    read_url, write_url = keto
+    room = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+    parent = Scope(ScopeKind.UNIT, "generated-foreign-unit")
+    async with aiohttp.ClientSession() as session:
+        backend = KetoAuthorityBackend(KetoClient(
+            session=session, read_url=read_url, write_url=write_url,
+        ))
+        outcome = await backend.put_relation(
+            scope=room, relation="member", person_id="generated-member")
+        assert outcome.status is OutcomeStatus.COMPLETE
+        outcome = await backend.publish_containment(scope=room, parent=parent)
+        assert outcome.status is OutcomeStatus.COMPLETE
+        rows = await backend.scope_relations_on(scope=room)
+        assert rows == frozenset({
+            ScopedRelation("member", "generated-member"),
+            ScopedRelation("unit", parent),
+        })
+        assert await backend.relations_on(scope=room) == frozenset(
+            {("member", "generated-member")})
+        response = await session.put(
+            f"{write_url}/admin/relation-tuples",
+            json={
+                "namespace": "Room", "object": room.id, "relation": "member",
+                "subject_set": {
+                    "namespace": "Unit", "object": "family",
+                    "relation": "member",
+                },
+            })
+        assert response.status == 201
+        unreadable = await backend.scope_relations_on(scope=room)
+        assert isinstance(unreadable, CheckResult)
+        assert unreadable.verdict is Verdict.UNAVAILABLE

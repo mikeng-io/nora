@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
@@ -332,6 +333,16 @@ class TopologySource(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class ScopedRelation:
+    """One asserted relation on a scope with its TYPED subject — a
+    `person_id` string, or the parent `Scope` a containment subject-set
+    names. The complete shape `scope_relations_on` returns."""
+
+    relation: str
+    subject: str | Scope
+
+
 @runtime_checkable
 class AuthorityBackend(Protocol):
     """The scoped-grant engine behind `check` — Keto in the managed
@@ -377,6 +388,17 @@ class AuthorityBackend(Protocol):
         """The (relation, person_id) pairs currently asserted on the scope —
         the mutation read-back. `CheckResult` carries `unavailable` when the
         read itself cannot answer."""
+        ...
+
+    async def scope_relations_on(
+        self, *, scope: Scope
+    ) -> CheckResult | frozenset[ScopedRelation]:
+        """EVERY asserted relation on the scope with its typed subject —
+        person rows AND subject-set (containment) rows. `relations_on`'s
+        person-only view cannot see a foreign parent; this is the complete
+        read an empty-or-owned target proof needs. A row the supported
+        scope vocabulary cannot represent is `unavailable`, never silently
+        dropped."""
         ...
 
     async def aclose(self) -> None:
