@@ -1,0 +1,101 @@
+# Managed identity handoff — admitting `identity.toml`/`policy.toml`
+
+`scripts/managed_identity_handoff.py` is the installation-only initial
+import described by `design/managed-identity-access/identity.md` «Backend
+selection and lifecycle»: when the managed backend is *selected*, the
+operator admits one validated mapping of the existing people and grants.
+This command performs that admission into an **empty managed target**. It
+does not select the backend, edit configuration, or activate anything —
+`backend = "file"` keeps working exactly as before, with or without this
+command having run.
+
+It is reachable only as a local command — never through HTTP, a model, or
+a room. Private account mappings, the source files, and credentials stay
+where they already live; the command prints counts and digests only.
+
+## What it does
+
+`plan` runs the real loaders (`load_persons`, `load_policy`) and computes
+the exact intended effect: every person (stable `person_id`s, including
+policy-listed people with no account yet), every account with all its
+typed identifiers and its non-matchable `label`, former-person aliases,
+descriptive names, explicit social opt-outs, and the effective room
+`member` grants at their declared scopes. Both files' SHA-256 digests and
+the effect digest bind a durable import identity
+(`file-admission:<digest>`); the same bytes always name the same import.
+
+`apply` then, under the shared mutation gate (`bindings.mutation()`):
+
+1. **Claims the target** — a direct read of every managed table, not the
+   active-only `persons()` view. Anything managed already present —
+   suspended people, revoked accounts, aliases, memberships, holds,
+   authority blocks, link rows, or any foreign journal — refuses the
+   claim, as does an existing Kratos identity already correlated to an
+   imported person.
+2. **Journals the effect** before any write (`file_admission` operation
+   row), then runs journaled steps: people → identity holds → Kratos
+   identities + correlation → aliases → memberships → containment +
+   `member` relations → read-back. Holds keep every imported person
+   `unavailable` to dependent managed access until the read-back proves
+   bindings, Kratos, memberships, Keto facts, and the full
+   person×room verdict matrix agree with the file predicate; only this
+   import's holds are released.
+3. **Reports** `complete` only after that read-back. A crash or outage
+   leaves an `incomplete` journal and re-running the *same* command with
+   the *same* files resumes the exact journaled steps — no new people or
+   accounts, no duplicated grants. Changed files derive a different
+   import identity and are refused (`different-import`), so a successful
+   import is never overwritten.
+
+## Usage
+
+```
+uv run python scripts/managed_identity_handoff.py plan \
+    --identity identity.toml --policy policy.toml
+
+uv run python scripts/managed_identity_handoff.py apply \
+    --identity identity.toml --policy policy.toml \
+    --database-url postgresql+asyncpg://… \
+    --kratos-admin-url http://127.0.0.1:4434 \
+    --keto-read-url http://127.0.0.1:4466 \
+    --keto-write-url http://127.0.0.1:4467
+```
+
+`--database-url` also accepts `DATABASE_URL`. Optional:
+`--kratos-admin-key-env`, `--keto-key-env`, `--timeout-seconds`.
+With all four target flags, `plan` additionally prints
+`target: fresh|resume|already-imported` or the refusal — without writing.
+
+Exit codes: `0` complete/ok · `2` refused · `3` incomplete or unavailable
+(retry the same command).
+
+## What is preserved — and what is not yet representable
+
+Preserved exactly: stable `person_id`s, multiple same-platform accounts
+per person, all typed identifiers per account, account `label`s,
+`former_person_ids` aliases, descriptive names, and the per-person social
+opt-out (Kratos trait `social`). Descriptive metadata with no managed
+home — `aliases` names, Instagram/Life360 metadata, Honcho workspace
+bindings — is bound by the source digests and stays in the files for a
+later export unit; it is never treated as ownership evidence.
+
+Published: the effective file `speak`/`view` grants as room `member`
+relations (a `persons = "*"` room publishes `member` for every admitted
+person, and unmapped senders stay admitted by the room's open flag), plus
+Nora-validated room→unit→workspace containment. Nothing is granted at
+unit or workspace level, and no management permit is inferred.
+
+Refused before any write — the whole plan fails, naming the limit:
+
+- a `server`/`guild` conversation (dynamic channel sets have no exact
+  scoped representation),
+- a non-empty `[dm]` admission list,
+- any file the loaders reject (invalid shapes, ambiguous identifier
+  ownership), or a changed source on retry,
+- a target that holds anything the import does not own.
+
+Post-import behaviour differs from file mode in one documented way: a
+person registered *after* admission is not a member of `persons = "*"`
+rooms by default — membership is then managed explicitly, which is the
+point of the managed backend. Managed-to-file export and initial
+administrative delegation are separate units and are not performed here.
