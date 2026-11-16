@@ -330,7 +330,7 @@ class SqlBindingStore:
     ) -> Outcome:
         """Atomically register person, account, identifiers and optional membership.
 
-        Exact replays are idempotent; foreign ownership conflicts, while this person's revoked binding rebinds.
+        Exact replay is idempotent; foreign ownership conflicts; own revoked bindings rebind.
         """
         async with self._engine.begin() as conn:
             await _insert_person(conn, person)
