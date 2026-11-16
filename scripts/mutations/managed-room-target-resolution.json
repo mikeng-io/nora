@@ -1,0 +1,23 @@
+[
+ {
+  "name": "authorization precedes every target read",
+  "file": "nora/people/app/room_invocation.py",
+  "old": "        check = await services.authority.check(\n            scope=scope, person_id=person_id, permit=permit\n        )\n        if check.verdict is Verdict.UNAVAILABLE:\n            return unavailable(\"authority-unavailable\")\n        if not check.allowed:\n            return denied(\"operator-not-authorized\")\n",
+  "new": "",
+  "target": "tests/unit/test_room_target_resolution.py::test_an_unauthorized_sender_gets_one_refusal_and_no_target_read"
+ },
+ {
+  "name": "a moved target binding is refused inside the mutation gate",
+  "file": "nora/people/app/management_invocation.py",
+  "old": "                if target is not None:\n                    refused = await self._target_current(operation, target)\n                    if refused is not None:\n                        return refused\n",
+  "new": "",
+  "target": "tests/unit/test_room_target_resolution.py::test_a_target_binding_moved_while_waiting_for_the_gate_refuses"
+ },
+ {
+  "name": "an unknown mention cannot be skipped past clarification",
+  "file": "nora/people/app/room_invocation.py",
+  "old": "                    if bound is None:\n                        unresolved.append(value)\n                        continue\n",
+  "new": "                    if bound is None:\n                        continue\n",
+  "target": "tests/unit/test_room_target_resolution.py::test_a_mixed_known_and_unknown_mention_clarifies_with_no_mutation"
+ }
+]

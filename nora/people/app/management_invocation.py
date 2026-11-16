@@ -1,6 +1,7 @@
 """Commit a human management request under its current exact-account session."""
 
 import logging
+from dataclasses import dataclass
 
 from nora.domain.authentication import AccountAuthentication, RoomAuthentication
 from nora.domain.managed import (
@@ -24,6 +25,19 @@ SCOPED_HUMAN_OPERATIONS = frozenset({
 })
 
 
+@dataclass(frozen=True)
+class ResolvedTarget:
+    """The account references a resolved membership target rode in on —
+    `(platform, value)` pairs as the caller named them. A membership
+    target cannot carry an account (`Target` forbids it), so the
+    `ownership` observed-revision cannot see a binding that moved between
+    resolution and commitment; `apply` re-resolves each reference inside
+    the mutation gate and refuses when one now names a different or no
+    canonical person, instead of mutating the stale person."""
+
+    refs: frozenset[tuple[str, str]] = frozenset()
+
+
 class HumanManagement:
     def __init__(self, bindings: BindingStore, registry: IdentityRegistry,
                  registration: RegistrationService, authority: AuthorityService) -> None:
@@ -35,6 +49,7 @@ class HumanManagement:
     async def apply(
         self, operation: Operation,
         authentication: AccountAuthentication | RoomAuthentication,
+        target: ResolvedTarget | None = None,
     ) -> Outcome:
         # A session invocation retains a binding claim the gate revalidates;
         # a room-message invocation carries transport provenance only — its
@@ -68,6 +83,10 @@ class HumanManagement:
                     return unavailable("authority-unavailable")
                 if not permission.allowed:
                     return denied("operator-not-authorized")
+                if target is not None:
+                    refused = await self._target_current(operation, target)
+                    if refused is not None:
+                        return refused
                 # One area-owned invocation holds the gate through authentication and effects.
                 service = (self._registration if operation.kind == "register_account"
                            else self._authority)
@@ -77,3 +96,18 @@ class HumanManagement:
         except Exception as error:  # noqa: BLE001 — an unreadable authority never authorizes
             log.error("human management unavailable: %s", type(error).__name__)
             return unavailable("store-failure")
+
+    async def _target_current(
+        self, operation: Operation, target: ResolvedTarget
+    ) -> Outcome | None:
+        """`None` while every resolved reference still names the operation's canonical person."""
+        for platform, value in sorted(target.refs):
+            bound = await self._bindings.resolve(platform, value)
+            canonical = (
+                await self._bindings.canonical_person(bound.person_id)
+                if bound is not None
+                else None
+            )
+            if canonical != operation.target.person_id:
+                return denied("target-binding-changed")
+        return None
