@@ -57,10 +57,17 @@ _OTLP_PORT = 14318
 _OTLP_ENDPOINT = f"http://127.0.0.1:{_OTLP_PORT}/v1/traces"
 _CHILD_DEADLINE_S = 600
 
-#: The declared world binds signal, honcho and the model upstream only; these
-#: integrations produce eager external effects the world cannot bind, so the
-#: case's services plan declares them off.
+#: The declared world binds signal, honcho, redis and the model upstream
+#: only; these integrations refuse composition without deployment
+#: credentials, run daemons/pollers, or dispatch outside the gateway's
+#: declared models — effects the declared world cannot bind, so the case's
+#: services plan declares them off.
 _WORLD_OVERRIDES = {
+    "computer.enabled": False,
+    "otp.enabled": False,
+    "platforms.discord.enabled": False,
+    "memory.index.embed": False,
+    "memory.graph.enabled": False,
     "social.enabled": False,
     "social.poll.enabled": False,
     "social.instagram.enabled": False,
