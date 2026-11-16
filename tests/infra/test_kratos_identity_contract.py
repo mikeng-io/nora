@@ -106,7 +106,7 @@ async def test_create_writes_admin_metadata_and_the_read_surfaces_it(api):
     outcome, identity = await client.create_identity(
         external_id=state["external"], traits={}, metadata_admin=marker)
     assert outcome.status is OutcomeStatus.COMPLETE
-    assert state["supplied"]["metadata_admin"] == marker
+    assert state["supplied"].get("metadata_admin") == marker
     assert identity is not None and identity.metadata_admin == marker
     state["body"] = {"id": state["identity"], "external_id": state["external"],
                      "state": "active", "traits": {}, "metadata_admin": marker}
@@ -126,7 +126,7 @@ async def test_admission_seam_moves_the_marker_as_typed_values(api):
     outcome, view = await admission.create(
         external_id=state["external"], traits={}, owner=marker)
     assert outcome.status is OutcomeStatus.COMPLETE
-    assert state["supplied"]["metadata_admin"] == marker
+    assert state["supplied"].get("metadata_admin") == marker
     assert view is not None and view.metadata_admin == marker
     state["body"] = {"id": state["identity"], "external_id": state["external"],
                      "state": "active", "traits": {}, "metadata_admin": marker}
