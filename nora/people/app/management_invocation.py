@@ -17,16 +17,22 @@ from nora.domain.managed import (
     unavailable,
 )
 from nora.domain.managed_ports import BindingStore, IdentityRegistry
-from nora.domain.management import AccountRegistration, ActorKind, Operation
+from nora.domain.management import (
+    AccountRegistration,
+    ActorKind,
+    Operation,
+    ProfileEdit,
+)
 from nora.people.app.authentication import AccountSessions
 from nora.people.app.managed import RegistrationService
 from nora.people.app.managed_authority import _REQUIRED_PERMIT, AuthorityService
 from nora.people.app.managed_ops import _journal_after_failure
+from nora.people.app.managed_profile import ScopedProfileService
 
 log = logging.getLogger("nora.people.management_invocation")
 SCOPED_HUMAN_OPERATIONS = frozenset({
     "register_account", "set_membership", "grant_access", "revoke_access",
-    "delegate", "revoke_delegation",
+    "delegate", "revoke_delegation", "update_profile",
 })
 
 
@@ -45,11 +51,13 @@ class ResolvedTarget:
 
 class HumanManagement:
     def __init__(self, bindings: BindingStore, registry: IdentityRegistry,
-                 registration: RegistrationService, authority: AuthorityService) -> None:
+                 registration: RegistrationService, authority: AuthorityService,
+                 scoped_profile: ScopedProfileService) -> None:
         self._bindings = bindings
         self._sessions = AccountSessions(bindings, registry)
         self._registration = registration
         self._authority = authority
+        self._scoped_profile = scoped_profile
 
     async def authenticate(
         self, authentication: AccountAuthentication | RoomAuthentication
@@ -84,7 +92,8 @@ class HumanManagement:
                         or operation.actor.person_id != principal.binding.person_id):
                     return denied("authentication-changed")
                 scope = (operation.payload.scope
-                         if isinstance(operation.payload, AccountRegistration)
+                         if isinstance(operation.payload,
+                                       (AccountRegistration, ProfileEdit))
                          else operation.target.scope)
                 if scope is None:
                     return denied("unscoped-operation")
@@ -99,8 +108,12 @@ class HumanManagement:
                     if refused is not None:
                         return refused
                 # One area-owned invocation holds the gate through authentication and effects.
-                service = (self._registration if operation.kind == "register_account"
-                           else self._authority)
+                service = (
+                    self._registration if operation.kind == "register_account"
+                    else self._scoped_profile
+                    if operation.kind == "update_profile"
+                    else self._authority
+                )
                 return await service._apply(operation)
         except (IdentifierConflictError, OperationConflictError):
             return denied("operation-conflict")

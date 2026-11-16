@@ -202,8 +202,23 @@ class FileBindingStore(BindingStore):
         return ()
 
     async def latest_profile_operation(
-        self, person_id: str
+        self, person_id: str, *, scope: Scope | None = None
     ) -> OperationRecord | None:
+        return None
+
+    async def set_scoped_name(
+        self, *, person_id: str, scope: Scope, nickname: str,
+        operation_id: str
+    ) -> Outcome:
+        # No TOML write and no silent managed fallback — file mode has no
+        # scoped-name store, so the write is the standard honest refusal.
+        return denied(_OPERATOR_MAINTAINED)
+
+    async def scoped_name_for(
+        self, *, person_id: str, scope: Scope
+    ) -> str | None:
+        # File mode holds no scoped names at all: `None` is the truthful
+        # absence, never another scope's or a stale file name.
         return None
 
 

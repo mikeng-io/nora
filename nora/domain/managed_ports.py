@@ -262,12 +262,40 @@ class BindingStore(PersonDirectory, Protocol):
         ...
 
     async def latest_profile_operation(
-        self, person_id: str
+        self, person_id: str, *, scope: Scope | None = None
     ) -> OperationRecord | None:
         """The newest journaled `update_profile` for this person, whatever
-        its state. The journal's order is the intents' order: a replay may
-        re-apply its recorded name ONLY while it is still the newest —
-        anything later owns the name and the replay closes superseded."""
+        its state, scoped to one profile target: `scope=None` reads the
+        holder's GLOBAL display name, an explicit `Scope` reads exactly
+        that (person, scope) nickname — a local edit never orders against
+        the global name or a sibling scope. The journal's order is the
+        intents' order: a replay may re-apply its recorded name ONLY
+        while it is still the newest — anything later owns the name and
+        the replay closes superseded."""
+        ...
+
+    async def set_scoped_name(
+        self, *, person_id: str, scope: Scope, nickname: str,
+        operation_id: str
+    ) -> Outcome:
+        """Set the canonical person's descriptive nickname inside the
+        EXACT scope — Nora-owned metadata (`authorization.md` «Scoped
+        authority»), never an identifier, grant, linkage proof or the
+        global Kratos trait.
+
+        `person_id` folds through the alias chain before the write, so a
+        retired id lands on the survivor; an absent or suspended person
+        is `denied`. `operation_id` binds the row to its owning journal
+        for provenance. Idempotent: the newest committed write wins."""
+        ...
+
+    async def scoped_name_for(
+        self, *, person_id: str, scope: Scope
+    ) -> str | None:
+        """The nickname this exact (person, scope) holds — `None` when
+        none is set. `person_id` folds through the alias chain, so a
+        retired id resolves through its survivor and never selects
+        another person's stale label."""
         ...
 
     # --- per-source observation ordering ------------------------------------

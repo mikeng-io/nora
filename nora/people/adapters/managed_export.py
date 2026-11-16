@@ -22,6 +22,7 @@ from nora.people.app.managed_export_prepare import (
     InventoryMembership,
     InventoryOperation,
     InventoryPerson,
+    InventoryScopedName,
 )
 
 
@@ -116,5 +117,12 @@ class SqlExportProbe:
                 for pid, kind, scope_id, reason in rows["blocks"]
             ),
             link_states=tuple(rows["link_states"]),
+            scoped_names=tuple(
+                InventoryScopedName(
+                    person_id=pid, scope=_scope(kind, scope_id),
+                    nickname=nickname,
+                )
+                for pid, kind, scope_id, nickname in rows["scoped_names"]
+            ),
             archive=rows["archive"],
         )

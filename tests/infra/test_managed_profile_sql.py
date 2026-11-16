@@ -22,6 +22,16 @@ from nora.domain.managed import (
     OutcomeStatus,
     PersonLifecycle,
 )
+from nora.domain.management import (
+    Actor,
+    ActorKind,
+    Operation,
+    ProfileEdit,
+    Scope,
+    ScopeKind,
+    Target,
+    TargetKind,
+)
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people.app.managed import ManagedServices
@@ -51,8 +61,8 @@ async def store(database):
         await connection.execute(sa.text(
             "TRUNCATE managed_membership_support, managed_membership, managed_alias,"
             " managed_identifier, managed_account, managed_identity_hold,"
-            " managed_authority_block, managed_operation, managed_person,"
-            " managed_link_decision, managed_link_request CASCADE"
+            " managed_authority_block, managed_operation, managed_scoped_name,"
+            " managed_person, managed_link_decision, managed_link_request CASCADE"
         ))
     try:
         yield SqlBindingStore(engine)
@@ -154,4 +164,120 @@ async def test_a_reconstructed_service_resumes_the_journaled_update(
     person = await store.person(PERSON)
     assert person is not None and person.display_name == NEW_NAME
     record = await store.operation("generated-sql-op-2")
+    assert record.state is OperationJournalState.COMPLETE
+
+
+ROOM = Scope(ScopeKind.ROOM, "generated-sql-room")
+OPERATOR = "generated-sql-operator"
+OP_ACCT = Identifier("discord", "user_id", "generated-operator-sql")
+NICK = "Generated Sql Nickname"
+
+
+def _scoped_services(store, registry, backend=None):
+    return ManagedServices(
+        store, backend or FakeAuthorityBackend(),
+        FakeTopologySource(rooms={ROOM.id: ("generated-sql-unit", False)},
+                           units={"generated-sql-unit": "generated-sql-ws"},
+                           workspaces={"generated-sql-ws"}),
+        registry, FakeLinkRequests())
+
+
+async def _enroll_operator(store):
+    outcome = await store.register(
+        person=ManagedPerson(OPERATOR, PersonLifecycle.ACTIVE),
+        account=ManagedAccount(str(uuid4()), OPERATOR, "discord",
+                               frozenset({OP_ACCT}), AccountState.BOUND))
+    assert outcome.status is OutcomeStatus.COMPLETE
+
+
+def _profile_op(revision, op_id="generated-sql-op-3", *, nickname=NICK,
+                scope=ROOM):
+    return Operation(
+        operation_id=op_id, kind="update_profile",
+        actor=Actor(ActorKind.OPERATOR, person_id=OPERATOR, scope=scope),
+        target=Target(TargetKind.PERSON, person_id=PERSON),
+        payload=ProfileEdit(nickname=nickname, scope=scope),
+        observed_revisions={"identity": revision, "authority": "a"})
+
+
+async def test_a_scoped_nickname_persists_without_touching_the_global_name(
+    store,
+):
+    registry = FakeIdentityRegistry()
+    backend = FakeAuthorityBackend()
+    services = _scoped_services(store, registry, backend)
+    await _enroll(store, registry)
+    await _enroll_operator(store)
+    await backend.put_relation(scope=ROOM, relation="admin",
+                               person_id=OPERATOR)
+
+    person = await store.person(PERSON)
+    outcome = await services.scoped_profile.apply(
+        _profile_op(str(person.revision)))
+    assert outcome.status is OutcomeStatus.COMPLETE
+
+    # The row is (canonical person, exact scope) metadata; the global
+    # projection and the Kratos trait are untouched by the local edit.
+    assert await store.scoped_name_for(person_id=PERSON, scope=ROOM) == NICK
+    assert await store.scoped_name_for(
+        person_id=PERSON,
+        scope=Scope(ScopeKind.UNIT, "generated-sql-unit")) is None
+    person = await store.person(PERSON)
+    assert person is not None and person.display_name == OLDER_NAME
+    assert registry.identities[PERSON]["traits"]["display_name"] == OLDER_NAME
+    ref = await services.access.person_ref(PERSON, scope=ROOM)
+    assert ref is not None and ref.name == NICK
+    record = await store.operation("generated-sql-op-3")
+    assert record is not None
+    assert record.state is OperationJournalState.COMPLETE
+
+
+async def test_a_reconstructed_service_resumes_the_journaled_scoped_edit(
+    store, database
+):
+    registry = FakeIdentityRegistry()
+    backend = FakeAuthorityBackend()
+    services = _scoped_services(store, registry, backend)
+    await _enroll(store, registry)
+    await _enroll_operator(store)
+    await backend.put_relation(scope=ROOM, relation="admin",
+                               person_id=OPERATOR)
+
+    # The store write dies once — a crash between journal and effect.
+    original = SqlBindingStore.set_scoped_name
+    calls = {"n": 0}
+
+    async def fail_once(self, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("generated store outage")
+        return await original(self, **kwargs)
+
+    person = await store.person(PERSON)
+    try:
+        SqlBindingStore.set_scoped_name = fail_once
+        outcome = await services.scoped_profile.apply(
+            _profile_op(str(person.revision)))
+    finally:
+        SqlBindingStore.set_scoped_name = original
+    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    record = await store.operation("generated-sql-op-3")
+    assert record is not None
+    assert record.state is not OperationJournalState.COMPLETE
+    assert await store.scoped_name_for(person_id=PERSON, scope=ROOM) is None
+
+    # A "restarted" service — new engine, same database — finishes the
+    # journaled nickname, nothing else.
+    engine2 = create_sql_engine(database)
+    try:
+        recovered = _scoped_services(
+            SqlBindingStore(engine2), registry, backend)
+        finished = await recovered.scoped_profile.reconcile()
+    finally:
+        await engine2.dispose()
+    assert [row.operation_id for row in finished] == ["generated-sql-op-3"]
+    assert await store.scoped_name_for(person_id=PERSON, scope=ROOM) == NICK
+    person = await store.person(PERSON)
+    assert person is not None and person.display_name == OLDER_NAME
+    record = await store.operation("generated-sql-op-3")
     assert record.state is OperationJournalState.COMPLETE

@@ -167,7 +167,8 @@ async def test_session_change_while_waiting_for_the_write_gate_prevents_a_privil
         token, method="POST", path=PATH, body=body)
     typed = decode_management_request(body, operator_person=proof["binding"]["person_id"])
     invocation = HumanManagement(services.bindings, services.registry,
-                                 services.registration, services.authority)
+                                 services.registration, services.authority,
+                                 services.scoped_profile)
     async with services.bindings.mutation():
         waiting = asyncio.create_task(invocation.apply(typed, authentication))
         await asyncio.sleep(0)
@@ -178,3 +179,76 @@ async def test_session_change_while_waiting_for_the_write_gate_prevents_a_privil
     result = await asyncio.wait_for(waiting, timeout=2)
     assert result.status is OutcomeStatus.DENIED
     assert await services.bindings.members_of(ROOM) == ()
+
+
+def profile_operation(scope=ROOM, *, person_id="generated-member",
+                      nickname="Generated Room Nickname", op_id=None):
+    return {"operation_id": op_id or str(uuid4()), "kind": "update_profile",
+        "target": {"kind": "person", "person_id": person_id},
+        "payload": {"nickname": nickname,
+                    "scope": {"kind": scope.kind.value, "id": scope.id}},
+        "observed_revisions": {"identity": "0", "authority": "observed"}}
+
+
+async def test_scoped_nickname_update_uses_the_same_authenticated_gate(surface):
+    """A scoped ProfileEdit rides the same retained-session + scoped
+    `manage_members` gate as every human operation — the write lands as
+    Nora-owned metadata, the global name is untouched, a sibling-scope
+    operator is refused with nothing written."""
+    _, services, _ = surface
+    body = profile_operation()
+    assert (await send(surface, body)).status == 200
+    # The exact request replays its committed outcome.
+    assert (await send(surface, body)).status == 200
+    assert (await services.bindings.scoped_name_for(
+        person_id="generated-member", scope=ROOM)) \
+        == "Generated Room Nickname"
+    member = await services.bindings.person("generated-member")
+    assert member is not None and member.display_name == ""
+    # Operator admin on ROOM confers nothing on the sibling room.
+    assert (await send(surface, profile_operation(OTHER))).status == 403
+    assert (await services.bindings.scoped_name_for(
+        person_id="generated-member", scope=OTHER)) is None
+
+
+@pytest.mark.parametrize("failure,expected", [
+    ("permission-revoked", 403), ("authority-down", 503),
+    ("identity-held", 503), ("unknown-person", 403),
+    ("unknown-scope", 403), ("global-payload", 400),
+])
+async def test_profile_update_revalidates_the_same_boundaries(
+    surface, failure, expected,
+):
+    _, services, _ = surface
+    body = profile_operation()
+    if failure == "permission-revoked":
+        await services.backend.drop_relation(
+            scope=ROOM, relation="admin", person_id="generated-operator")
+    elif failure == "authority-down":
+        services.backend.down = True
+    elif failure == "identity-held":
+        await services.bindings.hold_identity(
+            person_id="generated-member",
+            operation_id="generated-publication")
+    elif failure == "unknown-person":
+        body = profile_operation(person_id="generated-absent")
+    elif failure == "unknown-scope":
+        body = profile_operation(Scope(ScopeKind.ROOM, "generated-missing"))
+    else:
+        body = {**profile_operation(), "payload": {"display_name": "Sneaked"}}
+    assert (await send(surface, body)).status == expected
+    assert services.bindings.scoped_names == {}
+    member = await services.bindings.person("generated-member")
+    assert member is not None and member.display_name == ""
+
+
+async def test_profile_update_needs_the_retained_session(surface):
+    client, _, _ = surface
+    body = json.dumps(profile_operation()).encode()
+    # No Nora-Authentication header at all, and a sign-in proof with no
+    # retained binding: neither reaches the operation.
+    assert (await client.post(PATH, data=body)).status == 401
+    fresh = dict(claims())
+    fresh["purpose"] = "sign_in"
+    assert (await client.post(
+        PATH, data=body, headers=headers(fresh, body))).status == 401

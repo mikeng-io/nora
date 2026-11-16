@@ -16,6 +16,7 @@ from nora.domain.management import (
     Actor,
     ActorKind,
     Operation,
+    ProfileEdit,
     Target,
 )
 
@@ -58,7 +59,13 @@ def decode_management_request(
             json.dumps(request.payload), strict=True, extra="forbid",
         )
         if actor is None:
-            scope = payload.scope if isinstance(payload, AccountRegistration) else target.scope
+            # The operator's bound scope rides in the payload for
+            # registration and the scoped nickname; otherwise the target's.
+            scope = (
+                payload.scope
+                if isinstance(payload, (AccountRegistration, ProfileEdit))
+                else target.scope
+            )
             actor = Actor(ActorKind.OPERATOR, person_id=operator_person, scope=scope)
         return Operation(
             operation_id=request.operation_id,

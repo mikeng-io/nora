@@ -42,6 +42,7 @@ from nora.people.app.managed_export_prepare import (
     InventoryMembership,
     InventoryOperation,
     InventoryPerson,
+    InventoryScopedName,
 )
 from nora.persons import load_persons
 from nora.policy import load_policy
@@ -148,6 +149,10 @@ class _Probe:
                 for b in store.blocks.values()
             ),
             link_states=self._links,
+            scoped_names=tuple(
+                InventoryScopedName(pid, scope, nickname)
+                for (pid, scope), (nickname, _op) in store.scoped_names.items()
+            ),
             archive=self._archive,
         )
 
@@ -338,6 +343,21 @@ async def test_export_refuses_incomplete_publication(graph):
                for r in report.refusals)
     assert any(r.code.startswith("incomplete-publication:authority-blocks")
                for r in report.refusals)
+
+
+async def test_export_refuses_scoped_names_as_unsupported_state(graph):
+    """Scoped nicknames have no TOML representation — the export names a
+    fixed bounded refusal rather than silently dropping a person's name."""
+    store, *_ = _seed(graph)
+    store.scoped_names[(
+        "miles", ROOM_A)] = ("Generated Room Name", "op-1")
+    *_, policy_path, export = graph
+    report = await export.export(policy_path)
+    assert report.outcome.status is OutcomeStatus.DENIED
+    refusal = next(
+        r for r in report.refusals
+        if r.code == "unsupported-state:scoped-names")
+    assert refusal.detail == "1-names"
 
 
 async def test_export_refuses_a_pending_link(graph):

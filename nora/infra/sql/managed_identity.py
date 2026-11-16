@@ -37,6 +37,7 @@ from nora.domain.managed import (
 )
 from nora.domain.management import Scope
 from nora.infra.sql import managed_observations
+from nora.infra.sql import managed_scoped_names as scoped_names
 from nora.infra.sql.managed_publication import (
     consolidate_people,
     drop_membership_support,
@@ -46,6 +47,7 @@ from nora.infra.sql.managed_publication import (
 from nora.infra.sql.managed_registration import (
     _PG_UNIQUE_VIOLATION,
     _bind_account,
+    _canonical_person,
     _insert_person,
     bind_identifiers,
 )
@@ -172,20 +174,7 @@ class SqlBindingStore:
         self, conn: Any, person_id: str
     ) -> str | None:
         """Fold `person_id` through the alias chain — one hop (aliases point at LIVE rows)."""
-        exists = await conn.execute(
-            sa.select(MANAGED_PERSON.c.person_id).where(
-                MANAGED_PERSON.c.person_id == person_id
-            )
-        )
-        if exists.fetchone() is not None:
-            return person_id
-        alias = await conn.execute(
-            sa.select(MANAGED_ALIAS.c.person_id).where(
-                MANAGED_ALIAS.c.former_person_id == person_id
-            )
-        )
-        row = alias.fetchone()
-        return None if row is None else row.person_id
+        return await _canonical_person(conn, person_id)
 
     async def canonical_person(self, person_id: str) -> str | None:
         async with self._engine.connect() as conn:
@@ -423,6 +412,24 @@ class SqlBindingStore:
                 .values(display_name=display_name, updated_at=sa.func.now())
             )
             return complete() if result.rowcount else denied("absent-person")
+
+    async def set_scoped_name(
+        self, *, person_id: str, scope: Scope, nickname: str,
+        operation_id: str
+    ) -> Outcome:
+        """The (person, scope) nickname row — `operation_id` its journal
+        provenance; descriptive metadata, so no revision bumps."""
+        async with self._engine.begin() as conn:
+            return await scoped_names.set_scoped_name(
+                conn, person_id=person_id, scope=scope, nickname=nickname,
+                operation_id=operation_id)
+
+    async def scoped_name_for(
+        self, *, person_id: str, scope: Scope
+    ) -> str | None:
+        async with self._engine.connect() as conn:
+            return await scoped_names.scoped_name_for(
+                conn, person_id=person_id, scope=scope)
 
     async def revoke_binding(self, *, account: Identifier) -> Outcome:
         """End one binding — the identifiers stay owned (one owner, ever);
@@ -710,17 +717,29 @@ class SqlBindingStore:
             return tuple(_operation_from(r) for r in rows)
 
     async def latest_profile_operation(
-        self, person_id: str
+        self, person_id: str, *, scope: Scope | None = None
     ) -> OperationRecord | None:
+        where = [
+            MANAGED_OPERATION.c.kind == "update_profile",
+            MANAGED_OPERATION.c.snapshot["target_person"].astext == person_id,
+        ]
+        if scope is None:
+            # The holder's global edit carries no profile_scope — a scoped
+            # nickname never orders against it.
+            where.append(
+                ~MANAGED_OPERATION.c.snapshot.has_key("profile_scope"))
+        else:
+            where += [
+                MANAGED_OPERATION.c.snapshot["profile_scope"]["kind"].astext
+                == scope.kind.value,
+                MANAGED_OPERATION.c.snapshot["profile_scope"]["id"].astext
+                == scope.id,
+            ]
         async with self._engine.connect() as conn:
             row = (
                 await conn.execute(
                     sa.select(MANAGED_OPERATION)
-                    .where(MANAGED_OPERATION.c.kind == "update_profile")
-                    .where(
-                        MANAGED_OPERATION.c.snapshot["target_person"].astext
-                        == person_id
-                    )
+                    .where(*where)
                     .order_by(
                         MANAGED_OPERATION.c.created_at.desc(),
                         MANAGED_OPERATION.c.operation_id.desc(),

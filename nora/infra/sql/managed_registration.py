@@ -27,6 +27,7 @@ from nora.domain.managed import (
 )
 from nora.infra.sql.schema_managed import (
     MANAGED_ACCOUNT,
+    MANAGED_ALIAS,
     MANAGED_IDENTIFIER,
     MANAGED_PERSON,
 )
@@ -259,3 +260,21 @@ async def bind_identifiers(
                 .values(revision=MANAGED_ACCOUNT.c.revision + 1)
             )
     return complete()
+
+
+async def _canonical_person(conn: AsyncConnection, person_id: str) -> str | None:
+    """Fold `person_id` through the alias chain — one hop (aliases point at LIVE rows)."""
+    exists = await conn.execute(
+        sa.select(MANAGED_PERSON.c.person_id).where(
+            MANAGED_PERSON.c.person_id == person_id
+        )
+    )
+    if exists.fetchone() is not None:
+        return person_id
+    alias = await conn.execute(
+        sa.select(MANAGED_ALIAS.c.person_id).where(
+            MANAGED_ALIAS.c.former_person_id == person_id
+        )
+    )
+    row = alias.fetchone()
+    return None if row is None else row.person_id

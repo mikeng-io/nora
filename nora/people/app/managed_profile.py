@@ -37,13 +37,20 @@ from nora.domain.managed import (
     denied,
     unavailable,
 )
-from nora.domain.managed_ports import BindingStore, IdentityRegistry
+from nora.domain.managed_ports import (
+    AuthorityBackend,
+    BindingStore,
+    IdentityRegistry,
+    TopologySource,
+)
 from nora.domain.management import (
     Actor,
     ActorKind,
     Operation,
     OperationError,
     ProfileEdit,
+    Scope,
+    ScopeKind,
     Target,
     TargetKind,
 )
@@ -287,7 +294,10 @@ class ProfileService:
     async def _reconcile(self) -> tuple[OperationRecord, ...]:
         finished: list[OperationRecord] = []
         for record in await self._bindings.incomplete_operations():
-            if record.kind != _PROFILE_KIND:
+            if (record.kind != _PROFILE_KIND
+                    or "profile_scope" in record.snapshot):
+                # Scoped nicknames are `ScopedProfileService`'s journal —
+                # a global replay must never pick them up.
                 continue
             try:
                 outcome = await self._run_steps(record)
@@ -295,6 +305,186 @@ class ProfileService:
                 raise
             except Exception:
                 log.exception("profile replay failed")
+                outcome = unavailable("store-failure")
+            if outcome.status is OutcomeStatus.COMPLETE:
+                current = await self._bindings.operation(record.operation_id)
+                if (current is not None
+                        and current.state is OperationJournalState.COMPLETE):
+                    finished.append(current)
+        return tuple(finished)
+
+
+_SCOPED_STEPS = ("profile", "readback")
+
+
+class ScopedProfileService:
+    """`update_profile` for scoped operators — the (person, scope)
+    nickname (`authorization.md` «Scoped authority»).
+
+    Same kind and journaled retry/restart model as the holder's global
+    rename, but the effect is a Nora-owned metadata row under the
+    canonical person and the EXACT scope — never the Kratos trait, never
+    an identifier, grant or ownership proof. `latest_profile_operation`'s
+    scope partition keeps a local nickname independent of the global
+    name and of every sibling scope: neither can supersede or replay-
+    overwrite the other.
+    """
+
+    def __init__(
+        self,
+        bindings: BindingStore,
+        backend: AuthorityBackend,
+        topology: TopologySource,
+    ) -> None:
+        self._bindings = bindings
+        self._backend = backend
+        self._topology = topology
+
+    async def apply(self, op: Operation) -> Outcome:
+        try:
+            async with self._bindings.mutation():
+                return await self._apply(op)
+        except OperationConflictError:
+            # Two first-commitments raced one operation_id and the journal
+            # recorded the other effect.
+            return denied("operation-conflict")
+        except ManagedError:
+            raise
+        except Exception:
+            log.exception("scoped profile update failed")
+            return unavailable("store-failure")
+
+    async def _apply(self, op: Operation) -> Outcome:
+        """Inside the caller's mutation gate — actor, binding and permit revalidated."""
+        payload = op.payload
+        if (op.kind != _PROFILE_KIND
+                or op.actor.kind is not ActorKind.OPERATOR
+                or not isinstance(payload, ProfileEdit)
+                or payload.scope is None):
+            return denied(_REFUSED)
+        people = tuple(
+            pid for pid in (op.actor.person_id, op.target.person_id)
+            if pid is not None
+        )
+        refusal = await _publication_refusal(
+            self._bindings, people=people, payload=payload)
+        if refusal is not None:
+            return refusal
+        stale = await _revisions_fresh(self._bindings, op)
+        if stale is not None:
+            return stale
+        replay = await _recorded_replay(self._bindings, op)
+        if replay is not None:
+            return replay
+        scope = payload.scope
+        if not await self._topology.scope_exists(scope):
+            return denied("unknown-scope")
+        allowed = await self._actor_allowed(scope, op.actor)
+        if allowed is not None:
+            return allowed
+        person_id = cast(str, op.target.person_id)
+        person = await self._bindings.person(person_id)
+        if person is None:
+            return denied("unknown-person")
+        if person.lifecycle is not PersonLifecycle.ACTIVE:
+            return denied("person-suspended")
+        record = await _record(self._bindings, op, _SCOPED_STEPS)
+        if isinstance(record, Outcome):
+            return record
+        return await self._run_steps(record)
+
+    async def _actor_allowed(
+        self, scope: Scope, actor: Actor
+    ) -> Outcome | None:
+        person = await self._bindings.person(cast(str, actor.person_id))
+        if person is None or person.lifecycle is not PersonLifecycle.ACTIVE:
+            return denied("actor-suspended")
+        verdict = await self._backend.check(
+            scope=scope, person_id=cast(str, actor.person_id),
+            permit="manage_members")
+        if verdict.verdict is Verdict.UNAVAILABLE:
+            return unavailable("actor-check-unavailable")
+        if not verdict.allowed:
+            return denied(
+                f"actor-lacks-manage_members:{verdict.detail or verdict.verdict.value}")
+        return None
+
+    async def _run_steps(self, record: OperationRecord) -> Outcome:
+        """store write -> read-back, skipping journaled-done steps."""
+        snapshot = dict(record.snapshot)
+        person_id = snapshot["target_person"]
+        nickname = snapshot["nickname"]
+        scope_row = snapshot["profile_scope"]
+        scope = Scope(ScopeKind(scope_row["kind"]), scope_row["id"])
+        newest = await self._bindings.latest_profile_operation(
+            person_id, scope=scope)
+        if newest is not None and newest.operation_id != record.operation_id:
+            # The journal's order is the intents' order for THIS
+            # (person, scope): a later journaled edit owns the nickname,
+            # so this replay writes nothing over it.
+            await _finish(self._bindings, record, OperationJournalState.COMPLETE,
+                          "denied", "superseded")
+            return denied("superseded")
+        outcome = await self._step(
+            record, "profile",
+            lambda: self._bindings.set_scoped_name(
+                person_id=person_id, scope=scope, nickname=nickname,
+                operation_id=record.operation_id))
+        if outcome.status is OutcomeStatus.COMPLETE:
+            outcome = await self._step(
+                record, "readback",
+                lambda: self._readback(person_id, scope, nickname))
+        if outcome.status is OutcomeStatus.COMPLETE:
+            await _finish(self._bindings, record, OperationJournalState.COMPLETE,
+                          "complete")
+            return complete()
+        if outcome.status is OutcomeStatus.DENIED:
+            await _finish(self._bindings, record, OperationJournalState.COMPLETE,
+                          "denied", outcome.detail)
+            return outcome
+        await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,
+                      outcome.status.value, outcome.detail)
+        return outcome
+
+    async def _step(
+        self, record: OperationRecord, step: str, effect: Any
+    ) -> Outcome:
+        if not _pending(record, step):
+            return complete()
+        outcome = await effect()
+        if outcome.status is OutcomeStatus.COMPLETE:
+            await _step_done(self._bindings, record, step)
+        return outcome
+
+    async def _readback(
+        self, person_id: str, scope: Scope, nickname: str
+    ) -> Outcome:
+        """Success only when the stored row reads the intended nickname."""
+        actual = await self._bindings.scoped_name_for(
+            person_id=person_id, scope=scope)
+        if actual == nickname:
+            return complete()
+        return unavailable("read-back-mismatch")
+
+    async def reconcile(self) -> tuple[OperationRecord, ...]:
+        """Restart recovery — resume every journaled SCOPED
+        `update_profile` still owed. Global journals stay with
+        `ProfileService`."""
+        async with self._bindings.mutation():
+            return await self._reconcile()
+
+    async def _reconcile(self) -> tuple[OperationRecord, ...]:
+        finished: list[OperationRecord] = []
+        for record in await self._bindings.incomplete_operations():
+            if (record.kind != _PROFILE_KIND
+                    or "profile_scope" not in record.snapshot):
+                continue
+            try:
+                outcome = await self._run_steps(record)
+            except ManagedError:
+                raise
+            except Exception:
+                log.exception("scoped profile replay failed")
                 outcome = unavailable("store-failure")
             if outcome.status is OutcomeStatus.COMPLETE:
                 current = await self._bindings.operation(record.operation_id)

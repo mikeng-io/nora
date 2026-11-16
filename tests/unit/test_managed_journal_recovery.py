@@ -48,7 +48,8 @@ async def test_exception_recovery_attributes_only_the_exact_recorded_effect(call
     if partial:
         store.operations[original.operation_id] = replace(
             recorded, state=OperationJournalState.INCOMPLETE)
-    human = HumanManagement(store, registry, registration, services.authority)
+    human = HumanManagement(store, registry, registration, services.authority,
+                            services.scoped_profile)
     authentication = RoomAuthentication(
         issuer="signal", message_key=original.operation_id, account=ACCT,
         authenticated_at=datetime(2026, 1, 1, tzinfo=UTC))

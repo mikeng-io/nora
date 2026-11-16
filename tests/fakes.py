@@ -523,6 +523,7 @@ class FakeAdmissionProbe:
             holds=frozenset(store.identity_holds),
             blocks=len(store.blocks),
             link_rows=0,
+            scoped_names=len(store.scoped_names),
         )
 
     async def publish_held_person(

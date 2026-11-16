@@ -272,6 +272,19 @@ async def test_apply_refuses_a_target_that_is_not_empty(tmp_path, graph):
     assert outcome.detail == "foreign-target-state"
 
 
+async def test_apply_refuses_foreign_scoped_names(tmp_path, graph):
+    """A scoped-nickname row is durable managed state the import never
+    writes — its presence is foreign target state, not empty."""
+    store, _, _, admission = graph
+    store.scoped_names[(
+        "generated-person",
+        Scope(ScopeKind.ROOM, "generated-room"))] = ("generated", "op-1")
+    identity_path, policy_path = _sources(tmp_path)
+    outcome = await admission.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "foreign-target-state"
+
+
 async def test_apply_refuses_a_foreign_journal(tmp_path, graph):
     store, _, _, admission = graph
     store.operations["other-op"] = OperationRecord(

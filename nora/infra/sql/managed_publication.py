@@ -35,6 +35,7 @@ from nora.infra.sql.schema_managed import (
     MANAGED_MEMBERSHIP,
     MANAGED_MEMBERSHIP_SUPPORT,
     MANAGED_PERSON,
+    MANAGED_SCOPED_NAME,
 )
 
 
@@ -258,6 +259,25 @@ async def consolidate_people(
     )
     await conn.execute(sa.delete(MANAGED_IDENTITY_HOLD).where(
         MANAGED_IDENTITY_HOLD.c.person_id == former,
+    ))
+    # Scoped nicknames follow the canonical person like authority blocks;
+    # on a same-scope collision the survivor's own name wins.
+    await conn.execute(
+        pg_insert(MANAGED_SCOPED_NAME)
+        .from_select(
+            ["person_id", "scope_kind", "scope_id", "nickname",
+             "operation_id"],
+            sa.select(
+                sa.literal(survivor), MANAGED_SCOPED_NAME.c.scope_kind,
+                MANAGED_SCOPED_NAME.c.scope_id,
+                MANAGED_SCOPED_NAME.c.nickname,
+                MANAGED_SCOPED_NAME.c.operation_id,
+            ).where(MANAGED_SCOPED_NAME.c.person_id == former),
+        )
+        .on_conflict_do_nothing()
+    )
+    await conn.execute(sa.delete(MANAGED_SCOPED_NAME).where(
+        MANAGED_SCOPED_NAME.c.person_id == former,
     ))
     await conn.execute(sa.insert(MANAGED_ALIAS).values(
         former_person_id=former, person_id=survivor,

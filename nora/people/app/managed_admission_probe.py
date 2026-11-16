@@ -36,6 +36,7 @@ class AdmissionFacts:
     holds: frozenset[tuple[str, str]]                  # (person_id, operation_id)
     blocks: int
     link_rows: int
+    scoped_names: int   # an import writes none — any row is foreign state
 
 
 class AdmissionProbe(Protocol):

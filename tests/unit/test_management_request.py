@@ -189,3 +189,28 @@ def test_decoded_operation_is_independent_of_later_request_mutations():
     body["payload"]["surviving_person"] = "another-person"
     assert operation.payload.surviving_person == "synthetic-person"
     assert operation.observed_revisions["ownership"] == "o-1"
+
+
+def test_scoped_profile_request_binds_nickname_and_scope_to_the_operator():
+    """The operator's scoped nickname decodes with the actor bound to the
+    PAYLOAD's scope — the write-time checks revalidate its actual reach."""
+    body = {
+        "operation_id": "synthetic-scoped-profile", "kind": "update_profile",
+        "target": {"kind": "person", "person_id": "synthetic-member"},
+        "payload": {"nickname": "Generated nickname",
+                    "scope": {"kind": "room", "id": "synthetic-room"}},
+        "observed_revisions": {"identity": "i-1", "authority": "a-1"},
+    }
+    operation = decode_management_request(
+        json.dumps(body).encode(), operator_person="synthetic-operator")
+    assert operation.actor.kind is ActorKind.OPERATOR
+    assert operation.actor.person_id == "synthetic-operator"
+    assert operation.actor.scope == Scope(
+        ScopeKind.ROOM, "synthetic-room")
+    assert operation.payload.nickname == "Generated nickname"
+    assert operation.payload.scope == Scope(ScopeKind.ROOM, "synthetic-room")
+    # An operator cannot decode a global edit — the local scope is required.
+    body["payload"] = {"display_name": "Generated name"}
+    with pytest.raises(ManagementRequestError):
+        decode_management_request(
+            json.dumps(body).encode(), operator_person="synthetic-operator")

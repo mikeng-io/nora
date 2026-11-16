@@ -486,7 +486,8 @@ class FileAdmission:
         if record is None:
             if (facts.persons or facts.accounts or facts.identifiers
                     or facts.aliases or facts.memberships or facts.supports
-                    or facts.holds or facts.blocks or facts.link_rows):
+                    or facts.holds or facts.blocks or facts.link_rows
+                    or facts.scoped_names):
                 return denied("foreign-target-state")
             return "fresh"
         return self._residual(facts, prepared) or "resume"
@@ -536,7 +537,9 @@ class FileAdmission:
         if any(operation_id != prepared.import_id or pid not in people
                for pid, operation_id in facts.holds):
             return denied("foreign-target-state:hold")
-        if facts.blocks or facts.link_rows:
+        if facts.blocks or facts.link_rows or facts.scoped_names:
+            # An import never writes scoped names — a row present on
+            # resume is foreign state, not this import's own effect.
             return denied("foreign-target-state")
         return None
 

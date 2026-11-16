@@ -246,6 +246,7 @@ class RoomManagement:
             HumanManagement(
                 services.bindings, services.registry,
                 services.registration, services.authority,
+                services.scoped_profile,
             )
             if services is not None
             else None

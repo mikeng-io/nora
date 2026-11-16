@@ -1,0 +1,72 @@
+[
+  {
+    "name": "the human boundary derives the operator scope from the ProfileEdit payload",
+    "file": "nora/people/app/management_invocation.py",
+    "old": "                scope = (operation.payload.scope\n                         if isinstance(operation.payload,\n                                       (AccountRegistration, ProfileEdit))\n                         else operation.target.scope)",
+    "new": "                scope = operation.target.scope",
+    "target": "tests/web/test_management_operator.py::test_scoped_nickname_update_uses_the_same_authenticated_gate"
+  },
+  {
+    "name": "the request decoder binds the operator to the scoped payload's scope",
+    "file": "nora/web/management_request.py",
+    "old": "            scope = (\n                payload.scope\n                if isinstance(payload, (AccountRegistration, ProfileEdit))\n                else target.scope\n            )",
+    "new": "            scope = target.scope",
+    "target": "tests/web/test_management_operator.py::test_scoped_nickname_update_uses_the_same_authenticated_gate"
+  },
+  {
+    "name": "a stale scoped replay cannot overwrite a newer same-scope nickname",
+    "file": "nora/people/app/managed_profile.py",
+    "old": "        newest = await self._bindings.latest_profile_operation(\n            person_id, scope=scope)\n        if newest is not None and newest.operation_id != record.operation_id:",
+    "new": "        newest = await self._bindings.latest_profile_operation(\n            person_id, scope=scope)\n        if False:",
+    "target": "tests/unit/test_scoped_profile.py::test_a_stale_replay_cannot_overwrite_a_newer_same_scope_intent"
+  },
+  {
+    "name": "the global profile ordering never picks up a scoped operation",
+    "file": "nora/infra/sql/managed_identity.py",
+    "old": "            where.append(\n                ~MANAGED_OPERATION.c.snapshot.has_key(\"profile_scope\"))",
+    "new": "            where.append(sa.true())",
+    "target": "tests/contract/test_binding_store_scoped_contract.py::test_latest_profile_operation_partitions_global_and_each_scope"
+  },
+  {
+    "name": "a scoped profile write reaches only a declared scope",
+    "file": "nora/people/app/managed_profile.py",
+    "old": "        if not await self._topology.scope_exists(scope):",
+    "new": "        if False:",
+    "target": "tests/unit/test_scoped_profile.py::test_the_gate_refuses_honestly_before_any_effect[unknown-scope]"
+  },
+  {
+    "name": "initial admission reads scoped names as foreign target state",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "                    or facts.aliases or facts.memberships or facts.supports\n                    or facts.holds or facts.blocks or facts.link_rows\n                    or facts.scoped_names):",
+    "new": "                    or facts.aliases or facts.memberships or facts.supports\n                    or facts.holds or facts.blocks or facts.link_rows):",
+    "target": "tests/unit/test_managed_admission.py::test_apply_refuses_foreign_scoped_names"
+  },
+  {
+    "name": "export refuses scoped names instead of silently dropping them",
+    "file": "nora/people/app/managed_export_prepare.py",
+    "old": "    if inv.scoped_names:",
+    "new": "    if False:",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_scoped_names_as_unsupported_state"
+  },
+  {
+    "name": "consolidation moves the former person's scoped names to the survivor",
+    "file": "nora/infra/sql/managed_publication.py",
+    "old": "    await conn.execute(sa.delete(MANAGED_SCOPED_NAME).where(\n        MANAGED_SCOPED_NAME.c.person_id == former,\n    ))",
+    "new": "    pass",
+    "target": "tests/contract/test_binding_store_scoped_contract.py::test_scoped_names_fold_through_consolidation"
+  },
+  {
+    "name": "the scoped read walks the room-unit-workspace ancestry",
+    "file": "nora/access.py",
+    "old": "            current = await self._topology.parent_of(current)",
+    "new": "            current = None",
+    "target": "tests/unit/test_scoped_profile.py::test_the_nearest_ancestry_nickname_wins_then_the_global_name"
+  },
+  {
+    "name": "a suspended person cannot take a scoped nickname",
+    "file": "nora/infra/sql/managed_scoped_names.py",
+    "old": "    if lifecycle != PersonLifecycle.ACTIVE.value:",
+    "new": "    if False:",
+    "target": "tests/contract/test_binding_store_scoped_contract.py::test_scoped_name_refuses_absent_and_suspended_persons"
+  }
+]

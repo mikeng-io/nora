@@ -71,6 +71,8 @@ class FakeBindingStore(BindingStore):
         self.aliases: dict[str, str] = {}
         self.operations: dict[str, OperationRecord] = {}
         self.blocks: dict[tuple[str, Scope], AuthorityBlock] = {}
+        # (canonical person, exact scope) -> (nickname, owning operation)
+        self.scoped_names: dict[tuple[str, Scope], tuple[str, str]] = {}
         self.observations: dict[tuple[str, str, Scope], SourceObservation] = {}
         self.down = False
 
@@ -331,6 +333,28 @@ class FakeBindingStore(BindingStore):
         )
         return complete()
 
+    async def set_scoped_name(
+        self, *, person_id: str, scope: Scope, nickname: str,
+        operation_id: str
+    ) -> Outcome:
+        self._up()
+        canonical = self._canonical(person_id)
+        person = self.people.get(canonical)
+        if person is None:
+            return denied("absent-person")
+        if person.lifecycle is not PersonLifecycle.ACTIVE:
+            return denied("person-suspended")
+        self.scoped_names[(canonical, scope)] = (nickname, operation_id)
+        return complete()
+
+    async def scoped_name_for(
+        self, *, person_id: str, scope: Scope
+    ) -> str | None:
+        self._up()
+        canonical = self._canonical(person_id)
+        row = self.scoped_names.get((canonical, scope))
+        return None if row is None else row[0]
+
     async def revoke_binding(self, *, account: Identifier) -> Outcome:
         self._up()
         account_id = self.owners.get(account)
@@ -455,6 +479,12 @@ class FakeBindingStore(BindingStore):
                 self.blocks[(survivor, scope)] = replace(block, person_id=survivor)
             if pid == former:
                 del self.blocks[(pid, scope)]
+        # Scoped nicknames follow the canonical person; the survivor's own
+        # same-scope name wins on a collision.
+        for (pid, scope), row in list(self.scoped_names.items()):
+            if pid == former:
+                self.scoped_names.setdefault((survivor, scope), row)
+                del self.scoped_names[(pid, scope)]
         self.aliases[former] = survivor
         self.identity_holds = {
             (survivor if p == former else p, op)
@@ -509,14 +539,19 @@ class FakeBindingStore(BindingStore):
         )
 
     async def latest_profile_operation(
-        self, person_id: str
+        self, person_id: str, *, scope: Scope | None = None
     ) -> OperationRecord | None:
         self._up()
+        wanted = (
+            None if scope is None
+            else {"kind": scope.kind.value, "id": scope.id}
+        )
         # `operations` is an insertion-ordered journal: the last matching
-        # record is the newest intent.
+        # record is the newest intent for THIS profile target.
         for record in reversed(list(self.operations.values())):
             if (record.kind == "update_profile"
-                    and record.snapshot.get("target_person") == person_id):
+                    and record.snapshot.get("target_person") == person_id
+                    and record.snapshot.get("profile_scope") == wanted):
                 return record
         return None
 

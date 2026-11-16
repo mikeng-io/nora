@@ -257,3 +257,28 @@ MANAGED_OBSERVATION = sa.Table(
         "scope_kind IN ('workspace','unit','room')",
         name="ck_managed_observation_scope_kind"),
 )
+
+# The canonical person's descriptive nickname inside ONE scope — Nora-owned
+# metadata keyed by (canonical person, exact scope), `operation_id` its
+# provenance; never an identifier, grant or linkage proof.
+MANAGED_SCOPED_NAME = sa.Table(
+    "managed_scoped_name", METADATA,
+    sa.Column("person_id", sa.Text,
+              sa.ForeignKey("managed_person.person_id", ondelete="CASCADE",
+                            name="managed_scoped_name_person_fkey"),
+              primary_key=True),
+    sa.Column("scope_kind", sa.Text, primary_key=True),
+    sa.Column("scope_id", sa.Text, primary_key=True),
+    sa.Column("nickname", sa.Text, nullable=False),
+    sa.Column("operation_id", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.ForeignKeyConstraint(
+        ["operation_id"], ["managed_operation.operation_id"],
+        name="managed_scoped_name_operation_fkey", ondelete="RESTRICT"),
+    sa.CheckConstraint(
+        "scope_kind IN ('workspace','unit','room')",
+        name="ck_managed_scoped_name_scope_kind"),
+)

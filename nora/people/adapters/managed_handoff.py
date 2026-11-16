@@ -40,6 +40,7 @@ class SqlAdmissionProbe:
             holds=rows["holds"],
             blocks=rows["blocks"],
             link_rows=rows["link_rows"],
+            scoped_names=rows["scoped_names"],
         )
 
     async def publish_held_person(

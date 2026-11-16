@@ -49,6 +49,7 @@ from nora.infra.sql.schema_managed import (
     MANAGED_MEMBERSHIP_SUPPORT,
     MANAGED_OPERATION,
     MANAGED_PERSON,
+    MANAGED_SCOPED_NAME,
 )
 
 
@@ -64,6 +65,7 @@ class AdmissionRows(TypedDict):
     holds: frozenset[tuple[str, str]]
     blocks: int
     link_rows: int
+    scoped_names: int
 
 
 async def admission_facts(engine: AsyncEngine) -> AdmissionRows:
@@ -149,6 +151,9 @@ async def admission_facts(engine: AsyncEngine) -> AdmissionRows:
                 sa.select(sa.func.count()).select_from(MANAGED_AUTHORITY_BLOCK)
             ) or 0),
             "link_rows": link_rows,
+            "scoped_names": int(await conn.scalar(
+                sa.select(sa.func.count()).select_from(MANAGED_SCOPED_NAME)
+            ) or 0),
         }
 
 

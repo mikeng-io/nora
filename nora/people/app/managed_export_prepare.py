@@ -120,6 +120,13 @@ class InventoryBlock:
 
 
 @dataclass(frozen=True)
+class InventoryScopedName:
+    person_id: str
+    scope: Scope
+    nickname: str
+
+
+@dataclass(frozen=True)
 class ExportInventory:
     """The COMPLETE managed inventory under the gate — including the rows
     the active-only port reads hide: suspended people, revoked accounts,
@@ -135,6 +142,9 @@ class ExportInventory:
     holds: tuple[tuple[str, str], ...]                 # (person_id, operation_id)
     blocks: tuple[InventoryBlock, ...]
     link_states: tuple[tuple[str, str], ...]           # (request_id, state)
+    # Scoped descriptive names — no TOML representation exists yet, so
+    # the export must see them and refuse rather than silently drop state.
+    scoped_names: tuple[InventoryScopedName, ...]
     # The newest COMPLETE `file_admission` journal's archived sources —
     # (operation_id, identity_toml, policy_toml) — the authored-metadata
     # archive, never ownership or grant authority.
@@ -335,6 +345,12 @@ def _inventory_refusals(inv: ExportInventory) -> list[ExportRefusal]:
                 f"state:{state or 'malformed'}"))
     if any(m.state not in _MEMBERSHIP_STATES for m in inv.memberships):
         refused.append(ExportRefusal("untrustworthy:unknown-membership-state"))
+    if inv.scoped_names:
+        # Bounded, fixed refusal: scoped nicknames have no TOML shape yet —
+        # never silently dropped, never exported as another person's name.
+        refused.append(ExportRefusal(
+            "unsupported-state:scoped-names",
+            f"{len(inv.scoped_names)}-names"))
     return refused
 
 

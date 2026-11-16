@@ -77,7 +77,10 @@ from nora.people.app.managed_ops import (
     _revisions_fresh,
     _step_done,
 )
-from nora.people.app.managed_profile import ProfileService
+from nora.people.app.managed_profile import (
+    ProfileService,
+    ScopedProfileService,
+)
 
 log = logging.getLogger("nora.people.managed")
 
@@ -111,6 +114,7 @@ class ManagedServices:
             bindings, backend, topology, registry, links,
         )
         self.profile = ProfileService(bindings, registry, self.publication)
+        self.scoped_profile = ScopedProfileService(bindings, backend, topology)
         # Consumer reads use these same authorities; managed reads never fall back to files.
         self.access = access or IdentityAccess(
             bindings=bindings, authority=self.authority, topology=topology,

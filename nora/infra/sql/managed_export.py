@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import Any, TypedDict
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.infra.sql.schema_managed import (
     MANAGED_ACCOUNT,
@@ -35,6 +35,7 @@ from nora.infra.sql.schema_managed import (
     MANAGED_MEMBERSHIP_SUPPORT,
     MANAGED_OPERATION,
     MANAGED_PERSON,
+    MANAGED_SCOPED_NAME,
 )
 
 
@@ -50,10 +51,32 @@ class ExportRows(TypedDict):
     holds: tuple[tuple[str, str], ...]
     blocks: tuple[tuple[str, str, str, str], ...]
     link_states: tuple[tuple[str, str], ...]
+    # (person_id, scope_kind, scope_id, nickname) — scoped descriptive
+    # names have no TOML representation yet, so the export must see them
+    # and refuse rather than silently drop the state.
+    scoped_names: tuple[tuple[str, str, str, str], ...]
     # The newest COMPLETE file_admission journal's archived source texts —
     # (operation_id, identity_toml, policy_toml) — or None when the
     # installation never admitted a file mapping.
     archive: tuple[str, str, str] | None
+
+
+async def _scoped_names(
+    conn: AsyncConnection,
+) -> tuple[tuple[str, str, str, str], ...]:
+    rows = (await conn.execute(sa.select(
+        MANAGED_SCOPED_NAME.c.person_id,
+        MANAGED_SCOPED_NAME.c.scope_kind,
+        MANAGED_SCOPED_NAME.c.scope_id,
+        MANAGED_SCOPED_NAME.c.nickname,
+    ).order_by(
+        MANAGED_SCOPED_NAME.c.person_id,
+        MANAGED_SCOPED_NAME.c.scope_kind,
+        MANAGED_SCOPED_NAME.c.scope_id,
+    ))).all()
+    return tuple(
+        (r.person_id, r.scope_kind, r.scope_id, r.nickname) for r in rows
+    )
 
 
 async def export_rows(engine: AsyncEngine) -> ExportRows:
@@ -113,6 +136,7 @@ async def export_rows(engine: AsyncEngine) -> ExportRows:
             MANAGED_LINK_REQUEST.c.request_id,
             MANAGED_LINK_REQUEST.c.snapshot,
         ))).all()
+        scoped_names = await _scoped_names(conn)
         # The archived admission sources: newest COMPLETE import wins — an
         # installation only ever holds one (a second import is a different
         # target), but ordering by created_at is the honest rule anyway.
@@ -170,5 +194,6 @@ async def export_rows(engine: AsyncEngine) -> ExportRows:
                 )
                 for r in links
             ),
+            "scoped_names": scoped_names,
             "archive": archive,
         }

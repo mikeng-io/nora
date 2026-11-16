@@ -88,7 +88,8 @@ class _ManagementHTTP:
         self._services = services
         self._authentication = authentication
         self._human = (HumanManagement(services.bindings, services.registry,
-                                      services.registration, services.authority)
+                                      services.registration, services.authority,
+                                      services.scoped_profile)
                        if authentication is not None else None)
         self._identity = IdentityResolver(services.bindings, services.registry, services.topology)
 

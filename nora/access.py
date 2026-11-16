@@ -321,16 +321,47 @@ class IdentityAccess:
             return None
         return await self._bindings.person(canonical)
 
-    async def person_ref(self, person_id: str) -> PersonRef | None:
+    async def person_ref(
+        self, person_id: str, *, scope: Scope | None = None
+    ) -> PersonRef | None:
         """The name view of a known person — a retired id reads through
         its canonical survivor; suspension does not hide a name (grants,
-        not identity reads, enforce lifecycle)."""
+        not identity reads, enforce lifecycle).
+
+        `scope` is the caller's trusted read scope: the displayed name is
+        the nearest nickname on the scope's room→unit→workspace ancestry,
+        then the global display name (`authorization.md` «Scoped
+        authority»). An unreadable scoped store raises — a scope never
+        silently borrows another scope's or a stale name; an unset scope
+        keeps the global view."""
         if self._persons is not None:
             return self._persons.by_person.get(
                 self._persons.subject_id_for(person_id)
             )
         person = await self.person(person_id)
-        return None if person is None else _ref(person)
+        if person is None:
+            return None
+        if scope is None:
+            return _ref(person)
+        scoped = await self._scoped_name(person.person_id, scope)
+        if scoped is None:
+            return _ref(person)
+        return PersonRef(
+            person_id=person.person_id,
+            name=scoped,
+            honcho_peer_id=person.person_id,
+        )
+
+    async def _scoped_name(self, person_id: str, scope: Scope) -> str | None:
+        """The nearest nickname on `scope`'s room→unit→workspace ancestry."""
+        current: Scope | None = scope
+        while current is not None:
+            nickname = await self._bindings.scoped_name_for(
+                person_id=person_id, scope=current)
+            if nickname is not None:
+                return nickname
+            current = await self._topology.parent_of(current)
+        return None
 
     async def resolve_ref(
         self, platform: str, sender_id: str
