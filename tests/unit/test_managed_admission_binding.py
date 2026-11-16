@@ -221,12 +221,17 @@ async def test_capture_cannot_be_rewritten_through_nested_views_or_loader_indexe
     view["sources"]["identity_toml"] = "changed-after-capture"
     view["people"].append("injected-person")
     assert prepared.snapshot == expected
-    with pytest.raises(TypeError):
-        prepared.persons.by_person["injected-person"] = prepared.persons.by_person["miles"]
-    with pytest.raises(TypeError):
-        prepared.policy._by_id[("signal", "generated-room-a")] = None
-    with pytest.raises(TypeError):
-        prepared.persons._subject_aliases["miles_old"] = "ada"
+    for index, key, value in (
+        (prepared.persons.by_person, "injected-person", prepared.persons.by_person["miles"]),
+        (prepared.policy._by_id, ("signal", "generated-room-a"), None),
+        (prepared.persons._subject_aliases, "miles_old", "ada"),
+    ):
+        refused = False
+        try:
+            index[key] = value
+        except TypeError:
+            refused = True
+        assert refused, "captured loader index accepted a mutation"
     result = await admission.apply_prepared(prepared)
     assert result.status is OutcomeStatus.COMPLETE, result.detail
     assert store.operations[prepared.import_id].snapshot == expected
