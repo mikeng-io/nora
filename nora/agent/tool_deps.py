@@ -213,10 +213,7 @@ class ToolDeps:
     video: VideoDesk | None = None
     video_ref_kinds: frozenset[str] = frozenset()
     external_files: ExternalFilesSource | None = None
-    # The people area's in-room management invocation and the verified
-    # trigger message it authenticates — `member_update` is inert without
-    # both. `None` in every offline/eval composition: the tool answers
-    # `unavailable`, the way an unwired collaborator always does.
+    # Both the shared management invocation and verified trigger message are required.
     room_management: Any = None
     message: Any = None
     # `[google] account`: Nora's own Google mailbox, named in the NOT_SHARED

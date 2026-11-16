@@ -332,12 +332,7 @@ def test_budgets_match_todays_table():
         "poll_list": 1, "poll_read": 2, "room_state_read": 1,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
-        "group_members": 1, "lookup_person": 4, "about": 4,
-        # 4, sized like the people reads beside it: a management effect is
-        # journaled + read back locally, so the currency is the model round
-        # trip — one ask, a clarify retry, and an occasional second effect
-        # ("register them, then add Alice too") still fit a turn.
-        "member_update": 4,
+        "group_members": 1, "lookup_person": 4, "about": 4, "member_update": 4,
         # 4 — the dialectic reasoning verb is slow (~14-19s), so the budget is
         # sized by the loop wall clock (240s); four calls (~76s) still fit.
         # Enough for the personalization decomposition's group turns.
@@ -606,16 +601,14 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     # and `member_update`, and the worker-only `checkpoint_update` never reach)
     assert set(agent.tool_names) == (
         set(ToolRegistry().tool_names())
-        - {LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS,
-           "member_update"}
+        - {LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS, "member_update"}
         # no index wired: the Honcho memory surface (DEC-316)
         - GRAPH_MEMORY_TOOLS
         - {"poll_list", "poll_read", "room_state_read"}  # observation store unwired
     )
     assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {
         "skills", LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS,
-        *GRAPH_MEMORY_TOOLS, "poll_list", "poll_read", "room_state_read",
-        "member_update",
+        *GRAPH_MEMORY_TOOLS, "poll_list", "poll_read", "room_state_read", "member_update",
     }
     assert "skills" in NATIVE_TOOL_BUDGETS
 
@@ -983,10 +976,7 @@ ACT_VERBS = frozenset({"document_revise",
     # the Dreamer may never be granted it, same as the note verbs.
     # `profile_dispute` (the graph surface's dispute door, 35 §2) writes and
     # can hide a line at once: an act for the same reason.
-    # `member_update` registers an account or writes a membership row — an
-    # authenticated management act, tag-only on top of non-read-only.
-    "member_update",
-    "remember", "profile_dispute",
+    "member_update", "remember", "profile_dispute",
     # Discord-only music — every verb
     # but `music_status` mutates the voice session or its queue.
     "play_music", "skip_music", "top_music", "stop_music",
@@ -1144,8 +1134,4 @@ def test_a_room_catalog_omits_the_dreamer_only_memory_verb():
     # Nothing ELSE moved with it — the gate is one verb wide, not a catalog
     # rewrite that happens to drop this one.
     assert dreamer - tag == {"search_memory_workspace"}
-    # `member_update` is the mirror one: tag-only (TAG_ONLY_TOOLS), because a
-    # Dreamer turn has no verified sender to authenticate a management act
-    # from, so it is the one tool the tag build holds that the Dreamer
-    # catalog does not.
     assert tag - dreamer == {"member_update"}
