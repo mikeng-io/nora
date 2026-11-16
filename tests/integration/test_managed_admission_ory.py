@@ -12,6 +12,7 @@ from nora.domain.managed import (
 from nora.domain.managed_ports import ScopedRelation
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.ory.keto import KetoClient
+from nora.infra.ory.kratos import KratosClient
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people.adapters.keto_authority import KetoAuthorityBackend
@@ -110,6 +111,39 @@ async def test_initial_admission_uses_real_ory_and_retains_the_exact_source(
         output = capsys.readouterr().out
         assert "target: fresh" in output and "refused: different-import" in output
         assert "+852" not in output and "generated-room-a" not in output
+    finally:
+        await engine.dispose()
+
+
+async def test_a_target_connected_plan_refuses_the_held_external_id_real_kratos_shows(
+    clean_pg_url, tmp_path, ory, capsys,
+):
+    """The SAME preflight read apply runs, against the real admin API: an
+    identity already holding an imported person's `external_id` refuses the
+    fresh claim before a single write — through the command, for plan and
+    apply alike."""
+    identity = tmp_path / "identity.toml"
+    policy = tmp_path / "policy.toml"
+    identity.write_text(IDENTITY)
+    policy.write_text(EXPLICIT_POLICY)
+    engine = create_sql_engine(clean_pg_url)
+    store = SqlBindingStore(engine)
+    try:
+        async with aiohttp.ClientSession() as session:
+            outcome, foreign = await KratosClient(
+                session=session, admin_url=ory.kratos_admin,
+            ).create_identity(
+                external_id="miles", traits={"display_name": "generated-foreign"},
+            )
+            assert outcome.status is OutcomeStatus.COMPLETE and foreign is not None
+        assert await run(_arguments(
+            "plan", identity, policy, clean_pg_url, ory)) == REFUSED
+        assert await run(_arguments(
+            "apply", identity, policy, clean_pg_url, ory)) == REFUSED
+        assert not await store.persons()
+        output = capsys.readouterr().out
+        assert "refused: kratos-correlation-present" in output
+        assert "miles" not in output and "generated-foreign" not in output
     finally:
         await engine.dispose()
 
