@@ -53,7 +53,9 @@ from nora.people.app.authentication import AccountSessions
 from nora.people.app.link_publication import LinkPublicationService
 from nora.people.app.managed_authority import AuthorityService
 from nora.people.app.managed_ops import (
+    _fail,
     _finish,
+    _journal_after_failure,
     _pending,
     _publication_refusal,
     _record,
@@ -346,7 +348,8 @@ class ScopedProfileService:
             raise
         except Exception:
             log.exception("scoped profile update failed")
-            return unavailable("store-failure")
+            recorded = await _journal_after_failure(self._bindings, op)
+            return recorded if recorded is not None else unavailable("store-failure")
 
     async def _apply(self, op: Operation) -> Outcome:
         """Inside the caller's mutation gate — actor, binding and permit revalidated."""
@@ -439,9 +442,7 @@ class ScopedProfileService:
             await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                           "denied", outcome.detail)
             return outcome
-        await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,
-                      outcome.status.value, outcome.detail)
-        return outcome
+        return await _fail(self._bindings, record, outcome)
 
     async def _step(
         self, record: OperationRecord, step: str, effect: Any

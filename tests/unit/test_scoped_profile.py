@@ -474,3 +474,45 @@ async def test_blank_scoped_names_refuse_before_journaling(nickname):
     assert result.status is OutcomeStatus.DENIED
     assert not store.scoped_names and not store.operations
     assert (await _apply(services, store, _operation())).status is OutcomeStatus.COMPLETE
+
+
+class _ScopedReadFault(FakeBindingStore):
+    def __init__(self, mode="mismatch"):
+        super().__init__()
+        self.mode = mode
+        self.fault = True
+        self.name_writes = 0
+
+    async def set_scoped_name(self, **kwargs):
+        result = await super().set_scoped_name(**kwargs)
+        if result.status is OutcomeStatus.COMPLETE:
+            self.name_writes += 1
+        return result
+
+    async def scoped_name_for(self, **kwargs):
+        value = await super().scoped_name_for(**kwargs)
+        if self.fault and value is not None:
+            if self.mode == "exception":
+                raise RuntimeError("generated scoped read outage")
+            return "Generated Mismatching Read"
+        return value
+
+
+@pytest.mark.parametrize("mode", ["mismatch", "exception"])
+async def test_a_committed_scoped_name_with_failed_readback_is_incomplete(mode):
+    store = _ScopedReadFault(mode)
+    services = _services(store)
+    await _person(services)
+    await _operator(services, services.backend)
+    result = await services.scoped_profile.apply(_operation())
+    assert result.status is OutcomeStatus.INCOMPLETE
+    recorded = await store.operation("generated-op-1")
+    assert recorded.state is OperationJournalState.INCOMPLETE
+    assert recorded.steps["profile"] == "done"
+    assert recorded.steps["readback"] == "pending"
+    store.fault = False
+    assert await store.scoped_name_for(person_id=PERSON, scope=ROOM) == NICK
+    finished = await services.scoped_profile.reconcile()
+    assert [record.operation_id for record in finished] == ["generated-op-1"]
+    assert store.name_writes == 1
+    assert (await store.operation("generated-op-1")).state is OperationJournalState.COMPLETE

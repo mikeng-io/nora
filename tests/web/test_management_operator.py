@@ -31,6 +31,7 @@ from nora.web.management_auth import AuthenticationVerifier
 from nora.web.management_sessions import register_session_routes
 from tests.unit.test_management_authentication import ISSUER, claims, signed
 from tests.unit.test_management_authentication import PATH as EXCHANGE
+from tests.unit.test_scoped_profile import _ScopedReadFault
 
 PATH = "/app/v1/management/operations"
 ROOM = Scope(ScopeKind.ROOM, "generated-room")
@@ -51,8 +52,10 @@ def headers(value, body, path=PATH):
 
 
 @pytest.fixture
-async def surface(aiohttp_client):
-    services = ManagedServices(FakeBindingStore(), FakeAuthorityBackend(),
+async def surface(aiohttp_client, request):
+    mode = getattr(request, "param", None)
+    store = FakeBindingStore() if mode is None else _ScopedReadFault(mode)
+    services = ManagedServices(store, FakeAuthorityBackend(),
         FakeTopologySource(rooms={ROOM.id: ("generated-unit", False),
                                   OTHER.id: ("generated-other-unit", False)},
                            units={"generated-unit": "generated-workspace",
@@ -252,3 +255,21 @@ async def test_profile_update_needs_the_retained_session(surface):
     fresh["purpose"] = "sign_in"
     assert (await client.post(
         PATH, data=body, headers=headers(fresh, body))).status == 401
+
+
+@pytest.mark.parametrize("surface", ["mismatch", "exception"], indirect=True)
+async def test_scoped_profile_http_reports_a_committed_partial_change(surface):
+    _, services, _ = surface
+    body = profile_operation()
+    response = await send(surface, body)
+    assert response.status == 409
+    assert (await response.json())["status"] == "incomplete"
+    store = services.bindings
+    record = await store.operation(body["operation_id"])
+    assert record.steps["profile"] == "done"
+    store.fault = False
+    assert await store.scoped_name_for(
+        person_id="generated-member", scope=ROOM) == body["payload"]["nickname"]
+    assert await services.scoped_profile.reconcile()
+    assert (await send(surface, body)).status == 200
+    assert store.name_writes == 1
