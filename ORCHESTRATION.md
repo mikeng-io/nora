@@ -71,8 +71,15 @@ delegate, reconcile evidence, triage, land and report.
 
 The operator-facing orchestrator owns the whole outcome across workers and
 sessions. `nora-work` is the entry router; it loads the procedure for the next
-action. These are responsibilities, not mandatory documents or approval gates.
-A small change can cover several stages in one turn.
+action. This is a soft lifecycle: responsibilities, not mandatory documents or
+phase gates. Combine or skip inapplicable/already-satisfied steps; honor explicit
+operator exceptions and existing required checks/holds. Note material omissions
+briefly in the work/PR, not in a stage ledger.
+
+An implementation request continues from design through execution, verification
+and agreed delivery; finishing a bundle is not completion. A design-only request
+stops at its agreed design result. Design agreement within an implementation task
+allows the authorized next work; it does not grant new spending or deployment.
 
 | stage | responsibility | procedure | sufficient result |
 |---|---|---|---|

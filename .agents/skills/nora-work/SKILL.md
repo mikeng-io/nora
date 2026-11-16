@@ -15,8 +15,10 @@ This is a router, not a second execution procedure.
    Check: state the intended outcome, what remains and the next action briefly;
    resolve only missing facts that materially prevent that action.
 2. **Choose the next procedure.** Use the table below; load that skill before
-   acting. Small work stays in this session; delegation is a capacity decision.
-   Check: the next action advances an existing completion condition.
+   acting. Combine or skip steps already satisfied, inapplicable or explicitly
+   excepted by the operator; keep applicable checks/holds. Small work stays here.
+   Check: the next action advances an existing completion condition; a design
+   result alone does not end an implementation assignment.
 3. **Return to the outcome.** After a result, compare it with the work brief.
    Continue authorized remaining work, or use `nora-dispatch` to hand over or
    close. A worker's stop point does not end the parent's assignment.

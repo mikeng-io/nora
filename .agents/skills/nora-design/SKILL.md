@@ -6,9 +6,9 @@ description: Writes and edits Nora's design bundles (design/<topic>/), the ancho
 # nora-design
 
 The design bundle is the anchor of the system: its high-level architecture,
-precise and concise. Architecture is compiled from it: the bundle changes
-first, the code is built to it. Git is the log; the bundle only ever says what
-the design IS. It is never a log, a decision table or a task list.
+precise and concise. Keep the intended architecture explicit before or with its
+implementation. Git is the log; the bundle describes the system, not execution
+progress. `nora-work` owns continuation after design within the authorized task.
 
 ## 1. Is this an architecture change?
 
@@ -36,7 +36,7 @@ with the reason.
 | The parts, what each is responsible for, how they connect | **Implementation detail** (fields, schemas, values, config keys, signatures): code and tests |
 | The model and its terms: a glossary-level contract | **Work brief** (intent, completion conditions, scope): Linear; native tasks/dependencies express execution |
 | Boundaries and invariants | **Log** (dates, reviews, measurements, "supersedes", deprecation): git and the PRs |
-| Why it is shaped this way: rationale, alternatives rejected | **Status claims** ("shipped", "not built", "designed vs shipped"): the bundle's one status line and linked Linear work |
+| Why it is shaped this way: rationale, alternatives rejected | **Delivery progress**: Linear execution and GitHub roadmap; code/PR/runtime evidence establishes what exists |
 
 A contract stays at the level of terms and promises. *"An intention is what
 Nora has committed to; it closes only by a recorded outcome; the model
@@ -67,7 +67,7 @@ every capability, or express the capability in its kinds and stages.
 
 ```
 design/<topic>/
-  README.md        overview: purpose, the parts, one status line, Linear work link
+  README.md        overview: purpose, the parts, relevant work/roadmap links
   <subject>.md     one file per design subject, named for what it describes
 ```
 
@@ -75,10 +75,9 @@ design/<topic>/
   never dated. No `_index.yaml`, decisions, review, draft or roadmap files.
 - Budget: `README.md` at most 150 lines, a subject file at most 300. A change
   that would pass the budget is a cue to consolidate, not to split.
-- Status is one line in `README.md`: `designed` (ahead of the code),
-  `building`, or `built`. Link the owning Linear project/work for the gap
-  between design and code;
-  do not embed a task queue or reconstruct delivery from GitHub issue searches.
+- Link relevant execution/roadmap work when useful. Do not maintain proposal,
+  building or implementation states in the bundle; trackers own progress.
+  A design document is not evidence that its components exist.
 - No frontmatter dates, `supersedes:` blocks, deprecation banners or
   "was X, now Y". No decision numbers except a link to an ADR the reader needs.
 
@@ -100,12 +99,14 @@ design/<topic>/
 
 ## 5. Reading a bundle
 
-The bundle states the intended design. `built` means the code conforms; for
-`designed` or `building`, check the code and the bundle's linked Linear work
-before assuming a part exists. Where the bundle and the code disagree, that is a
-finding: either the code drifted (fix the code) or the design was never
-updated (fix the bundle). Decide which from the PR history, not from which
-text is newer.
+The bundle states intended architecture. Check current code and linked work
+before claiming implementation or delivery. A gap may be planned work, drift or
+an outdated design; use the brief and PR history to distinguish them before
+changing code or docs. Do not maintain a second progress state in the bundle.
+
+After a design result, return to `nora-work`: continue an implementation task
+through its remaining obligations; close a design-only task at its own boundary.
+Follow explicit operator pauses/exceptions without silently abandoning the parent.
 
 ## 6. Check
 
