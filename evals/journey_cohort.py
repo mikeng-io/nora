@@ -150,6 +150,12 @@ def bound_journey_services(
                 f"{corpus}: journey case {case.name!r}'s world binds "
                 f"undeclared judge aliases {list(plan.judge_models)!r}; "
                 f"the cohort declares {list(judges)!r}")
+        if (plan.model_gateway is not None
+                and not set(judges) <= set(plan.model_gateway.models)):
+            raise ValueError(
+                f"{corpus}: journey case {case.name!r}'s model gateway "
+                "does not declare the cohort's judge identities "
+                f"{list(judges)!r}")
         bound[case.name] = plan
     return bound
 

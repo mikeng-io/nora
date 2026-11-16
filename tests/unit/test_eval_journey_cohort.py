@@ -160,6 +160,26 @@ def test_the_journey_experiment_refuses_undeclared_judge_aliases(tmp_path):
             services={"the_outing": _journey_services(judges=("a", "b"))})
 
 
+def test_the_journey_experiment_refuses_a_gateway_omitting_a_judge(tmp_path):
+    """A plan's declared model gateway must name BOTH cohort judge
+    identities — a dispatch naming the omitted alias would refuse
+    mid-run, so the binding refuses before any case composes."""
+    from evals.journey_cohort import load_cohort
+    from nora.subject.journey_world import JourneyServices
+    from nora.subject.model_gateway import ModelGateway
+
+    cohort = load_cohort(_cohort_file(tmp_path), corpus="autonomous_journey")
+    plan = JourneyServices(
+        policy="[rooms]\nallow = []", judge_models=("alpha", "beta"),
+        model_gateway=ModelGateway(
+            upstream="http://127.0.0.1:9/v1",
+            models=frozenset({"alpha", "nora"})))
+    with pytest.raises(ValueError, match="judge"):
+        experiment_for(
+            "autonomous_journey", source_url="postgresql://u@h/eval",
+            cohort=cohort, services={"the_outing": plan})
+
+
 def test_the_journey_experiment_refuses_without_the_cohort():
     with pytest.raises(ValueError):
         experiment_for("autonomous_journey", source_url="postgresql://u@h/eval",

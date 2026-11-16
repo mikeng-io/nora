@@ -30,6 +30,7 @@ from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import current
+from nora.subject.model_gateway import ModelGateway
 from nora.subject.obtain import SubjectSpec, build_config
 from nora.testing.causal_protocol import CausalProtocol, texts
 from nora.testing.signal_daemon import FakeSignalDaemon
@@ -293,10 +294,15 @@ class JourneyServices:
 
     def __init__(self, *, policy: str, room: tuple[str, str] = ("signal", "g1"),
                  identity: str = "", overrides: dict[str, Any] | None = None,
-                 judge_models: tuple[str, str] = ("generated-a", "generated-b")) -> None:
+                 judge_models: tuple[str, str] = ("generated-a", "generated-b"),
+                 model_gateway: ModelGateway | None = None) -> None:
         self.policy, self.room, self.identity = policy, room, identity
         self._overrides = dict(overrides or {})
         self.judge_models = tuple(judge_models)
+        #: The case's one declared live boundary; when set, the generated
+        #: subject/judge responders are never installed and every model
+        #: dispatch is admitted to it — or refused — by the environment.
+        self.model_gateway = model_gateway
         self.requests: list[dict] = []
         self.errors: list[tuple] = []
         self.feeds: list[dict] = []
@@ -384,35 +390,37 @@ class JourneyServices:
         """`Spec.services`' contract: the case-owned world beside this database."""
         declared = Path(tempfile.mkdtemp(prefix="nora-journey-declared-"))
         cfg = self._declared_config(database_url, declared)
-        self.protocol = CausalProtocol(cfg)
-        self.judge = GeneratedJudge()
         self.daemon = FakeSignalDaemon(sent_at_ms=int(time.time() * 1000))
-        model = web.Application()
-
-        async def respond(request: web.Request) -> web.StreamResponse:
-            try:
-                body = await request.json()
-            except ValueError as exc:
-                self.errors.append(("malformed_request", type(exc).__name__))
-                return web.json_response(
-                    {"error": "malformed journey request"}, status=400)
-            self.requests.append(body)
-            if self.protocol is None or self.judge is None:
-                return web.json_response({"error": "world unbound"}, status=503)
-            destination = self._destination(body)
-            if destination == self.protocol.respond:
-                _record_request(self.protocol, body)
-            return await destination(request)
-
-        model.router.add_post("/v1/chat/completions", respond)
         apps = {
-            "llm.base_url": model,
             "honcho.base_url": memory_service(self.feeds),
             "platforms.signal.base_url": self._bridge_app(),
         }
-        apps.update({f"providers.{name}.base_url": model for name in cfg.providers})
+        if self.model_gateway is None:
+            self.protocol = CausalProtocol(cfg)
+            self.judge = GeneratedJudge()
+            model = web.Application()
+
+            async def respond(request: web.Request) -> web.StreamResponse:
+                try:
+                    body = await request.json()
+                except ValueError as exc:
+                    self.errors.append(("malformed_request", type(exc).__name__))
+                    return web.json_response(
+                        {"error": "malformed journey request"}, status=400)
+                self.requests.append(body)
+                if self.protocol is None or self.judge is None:
+                    return web.json_response({"error": "world unbound"}, status=503)
+                destination = self._destination(body)
+                if destination == self.protocol.respond:
+                    _record_request(self.protocol, body)
+                return await destination(request)
+
+            model.router.add_post("/v1/chat/completions", respond)
+            apps["llm.base_url"] = model
+            apps.update({f"providers.{name}.base_url": model for name in cfg.providers})
         environment = IsolatedServices(
-            database_url=database_url, applications=apps, redis=redis)
+            database_url=database_url, applications=apps, redis=redis,
+            model_gateway=self.model_gateway)
         async with environment as env:
             env.world = self
             yield env
