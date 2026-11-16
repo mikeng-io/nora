@@ -2,14 +2,14 @@
   {
     "name": "an unanswered SDK verdict row is an errored reading",
     "file": "evals/reading.py",
-    "old": "    for outputs in report.detailed_results:\n        if not outputs:\n            # A (case, evaluator) row whose evaluator produced no verdict —\n            # a task or evaluator error — is an errored reading, never a\n            # smaller denominator.\n            counts[ERROR] += 1\n        for out in outputs:",
+    "old": "    for outputs in report.detailed_results:\n        if not outputs:\n            # A (case, evaluator) row whose evaluator produced no verdict \u2014\n            # a task or evaluator error \u2014 is an errored reading, never a\n            # smaller denominator.\n            counts[ERROR] += 1\n        for out in outputs:",
     "new": "    for outputs in report.detailed_results:\n        for out in outputs:",
     "target": "tests/unit/test_eval_report_accounting.py::test_a_failed_task_row_is_execution_error_never_silence"
   },
   {
     "name": "a sampled draw with no verdict is an errored draw",
     "file": "evals/reading.py",
-    "old": "        if not outputs:\n            # An unanswered row means the draw's evaluator produced no\n            # verdict — an errored draw, never an absent one.\n            groups.setdefault(base, []).append(ERROR)\n        for out in outputs:",
+    "old": "        if not outputs:\n            # An unanswered row means the draw's evaluator produced no\n            # verdict \u2014 an errored draw, never an absent one.\n            groups.setdefault(base, []).append(ERROR)\n        for out in outputs:",
     "new": "        for out in outputs:",
     "target": "tests/unit/test_eval_report_accounting.py::test_a_sampled_draw_that_never_answered_is_errored_not_missing"
   },
@@ -65,15 +65,15 @@
   {
     "name": "the corpus gate requires coverage and both required axes",
     "file": "evals/__main__.py",
-    "old": "    return (reading.failed == 0 and reading.errored == 0\n            and context_complete and accepted(coverage, outcome))",
-    "new": "    return (reading.failed == 0 and reading.errored == 0\n            and context_complete)",
+    "old": "    return (reading.accepted\n            and context_complete and accepted(coverage, outcome))",
+    "new": "    return (reading.accepted\n            and context_complete)",
     "target": "tests/unit/test_eval_report_accounting.py::test_a_denominator_error_fails_the_run_even_when_verdicts_pass"
   },
   {
     "name": "the corpus gate refuses an unestablished axis",
     "file": "evals/__main__.py",
-    "old": "    return (reading.failed == 0 and reading.errored == 0\n            and context_complete and accepted(coverage, outcome))",
-    "new": "    return (reading.failed == 0 and reading.errored == 0\n            and context_complete)",
+    "old": "    return (reading.accepted\n            and context_complete and accepted(coverage, outcome))",
+    "new": "    return (reading.accepted\n            and context_complete)",
     "target": "tests/unit/test_eval_report_accounting.py::test_an_unestablished_axis_fails_the_run_even_when_verdicts_pass"
   },
   {
@@ -86,7 +86,7 @@
   {
     "name": "the saved report serializes the three result axes",
     "file": "scripts/cognition_loop/accounting.py",
-    "old": "    report[\"coverage\"] = reconcile(report, output)\n    try:\n        report[\"outcome\"] = outcome(report, report[\"coverage\"])\n    except Exception:  # noqa: BLE001 — a failed projection is itself an error\n        report[\"outcome\"] = {\n            \"execution\": {\"status\": \"ERROR\"}, \"validity\": {\"status\": \"ERROR\"},\n            \"behavior\": {\"status\": \"ERROR\"}, \"cause\": \"outcome projection failed\"}",
+    "old": "    report[\"coverage\"] = reconcile(report, output)\n    try:\n        report[\"outcome\"] = outcome(report, report[\"coverage\"])\n    except Exception:  # noqa: BLE001 \u2014 a failed projection is itself an error\n        report[\"outcome\"] = {\n            \"execution\": {\"status\": \"ERROR\"}, \"validity\": {\"status\": \"ERROR\"},\n            \"behavior\": {\"status\": \"ERROR\"}, \"cause\": \"outcome projection failed\"}",
     "new": "    report[\"coverage\"] = reconcile(report, output)",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_the_saved_report_serializes_the_three_axes_once"
   },
