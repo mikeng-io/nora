@@ -29,8 +29,22 @@ different import. An exact completed retry returns the recorded
 historical receipt; it asserts prior completion, never that current
 state still equals the original file.
 
-Exit codes: 0 complete/ok · 2 refused (source invalid, unsupported input,
-foreign or occupied target) · 3 incomplete/unavailable (retryable).
+A target-connected plan runs the SAME non-mutating preflight apply runs:
+the durable attribution, the empty-or-owned reads and the Kratos
+absence/collision check. Fresh is reported only on an explicit absence
+answer — a collision refuses and a target that cannot answer is
+unavailable, never fresh.
+
+Every printed line is bounded: fixed statuses and reason codes,
+the plan's own counts and the digest-derived import id. An
+outcome detail outside that vocabulary prints as `detail-withheld` —
+source paths, file text, room labels and ids, person/account names,
+endpoints and provider answers never reach stdout, stderr or the log.
+
+Exit codes: 0 complete/ok · 2 refused (invalid arguments, invalid or
+unsupported source, foreign or occupied target) · 3 unavailable —
+unreadable source, a target/credential that cannot be wired, answered or
+closed, an incomplete journal (retryable).
 """
 
 from __future__ import annotations
@@ -42,6 +56,7 @@ import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
+from typing import NoReturn
 
 from nora.config_identity import ManagedOryConfig
 from nora.domain.managed import Outcome, OutcomeStatus
@@ -55,9 +70,84 @@ COMPLETE = 0
 REFUSED = 2
 RETRYABLE = 3
 
+#: Every reason the command may name — an unlisted reason is never trusted
+#: to be safe, however plausible its prefix looks.
+_REASONS = frozenset({
+    # the claim, its receipt and the journaled effect
+    "fresh", "resume", "complete", "read-back",
+    "effect-conflict", "receipt-unconfirmed", "journal-missing",
+    "absent-operation", "different-import", "foreign-journal",
+    "unknown-person", "absent-person", "absent-binding", "already-revoked",
+    "alias-conflict", "former-id-is-live", "conflicting-correlation",
+    "kratos-id-claimed", "no-block",
+    # the target's managed and remote state
+    "foreign-authority-state", "kratos-correlation-present",
+    "kratos-foreign-identity", "external-id-conflict",
+    "conflict-unresolved", "owner-evidence-mismatch",
+    "identity-unconfirmed", "identity-absent",
+    "identity-publication-pending", "read-back-mismatch", "store-failure",
+    "malformed-body", "absent", "subject-less tuple",
+    # the source files and what they cannot express
+    "unreadable-source", "invalid-identity-file", "invalid-policy-file",
+    "unsupported-input:dynamic-membership", "unsupported-input:guild",
+    "foreign-target-state", "foreign-target-state:person",
+    "foreign-target-state:account", "foreign-target-state:identifier",
+    "foreign-target-state:alias", "foreign-target-state:membership",
+    "foreign-target-state:membership-support", "foreign-target-state:hold",
+})
+
+_PREFIX_REASONS = {
+    "unreadable-source:": "unreadable-source",
+    "invalid-identity-file:": "invalid-identity-file",
+    "invalid-policy-file:": "invalid-policy-file",
+    "transport:": "transport-unavailable",
+    "status:": "remote-status",
+    "redirect:": "remote-redirect",
+    "unsupported-input:dm-admission:": "unsupported-input:dm-admission",
+}
+
+
+def _bounded_detail(detail: str) -> str | None:
+    """Only fixed codes cross the boundary; parameter tails are discarded."""
+    parts = detail.split(";", 3)
+    if len(parts) > 3:
+        return None
+    safe = []
+    for part in parts:
+        if part in _REASONS:
+            safe.append(part)
+            continue
+        code = next((code for prefix, code in _PREFIX_REASONS.items()
+                     if part.startswith(prefix)), None)
+        if code is None:
+            return None
+        safe.append(code)
+    return ";".join(safe)
+
+
+def _report(outcome: Outcome, *, prefix: str) -> int:
+    detail = _bounded_detail(outcome.detail)
+    if outcome.status is OutcomeStatus.COMPLETE:
+        print(f"{prefix}: {detail or 'complete'}")
+        return COMPLETE
+    if outcome.status is OutcomeStatus.DENIED:
+        print(f"refused: {detail or 'detail-withheld'}")
+        return REFUSED
+    print(f"{outcome.status.value}: {detail or 'detail-withheld'}")
+    return RETRYABLE
+
+
+class _Parser(argparse.ArgumentParser):
+    """argparse whose usage errors stay bounded — the default `error`
+    echoes the offending argv token, which can be a private path or id."""
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        self.exit(REFUSED, "refused: invalid-arguments\n")
+
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = _Parser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     for command in ("plan", "apply"):
         sub.add_parser(command)
@@ -134,48 +224,63 @@ async def _target_services(
 RuntimeFactory = Callable[[], AbstractAsyncContextManager[FileAdmission]]
 
 
+_TARGET_FLAGS = (
+    "database_url", "kratos_admin_url", "keto_read_url", "keto_write_url",
+    "kratos_admin_key_env", "keto_key_env",
+)
+
+
 async def run(
     argv: list[str] | None = None,
     *,
     services: RuntimeFactory | None = None,
 ) -> int:
-    args = _parser().parse_args(argv)
-    prepared = prepare(Path(args.identity), Path(args.policy))
+    try:
+        args = _parser().parse_args(argv)
+    except SystemExit as exited:  # argparse exits on --help and on refusal
+        return exited.code if isinstance(exited.code, int) else REFUSED
+    try:
+        prepared = prepare(Path(args.identity), Path(args.policy))
+    except Exception:  # noqa: BLE001 — a source fault is unavailable
+        print("unavailable: source-read")
+        return RETRYABLE
     if isinstance(prepared, Outcome):
-        print(f"refused: {prepared.detail}")
-        return REFUSED
+        return _report(prepared, prefix="source")
     counts = prepared.snapshot["counts"]
     print(
         f"plan {prepared.import_id} "
         + " ".join(f"{key}={counts[key]}" for key in sorted(counts))
     )
-    need_target = args.command == "apply" or bool(args.database_url)
-    if not need_target:
+    if args.command == "plan" and not any(
+        getattr(args, name) for name in _TARGET_FLAGS
+    ):
         return COMPLETE
     missing = [
-        name for name in
-        ("database_url", "kratos_admin_url", "keto_read_url", "keto_write_url")
-        if not getattr(args, name)
+        name for name in _TARGET_FLAGS[:4] if not getattr(args, name)
     ]
     if missing:
         print(f"refused: the managed target needs {', '.join(missing)}")
         return REFUSED
     factory = services or (lambda: _target_services(args, prepared))
-    async with factory() as admission:
-        if args.command == "plan":
-            outcome = await admission.assess_prepared(prepared)
-            prefix = "target"
-        else:
-            outcome = await admission.apply_prepared(prepared)
-            prefix = "import"
-    if outcome.status is OutcomeStatus.COMPLETE:
-        print(f"{prefix}: {outcome.detail or 'complete'}")
-        return COMPLETE
-    if outcome.status is OutcomeStatus.DENIED:
-        print(f"refused: {outcome.detail}")
-        return REFUSED
-    print(f"{outcome.status.value}: {outcome.detail}")
-    return RETRYABLE
+    prefix = "target" if args.command == "plan" else "import"
+    stage = "target-setup"
+    outcome: Outcome | None = None
+    try:
+        async with factory() as admission:
+            stage = "target-check"
+            if args.command == "plan":
+                outcome = await admission.assess_prepared(prepared)
+            else:
+                outcome = await admission.apply_prepared(prepared)
+            stage = "target-close"
+    except Exception:  # noqa: BLE001 — every stage stays unavailable;
+        # a cleanup fault after a committed import is still honestly
+        # unavailable until an exact retry confirms the durable receipt.
+        print(f"unavailable: {stage}")
+        return RETRYABLE
+    if outcome is None:  # unreachable: the except returns on every fault
+        return RETRYABLE
+    return _report(outcome, prefix=prefix)
 
 
 def main() -> None:

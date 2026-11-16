@@ -145,21 +145,21 @@ def _read_sources(
     try:
         identity_source = identity_path.read_bytes()
         policy_source = policy_path.read_bytes()
+        with TemporaryDirectory(prefix="nora-admission-") as directory:
+            identity_copy = Path(directory) / "identity.toml"
+            policy_copy = Path(directory) / "policy.toml"
+            identity_copy.write_bytes(identity_source)
+            policy_copy.write_bytes(policy_source)
+            try:
+                persons = load_persons(identity_copy)
+            except (PersonsError, UnicodeError) as error:
+                return denied(f"invalid-identity-file:{type(error).__name__}")
+            try:
+                policy = load_policy(policy_copy)
+            except (PolicyError, UnicodeError) as error:
+                return denied(f"invalid-policy-file:{type(error).__name__}")
     except OSError as error:
-        return denied(f"unreadable-source:{type(error).__name__}")
-    with TemporaryDirectory(prefix="nora-admission-") as directory:
-        identity_copy = Path(directory) / "identity.toml"
-        policy_copy = Path(directory) / "policy.toml"
-        identity_copy.write_bytes(identity_source)
-        policy_copy.write_bytes(policy_source)
-        try:
-            persons = load_persons(identity_copy)
-        except (PersonsError, OSError, UnicodeError) as error:
-            return denied(f"invalid-identity-file:{type(error).__name__}")
-        try:
-            policy = load_policy(policy_copy)
-        except (PolicyError, OSError, UnicodeError) as error:
-            return denied(f"invalid-policy-file:{type(error).__name__}")
+        return unavailable(f"unreadable-source:{type(error).__name__}")
     return persons, policy, identity_source, policy_source
 
 
@@ -251,24 +251,18 @@ def prepare(identity_path: Path, policy_path: Path) -> PreparedImport | Outcome:
 
 
 def _unsupported(policy: Policy) -> list[str]:
-    """Inputs the managed model cannot represent exactly — named, never silently subset."""
+    """Unrepresentable inputs, named by class — never a room/guild label or id."""
     refused: list[str] = []
     for convo in policy.conversations:
         if convo.persons is None and not convo.guild:
-            refused.append(
-                f"unsupported-input:dynamic-membership:{convo.platform}"
-                f"/{convo.label or convo.primary_id}"
-            )
+            refused.append("unsupported-input:dynamic-membership")
         if convo.guild:
-            refused.append(
-                f"unsupported-input:guild:{convo.platform}"
-                f"/{convo.label or convo.guild}"
-            )
+            refused.append("unsupported-input:guild")
     if policy.dm_persons:
         refused.append(
             f"unsupported-input:dm-admission:{len(policy.dm_persons)}-persons"
         )
-    return refused
+    return list(dict.fromkeys(refused))
 
 
 def _snapshot(
@@ -323,11 +317,15 @@ def _snapshot(
     })
 
 
-def plan(identity_path: Path, policy_path: Path) -> AdmissionPlan:
-    """Non-mutating preflight: the loaders' verdict and the bounded counts."""
+def plan(identity_path: Path, policy_path: Path) -> AdmissionPlan | Outcome:
+    """Non-mutating preflight: the loaders' verdict and the bounded counts.
+    A refusal is an `AdmissionPlan`; a source the loaders could not even
+    answer on is the `Outcome` — unavailable, never reported as refused."""
     prepared = prepare(identity_path, policy_path)
     if isinstance(prepared, Outcome):
-        return AdmissionPlan(import_id="", refused=(prepared.detail,))
+        if prepared.status is OutcomeStatus.DENIED:
+            return AdmissionPlan(import_id="", refused=(prepared.detail,))
+        return prepared
     return AdmissionPlan(
         import_id=prepared.import_id,
         counts=MappingProxyType(dict(prepared.snapshot["counts"])),
@@ -363,9 +361,12 @@ class FileAdmission:
 
     async def assess_prepared(self, prepared: PreparedImport) -> Outcome:
         """Read-only target assessment for `plan` against a target: fresh,
-        resumable, replayed or refused — never a write. The same attribution
-        rule as `apply_prepared`: the durable journal is bound by kind and
-        full snapshot, and an exact completed match is its own receipt."""
+        resumable, replayed or refused — never a write. The same preflight
+        as `apply_prepared`: the durable journal is bound by kind and full
+        snapshot, an exact completed match is its own receipt, and a fresh
+        claim also requires the explicit Kratos absence — a present
+        external_id refuses and a read that cannot answer is unavailable,
+        never fresh."""
         try:
             async with self.bindings.mutation():
                 return await self._assess(prepared)
@@ -385,6 +386,10 @@ class FileAdmission:
             prepared, fresh=(claim == "fresh"))
         if residual is not None:
             return residual
+        if record is None and claim == "fresh":
+            collision = await self._kratos_fresh(prepared)
+            if collision is not None:
+                return collision
         return complete(claim)
 
     async def apply(self, identity_path: Path, policy_path: Path) -> Outcome:
@@ -399,8 +404,8 @@ class FileAdmission:
         try:
             async with self.bindings.mutation():
                 return await self._apply(prepared)
-        except Exception:
-            log.exception("file admission failed")
+        except Exception:  # noqa: BLE001 — private port errors stay unavailable
+            log.error("file admission failed")
             return unavailable("store-failure")
 
     async def _apply(self, prepared: PreparedImport) -> Outcome:
@@ -569,7 +574,7 @@ class FileAdmission:
             outcome, view = await self.kratos.read(external_id=person_id)
             if view is not None:
                 return denied("kratos-correlation-present")
-            if outcome.status is not OutcomeStatus.DENIED:
+            if outcome.status is not OutcomeStatus.DENIED or outcome.detail != "absent":
                 return unavailable(outcome.detail or "identity-unconfirmed")
         return None
 
