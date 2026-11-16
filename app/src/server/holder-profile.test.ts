@@ -18,11 +18,17 @@ let server: Server;
 let calls: { path: string; body: string; purpose: string }[];
 let code: number;
 let result: unknown;
+let replayBackend: boolean;
+let effects: Map<string, string>;
+let writes: number;
 
 beforeEach(async () => {
   calls = [];
   code = 200;
   result = { status: "ok" };
+  replayBackend = false;
+  effects = new Map();
+  writes = 0;
   login.current = { user: { managedIdentity: identity } };
   vi.stubEnv("NORA_IDENTITY_BACKEND", "managed");
   vi.stubEnv("NORA_AUTHENTICATION_KEY", key);
@@ -41,6 +47,23 @@ beforeEach(async () => {
     expect(claims.binding).toEqual(identity.binding);
     expect(claims.account).toEqual(identity.authentication.account);
     calls.push({ path: request.url ?? "", body, purpose: claims.purpose });
+    if (replayBackend) {
+      const intent = JSON.parse(body) as { operation_id: string; display_name: string };
+      const previous = effects.get(intent.operation_id);
+      if (previous !== undefined && previous !== intent.display_name) {
+        response.writeHead(403, { "Content-Type": "application/json" })
+          .end(JSON.stringify({ status: "denied", detail: "operation-conflict" }));
+      } else {
+        if (previous === undefined) {
+          effects.set(intent.operation_id, intent.display_name);
+          writes++;
+        }
+        response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
+          status: "ok", ...(previous === undefined ? {} : { detail: "replayed" }),
+        }));
+      }
+      return;
+    }
     if (code === 307) response.writeHead(code, { Location: "/unexpected" }).end();
     else response.writeHead(code, { "Content-Type": "application/json" }).end(JSON.stringify(result));
   });
@@ -82,6 +105,23 @@ it("refuses foreign origins, missing identity and file mode without forwarding",
   vi.stubEnv("NORA_IDENTITY_BACKEND", "file");
   expect((await POST(request({ operation_id: "x", display_name: "y" }))).status).toBe(403);
   expect(calls).toHaveLength(0);
+});
+
+it("keeps a completed same-effect retry successful without a second effect", async () => {
+  replayBackend = true;
+  const body = { operation_id: "generated-replay", display_name: "Generated Name" };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await POST(request(body));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "ok" });
+  }
+  expect(calls).toHaveLength(2);
+  expect(writes).toBe(1);
+  expect(effects).toEqual(new Map([[body.operation_id, body.display_name]]));
+  const conflict = await POST(request({ ...body, display_name: "Generated Other" }));
+  expect(conflict.status).toBe(403);
+  expect(writes).toBe(1);
+  expect(effects.get(body.operation_id)).toBe(body.display_name);
 });
 
 it("preserves denied, unavailable and incomplete outcomes without reporting completion", async () => {

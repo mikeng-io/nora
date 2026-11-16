@@ -31,7 +31,7 @@ export async function POST(request: Request): Promise<Response> {
     });
     const json: unknown = await result.json();
     if (result.status === 200
-      && z.object({ status: z.literal("ok") }).strict().safeParse(json).success) {
+      && z.object({ status: z.literal("ok"), detail: z.string().optional() }).strict().safeParse(json).success) {
       return Response.json({ status: "ok" }, { headers: privateHeaders });
     }
     const refused = failure.safeParse(json);

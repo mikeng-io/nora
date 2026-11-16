@@ -16,6 +16,7 @@ The behaviours this service owns:
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -36,6 +37,7 @@ from nora.domain.managed import (
     unavailable,
 )
 from nora.domain.management import Scope, ScopeKind
+from nora.people.app.link_publication import LinkPublicationService
 from nora.people.app.managed import ManagedServices
 from nora.people.app.managed_profile import ProfileService
 from nora.testing.managed import (
@@ -149,12 +151,13 @@ async def _authentication(
         purpose=purpose, binding=binding)
 
 
-async def test_a_holder_renames_their_own_person_and_consumers_read_it():
+@pytest.mark.parametrize("purpose", ["session", "sign_in"])
+async def test_a_holder_renames_their_own_person_and_consumers_read_it(purpose):
     store, registry, services = _service()
     await _enrolled(store, registry)
-    outcome = await services.profile.update_display_name(
-        await _authentication(store),
-        operation_id="generated-op-1", display_name=NEW_NAME)
+    outcome = await asyncio.wait_for(services.profile.update_display_name(
+        await _authentication(store, purpose=purpose),
+        operation_id="generated-op-1", display_name=NEW_NAME), timeout=5)
     assert outcome.status is OutcomeStatus.COMPLETE
 
     person = await store.person(PERSON)
@@ -247,6 +250,32 @@ async def test_a_revoked_or_unbound_account_cannot_rename():
         authentication, operation_id="generated-op-1", display_name=NEW_NAME)
     assert outcome.status is OutcomeStatus.DENIED
     assert (await store.person(PERSON)).display_name == OLDER_NAME
+
+
+class _RevokingPublication(LinkPublicationService):
+    async def authority_revision(self, person_id):
+        revision = await super().authority_revision(person_id)
+        async with self._bindings.mutation():
+            await self._bindings.revoke_binding(account=ACCT)
+        return revision
+
+
+async def test_a_profile_write_refuses_revocation_after_initial_authentication():
+    store, registry, services = _service()
+    await _enrolled(store, registry)
+    authentication = await _authentication(store)
+    publication = _RevokingPublication(
+        store, services.backend, services.topology, registry, services.links
+    )
+    profile = ProfileService(store, registry, publication)
+    outcome = await profile.update_display_name(
+        authentication, operation_id="generated-revocation-race", display_name=NEW_NAME
+    )
+    assert await store.record_for(account=ACCT) is None
+    assert (await store.person(PERSON)).display_name == OLDER_NAME
+    assert registry.identities[PERSON]["traits"]["display_name"] == OLDER_NAME
+    assert await store.operation("generated-revocation-race") is None
+    assert outcome.status is OutcomeStatus.DENIED
 
 
 async def test_a_suspended_person_cannot_rename():

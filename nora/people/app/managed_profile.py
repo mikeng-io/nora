@@ -125,7 +125,7 @@ class ProfileService:
                 })
         except OperationError as error:
             return denied(str(error))
-        return await self.apply(operation)
+        return await self.apply(operation, authentication)
 
     async def _principal(
         self, authentication: AccountAuthentication
@@ -140,9 +140,20 @@ class ProfileService:
 
     # -- the journaled operation --------------------------------------------
 
-    async def apply(self, op: Operation) -> Outcome:
+    async def apply(self, op: Operation, authentication: AccountAuthentication) -> Outcome:
         try:
             async with self._bindings.mutation():
+                # The gate is already held; check() would reacquire it for a fresh sign-in.
+                verified = await self._sessions._check(authentication)
+                if verified.verdict is Verdict.UNAVAILABLE:
+                    return unavailable("authentication-unavailable")
+                checked = verified.principal
+                if checked is None:
+                    return denied("authentication-refused")
+                if (op.actor.account != authentication.account
+                        or op.actor.person_id != checked.binding.person_id
+                        or op.target.person_id != checked.binding.person_id):
+                    return denied("authentication-changed")
                 return await self._apply(op)
         except OperationConflictError:
             return denied("operation-conflict")
