@@ -80,9 +80,8 @@ def build_offline_pipeline(
     participation_runner: Any = None,
     proactive_runner: Any = None,
     participation_clock: Callable[[], float] | None = None,
-    participation_opt_in: bool = False,
-    participation_gate: RelevanceGate | None = None,
-    extra_adapters: Mapping[str, Any] | None = None,
+    participation_opt_in: bool = False, participation_gate: RelevanceGate | None = None,
+    extra_adapters: Mapping[str, Any] | None = None, room_commands: Any = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks, ParticipationTrigger | None]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -273,7 +272,7 @@ def build_offline_pipeline(
         # inside the reply slot, and an eval measuring a tag's trajectory must not have a
         # second, unrelated completion added to its budget. A caller that wants to
         # exercise the stage passes its own.
-        debrief_wiring=debrief_wiring,
+        debrief_wiring=debrief_wiring, room_commands=room_commands,
     )
     participation_trigger = participation
     if participation_trigger is None and participation_runner is not None:
@@ -435,5 +434,6 @@ def build_offline_pipeline(
     dispatcher = Dispatcher(
         ingest=ingest, engagement=engagement, background=background,
         participation=participation_trigger,
+        room_command=(room_commands.is_command if room_commands else None),
     )
     return dispatcher, engagement, background, participation_trigger

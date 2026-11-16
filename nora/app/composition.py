@@ -1218,7 +1218,7 @@ async def build_dependencies(
         policy=policy,
         registry=registry,
         slots=slots,
-        stimulus_wiring=stimulus_wiring,
+        stimulus_wiring=stimulus_wiring, room_command=room_commands.is_command,
     )
     bridge_runtime = _bridge_runtime.bridge_runtime
     _dreamer_preamble = preamble(engine=engine)

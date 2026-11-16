@@ -307,7 +307,7 @@ async def build_handler(
     tool_registry=None,
     participation_script=None,
     participation_rooms: tuple[str, ...] = ("g1",),
-    participation_clock: Callable[[], float] | None = None,
+    participation_clock: Callable[[], float] | None = None, room_commands=None,
 ) -> Harness:
     """Assemble real pipelines wired to a tmp db + a tmp COPY of the real doctrine dir +
     fakes.
@@ -504,7 +504,7 @@ async def build_handler(
         # a scenario that appends typed source evidence sees it where production
         # would (transcript events, the standing slot, `record_query`'s kind
         # branch). No scenario's ingest writes it today, so it reads empty.
-        observations=SqlObservationStore(engine),
+        observations=SqlObservationStore(engine), room_commands=room_commands,
     )
     handler = _HandlerView(dispatcher=dispatcher, engagement=engagement, adapter=adapter)
 
