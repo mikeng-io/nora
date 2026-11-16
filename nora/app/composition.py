@@ -1343,7 +1343,6 @@ async def _compose_dependencies(
         metrics=metrics,
     )
     computer_sweeper = _computer_sweeper.computer_sweeper
-
     return Dependencies(
         config_reload=reload_files, discord_control=discord_control,
         audit=audit,
