@@ -25,6 +25,10 @@ class RosterRequest(BaseModel):
     audience: Literal["collection", "room"]
     members: tuple[ObservedAccount, ...]
     complete: bool
+    # The producer's own upstream-read instant — absent means undated
+    # evidence the shared mutation boundary refuses (`unavailable`), never
+    # a receipt-time stamp invented here.
+    observed_ms: int = 0
 
     @model_validator(mode="after")
     def coherent(self) -> "RosterRequest":

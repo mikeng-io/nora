@@ -195,6 +195,18 @@ $_$;
 );
 );
 );
+);
+);
+);
+);
+);
+);
+);
+);
+);
+);
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -276,6 +288,23 @@ ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (
 ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT lesson_pkey PRIMARY KEY (id);
 ADD CONSTRAINT lesson_revision_pkey PRIMARY KEY (id);
+ADD CONSTRAINT managed_account_person_fkey FOREIGN KEY (person_id) REFERENCES public.managed_person(person_id) ON DELETE RESTRICT;
+ADD CONSTRAINT managed_account_pkey PRIMARY KEY (account_id);
+ADD CONSTRAINT managed_alias_person_fkey FOREIGN KEY (person_id) REFERENCES public.managed_person(person_id) ON DELETE RESTRICT;
+ADD CONSTRAINT managed_alias_pkey PRIMARY KEY (former_person_id);
+ADD CONSTRAINT managed_identifier_account_fkey FOREIGN KEY (account_id) REFERENCES public.managed_account(account_id) ON DELETE RESTRICT;
+ADD CONSTRAINT managed_identity_hold_person_fkey FOREIGN KEY (person_id) REFERENCES public.managed_person(person_id) ON DELETE CASCADE;
+ADD CONSTRAINT managed_identity_hold_pkey PRIMARY KEY (person_id, operation_id);
+ADD CONSTRAINT managed_link_decision_pkey PRIMARY KEY (operation_id);
+ADD CONSTRAINT managed_link_decision_request_fkey FOREIGN KEY (request_id) REFERENCES public.managed_link_request(request_id) ON DELETE RESTRICT;
+ADD CONSTRAINT managed_link_request_pkey PRIMARY KEY (request_id);
+ADD CONSTRAINT managed_membership_person_fkey FOREIGN KEY (person_id) REFERENCES public.managed_person(person_id) ON DELETE RESTRICT;
+ADD CONSTRAINT managed_membership_support_person_fkey FOREIGN KEY (person_id) REFERENCES public.managed_person(person_id) ON DELETE RESTRICT;
+ADD CONSTRAINT managed_membership_support_pkey PRIMARY KEY (person_id, scope_kind, scope_id, source);
+ADD CONSTRAINT managed_observation_pkey PRIMARY KEY (service, collection, scope_kind, scope_id);
+ADD CONSTRAINT managed_operation_pkey PRIMARY KEY (operation_id);
+ADD CONSTRAINT managed_person_kratos_identity_id_key UNIQUE (kratos_identity_id);
+ADD CONSTRAINT managed_person_pkey PRIMARY KEY (person_id);
 ADD CONSTRAINT media_objects_pkey PRIMARY KEY (sha256);
 ADD CONSTRAINT memo_pkey PRIMARY KEY (id);
 ADD CONSTRAINT memo_revision_pkey PRIMARY KEY (id);
@@ -314,6 +343,9 @@ ADD CONSTRAINT otp_attempt_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_challenge_pkey PRIMARY KEY (challenge_id);
 ADD CONSTRAINT participation_window_state_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT pk_document_revision PRIMARY KEY (document_id, revision);
+ADD CONSTRAINT pk_managed_authority_block PRIMARY KEY (person_id, scope_kind, scope_id);
+ADD CONSTRAINT pk_managed_identifier PRIMARY KEY (platform, kind, value);
+ADD CONSTRAINT pk_managed_membership PRIMARY KEY (person_id, scope_kind, scope_id);
 ADD CONSTRAINT platform_object_state_pkey PRIMARY KEY (id);
 ADD CONSTRAINT platform_observation_delivered_fkey FOREIGN KEY (delivered_message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
 ADD CONSTRAINT platform_observation_pkey PRIMARY KEY (id);
@@ -481,6 +513,26 @@ ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.lesson
 ALTER TABLE ONLY public.lesson_revision
+ALTER TABLE ONLY public.managed_account
+ALTER TABLE ONLY public.managed_account
+ALTER TABLE ONLY public.managed_alias
+ALTER TABLE ONLY public.managed_alias
+ALTER TABLE ONLY public.managed_authority_block
+ALTER TABLE ONLY public.managed_identifier
+ALTER TABLE ONLY public.managed_identifier
+ALTER TABLE ONLY public.managed_identity_hold
+ALTER TABLE ONLY public.managed_identity_hold
+ALTER TABLE ONLY public.managed_link_decision
+ALTER TABLE ONLY public.managed_link_decision
+ALTER TABLE ONLY public.managed_link_request
+ALTER TABLE ONLY public.managed_membership
+ALTER TABLE ONLY public.managed_membership
+ALTER TABLE ONLY public.managed_membership_support
+ALTER TABLE ONLY public.managed_membership_support
+ALTER TABLE ONLY public.managed_observation
+ALTER TABLE ONLY public.managed_operation
+ALTER TABLE ONLY public.managed_person
+ALTER TABLE ONLY public.managed_person
 ALTER TABLE ONLY public.media_objects
 ALTER TABLE ONLY public.memo
 ALTER TABLE ONLY public.memo_revision
@@ -777,6 +829,12 @@ CONSTRAINT ck_lesson_revision_retired_by CHECK (((state = 'retired'::text) = (re
 CONSTRAINT ck_lesson_revision_retired_by_who CHECK (((retired_by IS NULL) OR (retired_by = ANY (ARRAY['session'::text, 'operator'::text])))),
 CONSTRAINT ck_lesson_revision_seq CHECK ((seq >= 1)),
 CONSTRAINT ck_lesson_revision_state CHECK ((state = ANY (ARRAY['active'::text, 'retired'::text])))
+CONSTRAINT ck_managed_account_state CHECK ((state = ANY (ARRAY['bound'::text, 'revoked'::text])))
+CONSTRAINT ck_managed_membership_scope_kind CHECK ((scope_kind = ANY (ARRAY['workspace'::text, 'unit'::text, 'room'::text]))),
+CONSTRAINT ck_managed_membership_state CHECK ((state = ANY (ARRAY['member'::text, 'left'::text])))
+CONSTRAINT ck_managed_observation_scope_kind CHECK ((scope_kind = ANY (ARRAY['workspace'::text, 'unit'::text, 'room'::text])))
+CONSTRAINT ck_managed_operation_state CHECK ((state = ANY (ARRAY['pending'::text, 'incomplete'::text, 'complete'::text, 'blocked'::text])))
+CONSTRAINT ck_managed_person_lifecycle CHECK ((lifecycle = ANY (ARRAY['active'::text, 'suspended'::text])))
 CONSTRAINT ck_memo_has_a_unit CHECK ((length(btrim(unit)) > 0))
 CONSTRAINT ck_memo_revision_body_ceiling CHECK ((length(body) <= 4000)),
 CONSTRAINT ck_memo_revision_cites_something CHECK ((cardinality(citations) >= 1)),
@@ -1081,6 +1139,10 @@ CREATE INDEX idx_graph_arrival_pending ON public.graph_arrival USING btree (unit
 CREATE INDEX idx_instagram_summons_state ON public.instagram_summons USING btree (state, mode);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
 CREATE INDEX idx_lesson_unit ON public.lesson USING btree (unit);
+CREATE INDEX idx_managed_identifier_account ON public.managed_identifier USING btree (account_id);
+CREATE INDEX idx_managed_link_decision_request ON public.managed_link_decision USING btree (request_id);
+CREATE INDEX idx_managed_membership_scope ON public.managed_membership USING btree (scope_kind, scope_id);
+CREATE INDEX idx_managed_operation_state ON public.managed_operation USING btree (state);
 CREATE INDEX idx_memo_unit ON public.memo USING btree (unit);
 CREATE INDEX idx_memory_edge_dst ON public.memory_edge USING btree (dst_kind, dst_id);
 CREATE INDEX idx_memory_node_embedding_256 ON public.memory_node USING hnsw (((public.subvector(embedding, 1, 256))::public.halfvec(256)) public.halfvec_cosine_ops);
@@ -1219,6 +1281,18 @@ CREATE TABLE public.instagram_summons (
 CREATE TABLE public.language_observation (
 CREATE TABLE public.lesson (
 CREATE TABLE public.lesson_revision (
+CREATE TABLE public.managed_account (
+CREATE TABLE public.managed_alias (
+CREATE TABLE public.managed_authority_block (
+CREATE TABLE public.managed_identifier (
+CREATE TABLE public.managed_identity_hold (
+CREATE TABLE public.managed_link_decision (
+CREATE TABLE public.managed_link_request (
+CREATE TABLE public.managed_membership (
+CREATE TABLE public.managed_membership_support (
+CREATE TABLE public.managed_observation (
+CREATE TABLE public.managed_operation (
+CREATE TABLE public.managed_person (
 CREATE TABLE public.media_objects (
 CREATE TABLE public.memo (
 CREATE TABLE public.memo_revision (
@@ -1783,11 +1857,14 @@ WHERE table_name = TG_TABLE_NAME AND row_key = new_key
 WHERE table_name = TG_TABLE_NAME AND row_key = old_key
 WITH changed AS (
 account text NOT NULL,
+account_id uuid NOT NULL,
+account_id uuid NOT NULL,
 account_key text NOT NULL,
 account_key text NOT NULL,
 account_key text NOT NULL,
 account_key text NOT NULL,
 account_key text NOT NULL,
+account_proof jsonb,
 accuracy_m double precision,
 act text NOT NULL,
 act text NOT NULL,
@@ -1945,6 +2022,7 @@ code_hash text NOT NULL,
 code_version text NOT NULL,
 col text;
 collab boolean DEFAULT false NOT NULL,
+collection text NOT NULL,
 colocation_ms bigint NOT NULL,
 colocation_ms bigint NOT NULL,
 comment_id text,
@@ -2044,6 +2122,16 @@ created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL,
+created_at timestamp with time zone DEFAULT now() NOT NULL,
+created_at timestamp with time zone DEFAULT now() NOT NULL,
+created_at timestamp with time zone DEFAULT now() NOT NULL,
+created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -2088,6 +2176,8 @@ detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail text DEFAULT ''::text NOT NULL,
 detail text DEFAULT ''::text NOT NULL,
+detail text DEFAULT ''::text NOT NULL,
+display_name text DEFAULT ''::text NOT NULL,
 disputed_at bigint,
 disputed_at bigint,
 disputed_by text NOT NULL,
@@ -2128,6 +2218,8 @@ duration_mad_ms bigint,
 duration_median_ms bigint,
 dwell_ms bigint DEFAULT 0 NOT NULL,
 edits integer NOT NULL,
+effect text NOT NULL,
+effect_id text NOT NULL,
 eligible_count integer NOT NULL,
 embed_attempts integer DEFAULT 0 NOT NULL,
 embed_error text,
@@ -2162,6 +2254,7 @@ event_id uuid NOT NULL,
 event_id uuid NOT NULL,
 event_id uuid,
 event_ref text NOT NULL
+evidence jsonb NOT NULL
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 exchange_basis text[] DEFAULT '{}'::text[] NOT NULL,
@@ -2223,6 +2316,7 @@ fix_count integer NOT NULL,
 fold_count integer DEFAULT 0 NOT NULL,
 fold_count integer NOT NULL,
 follows integer DEFAULT 0 NOT NULL,
+former_person_id text NOT NULL,
 from_stimulus_id bigint CONSTRAINT cognition_wake_from_signal_id_not_null NOT NULL,
 from_stimulus_id bigint NOT NULL,
 frontier_ts bigint NOT NULL,
@@ -2404,6 +2498,10 @@ kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
+kind text NOT NULL,
+kind text NOT NULL,
+kratos_identity_id text,
+label text,
 label text,
 last_activity_at timestamp with time zone NOT NULL,
 last_activity_at timestamp with time zone NOT NULL,
@@ -2458,6 +2556,7 @@ lease_owner text,
 leased_until timestamp with time zone,
 lesson_id uuid NOT NULL,
 lexeme_basis text[] DEFAULT '{}'::text[] NOT NULL,
+lifecycle text DEFAULT 'active'::text NOT NULL,
 likes bigint,
 likes_hidden boolean NOT NULL,
 line_id uuid,
@@ -2602,6 +2701,7 @@ observed_at bigint NOT NULL,
 observed_at bigint NOT NULL,
 observed_in text[] DEFAULT '{}'::text[] NOT NULL,
 observed_in text[] DEFAULT '{}'::text[] NOT NULL,
+observed_ms bigint NOT NULL,
 observed_ms bigint,
 occasion text DEFAULT 'tag'::text NOT NULL,
 occurred_ms bigint,
@@ -2626,6 +2726,11 @@ opened_at bigint NOT NULL,
 opened_at bigint NOT NULL,
 opened_at bigint NOT NULL,
 operation text NOT NULL,
+operation_id text NOT NULL,
+operation_id text NOT NULL,
+operation_id text NOT NULL,
+operation_id text NOT NULL,
+operation_id text NOT NULL,
 operation_id uuid NOT NULL,
 operation_id uuid NOT NULL,
 ordering text DEFAULT 'arrival'::text NOT NULL,
@@ -2638,6 +2743,7 @@ origin_room text NOT NULL,
 origin_room text NOT NULL,
 origin_room text NOT NULL,
 origin_room text,
+outcome text DEFAULT ''::text NOT NULL,
 outcome text DEFAULT 'started'::text NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
@@ -2704,6 +2810,13 @@ person_id text NOT NULL,
 person_id text NOT NULL,
 person_id text NOT NULL,
 person_id text NOT NULL,
+person_id text NOT NULL,
+person_id text NOT NULL,
+person_id text NOT NULL,
+person_id text NOT NULL,
+person_id text NOT NULL,
+person_id text NOT NULL,
+person_id text NOT NULL,
 person_id text,
 person_id text,
 person_id text,
@@ -2724,6 +2837,8 @@ place_label text,
 place_label text,
 platform text DEFAULT ''::text NOT NULL,
 platform text DEFAULT ''::text NOT NULL,
+platform text NOT NULL,
+platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
@@ -2803,6 +2918,7 @@ reading text NOT NULL,
 reading_digest text NOT NULL,
 reason text DEFAULT ''::text NOT NULL,
 reason text DEFAULT ''::text NOT NULL,
+reason text NOT NULL,
 reason text NOT NULL,
 reason text NOT NULL,
 reason text NOT NULL,
@@ -2917,6 +3033,8 @@ reposts bigint,
 request jsonb DEFAULT '{}'::jsonb NOT NULL,
 request jsonb NOT NULL,
 request_hash text NOT NULL,
+request_id text NOT NULL,
+request_id text NOT NULL,
 requester_person_id text NOT NULL,
 requester_person_id text NOT NULL,
 requester_person_id text,
@@ -2940,6 +3058,9 @@ retired_at timestamp with time zone
 retired_at timestamp with time zone,
 retired_by text,
 revised boolean DEFAULT false NOT NULL,
+revision bigint DEFAULT '1'::bigint NOT NULL,
+revision bigint DEFAULT '1'::bigint NOT NULL,
+revision bigint DEFAULT '1'::bigint NOT NULL,
 revision integer DEFAULT 0 NOT NULL,
 revision integer NOT NULL,
 revision integer NOT NULL,
@@ -2952,6 +3073,7 @@ revision text NOT NULL,
 revision_scope text,
 revision_scope text,
 revisit_at bigint,
+revoked_at timestamp with time zone,
 role text NOT NULL,
 room text NOT NULL,
 rooms jsonb NOT NULL,
@@ -2983,6 +3105,14 @@ scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
+scope_id text NOT NULL,
+scope_id text NOT NULL,
+scope_id text NOT NULL,
+scope_id text NOT NULL,
+scope_kind text NOT NULL,
+scope_kind text NOT NULL,
+scope_kind text NOT NULL,
+scope_kind text NOT NULL,
 seen_at timestamp with time zone DEFAULT now() NOT NULL,
 seen_at timestamp with time zone NOT NULL,
 sender_id text NOT NULL,
@@ -3002,6 +3132,7 @@ sequence jsonb NOT NULL,
 sequence jsonb,
 series_anchor_at timestamp with time zone,
 series_id uuid,
+service text NOT NULL,
 session_id bigint NOT NULL,
 session_id bigint NOT NULL,
 session_id bigint,
@@ -3029,8 +3160,12 @@ size_bytes bigint NOT NULL,
 size_bytes bigint NOT NULL,
 skill_versions jsonb DEFAULT '{}'::jsonb NOT NULL,
 slug text NOT NULL,
+snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+snapshot jsonb NOT NULL
 snapshot jsonb NOT NULL,
 source text DEFAULT 'fold'::text NOT NULL,
+source text NOT NULL,
+source text NOT NULL,
 source text NOT NULL,
 source text NOT NULL,
 source text NOT NULL,
@@ -3077,6 +3212,7 @@ started_at_ms bigint NOT NULL,
 started_ts bigint NOT NULL,
 started_ts bigint NOT NULL,
 state jsonb NOT NULL,
+state text DEFAULT 'bound'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
@@ -3087,6 +3223,8 @@ state text DEFAULT 'pending'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
 state text DEFAULT 'prepared'::text NOT NULL,
+state text NOT NULL,
+state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
@@ -3116,6 +3254,7 @@ status text,
 stay_count integer NOT NULL,
 stay_ms bigint NOT NULL,
 stays jsonb NOT NULL,
+steps jsonb DEFAULT '{}'::jsonb NOT NULL,
 stimulus_count integer CONSTRAINT cognition_wake_signal_count_not_null NOT NULL,
 stimulus_id bigint NOT NULL,
 stimulus_id bigint NOT NULL,
@@ -3296,6 +3435,10 @@ updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL,
+updated_at timestamp with time zone DEFAULT now() NOT NULL,
+updated_at timestamp with time zone DEFAULT now() NOT NULL,
+updated_at timestamp with time zone DEFAULT now() NOT NULL,
+updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone NOT NULL,
 updated_at timestamp with time zone NOT NULL,
 updated_at timestamp with time zone NOT NULL,
@@ -3323,6 +3466,7 @@ valid_to_ms bigint NOT NULL,
 valid_to_ms bigint NOT NULL,
 valid_to_ms bigint NOT NULL,
 valid_until bigint,
+value text NOT NULL,
 venue_address text,
 venue_address text,
 venue_city text,

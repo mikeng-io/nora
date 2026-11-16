@@ -37,6 +37,7 @@ from nora.domain.managed import (
     ManagedMembership,
     ManagedPerson,
     MembershipState,
+    ObservationFreshness,
     OperationConflictError,
     OperationJournalState,
     OperationRecord,
@@ -89,14 +90,17 @@ class ManagedServices:
         topology: TopologySource,
         registry: IdentityRegistry,
         links: LinkRequestStore,
+        freshness: ObservationFreshness | None = None,
     ) -> None:
         self.bindings = bindings
         self.backend = backend
         self.topology = topology
         self.registry = registry
         self.links = links
+        self.freshness = freshness or ObservationFreshness()
         self.registration = RegistrationService(bindings, registry)
-        self.authority = AuthorityService(bindings, backend, topology)
+        self.authority = AuthorityService(
+            bindings, backend, topology, self.freshness)
         self.publication = LinkPublicationService(
             bindings, backend, topology, registry, links,
         )

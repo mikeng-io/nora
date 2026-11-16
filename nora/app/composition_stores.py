@@ -410,7 +410,7 @@ async def managed_identity(
         )
     import aiohttp
 
-    from nora.domain.managed import Verdict
+    from nora.domain.managed import ObservationFreshness, Verdict
     from nora.domain.management import Scope, ScopeKind
 
     session = aiohttp.ClientSession()
@@ -418,6 +418,9 @@ async def managed_identity(
         services = _people_wire.managed_services(
             managed=cfg.identity.managed, session=session,
             policy=policy, engine=engine, credentials=cfg.credentials,
+            freshness=ObservationFreshness(
+                max_age_ms=int(
+                    cfg.identity.onboarding.interval_seconds * 1000)),
         )
     except ValueError:
         await session.close()

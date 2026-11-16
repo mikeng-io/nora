@@ -50,6 +50,7 @@ from typing import Any
 
 from nora.domain.managed import (
     CollectionSnapshot,
+    ObservationFreshness,
     Outcome,
     OutcomeStatus,
 )
@@ -68,12 +69,6 @@ from nora.people.app.managed_authority import AuthorityService
 from nora.people.app.roster_provisioning import RosterProvisioning
 
 log = logging.getLogger("nora.people.onboarding")
-
-#: How far into the future an `observed_ms` may sit before it is refused:
-#: bounds bridge↔app clock disagreement at the scale of the reads' own
-#: transport timeouts (30s). Anything beyond it — including a stamp meant
-#: to look permanently fresh — is a future read that never happened.
-_OBSERVATION_FUTURE_SKEW_MS = 30_000
 
 
 @dataclass(frozen=True)
@@ -103,6 +98,7 @@ class PlatformOnboarding:
         authority: AuthorityService,
         interval_seconds: float,
         retry_seconds: float,
+        freshness: ObservationFreshness | None = None,
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], float] = time.time,
     ) -> None:
@@ -115,6 +111,8 @@ class PlatformOnboarding:
         self._retry = retry_seconds
         self._clock = clock
         self._wall_clock = wall_clock
+        self._freshness = freshness or ObservationFreshness(
+            max_age_ms=int(interval_seconds * 1000), wall_clock=wall_clock)
         self._wake = asyncio.Event()
         # (rule_name, sender value) — a bounded dedup queue, not a cache:
         # `_seen` is "attempted" so one sender cannot re-register, and a
@@ -281,20 +279,8 @@ class PlatformOnboarding:
             log.exception("onboarding authority reconcile failed")
 
     def _observation_fresh(self, snapshot: CollectionSnapshot) -> bool:
-        """A departure-capable roster may only act on an instant the
-        producer timestamped itself: `observed_ms` must be present and
-        positive, no older than one sync interval, and no further into
-        the future than real clock disagreement allows. Anything else is
-        unavailable evidence — a read whose instant cannot be established
-        cannot remove anyone.
-        """
-        observed = snapshot.observed_ms
-        if not isinstance(observed, int) or observed <= 0:
-            return False
-        now_ms = self._wall_clock() * 1000
-        if observed > now_ms + _OBSERVATION_FUTURE_SKEW_MS:
-            return False
-        return now_ms - observed <= self._interval * 1000
+        """The shared departure check the mutation boundary re-enforces."""
+        return self._freshness.departure(snapshot.observed_ms)
 
     async def _sync_rule(self, rule: OnboardingRule) -> Outcome | None:
         try:
@@ -317,7 +303,8 @@ class PlatformOnboarding:
                 actor=rule.actor, scope=rule.scope,
                 collection=rule.collection,
                 members=snapshot.members,
-                complete_roster=snapshot.complete)
+                complete_roster=snapshot.complete,
+                observed_ms=snapshot.observed_ms)
         except Exception:
             log.exception("onboarding %s: roster sync failed", rule.name)
             return None

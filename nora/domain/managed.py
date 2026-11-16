@@ -15,6 +15,8 @@ HTTP, TOML) belongs to the adapters.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
@@ -463,3 +465,72 @@ class CollectionSnapshot:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "members", tuple(self.members))
+
+
+# ---------------------------------------------------------------------------
+# Observation ordering: one producer-time policy, one durable per-source mark.
+# ---------------------------------------------------------------------------
+
+#: Clock disagreement bound on `observed_ms`: a stamp further into the
+#: future than one transport timeout is a read that never happened.
+_OBSERVATION_FUTURE_SKEW_MS = 30_000
+
+#: The default departure window — one default onboarding interval.
+_DEFAULT_OBSERVATION_MAX_AGE_MS = 300_000
+
+
+@dataclass(frozen=True)
+class ObservationFreshness:
+    """The ONE producer-time admission policy every roster path shares —
+    a read may only act on the instant the producer stamped itself:
+    `observed_ms` must be a real positive instant, never absent and never
+    further into the future than bridge↔app clock disagreement allows.
+    A COMPLETE roster — the only shape that can establish absence — must
+    additionally sit within one sync interval of now (`departure`).
+    `wall_clock` is the constructor clock seam tests pin."""
+
+    max_age_ms: int = _DEFAULT_OBSERVATION_MAX_AGE_MS
+    future_skew_ms: int = _OBSERVATION_FUTURE_SKEW_MS
+    wall_clock: Callable[[], float] = time.time
+
+    def instant(self, observed_ms: int) -> bool:
+        """The stamp is usable at all: a real positive instant, never
+        absent or future-dated beyond skew."""
+        return (
+            isinstance(observed_ms, int)
+            and not isinstance(observed_ms, bool)
+            and 0 < observed_ms <= self.wall_clock() * 1000 + self.future_skew_ms
+        )
+
+    def departure(self, observed_ms: int) -> bool:
+        """`instant` AND fresh enough to establish absence."""
+        return self.instant(observed_ms) and (
+            self.wall_clock() * 1000 - observed_ms <= self.max_age_ms
+        )
+
+
+@dataclass(frozen=True)
+class SourceObservation:
+    """The newest roster observation a (service, collection, scope)
+    accepted — the durable ordering mark each sync re-validates against.
+    `effect` is the journaled effect digest: an exact replay carries the
+    same instant AND the same effect; a same-instant DIFFERENT effect is
+    conflicting evidence that can never replace the accepted one."""
+
+    service: str
+    collection: str
+    scope: Scope
+    observed_ms: int
+    operation_id: str
+    effect: str
+
+    def __post_init__(self) -> None:
+        _nonblank("service", self.service)
+        if not isinstance(self.collection, str):
+            raise ManagedError("an observation mark requires a collection")
+        _nonblank("operation_id", self.operation_id)
+        _nonblank("effect", self.effect)
+        if (not isinstance(self.observed_ms, int)
+                or isinstance(self.observed_ms, bool)
+                or self.observed_ms <= 0):
+            raise ManagedError("an observation mark requires a positive instant")

@@ -50,6 +50,7 @@ from nora.domain.managed import (
     OperationRecord,
     Outcome,
     PersonLifecycle,
+    SourceObservation,
     allowed,
     check_denied,
     check_unavailable,
@@ -90,6 +91,7 @@ class FakeBindingStore(BindingStore):
         self.aliases: dict[str, str] = {}
         self.operations: dict[str, OperationRecord] = {}
         self.blocks: dict[tuple[str, Scope], AuthorityBlock] = {}
+        self.observations: dict[tuple[str, str, Scope], SourceObservation] = {}
         self.down = False
 
     def mutation(self) -> AbstractAsyncContextManager[None]:
@@ -495,6 +497,18 @@ class FakeBindingStore(BindingStore):
             r for r in self.operations.values()
             if r.state is not OperationJournalState.COMPLETE
         )
+
+    async def observation_for(
+            self, *, service: str, collection: str,
+            scope: Scope) -> SourceObservation | None:
+        self._up()
+        return self.observations.get((service, collection, scope))
+
+    async def record_observation(self, observation: SourceObservation) -> Outcome:
+        self._up()
+        o = observation
+        self.observations[(o.service, o.collection, o.scope)] = o
+        return complete()
 
     async def block_authority(self, block: AuthorityBlock) -> Outcome:
         self._up()

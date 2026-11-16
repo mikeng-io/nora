@@ -88,7 +88,8 @@ def onboarding(
         bindings=services.bindings,
         authority=services.authority,
         interval_seconds=config.interval_seconds,
-        retry_seconds=config.retry_seconds))
+        retry_seconds=config.retry_seconds,
+        freshness=services.freshness))
 
 
 def _discovery_for(

@@ -100,13 +100,13 @@ def member_obs(ref: str, operation: Operation = "add") -> Observation:
 
 
 
-def _graph() -> tuple[ManagedServices, RosterProvisioning]:
+def _graph(*, freshness=None) -> tuple[ManagedServices, RosterProvisioning]:
     services = ManagedServices(
         FakeBindingStore(), FakeAuthorityBackend(),
         FakeTopologySource(
             units={UNIT.id: "generated-ws", UNIT_TWO.id: "generated-ws"},
             workspaces={"generated-ws"}),
-        FakeIdentityRegistry(), FakeLinkRequests())
+        FakeIdentityRegistry(), FakeLinkRequests(), freshness=freshness)
     return services, RosterProvisioning(
         bindings=services.bindings, registry=services.registry,
         topology=services.topology, registration=services.registration,
@@ -131,12 +131,16 @@ def _rule(discovery, name: str = "generated-rule", collection: str = GUILD,
         collection=collection, scope=scope, discovery=discovery)
 
 
+_read = 0
+
+
 def _rows(rows, observed_ms=None):
-    """A live producer answer: the rows plus the read's own completion
-    stamp, exactly as the real seams stamp one."""
+    """A producer answer stamped with a strictly increasing instant."""
+    global _read
+    _read += 1
     return ObservedRows(
         rows=tuple(rows),
-        observed_ms=int(time.time() * 1000) if observed_ms is None
+        observed_ms=int(time.time() * 1000) + _read if observed_ms is None
         else observed_ms)
 
 
@@ -306,12 +310,14 @@ class TestOnboarding:
         await onboarding._drain()
         assert len(await services.bindings.members_of(UNIT)) == 2
 
-        # A partial snapshot merges — the absent member stays.
+        # A partial snapshot merges — the absent member stays. Its stamp
+        # must be newer than the drain's accepted mark or it is refused as
+        # superseded evidence.
         partial = ScriptedDiscovery(CollectionSnapshot(
             available=True, complete=False,
             members=(ObservedMember(
                 frozenset({Identifier("discord", "user_id", "10003")})),),
-            observed_ms=1), collection=GUILD)
+            observed_ms=int(time.time() * 1000) + 1_000), collection=GUILD)
         onboarding = _onboarding(services, provisioning, _rule(partial))
         await onboarding._drain()
         members = await services.bindings.members_of(UNIT)

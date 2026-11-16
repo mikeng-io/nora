@@ -32,6 +32,7 @@ from nora.domain.managed import (
     OperationRecord,
     Outcome,
     PersonLifecycle,
+    SourceObservation,
     allowed,
     check_denied,
     denied,
@@ -178,6 +179,15 @@ class FileBindingStore(BindingStore):
 
     async def incomplete_operations(self) -> tuple[OperationRecord, ...]:
         return ()
+
+    async def observation_for(
+        self, *, service: str, collection: str, scope: Scope
+    ) -> SourceObservation | None:
+        # File mode records no managed observation marks.
+        return None
+
+    async def record_observation(self, observation: SourceObservation) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
 
     async def block_authority(self, block: AuthorityBlock) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)

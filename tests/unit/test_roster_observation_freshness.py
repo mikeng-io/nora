@@ -39,6 +39,7 @@ from nora.config_identity import (
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     CollectionSnapshot,
+    ObservationFreshness,
     ObservedMember,
     ObservedRows,
 )
@@ -83,11 +84,17 @@ def _onboarding(services, provisioning, *rules, wall_clock=lambda: NOW):
         wall_clock=wall_clock)
 
 
+def _fresh_graph():
+    """Onboarding and the boundary share this pinned wall, not real time."""
+    return _graph(freshness=ObservationFreshness(
+        wall_clock=lambda: NOW))
+
+
 class TestFreshnessGuard:
     """`observed_ms` is the only clock a departure trusts."""
 
     async def test_stale_complete_roster_cannot_retract_membership(self):
-        services, provisioning = _graph()
+        services, provisioning = _fresh_graph()
         member, other = _member(1), _member(2)
         discovery = ScriptedDiscovery(CollectionSnapshot(
             available=True, complete=True, members=(member, other),
@@ -105,10 +112,11 @@ class TestFreshnessGuard:
         await onboarding._drain()
         assert len(await services.bindings.members_of(UNIT)) == 2
 
-        # Positive control: the same read, honestly stamped now, departs.
+        # Positive control: the same read, honestly stamped after the
+        # earlier one, departs.
         discovery.snapshot = CollectionSnapshot(
             available=True, complete=True, members=(member,),
-            observed_ms=NOW_MS)
+            observed_ms=NOW_MS + 1_000)
         onboarding.notify_resumed(platform="discord")
         await onboarding._drain()
         assert len(await services.bindings.members_of(UNIT)) == 1
@@ -120,7 +128,7 @@ class TestFreshnessGuard:
     ])
     async def test_undated_invalid_or_future_stamps_cannot_depart(
             self, observed_ms):
-        services, provisioning = _graph()
+        services, provisioning = _fresh_graph()
         member, other = _member(1), _member(2)
         discovery = ScriptedDiscovery(CollectionSnapshot(
             available=True, complete=True, members=(member, other),
@@ -140,7 +148,7 @@ class TestFreshnessGuard:
         """The reviewer's path: a cached read re-served later keeps the
         instant the upstream read actually happened — delivered now, it
         does not read as observed now."""
-        services, provisioning = _graph()
+        services, provisioning = _fresh_graph()
         reads = {"rows": [guild_member(1), guild_member(2)],
                  "observed_ms": NOW_MS}
 
@@ -161,10 +169,11 @@ class TestFreshnessGuard:
         await onboarding._drain()
         assert len(await services.bindings.members_of(UNIT)) == 2
 
-    async def test_partial_roster_merges_without_freshness(self):
-        """Partial reads were never departure-capable — their merge path
-        keeps its existing source-support semantics."""
-        services, provisioning = _graph()
+    async def test_partial_roster_merges_on_a_real_instant_only(self):
+        """Partial reads still add presence without being fresh — but like
+        every roster they must carry a real producer instant: an undated
+        partial is refused, it does not merge."""
+        services, provisioning = _fresh_graph()
         member, other = _member(1), _member(2)
         discovery = ScriptedDiscovery(CollectionSnapshot(
             available=True, complete=True, members=(member,),
@@ -176,6 +185,13 @@ class TestFreshnessGuard:
         discovery.snapshot = CollectionSnapshot(
             available=True, complete=False,
             members=(member, other), observed_ms=0)
+        onboarding.notify_resumed(platform="discord")
+        await onboarding._drain()
+        assert len(await services.bindings.members_of(UNIT)) == 1
+
+        discovery.snapshot = CollectionSnapshot(
+            available=True, complete=False,
+            members=(member, other), observed_ms=NOW_MS + 1_000)
         onboarding.notify_resumed(platform="discord")
         await onboarding._drain()
         assert len(await services.bindings.members_of(UNIT)) == 2

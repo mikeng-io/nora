@@ -287,11 +287,15 @@ class RosterSync:
     """`sync_membership`: the observed member accounts of the target scope.
     `complete` is the roster's own completeness claim — only a complete,
     relevant roster may establish absence (`management.md` «Platform
-    discovery and membership»); a partial one can add, never remove."""
+    discovery and membership»); a partial one can add, never remove.
+    `observed_ms` is the producer's own upstream-read instant — `0` is
+    undated evidence the shared mutation boundary refuses, never a claim
+    of the epoch."""
 
     members: frozenset[Identifier]
     complete: bool
     collection: str = ""
+    observed_ms: int = 0
 
     def __post_init__(self) -> None:
         if (not isinstance(self.collection, str)

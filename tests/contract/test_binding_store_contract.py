@@ -47,6 +47,7 @@ from nora.domain.managed import (
     Outcome,
     OutcomeStatus,
     PersonLifecycle,
+    SourceObservation,
 )
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.engine import create_sql_engine
@@ -65,7 +66,7 @@ PHONE = Identifier(platform="signal", kind="phone", value="85290000101")
 _MANAGED_TABLES = (
     "managed_alias, managed_membership, managed_membership_support,"
     " managed_identifier, managed_account, managed_person, managed_operation,"
-    " managed_authority_block"
+    " managed_authority_block, managed_observation"
 )
 
 
@@ -102,6 +103,10 @@ class _Store(Protocol):
     async def block_authority(self, block: AuthorityBlock) -> Any: ...
     async def authority_blocks(self) -> Any: ...
     async def clear_block(self, *, person_id: str, scope: Scope) -> Any: ...
+    async def observation_for(
+        self, *, service: str, collection: str, scope: Scope
+    ) -> Any: ...
+    async def record_observation(self, observation: SourceObservation) -> Any: ...
     async def aclose(self) -> None: ...
 
 
@@ -643,3 +648,74 @@ async def test_drop_membership_support_retracts_only_its_source(store: _Store):
         person_id=PERSON, scope=ROOM, source="delegation")
     room = {m for m in await store.memberships_for(PERSON) if m.scope == ROOM}
     assert room.pop().state is MembershipState.LEFT
+
+
+def _observation(
+    observed_ms: int, *, service: str = "generated-bridge",
+    collection: str = "generated-guild", scope: Scope = ROOM,
+    operation_id: str = "generated-op", effect: str = "generated-effect",
+) -> SourceObservation:
+    return SourceObservation(
+        service=service, collection=collection, scope=scope,
+        observed_ms=observed_ms, operation_id=operation_id, effect=effect)
+
+
+async def test_an_observation_mark_round_trips_per_source(store: _Store):
+    """Absent before the first write; the newest accepted instant answers
+    back with its operation and effect identity intact."""
+    assert await store.observation_for(
+        service="generated-bridge", collection="generated-guild",
+        scope=ROOM) is None
+    outcome = await store.record_observation(_observation(1_700_000_000_000))
+    assert outcome.status is OutcomeStatus.COMPLETE
+    mark = await store.observation_for(
+        service="generated-bridge", collection="generated-guild",
+        scope=ROOM)
+    assert mark == _observation(1_700_000_000_000)
+
+
+async def test_observation_marks_are_isolated_by_service_collection_scope(
+    store: _Store,
+):
+    """Each exact (service, collection, scope kind, scope id) keeps its own
+    mark — nothing bleeds across a neighbour's ordering."""
+    other_room = Scope(ScopeKind.ROOM, "signal/conv-2")
+    unit = Scope(ScopeKind.UNIT, "unit-a")
+    await store.record_observation(_observation(2_000))
+    await store.record_observation(_observation(
+        1_000, collection="generated-guild-two"))
+    await store.record_observation(_observation(
+        3_000, service="generated-other"))
+    await store.record_observation(_observation(4_000, scope=other_room))
+    await store.record_observation(_observation(5_000, scope=unit))
+    marks = {
+        key: (await store.observation_for(
+            service=key[0], collection=key[1], scope=key[2])).observed_ms
+        for key in (
+            ("generated-bridge", "generated-guild", ROOM),
+            ("generated-bridge", "generated-guild-two", ROOM),
+            ("generated-other", "generated-guild", ROOM),
+            ("generated-bridge", "generated-guild", other_room),
+            ("generated-bridge", "generated-guild", unit),
+        )
+    }
+    assert marks == {
+        ("generated-bridge", "generated-guild", ROOM): 2_000,
+        ("generated-bridge", "generated-guild-two", ROOM): 1_000,
+        ("generated-other", "generated-guild", ROOM): 3_000,
+        ("generated-bridge", "generated-guild", other_room): 4_000,
+        ("generated-bridge", "generated-guild", unit): 5_000,
+    }
+
+
+async def test_recording_an_observation_replaces_the_mark_whole(store: _Store):
+    """The port is an upsert — admission ordering lives at the boundary,
+    so the newest write wins whole: instant, operation AND effect."""
+    await store.record_observation(_observation(1_000, effect="first"))
+    await store.record_observation(_observation(
+        2_000, operation_id="generated-op-2", effect="second"))
+    mark = await store.observation_for(
+        service="generated-bridge", collection="generated-guild",
+        scope=ROOM)
+    assert mark == _observation(
+        2_000, operation_id="generated-op-2", effect="second")

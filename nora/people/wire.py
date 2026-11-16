@@ -171,7 +171,8 @@ def file_services(persons, policy):
     )
 
 
-def managed_services(*, managed, session, policy, engine, credentials):
+def managed_services(*, managed, session, policy, engine, credentials,
+                     freshness=None):
     """The `managed` backend's services: PostgreSQL bindings, the Keto
     authority engine, Kratos identity records — topology still read from the
     loaded `Policy`, because topology stays Nora configuration in every
@@ -216,4 +217,5 @@ def managed_services(*, managed, session, policy, engine, credentials):
         topology=FileTopologySource(policy),
         registry=KratosIdentityRegistry(kratos_client),
         links=SqlLinkRequests(engine=engine),
+        freshness=freshness,
     )

@@ -16,6 +16,7 @@ grouped enrichment (`identity.md` «One person, many accounts»):
 
 from __future__ import annotations
 
+import time
 from uuid import uuid4
 
 from nora.domain.identity import Identifier
@@ -344,7 +345,7 @@ async def test_roster_enriches_the_member_and_syncs_its_membership():
         operation_id="roster-1", actor=SERVICE, scope=UNIT,
         collection="generated-collection",
         members=(ObservedMember(frozenset({PHONE, ACCT})),),
-        complete_roster=True)
+        complete_roster=True, observed_ms=int(time.time() * 1000))
     assert outcome.status is OutcomeStatus.COMPLETE
     for ident in (PHONE, ACCT):
         record = await services.bindings.record_for(account=ident)
@@ -364,7 +365,7 @@ async def test_roster_refuses_a_group_split_across_accounts():
         operation_id="roster-1", actor=SERVICE, scope=UNIT,
         collection="generated-collection",
         members=(ObservedMember(frozenset({PHONE, ACCT})),),
-        complete_roster=True)
+        complete_roster=True, observed_ms=int(time.time() * 1000))
     assert outcome.status is OutcomeStatus.INCOMPLETE
     assert outcome.detail == "account-registration-unconfirmed"
     assert await services.bindings.members_of(UNIT) == ()

@@ -21,12 +21,14 @@ from nora.domain.managed import (
     CheckResult,
     ManagedError,
     MembershipState,
+    ObservationFreshness,
     OperationConflictError,
     OperationJournalState,
     OperationRecord,
     Outcome,
     OutcomeStatus,
     PersonLifecycle,
+    SourceObservation,
     Verdict,
     check_denied,
     check_unavailable,
@@ -50,7 +52,9 @@ from nora.domain.management import (
 from nora.people.app.managed_ops import (
     Effect,
     Effects,
+    _effect_digest,
     _finish,
+    _op_snapshot,
     _pending,
     _publication_refusal,
     _rebuild,
@@ -92,10 +96,12 @@ class AuthorityService:
         bindings: BindingStore,
         backend: AuthorityBackend,
         topology: TopologySource,
+        freshness: ObservationFreshness | None = None,
     ) -> None:
         self._bindings = bindings
         self._backend = backend
         self._topology = topology
+        self._freshness = freshness or ObservationFreshness()
 
     async def check(
         self, *, scope: Scope, person_id: str, permit: str
@@ -170,7 +176,56 @@ class AuthorityService:
             )
             if lifecycle is not PersonLifecycle.ACTIVE:
                 return denied("target-person-inactive")
+        observation = await self._admit_observation(op)
+        if observation is not None:
+            return observation
         return await self._run(op, None)
+
+    async def _admit_observation(self, op: Operation) -> Outcome | None:
+        """Pre-journal admission: one freshness policy, one durable mark."""
+        if op.kind != "sync_membership":
+            return None
+        payload = op.payload
+        if not isinstance(payload, RosterSync) or op.target.scope is None:
+            raise ManagedError("sync_membership names a scope and a RosterSync")
+        if not self._freshness.instant(payload.observed_ms):
+            return unavailable(
+                "observation-future" if isinstance(payload.observed_ms, int)
+                and payload.observed_ms > 0 else "observation-undated")
+        if payload.complete and not self._freshness.departure(
+                payload.observed_ms):
+            return unavailable("observation-stale")
+        service = str(op.actor.service_id or "")
+        effect = _effect_digest(_op_snapshot(op))
+        mark = await self._bindings.observation_for(
+            service=service, collection=payload.collection,
+            scope=op.target.scope)
+        if mark is not None:
+            if mark.observed_ms > payload.observed_ms:
+                return unavailable("observation-superseded")
+            if (mark.observed_ms == payload.observed_ms
+                    and mark.effect != effect):
+                return unavailable("observation-conflict")
+        recorded = await self._bindings.record_observation(SourceObservation(
+            service=service, collection=payload.collection,
+            scope=op.target.scope, observed_ms=payload.observed_ms,
+            operation_id=op.operation_id, effect=effect))
+        if recorded.status is not OutcomeStatus.COMPLETE:
+            return recorded
+        return None
+
+    async def _sync_superseded(self, effect: _ReplayOp) -> bool:
+        """Whether a journaled roster's warrant died: newer evidence accepted, or never dated."""
+        if (effect.kind != "sync_membership"
+                or not isinstance(effect.payload, RosterSync)):
+            return False
+        if not effect.service or effect.payload.observed_ms <= 0:
+            return True
+        mark = await self._bindings.observation_for(
+            service=effect.service, collection=effect.payload.collection,
+            scope=effect.scope)
+        return (mark is not None
+                and mark.observed_ms > effect.payload.observed_ms)
 
     async def apply_replay(self, record: OperationRecord) -> Outcome:
         """Resume a journaled operation's pending steps under its existing
@@ -201,6 +256,18 @@ class AuthorityService:
             return refusal
         if current.state is OperationJournalState.COMPLETE:
             return complete("replayed")
+        if await self._sync_superseded(effect):
+            # Nothing applies: the journal closes as superseded and the
+            # op's own unconfirmed-departure blocks die with their warrant
+            # — the member it failed to remove never left.
+            for block in await self._bindings.authority_blocks():
+                if block.operation_id == current.operation_id:
+                    await self._bindings.clear_block(
+                        person_id=block.person_id, scope=block.scope
+                    )
+            await _finish(self._bindings, current, OperationJournalState.COMPLETE,
+                          "superseded", "newer-observation-accepted")
+            return complete("superseded")
         return await self._replay(current)
 
     async def _canonicalize_effect(self, effect: _ReplayOp) -> _ReplayOp:
@@ -322,6 +389,7 @@ class AuthorityService:
                 scope=op.target.scope,
                 payload=op.payload,
                 sync_source=str(record.snapshot.get("sync_source", "sync")),
+                service=str(record.snapshot.get("service") or ""),
             )
         scope = effect.scope
         outcome = await self._run_step(

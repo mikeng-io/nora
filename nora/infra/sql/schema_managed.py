@@ -216,3 +216,24 @@ MANAGED_LINK_DECISION = sa.Table(
 IDX_MANAGED_LINK_DECISION_REQUEST = sa.Index(
     "idx_managed_link_decision_request", MANAGED_LINK_DECISION.c.request_id,
 )
+
+# The durable per-source ordering mark: each (authenticated service,
+# collection, scope) keeps the newest accepted instant plus the effect
+# digest separating an exact replay from same-instant conflicting content.
+MANAGED_OBSERVATION = sa.Table(
+    "managed_observation", METADATA,
+    sa.Column("service", sa.Text, primary_key=True),
+    sa.Column("collection", sa.Text, primary_key=True),
+    sa.Column("scope_kind", sa.Text, primary_key=True),
+    sa.Column("scope_id", sa.Text, primary_key=True),
+    sa.Column("observed_ms", sa.BigInteger, nullable=False),
+    sa.Column("operation_id", sa.Text, nullable=False),
+    sa.Column("effect", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.CheckConstraint(
+        "scope_kind IN ('workspace','unit','room')",
+        name="ck_managed_observation_scope_kind"),
+)

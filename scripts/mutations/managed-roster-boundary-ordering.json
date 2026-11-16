@@ -1,0 +1,37 @@
+[
+  {
+    "name": "the shared boundary refuses undated or future evidence",
+    "file": "nora/people/app/managed_authority.py",
+    "old": "        if not self._freshness.instant(payload.observed_ms):",
+    "new": "        if False:",
+    "target": "tests/unit/test_roster_observation.py::test_an_undated_roster_is_unavailable_and_never_departs"
+  },
+  {
+    "name": "only a fresh complete roster may establish absence",
+    "file": "nora/people/app/managed_authority.py",
+    "old": "        if payload.complete and not self._freshness.departure(\n                payload.observed_ms):",
+    "new": "        if False:",
+    "target": "tests/unit/test_roster_observation.py::test_a_stale_complete_roster_is_unavailable_and_never_departs"
+  },
+  {
+    "name": "an older observation cannot supersede a newer mark",
+    "file": "nora/people/app/managed_authority.py",
+    "old": "            if mark.observed_ms > payload.observed_ms:",
+    "new": "            if False:",
+    "target": "tests/unit/test_roster_observation.py::test_an_older_observation_never_supersedes_a_newer_one"
+  },
+  {
+    "name": "the same instant with different content is a conflict",
+    "file": "nora/people/app/managed_authority.py",
+    "old": "            if (mark.observed_ms == payload.observed_ms\n                    and mark.effect != effect):",
+    "new": "            if False:",
+    "target": "tests/unit/test_roster_observation.py::test_the_same_instant_with_different_content_is_a_conflict"
+  },
+  {
+    "name": "a newer mark retires an older journaled roster instead of replaying it",
+    "file": "nora/people/app/managed_authority.py",
+    "old": "        return (mark is not None\n                and mark.observed_ms > effect.payload.observed_ms)",
+    "new": "        return False",
+    "target": "tests/unit/test_roster_observation.py::test_an_interrupted_roster_replays_as_superseded_after_a_newer_one"
+  }
+]

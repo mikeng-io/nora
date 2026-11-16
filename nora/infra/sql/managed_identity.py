@@ -59,10 +59,12 @@ from nora.domain.managed import (
     OperationRecord,
     Outcome,
     PersonLifecycle,
+    SourceObservation,
     complete,
     denied,
 )
 from nora.domain.management import Scope, ScopeKind
+from nora.infra.sql import managed_observations
 from nora.infra.sql.managed_publication import (
     consolidate_people,
     drop_membership_support,
@@ -812,6 +814,17 @@ class SqlBindingStore:
                 )
             ).fetchall()
             return tuple(_operation_from(r) for r in rows)
+
+    # per-source observation ordering: `managed_observations`
+
+    async def observation_for(
+            self, *, service: str, collection: str,
+            scope: Scope) -> SourceObservation | None:
+        return await managed_observations.observation_for(
+            self._engine, service=service, collection=collection, scope=scope)
+
+    async def record_observation(self, observation: SourceObservation) -> Outcome:
+        return await managed_observations.record_observation(self._engine, observation)
 
     # ------------------------------------------------------------------
     # revocation-first authority blocks

@@ -51,7 +51,7 @@ class RosterProvisioning:
 
     async def apply(self, *, operation_id: str, actor: Actor, scope: Scope,
                     collection: str, members: Iterable[ObservedMember],
-                    complete_roster: bool) -> Outcome:
+                    complete_roster: bool, observed_ms: int) -> Outcome:
         roster = tuple(members)
         groups = tuple(frozenset(member.identifiers) for member in roster
                        if member.classification == "person")
@@ -69,7 +69,7 @@ class RosterProvisioning:
                 if not await self.topology.scope_exists(scope):
                     return denied("unknown-scope")
                 return await self._apply(operation_id, actor, scope, collection,
-                                         groups, complete_roster)
+                                         groups, complete_roster, observed_ms)
         except OperationConflictError:
             return denied("operation-conflict")
         except Exception:
@@ -78,11 +78,12 @@ class RosterProvisioning:
 
     async def _apply(self, key: str, actor: Actor, scope: Scope, collection: str,
                      groups: tuple[frozenset[Identifier], ...],
-                     complete_roster: bool) -> Outcome:
+                     complete_roster: bool, observed_ms: int) -> Outcome:
         ordered = sorted(groups, key=lambda group: min(
             (i.platform, i.kind, i.value) for i in group))
         snapshot = {"service": actor.service_id, "collection": collection,
-            "scope": {"kind": scope.kind.value, "id": scope.id}, "complete": complete_roster,
+            "scope": {"kind": scope.kind.value, "id": scope.id},
+            "complete": complete_roster, "observed_ms": observed_ms,
             "members": [[
                 [i.platform, i.kind, i.value]
                 for i in sorted(group, key=lambda i: (i.platform, i.kind, i.value))
@@ -110,7 +111,8 @@ class RosterProvisioning:
         members = frozenset().union(*ordered) if ordered else frozenset()
         sync = Operation(key + ":membership", "sync_membership", actor,
             Target(TargetKind.SCOPE, scope=scope),
-            RosterSync(members, complete_roster, collection), {"authority": "current"})
+            RosterSync(members, complete_roster, collection, observed_ms),
+            {"authority": "current"})
         outcome = await self.authority._apply(sync)
         if outcome.status is OutcomeStatus.INCOMPLETE:
             pending = await self.bindings.operation(sync.operation_id)
@@ -121,7 +123,10 @@ class RosterProvisioning:
         state = (OperationJournalState.COMPLETE if outcome.status is OutcomeStatus.COMPLETE
                  else OperationJournalState.INCOMPLETE)
         await _finish(self.bindings, record, state, outcome.status.value, outcome.detail)
-        return outcome if state is OperationJournalState.COMPLETE else incomplete(outcome.detail)
+        # The inner sync's refusal is its own answer — a pre-effect
+        # freshness/ordering refusal is `unavailable`, never dressed as a
+        # partial commit and never as completion.
+        return outcome
 
     async def _account(self, key: str, actor: Actor,
                        group: frozenset[Identifier]) -> Outcome:

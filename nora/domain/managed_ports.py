@@ -27,6 +27,7 @@ from nora.domain.managed import (
     OperationRecord,
     Outcome,
     PersonLifecycle,
+    SourceObservation,
 )
 from nora.domain.management import Operation, Scope
 
@@ -233,6 +234,22 @@ class BindingStore(PersonDirectory, Protocol):
     async def incomplete_operations(self) -> tuple[OperationRecord, ...]:
         """Every `pending`/`incomplete`/`blocked` operation — the
         reconciler's queue, and the restart recovery set."""
+        ...
+
+    # --- per-source observation ordering ------------------------------------
+
+    async def observation_for(
+        self, *, service: str, collection: str, scope: Scope
+    ) -> SourceObservation | None:
+        """The newest roster observation this (service, collection, scope)
+        accepted — the durable ordering mark every sync re-validates
+        against. `None` means none recorded."""
+        ...
+
+    async def record_observation(self, observation: SourceObservation) -> Outcome:
+        """Persist `observation` as this source's newest accepted mark —
+        ordering is decided by the caller under `mutation()`; this write
+        is the durable half of that decision."""
         ...
 
     # --- revocation-first authority blocks -------------------------------------

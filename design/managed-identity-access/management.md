@@ -102,6 +102,18 @@ timeout or unavailable roster does not remove every missing member. Failed
 synchronisation is visible as unavailable, and fresh privileged decisions do not
 rely on membership evidence known to be incomplete or stale.
 
+The shared mutation boundary owns the one freshness policy every roster path
+answers to: the producer stamps each observation with its own upstream-read
+instant, a complete roster may establish absence only inside one sync interval
+of that instant (clock disagreement bounded), and missing, stale or future
+evidence is unavailable rather than an empty synchronisation. One durable mark
+per authenticated service, collection and scope records the newest accepted
+instant and its effect: an older observation never supersedes it, a replay of
+the same instant and effect returns its recorded outcome, and the same instant
+carrying different content is refused. A newer accepted observation — including
+a partial one — orphans an older journaled effect's pending steps, which close
+as superseded instead of applying.
+
 A guild/server roster is not a channel audience. Room membership and disclosure
 use the actual channel visibility and the existing roster/read contract. Leaving
 one collection revokes the grants derived from that membership while preserving
