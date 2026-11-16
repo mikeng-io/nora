@@ -32,7 +32,7 @@
     "file": "nora/people/app/managed_profile.py",
     "old": "        if not await self._topology.scope_exists(scope):",
     "new": "        if False:",
-    "target": "tests/unit/test_scoped_profile.py::test_the_gate_refuses_honestly_before_any_effect[unknown-scope]"
+    "target": "tests/unit/test_scoped_profile.py::test_the_service_alone_refuses_an_undeclared_scope"
   },
   {
     "name": "initial admission reads scoped names as foreign target state",
@@ -51,7 +51,7 @@
   {
     "name": "consolidation moves the former person's scoped names to the survivor",
     "file": "nora/infra/sql/managed_publication.py",
-    "old": "    await conn.execute(sa.delete(MANAGED_SCOPED_NAME).where(\n        MANAGED_SCOPED_NAME.c.person_id == former,\n    ))",
+    "old": "    await conn.execute(\n        pg_insert(MANAGED_SCOPED_NAME)\n        .from_select(\n            [\"person_id\", \"scope_kind\", \"scope_id\", \"nickname\",\n             \"operation_id\"],\n            sa.select(\n                sa.literal(survivor), MANAGED_SCOPED_NAME.c.scope_kind,\n                MANAGED_SCOPED_NAME.c.scope_id,\n                MANAGED_SCOPED_NAME.c.nickname,\n                MANAGED_SCOPED_NAME.c.operation_id,\n            ).where(MANAGED_SCOPED_NAME.c.person_id == former),\n        )\n        .on_conflict_do_nothing()\n    )\n    await conn.execute(sa.delete(MANAGED_SCOPED_NAME).where(\n        MANAGED_SCOPED_NAME.c.person_id == former,\n    ))",
     "new": "    pass",
     "target": "tests/contract/test_binding_store_scoped_contract.py::test_scoped_names_fold_through_consolidation"
   },

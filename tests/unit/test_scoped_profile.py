@@ -207,6 +207,22 @@ async def test_the_gate_refuses_honestly_before_any_effect(failure):
         is OperationJournalState.COMPLETE)
 
 
+async def test_the_service_alone_refuses_an_undeclared_scope():
+    """Without the web boundary, the service still refuses a scope the
+    topology does not declare — even with an authority row on it."""
+    services = _services()
+    store = services.bindings
+    await _person(services)
+    await _operator(services, services.backend)
+    missing = Scope(ScopeKind.ROOM, "generated-missing")
+    await services.backend.put_relation(
+        scope=missing, relation="admin", person_id=OPERATOR)
+    outcome = await services.scoped_profile.apply(_operation(scope=missing))
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "unknown-scope"
+    assert store.scoped_names == {}
+
+
 async def test_a_holder_or_service_actor_never_reaches_the_scoped_path():
     services = _services()
     store = services.bindings
