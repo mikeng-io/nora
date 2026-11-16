@@ -40,5 +40,12 @@
     "old": "        if person is not None or not _pending(recorded, \"binding\"):\n            if (person is None or bound is None\n                    or bound.identifiers != payload.identifiers):\n                return denied(\"registration-binding-changed\")\n            if person.lifecycle is not PersonLifecycle.ACTIVE:\n                return denied(\"person-suspended\")\n",
     "new": "",
     "target": "tests/unit/test_managed_registration.py::test_an_interrupted_registration_refuses_changed_binding_or_lifecycle"
+  },
+  {
+    "name": "exception recovery attributes only the exact journaled effect",
+    "file": "nora/people/app/managed_ops.py",
+    "old": "    if record.kind != op.kind or record.snapshot != _op_snapshot(op):\n        return denied(\"operation-conflict\")\n",
+    "new": "",
+    "target": "tests/unit/test_managed_registration.py::test_exception_recovery_attributes_only_the_exact_recorded_effect"
   }
 ]

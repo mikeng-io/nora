@@ -226,8 +226,10 @@ async def _journal_after_failure(
         record = await store.operation(op.operation_id)
     except Exception:  # noqa: BLE001 — an unreadable journal is a clean outage
         return None
-    if record is None or record.kind != op.kind:
+    if record is None:
         return None
+    if record.kind != op.kind or record.snapshot != _op_snapshot(op):
+        return denied("operation-conflict")
     if record.state is OperationJournalState.COMPLETE:
         return complete(record.detail or "replayed")
     if any(done == "done" for done in record.steps.values()):
