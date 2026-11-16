@@ -745,28 +745,26 @@ def _make_member_update(deps):
         target: str | None = None,
         target_kind: Literal["mention", "account", "name"] | None = None,
     ) -> dict:
-        """Register one referenced platform account, or add/remove one person's
-        membership in THIS room, as the sender's delegated action. Call it when
-        someone in the room asks you to register a newcomer's account or to add
-        or remove a member — the action is authenticated as the actual sender
-        of this message, never as whoever is named.
+        """Register an account or update room membership when someone asks you
+        to register, add or remove a member. Returns the management outcome.
 
         You cannot supply the actor, the room, or any credential: who asked and
         where are taken from the verified message itself. An unregistered
         account must be registered (`action="register"`) before membership can
-        name the person.
+        name the person. The action is authenticated as the actual sender of
+        this message, never as whoever is named.
 
         Returns `status`: ok (`action` applied), already_present (the same ask
-        already landed), refused (no authority — say who asked, and that they
+        already landed), refused (no authority: say who asked, and that they
         are not a room operator), ambiguous or nothing_found (the target did
-        not resolve — ask), partial (the write only partly landed — warn, and
+        not resolve: ask), partial (the write only partly landed: warn, and
         do not call again), or unavailable (the identity store could not
-        answer — say you cannot do it now), with a `note` for every status.
+        answer: say you cannot do it now), with a `note` for every status.
 
         Args:
             action: "register" a referenced unbound account as a new person;
                 "add" or "remove" one person's room membership.
-            target: Who or what the request names — omit for the account this
+            target: Who or what the request names: omit for the account this
                 message @-mentions, else the exact platform account id or a
                 name this room knows.
             target_kind: "mention", "account" or "name". Leave it out and it
