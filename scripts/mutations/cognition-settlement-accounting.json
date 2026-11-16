@@ -58,8 +58,8 @@
   {
     "file": "scripts/cognition_loop/accounting.py",
     "name": "a missing required identity stays unknown",
-    "old": "    def required(actual: Any, expected: Any, label: str) -> None:\n        if actual is None or expected is None:\n            missing.append(label)\n        elif not _same(actual, expected):",
-    "new": "    def required(actual: Any, expected: Any, label: str) -> None:\n        if actual is None or expected is None:\n            return\n        elif not _same(actual, expected):",
+    "old": "        return \"frozen wake is not an object\"\n    missing: list[str] = []\n    foreign: list[str] = []\n\n    def required(actual: Any, expected: Any, label: str) -> None:\n        if actual is None or expected is None:\n            missing.append(label)\n        elif not _same(actual, expected):",
+    "new": "        return \"frozen wake is not an object\"\n    missing: list[str] = []\n    foreign: list[str] = []\n\n    def required(actual: Any, expected: Any, label: str) -> None:\n        if actual is None or expected is None:\n            return\n        elif not _same(actual, expected):",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_expected_denominators_do_not_shrink_with_missing_evidence"
   },
   {

@@ -82,7 +82,11 @@ def test_expected_denominators_do_not_shrink_with_missing_evidence(tmp_path, dam
     elif damage == "artifact":
         (tmp_path / "wake-0-11.json").unlink()
     elif damage == "frozen":
-        (tmp_path / "wake-0-11.json").write_text('{"expectations": []}')
+        # The artifact still proves its identity; only its frozen
+        # judgments disagree with the report row.
+        frozen = json.loads((tmp_path / "wake-0-11.json").read_text())
+        frozen["expectations"] = []
+        (tmp_path / "wake-0-11.json").write_text(json.dumps(frozen))
     elif damage == "identity":
         report["cases"][0]["wakes"][0]["recorded_wake_id"] = -1
     elif damage == "duplicate":

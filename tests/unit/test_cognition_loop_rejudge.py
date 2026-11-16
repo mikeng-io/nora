@@ -294,12 +294,14 @@ async def test_an_unmeasured_wake_spends_no_judge_call(
         "trajectory": _trajectory(
             blocks={"agenda": "generated source 0"},
             unit=case.unit, at_ms=1000)}))
+    # Wake 1's evidence is complete — no evidence gap masks the failure:
+    # only the interrupted step keeps it unmeasurable.
     (tmp_path / f"wake-1-{case.wakes[1]}.json").write_text(json.dumps({
         "error": {"step": "wake",
                   "message": "the session ended failed: capture interrupted"},
         "recorded_wake_id": case.wakes[1], "unit": case.unit,
         "at_ms": 1001,
-        "trajectory": {"session_id": None}}))
+        "trajectory": _trajectory(unit=case.unit, at_ms=1001)}))
 
     judged = []
 

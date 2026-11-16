@@ -107,8 +107,8 @@
   {
     "name": "a contradictory frozen artifact is never judged",
     "file": "scripts/cognition_loop/rejudge.py",
-    "old": "        judgeable = identity is None and not unmeasured(frozen, recorded)",
-    "new": "        judgeable = not unmeasured(frozen, recorded)",
+    "old": "        judgeable = identity is None and not stale and not gap",
+    "new": "        judgeable = not stale and not gap",
     "target": "tests/unit/test_cognition_loop_rejudge.py::test_a_frozen_artifact_that_is_not_this_wake_is_never_judged"
   }
 ]
