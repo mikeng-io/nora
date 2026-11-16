@@ -300,6 +300,8 @@ async def test_a_conflicting_measurement_refuses_before_sdk_composition(sdk_evid
         await backbone._drive(Case(name="foreign-claim", input="generated"),
                               Spec(source_url="unused", measurement=BEHAVIORAL))
     added = read_events(sdk_evidence.path)[len(before):]
+    if any(e["kind"] == "case_failed" for e in added):
+        sdk_evidence.record("expected_invalid_capture")
     assert added == []
     assert str(refused.value) == "measurement_claim_conflict"
 
