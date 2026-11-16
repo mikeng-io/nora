@@ -611,6 +611,7 @@ async def test_readback_fails_closed_on_a_missing_containment_link(
     Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a")),
     Scope(ScopeKind.UNIT, "family"),
     Scope(ScopeKind.WORKSPACE, "home"),
+    Scope(ScopeKind.WORKSPACE, "default"),
 ])
 async def test_foreign_containment_on_every_scope_refuses_fresh_and_resume(
     tmp_path, graph, scope, resume,
@@ -651,12 +652,13 @@ class _OvergrantOutsideFile(FakeAuthorityBackend):
         if permit == "view" and (
             (self.leak == "unknown" and person_id.endswith(":unknown"))
             or (self.leak == "ancestor" and scope.kind is ScopeKind.UNIT)
+            or (self.leak == "default-workspace" and scope == Scope(ScopeKind.WORKSPACE, "default"))
         ):
             return allowed()
         return await super().check(scope=scope, person_id=person_id, permit=permit)
 
 
-@pytest.mark.parametrize("leak", ["unknown", "ancestor"])
+@pytest.mark.parametrize("leak", ["unknown", "ancestor", "default-workspace"])
 async def test_readback_refuses_access_outside_the_file_predicate(tmp_path, graph, leak):
     store, _, registry, _ = graph
     backend = _OvergrantOutsideFile(leak)
@@ -668,3 +670,7 @@ async def test_readback_refuses_access_outside_the_file_predicate(tmp_path, grap
     assert outcome.status is OutcomeStatus.UNAVAILABLE
     assert outcome.detail == "read-back-mismatch"
     assert next(iter(store.operations.values())).state is OperationJournalState.INCOMPLETE
+    backend.leak = None
+    restored = await admission.apply(identity, policy)
+    assert restored.status is OutcomeStatus.COMPLETE, restored.detail
+    assert not store.identity_holds

@@ -88,7 +88,7 @@ from nora.people.app.managed_admission_probe import (
 )
 from nora.people.app.managed_ops import _finish, _pending, _step_done
 from nora.persons import Persons, PersonsError, load_persons
-from nora.policy import Policy, PolicyError, load_policy
+from nora.policy import DEFAULT_WORKSPACE, Policy, PolicyError, load_policy
 
 log = logging.getLogger("nora.people.managed")
 
@@ -544,7 +544,8 @@ class FileAdmission:
         self, prepared: PreparedImport
     ) -> dict[Scope, set[ScopedRelation]]:
         """This import's own authority rows per scope: members + containment."""
-        wanted: dict[Scope, set[ScopedRelation]] = {}
+        wanted: dict[Scope, set[ScopedRelation]] = {
+            Scope(ScopeKind.WORKSPACE, DEFAULT_WORKSPACE): set()}
         for person_id, scope in prepared.memberships:
             wanted.setdefault(scope, set()).add(ScopedRelation("member", person_id))
         for child, parent in prepared.containment:
