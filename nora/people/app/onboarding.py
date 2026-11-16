@@ -15,9 +15,11 @@ authority journal — all sequenced, so the cost is bounded by the number
 of rules, never by event rate.
 
 - `notify_sender` (every inbound message, both runtimes) queues a FIRST
-  ENCOUNTER: an untyped sender in a covered collection is observed once
-  under the rule's identity — the roster stays the truth for membership;
-  the sender note only makes the person resolvable before it lands.
+  ENCOUNTER: an untyped sender in a covered collection is observed under
+  the rule's identity — the roster stays the truth for membership; the
+  sender note only makes the person resolvable before it lands. Each
+  note re-derives the sender's provable identifier group, so a pair the
+  provider reveals later still enriches the SAME account.
 - `notify_observation` (the bridged/direct membership lane) and
   `notify_resumed` (a gateway resume) mark the matching rule dirty, so an
   add/remove/revise — or a gap in those — reconciles promptly instead of
@@ -114,11 +116,10 @@ class PlatformOnboarding:
         self._freshness = freshness or ObservationFreshness(
             max_age_ms=int(interval_seconds * 1000), wall_clock=wall_clock)
         self._wake = asyncio.Event()
-        # (rule_name, sender value) — a bounded dedup queue, not a cache:
-        # `_seen` is "attempted" so one sender cannot re-register, and a
-        # retryable failure is dropped from it so the next note retries.
+        # (rule_name, sender value) — a dedup queue, never a cache: notes
+        # coalesce inside one drain, then the set empties; the journaled
+        # operation id replays an identical repeat.
         self._senders: set[tuple[str, str]] = set()
-        self._seen_senders: set[tuple[str, str]] = set()
         self._dirty: set[str] = set()
         self._next_at: dict[str, float] = {}
         self._streak: dict[str, int] = {}
@@ -329,13 +330,7 @@ class PlatformOnboarding:
         self, rule: OnboardingRule, value: str
     ) -> None:
         """First-encounter observe under the rule's identity — the roster decides membership."""
-        seen = (rule.name, value)
-        if seen in self._seen_senders:
-            return
         try:
-            if await self._bindings.resolve(rule.platform, value) is not None:
-                self._seen_senders.add(seen)
-                return
             ids = await rule.discovery.sender_identifiers(
                 collection=rule.collection, value=value)
             if (not ids
@@ -343,15 +338,6 @@ class PlatformOnboarding:
                 # No provable identifiers, or a discovery answer outside the
                 # service's approved sources — either way there is nothing
                 # this rule may lawfully observe.
-                return
-            resolved = False
-            for identifier in ids:
-                if await self._bindings.resolve(
-                        identifier.platform, identifier.value) is not None:
-                    resolved = True
-                    break
-            if resolved:
-                self._seen_senders.add(seen)
                 return
             account = min(ids, key=lambda i: (i.platform, i.kind, i.value))
             record = await self._bindings.record_for(account=account)
@@ -366,10 +352,9 @@ class PlatformOnboarding:
                 AccountObservation(frozenset(ids)),
                 {"ownership": str(record.revision)
                  if record is not None else "0"}))
-            if outcome.status is OutcomeStatus.UNAVAILABLE:
-                return  # retryable — the next note or roster re-attempts it
-            self._seen_senders.add(seen)
             if outcome.status is not OutcomeStatus.COMPLETE:
+                # Nothing is remembered — the next note re-observes, and
+                # an unfinished journaled operation resumes where it left off.
                 log.info(
                     "onboarding %s: sender not registered (%s)",
                     rule.name, outcome.detail)

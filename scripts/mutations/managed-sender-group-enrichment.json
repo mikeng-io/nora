@@ -1,0 +1,30 @@
+[
+  {
+    "name": "a resolved sender's note still consults the provable group",
+    "file": "nora/people/app/onboarding.py",
+    "old": "            ids = await rule.discovery.sender_identifiers(\n                collection=rule.collection, value=value)",
+    "new": "            if await self._bindings.resolve(\n                    rule.platform, value) is not None:\n                return\n            ids = await rule.discovery.sender_identifiers(\n                collection=rule.collection, value=value)",
+    "target": "tests/unit/test_onboarding_sender_enrichment.py::test_a_bound_senders_note_still_enriches_the_same_account"
+  },
+  {
+    "name": "an already-resolved group member does not stop enrichment",
+    "file": "nora/people/app/onboarding.py",
+    "old": "            account = min(ids, key=lambda i: (i.platform, i.kind, i.value))",
+    "new": "            for identifier in ids:\n                if await self._bindings.resolve(\n                        identifier.platform, identifier.value) is not None:\n                    return\n            account = min(ids, key=lambda i: (i.platform, i.kind, i.value))",
+    "target": "tests/unit/test_onboarding_sender_enrichment.py::test_a_bound_senders_note_still_enriches_the_same_account"
+  },
+  {
+    "name": "the whole provable group is presented, not one identifier",
+    "file": "nora/people/app/onboarding.py",
+    "old": "                AccountObservation(frozenset(ids)),",
+    "new": "                AccountObservation(frozenset({account})),",
+    "target": "tests/unit/test_onboarding_sender_enrichment.py::test_a_bound_senders_note_still_enriches_the_same_account"
+  },
+  {
+    "name": "the operation identity keys on the group, not the sender value",
+    "file": "nora/people/app/onboarding.py",
+    "old": "                f\"onboard-sender:{rule.name}:{digest}\", \"observe_account\",",
+    "new": "                f\"onboard-sender:{rule.name}:{value}\", \"observe_account\",",
+    "target": "tests/unit/test_onboarding_sender_enrichment.py::test_a_sender_reobserved_with_a_larger_group_is_enriched"
+  }
+]
