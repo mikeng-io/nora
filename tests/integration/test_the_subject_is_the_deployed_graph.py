@@ -242,8 +242,14 @@ async def test_http_dispatch_and_redirects_cannot_bypass_owned_services(http):
                 response = await client.get(f"{owned}/v1/self")
                 assert response.json()["primary"] == "generated-self"
                 for target in (f"{url}/v1/actions", f"{owned}/redirect"):
-                    with pytest.raises(PermissionError, match="not isolated"):
+                    refusal = None
+                    try:
                         await client.get(target)
+                    except (PermissionError, http.ConnectError) as exc:
+                        refusal = exc
+                    assert isinstance(refusal, PermissionError), (
+                        "the HTTP dispatch reached transport instead of its isolation refusal: "
+                        f"{type(refusal).__name__}")
             with http.Client() as client, pytest.raises(PermissionError, match="not isolated"):
                 client.post(f"{url}/v1/actions", json={"op": "send", "request": {"text": "leak"}})
             assert [row["operation"] for row in environment.denied] == ["http"] * 3

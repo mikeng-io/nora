@@ -127,6 +127,7 @@ async def test_native_sdk_keeps_each_drive_and_gives_the_judge_the_first_effects
     assert report.detailed_results[0][0].label == ("ERROR" if broken else "PASS"), (
         state_of_from_row(row, backbone.NORA_ERROR), report.detailed_results[0][0].reason)
     if broken:
+        sdk_evidence.record("expected_invalid_capture")
         assert requests == [] and len(ids) == 1
         assert "canonical_lifecycle_unavailable" in state_of_from_row(row, backbone.NORA_ERROR)
         assert artifact["status"] == "unavailable" and artifact["drives"] is None
@@ -140,7 +141,6 @@ async def test_native_sdk_keeps_each_drive_and_gives_the_judge_the_first_effects
         result = results[0]
         captured = {state["name"]: state["state"] for state in result["environment_state"]}
         assert captured[backbone.NORA_ERROR] == state_of_from_row(row, backbone.NORA_ERROR)
-        sdk_evidence.record("expected_invalid_capture")
     else:
         assert state_of_from_row(row, backbone.NORA_ERROR) is None
         assert artifact["status"] == "observed" and len(artifact["drives"]) == len(ids) == 2
