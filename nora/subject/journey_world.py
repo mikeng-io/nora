@@ -30,6 +30,7 @@ from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import current
+from nora.subject.model_gateway import ModelGateway
 from nora.subject.obtain import SubjectSpec, build_config
 from nora.testing.causal_protocol import CausalProtocol, texts
 from nora.testing.signal_daemon import FakeSignalDaemon
@@ -195,10 +196,7 @@ class GeneratedJudge:
                 "entry_ids": cited}
 
     def _behavior(self, payload: dict, expectation: dict) -> dict:
-        """The generated rehearsal's behavior binding: the claim anchors a
-        turn by its declared input and outcome, and `check` is the declared
-        token the turn's observed output must carry or lack — the token
-        the fixture itself made observable, never a scripted verdict."""
+        """Judge the declared token against this turn's delivered output and successful actions."""
         outcome = (payload.get("turn_outcome") or {}).get("status")
         effects = (payload.get("effects") or {}).get("status")
         declared = (payload.get("declared_input") or {}).get("text")
@@ -213,10 +211,7 @@ class GeneratedJudge:
         said = " ".join(str(v) for v in (
             (payload.get("turn_outcome") or {}).get("said") or []))
         said = f"{said} {payload.get('final_output') or ''}"
-        # What the turn SAID binds only on its delivered output and its
-        # acted calls — an observation call's arguments, or a call that
-        # failed or was refused, never proves the turn recalled or said
-        # the token.
+        # Only delivered output and successful send_reply/remind calls establish the token.
         said += " " + " ".join(
             json.dumps(call.get("arguments"), ensure_ascii=False)
             for call in payload.get("tool_calls") or []
@@ -293,10 +288,15 @@ class JourneyServices:
 
     def __init__(self, *, policy: str, room: tuple[str, str] = ("signal", "g1"),
                  identity: str = "", overrides: dict[str, Any] | None = None,
-                 judge_models: tuple[str, str] = ("generated-a", "generated-b")) -> None:
+                 judge_models: tuple[str, str] = ("generated-a", "generated-b"),
+                 model_gateway: ModelGateway | None = None) -> None:
         self.policy, self.room, self.identity = policy, room, identity
         self._overrides = dict(overrides or {})
         self.judge_models = tuple(judge_models)
+        #: The case's one declared live boundary; when set, the generated
+        #: subject/judge responders are never installed and every model
+        #: dispatch is admitted to it — or refused — by the environment.
+        self.model_gateway = model_gateway
         self.requests: list[dict] = []
         self.errors: list[tuple] = []
         self.feeds: list[dict] = []
@@ -362,15 +362,7 @@ class JourneyServices:
             policy=self.policy, identity=self.identity, overrides=self.overrides()))
 
     def _destination(self, body: dict) -> Any:
-        """The responder a request belongs to, by its declared model.
-
-        The judge aliases answer the eval's own calls — a judge request that
-        arrives streamed or with tools is `GeneratedJudge`'s named error, not
-        a subject call. Every other request is the subject's to dispatch:
-        `stream` status alone never picks a responder, so a raw non-judge
-        call (the relevance gate, a malformed request, an unknown lane)
-        reaches `CausalProtocol`, which names it into `errors` — it never
-        lands on the judge by accident."""
+        """The declared judge responder or subject protocol, independent of stream shape."""
         if body.get("model") in self.judge_models:
             if self.judge is None:
                 raise RuntimeError("journey world judge is unbound")
@@ -384,35 +376,37 @@ class JourneyServices:
         """`Spec.services`' contract: the case-owned world beside this database."""
         declared = Path(tempfile.mkdtemp(prefix="nora-journey-declared-"))
         cfg = self._declared_config(database_url, declared)
-        self.protocol = CausalProtocol(cfg)
-        self.judge = GeneratedJudge()
         self.daemon = FakeSignalDaemon(sent_at_ms=int(time.time() * 1000))
-        model = web.Application()
-
-        async def respond(request: web.Request) -> web.StreamResponse:
-            try:
-                body = await request.json()
-            except ValueError as exc:
-                self.errors.append(("malformed_request", type(exc).__name__))
-                return web.json_response(
-                    {"error": "malformed journey request"}, status=400)
-            self.requests.append(body)
-            if self.protocol is None or self.judge is None:
-                return web.json_response({"error": "world unbound"}, status=503)
-            destination = self._destination(body)
-            if destination == self.protocol.respond:
-                _record_request(self.protocol, body)
-            return await destination(request)
-
-        model.router.add_post("/v1/chat/completions", respond)
         apps = {
-            "llm.base_url": model,
             "honcho.base_url": memory_service(self.feeds),
             "platforms.signal.base_url": self._bridge_app(),
         }
-        apps.update({f"providers.{name}.base_url": model for name in cfg.providers})
+        if self.model_gateway is None:
+            self.protocol = CausalProtocol(cfg)
+            self.judge = GeneratedJudge()
+            model = web.Application()
+
+            async def respond(request: web.Request) -> web.StreamResponse:
+                try:
+                    body = await request.json()
+                except ValueError as exc:
+                    self.errors.append(("malformed_request", type(exc).__name__))
+                    return web.json_response(
+                        {"error": "malformed journey request"}, status=400)
+                self.requests.append(body)
+                if self.protocol is None or self.judge is None:
+                    return web.json_response({"error": "world unbound"}, status=503)
+                destination = self._destination(body)
+                if destination == self.protocol.respond:
+                    _record_request(self.protocol, body)
+                return await destination(request)
+
+            model.router.add_post("/v1/chat/completions", respond)
+            apps["llm.base_url"] = model
+            apps.update({f"providers.{name}.base_url": model for name in cfg.providers})
         environment = IsolatedServices(
-            database_url=database_url, applications=apps, redis=redis)
+            database_url=database_url, applications=apps, redis=redis,
+            model_gateway=self.model_gateway)
         async with environment as env:
             env.world = self
             yield env

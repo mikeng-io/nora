@@ -15,6 +15,7 @@ from nora.subject.recorded_services import RecordedServices
 JOURNEY_KIND = "journey_world"
 _JOURNEY_KEYS = frozenset({
     "kind", "policy", "room", "identity", "overrides", "judges",
+    "model_gateway",
 })
 
 
@@ -27,6 +28,36 @@ class ServiceInputs:
         evidence.retain("external-services.json", self.raw)
         evidence.record("external_service_inputs", ref="external-services.json",
                         sha256=hashlib.sha256(self.raw).hexdigest())
+
+
+def _gateway(name: str, entry: dict[str, Any], judges: list) -> Any:
+    """The plan's credential-free model boundary, including both judges, or None."""
+    from nora.subject.model_gateway import ModelGateway
+
+    declared = entry.get("model_gateway")
+    if declared is None:
+        return None
+    if not isinstance(declared, dict) or set(declared) != {"upstream", "models"}:
+        raise ValueError(
+            f"journey service plan for {name!r} declares a malformed "
+            "model gateway")
+    models = declared["models"]
+    if (not isinstance(models, list) or not models
+            or not all(isinstance(m, str) and m for m in models)):
+        raise ValueError(
+            f"journey service plan for {name!r} declares no model "
+            "identities for its model gateway")
+    if not set(judges) <= set(models):
+        raise ValueError(
+            f"journey service plan for {name!r} declares a model gateway "
+            "whose identities omit a declared judge alias")
+    try:
+        return ModelGateway(
+            upstream=declared["upstream"], models=frozenset(models))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"journey service plan for {name!r} declares an invalid model "
+            f"gateway: {exc}") from None
 
 
 def _journey_plan(name: str, entry: dict[str, Any]) -> Any:
@@ -58,7 +89,8 @@ def _journey_plan(name: str, entry: dict[str, Any]) -> Any:
     return JourneyServices(
         policy=entry["policy"], room=(str(room[0]), str(room[1])),
         identity=identity, overrides=dict(overrides),
-        judge_models=(judges[0], judges[1]))
+        judge_models=(judges[0], judges[1]),
+        model_gateway=_gateway(name, entry, judges))
 
 
 def _plan_for(name: str, entry: Any) -> Any:

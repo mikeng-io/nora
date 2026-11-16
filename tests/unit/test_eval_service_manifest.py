@@ -66,6 +66,28 @@ def test_a_journey_world_plan_constructs_the_declared_finite_world(tmp_path):
     assert plan.identity == "[self]\nhandle = 'nora'"
     assert plan.overrides()["memory.index.read"] is False
     assert plan.judge_models == ("alpha", "beta")
+    # No declaration means NO live endpoint — the generated world, never
+    # a default upstream.
+    assert plan.model_gateway is None
+
+
+def test_a_journey_world_plan_binds_its_declared_model_gateway(tmp_path):
+    """`model_gateway` declares the case's one live model boundary: an
+    upstream plus the identities a dispatch may name, carried on the
+    `JourneyServices` the live-clock drive opens."""
+    upstream = "http://127.0.0.1:9876/v1"
+    data = {"version": 1, "corpora": {"autonomous_journey": {"the_outing": {
+        "kind": "journey_world",
+        "policy": "[rooms]\nallow = []",
+        "judges": ["alpha", "beta"],
+        "model_gateway": {"upstream": upstream,
+                          "models": ["nora", "alpha", "beta"]}}}}}
+    path = tmp_path / "services.json"
+    path.write_text(json.dumps(data))
+    plan = load_services(path).corpora["autonomous_journey"]["the_outing"]
+    assert plan.model_gateway is not None
+    assert plan.model_gateway.upstream == upstream
+    assert plan.model_gateway.models == frozenset({"nora", "alpha", "beta"})
 
 
 def test_an_explicit_recorded_kind_stays_the_positional_recording(tmp_path):
@@ -90,6 +112,27 @@ def test_an_explicit_recorded_kind_stays_the_positional_recording(tmp_path):
     {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
      "surprise": 1},
     {"kind": "a_kind_nobody_declared", "policy": "p", "judges": ["a", "b"]},
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "model_gateway": "http://127.0.0.1:9/v1"},                       # not an object
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "model_gateway": {"upstream": "http://127.0.0.1:9/v1"}},          # no models
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "model_gateway": {"models": ["a", "b"]}},                         # no upstream
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "model_gateway": {"upstream": "http://127.0.0.1:9/v1",
+                      "models": ["a", "b"], "api_key": "generated"}},  # a credential
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "model_gateway": {"upstream": "http://127.0.0.1:9/v1",
+                      "models": []}},                                  # no identities
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "model_gateway": {"upstream": "http://127.0.0.1:9/v1",
+                      "models": ["nora", "a"]}},                       # a judge omitted
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "model_gateway": {"upstream": "https://user:pw@127.0.0.1:9/v1",
+                      "models": ["nora", "a", "b"]}},                  # upstream credential
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "model_gateway": {"upstream": "ftp://127.0.0.1:9/v1",
+                      "models": ["nora", "a", "b"]}},                  # not http(s)
     "not a plan at all",
 ])
 def test_malformed_and_unknown_service_plans_are_refused(tmp_path, plan):
