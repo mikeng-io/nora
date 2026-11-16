@@ -81,7 +81,7 @@ platform = "signal"
 id = "generated-room-b"
 unit = "work"
 label = "Room B"
-persons = "*"
+persons = ["miles", "ada", "listed_only"]
 
 [[conversations]]
 platform = "discord"
@@ -172,6 +172,24 @@ def test_plan_counts_the_exact_effect(tmp_path):
     }
     again = plan(identity_path, policy_path)
     assert again.import_id == result.import_id
+
+
+async def test_admission_refuses_dynamic_membership_before_any_write(tmp_path, graph):
+    store, backend, registry, admission = graph
+    dynamic = POLICY.replace(
+        'persons = ["miles", "ada", "listed_only"]', 'persons = "*"',
+    )
+    identity, policy = _sources(tmp_path, policy=dynamic)
+    assert any("unsupported-input:dynamic-membership" in reason
+               for reason in plan(identity, policy).refused)
+    result = await admission.apply(identity, policy)
+    assert result.status is OutcomeStatus.DENIED
+    assert "unsupported-input:dynamic-membership" in result.detail
+    assert not store.people and not store.operations and not backend.tuples
+    assert not registry.identities
+    policy.write_text(POLICY)
+    assert (await admission.apply(identity, policy)).status is OutcomeStatus.COMPLETE
+    assert store.people and store.operations and backend.tuples
 
 
 def test_admission_hashes_the_same_source_bytes_the_loaders_parse(tmp_path):
