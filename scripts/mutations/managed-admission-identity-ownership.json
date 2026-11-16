@@ -61,5 +61,12 @@
     "old": "        outcome, identity = await self._client.create_identity(\n            external_id=external_id, traits=traits, metadata_admin=owner)",
     "new": "        outcome, identity = await self._client.create_identity(\n            external_id=external_id, traits=traits)",
     "target": "tests/infra/test_kratos_identity_contract.py::test_admission_seam_moves_the_marker_as_typed_values"
+  },
+  {
+    "name": "owned recovery also binds the external person",
+    "file": "nora/people/app/managed_admission_identity.py",
+    "old": "    if view.external_id != external_id or not identity_owned(view, marker):",
+    "new": "    if not identity_owned(view, marker):",
+    "target": "tests/unit/test_managed_admission_identity.py::test_owned_recovery_refuses_a_different_external_person"
   }
 ]

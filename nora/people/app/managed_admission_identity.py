@@ -103,7 +103,7 @@ async def ensure_owned(
         if outcome.status is OutcomeStatus.DENIED:
             return unavailable("conflict-unresolved"), None
         return outcome, None
-    if not identity_owned(view, marker):
+    if view.external_id != external_id or not identity_owned(view, marker):
         return denied("kratos-foreign-identity"), None
     if view.state != "active":
         return unavailable(f"identity-state:{view.state}"), None

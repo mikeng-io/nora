@@ -7,6 +7,8 @@ record — id, marker, state and the intended initial traits — to the SQL
 correlation before any hold releases.
 """
 
+from dataclasses import replace
+
 import pytest
 
 from nora.domain.managed import (
@@ -16,7 +18,11 @@ from nora.domain.managed import (
     unavailable,
 )
 from nora.people.app.managed_admission import FileAdmission, _prepare
-from nora.people.app.managed_admission_identity import AdmissionIdentity
+from nora.people.app.managed_admission_identity import (
+    AdmissionIdentity,
+    admission_marker,
+    ensure_owned,
+)
 from nora.testing.managed import FakeAuthorityBackend, FakeBindingStore
 from tests.fakes import FakeAdmissionKratos
 from tests.unit.test_managed_admission import _Probe, _sources
@@ -247,3 +253,22 @@ async def test_a_kratos_outage_on_the_fresh_claim_is_unavailable(tmp_path):
     assert outcome.status is OutcomeStatus.UNAVAILABLE
     assert not store.operations and not store.people
     assert not kratos.identities
+
+
+async def test_owned_recovery_refuses_a_different_external_person():
+    class WrongExternal(FakeAdmissionKratos):
+        async def read(self, *, external_id):
+            outcome, view = await super().read(external_id=external_id)
+            return outcome, replace(view, external_id="generated-other")
+
+    marker = admission_marker(import_id="generated-import", effect_sha256="generated-effect")
+    kratos = WrongExternal()
+    traits = {"display_name": "Generated", "social": False}
+    created, original = await kratos.create(
+        external_id="generated-person", traits=traits, owner=marker)
+    assert created.status is OutcomeStatus.COMPLETE and original is not None
+    outcome, recovered = await ensure_owned(
+        kratos, external_id="generated-person", traits=traits, marker=marker)
+    assert outcome.status is OutcomeStatus.DENIED
+    assert recovered is None
+    assert len(kratos.identities) == 1

@@ -487,7 +487,7 @@ class FakeAdmissionKratos:
             external_id=external_id,
             state=record["state"],
             traits=dict(record["traits"]),
-            metadata_admin=record.get("metadata_admin"),
+            metadata_admin=copy.deepcopy(record.get("metadata_admin")),
         )
 
     async def create(
@@ -501,7 +501,7 @@ class FakeAdmissionKratos:
             "id": f"kratos-admission-{len(self.identities) + 1}",
             "state": "active",
             "traits": dict(traits),
-            "metadata_admin": owner,
+            "metadata_admin": copy.deepcopy(owner),
         }
         return complete(), self._view(external_id, self.identities[external_id])
 
