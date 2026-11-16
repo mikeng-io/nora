@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
@@ -311,3 +313,32 @@ async def test_an_interrupted_roster_replays_as_superseded_after_a_newer_one():
     assert (await svc.check(
         scope=ROOM, person_id="person_member", permit="speak"
     )).verdict is Verdict.ALLOWED
+
+
+@pytest.mark.parametrize("elapsed_ms", [0, 120_000])
+async def test_reconstructed_roster_rechecks_freshness_before_departure(elapsed_ms):
+    store, backend, initial = _service(backend=_DropsFail())
+    await _member(store, backend)
+    backend.fail_drops = True
+    interrupted = await initial.apply(_roster("op-aging", NOW - 20_000))
+    assert interrupted.status is OutcomeStatus.UNAVAILABLE
+    journal = await store.operation("op-aging")
+    assert journal is not None
+    assert await store.members_of(ROOM)
+    backend.fail_drops = False
+    current = AuthorityService(
+        store, backend,
+        FakeTopologySource(rooms={ROOM.id: (UNIT.id, False)},
+                           units={UNIT.id: WS.id}, workspaces={WS.id}),
+        ObservationFreshness(max_age_ms=60_000,
+                             wall_clock=lambda: (NOW + elapsed_ms) / 1000),
+    )
+    result = await current.apply_replay(journal)
+    if elapsed_ms:
+        assert result.status is OutcomeStatus.UNAVAILABLE
+        assert result.detail == "observation-stale"
+        assert await store.members_of(ROOM)
+        assert (await store.operation("op-aging")).state is OperationJournalState.INCOMPLETE
+    else:
+        assert result.status is OutcomeStatus.COMPLETE
+        assert not await store.members_of(ROOM)

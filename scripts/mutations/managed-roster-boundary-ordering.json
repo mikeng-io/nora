@@ -33,5 +33,12 @@
     "old": "        return (mark is not None\n                and mark.observed_ms > effect.payload.observed_ms)",
     "new": "        return False",
     "target": "tests/unit/test_roster_observation.py::test_an_interrupted_roster_replays_as_superseded_after_a_newer_one"
+  },
+  {
+    "name": "interrupted roster rechecks freshness before departure replay",
+    "file": "nora/people/app/managed_authority.py",
+    "old": "        if not isinstance(payload, RosterSync):\n            raise ManagedError(f\"{kind} payload is {type(payload).__name__}\")\n        refusal = self._observation_refusal(payload)\n        if refusal is not None:\n            return refusal\n        joined: set[str] = set()",
+    "new": "        if not isinstance(payload, RosterSync):\n            raise ManagedError(f\"{kind} payload is {type(payload).__name__}\")\n        joined: set[str] = set()",
+    "target": "tests/unit/test_roster_observation.py::test_reconstructed_roster_rechecks_freshness_before_departure"
   }
 ]

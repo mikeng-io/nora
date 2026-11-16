@@ -1,33 +1,7 @@
-"""`BindingStore` over SQLAlchemy Core — the managed backend's Postgres
-record (`design/managed-identity-access/identity.md`, `management.md`).
+"""SQL BindingStore with individually committed reads/writes.
 
-Shaped like `nora.infra.sql.reminders`: the engine comes through `__init__`,
-every write is one transaction inside `async with self._engine.begin()`,
-every read is one statement inside `async with self._engine.connect()`.
-
-THE RULES THIS STORE ENFORCES, NOT DESCRIBES
---------------------------------------------
-- **One matchable identifier, one owner.** `managed_identifier`'s primary
-  key is (platform, kind, value); a second account claiming it is an
-  `IdentifierConflictError` read back from the unique violation — Postgres
-  decides the race, so concurrent discovery cannot fork a person.
-- **Discovery never merges.** `register` creates an INDEPENDENT person per
-  unclaimed account; nothing here groups by name, number or heuristic.
-- **Lifecycle facts stay distinct.** A suspended person (`managed_person.
-  lifecycle`), a revoked binding (`managed_account.state`) and a left room
-  (`managed_membership.state`) are three rows, not one flag.
-- **Retired ids keep resolving.** `managed_alias` folds a former person_id
-  into the survivor so `canonical_person` answers before any read.
-- **The journal is the restart boundary.** `managed_operation` records the
-  intended effect and each step's state BEFORE the first store write;
-  `incomplete`/`blocked` rows are the reconciler's queue and persist a
-  crash. `managed_authority_block` is the local block a failed revocation
-  raises — check consults it before trusting a grant.
-
-Revisions: `person.revision` bumps on lifecycle/correlation writes,
-`account.revision` on state changes, `membership.revision` on standing
-changes — the values `identity`/`ownership`/`authority` observed revisions
-compare against when the service revalidates at commitment.
+Ownership, lifecycle, aliases and recovery contracts are declared in
+`design/managed-identity-access/` and the shared binding-store contract suite.
 """
 
 from __future__ import annotations

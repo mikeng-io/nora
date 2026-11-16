@@ -188,13 +188,9 @@ class AuthorityService:
         payload = op.payload
         if not isinstance(payload, RosterSync) or op.target.scope is None:
             raise ManagedError("sync_membership names a scope and a RosterSync")
-        if not self._freshness.instant(payload.observed_ms):
-            return unavailable(
-                "observation-future" if isinstance(payload.observed_ms, int)
-                and payload.observed_ms > 0 else "observation-undated")
-        if payload.complete and not self._freshness.departure(
-                payload.observed_ms):
-            return unavailable("observation-stale")
+        refusal = self._observation_refusal(payload)
+        if refusal is not None:
+            return refusal
         service = str(op.actor.service_id or "")
         effect = _effect_digest(_op_snapshot(op))
         mark = await self._bindings.observation_for(
@@ -212,6 +208,16 @@ class AuthorityService:
             operation_id=op.operation_id, effect=effect))
         if recorded.status is not OutcomeStatus.COMPLETE:
             return recorded
+        return None
+
+    def _observation_refusal(self, payload: RosterSync) -> Outcome | None:
+        if not self._freshness.instant(payload.observed_ms):
+            return unavailable(
+                "observation-future" if isinstance(payload.observed_ms, int)
+                and payload.observed_ms > 0 else "observation-undated")
+        if payload.complete and not self._freshness.departure(
+                payload.observed_ms):
+            return unavailable("observation-stale")
         return None
 
     async def _sync_superseded(self, effect: _ReplayOp) -> bool:
@@ -574,6 +580,9 @@ class AuthorityService:
         kind = effect.kind
         if not isinstance(payload, RosterSync):
             raise ManagedError(f"{kind} payload is {type(payload).__name__}")
+        refusal = self._observation_refusal(payload)
+        if refusal is not None:
+            return refusal
         joined: set[str] = set()
         for ident in payload.members:
             account = await self._bindings.account_for(

@@ -1,19 +1,6 @@
-"""In-memory second implementations of the managed ports — the fake half of
-the binding-store contract suite
-(`tests/contract/test_binding_store_contract.py`) and the stand-in the unit
-services run against. The Keto/Kratos halves are covered live:
-`scripts.check_ory_policy` probes the real OPL engine and the deployed
-adapters answer to the real admin APIs.
+"""Managed-port fakes for the shared contracts in `tests/contract/`.
 
-These are REAL implementations, not answer stubs: `FakeAuthorityBackend`
-evaluates the committed OPL semantics (`deploy/ory/keto/namespaces.ts`) —
-deny wins at the scope and down every ancestor, `restricted` denies
-everything on its scope, `member` confers speak+view on a Room only,
-management permits inherit downward while parent membership confers
-nothing. `FakeBindingStore` enforces the same one-owner-per-identifier and
-journal-conflict rules the SQL store does. `down` flips each fake into the
-unavailable path a real outage produces, so fail-closed tests don't need a
-socket.
+Authority evaluation follows `deploy/ory/keto/namespaces.ts`.
 """
 
 from __future__ import annotations
@@ -77,8 +64,7 @@ from nora.domain.management import (
 
 
 class FakeBindingStore(BindingStore):
-    """In-memory bindings. `down=True` makes every call raise — the
-    service maps a genuine store failure to `unavailable`."""
+    """In-memory bindings with switchable outages."""
 
     def __init__(self) -> None:
         self._mutation_lock = asyncio.Lock()
