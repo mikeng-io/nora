@@ -1,9 +1,9 @@
 # Cognition journeys
 
-Cognition is measured as a participant in Nora's continuing loop. A wake can
-revise understanding, maintain Notebook state, schedule another look or create
-a reminder for a conscious turn. Its result is what those changes enable and
-prevent later, not only the graph statements written during one session.
+Cognition is measured through the production engagement and reflection loops
+over the [Cognitive Graph](../cognition/README.md). A journey connects new
+observations, revised understanding, commitments, acts and their outcomes to
+later decisions. Its result is what that continuity enables and prevents.
 
 The [subject](subject.md), [measurement](measurement.md) and
 [coverage](coverage.md) contracts apply unchanged. This subject adds causal
@@ -11,23 +11,23 @@ relationships across wakes, not a separate composition or grading system.
 
 ## State carries forward
 
-A journey declares its initial state and semantic clock. Historical state is
-restored once at the declared cut; generated initial state is explicit.
-The source cut and the clock of a later observation remain distinct.
-Production ingestion records external events; eligibility and admission
-determine when a Cognition session runs. The session uses its normal context,
-tools and reads; production completion settles claims, lessons, Standing and pending work.
+A journey declares its target revision, initial state and semantic clock.
+State is restored once at the declared cut; generated initial state is
+explicit. The source cut and the clock of a later observation remain distinct.
+Production observation records inputs; ordinary admission starts the applicable
+pass. Both loops use their production context, tools, reads and settlement.
 Failure retains unprocessed input according to the runtime's own rules.
 
-Subsequent turns read what the candidate retained. Newly discovered relations
-feed later prefetch; lessons can alter a later response; a later fact can
-revise or retire an earlier note. Environmental advancement contributes world
-events, not another Nora's intervening conclusions or replies.
+Subsequent passes read what the candidate retained. New relations feed later
+prefetch; a correction can revise understanding or change a later decision.
+Environmental advancement contributes world events, never another Nora's
+intervening conclusions or replies.
 
-Self-wakes are inward eligibility for a later look. Reminders enter the normal
-conscious fire path, whose reads, delivery or silence and observed responses
-become input to later cognition. They are executed against isolated boundaries,
-not removed from the object graph to make the journey safe.
+An intention's review time or due condition returns work through ordinary
+admission. Only engagement delivers; reflection reaches a room through an
+intention a proactive pass carries out. Delivery, deliberate silence and later
+responses return through observation. Isolation replaces their external effects
+without removing those paths from the composed subject.
 
 A recorded-wake replay deliberately fixes a session boundary. It can inspect
 or measure the session and its downstream effects at that boundary, but forcing
@@ -51,11 +51,16 @@ Unavailable retrieval is distinct from finding nothing; a bounded partial read
 is distinct from a failed read. A link's existence does not establish that a
 walk can reach it within its budget and scope.
 
-Persistent effects are checked across every owned state kind, including
+Persistent effects are checked across the target's canonical state, including
 revisions, retirement and cancellation. A current view can serve the model but
 cannot replace the revision evidence needed to measure changes. Loop evidence
 connects discoveries, repeated reads, new links and their later use; an
 unrecorded relationship is unknown rather than a zero count.
+
+An attempted act is not a recorded outcome, and a delivered act does not by
+itself close every intention. Closing evidence follows the intention's own
+condition. A pass's reply outcome and its debrief obligation remain distinct;
+retrying a failed debrief cannot deliver the reply again.
 
 Each criterion is grounded in the product's intended behaviour. Nothing need
 be written merely because a wake ran; a grounded fact need not become a
@@ -83,5 +88,5 @@ the digest as provenance only. The recorded replay refuses a version-2
 claim rather than measuring it with the wrong instrument, and no version
 silently becomes another.
 
-The production loop and its responsibilities are owned by
-[Cognition and the Dreamer runtime](../cognition-loop/README.md).
+The production loops, passes and executors are owned by
+[Cognition](../cognition/README.md).
