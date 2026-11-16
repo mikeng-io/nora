@@ -82,7 +82,9 @@ design/<topic>/
   that would pass the budget is a cue to consolidate, not to split.
 - Link relevant execution/roadmap work when useful. Do not maintain proposal,
   building or implementation states in the bundle; trackers own progress.
-  A design document is not evidence that its components exist.
+  A design document is not evidence that its components exist. When touching
+  a bundle, remove legacy `Status:` progress and execution-issue search links;
+  retain links to actual problem reports where useful.
 - No frontmatter dates, `supersedes:` blocks, deprecation banners or
   "was X, now Y". No decision numbers except a link to an ADR the reader needs.
 

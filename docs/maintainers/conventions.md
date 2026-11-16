@@ -320,6 +320,12 @@ workflow and a concise next action/blocker, not an invented state or label.
 Sub-issues have independently verifiable outcomes; do not ticket every test,
 commit or review finding. Update the parent outcome after accepting results.
 
+Deferred review work needs an accountable owner, a next action and a concrete
+revisit trigger (for example, before the linked dependent task starts). That
+owner or the orchestrator reads it when the trigger occurs and admits, revises
+or cancels it. Without a consumer/trigger, keep a limitation in the review
+receipt instead of creating a task; do not turn every finding into Backlog.
+
 ## Cross-service links
 
 A GitHub report owns the problem/request, reproduction and public disposition.

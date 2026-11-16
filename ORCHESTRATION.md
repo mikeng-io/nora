@@ -210,7 +210,7 @@ a link to the rest. Non-blocking findings are useful input, not new scope.
 
 | Verdict | Consequence |
 |---|---|
-| BLOCKER: the candidate materially fails agreed completion, or introduces reachable data loss, disclosure, crash or a weakened required gate | Fix and verify; only this verdict buys another round |
+| BLOCKER: the candidate materially fails agreed completion, or introduces reachable data loss, disclosure, crash or a weakened required gate | Fix and verify; non-blocking findings do not buy another round |
 | FIX-IF-CHEAP: a real in-diff defect with bounded harm | Fix if it takes minutes within the slice; otherwise record a limitation; no new round |
 | ISSUE: real but pre-existing outside agreed completion, or out of scope | Use the existing Linear work item or GitHub defect report; file only actionable work with no home (`nora-decision`); never blocks |
 | DROP: hypothetical, contrived, style or unrelated | One-line disposition |
@@ -221,9 +221,12 @@ a link to the rest. Non-blocking findings are useful input, not new scope.
 - Verify each finding at the cited line with the right check; production fixes
   follow `nora-prove-fix`. A clean review does not replace the gate or a
   required live read-back.
-- A round with no BLOCKER ends review. **At most two rounds**; round two checks
-  only `git diff <reviewed-sha>..HEAD`. A BLOCKER left after round two is fixed
-  and proved, then the orchestrator rereads the spec and reports; only the
+- With no BLOCKER or required evidence gap, end review. **At most two rounds**;
+  round two checks `git diff <reviewed-sha>..HEAD`, unresolved findings and
+  previously unavailable required evidence, even when the diff is empty. Waiting
+  for evidence is not a round; a requested re-check consumes the next round.
+  A BLOCKER or required evidence gap left after round two is addressed within scope
+  and measured, then the orchestrator rereads the spec and reports; only the
   operator authorises a third round.
 - Record review tier and triage in the PR's Gate section. Keep the source
   finding when adjudicating it; never silently downgrade a blocker. Waiving an

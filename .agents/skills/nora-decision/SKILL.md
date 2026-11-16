@@ -32,7 +32,7 @@ branch's worktree.
    outcomes, and GitHub Issues for reports. Keep one work identity; do not create a
    GitHub Issue to make a Linear task eligible for execution.
 3. **Select the destination.** GitHub reports use `.github/ISSUE_TEMPLATE/`
-   and the form conventions. Linear execution follows the [issue convention](../../../docs/maintainers/conventions.md#linear-execution).
+   and the form conventions. Linear execution follows the [execution convention](../../../docs/maintainers/conventions.md#linear-execution).
    Use the work brief in `nora-dispatch` and native properties; no second spec/plan.
 4. **Scrub before writing.** No private conversations, identities, credentials
    or production rows in either service. Link permitted source/evidence rather

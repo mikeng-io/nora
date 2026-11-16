@@ -43,8 +43,8 @@ work item, PR layer and T3 worker need not have one-to-one identities.
 Check: the remaining completion conditions, including integration, have owners.
 
 For cross-session work, first follow linked related work/threads; use T3's
-project thread search/list only to find missing relevant owners, then read those
-threads' actual checkout/head and latest handoff. Check neighboring bundles when
+project thread search/list (or the host's equivalent session store) to find
+missing relevant owners, then read their actual checkout/head and latest handoff. Check neighboring bundles when
 they share an interface/invariant. Do not preload all sessions or infer ownership
 from titles. Record the related work/thread links and shared seam in References.
 Agree with its active owner on who changes that seam and the dependency/base;
@@ -71,7 +71,8 @@ met, unmet or unavailable, with evidence locators and their limits.
 - Before authorizing a repair, check the finding's requirement, real trigger,
   harm and relation to the candidate. Repair only an admitted in-scope defect
   or unmet original condition; choose the smallest correction and proving check.
-- Keep adjacent improvements outside it; record actionable deferred work once.
+- Keep adjacent improvements outside it; defer once under the Linear convention:
+  owner, next action and revisit trigger, otherwise a review limitation.
 - Resolve unknowns with the smallest useful check; they are not new requirements.
 - For repeated blockers in the same seam, revisit the intent and real flow
   before another repair. Preserve review limits; scope changes need authority.
@@ -86,7 +87,10 @@ its next action; a green test or merged child alone is not completion.
 ## 5. Close or hand over
 
 Close only when the agreed results, including delivery where required, have
-actual evidence. Link receipts instead of copying logs into Linear.
+actual evidence. Update the owning Linear item: current status, outcome/evidence,
+remaining work and next owner/action if any; read back the write. Update parent
+acceptance separately. Report the result, material limits and next action to the
+operator. Link receipts instead of copying logs into Linear.
 
 At pause, blocker or session replacement, update a short current handoff:
 **where now, what remains, next action, active holds**, plus necessary decisions

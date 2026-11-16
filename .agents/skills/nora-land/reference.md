@@ -53,8 +53,8 @@ findings reported only in comments or check annotations.
 
 ## Stacked delivery
 
-Use this path for dependent PR layers. Stack management remains with GitHub/T3;
-no extra task store, hooks or dispatcher. This procedure does not install the
+Use this path for dependent PR layers. GitHub and the session host manage
+stacks; no extra task store, hooks or dispatcher. This procedure does not install the
 stack extension, configure checks or prove repository readiness.
 
 1. **Choose delivery.** For one integrated feature, use its integration branch

@@ -94,7 +94,8 @@ REQUEST CHANGES means a supported blocker or a required review-evidence gap;
 identify which. APPROVE is not task completion, green CI, merge or deployment.
 Finish the assigned coverage even after finding a defect; do not manufacture
 findings to fill the report. With no BLOCKER, summarize non-blocking harvest
-once and stop. The orchestrator owns triage and any next round under the policy.
+once and stop; required evidence gaps remain unresolved under the policy.
+The orchestrator owns triage and any next round.
 Devin Review is supplemental; Fusion's internal review alone is not independent
 review. Pure non-runtime docs and ordinary MCP client config need no automatic
 code review; explicit review requests and mixed/runtime changes follow the tier.

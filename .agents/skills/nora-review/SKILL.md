@@ -16,7 +16,8 @@ independence, dispositions and round limits. This skill is the procedure.
    the candidate. Missing material requirements return to scoping.
 2. **Inspect the candidate.** Verify checkout/head/status; read
    `git diff <base>...<head>`. A repair re-check uses
-   `git diff <previously-reviewed-head>..<head>` plus unresolved findings.
+   `git diff <previously-reviewed-head>..<head>` plus unresolved findings and
+   previously unavailable required evidence, including an unchanged candidate.
    Check: the actual candidate matches the assignment; preserve unrelated work.
 3. **Test the claims.** Trace affected callers and failure paths to the tier's
    depth. Read actual checks/results and model inputs or runtime evidence only
