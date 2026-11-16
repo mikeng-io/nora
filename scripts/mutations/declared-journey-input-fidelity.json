@@ -1,0 +1,58 @@
+[
+  {
+    "name": "a declared input with no matching reader is unavailable",
+    "file": "nora/subject/journey.py",
+    "old": "                       and r._account_key == declared.account_key), None)",
+    "new": "                       and True), None)",
+    "target": "tests/integration/subject/test_journey_declared_inputs.py::test_declared_input_with_a_foreign_reader_is_unavailable"
+  },
+  {
+    "name": "contradictory outer and message identity is refused",
+    "file": "nora/subject/journey.py",
+    "old": "            or message.timestamp != declared.sent_ms):",
+    "new": "            or False):",
+    "target": "tests/unit/test_journey_inputs.py::test_declared_envelope_rejects_contradictory_outer_identity"
+  },
+  {
+    "name": "the declared envelope crosses the producer unsubstituted",
+    "file": "nora/subject/journey.py",
+    "old": "        _, canonical = await producer.enqueue(declared)",
+    "new": "        _, canonical = await producer.enqueue(replace(declared, sender_id=\"+852111\", sender_name=\"Miles\"))",
+    "target": "tests/integration/subject/test_journey_declared_inputs.py::test_declared_input_survives_real_ingress_and_admission"
+  },
+  {
+    "name": "a step naming both input alternatives is refused",
+    "file": "evals/rebuilt/journey_manifest.py",
+    "old": "            if set(step) != {\"envelope\"}:",
+    "new": "            if False:",
+    "target": "tests/unit/test_journey_inputs.py::test_plan_refuses_a_step_naming_both_input_alternatives"
+  },
+  {
+    "name": "the declared instant reaches the turn ctx, not the wall clock",
+    "file": "evals/rebuilt/autonomous_journey.py",
+    "old": "        \"at_ms\": (_now_ms() if declared is None\n                  else int(declared.sent_ms)),",
+    "new": "        \"at_ms\": _now_ms(),",
+    "target": "tests/unit/test_journey_inputs.py::test_input_ctx_binds_the_declared_declaration_and_instant"
+  },
+  {
+    "name": "the declared source is forwarded into the input projection",
+    "file": "evals/rebuilt/journey_turns.py",
+    "old": "    if ctx.get(\"source\") is not None:\n        declared[\"source\"] = ctx[\"source\"]",
+    "new": "    if ctx.get(\"source\") is not None:\n        pass",
+    "target": "tests/unit/test_journey_inputs.py::test_declared_input_carries_source_only_for_declared_envelopes"
+  },
+  {
+    "name": "a frozen turn's declared input is compared, not text-matched",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "    frozen_source = (isinstance(declared, dict)\n                     and declared.get(\"source\") is not None)\n    if isinstance(recorded_input, dict):\n        if (not isinstance(declared, dict)\n                or not _input_same(declared, recorded_input)):\n            foreign.append(\"declared_input\")\n    elif frozen_source:\n        foreign.append(\"declared_input\")",
+    "new": "    pass",
+    "target": "tests/unit/test_journey_inputs.py::test_frozen_turn_identity_rejects_a_foreign_declared_input"
+  },
+  {
+    "name": "an unbound declared source cannot reach a judge",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "    elif \"source\" in declared:",
+    "new": "    elif False:",
+    "target": "tests/unit/test_journey_inputs.py::test_turn_gap_rejects_an_unbound_declared_source"
+  }
+]
