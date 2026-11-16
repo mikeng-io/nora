@@ -12,28 +12,52 @@ shape review behavior, not machine enforcement or paid-review admission.
 
 ## Scope and inputs
 
-Read the original Linear work brief or operator brief, referenced design
-invariants, exact base/head and PR claims. The implementation is not its own
-specification. Missing or conflicting intent returns to scoping.
+The orchestrator supplies a short review brief in the launch message, not a
+new document. An automatic reviewer without one derives and states the scope
+from the diff and available requirements; missing intent remains a limitation.
 
-| review request | inspect |
+```
+Question   what this review must decide; change / repair re-check / acceptance audit
+Basis      work/operator brief, design invariant or API contract; base/head
+Surface    changed behavior and affected callers; prior findings for a re-check
+Lenses     relevant risks and the concrete question for each; tier is depth
+Evidence   relevant receipts and allowed checks; what would disprove the claim
+Exclude    unrelated areas, settled decisions and action/spending limits
+```
+
+Select lenses from what changed and what it can break, not a fixed panel:
+
+| lens | question and trigger |
 |---|---|
-| change review | the agreed diff, reachable callers, failure paths and relevant tests at the assigned tier |
-| repair re-check | the previous review's repair delta and affected paths; retain unresolved findings |
-| scope/acceptance audit | each agreed completion condition against current artifacts and evidence |
+| application | does the agreed behavior work for actual callers and failure paths? baseline for a code change |
+| security/privacy | can a real input cross an auth, identity, disclosure or network boundary? when that boundary is touched |
+| data/concurrency | can state be lost, duplicated or raced across retries, commits or cancellation? when state/lifetime changes |
+| measurement/operations | does the check measure its claim, and does config/release reach the real consumer? when evidence or wiring changes |
 
-Surrounding code/docs are context, not permission to audit the repository.
-Runtime prompts/config, tests and CI are behavior when the change touches them.
-Design/docs are targets when assigned or needed to assess a changed invariant;
-do not harvest unrelated prose, formatting or historical-record preferences.
-Consult settled decisions before proposing a mechanism change; cite new evidence
-before reopening one. Stay read-only; no fixes, agents, GitHub approval, merge or
-deploy unless separately assigned. Report the actual review scope and limits.
+For architecture/docs, use changed responsibilities and invariants as the basis.
+One reviewer can cover several lenses; select separate specialists only when
+capability or scope warrants it. A title such as "security reviewer" alone is
+not a brief. Keep required risk floors from ORCHESTRATION.md.
+
+Read surrounding code/docs as needed to trace the affected behavior. The focus
+does not suppress a material regression caused by the candidate outside a named
+file/lens, but does not authorize repairing or auditing unrelated old defects.
+A repair re-check covers the previous repair delta, affected paths and unresolved
+findings, not a fresh full audit. Consult settled decisions before reopening one;
+cite new evidence. Stay read-only; no fixes, agents, approvals, merge or deploy
+unless separately assigned.
 
 ## Findings we want
 
-- Report grounded defects, including useful P2 observations; NONE is valid.
-  Trace a reachable trigger to concrete harm and an agreed requirement or rule.
+- Admit a defect only with **basis, reachability and consequence**: the violated
+  requirement/contract/trust boundary; an actual caller, supported input/state
+  or credible attacker entry; and concrete harm. Show whether this candidate
+  introduced it or left an original completion condition unmet. NONE is valid.
+- An extreme input is not a defect merely because a direct function call can
+  construct it. Check real entry validation, supported config and lifetime.
+  Rare concurrency or adversarial cases still count when reachable across a
+  real boundary. An unverified premise is a hypothesis: name the smallest
+  discriminating check, not a speculative guard or test suite.
 - Separate **severity** (impact/urgency) from **disposition** (what happens next).
   P1 denotes material correctness, safety or availability failure; P2 denotes
   bounded impact. Use BLOCKER / FIX-IF-CHEAP / ISSUE / DROP per the policy.
@@ -48,10 +72,10 @@ deploy unless separately assigned. Report the actual review scope and limits.
   AST check or green test count is not proof the real path works. Report a
   false-PASS proxy at the boundary it weakens; do not spend rounds enumerating
   evasions of that same proxy. Source-shape checks are valid for source-shape
-  claims. Mark pre-existing/out-of-scope defects explicitly.
+  claims. Pre-existing defects outside agreed completion are separate harvest.
 - Exclude taste, speculative guards, duplicate tests and unrequested redesign.
-  Do not invent requirements or ask for extra checks without naming what they
-  could establish. Missing evidence is unavailable, not proof of missing code.
+  New tests must catch an admitted in-scope defect or prove an existing condition;
+  missing evidence is unavailable, not proof of missing code.
 
 ## Return and convergence
 

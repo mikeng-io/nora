@@ -51,14 +51,17 @@ Check: the execution has started on the intended input, with a finite boundary.
 Read the actual diff and named checks with exit codes. Mark required results
 met, unmet or unavailable, with evidence locators and their limits.
 
-- Repair defects that defeat the existing completion conditions in this work.
+- Before authorizing a repair, check the finding's requirement, real trigger,
+  harm and relation to the candidate. Repair only an admitted in-scope defect
+  or unmet original condition; choose the smallest correction and proving check.
 - Keep adjacent improvements outside it; record actionable deferred work once.
 - Resolve unknowns with the smallest useful check; they are not new requirements.
 - For repeated blockers in the same seam, revisit the intent and real flow
   before another repair. Preserve review limits; scope changes need authority.
 
-Route review through `nora-review` at the applicable tier; integrate and measure
-where required, then use `nora-land`. Before claiming an eval, paid run or deploy
+Before review, supply [REVIEW.md](../../../REVIEW.md#scope-and-inputs)'s short brief,
+including risk lenses and exclusions. `nora-review` performs the review at the
+applicable tier. Integrate and measure where required, then use `nora-land`. Before claiming an eval, paid run or deploy
 ready, use its authorized zero-cost rehearsal of the actual path, not a proxy.
 Check: after each worker result, the parent resumes the whole outcome and selects
 its next action; a green test or merged child alone is not completion.

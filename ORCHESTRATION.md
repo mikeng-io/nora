@@ -190,9 +190,9 @@ a link to the rest. Non-blocking findings are useful input, not new scope.
 
 | Verdict | Consequence |
 |---|---|
-| BLOCKER: this diff materially defeats agreed completion, causes reachable data loss, disclosure or crash, or weakens a required gate | Fix and verify; only this verdict buys another round |
+| BLOCKER: the candidate materially fails agreed completion, or introduces reachable data loss, disclosure, crash or a weakened required gate | Fix and verify; only this verdict buys another round |
 | FIX-IF-CHEAP: a real in-diff defect with bounded harm | Fix if it takes minutes within the slice; otherwise record a limitation; no new round |
-| ISSUE: real but pre-existing or out of scope | Use the existing Linear work item or GitHub defect report; file only actionable work with no home (`nora-decision`); never blocks |
+| ISSUE: real but pre-existing outside agreed completion, or out of scope | Use the existing Linear work item or GitHub defect report; file only actionable work with no home (`nora-decision`); never blocks |
 | DROP: hypothetical, contrived, style or unrelated | One-line disposition |
 
 - Severity measures consequence; disposition determines action. Preserve the
