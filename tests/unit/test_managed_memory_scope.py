@@ -189,10 +189,11 @@ async def test_a_social_opt_out_excludes_social_items_but_keeps_enabled_and_non_
         ("social", "generated-enabled"), ("message", "generated-opted-out-chat")}
 
 
-def _graph_composition(persons, access):
+def _graph_composition(persons, access, cfg):
     from types import SimpleNamespace
 
     from nora.memory.wire import graph as wire_graph
+    from tests.builders import override_config
 
     allowlist = SimpleNamespace(
         rooms=lambda: [
@@ -202,12 +203,10 @@ def _graph_composition(persons, access):
         ],
         home_rooms=lambda: frozenset(),
     )
-    cfg = SimpleNamespace(
-        memory=SimpleNamespace(
-            graph=SimpleNamespace(
-                enabled=True, comprehend=SimpleNamespace(enabled=True))),
-        cognition=SimpleNamespace(enabled=True),
-    )
+    cfg = override_config(cfg, {
+        "memory.graph.enabled": True, "memory.graph.comprehend.enabled": True,
+        "cognition.enabled": True,
+    })
     return wire_graph(
         allowlist=allowlist, cfg=cfg, content_checks=False, engine=object(),
         media_join=SimpleNamespace(), metrics=Metrics(), persons=persons,
@@ -218,15 +217,15 @@ def _graph_composition(persons, access):
         unit_scopes=lambda: (HERE.unit,), access=access)
 
 
-async def test_graph_composition_wires_and_starts_under_the_managed_backend():
+async def test_graph_composition_wires_and_starts_under_the_managed_backend(example_config):
     from nora.access import EMPTY_PERSONS
 
     _, access, _ = await _world()
-    wired = _graph_composition(EMPTY_PERSONS, access)
+    wired = _graph_composition(EMPTY_PERSONS, access, example_config)
     assert wired.cognition_memory is not None
 
 
-async def test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied():
+async def test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied(example_config):
     from nora.domain.models import PersonRef
     from nora.persons import Persons
 
@@ -235,7 +234,7 @@ async def test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied():
             person_id=PERSON, name="Generated Person", honcho_peer_id=PERSON)},
         index={}, _social_off=frozenset({PERSON}),
     )
-    wired = _graph_composition(persons, None)
+    wired = _graph_composition(persons, None, example_config)
     assert wired.cognition_memory is not None
     assert await wired.cognition_memory.records._social_off((PERSON,)) == {PERSON}
     assert FOREIGN not in await wired.cognition_memory.records._social_off((FOREIGN,))
