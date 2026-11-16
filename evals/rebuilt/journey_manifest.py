@@ -12,6 +12,7 @@ from typing import Any
 
 from nora.subject.circle import create_sql_engine
 from nora.subject.effects import wake_census
+from nora.subject.journey import declared_envelope
 from scripts.cognition_loop.cases import BEHAVIOR_KIND, STATE_KINDS, Expectation
 from scripts.cognition_loop.verdicts import Rollup
 
@@ -44,6 +45,22 @@ def _plan_error(plan: dict[str, Any]) -> str | None:
     for step in steps:
         if not isinstance(step, dict):
             return f"a journey step is not an object: {step!r}"
+        if "envelope" in step:
+            # One input alternative only: a step mixing a declared envelope
+            # with send/tagged (or any other key) is refused before run, and
+            # declared errors name fixed causes — never the private values.
+            if set(step) != {"envelope"}:
+                return ("a journey input step names both a declared "
+                        "envelope and another input alternative")
+            if version != 2:
+                return ("a declared envelope step belongs to version-2 "
+                        "journey inputs")
+            try:
+                declared_envelope(step["envelope"])
+            except ValueError as exc:
+                return str(exc)
+            sent += 1
+            continue
         if "send" in step:
             if not isinstance(step["send"], str):
                 return f"a journey send is not text: {step!r}"

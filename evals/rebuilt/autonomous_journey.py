@@ -36,7 +36,11 @@ from nora.subject.effects import (
     sent_message_bodies,
 )
 from nora.subject.eval_evidence import current, read_events, validate_events
-from nora.subject.journey import JourneyDriver
+from nora.subject.journey import (
+    JourneyDriver,
+    declared_envelope,
+    message_from_dict,
+)
 from scripts.cognition_loop import html as report_html
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.accounting import write_report
@@ -54,7 +58,7 @@ from .journey_manifest import (
     _plan_error,
     _wake_census,
 )
-from .journey_turns import _turn_error, observed_turn
+from .journey_turns import _turn_error, declared_source, observed_turn
 from .journey_wakes import _await_wake, _finalize, _wake_error
 
 _MODE = "autonomous-live-journey"
@@ -95,6 +99,43 @@ async def _drain_pending(pending: list[dict[str, Any]], *, before: Any,
         before = await settle(ctx, before)
     pending.clear()
     return before
+
+
+def _input_ctx(step: dict[str, Any], *, sent: int, engine: Any,
+               boundary: Any, cursor: Any) -> dict[str, Any]:
+    """The turn ctx before admission: input text, instant, declaration."""
+    declared = (declared_envelope(step["envelope"])
+                if "envelope" in step else None)
+    return {
+        "index": sent - 1,
+        "input": (str(step["send"]) if declared is None else
+                  message_from_dict(declared.message).body),
+        "event_id": None,
+        "at_ms": (_now_ms() if declared is None
+                  else int(declared.sent_ms)),
+        "cursor": cursor, "boundary": boundary,
+        "engine": engine, "event": None, "work": None,
+        "envelope": declared,
+        "source": (None if declared is None
+                   else declared_source(declared)),
+    }
+
+
+async def _admit_input(driver: JourneyDriver, ctx: dict[str, Any], *,
+                       sent: int, tagged: bool) -> None:
+    """The ctx's declared input through real ingress."""
+    declared = ctx["envelope"]
+    if declared is None:
+        incoming, event, work = await driver.ingress(
+            ctx["input"], event_id=f"generated-journey-{sent}",
+            tagged=tagged)
+    else:
+        incoming, event, work = await driver.ingress_declared(declared)
+    ctx.update({
+        "event_id": incoming.event_id,
+        "at_ms": (int(incoming.sent_ms or _now_ms()) if declared is None
+                  else int(declared.sent_ms)),
+        "event": event, "work": work})
 
 
 async def _drive(subject: Any, *, world: Any, steps: list[dict[str, Any]],
@@ -168,7 +209,7 @@ async def _drive(subject: Any, *, world: Any, steps: list[dict[str, Any]],
                 metrics=subject.deps.metrics)
         sent = 0
         for step in steps:
-            if "send" in step:
+            if "send" in step or "envelope" in step:
                 before = await _drain_pending(pending, before=before,
                                               settle=_settled)
                 before = await _close_open(before)
@@ -178,20 +219,12 @@ async def _drive(subject: Any, *, world: Any, steps: list[dict[str, Any]],
                 # The turn is registered before admission: an ingress
                 # failure still freezes its ERROR row in `_run`, keeping
                 # the declared turn in the denominator.
-                ctx = {
-                    "index": sent - 1, "input": str(step["send"]),
-                    "event_id": None, "at_ms": _now_ms(), "cursor": cursor,
-                    "boundary": boundary, "engine": engine,
-                    "event": None, "work": None,
-                }
+                ctx = _input_ctx(step, sent=sent, engine=engine,
+                                 boundary=boundary, cursor=cursor)
                 open_turn.append(ctx)
-                incoming, event, work = await driver.ingress(
-                    str(step["send"]), event_id=f"generated-journey-{sent}",
+                await _admit_input(
+                    driver, ctx, sent=sent,
                     tagged=bool(step.get("tagged")))
-                ctx.update({
-                    "event_id": incoming.event_id,
-                    "at_ms": int(incoming.sent_ms or _now_ms()),
-                    "event": event, "work": work})
                 pending.append({
                     "boundary": boundary, "engine": engine,
                     "tokens": subject.deps.metrics.get(
@@ -269,7 +302,7 @@ async def _run(subject: Any, case: Case, plan: dict[str, Any],
         roll.error("canonical capture unavailable mid-drive")
         return roll, wakes_report, turns_report, None
     steps = plan.get("steps") or []
-    if not any("send" in step for step in steps):
+    if not any("send" in step or "envelope" in step for step in steps):
         roll.error("the journey plan sends nothing through real ingress")
         return roll, wakes_report, turns_report, None
     wake_seconds = (subject.cfg.cognition.cue_quiet_seconds
@@ -350,8 +383,11 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
                 else [w.get("recorded_wake_id") for w in wakes_report])
     bound = _bind_declared_wakes(plan.get("expected_wakes"), produced, roll)
     version = plan.get("version", 1)
-    sends = [str(step["send"]) for step in plan.get("steps") or []
-             if isinstance(step, dict) and "send" in step]
+    sends = [
+        str(step["send"]) if "send" in step
+        else message_from_dict(declared_envelope(step["envelope"]).message).body
+        for step in plan.get("steps") or []
+        if isinstance(step, dict) and ("send" in step or "envelope" in step)]
     case_report = _report(case, subject.unit, roll, wakes_report,
                           turns_report, version)
     expected = {
