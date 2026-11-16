@@ -524,6 +524,32 @@ async def test_an_already_bound_account_cannot_register_again():
 # -- failure honesty ------------------------------------------------------
 
 
+class _LostCorrelationResponse(FakeBindingStore):
+    async def correlate_kratos(self, *, person_id, kratos_identity_id):
+        await super().correlate_kratos(
+            person_id=person_id, kratos_identity_id=kratos_identity_id
+        )
+        raise ConnectionError("generated response lost after correlation")
+
+
+async def test_a_lost_registration_response_does_not_claim_nothing_applied():
+    bindings, backend, _, registry, services = _services(_LostCorrelationResponse())
+    await _operator(bindings, backend, registry)
+    management = RoomManagement(services)
+    result = await _tool(
+        _tool_deps(management, _message(
+            "please register", mentions=frozenset({TARGET_ID})
+        )), action="register",
+    )
+    bound = await bindings.resolve("signal", TARGET_ID)
+    assert bound is not None and await _member_phone(bindings, bound.person_id)
+    person = await bindings.person(bound.person_id)
+    assert person is not None and person.kratos_identity_id
+    assert result["status"] == "unavailable"
+    assert "couldn't confirm what applied" in result["note"]
+    assert "nothing applied" not in result["note"]
+
+
 async def test_file_mode_is_an_authoritative_denial_not_a_pretend_apply():
     persons = load_persons(Path("identity.example.toml"))
     policy = load_policy(Path("policy.example.toml"))

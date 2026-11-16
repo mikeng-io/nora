@@ -115,7 +115,7 @@ _UNAVAILABLE_REPLIES = {
     "bindings-unavailable": "I couldn't reach the identity store — try again",
     "authority-unavailable": "I couldn't check your authority just now — try again",
     "authentication-unavailable": "I couldn't verify your account just now — try again",
-    "store-failure": "the identity store failed — nothing applied, try again",
+    "store-failure": "I couldn't confirm what applied — ask the operator to check before retrying",
 }
 
 
@@ -280,8 +280,8 @@ class RoomManagement:
             )
         if result.status is OutcomeStatus.INCOMPLETE:
             return (
-                "that only partly applied — the journal will finish it, but "
-                "tell the operator"
+                "that only partly applied — ask the operator to reconcile "
+                "the recorded operation before retrying"
             )
         return _UNAVAILABLE_REPLIES.get(
             result.detail, "I couldn't reach the identity store — try again"
