@@ -266,12 +266,16 @@ async def test_managed_source_names_are_screened_live_before_external_reads(
         }, {})]
         return _result_of(events[-1])
 
-    assert (await call("Generated Person news"))["reason"] == "private_person"
+    private = await call("Generated Person news")
+    assert private["status"] == "refused"
+    assert private["reason"] == "private_person"
     assert calls == []
     assert (await call("volleyball news"))["status"] == "ok"
     assert calls == ["volleyball news"]
     bindings.people[PERSON] = replace(bindings.people[PERSON], display_name="Generated Renamed")
-    assert (await call("Generated Renamed news"))["reason"] == "private_person"
+    renamed = await call("Generated Renamed news")
+    assert renamed["status"] == "refused"
+    assert renamed["reason"] == "private_person"
     bindings.down = True
     assert (await call("volleyball news"))["status"] == "unavailable"
     bindings.down = False
