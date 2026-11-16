@@ -189,18 +189,11 @@ async def test_a_social_opt_out_excludes_social_items_but_keeps_enabled_and_non_
         ("social", "generated-enabled"), ("message", "generated-opted-out-chat")}
 
 
-async def test_graph_composition_wires_and_starts_under_the_managed_backend():
-    """The real `wire.graph` a managed deployment walks: graph+comprehend
-    enabled, `EMPTY_PERSONS` on the sync surface, the selected `access`
-    carrying membership/preferences. It used to die asking
-    `EMPTY_PERSONS.social_off_ids()` globally at boot; now the managed
-    answers are read where they are needed."""
+def _graph_composition(persons, access):
     from types import SimpleNamespace
 
-    from nora.access import EMPTY_PERSONS
     from nora.memory.wire import graph as wire_graph
 
-    _, access, _ = await _world()
     allowlist = SimpleNamespace(
         rooms=lambda: [
             SimpleNamespace(
@@ -215,15 +208,37 @@ async def test_graph_composition_wires_and_starts_under_the_managed_backend():
                 enabled=True, comprehend=SimpleNamespace(enabled=True))),
         cognition=SimpleNamespace(enabled=True),
     )
-    wired = wire_graph(
+    return wire_graph(
         allowlist=allowlist, cfg=cfg, content_checks=False, engine=object(),
-        media_join=SimpleNamespace(), metrics=Metrics(), persons=EMPTY_PERSONS,
+        media_join=SimpleNamespace(), metrics=Metrics(), persons=persons,
         presence_circles=(), profile_index=False,
         registry=SimpleNamespace(self_aliases=lambda: frozenset()),
         rosters={}, route_model=lambda occasion, model: "generated-model",
         tier=SimpleNamespace(model="generated-model"),
         unit_scopes=lambda: (HERE.unit,), access=access)
+
+
+async def test_graph_composition_wires_and_starts_under_the_managed_backend():
+    from nora.access import EMPTY_PERSONS
+
+    _, access, _ = await _world()
+    wired = _graph_composition(EMPTY_PERSONS, access)
     assert wired.cognition_memory is not None
+
+
+async def test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied():
+    from nora.domain.models import PersonRef
+    from nora.persons import Persons
+
+    persons = Persons(
+        by_person={PERSON: PersonRef(
+            person_id=PERSON, name="Generated Person", honcho_peer_id=PERSON)},
+        index={}, _social_off=frozenset({PERSON}),
+    )
+    wired = _graph_composition(persons, None)
+    assert wired.cognition_memory is not None
+    assert await wired.cognition_memory.records._social_off((PERSON,)) == {PERSON}
+    assert FOREIGN not in await wired.cognition_memory.records._social_off((FOREIGN,))
 
 
 async def test_an_opted_out_retired_identity_still_excludes_the_survivors_social_items():

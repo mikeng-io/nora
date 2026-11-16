@@ -237,6 +237,7 @@ def graph(
                 }
             ),
             access=access,
+            social_off_ids=persons.social_off_ids() if access is None else frozenset(),
             can_release_place=place_release(
                 rooms_of=lambda u: [
                     (c.platform, c.primary_id, c.location)

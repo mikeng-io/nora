@@ -2,8 +2,8 @@
  {
   "name": "graph boot: no synchronous global preference read under managed",
   "file": "nora/memory/wire.py",
-  "old": "            access=access,\n            can_release_place=place_release(",
-  "new": "            social_off_ids=persons.social_off_ids(),\n            can_release_place=place_release(",
+  "old": "            social_off_ids=persons.social_off_ids() if access is None else frozenset(),",
+  "new": "            social_off_ids=persons.social_off_ids(),",
   "target": "tests/unit/test_managed_memory_scope.py::test_graph_composition_wires_and_starts_under_the_managed_backend"
  },
  {
@@ -33,5 +33,12 @@
   "old": "            listed = scope.listed_here if scope is not None else None",
   "new": "            listed = target.room.persons if target.room is not None else None",
   "target": "tests/unit/test_memory_search_tool.py::test_memory_search_admits_a_managed_member_the_stale_roster_omits"
+ },
+ {
+  "name": "file graph keeps its opt-outs without a selected access facade",
+  "file": "nora/memory/wire.py",
+  "old": "            social_off_ids=persons.social_off_ids() if access is None else frozenset(),",
+  "new": "            social_off_ids=frozenset(),",
+  "target": "tests/unit/test_managed_memory_scope.py::test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied"
  }
 ]
