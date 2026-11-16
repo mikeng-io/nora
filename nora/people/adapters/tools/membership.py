@@ -15,7 +15,7 @@ def _make_member_update(deps):
         target: str | None = None,
         target_kind: Literal["mention", "account", "name"] | None = None,
     ) -> dict:
-        """Manage members when asked.
+        """Manage members when someone asks.
 
         You cannot supply the actor, the room, or any credential: who asked and
         where are taken from the verified message itself. An unregistered
