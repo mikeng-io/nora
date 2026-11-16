@@ -91,9 +91,18 @@ Nora's service holds the write side.
 Registration, granting access and delegating administrative power are separate
 operations. Permission to add a member is not permission to appoint an operator,
 edit the operator's own authority or change the global owner of an account.
-Global profile changes require holder authority; local nicknames belong to the
-local scope. Initial installation authority is established out of band, never by
-the first person to issue an in-room command.
+Global profile changes require holder authority. A local nickname is descriptive
+metadata Nora owns for a canonical person inside a room, unit or workspace;
+it never proves account ownership or changes the global Kratos profile.
+Scoped operators update it through the same authenticated management boundary.
+A scoped name view uses the nearest nickname on its room-to-workspace ancestry,
+then the global name. Unscoped views use the global name; siblings never borrow
+each other's local names, and an unreadable scoped source stays unavailable.
+Local names follow the same disclosure boundary as the context that uses them.
+Authority handoff includes this state or refuses an unrepresentable transfer.
+
+Initial installation authority is established out of band, never by the first
+person to issue an in-room command.
 
 Platform roles and rosters are observations. An installation may explicitly
 delegate bounded authority to a platform role; no such delegation is inferred
