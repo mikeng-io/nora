@@ -640,6 +640,22 @@ async def test_a_retry_while_the_outage_continues_stays_incomplete():
     assert record.steps["kratos"] == "pending"
 
 
+async def test_an_interrupted_registration_does_not_complete_after_binding_revocation():
+    store, registry, svc = _service()
+    registry.down = True
+    interrupted = await _register(svc, "op-1")
+    assert interrupted.status is OutcomeStatus.UNAVAILABLE
+    assert await store.record_for(account=ACCT) is not None
+    await store.revoke_binding(account=ACCT)
+    registry.down = False
+    retried = await _register(svc, "op-1")
+    assert retried.status is OutcomeStatus.DENIED
+    assert await store.record_for(account=ACCT) is None
+    assert (await store.person(PERSON)).kratos_identity_id is None
+    assert PERSON not in registry.identities
+    assert (await store.operation("op-1")).state is OperationJournalState.INCOMPLETE
+
+
 async def test_the_journaled_snapshot_lists_identifiers_in_canonical_order():
     """The journaled effect survives process reconstruction — frozenset
     order is process luck, so the snapshot records identifiers sorted."""

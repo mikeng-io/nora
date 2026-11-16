@@ -203,23 +203,20 @@ class RegistrationService:
         return complete("replayed")
 
     async def _resume_registration(self, op: Operation) -> Outcome | None:
-        """A non-complete journal row for THIS operation resumes its exact
-        recorded effect: the journal is the warrant — authority was proved at
-        first commitment and an authenticated retry re-proves it at the gate —
-        so only unfinished steps run, against the persisted record.
-        """
+        """Resume only the still-owned effect recorded by this unfinished registration."""
         recorded = await self._bindings.operation(op.operation_id)
         if recorded is None or recorded.state is OperationJournalState.COMPLETE:
             return None
         if recorded.kind != op.kind or recorded.snapshot != _op_snapshot(op):
             return denied("operation-conflict")
         payload = cast(AccountRegistration, op.payload)
-        bound: ManagedAccount | None = None
-        for ident in payload.identifiers:
-            found = await self._bindings.record_for(account=ident)
-            if found is not None and found.person_id == payload.person_id:
-                bound = found
-                break
+        bound = await self._already_owned(payload)
+        if not _pending(recorded, "binding"):
+            if bound is None or bound.identifiers != payload.identifiers:
+                return denied("registration-binding-changed")
+            lifecycle = await self._bindings.person_lifecycle(payload.person_id)
+            if lifecycle is not PersonLifecycle.ACTIVE:
+                return denied("person-suspended")
         person = ManagedPerson(person_id=payload.person_id,
                                lifecycle=PersonLifecycle.ACTIVE)
         account = bound or ManagedAccount(
