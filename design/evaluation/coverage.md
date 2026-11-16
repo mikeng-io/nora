@@ -16,7 +16,10 @@ paths, retaining candidate effects across that sequence.
 Learning requires evidence of persistence, later retrieval, use and correction.
 A successful write alone establishes none of the later steps. A quiet outcome
 can establish restraint but does not by itself establish useful memory.
-[Cognition journeys](cognition-loop.md) defines the cross-wake relationship.
+Later recall, action and restraint are measured on the produced turn's
+observable outcome; which store carried the retained state is provenance,
+never the claim. [Cognition journeys](cognition-loop.md) defines the
+cross-wake relationship and the versioned case formats that measure it.
 
 ## Execution modes and their claims
 

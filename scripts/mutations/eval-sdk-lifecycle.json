@@ -1,0 +1,128 @@
+[
+  {
+    "name": "uncaptured SDK cannot reach its subject source",
+    "file": "evals/backbone.py",
+    "old": "    if current() is None:\n        raise EvidenceError(\"canonical_capture_unavailable\")",
+    "new": "    if False:\n        raise EvidenceError(\"canonical_capture_unavailable\")",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_uncaptured_native_sdk_refuses_before_any_subject_source"
+  },
+  {
+    "name": "no-judge drives reject incomplete effects",
+    "file": "nora/subject/effect_capture.py",
+    "old": "                if not observed_effects(effects):",
+    "new": "                if False:",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_sdk_cases_use_real_subjects_in_distinct_owned_services[effects]"
+  },
+  {
+    "name": "repeat drives use independent SQL boundaries",
+    "file": "nora/subject/effect_capture.py",
+    "old": "        boundary = await effect_boundary(self.engine)",
+    "new": "        boundary = getattr(self, \"prior_boundary\", None) or await effect_boundary(self.engine)\n        self.prior_boundary = boundary",
+    "target": "tests/integration/subject/test_sdk_lifecycle.py::test_native_sdk_keeps_each_drive_and_gives_the_judge_the_first_effects[False]"
+  },
+  {
+    "name": "SDK tool windows exclude earlier cases",
+    "file": "nora/subject/effect_capture.py",
+    "old": "events=self.evidence.since(cursor))",
+    "new": "events=self.evidence.since((0, 0)))",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_sdk_cases_use_real_subjects_in_distinct_owned_services[False]"
+  },
+  {
+    "name": "reader failure prevents semantic dispatch",
+    "file": "nora/subject/effect_capture.py",
+    "old": "                raise EvidenceError(\"canonical_lifecycle_unavailable\") from exc",
+    "new": "                effects = {\"status\": \"observed\", \"items\": [], \"tools\": []}",
+    "target": "tests/integration/subject/test_sdk_lifecycle.py::test_native_sdk_keeps_each_drive_and_gives_the_judge_the_first_effects[True]"
+  },
+  {
+    "name": "judge input retains exact lifecycle block",
+    "file": "evals/rebuilt/grading.py",
+    "old": "        if self.lifecycle is None:\n            return prompt",
+    "new": "        if True:\n            return prompt",
+    "target": "tests/integration/subject/test_sdk_lifecycle.py::test_native_sdk_keeps_each_drive_and_gives_the_judge_the_first_effects[False]"
+  },
+  {
+    "name": "native SDK report retains canonical effects",
+    "file": "evals/backbone.py",
+    "old": "EnvironmentState(name=NORA_EFFECTS, state=capture.receipt()),",
+    "new": "EnvironmentState(name=NORA_EFFECTS, state=None),",
+    "target": "tests/integration/subject/test_sdk_lifecycle.py::test_native_sdk_keeps_each_drive_and_gives_the_judge_the_first_effects[False]"
+  },
+  {
+    "name": "failed cases retain private task result",
+    "file": "evals/backbone.py",
+    "old": "            if evidence.failure is None:\n                evidence.result(_measured_result(\n                    task_error(exc, spec.source_url), spec.measurement))",
+    "new": "            if False:\n                evidence.result(_measured_result(\n                    task_error(exc, spec.source_url), spec.measurement))",
+    "target": "tests/integration/subject/test_sdk_lifecycle.py::test_native_sdk_keeps_each_drive_and_gives_the_judge_the_first_effects[True]"
+  },
+  {
+    "name": "cursor reads only the new durable byte window",
+    "file": "nora/subject/eval_evidence.py",
+    "old": "            file.seek(offset)",
+    "new": "            file.seek(0)",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_canonical_cursor_reads_only_new_private_bytes"
+  },
+  {
+    "name": "cursor detects a missing durable tail",
+    "file": "nora/subject/eval_evidence.py",
+    "old": "            if (events[-1][\"order\"] if events else cursor[0]) != self._order:",
+    "new": "            if False:",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_canonical_cursor_reads_only_new_private_bytes"
+  },
+  {
+    "name": "raw gate records the actual formatted request",
+    "file": "nora/app/raw_clients.py",
+    "old": "                    record_eval_model_request(request)",
+    "new": "                    pass",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_sdk_cases_use_real_subjects_in_distinct_owned_services[False]"
+  },
+  {
+    "name": "raw gate captures its actual transport response",
+    "file": "nora/app/raw_clients.py",
+    "old": "                    async with client_capture(self._client) as client:",
+    "new": "                    async with nullcontext(self._client) as client:",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_sdk_cases_use_real_subjects_in_distinct_owned_services[False]"
+  },
+  {
+    "name": "coverage records the actual formatted request",
+    "file": "evals/rebuilt/grading.py",
+    "old": "                record_eval_model_request(request)",
+    "new": "                pass",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording[coverage]"
+  },
+  {
+    "name": "coverage captures the actual response",
+    "file": "evals/rebuilt/grading.py",
+    "old": "                async with client_capture(client, role=\"judge\") as observed:",
+    "new": "                from contextlib import nullcontext\n                async with nullcontext(client) as observed:",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording[coverage]"
+  },
+  {
+    "name": "coverage binds the declared deployment config",
+    "file": "evals/__main__.py",
+    "old": "config_path=Path(args.config or args.deployment_config), contract=contract,",
+    "new": "config_path=args.config, contract=contract,",
+    "target": "tests/unit/test_profile_coverage.py::test_real_cli_roundtrip_calibrates_before_measurement[2-0]"
+  },
+  {
+    "name": "cognition judges refuse incomplete lifecycle histories",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "        return [\"trajectory_unavailable\"]\n    if not observed_effects(trajectory.get(\"effects\")):\n        causes.append(\"effects_unobserved\")\n",
+    "new": "        return [\"trajectory_unavailable\"]\n    if False and not observed_effects(trajectory.get(\"effects\")):\n        causes.append(\"effects_unobserved\")\n",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_missing_lifecycle_evidence_stops_before_either_judge_call"
+  },
+  {
+    "name": "new trace roots retain only local evaluation custody",
+    "file": "nora/obs/tracing.py",
+    "old": "        if callable(evidence):\n            selected = otel_context.set_value(EVAL_EVIDENCE_KEY, evidence, selected)\n            selected = baggage.set_baggage(\"nora.eval.capture\", \"true\", context=selected)\n",
+    "new": "",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording[detached-coverage]"
+  },
+  {
+    "name": "SDK-owned HTTP pools follow upstream per-request lifetime",
+    "file": "nora/agent/structured.py",
+    "old": "    if http_client is not None:\n        client_args[\"http_client\"] = http_client\n",
+    "new": "    # A bounded run gates the SDK-owned client too: `bounded_http_client`\n    # wraps whatever transport is present (a real one when unset) so the\n    # AsyncOpenAI `_get_client` builds inside the provider admits through\n    # the same budget. None with no budget installed \u2014 the SDK default.\n    from nora.agent.run_budget_transport import bounded_http_client\n    bounded = bounded_http_client(http_client)\n    if bounded is not None:\n        client_args[\"http_client\"] = bounded\n        from ..domain.run_budget import active_run_budget\n        if active_run_budget.get() is not None:\n            client_args[\"max_retries\"] = 0\n",
+    "target": "tests/integration/subject/test_reused_sdk_model.py::test_reused_model_opens_a_fresh_bounded_sdk_client_for_each_invocation"
+  }
+]

@@ -6,7 +6,7 @@ items, stimuli), `nora.session.instructions` (doctrine and skill
 versions), `nora.session.terminal` (outcome, error, bound) — while a
 `nora.model.request` carries `nora.model.request.body`. A trajectory is
 bound to its session: the window opens at the `started` whose body
-names this session and wake, and closes at its `terminal`. A wake with
+names this session and wake, and closes at its committed `settled`. A wake with
 no session produces an empty trajectory — never the previous wake's.
 """
 
@@ -16,6 +16,7 @@ import json
 import re
 from typing import Any
 
+from nora.subject.effects import tool_outcome
 from scripts.memory_graph_spike import evidence_exchanges
 
 _MEMORY_READS = ("memory_search", "memory_read")
@@ -106,33 +107,103 @@ def loop_counts(
     }
 
 
-def result_values(result: Any) -> list[Any]:
-    """A Strands tool result's content values, JSON-decoded — the same
-    decode `evidence_exchanges` applies, so a caller never reads the
-    raw envelope."""
-    if not isinstance(result, dict):
-        return []
-    values = []
-    for part in result.get("content") or []:
-        if not isinstance(part, dict):
+def _delivery_invocations(events: list[dict[str, Any]]) -> set[str]:
+    """Delivery invocations, excluding downstream tool-less folds in the same trace."""
+    owners: set[str] = set()
+    for event in events:
+        if event.get("name") != "nora.model.request":
             continue
-        if "json" in part:
-            values.append(part["json"])
-        elif "text" in part:
-            try:
-                values.append(json.loads(part["text"]))
-            except ValueError:
-                values.append(part["text"])
-    return values
+        names = {
+            name for tool in _body(event).get("tools") or []
+            if isinstance(tool, dict)
+            for name in (
+                tool.get("name"),
+                (tool.get("function") or {}).get("name")
+                if isinstance(tool.get("function"), dict) else None,
+                (tool.get("toolSpec") or {}).get("name")
+                if isinstance(tool.get("toolSpec"), dict) else None)
+            if isinstance(name, str)}
+        if "send_reply" in names and event.get("invocation_id"):
+            owners.add(event["invocation_id"])
+    return owners
 
 
-def tool_outcome(result: Any) -> dict[str, Any]:
-    """The tool's own three-state outcome inside the Strands envelope: the
-    envelope says `success` for a refused or unavailable write too."""
-    for value in result_values(result):
-        if isinstance(value, dict) and "status" in value:
-            return value
-    return {}
+def terminal_response(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Select a settled terminal attempt; never infer output from a request."""
+    starts = [(i, e) for i, e in enumerate(events)
+              if e.get("kind") == "invocation_started"]
+    ids = {e.get("invocation_id") for _, e in starts}
+    roots = [(i, e) for i, e in starts if e.get("parent_invocation_id") not in ids]
+    if len(roots) != 1:
+        owners = _delivery_invocations(events)
+        roots = [(i, e) for i, e in roots
+                 if e.get("invocation_id") in owners]
+    selected: dict[str, Any] = (
+        {"invocation_id": roots[0][1].get("invocation_id"), "index": roots[0][0]}
+        if len(roots) == 1 else {})
+    identity = selected.get("invocation_id")
+    result = {"status": "unavailable", "text": None,
+              "invocation_id": identity, "attempt_id": None}
+    if not identity:
+        return {**result, "cause": "invocation_missing"}
+    invocation = [e for e in events[selected["index"]:]
+                  if e.get("invocation_id") == identity]
+    if not invocation or invocation[-1].get("kind") != "invocation_finished":
+        return {**result, "cause": "invocation_unsettled"}
+    calls = [e for e in invocation if e.get("kind") == "call_started"]
+    # A sent reply ends the turn: the loop's next cycle is cancelled before
+    # it reaches a transport — the settled attempt before it is terminal.
+    last = None
+    for call in reversed(calls):
+        if any(e.get("kind") == "transport_started" for e in invocation
+               if e.get("attempt_id") == call.get("attempt_id")):
+            last = call
+            break
+        if call.get("cancelled") != "Reply already sent — the turn is finished.":
+            break
+    last = last or (calls[-1] if calls else None)
+    attempt = last.get("attempt_id") if last else None
+    result["attempt_id"] = attempt
+    if not attempt:
+        return {**result, "cause": "attempt_missing"}
+    records = [e for e in invocation if e.get("attempt_id") == attempt]
+    finished = [(i, e) for i, e in enumerate(records) if e.get("kind") == "call_finished"]
+    if (not finished or finished[-1][1].get("retry") or finished[-1][1].get("error_type")
+            or (last or {}).get("cancelled")):
+        return {**result, "cause": "attempt_unsettled"}
+    records = records[:finished[-1][0] + 1]
+    transports = [i for i, e in enumerate(records) if e.get("kind") == "transport_started"]
+    if not transports:
+        return {**result, "cause": "response_missing"}
+    transport = records[transports[-1]:]
+    ends = [e for e in transport if e.get("kind") == "transport_finished"]
+    if not ends or ends[-1].get("error_type"):
+        return {**result, "cause": "transport_unsettled"}
+    text: list[str] = []
+    stop = None
+    observed = False
+    for event in transport:
+        if event.get("kind") != "transport_response":
+            continue
+        for choice in (event.get("response") or {}).get("choices") or []:
+            if choice.get("index", 0) != 0:
+                continue
+            message = choice.get("message") if "message" in choice else choice.get("delta")
+            if not isinstance(message, dict):
+                return {**result, "cause": "response_invalid"}
+            content = message.get("content")
+            if content is not None and not isinstance(content, str):
+                return {**result, "cause": "response_invalid"}
+            if message.get("role") not in (None, "assistant"):
+                return {**result, "cause": "response_invalid"}
+            observed = True
+            if content is not None:
+                text.append(content)
+            stop = choice.get("finish_reason") or stop
+    if not observed or stop not in ("stop", "tool_calls", "function_call"):
+        return {**result, "cause": "response_incomplete"}
+    return {**result, "status": "observed", "text": "".join(text),
+            "finish_reason": stop, "cause": None}
 
 
 def _body(event: dict[str, Any]) -> dict[str, Any]:
@@ -151,8 +222,7 @@ def session_events(
     events: list[dict[str, Any]], *, session_id: str | None,
     wake_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """The events from the `started` naming `session_id`/`wake_id` to its
-    `terminal`, inclusive. No matching session: empty."""
+    """The owned replay session through settlement, or its incomplete terminal window."""
     start = None
     for i, event in enumerate(events):
         if event.get("name") != "nora.session.started":
@@ -164,26 +234,73 @@ def session_events(
             start = i
     if start is None:
         return []
-    out: list[dict[str, Any]] = []
-    for event in events[start:]:
-        out.append(event)
-        if (event.get("name") == "nora.session.terminal"
-                and _body(event).get("session_id") == session_id):
-            break
-    return out
+    terminal = None
+    for i, event in enumerate(events[start:], start):
+        if _body(event).get("session_id") != session_id:
+            continue
+        if event.get("name") == "nora.session.terminal":
+            terminal = i
+        if event.get("name") == "nora.session.settled":
+            return events[start:i + 1]
+    return events[start:terminal + 1] if terminal is not None else events[start:]
+
+
+def turn_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A produced turn's whole evidence window since its declared send:
+    admission, session, model requests, tool calls and transports as the
+    App emitted them. Nothing is filtered — the window is provenance, and
+    `bound_turn_events` names the subset this turn's own occasion caused."""
+    return list(events)
+
+
+def bound_turn_events(
+    events: list[dict[str, Any]], *, event_id: str | None,
+    session_id: Any,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """The subset of a turn's window its own declared input caused, plus
+    the trace ids it was bound by.
+
+    The occasion's own causal marker is the span attribute
+    `nora.bridge.event_id`: the queue journal spans (`queue.claim`,
+    `queue.attempt`, `queue.ack`) carry it, and so does the separate
+    generation root the durable turn's model calls, tool acts and sends
+    record under. A span naming the canonical event id belongs to this
+    occasion wherever it sits — a `queue.attempt` root is never the
+    model call's trace. The session its own stimulus settled to joins by
+    the session's own identity. Everything else in the window — a
+    reminder's fire, a background pass, a foreign occasion — stays
+    provenance, never this turn's acts.
+    """
+    traces = sorted({
+        event["trace_id"] for event in events
+        if event_id is not None
+        and (event.get("attributes") or {}).get("nora.bridge.event_id")
+        == event_id
+        and isinstance(event.get("trace_id"), str)
+    })
+    bound = [event for event in events
+             if event.get("trace_id") in set(traces)]
+    seen = {id(event) for event in bound}
+    if session_id is not None:
+        bound.extend(
+            event for event in session_events(events, session_id=session_id)
+            if id(event) not in seen)
+    return bound, traces
 
 
 def wake_trajectory(
-    events: list[dict[str, Any]], *, wake_id: int,
+    events: list[dict[str, Any]], *, wake_id: int | None,
     session_id: str | None, tokens: int | None,
 ) -> dict[str, Any]:
     """The session's events for one wake, grouped for a judge to read."""
     started: dict[str, Any] = {}
     instructions: dict[str, Any] = {}
     terminal: dict[str, Any] = {}
+    settlement: dict[str, Any] = {"status": "unavailable", "cause": "settlement_not_captured"}
+    terminal_index = len(events)
     model: list[dict[str, Any]] = []
     tools: list[dict[str, Any]] = []
-    for entry in events:
+    for index, entry in enumerate(events):
         name = entry.get("name")
         if name == "nora.session.started":
             started = _body(entry)
@@ -191,6 +308,9 @@ def wake_trajectory(
             instructions = _body(entry)
         elif name == "nora.session.terminal":
             terminal = _body(entry)
+            terminal_index = index
+        elif name == "nora.session.settled":
+            settlement = {"status": "observed", **_body(entry)}
         elif name == "nora.model.request":
             model.append(_body(entry))
         elif entry.get("kind") == "tool_finished":
@@ -221,6 +341,8 @@ def wake_trajectory(
         },
         "prefetch": prefetch,
         "model_calls": model,
+        "final_response": terminal_response(events[:terminal_index + 1]),
+        "settlement": settlement,
         "exchanges": evidence_exchanges(events),
         "tool_calls": tools,
         "stop_reason": terminal.get("outcome") or terminal.get("stop_reason"),

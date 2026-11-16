@@ -11,6 +11,8 @@ assembly or control loop.
 The baseline is the deployment's own subject. A model, prompt or feature change
 is an explicit candidate variable, not an implicit sandbox default. Sharing a
 runner does not establish equivalence when its dependencies or inputs differ.
+The pinned runtime revision determines which canonical state and active
+dependencies belong to that subject.
 
 For the same occasion, state and stimulus, equivalence is checked at the actual
 model boundary: instructions, rendered blocks, tool schemas and parameters,
@@ -27,6 +29,15 @@ result contracts while their effects land in isolated services. Disabling a
 feature, deleting a tool or substituting an unavailable reader is not isolation
 of the same capability.
 
+The one declared exception is the model gateway. When a case declares it,
+dispatches naming the declared subject or judge identities reach that single
+configured upstream unchanged — model alias, tools and context intact — each
+request admitted on destination, method, configured route and declared model,
+counted once through the installed run budget, and the upstream's addresses
+reachable only while an admitted dispatch is in flight. Every other external
+effect remains refused; a missing declaration or budget refuses rather than
+defaulting to a live endpoint.
+
 Recorded external responses cross the real dependency boundary, not a prompt
 block pretending to be a tool result. Their identities, time and availability
 remain part of the scenario. An unknown historical roster cannot be replaced
@@ -39,13 +50,15 @@ does not turn it into production equivalence.
 
 Production storage and shared source/template databases remain unchanged.
 Disposable copies may be migrated privately; teardown and cancellation run on
-all exits. Isolated external memory preserves the state required by the claim;
-an empty workspace is not a reconstruction of existing memory.
+all exits. Restoration preserves the pinned target's required state. For a
+[Cognitive Graph subject](../cognition/storage.md), its tables are the truth;
+third-party memory is neither fed nor read. A target that uses external memory
+requires its actual state; an empty workspace is not a reconstruction.
 
 ## Input and causal scope
 
-An anchored case names a real room and instant. Restored Record, Notebook,
-Rollups, media and derived indexes preserve their provenance and read scope.
+An anchored case names a real room and instant. Restored canonical rows, source
+content and derived indexes preserve their provenance and read scope.
 Restoration uses production's producers and readers, not authored substitutes
 for missing context. Different storage restoration strategies must preserve the
 same required state; they cannot justify a reduced subject per corpus.

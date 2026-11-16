@@ -202,6 +202,10 @@ class RunBudget:
         """Terminal check: anything invalid makes the run ERROR."""
         if self._spent_reason is not None:
             raise RunBudgetError(self._spent_reason)
+        if self._reserved_out:
+            raise self._fail(
+                "run budget: an attempt's output reservation was never "
+                "released — its response never settled")
 
     def as_metadata(self) -> dict[str, Any]:
         return {

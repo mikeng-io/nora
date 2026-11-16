@@ -12,34 +12,23 @@ rather than added because a caller needed it.
 
 from __future__ import annotations
 
-import contextlib
-import dataclasses
 import shutil
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from types import UnionType
+from typing import Any, Union, get_args, get_origin
 
-import tomlkit
 from pydantic import BaseModel, TypeAdapter
 
 from nora.app.composition import Dependencies, build_dependencies, wall_clock
-from nora.app.memory_routing import build_workspace_router
 from nora.config import Config
 from nora.config import load as _load_config
-from nora.persons import load_persons
-from nora.policy import Conversation, load_policy
+from nora.policy import Conversation, Policy
 
-from .circle import CircleMemory, CircleOverlay, external_boundaries
-from .memory_workspace import (
-    NotADrawWorkspaceError,
-    refuse_unless_draw_workspace,
-    shared_eval_workspace,
-)
-from .recording_subagent import recording_subagent_worker
-from .sandbox_platforms import landed_platform_transports
+from .circle import CircleMemory, CircleOverlay
+from .environment import IsolatedServices
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -62,37 +51,6 @@ DEFAULT_ROOM = ("signal", "g1")
 #: The rule "nothing reaches the model that the deployment would not send"
 #: constrains the PROMPT; this constrains the READER.
 _TEMPLATE = _REPO_ROOT / "config.evaluation.toml"
-
-#: `miles_novak`, matching the old driver's `_EVAL_PERSON_ID`, and it matters.
-#:
-#: A conclusion is keyed by the Honcho PEER id, which IS the person id, and the
-#: two participation corpora spell `miles_novak`. Keyed under any other id the
-#: conclusion is written and cannot be read — `representation` looks up
-#: `target or peer_id` and an unknown peer answers reachable-and-knowing-
-#: nothing — so the `-known` half of a twin pair would come back identical to
-#: its `-unknown` half and the pair would report that the knowledge cut works
-#: having cut nothing.
-#:
-#: A SYNTHETIC account, and deliberately not the real one.
-#:
-#: Any E.164-shaped string short-circuits the startup resolution; the value is
-#: never dialled and never reaches a network. It is not Nora's real Signal
-#: number, which `scrub/README.md` names as a scrub-map target and which
-#: `Dockerfile`'s `COPY nora/ ./nora/` and `pyproject.toml`'s
-#: `include = ["nora*"]` would put in the image and the wheel.
-_PLACEHOLDER_ACCOUNT = "+85200000000"
-#: An env var this process owns, so an enabled Discord adapter authenticates
-#: against nothing instead of the deployment's real bot. The value is the
-#: variable's NAME, not a credential — hence the S105 suppression.
-_PLACEHOLDER_TOKEN_ENV = "NORA_EVAL_SUBJECT_DISCORD_TOKEN"  # noqa: S105
-
-#: Credentials an ENABLED feature demands before composition will start, or
-#: whose absence downgrades a tool the deployment's Nora holds. Filled with
-#: `setdefault`, so the deploy host's real values always win.
-_CREDENTIALS_ENABLED_FEATURES_DEMAND = (
-    "GOOGLE_MAPS_API_KEY",      # [route]
-    "OMNIROUTE_API_KEY",        # the model key Nora herself runs on
-)
 
 #: One person, one room, `default = "deny"`. A caller that does not care about
 #: identity gets something VALID and CLOSED rather than an accident — the same
@@ -145,11 +103,28 @@ def resolve_credentials(path: Path) -> dict[str, str]:
     return resolve(path)
 
 
-def model_endpoint(path: Path, purpose: str, model: str = "") -> tuple[str, str, str]:
+def model_endpoint(path: Path | Config, purpose: str, model: str = "") -> tuple[str, str, str]:
     """Resolve a measurement route through the application's configuration,
     reachable from where the measurer runs (the subject's own rewrite)."""
-    url, key, name = _load_config(path, require_secrets=False).endpoint(purpose, model)
-    return (url if _resolves(_DOCKER_HOST) else _from_host(url)), key, name
+    cfg = path if isinstance(path, Config) else _load_config(path, require_secrets=False)
+    url, key, name = cfg.endpoint(purpose, model)
+    if any(f"//{host}:" in url or f"//{host}/" in url
+           for host in (_DOCKER_HOST, _HONCHO_ALIAS)) and not _resolves(_DOCKER_HOST):
+        url = _from_host(url)
+    return url, key, name
+
+
+class _Unresolved:
+    """A config path the schema cannot give a concrete default for."""
+
+    def __repr__(self) -> str:
+        return "UNRESOLVED"
+
+
+#: `config_default`'s answer for a path that is not a concrete schema leaf —
+#: a required field, a runtime-keyed container, a typo. `None` is a real
+#: nullable default; `UNRESOLVED` means there is no default to reconstruct.
+UNRESOLVED = _Unresolved()
 
 
 def config_default(key: str) -> object:
@@ -160,9 +135,10 @@ def config_default(key: str) -> object:
     already the eval-facing seam. It answers one question about the CONFIG
     SCHEMA, which is Nora's own, not about evaluation.
 
-    `None` means UNRESOLVABLE — a required field with no default, or a nested
-    container like `dreamer.budgets.<name>` that is keyed at runtime. Callers
-    must treat that as "cannot check", never as "agrees".
+    `UNRESOLVED` means UNRESOLVABLE — a required field with no default, or a
+    nested container like `dreamer.budgets.<name>` that is keyed at runtime.
+    `None` is a real nullable default. Callers must treat `UNRESOLVED` as
+    "cannot check", never as "agrees" — and never as the value `None`.
     """
     from pydantic_core import PydanticUndefined
 
@@ -173,15 +149,55 @@ def config_default(key: str) -> object:
     for index, part in enumerate(parts):
         field = getattr(model, "model_fields", {}).get(part)
         if field is None:
-            return None
+            return UNRESOLVED
         if index == len(parts) - 1:
-            if field.default is PydanticUndefined:
-                return None
-            return None if hasattr(field.default, "model_fields") else field.default
-        model = field.annotation
-        if not hasattr(model, "model_fields"):
-            return None
-    return None
+            default = field.default
+            if default is PydanticUndefined:
+                default = (field.default_factory()
+                           if field.default_factory is not None
+                           else PydanticUndefined)
+            return (UNRESOLVED if default is PydanticUndefined
+                    or hasattr(default, "model_fields") else default)
+        annotation = field.annotation
+        origin = get_origin(annotation)
+        if origin in (Union, UnionType):
+            annotation = next(arg for arg in get_args(annotation)
+                              if arg is not type(None))
+        if not hasattr(annotation, "model_fields"):
+            return UNRESOLVED
+        model = annotation
+    return UNRESOLVED
+
+
+def config_member_of_runtime_map(key: str) -> bool:
+    """Whether a dotted key names a member of a `dict[...]`-typed field.
+
+    `dreamer.budgets.culture.turns` is keyed at runtime: production holds no
+    `culture` member it never stated, so omitting the example's member IS
+    the parity — unlike a required leaf, whose omission cannot load.
+    """
+    from nora.config import Config
+
+    model: Any = Config
+    parts = key.split(".")
+    for index, part in enumerate(parts):
+        field = getattr(model, "model_fields", {}).get(part)
+        if field is None:
+            return False  # an unknown path, not a runtime-keyed member
+        if index == len(parts) - 1:
+            return False
+        annotation = field.annotation
+        origin = get_origin(annotation)
+        if origin in (Union, UnionType):
+            annotation = next(arg for arg in get_args(annotation)
+                              if arg is not type(None))
+            origin = get_origin(annotation)
+        if origin is dict:
+            return True
+        if not hasattr(annotation, "model_fields"):
+            return False
+        model = annotation
+    return False
 
 
 def default_policy(room: tuple[str, str], *, unit: str = "nora") -> str:
@@ -231,6 +247,11 @@ class SubjectSpec:
     #: A directory the composition may write into — media custody, anything
     #: file-backed. Never a shared location.
     workdir: Path
+
+    #: WHICH CONFIGURATION she composes FROM — the recorded `config.toml` in
+    #: force at the case's instant; `None` is the committed template. Same
+    #: copy-into-workdir path, same credential custody as the template's.
+    config: Path | None = None
 
     #: Overrides onto the committed template, as dotted paths. This is the seam
     #: for "which doctrine", "which model", "how many samples" — configuration,
@@ -297,6 +318,8 @@ class SubjectSpec:
     #: overlay endpoint — composition is untouched.
     signal_rpc_url: str = ""
 
+    environment: IsolatedServices | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class Subject:
@@ -345,15 +368,20 @@ class Subject:
     #: source for the persons production would render and no others.
     listed_persons: frozenset[str] | None = None
     circle_memory: CircleMemory | None = None
+    environment: IsolatedServices | None = None
+
+    async def aclose(self) -> None:
+        if self.environment is not None:
+            await self.environment.close_subject(self)
 
 
 def _with(obj: Any, path: str, value: Any) -> Any:
     head, _, rest = path.partition(".")
     if rest:
-        value = _with(getattr(obj, head), rest, value)
-    if isinstance(value, dict):
+        value = _with(obj[head] if isinstance(obj, dict) else getattr(obj, head), rest, value)
+    if isinstance(value, dict) and not isinstance(obj, dict):
         value = TypeAdapter(type(obj).model_fields[head].annotation).validate_python(value)
-    return obj.model_copy(update={head: value})
+    return {**obj, head: value} if isinstance(obj, dict) else obj.model_copy(update={head: value})
 
 
 #: What EVERY non-production caller needs, applied before the caller's own
@@ -368,50 +396,6 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # Each composed subject owns its journal lock, just like its database
     # and media. The deployment's computer state cannot be shared by draws.
     cfg = _with(cfg, "computer.state_dir", str(workdir / "state"))
-    # `platforms.signal.account` — the template's default is empty, meaning
-    # "derive from the daemon", and `build_dependencies` then makes a REAL HTTP
-    # call to signal-cli at startup and raises `StartupError` when nothing
-    # answers. An override returns immediately with no network. Composing Nora
-    # reaches the world unless told otherwise. It does not cover a
-    # send or react: `landed_platform_transports` below does.
-    cfg = _with(cfg, "platforms.signal.account", _PLACEHOLDER_ACCOUNT)
-    # `platforms.*.mode` — a deployment on `mode = "bridge"` needs Redis and
-    # live bridges; a sandbox has neither, so composition would refuse to boot.
-    # The direct adapter stays PRESENT (the registry's `self_aliases()` still
-    # feeds `self_ids`) with its network neutralised by the placeholder
-    # account/token above — the same seam `mode` itself names, taken the other
-    # way.
-    for platform in ("signal", "discord", "whatsapp", "instagram"):
-        cfg = _with(cfg, f"platforms.{platform}.mode", "direct")
-    # `platforms.discord.token_env` — the SAME neutralisation, for the reason
-    # above. The adapters stay ENABLED as the deployment has them, because the
-    # registry's `self_aliases()` feeds `self_ids` and `self_ids` is what
-    # `MentionPolicy`/`ReplyToNoraPolicy` match on — with the deployment's text
-    # trigger off, mention-and-reply IS the engagement path, so a disabled
-    # adapter would delete it. What must not reach the world is the CREDENTIAL,
-    # and Discord's lives in an env var rather than the config
-    # (`nora/platform/registry.py` refuses to start without it), so the
-    # variable is pointed at one this process owns.
-    cfg._credentials = {**cfg.credentials, _PLACEHOLDER_TOKEN_ENV: "eval-subject-not-a-real-token"}
-    cfg = _with(cfg, "platforms.discord.token_env", _PLACEHOLDER_TOKEN_ENV)
-    # Synthetic fallbacks stay scoped to this subject; real configured credentials win.
-    for name in _CREDENTIALS_ENABLED_FEATURES_DEMAND:
-        cfg._credentials = {name: "eval-subject-placeholder", **cfg.credentials}
-    # `honcho.workspace_id` — Honcho is the ONE store the sandbox database
-    # does not isolate: it is an external service keyed by workspace, and the
-    # deployment's workspace is where every real peer card lives. An eval
-    # turn's ingest FEEDS Honcho (`nora/ingest/stages/memory_feed.py`), so a
-    # subject composed with the deployment's workspace writes eval speech
-    # into production's peer representations.
-    #
-    # The fixed `-eval` sibling is the DEFAULT only. An eval draw overrides it
-    # with a workspace of its own (`honcho.workspace_id`, from
-    # `memory_workspace.draw_workspace`), because the shared sibling made
-    # draws correlated: the tag path read earlier draws' conclusions back.
-    # Configuration, not a new seam: which workspace is a value
-    # one deployment differs from another by, which is what `overrides` is
-    # for, and `build_config` refuses any value outside the eval namespace.
-    cfg = _with(cfg, "honcho.workspace_id", shared_eval_workspace(cfg.honcho.workspace_id))
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a
@@ -422,34 +406,8 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     return cfg
 
 
-def _refuse_a_workspace_outside_the_eval_namespace(workspace: str, deployment: str) -> None:
-    """A subject's Honcho workspace is the shared `<deployment>-eval` sibling
-    or a draw's `<deployment>-eval-...`, and nothing else.
-
-    Held on the COMPOSED config, after every override, because an eval draw
-    names its workspace through `spec.overrides`, and an override of `nora`
-    would feed eval speech into production's peer cards with nothing raising.
-    """
-    if workspace == shared_eval_workspace(deployment):
-        return
-    try:
-        refuse_unless_draw_workspace(workspace, deployment)
-    except NotADrawWorkspaceError as exc:
-        raise ValueError(
-            f"a subject's Honcho workspace must be {shared_eval_workspace(deployment)!r} "
-            f"or a draw's ({exc})"
-        ) from exc
-
-
 def memory_endpoint() -> tuple[str, str]:
-    """`(base_url, deployment_workspace)` for Honcho, as a subject reaches it.
-
-    Read from the same template `build_config` copies, with the same
-    host-from-the-host rewrite `_baseline` applies, so the workspace a draw
-    creates is on the server its subject will talk to. The second value is
-    the DEPLOYMENT's workspace, before `_baseline` suffixes it: the prefix
-    every draw workspace is derived from and guarded by.
-    """
+    """The template's external-memory origin and default workspace."""
     cfg = _load_config(_TEMPLATE, require_secrets=False)
     base_url = cfg.honcho.base_url
     if not _resolves(_DOCKER_HOST):
@@ -480,10 +438,12 @@ def build_config(spec: SubjectSpec) -> Config:
     # hardcoded `"nora"` fallback would pass whenever three literals in three
     # files happened to coincide — convention, not construction.
     cfg_path = spec.workdir / "config.toml"
-    shutil.copy(_TEMPLATE, cfg_path)
+    shutil.copy(spec.config or _TEMPLATE, cfg_path)
     loaded = _load_config(cfg_path, require_secrets=False)
+    # Credential custody stays with the DEPLOYMENT's `secret.toml`, wherever
+    # the declared configuration came from: a recorded `in_force/` directory
+    # holds none, and pointing resolution at it would silently lose them.
     loaded._secret_path = _TEMPLATE.parent / "secret.toml"
-    deployment = loaded.honcho.workspace_id
     cfg = _baseline(loaded, spec.workdir)
     for path, value in (spec.overrides or {}).items():
         cfg = _with(cfg, path, value)
@@ -498,9 +458,8 @@ def build_config(spec: SubjectSpec) -> Config:
                 section_type.model_validate(
                     getattr(cfg, name).model_dump(mode="python"),
                     context={"base": spec.workdir})
-    # Rewrite after overrides, including deployment routes, so host-only callers
-    # cannot restore container addresses over the sandbox configuration.
-    if not _resolves(_DOCKER_HOST):
+    # A case-owned environment binds origins itself without DNS discovery.
+    if spec.environment is None and not _resolves(_DOCKER_HOST):
         cfg = _with(cfg, "llm.base_url", _from_host(cfg.llm.base_url))
         cfg = _with(cfg, "honcho.base_url", _from_host(cfg.honcho.base_url))
         # Named model endpoints carry their own URL; a route through one would
@@ -508,64 +467,9 @@ def build_config(spec: SubjectSpec) -> Config:
         cfg = cfg.model_copy(update={"providers": {
             name: p.model_copy(update={"base_url": _from_host(p.base_url)})
             for name, p in cfg.providers.items()}})
-    _refuse_a_workspace_outside_the_eval_namespace(cfg.honcho.workspace_id, deployment)
     policy = spec.policy or default_policy(spec.room)
     (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")
-    _pin_memory_to_the_eval_workspace(spec.workdir, cfg.honcho.workspace_id, deployment)
-    _conversation_for(spec)
     return cfg
-
-
-def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment: str) -> None:
-    """Every Honcho workspace this subject can route to is `workspace` — the
-    eval namespace's — and that is measured, not assumed (DEC-214).
-
-    Rewriting `honcho.workspace_id` alone is not the guarantee: a policy with
-    `[units]`
-    routes each unit to the Honcho workspace its Nora workspace is BOUND to
-    in `identity.toml`, and the eval suite composes against the deployment's
-    own policy and identity by default — whose bindings name production's
-    live workspaces. Composed as written, a subject would feed eval speech
-    into `nora` itself with nothing raising.
-
-    So the copies in `workdir` are rewritten to ONE workspace. A policy that
-    declares `[units]` keeps it — the subject stays strict and scoped, the
-    way production reads — but every unit is put in one workspace, `eval`,
-    and `identity.toml`'s `[workspaces]` becomes that one binding, to
-    `honcho.workspace_id` (already the eval namespace's). A policy without
-    `[units]` loses any `[workspaces]` table and stays implicit. Every room,
-    unit and scope survives; the divergence from production is that two Nora
-    workspaces' people share this ONE throwaway workspace's peers. Then the
-    router production itself builds from these files is asked where it can
-    reach, and anything outside the eval namespace refuses the subject. That
-    check is the guarantee; the rewrite is only what makes it pass.
-    """
-    policy_path, identity_path = workdir / "policy.toml", workdir / "identity.toml"
-    policy_doc = tomlkit.parse(policy_path.read_text(encoding="utf-8"))
-    identity_doc = tomlkit.parse(identity_path.read_text(encoding="utf-8"))
-    strict = "units" in policy_doc
-    if strict:
-        for unit in policy_doc["units"].values():
-            unit["workspace"] = _EVAL_WORKSPACE
-        policy_path.write_text(tomlkit.dumps(policy_doc), encoding="utf-8")
-    if "workspaces" in identity_doc:
-        del identity_doc["workspaces"]
-    if strict:
-        binding = tomlkit.table()
-        binding.add(_EVAL_WORKSPACE, {"honcho_workspace": workspace})
-        identity_doc["workspaces"] = binding
-    identity_path.write_text(tomlkit.dumps(identity_doc), encoding="utf-8")
-    router = build_workspace_router(
-        policy=load_policy(policy_path),
-        bindings=load_persons(identity_path).honcho_workspaces,
-        default_workspace=workspace,
-    )
-    for reachable in router.workspaces():
-        _refuse_a_workspace_outside_the_eval_namespace(reachable, deployment)
-
-
-#: The one Nora workspace an eval subject's units are put in.
-_EVAL_WORKSPACE = "eval"
 
 
 class RoomNotInPolicyError(ValueError):
@@ -574,23 +478,9 @@ class RoomNotInPolicyError(ValueError):
     can say so without matching on this message."""
 
 
-def _conversation_for(spec: SubjectSpec) -> Conversation:
-    """The policy entry `spec.room` composes with — RESOLVED, not grepped.
-
-    A substring test over the raw TOML text only proves `spec.room[1]`
-    appears as SOME conversation's `id` somewhere in the file — a hand-written
-    multi-entry policy can satisfy that while the subject's OWN room resolves
-    to a different entry, with a different `primary_id` and a different
-    `unit` — so a policy whose OTHER entry carries the room's id string would
-    compose cleanly and silently key culture/notes/the Dreamer's scope under a
-    real room's identifiers instead of the subject's own.
-
-    A policy that does NOT name the room is REFUSED, because it is the
-    quietest failure available: ingest refuses admission, no turn runs,
-    nothing raises, and every tag case scores a `no_reply` PASS while the
-    report reads OK.
-    """
-    convo = load_policy(spec.workdir / "policy.toml").conversation(*spec.room)
+def _conversation_for(spec: SubjectSpec, policy: Policy) -> Conversation:
+    """Resolve the room through the production graph's current policy."""
+    convo = policy.conversation(*spec.room)
     if convo is None:
         raise RoomNotInPolicyError(
             f"policy names no conversation for the subject's room "
@@ -610,7 +500,16 @@ def _conversation_for(spec: SubjectSpec) -> Conversation:
 
 async def obtain(spec: SubjectSpec) -> Subject:
     """Compose an isolated subject with scoped credentials and database mapping."""
-    cfg = build_config(spec)
+    environment = spec.environment
+    if environment is None or not environment.active:
+        raise ValueError("obtain requires active case-owned external services")
+    if environment.database_url != spec.database_url:
+        raise ValueError("subject database differs from its isolated environment")
+    if spec.signal_rpc_url or (spec.circle and any((
+            spec.circle.memory, spec.circle.reaction, spec.circle.gif))):
+        raise ValueError("scenario responses require case-owned service bindings; "
+                         "composition substitutions are not production equivalence")
+    cfg = environment.bind_config(build_config(spec))
     if spec.now is None:
         clock: Callable[[], datetime] = wall_clock
     else:
@@ -618,52 +517,29 @@ async def obtain(spec: SubjectSpec) -> Subject:
 
         def clock() -> datetime:
             return _at
-    var = f"NORA_SUBJECT_DATABASE_URL_{uuid.uuid4().hex}"
-    cfg = _with(cfg, "store.database_url_env", var)
-    cfg._credentials = {**cfg.credentials, var: spec.database_url}
-    circle_memory = (CircleMemory(unavailable=spec.circle.memory == 'unavailable')
-                     if spec.circle and spec.circle.memory else None)
-    with (
-        recording_subagent_worker() if cfg.subagent.enabled else contextlib.nullcontext(),
-        landed_platform_transports(),
-        external_boundaries(spec.circle, signal_url=spec.signal_rpc_url, memory=circle_memory),
-    ):
-        deps = await build_dependencies(
-            cfg, clock=clock,
-            # The frozen `spec.now` is the SEMANTIC clock only — what the
-            # block renders and the turn sees. Queue deadlines, lease and
-            # idle arithmetic are operational: they run on the wall clock
-            # or the scoped computer's tasks would never time out and its
-            # tabs never idle inside a draw.
-            operational_clock=wall_clock)
-    # NO EMBEDDING WORKER, whatever `[memory.index] embed` says. The flag also
-    # switches the graph surface's query embedding on (`composition.py`), so
-    # it stays as deployed; the worker is the write half, which only
-    # `nora/__main__.py`'s drain loop runs, and a subject must never hold one:
-    # with the embedder reachable from the host
-    # (`sandbox_index.EMBEDDER_FROM_HOST`) it would write vectors into the
-    # sandbox from the live embedder and compete with production's backfill
-    # for it. A sandbox's vectors are adopted from the source instead
-    # (`nora.subject.sandbox_index`).
-    deps = dataclasses.replace(deps, memory_embed=None)
-    # The scoped computer's maintenance IS part of the composed graph:
-    # the same `ComputerLifecycle` `__main__` starts — a subject with
-    # `[computer.scoped]` enabled ticks its queue and sweeps its tabs,
-    # and `backbone._close` closes it in the same order the app's
-    # shutdown does.
-    if deps.computer_lifecycle is not None:
-        deps.computer_lifecycle.start(deps.background)
-    # The variable is GONE, so the config must not go on naming it: anything
-    # that re-read `os.environ[cfg.store.database_url_env]` would get a
-    # KeyError. `Subject.database_url` is the field to read, and this makes the
-    # dead name unreadable rather than merely unused.
-    cfg = _with(cfg, "store.database_url_env", "")
-    convo = _conversation_for(spec)
-    return Subject(
-        deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
-        unit=convo.unit, culture_key=convo.primary_id,
-        listed_persons=convo.persons, circle_memory=circle_memory,
-    )
+    # Semantic time is controlled; operational leases and deadlines advance.
+    deps = await build_dependencies(cfg, clock=clock, operational_clock=wall_clock)
+    subject = None
+    try:
+        convo = _conversation_for(spec, deps.config_reload.policy)
+        subject = Subject(
+            deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
+            unit=convo.unit, culture_key=convo.primary_id,
+            listed_persons=convo.persons, environment=environment,
+        )
+        environment.register_subject(subject)
+        if deps.computer_lifecycle is not None:
+            deps.computer_lifecycle.start(deps.background)
+        environment.check()
+        return subject
+    except BaseException:
+        if subject is None:
+            from nora.app.lifecycle import close_dependencies
+
+            await close_dependencies(deps)
+        else:
+            await subject.aclose()
+        raise
 
 
 def validate_subject_overrides(overrides: dict[str, Any],

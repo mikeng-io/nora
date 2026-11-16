@@ -104,6 +104,35 @@ class RunEvidence(SpanProcessor, logging.Handler):
         if self.failure:
             raise EvidenceError(self.failure)
 
+    @property
+    def case_id(self) -> str | None:
+        return _CASE.get()
+
+    def cursor(self) -> tuple[int, int]:
+        """The durable order and byte offset before owned work starts."""
+        with self._write_lock:
+            self.check()
+            return self._order, os.lseek(self._fd, 0, os.SEEK_END)
+
+    def since(self, cursor: tuple[int, int]) -> list[dict[str, Any]]:
+        """Read one complete append window without rescanning earlier cases."""
+        with self._write_lock:
+            self.check()
+            events = read_events(self.path, after=cursor)
+            if (events[-1]["order"] if events else cursor[0]) != self._order:
+                raise EvidenceError("dropped_event")
+            return events
+
+    def retain(self, name: str, data: bytes) -> None:
+        """Preserve diagnostic bytes without clearing a failed instrument."""
+        if Path(name).name != name or name in {"", ".", ".."}:
+            raise ValueError("evidence artifact requires a filename")
+        fd = os.open(self.path / name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as file:
+            file.write(data)
+            file.flush()
+            os.fsync(file.fileno())
+
     def record(self, kind: str, **payload: Any) -> None:
         self.check()
         if (self._export is not None and self._export.span_exporter.failed
@@ -333,7 +362,7 @@ def revision(root: Path) -> dict[str, Any]:
         return {"head": None, "lockfile_sha256": fingerprint(root / "uv.lock")}
 
 
-def read_events(path: Path) -> list[dict[str, Any]]:
+def read_events(path: Path, *, after: tuple[int, int] = (0, 0)) -> list[dict[str, Any]]:
     """Read the private append-only record; broken tails are evidence errors."""
     try:
         info = path.lstat()
@@ -341,10 +370,15 @@ def read_events(path: Path) -> list[dict[str, Any]]:
         if (not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077
                 or not stat.S_ISREG(file_info.st_mode) or file_info.st_mode & 0o077):
             raise EvidenceError("non_private_record")
-        events = [json.loads(line) for line in (path / "events.jsonl").read_text().splitlines()]
+        order, offset = after
+        if order < 0 or offset < 0:
+            raise EvidenceError("invalid_event_cursor")
+        with (path / "events.jsonl").open("rb") as file:
+            file.seek(offset)
+            events = [json.loads(line) for line in file]
     except (OSError, ValueError) as exc:
         raise EvidenceError("unreadable_record") from exc
-    if [e.get("order") for e in events] != list(range(1, len(events) + 1)):
+    if [e.get("order") for e in events] != list(range(order + 1, order + len(events) + 1)):
         raise EvidenceError("dropped_event")
     return events
 

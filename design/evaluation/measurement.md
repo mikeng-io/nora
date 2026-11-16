@@ -60,6 +60,15 @@ fluent prose or an agreeing judge. Reviewed contrasts calibrate false accepts
 and rejects; calibration examples are distinct from held-out confirmation.
 Permission, disclosure and fabricated-presence failures cannot average away.
 
+Learning claims follow [Cognition's evidence chain](../cognition/learning.md).
+Persistence, exposure, declared dependence and later success do not alone
+establish use. Adaptation compares the same recorded decision with and without
+its learned rows, under matched repeated draws and unchanged-arm controls.
+An independent semantic comparison must separate a changed decision from
+ordinary replay instability. This measures influence at that decision, not
+the whole acquisition-to-correction journey; an unreproducible input is
+unavailable.
+
 ## Three results
 
 - **Execution** states whether the specified path ran and settled, including

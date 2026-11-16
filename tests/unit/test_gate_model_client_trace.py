@@ -26,6 +26,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from opentelemetry import trace
 
 from nora.app import raw_clients
 from nora.app.raw_clients import _RelevanceGateModelClient
@@ -111,7 +112,7 @@ async def test_the_gate_client_annotates_what_the_provider_returned(monkeypatch)
     captured: dict = {}
 
     def _fake_start(**kwargs):
-        return object()  # opaque — `end_raw_model_span` never inspects it
+        return trace.INVALID_SPAN
 
     def _fake_end(**kwargs):
         captured.update(kwargs)
@@ -138,7 +139,7 @@ async def test_a_provider_that_reports_no_usage_now_records_zero(monkeypatch):
     write nothing" branch — see this file's own module docstring for why
     this is accepted rather than fixed."""
     captured: dict = {}
-    monkeypatch.setattr(raw_clients, "start_raw_model_span", lambda **kw: object())
+    monkeypatch.setattr(raw_clients, "start_raw_model_span", lambda **kw: trace.INVALID_SPAN)
     monkeypatch.setattr(raw_clients, "end_raw_model_span", lambda **kw: captured.update(kw))
 
     client = _FakeClient(usage=None)
