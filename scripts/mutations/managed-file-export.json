@@ -63,11 +63,11 @@
     "target": "tests/unit/test_managed_export.py::test_export_refuses_when_the_topology_source_changed"
   },
   {
-    "name": "export verifies archived ownership before applying metadata",
+    "name": "export refuses competing archived claims on one binding",
     "file": "nora/people/app/managed_export_prepare.py",
-    "old": "                if len(owners) > 1 or (\n                    owners\n                    and (account_owner[next(iter(owners))] != canonical\n                         or next(iter(owners)) in index)\n                ):",
-    "new": "                if len(owners) > 1:",
-    "target": "tests/unit/test_managed_export.py::test_export_refuses_an_archived_binding_that_moved"
+    "old": "                         or next(iter(owners)) in index)",
+    "new": "                         or False)",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_competing_archived_claims"
   },
   {
     "name": "the command prints bounded refusal codes only",

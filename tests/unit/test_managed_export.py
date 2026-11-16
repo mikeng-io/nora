@@ -492,6 +492,33 @@ username = "stale"
                for r in report.refusals)
 
 
+async def test_export_refuses_competing_archived_claims(graph):
+    """Two archived blocks resolving to the SAME live binding are
+    ambiguous — which authored metadata applies cannot be guessed, so the
+    export refuses rather than letting the last claim win silently."""
+    _seed(graph)
+    archive_identity = """\
+[persons.ada]
+name = "Ada"
+
+[[persons.ada.signal]]
+phone = "+85200000003"
+username = "first-archived"
+
+[[persons.ada.signal]]
+phone = "+85200000003"
+username = "second-archived"
+"""
+    *_, policy_path, _export = graph
+    probe = _Probe(graph[0], graph[2], archive=(
+        "op-archive", archive_identity, "default = \"deny\"\n"))
+    export = _export_for(graph[0], graph[1], graph[2], policy_path, probe=probe)
+    report = await export.export(policy_path)
+    assert report.outcome.status is OutcomeStatus.DENIED
+    assert any(r.code.startswith("ambiguous-ownership:archived-binding-conflict")
+               for r in report.refusals)
+
+
 async def test_export_overlays_archived_metadata_only_where_it_still_applies(
     graph,
 ):
