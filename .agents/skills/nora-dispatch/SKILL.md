@@ -87,7 +87,13 @@ Follow `ORCHESTRATION.md` «Choosing a worker»: pass provider, model and option
 explicitly, and read back what actually launched. One unit per launch. A
 builder never starts review, other builders or a wider audit.
 
-Check: the launched model and options match the ones chosen.
+Before the first write, verify the command's actual working directory, branch
+and HEAD against the prepared isolated checkout. Set that directory explicitly
+on every command; a tool's default may still point at the parent. A mismatch
+stops the build before edits or commits; report it without creating a checkout.
+
+Check: the launched model and options match the ones chosen, and commands run
+inside the assigned checkout.
 
 ## 5. Read back the result
 
