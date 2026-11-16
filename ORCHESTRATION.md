@@ -73,16 +73,16 @@ Stages apply as a change needs them; a small one passes several in one sitting.
 
 | stage | answers | owner | produces | exits when |
 |---|---|---|---|---|
-| **intake** | is this architecture or code, and where does it belong? | `nora-design` §1; `nora-decision` for issues | an issue, or a direct brief recorded in the PR | outcome, scope and non-goals are pinned to a revision |
+| **intake** | what outcome is wanted, and is it architecture or code? | `nora-design` §1; `nora-decision` | a Linear work brief, or a direct brief in the PR | intent, completion conditions and boundaries are explicit |
 | **design** (architecture changes only) | what is the system? | `nora-design` | a bundle edit, before or with the code | the bundle change is reviewed per its tier |
 | **decide** | does this need a ruling on record? | `nora-decision` | a DEC row or ADR | numbered at merge |
-| **dispatch** | how is it cut, briefed and assigned? | `nora-dispatch` | units, briefs, acceptance in the issue or the PR-recorded brief | every acceptance statement is covered by a unit |
+| **dispatch** | what is the next bounded outcome and who owns it? | `nora-dispatch` | native Linear ownership, dependencies and necessary sub-issues | completion conditions and integration have owners |
 | **build** | — | the builder, with `nora-land`, `nora-structure`, `nora-test`, `nora-tool`, `nora-runtime-skill` | commits on a branch | the brief's named checks ran once |
 | **verify** | does it do what it claims? | `nora-prove-fix`, `nora-eval`, the gate in `nora-land` | evidence | each obligation is met, unmet or unavailable, with evidence |
 | **review** | does it hold up to someone else? | `nora-review`, `REVIEW.md` | findings and a verdict | no BLOCKER, within two rounds |
 | **land** | — | `nora-land` | a merge commit | on master and read back |
 | **release and deploy** | — | `nora-release`, `nora-deploy`, `nora-readback` | a release; the live service | released; live state read back when acceptance requires it |
-| **close and learn** | is the outcome delivered, and did the process itself fail anywhere? | the orchestrator | the issue updated; the owning skill or root document edited | obligations reconciled; a process failure (an unreadable brief, a skipped rehearsal, a rule nobody loaded) fixed in its owner in the same arc |
+| **close and learn** | is the outcome delivered, and did the process itself fail anywhere? | the orchestrator | Linear work reconciled; the owning skill or root document edited | completion conditions evidenced; process failures corrected in their owner |
 
 ## Execution tier
 
@@ -123,10 +123,14 @@ needs checks on what the upstream change touches.
 
 ## Intent, evidence and completion
 
-- Pin the outcome, scope, non-goals and acceptance to the issue or the
-  operator's brief, recorded in the PR for direct work, before editing; the
-  design holds the invariants they link to. Never
-  create an issue or contract file only to repeat it.
+- Linear owns roadmap and execution. A **work brief** in its issue description
+  combines intent, observable completion conditions and boundaries, with design
+  links as needed. The model chooses implementation details; no separate plan,
+  spec or PRD is required. Small direct work may use the PR-recorded brief.
+- Read the current brief, parent intent and actual blockers before launch,
+  intake and handoff; bind the intent/completion-condition digest in the run.
+  Keep the description concise and current. Comments hold discussion and
+  precise evidence, not the only current acceptance or another live queue.
 - Agreement to a concrete proposed fix means implement it. File only work
   explicitly deferred from this slice, after checking for an existing home.
 - Judge each obligation met, unmet or unavailable against the real source or
@@ -138,8 +142,11 @@ needs checks on what the upstream change touches.
   requirement. Never soften an obligation to get a pass.
 - Close the slice when every obligation is evidenced and no BLOCKER remains,
   then stop. Record limitations without claiming them delivered; update the
-  issue's remaining scope; close an issue only for its whole outcome. Reopen a
+  work item's remaining scope; close it only for its whole outcome. Reopen a
   settled result only on new evidence or a changed requirement.
+- A worker's stop point is not the orchestrator's completion condition. After
+  intake, reconcile the whole outcome and continue authorized work; a new
+  operator-facing session inherits that responsibility and the existing holds.
 
 ## Choosing a worker
 
@@ -167,8 +174,8 @@ block or get the operator's waiver.
 
 **A brief** follows `nora-dispatch`: one bounded outcome a reviewer can read in
 one sitting, in complete sentences a fresh agent can follow, linking what the
-repo holds instead of pasting or abbreviating it. It names acceptance (in the
-issue or the PR-recorded brief, never only a temporary file), input revisions, allowed
+repo holds instead of pasting or abbreviating it. It links the Linear work
+brief (or direct-work PR), input revisions, allowed
 paths, non-goals, worktree/base/branch, skills, named checks and the stop
 point. Builders run the named checks once and stop at the handoff; the
 orchestrator owns acceptance. No extra handling, tests, reviewers or scope:
@@ -189,7 +196,7 @@ most six into the PR, most severe first.
 |---|---|
 | BLOCKER: this diff causes reachable wrong output, data loss, disclosure, crash or a weakened gate | Fix and verify; only this verdict buys another round |
 | FIX-IF-CHEAP: a real in-diff defect with bounded harm | Fix if it takes minutes within the slice; otherwise record a limitation; no new round |
-| ISSUE: real but pre-existing or out of scope | Use the existing issue; file only actionable work with no home (`nora-decision`); never blocks |
+| ISSUE: real but pre-existing or out of scope | Use the existing Linear work item or GitHub defect report; file only actionable work with no home (`nora-decision`); never blocks |
 | DROP: hypothetical, contrived, style or unrelated | One-line disposition |
 
 - Severity follows reachable consequence, not recurrence, confidence or repair
@@ -215,25 +222,35 @@ most six into the PR, most severe first.
 | This policy | Assignment, capability, review and ownership rules |
 | Design bundle | The high-level architecture and its rationale (`nora-design`); never a plan or a status report |
 | ADR | One decision, its alternatives and what it cost |
-| Issue | One bounded outcome: scope, non-goals, acceptance, dependencies |
-| Roadmap card | A capability outcome and its horizon; never an execution queue |
+| Linear issue | One work brief: intent, completion conditions and boundaries; native ownership/dependencies |
+| Linear project / initiative | Capability outcomes, grouping and roadmap; links work instead of copying it |
+| GitHub issue | Defect/problem reports and their resolution; never the execution queue or roadmap |
 | Run / review receipt | Actual provider, model, toolset, options, fit reason, run reference, input revision and evidence |
 
-- An issue links the design it builds and owns its scope and acceptance, never
-  a copy of the design; a Project card is a view of its issue. Assignees,
-  milestones, relationships and Development links stay native in GitHub; tiers
-  live with the issue's readiness and run brief; receipts live in the run
-  system, never as committed run files or a task database.
+- A work brief links the design; native Linear ownership, blocking relations
+  and necessary sub-issues express the execution plan. Split independently
+  assignable/verifiable outcomes, not every code step or review finding. Each
+  child inherits the parent's boundaries and names only its own outcome.
+- PRs and run receipts own evidence; Linear links them. No GitHub Issue mirror,
+  duplicate board prose, committed run database or new plan/spec files. During
+  migration, preserve each existing work ID, holds, evidence and active owner
+  until its Linear successor is read back and linked; then archive the obsolete
+  board view without deleting reports, PRs or historical evidence.
+- Agent session state is not work acceptance. PR merge and child closure do
+  not automatically close an outcome. MCP is access, not a scheduler; native
+  integrations or a configured adapter own unattended starts. Policy adoption
+  does not install that wiring, enable Loops or authorize model spending.
 
-Task states describe issue and run readiness, not Project fields:
+Task states describe work and run readiness, not agent session states:
 **Inbox** may be incomplete (blank tiers mean unclassified); **Ready** has a
 bounded outcome, resolvable acceptance, available dependencies and
 permissions, a priority and tiers; **Running** links a real launched run;
-**Review** links the run and inspectable evidence; **Blocked** links its issue
+**Review** links the run and inspectable evidence; **Blocked** links its work item
 and the reason and unblock step, never fabricated Ready metadata; **Done** has
 acceptance evidence for the whole slice, including merge or live read-back when
 specified. Cancelled or superseded work closes as not planned with its reason;
-partial work references its parent issue without closing it.
+partial work references its parent without closing it. Linear's configured
+workflow names are read back rather than assumed to match these labels.
 
 ## Interchange shape
 
@@ -241,7 +258,8 @@ partial work references its parent issue without closing it.
 priority and tier vocabularies and validates policy, task and run shapes; the
 `kind` field selects which. It checks shape only, not link resolution, worker
 competence, independence or acceptance: read those back. Task metadata is a small
-projection, not the GitHub API payload. Unknown properties are rejected except in
+projection, not a tracker API payload. `issue_ref` accepts the owning Linear
+work URL; the schema does not install a tracker integration. Unknown properties are rejected except in
 run `options`. References are absolute URIs; use immutable revisions where content
 can change. `tests/architecture/test_orchestration_contract.py` validates this
 policy and the synthetic examples below, which resolve to no real evidence.
@@ -252,7 +270,7 @@ inbox:
   status: Inbox
 ready: &ready
   kind: task
-  issue_ref: https://github.com/example/nora-synthetic/issues/1
+  issue_ref: https://linear.app/example/issue/SYN-1
   status: Ready
   priority: P2
   execution_tier: scoped
@@ -272,12 +290,12 @@ done:
   evidence_refs: [https://example.invalid/acceptance/accepted-head]
 blocked:
   kind: task
-  issue_ref: https://github.com/example/nora-synthetic/issues/1
+  issue_ref: https://linear.app/example/issue/SYN-1
   status: Blocked
   blocked_ref: https://example.invalid/tasks/1#reason-and-unblock
 resolved_run:
   kind: run
-  issue_ref: https://github.com/example/nora-synthetic/issues/1
+  issue_ref: https://linear.app/example/issue/SYN-1
   run_ref: https://example.invalid/runs/build
   input_revision: synthetic-commit-a
   selection:

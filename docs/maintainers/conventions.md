@@ -102,26 +102,18 @@ unavailable, never a pass. `nora-prove-fix` owns the bounded table procedure.
 
 ## Issues
 
-Deferred work needs a durable home, not a duplicate ticket. First update the
-existing issue that owns it. File a
-GitHub issue on `mikeng-io/nora` only for actionable deferred work with no home;
-small residues belong in PR limitations. Never leave work only in chat or memory.
-When an issue is used, scope and task-specific deltas live there; evidence links
-the run/review record; task readiness stays with that issue.
-**File through an issue form**
-(`.github/ISSUE_TEMPLATE/`); blank issues are disabled.
+GitHub Issues hold repository defect/problem reports and community requests.
+They are not the engineering execution queue or roadmap. Linear owns work,
+priorities, dependencies and outcomes; a report can link its Linear work without
+copying the task description or status back and forth. Small direct changes
+need no ticket: the PR records the operator's intent and result.
 
-[ORCHESTRATION.md](../../ORCHESTRATION.md) owns engineering assignment and artifact
-boundaries. Design bundles own the architecture and its rationale
-(`nora-design`), never plans or status. Each issue owns one bounded outcome:
-scope, non-goals and acceptance; it links the bundle it builds and never copies
-it. Roadmap cards expose capability/outcome issues, their horizon and lifecycle.
-Task readiness, required execution/review tiers and run/evidence/unblock links
-stay with the issue and run. Keep
-assignees, milestones, relationships and Development links native. Run/review
-records own actual worker/model/toolset/options, input revision and measured
-evidence; no checked-in task database or run records. Generic rules stay in the
-root policy instead of being copied into issues, cards or design bundles.
+[ORCHESTRATION.md](../../ORCHESTRATION.md) owns assignment and artifact boundaries.
+Design bundles hold architecture, invariants and rationale. A Linear **work
+brief** combines intent, completion conditions and boundaries in one current
+issue description. Native owners, delegates, dependencies and necessary children
+express execution; no separate plan/spec documents or GitHub Issue mirror.
+PRs and run receipts own measured results; Linear links that evidence.
 
 Use **Bug report** for a reproducible problem: Description, Steps to reproduce,
 Expected behavior, Actual behavior, and Version and environment. Use **Feature
@@ -129,9 +121,9 @@ request** for an improvement: Problem and Proposed solution. Both accept a plain
 descriptive title and need no internal design document. Never include private
 data; follow SECURITY.md for vulnerabilities.
 
-The **freeform** and **design-anchored** forms below remain available for internal
-design and implementation work. The forms carry the headings so
-the convention survives the moment nobody remembers it.
+The **freeform** and **design-anchored** forms remain supported for reports
+and retained references. They do not create an execution plan or dispatch
+authority. Internal work uses Linear even when it links one of these reports.
 
 **Title** — `<Area>: <the gap>`, stated as a fact about what is wrong or
 missing, not as a task: *"Note tier: discharge pipeline — route settled note
@@ -191,87 +183,55 @@ labels and milestones on GitHub are repository metadata, not created by these
 forms. Required form fields do not replace review of the issue's substance.
 
 
-## The flow: issue → branch → PR → merge
+## The flow: work → branch → PR → merge
 
-```
-idea in a session
-   │
-   ├─ small, obvious, and doable now? ──▶ worktree + branch + PR.  No issue.
-   │                                       The PR body is the record.
-   │
-   └─ deferred or needs scoping? ──▶ UPDATE EXISTING HOME; OTHERWISE ISSUE
-                                                   │
-            architecture change? bundle first ─────┤  (nora-design)
-                                                   ▼
-                                          worktree + branch (`<type>/<slug>`)
-                                                   ▼
-                                          PR, referencing the issue
-                                                   ▼
-                                    merge commit (--no-ff, authored message)
-                                                   ▼
-                            issue closed  ──or──  left open for the next PR
-```
+Direct operator work goes to a worktree/PR. Work needing durable ownership uses
+one Linear work brief, refined only enough to execute (`nora-dispatch`). An
+architecture change updates its design owner first or in the same PR. The PR
+links the work; review/CI and the authored merge establish source delivery.
+The outcome owner then reads back the required completion conditions.
 
-**When to create an issue.** File actionable work deferred from the present
-slice only after looking for its existing design/issue home (`nora-decision`).
-Future work lives in issues, never in a design bundle.
-Work being completed in the same sitting needs no issue; its PR is the record.
+Refine in place. Use sub-issues for independently assignable/verifiable results
+or real dependencies, not every implementation step or finding. A child states
+its own outcome and inherits the parent's boundaries; the parent retains
+integration/completion ownership. In-scope defects stay with their unit;
+adjacent improvements enter backlog without becoming blockers. Repeated defects
+at one seam require reconsidering the approach before another repair dispatch.
 
-**When to update an issue.** When the scope changes, when a dependency gets
-filed (replace the `#TBD`), when a measurement changes the picture, and when a
-PR lands part of it. An issue that has taken three PRs and says nothing about
-them is a stale issue. Update the body for scope, comment for evidence.
+Keep the current brief readable without historical comments. Incorporate
+operator-authorized scope changes before the next dispatch; link precise
+supporting evidence. Do not grow descriptions into run logs or archive the only
+current acceptance. A session handoff carries the work URL, checkout/head,
+remaining work, next action and holds, not another planning document.
 
-**When to close an issue.** Apply `ORCHESTRATION.md` «Intent, evidence and
-completion» against the original slice, not newly invented obligations. Update
-its remaining scope after each landing; evidence unavailable is distinct from
-implementation absent. Three ways to close, and each needs a stated reason:
+Use Linear's native PR integration without GitHub Issue sync. Configure workflow
+states from the actual team: PR merge may mean source delivered but not outcome
+accepted. Avoid parent/child auto-close where integrated or runtime acceptance
+is still required. A completed agent session is separate from issue completion.
 
-| reason | how |
-|---|---|
-| **done** | `Closes #N` in the PR that finishes it — GitHub closes it on merge |
-| **superseded** | close with a comment naming what replaced it and where the evidence is |
-| **won't do** | close with a comment saying what was decided instead, and why |
+For a real GitHub report, use `Closes #N` only when the PR fully resolves that
+report; otherwise link it without closing. Close superseded/not-planned reports
+with their reason and successor when present. Do not close retained planning
+issues during migration until their Linear successors, obligations and active
+owners have been read back. Never delete issue/PR history to reset a board.
 
-Never close an issue silently, and never close one because it got old. A stale
-issue is a signal about the backlog; a silently closed one is a decision nobody
-can find. If the premise stopped holding — the subsystem was deleted, the design
-changed underneath it — that is *superseded*, and the comment should say what
-reading would have caught it sooner.
-
-**When NOT to close.** A multi-PR design track stays open across incremental
-landings. Reference it as "issue #N" in those PR bodies, without the closing
-keyword. The issue carries its remaining slice and task readiness,
-and the roadmap carries outcome lifecycle. The issue closes when the last piece lands, not the first.
-
-**Linking, in both directions.** Each link exists so someone standing at one
-artifact can reach the others:
-
-| from | to | how |
-|---|---|---|
-| PR | issue | `Closes #N` when it finishes it, plain `issue #N` when it does not |
-| commit body | issue | `issue #N` — so `git log` alone reaches the reasoning |
-| issue | design bundle | `**Design:** design/<topic>/<file>.md` at the top of the body |
-| issue | dependent issue | `#TBD` until it exists, then edited in |
-| ADR | issue / decision row | the `Index:` line names the DEC row, or `none` with a reason |
-| decision row | test | the enforcing test's path, in the row's last column |
-
-The branch name is deliberately *not* in that table: branches are named for the
-change, not the ticket, and a branch outlives neither the PR nor the issue.
+Branches remain `<type>/<slug>`; link Linear by PR URL/body rather than requiring
+a ticket-shaped branch name. ADRs link the relevant work/report; decision rows
+link their enforcing tests. No new task database or status-sync daemon.
 
 ## Issue → ADR → decision row
 
-Three artifacts, three different jobs, and using the wrong one is how reasoning
-gets lost:
+These artifacts have different jobs; confusing them loses the intent:
 
 | artifact | records | lives in |
 |---|---|---|
-| **GitHub issue** | a *candidate* — something not yet decided or not yet built | `mikeng-io/nora` |
+| **Linear work brief** | a proposed outcome and its completion boundary | Linear |
+| **GitHub issue** | a repository defect/problem report | `mikeng-io/nora` |
 | **ADR** | a *decision with a cost* — an alternative rejected, a trade accepted | `docs/adr/NNNN-*.md` |
 | **decision row** | a *landed* decision and the test that enforces it | `design/09-decision-index.md` |
 
-An open issue is not a decision. A trivial decision gets an index row and
-nothing more. An ADR is warranted when the decision will look wrong to someone
+An open work item or defect report is not a decision. A trivial decision gets
+an index row and nothing more. An ADR is warranted when the decision will look wrong to someone
 who does not know what it replaced — [Nygard
 form](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions),
 Context / Decision / Consequences, and **the consequences must include what got
@@ -315,37 +275,26 @@ their existing validated reload.
 
 ## Roadmap
 
-[Universal Roadmap](https://github.com/users/mikeng-io/projects/9) is the portfolio;
-its **Nora Roadmap** view shows Nora capability/outcome issues. Nora Engineering
-is retired (operator, 2026-11-02). Ordinary bugs, maintenance and PRs remain in the
-repository backlog; there is no second execution board.
+Linear owns the organization roadmap and engineering work. Use a project for a
+substantial outcome spanning independently deliverable work; use an initiative
+only for useful cross-project grouping. Smaller outcomes remain issues or
+parent/sub-issues. Do not introduce every hierarchy level for every change.
+Project overviews state intent and design links; work briefs own bounded
+completion conditions. Milestones are optional real checkpoints, not mandatory
+SDLC documents. Dates stay empty until committed.
 
-A direction may be Proposed before it has a build plan. Its issue states the user
-benefit, canonical design links, known implemented parts, remaining scope and the
-next decision or evidence needed. Reuse an existing issue before adding a parent;
-use native sub-issues for actual deliverables. Do not copy a design into a card.
-Horizon Now / Next / Later is a planning order, not dispatch authority. Dates stay
-empty until committed. Review current source/merged receipts and dated design
-amendments before classifying delivery; stale frontmatter is not proof of absence.
+`nora-decision` admits/updates work; `nora-dispatch` refines, assigns and intakes;
+`nora-land` reconciles delivery evidence. Native status/ownership/dependency views
+replace manually maintained task tables. Child counts, PR merge and agent session
+completion do not prove whole-outcome acceptance. Read the actual Linear team
+workflow; no particular status names or automations are presumed configured.
 
-Use repository-native milestones only for an agreed delivery checkpoint. A
-cross-repository outcome links each repository's milestones; no universal
-milestone store or manually maintained completion percentage. Keep an umbrella
-outside its children's milestone unless it is itself a delivery item.
-
-Planning through `nora-decision` creates or updates the outcome issue, adds that
-same issue to the Project and sets Level=Outcome, Status and Horizon with a
-reason. Default an unscheduled new direction to Proposed / Later; retain existing
-commitments. Deliverables may appear in their own view with Level=Deliverable.
-Read back issue identity, native relations, membership and fields after writing.
-
-Completion through `nora-land` checks the linked outcome's remaining acceptance.
-Update Status only for evidenced progress: In progress for actual work, Validating
-for delivered work awaiting outcome evidence, Achieved only when the whole outcome
-is accepted. Reconcile partial work without closing the parent. Child closure and
-milestone percentage do not establish semantic quality or runtime deployment.
-Cancellation/supersession gets its reason and On hold or removal, never Achieved.
-Automatic sub-issue addition is convenience only: check Level on added children.
-No mirrored task statuses, new sync daemon, paid run, merge or deployment follows
-from roadmap membership. Reopen this allocation if measured coordination gaps
-require another execution view.
+GitHub Projects are not a parallel roadmap or execution queue. Reset obsolete
+Nora planning views by archiving/closing them after the selected unfinished work
+has read-back-verified Linear successors. Preserve reports, PRs, evidence and
+running owners; do not bulk-import historical comments or close unrelated work.
+An unavailable Linear connector blocks cutover, not ongoing work already owned
+by a session. Existing work retains its current authority until linked cutover.
+MCP access is not automatic dispatch; native agent integrations or an explicitly
+configured adapter own event-driven starts. No new paid coding, Loops, retry,
+merge or deploy authority follows from planning, migration or status changes.

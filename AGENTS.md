@@ -79,7 +79,7 @@ refactor, threshold, prompt or doctrine wording, eval case) goes straight to
 code. `nora-design` owns the procedure.
 
 **Git and GitHub are the log.** Commits and PRs record what changed and why;
-plans, roadmaps and open items are GitHub issues and the project. The ADRs are
+work briefs, roadmaps and tasks live in Linear; GitHub Issues hold defect reports. The ADRs are
 the one decision record kept as history; `design/09-decision-index.md` lists
 the decisions that hold now, each with its test or `NOT ENFORCED` (`nora-decision`).
 

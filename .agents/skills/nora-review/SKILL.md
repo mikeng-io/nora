@@ -13,8 +13,8 @@ reader elections; verify foreground progress and release on failure/cancellation
 stopping rules; `REVIEW.md` is the shared reviewer contract. Read both first.
 This skill supplies the order, not another policy or automatic enforcement.
 
-1. **Bind the input.** Read the original operator brief or issue and the referenced
-   design acceptance at its named revision, then the PR's delivery claims.
+1. **Bind the input.** Read the original Linear work brief (or direct operator brief) and
+   referenced design invariants at their named revision, then the PR's delivery claims.
    Record the outcome, non-goals, obligations, assigned tier and review base/head.
    Check: missing or conflicting requirements return to scoping; do not invent a
    specification from the implementation or expand the brief's unknowns.

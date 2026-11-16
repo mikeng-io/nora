@@ -23,7 +23,7 @@ LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 Read `ORCHESTRATION.md` «Intent, evidence and completion»: pin the brief/design's
 outcome, scope, obligations and stopping boundary; inspect existing code and carry that intent.
 An operator agreeing to the proposed fix means implement it, not create a
-planning issue and stop. Only explicitly deferred work needs an issue.
+planning ticket and stop. Deferred execution work belongs in Linear.
 
 ```bash
 git fetch origin
@@ -193,9 +193,9 @@ make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must 
 ```
 
 Fix a process failure found on the way in its owning skill or root document now
-(`ORCHESTRATION.md` «The lifecycle»). Reconcile obligations with met/unmet/unavailable evidence; update design coverage and issue remaining scope, closing only a fully satisfied issue with a reason.
+(`ORCHESTRATION.md` «The lifecycle»). Reconcile the Linear work brief with met/unmet/unavailable evidence and remaining scope. Link the PR/result; close only a fully satisfied outcome. GitHub defect reports keep their separate resolution.
 For a linked outcome, follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap): reconcile remaining acceptance,
-update evidenced lifecycle/horizon and read back fields. A merged child is not an Achieved parent; routine work needs no card.
+read back Linear state, ownership and remaining completion conditions. A merged child or completed agent session is not an accepted parent; routine direct work needs no ticket.
 Report completed/unmet obligations separately; keep required read-back, add no extra
 research/deployment, and stop when the completion rule holds.
 The next change starts in a new worktree; cleanup: `docs/maintainers/conventions.md`. Deploying: nora-deploy.
