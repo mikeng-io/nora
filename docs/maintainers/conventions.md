@@ -137,13 +137,14 @@ content on close"*, not *"Add discharge pipeline"*.
 <what is broken or missing today, with file:line references>
 
 ## What's specified (decided, not open)
-<the design this builds to, by link, and this task's acceptance>
+<the design-anchored discrepancy and expected behavior, with its design link;
+link admitted Linear execution acceptance rather than duplicating it>
 
 ## Not built
 <what does not exist yet — "nothing" is a valid answer>
 
 ## Depends on / feeds
-<cross-issue dependencies; "#TBD" until the other issue exists>
+<related reports or admitted Linear work, if any; no placeholder issues>
 ```
 
 *Freeform*, when this issue is proposing the decision:
@@ -163,7 +164,7 @@ the next reader will suggest folding in.
 
 | label | set by | means |
 |---|---|---|
-| `design-anchored` | the *design-anchored* form | a design document already specified this; the issue builds to spec |
+| `design-anchored` | the *design-anchored* form | a report of a discrepancy against already specified behavior |
 | `freeform` | the *freeform* form | the issue itself proposes the decision |
 | `bug` | the *Bug report* form | a reproducible problem |
 | `enhancement` | the *Feature request* form | a proposed improvement |
