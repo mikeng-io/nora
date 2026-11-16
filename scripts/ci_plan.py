@@ -40,6 +40,8 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
             "nora/domain/", "scripts/check_ory_",
         ))) or path in {
             "pyproject.toml", "uv.lock",
+            "tests/contract/test_authority_backend_contract.py",
+            "tests/integration/test_managed_admission_ory.py",
         }:
             plan["ory"] = True
         # These component contracts read shared generated schemas/fixtures.

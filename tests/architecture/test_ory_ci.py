@@ -9,6 +9,8 @@ from scripts import ci_plan
     "deploy/ory/keto/namespaces.ts", "deploy/ory/kratos/person.schema.json",
     "nora/infra/ory/kratos.py", "nora/people/app/identity_resolution.py",
     "nora/domain/management.py", "scripts/check_ory_clients.py", "uv.lock",
+    "tests/contract/test_authority_backend_contract.py",
+    "tests/integration/test_managed_admission_ory.py",
 ])
 def test_managed_identity_changes_require_the_real_ory_job(path):
     plan = ci_plan.classify([path])

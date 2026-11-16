@@ -388,6 +388,8 @@ jobs:
         run: >-
           uv run python -m scripts.pytest_gate
           tests/contract/test_binding_store_contract.py
+          tests/contract/test_authority_backend_contract.py
+          tests/integration/test_managed_admission_ory.py
           tests/infra/test_account_link_requests.py
           tests/infra/test_link_publication_sql.py
           tests/infra/test_managed_otp.py
