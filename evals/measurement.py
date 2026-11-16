@@ -1,12 +1,8 @@
 """The one measurement claim a run declares, and its honest result policy.
 
-`design/evaluation/coverage.md` «Execution modes and their claims»: a journey
-run is a **protocol rehearsal** by default — a finite generated world
-(`CausalProtocol`/`GeneratedJudge`) answers every model request, so behavior
-stays `UNMEASURED` — or, only when the caller declares it AND every selected
-case's world names a live `model_gateway`, a **behavioral evaluation** whose
-evaluator verdicts carry the behavior axis (`measurement.md` «Three
-results»).
+Protocol rehearsal keeps behavior UNMEASURED, including a fixture served
+through the declared gateway. Behavioral evaluation additionally requires
+that declared claim and a gateway; a gateway alone never selects the claim.
 
 Every surface reads this module, never its own string: the SDK draw's
 `environment_state` (`per_draw`), the retained corpus JSON (`mode`/
@@ -36,6 +32,10 @@ class Measurement:
     """The bound measurement: one mode, its per-draw stamp and its rollup."""
 
     mode: str = PROTOCOL_REHEARSAL
+
+    def __post_init__(self) -> None:
+        if self.mode not in (PROTOCOL_REHEARSAL, BEHAVIORAL_EVALUATION):
+            raise ValueError("unknown measurement mode")
 
     @property
     def behavioral(self) -> bool:
@@ -74,13 +74,13 @@ class Measurement:
             return UNMEASURED
         if unanswered or verdicts.get(ERROR) or not any(verdicts.values()):
             return ERROR
+        if execution != PASS or validity != PASS:
+            return ERROR if ERROR in (execution, validity) else UNKNOWN
         if verdicts.get(FAIL):
             return FAIL
         if verdicts.get(REVIEW):
             return REVIEW
-        if execution == PASS and validity == PASS:
-            return PASS
-        return UNKNOWN
+        return PASS
 
     def retained_behavior(self, verdict: str) -> str:
         """What a per-case report may claim for behavior: the verdict under
@@ -102,8 +102,8 @@ def for_measure(value: str) -> Measurement:
     raise ValueError(f"unknown measurement {value!r}; declare one of {MEASURES}")
 
 
-def for_world(world: Any) -> Measurement:
-    """The measurement a generated journey world can honestly carry out —
-    behavioral only when it declares a live model gateway, so the claim is
-    read off the world rather than trusted to agree with one."""
-    return BEHAVIORAL if getattr(world, "model_gateway", None) is not None else PROTOCOL
+def for_world(world: Any, measurement: Measurement = PROTOCOL) -> Measurement:
+    """Validate the declared claim against the world without inferring it."""
+    if measurement.behavioral and getattr(world, "model_gateway", None) is None:
+        raise ValueError("a behavioral measurement cannot promote a generated world")
+    return measurement

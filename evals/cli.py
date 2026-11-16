@@ -99,8 +99,8 @@ def eval_parser() -> argparse.ArgumentParser:
              "is protocol evidence only — behavior stays UNMEASURED")
     ap.add_argument("--measure", choices=MEASURES, default="protocol",
                     help="the bound claim: `protocol` rehearsal (behavior "
-                         "UNMEASURED; a gateway is refused, not spent) or "
-                         "`behavioral` — journeys with one declared only")
+                         "UNMEASURED, including declared gateway fixtures) or "
+                         "`behavioral` — journeys with a declared gateway")
     ap.add_argument(
         "--case", action="append", dest="cases", metavar="NAME",
         help="run only these cases of the named corpus; repeatable. A "

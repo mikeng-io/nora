@@ -426,7 +426,7 @@ def test_protocol_axes_keep_behavior_unmeasured_even_with_verdicts():
     assert axes["behavior"]["status"] == "UNMEASURED"
     assert axes["behavior"]["verdicts"] == {
         "PASS": 1, "FAIL": 0, "REVIEW": 0, "ERROR": 0}
-    assert axes["behavior"]["scope"] == "protocol-rehearsal"
+    assert axes["behavior"].get("scope") == "protocol-rehearsal"
     assert axes["validity"]["scope"] == "protocol-rehearsal"
 
 
@@ -450,7 +450,39 @@ def test_a_behavioral_measurement_reports_the_evaluators_axis(status, expected):
     assert axes["execution"]["status"] == "PASS"
     assert axes["validity"]["status"] == "PASS"
     assert axes["behavior"]["status"] == expected
-    assert axes["behavior"]["scope"] == "behavioral-evaluation"
+    assert axes["behavior"].get("scope") == "behavioral-evaluation"
+
+
+@pytest.mark.parametrize("status", ["FAIL", "REVIEW"])
+@pytest.mark.parametrize("receipt,expected", [(None, "UNKNOWN"), ({"status": "ERROR"}, "ERROR")])
+def test_invalid_evidence_cannot_be_an_ordinary_behavioral_judgment(status, receipt, expected):
+    from evals.measurement import BEHAVIORAL
+
+    experiment, report = _journey_report(status)
+    axes = report_outcome(
+        report, reconcile_report(experiment, report), experiment=experiment,
+        measurement=BEHAVIORAL,
+        evidence={"receipt": receipt, "settlement": {"generated-draw": "settled"}})
+    assert axes["execution"]["status"] == "PASS"
+    assert axes["behavior"]["status"] == expected
+
+
+def test_a_gateway_does_not_choose_the_measurement_claim():
+    from evals.measurement import BEHAVIORAL, PROTOCOL, for_world
+
+    world = SimpleNamespace(model_gateway=object())
+    assert for_world(world) == PROTOCOL
+    assert for_world(world, BEHAVIORAL) == BEHAVIORAL
+    with pytest.raises(ValueError, match="cannot promote"):
+        for_world(SimpleNamespace(model_gateway=None), BEHAVIORAL)
+
+
+def test_an_unknown_serialized_measurement_is_refused():
+    from evals.measurement import Measurement
+
+    assert Measurement(mode="protocol-rehearsal").mode == "protocol-rehearsal"
+    with pytest.raises(ValueError, match="unknown measurement"):
+        Measurement(mode="unrecognized")
 
 
 def test_a_behavioral_pass_cannot_stand_on_an_unestablished_measurement():

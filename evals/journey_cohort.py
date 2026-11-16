@@ -154,17 +154,11 @@ def bound_journey_services(
                 f"{corpus}: journey case {case.name!r}'s world binds "
                 f"undeclared judge aliases {list(plan.judge_models)!r}; "
                 f"the cohort declares {list(judges)!r}")
-        if (plan.model_gateway is not None) != measurement.behavioral:
-            if measurement.behavioral:
-                raise ValueError(
-                    f"{corpus}: journey case {case.name!r} declares no "
-                    "model gateway — a behavioral measurement cannot "
-                    "promote the generated world's "
-                    "CausalProtocol/GeneratedJudge")
+        if measurement.behavioral and plan.model_gateway is None:
             raise ValueError(
-                f"{corpus}: journey case {case.name!r} declares a model "
-                "gateway — a protocol rehearsal cannot silently spend "
-                "the live boundary")
+                f"{corpus}: journey case {case.name!r} declares no model "
+                "gateway — a behavioral measurement cannot promote the "
+                "generated world's CausalProtocol/GeneratedJudge")
         if (plan.model_gateway is not None
                 and not set(judges) <= set(plan.model_gateway.models)):
             raise ValueError(

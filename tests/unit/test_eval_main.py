@@ -420,16 +420,16 @@ def test_a_behavioral_selection_cannot_promote_a_generated_world(tmp_path):
         bound_selection(args, ["autonomous_journey"], None)
 
 
-def test_a_protocol_selection_cannot_silently_spend_a_declared_gateway(
+def test_a_gateway_fixture_keeps_the_declared_protocol_measurement(
         tmp_path):
-    """A plan naming a live boundary under the default claim would run
-    real inference while reporting a rehearsal — refused, not mislabeled."""
+    """A declared gateway never promotes a protocol claim to behavior."""
     from evals.journey_cohort import bound_selection
 
     args = _journey_inputs(tmp_path)
     args.services, args.service_inputs = _gateway_manifest(tmp_path)
-    with pytest.raises(ValueError, match="protocol rehearsal"):
-        bound_selection(args, ["autonomous_journey"], None)
+    cohort = bound_selection(args, ["autonomous_journey"], None)
+    assert [case.name for case in cohort.cases] == ["the_outing"]
+    assert args.bound_measurement.mode == "protocol-rehearsal"
 
 
 def test_a_behavioral_measurement_binds_the_journey_only(tmp_path):

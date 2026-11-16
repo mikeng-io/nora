@@ -199,10 +199,9 @@ def test_the_journey_experiment_refuses_behavioral_without_a_gateway(
             measurement=BEHAVIORAL)
 
 
-def test_the_journey_experiment_refuses_a_gateway_under_the_default_claim(
+def test_the_journey_experiment_keeps_a_gateway_rehearsal_unmeasured(
         tmp_path):
-    """A declared live boundary under protocol rehearsal is real
-    inference mislabeled as a rehearsal — refused rather than run."""
+    """The same gateway path can serve a finite zero-cost rehearsal."""
     from evals.journey_cohort import load_cohort
     from nora.subject.journey_world import JourneyServices
     from nora.subject.model_gateway import ModelGateway
@@ -213,10 +212,10 @@ def test_the_journey_experiment_refuses_a_gateway_under_the_default_claim(
         model_gateway=ModelGateway(
             upstream="http://127.0.0.1:9/v1",
             models=frozenset({"alpha", "beta", "nora"})))
-    with pytest.raises(ValueError, match="protocol rehearsal"):
-        experiment_for(
-            "autonomous_journey", source_url="postgresql://u@h/eval",
-            cohort=cohort, services={"the_outing": plan})
+    experiment, _ = experiment_for(
+        "autonomous_journey", source_url="postgresql://u@h/eval",
+        cohort=cohort, services={"the_outing": plan})
+    assert [case.name for case in experiment.cases] == ["the_outing"]
 
 
 def test_the_behavioral_experiment_binds_the_live_clock_pair(tmp_path):
