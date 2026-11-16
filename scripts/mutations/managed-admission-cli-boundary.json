@@ -21,9 +21,9 @@
     "target": "tests/unit/test_managed_admission_cli_boundary.py::test_an_unreadable_source_is_unavailable_not_a_refusal"
   },
   {
-    "name": "an apply failure logs the exception class, never its text",
+    "name": "an apply failure logs only a fixed code",
     "file": "nora/people/app/managed_admission.py",
-    "old": "            log.error(\"file admission failed (%s)\", type(error).__name__)",
+    "old": "            log.error(\"file admission failed\")",
     "new": "            log.exception(\"file admission failed\")",
     "target": "tests/unit/test_managed_admission_cli_boundary.py::test_apply_failure_never_logs_exception_parameters"
   },
@@ -37,8 +37,8 @@
   {
     "name": "a context fault after a committed import stays unavailable",
     "file": "scripts/managed_identity_handoff.py",
-    "old": "        print(f\"unavailable: {stage}:{type(error).__name__}\")\n        return RETRYABLE",
-    "new": "        print(f\"unavailable: {stage}:{type(error).__name__}\")\n        return COMPLETE",
+    "old": "        print(f\"unavailable: {stage}\")\n        return RETRYABLE",
+    "new": "        print(f\"unavailable: {stage}\")\n        return COMPLETE",
     "target": "tests/unit/test_managed_admission_cli_boundary.py::test_a_committed_import_with_a_cleanup_failure_confirms_on_exact_retry"
   },
   {
@@ -56,10 +56,24 @@
     "target": "tests/unit/test_managed_admission_cli_boundary.py::test_source_only_plan_never_reaches_a_target"
   },
   {
-    "name": "plan assesses — it never applies",
+    "name": "plan assesses \u2014 it never applies",
     "file": "scripts/managed_identity_handoff.py",
     "old": "                outcome = await admission.assess_prepared(prepared)",
     "new": "                outcome = await admission.apply_prepared(prepared)",
     "target": "tests/unit/test_managed_admission_cli_boundary.py::test_fresh_target_plan_reports_fresh_and_writes_nothing"
+  },
+  {
+    "name": "receipt detail cannot disguise private identifiers as count keys",
+    "file": "scripts/managed_identity_handoff.py",
+    "old": "    detail = _bounded_detail(outcome.detail)",
+    "new": "    detail = outcome.detail",
+    "target": "tests/unit/test_managed_admission_cli_boundary.py::test_a_completed_receipt_cannot_disclose_a_person_as_a_count_key"
+  },
+  {
+    "name": "only an explicit absence can make the target fresh",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "            if outcome.status is not OutcomeStatus.DENIED or outcome.detail != \"absent\":",
+    "new": "            if outcome.status is not OutcomeStatus.DENIED:",
+    "target": "tests/unit/test_managed_admission_cli_boundary.py::test_a_denial_without_explicit_absence_cannot_make_a_fresh_plan"
   }
 ]

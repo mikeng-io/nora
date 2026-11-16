@@ -636,7 +636,7 @@ async def test_a_sql_exception_never_discloses_its_text_or_parameters(
 ):
     """A live PostgreSQL failure whose message embeds a generated private
     value reports the bounded `store-failure` — the statement's own words
-    are in no detail and in no log line; the class name alone stays."""
+    are in no detail and in no log line; only the fixed diagnostic stays."""
     sentinel = "generated-private-sql-9f7e2c"
     await _install_trigger(
         engine, name="fail_hold_insert_private", event="INSERT",

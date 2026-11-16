@@ -35,8 +35,8 @@ absence/collision check. Fresh is reported only on an explicit absence
 answer — a collision refuses and a target that cannot answer is
 unavailable, never fresh.
 
-Every printed line is bounded: fixed statuses and the reason codes in
-`_REASONS`, the plan's own counts and the digest-derived import id. An
+Every printed line is bounded: fixed statuses and reason codes,
+the plan's own counts and the digest-derived import id. An
 outcome detail outside that vocabulary prints as `detail-withheld` —
 source paths, file text, room labels and ids, person/account names,
 endpoints and provider answers never reach stdout, stderr or the log.
@@ -52,7 +52,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-import re
 import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -97,42 +96,33 @@ _REASONS = frozenset({
     "foreign-target-state:membership-support", "foreign-target-state:hold",
 })
 
-_CLASS = re.compile(r"[A-Z][A-Za-z0-9_]*")       # an exception class name
-_STATUS = re.compile(r"[0-9]{3}")                # an HTTP status
-_PERSONS = re.compile(r"[0-9]+-persons")         # a bounded input count
-_COUNTS = re.compile(r"[a-z_]+=[0-9]+( [a-z_]+=[0-9]+)*")  # the plan's counts
-
-#: Parametric codes whose tail the producer itself generates — an
-#: exception class, an HTTP status or a count; never a free value.
-_GENERATED = (
-    ("unreadable-source:", _CLASS),
-    ("invalid-identity-file:", _CLASS),
-    ("invalid-policy-file:", _CLASS),
-    ("transport:", _CLASS),
-    ("status:", _STATUS),
-    ("redirect:", _STATUS),
-    ("unsupported-input:dm-admission:", _PERSONS),
-)
-
-
-def _bounded_segment(segment: str) -> bool:
-    if segment in _REASONS:
-        return True
-    return any(
-        segment.startswith(prefix)
-        and bool(pattern.fullmatch(segment[len(prefix):]))
-        for prefix, pattern in _GENERATED
-    )
+_PREFIX_REASONS = {
+    "unreadable-source:": "unreadable-source",
+    "invalid-identity-file:": "invalid-identity-file",
+    "invalid-policy-file:": "invalid-policy-file",
+    "transport:": "transport-unavailable",
+    "status:": "remote-status",
+    "redirect:": "remote-redirect",
+    "unsupported-input:dm-admission:": "unsupported-input:dm-admission",
+}
 
 
 def _bounded_detail(detail: str) -> str | None:
-    """The detail when every `;` segment is bounded, else None — withheld."""
-    if _COUNTS.fullmatch(detail):
-        return detail
-    parts = detail.split(";")
-    if parts and all(_bounded_segment(part) for part in parts):
-        return detail
-    return None
+    """Only fixed codes cross the boundary; parameter tails are discarded."""
+    parts = detail.split(";", 3)
+    if len(parts) > 3:
+        return None
+    safe = []
+    for part in parts:
+        if part in _REASONS:
+            safe.append(part)
+            continue
+        code = next((code for prefix, code in _PREFIX_REASONS.items()
+                     if part.startswith(prefix)), None)
+        if code is None:
+            return None
+        safe.append(code)
+    return ";".join(safe)
 
 
 def _report(outcome: Outcome, *, prefix: str) -> int:
@@ -251,8 +241,8 @@ async def run(
         return exited.code if isinstance(exited.code, int) else REFUSED
     try:
         prepared = prepare(Path(args.identity), Path(args.policy))
-    except Exception as error:  # noqa: BLE001 — a source fault is unavailable
-        print(f"unavailable: source-read:{type(error).__name__}")
+    except Exception:  # noqa: BLE001 — a source fault is unavailable
+        print("unavailable: source-read")
         return RETRYABLE
     if isinstance(prepared, Outcome):
         return _report(prepared, prefix="source")
@@ -283,10 +273,10 @@ async def run(
             else:
                 outcome = await admission.apply_prepared(prepared)
             stage = "target-close"
-    except Exception as error:  # noqa: BLE001 — every stage stays unavailable;
+    except Exception:  # noqa: BLE001 — every stage stays unavailable;
         # a cleanup fault after a committed import is still honestly
         # unavailable until an exact retry confirms the durable receipt.
-        print(f"unavailable: {stage}:{type(error).__name__}")
+        print(f"unavailable: {stage}")
         return RETRYABLE
     if outcome is None:  # unreachable: the except returns on every fault
         return RETRYABLE

@@ -145,22 +145,21 @@ def _read_sources(
     try:
         identity_source = identity_path.read_bytes()
         policy_source = policy_path.read_bytes()
+        with TemporaryDirectory(prefix="nora-admission-") as directory:
+            identity_copy = Path(directory) / "identity.toml"
+            policy_copy = Path(directory) / "policy.toml"
+            identity_copy.write_bytes(identity_source)
+            policy_copy.write_bytes(policy_source)
+            try:
+                persons = load_persons(identity_copy)
+            except (PersonsError, UnicodeError) as error:
+                return denied(f"invalid-identity-file:{type(error).__name__}")
+            try:
+                policy = load_policy(policy_copy)
+            except (PolicyError, UnicodeError) as error:
+                return denied(f"invalid-policy-file:{type(error).__name__}")
     except OSError as error:
-        # Bytes that cannot be read are unavailable, never a refusal.
         return unavailable(f"unreadable-source:{type(error).__name__}")
-    with TemporaryDirectory(prefix="nora-admission-") as directory:
-        identity_copy = Path(directory) / "identity.toml"
-        policy_copy = Path(directory) / "policy.toml"
-        identity_copy.write_bytes(identity_source)
-        policy_copy.write_bytes(policy_source)
-        try:
-            persons = load_persons(identity_copy)
-        except (PersonsError, OSError, UnicodeError) as error:
-            return denied(f"invalid-identity-file:{type(error).__name__}")
-        try:
-            policy = load_policy(policy_copy)
-        except (PolicyError, OSError, UnicodeError) as error:
-            return denied(f"invalid-policy-file:{type(error).__name__}")
     return persons, policy, identity_source, policy_source
 
 
@@ -405,9 +404,8 @@ class FileAdmission:
         try:
             async with self.bindings.mutation():
                 return await self._apply(prepared)
-        except Exception as error:  # noqa: BLE001 — bounded to the class name:
-            # the text can carry SQL parameters or source values, never a log.
-            log.error("file admission failed (%s)", type(error).__name__)
+        except Exception:  # noqa: BLE001 — private port errors stay unavailable
+            log.error("file admission failed")
             return unavailable("store-failure")
 
     async def _apply(self, prepared: PreparedImport) -> Outcome:
@@ -576,7 +574,7 @@ class FileAdmission:
             outcome, view = await self.kratos.read(external_id=person_id)
             if view is not None:
                 return denied("kratos-correlation-present")
-            if outcome.status is not OutcomeStatus.DENIED:
+            if outcome.status is not OutcomeStatus.DENIED or outcome.detail != "absent":
                 return unavailable(outcome.detail or "identity-unconfirmed")
         return None
 

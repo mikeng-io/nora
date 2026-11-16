@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 
 import aiohttp
@@ -222,7 +223,7 @@ async def test_an_unreadable_source_is_unavailable_not_a_refusal(sources, capsys
     rc = await run(_argv("plan", missing, policy_path))
     captured = _clean(_SENTINEL, capsys)   # the PATH itself is private
     assert rc == RETRYABLE
-    assert "unavailable: unreadable-source:FileNotFoundError" in captured.out
+    assert "unavailable: unreadable-source" in captured.out
 
 
 async def test_an_invalid_source_is_a_refusal(sources, capsys):
@@ -231,7 +232,7 @@ async def test_an_invalid_source_is_a_refusal(sources, capsys):
     rc = await run(_argv("plan", identity_path, sources[1]))
     captured = _clean(_SENTINEL, capsys)
     assert rc == REFUSED
-    assert "refused: invalid-identity-file:" in captured.out
+    assert "refused: invalid-identity-file" in captured.out
 
 
 async def test_a_prepare_outcome_reports_unavailable_honestly(tmp_path):
@@ -287,7 +288,7 @@ async def test_a_missing_configured_credential_is_unavailable(
     ))   # no services= — the real `_target_services` boundary
     captured = _clean(_SENTINEL, capsys)
     assert rc == RETRYABLE
-    assert "unavailable: target-setup:ValueError" in captured.out
+    assert "unavailable: target-setup" in captured.out
 
 
 async def test_a_credential_value_never_leaks_through_setup(sources, capsys, monkeypatch):
@@ -319,7 +320,7 @@ async def test_a_context_entry_failure_is_unavailable(sources, capsys):
                    services=factory)
     captured = _clean(_SENTINEL, capsys)
     assert rc == RETRYABLE
-    assert "unavailable: target-setup:RuntimeError" in captured.out
+    assert "unavailable: target-setup" in captured.out
 
 
 async def test_a_context_exit_failure_is_unavailable(sources, capsys):
@@ -336,7 +337,7 @@ async def test_a_context_exit_failure_is_unavailable(sources, capsys):
                    services=closing_fault)
     captured = _clean(_SENTINEL, capsys)
     assert rc == RETRYABLE
-    assert "unavailable: target-close:RuntimeError" in captured.out
+    assert "unavailable: target-close" in captured.out
 
 
 async def test_a_committed_import_with_a_cleanup_failure_confirms_on_exact_retry(
@@ -443,7 +444,7 @@ async def test_apply_failure_never_logs_exception_parameters(
     sources, capsys, caplog,
 ):
     """A real SQL exception carrying generated private parameters becomes
-    the bounded 'store-failure' — the log keeps a class name, never the
+    the bounded 'store-failure' — the log keeps a fixed code, never the
     statement's text or its traceback."""
     class _LeakyProbe(FakeAdmissionProbe):
         async def facts(self):
@@ -478,7 +479,7 @@ async def test_a_real_sql_exception_never_reaches_the_report(
     sources, capsys, caplog,
 ):
     """The statement's own text and bound params reach neither stream —
-    the class name alone is the diagnostic."""
+    the fixed failure code is the diagnostic."""
     class _SqlLeakyProbe(FakeAdmissionProbe):
         async def facts(self):
             raise sa.exc.StatementError(
@@ -499,7 +500,7 @@ async def test_a_real_sql_exception_never_reaches_the_report(
                    services=factory)
     captured = _clean(_SENTINEL, capsys)
     assert _SENTINEL not in caplog.text
-    assert "StatementError" in caplog.text           # the class stays, params go
+    assert "StatementError" not in caplog.text
     assert rc == RETRYABLE
     assert "unavailable: store-failure" in captured.out
 
@@ -528,7 +529,7 @@ async def test_a_real_transport_failure_reports_unavailable_without_the_endpoint
                    services=factory)
     captured = _clean(_SENTINEL, capsys)
     assert rc == RETRYABLE
-    assert "unavailable: transport:" in captured.out  # bounded, endpoint-free
+    assert "unavailable: transport-unavailable" in captured.out  # bounded, endpoint-free
 
 
 # -- the real process boundary --------------------------------------------------
@@ -572,7 +573,7 @@ def test_subprocess_reports_an_unreadable_source_as_unavailable(tmp_path):
         ["plan", "--identity", str(missing), "--policy", str(policy_path)],
         cwd=root)
     assert result.returncode == RETRYABLE
-    assert "unavailable: unreadable-source:" in result.stdout
+    assert "unavailable: unreadable-source" in result.stdout
     assert _SENTINEL not in result.stdout and _SENTINEL not in result.stderr
 
 
@@ -595,3 +596,63 @@ def test_subprocess_help_exits_zero(tmp_path):
     result = _subprocess(["--help"], cwd=root)
     assert result.returncode == COMPLETE
     assert "plan" in result.stdout
+
+
+async def test_a_completed_receipt_cannot_disclose_a_person_as_a_count_key(sources, capsys):
+    private_person = "generated_private_person"
+    identity, policy = sources
+    identity.write_text(IDENTITY.replace(_SENTINEL, private_person))
+    policy.write_text(POLICY.replace(_SENTINEL, private_person))
+    factory, store, _, _ = _services()
+    argv = _argv("apply", identity, policy, *_TARGET)
+    assert await run(argv, services=factory) == COMPLETE
+    capsys.readouterr()
+    record = next(iter(store.operations.values()))
+    store.operations[record.operation_id] = replace(record, detail=f"{private_person}=1")
+    assert await run(argv, services=factory) == COMPLETE
+    captured = capsys.readouterr()
+    assert private_person not in captured.out
+    assert private_person not in captured.err
+    assert "import: complete" in captured.out
+
+
+@pytest.mark.parametrize("detail", ["transport:GeneratedPrivatePerson", "private_generated_id=123"])
+async def test_shape_matching_details_are_never_printed_as_values(sources, capsys, detail):
+    identity, policy = sources
+    assert await run(_argv("apply", identity, policy, *_TARGET),
+                     services=lambda: _stub(unavailable(detail))) == RETRYABLE
+    captured = capsys.readouterr()
+    assert detail not in captured.out and detail not in captured.err
+    assert "unavailable:" in captured.out
+
+
+async def test_a_denial_without_explicit_absence_cannot_make_a_fresh_plan(sources, capsys):
+    class DeniedRead(FakeAdmissionKratos):
+        async def read(self, *, external_id):
+            return denied("permission-denied"), None
+
+    factory, store, backend, _ = _services(kratos=DeniedRead())
+    identity, policy = sources
+    assert await run(_argv("plan", identity, policy, *_TARGET), services=factory) == RETRYABLE
+    assert "target: fresh" not in capsys.readouterr().out
+    assert not store.operations and not store.people and not backend.tuples
+    good, _, _, _ = _services()
+    assert await run(_argv("plan", identity, policy, *_TARGET), services=good) == COMPLETE
+
+
+async def test_private_copy_read_io_failure_is_unavailable(sources, capsys, monkeypatch):
+    original_open = Path.open
+
+    def fault(path, mode="r", *args, **kwargs):
+        if path.parent.name.startswith("nora-admission-") and mode == "rb":
+            raise OSError("generated-private-file-read")
+        return original_open(path, mode, *args, **kwargs)
+
+    identity, policy = sources
+    monkeypatch.setattr(Path, "open", fault)
+    assert await run(_argv("plan", identity, policy)) == RETRYABLE
+    captured = capsys.readouterr()
+    assert "unavailable: unreadable-source" in captured.out
+    assert "generated-private-file-read" not in captured.out + captured.err
+    monkeypatch.setattr(Path, "open", original_open)
+    assert await run(_argv("plan", identity, policy)) == COMPLETE
