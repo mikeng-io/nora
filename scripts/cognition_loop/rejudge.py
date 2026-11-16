@@ -112,9 +112,7 @@ def run_status_after(report: dict[str, Any]) -> str:
 
 
 def _manifest_entry(entry: Any) -> dict[str, Any]:
-    """One expected-case row normalized to the current manifest shape:
-    fields a version-1-era report never recorded default to their
-    version-1 values, never silently rewriting what it declared."""
+    """One manifest row with legacy fields defaulted to their original version-1 values."""
     shape = {
         "name": None, "unit": None, "wakes": [], "expectations": [],
         "read_probes": [], "turns": [], "version": 1,

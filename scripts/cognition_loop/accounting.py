@@ -390,10 +390,7 @@ def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
                         f"{case.get('name')}:turn-{index} failed at {step}: "
                         f"{turn.get('error')}")
                     continue
-                # A produced turn settles to its typed outcome: confirmed
-                # delivery, an explicit recorded abstention, or the
-                # admission's own declined engagement. Anything else —
-                # unconfirmed, absent — stays unestablished.
+                # Only confirmed delivery, recorded abstention or declined engagement counts.
                 if turn.get("outcome") in ("delivered",
                                            "intentional_non_delivery",
                                            "recorded"):

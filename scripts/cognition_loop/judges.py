@@ -269,8 +269,7 @@ def _message_text(content: Any) -> str:
 
 
 def _model_calls(calls: Any) -> list[dict[str, Any]]:
-    """Each actual request, bounded: model, offered tools and the newest
-    messages excerpted — never the repeated stack."""
+    """Each request's model, tools and bounded newest messages, without the repeated stack."""
     digests = []
     for index, call in enumerate(calls or []):
         messages = call.get("messages") or []
@@ -327,10 +326,7 @@ def _wake_evidence(
             "model_calls": _model_calls(trajectory.get("model_calls")),
         })
         if history:
-            # An earlier turn is history, not the occasion under judgment:
-            # the same compact shape a wake digest has — the verbatim
-            # requests stay in the frozen artifact for audit, never in
-            # every later payload.
+            # History uses the compact wake shape; verbatim requests remain in the frozen artifact.
             evidence.pop("model_calls", None)
     return evidence
 
@@ -498,8 +494,7 @@ def trajectory_gap(trajectory: Any) -> list[str]:
 
 
 def _occasion_gap(trajectory: Any) -> list[str]:
-    """The one prerequisite for the occasion's own kind: a produced turn
-    is bound by its typed outcome, a wake by its settled session."""
+    """A turn's typed outcome or a wake's settled session, according to the occasion."""
     if isinstance(trajectory, dict) and "turn" in trajectory:
         return turn_gap(trajectory)
     return trajectory_gap(trajectory)
@@ -507,8 +502,7 @@ def _occasion_gap(trajectory: Any) -> list[str]:
 
 def _earlier_gaps(earlier_wakes: tuple[tuple[Any, dict[str, Any]], ...]
                   ) -> list[str]:
-    """Every earlier occasion's gap: an invalid antecedent is a named
-    refusal, never an empty history."""
+    """Each antecedent's named refusal; invalid history never becomes empty history."""
     causes: list[str] = []
     for index, (prior_diff, earlier) in enumerate(earlier_wakes):
         label = ("earlier turn"
