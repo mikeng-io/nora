@@ -18,7 +18,8 @@ from collections import Counter
 from typing import Any
 
 from evals.backbone import ERROR, FAIL, NORA_ERROR, PASS
-from evals.outcome import REVIEW, UNKNOWN, UNMEASURED, axis
+from evals.measurement import PROTOCOL, Measurement
+from evals.outcome import REVIEW, UNKNOWN, axis
 
 ALIGNED_FIELDS = ("scores", "test_passes", "reasons")
 
@@ -127,10 +128,11 @@ def evidence_outcome(evidence: Any) -> dict[str, Any]:
 
 def report_outcome(report: Any, coverage: dict[str, Any], *,
                    experiment: Any = None, evidence: dict[str, Any] | None = None,
-                   scope: str = "protocol-rehearsal") -> dict[str, Any]:
+                   measurement: Measurement = PROTOCOL) -> dict[str, Any]:
     """The three result axes, from the same rows coverage counted plus the
     canonical evidence receipts (`receipt` = the `validate_events` verdict,
-    `settlement` = `case_settlement`'s per-case completion)."""
+    `settlement` = `case_settlement`'s per-case completion), scoped to the
+    bound measurement's claim."""
     rows = list(getattr(report, "cases", None) or [])
     by_name: dict[Any, dict[str, Any]] = {}
     for row in rows:
@@ -194,20 +196,28 @@ def report_outcome(report: Any, coverage: dict[str, Any], *,
         for out in outputs:
             label = getattr(out, "label", None)
             verdicts[label if label in verdicts else ERROR] += 1
+    unanswered = sum(1 for outputs in detailed if not outputs)
     return {
         "execution": execution,
-        "validity": axis(valid, scope=scope, causes=validity_causes),
-        "behavior": axis(UNMEASURED, scope=scope, verdicts=verdicts,
-                         unanswered=sum(1 for outputs in detailed if not outputs)),
+        "validity": axis(valid, scope=measurement.mode,
+                         causes=validity_causes),
+        "behavior": axis(
+            measurement.behavior_status(
+                verdicts=verdicts, unanswered=unanswered,
+                execution=execution["status"], validity=valid),
+            scope=measurement.mode, verdicts=verdicts,
+            unanswered=unanswered),
     }
 
 
 def accounted(report: Any, experiment: Any, *,
-              evidence: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+              evidence: dict[str, Any] | None = None,
+              measurement: Measurement = PROTOCOL) -> tuple[dict[str, Any], dict[str, Any]]:
     """Coverage and the three axes for one SDK report, computed once."""
     coverage = reconcile_report(experiment, report)
     return coverage, report_outcome(
-        report, coverage, experiment=experiment, evidence=evidence)
+        report, coverage, experiment=experiment, evidence=evidence,
+        measurement=measurement)
 
 
 def accepted(coverage: dict[str, Any], outcome: dict[str, Any]) -> bool:

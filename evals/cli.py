@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from evals.measurement import MEASURES
 from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES
 
 BUDGET_MINUTES = 60
@@ -96,6 +97,10 @@ def eval_parser() -> argparse.ArgumentParser:
              "generated worlds declared per case in --services, and the "
              "run requires an explicit --run-budget. Generated-world input "
              "is protocol evidence only — behavior stays UNMEASURED")
+    ap.add_argument("--measure", choices=MEASURES, default="protocol",
+                    help="the bound claim: `protocol` rehearsal (behavior "
+                         "UNMEASURED; a gateway is refused, not spent) or "
+                         "`behavioral` — journeys with one declared only")
     ap.add_argument(
         "--case", action="append", dest="cases", metavar="NAME",
         help="run only these cases of the named corpus; repeatable. A "

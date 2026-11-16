@@ -580,6 +580,7 @@ def experiment_for(
     contract: GradingContract | None = None,
     services: Mapping[str, Any] | None = None,
     cohort: Any = None,
+    measurement: Any = None,
 ) -> tuple[Experiment, Any]:
     """A ready-to-run `(Experiment, task)` pair for one corpus.
 
@@ -608,11 +609,22 @@ def experiment_for(
     (`bound_journey_services` refuses missing, wrong-kind or judge-mismatched
     plans), and `Spec.entry` the live-clock entry. No sampling, no
     `--judge`, no memory surface: the world declares its subject and its
-    two judge aliases, and behavior stays UNMEASURED.
+    two judge aliases. `measurement` is the bound claim (`evals.measurement`)
+    — protocol rehearsal by default, behavioral only when every selected
+    case's world declares its live model gateway.
     """
     from evals.backbone import JourneyGrader
     from evals.journey_cohort import bound_journey_services
+    from evals.measurement import PROTOCOL
     from evals.reading import sampled
+
+    if measurement is None:
+        measurement = PROTOCOL
+    if measurement.behavioral and name not in JOURNEY_CORPORA:
+        raise ValueError(
+            f"{name}: a behavioral measurement binds "
+            f"{sorted(JOURNEY_CORPORA)} only; every other corpus is a "
+            "protocol rehearsal")
 
     if name in JOURNEY_CORPORA:
         if sample != 1:
@@ -621,13 +633,15 @@ def experiment_for(
                 "journey; each run is one declared world")
         cases = selected_cases(name, only=only, cohort=cohort)
         plans = bound_journey_services(
-            name, cases, services, judges=cohort.judges)
+            name, cases, services, judges=cohort.judges,
+            measurement=measurement)
         if contract is not None:
             cases = [contract.bind_case(name, case) for case in cases]
         spec = Spec(
             source_url=source_url,
             services=plans,
             entry=corpus_entry(name),
+            measurement=measurement,
         )
         return Experiment(cases=cases, evaluators=[JourneyGrader()]), nora_task(spec)
 

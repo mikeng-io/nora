@@ -38,6 +38,7 @@ from evals.backbone import (
 from evals.cli import BUDGET_MINUTES, eval_parser, run_budget_for
 from evals.grading_contract import GradingContract
 from evals.journey_cohort import bound_selection
+from evals.measurement import PROTOCOL, Measurement
 from evals.reading import base_name, read, sample_read
 from evals.rebuilt.grading import DEFAULT_SAMPLES, Judge
 from evals.scenarios import (
@@ -191,8 +192,8 @@ def over_budget(est: Estimate, *, allow_long: bool) -> str | None:
 
 def _list_corpora() -> None:
     for name in sorted([*CORPUS_ENTRY, *JOURNEY_CORPORA]):
-        judged = ("journey; --journey-cohort + finite --services worlds; "
-                  "--run-budget required; behavior UNMEASURED"
+        judged = ("journey; --journey-cohort + --services worlds; --run-budget"
+                  " required; --measure behavioral else behavior UNMEASURED"
                   if name in JOURNEY_CORPORA else
                   "judged" if name in JUDGED_CORPORA else "structural")
         print(f"{name:24} entry={corpus_entry(name):14} "
@@ -407,27 +408,24 @@ def _print_positions(report: Any) -> None:
 def _run_one(
     name: str, *, source_url: str, judge: Judge | None, sample: int,
     only: frozenset[str] | None = None, all_reasons: bool = False,
-    positions: bool = False,
-    context_receipts: list[dict] | None = None,
-    memory_index: bool = False,
-    subject_overrides: dict[str, Any] | None = None,
-    contract: GradingContract | None = None,
-    services: dict[str, Any] | None = None,
-    cohort: Any = None,
+    positions: bool = False, context_receipts: list[dict] | None = None,
+    memory_index: bool = False, subject_overrides: dict[str, Any] | None = None,
+    contract: GradingContract | None = None, services: dict[str, Any] | None = None,
+    cohort: Any = None, measurement: Measurement = PROTOCOL,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
         memory_index=memory_index, overrides=subject_overrides,
-        contract=contract,
-        services=services,
-        cohort=cohort,
+        contract=contract, services=services,
+        cohort=cohort, measurement=measurement,
     )
     report = experiment.run_evaluations(task=task)
-    coverage, outcome = accounted(report, experiment)
+    coverage, outcome = accounted(report, experiment, measurement=measurement)
     from nora.subject.eval_evidence import current
 
     if evidence := current():
-        retained = retain_report(evidence, name, report, experiment=experiment, coverage=coverage)
+        retained = retain_report(evidence, name, report, experiment=experiment,
+                                 coverage=coverage, measurement=measurement)
         outcome = retained["outcome"]
         evidence.check()
         evidence.record("corpus_report", **retained)
@@ -440,7 +438,7 @@ def _run_one(
             context_complete = False
     scope = f" [{len(experiment.cases)} selected]" if only else ""
     print(f"--- {name}: {census(name, cohort=cohort)}{scope} ---")
-    print("mode: protocol rehearsal; model behavior: UNMEASURED")
+    print(f"mode: {measurement.phrase}; model behavior: {outcome['behavior']['status']}")
     describe_outcome(coverage, outcome)
     _print_spend()
     _print_memory_overhead()
@@ -624,7 +622,8 @@ def _main(*, lock_fd: int = -1) -> int:
     try:
         args.service_inputs = load_services(args.services) if args.services else None
         # THE JOURNEY SELECTION binds and refuses here, before anything
-        # composes or a model is called: cohort, per-case worlds, judges, budget.
+        # composes or a model is called: cohort, per-case worlds, judges,
+        # budget, and the measurement claim agreeing with every world.
         args.bound_cohort = bound_selection(args, names, only)
     except (OSError, ValueError, TypeError) as exc:
         print(f"refusing to run: {exc}", file=sys.stderr)
@@ -655,7 +654,8 @@ def _main(*, lock_fd: int = -1) -> int:
             args.bound_cohort.judges if args.bound_cohort else ()),
         selection={"corpora": names, "only": sorted(only or ()),
                    "sample": args.sample, "judge_samples": args.judge_samples,
-                   **({"journey_cohort": args.bound_cohort.sha256}
+                   **({"journey_cohort": args.bound_cohort.sha256,
+                       "measurement": args.bound_measurement.mode}
                       if args.bound_cohort else {})},
     )
     from opentelemetry import trace
@@ -674,8 +674,7 @@ def _main(*, lock_fd: int = -1) -> int:
             return 2
     # Bound dispatches, including model reads during composition.
     try:
-        budget = run_budget_for(args.run_budget,
-                                input_bytes=args.run_input_bytes)
+        budget = run_budget_for(args.run_budget, input_bytes=args.run_input_bytes)
     except ValueError as exc:
         print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
@@ -687,6 +686,7 @@ def _main(*, lock_fd: int = -1) -> int:
             "sample": args.sample, "judge": args.judge, "judge_samples": args.judge_samples,
             "deployment_config_sha256": fingerprint(Path(args.deployment_config)),
             "lock_path": str(EVAL_HOST_LOCK), "lock_acquired": True,
+            "measurement": args.bound_measurement.mode,
             **({"subject_overrides_file": str(args.subject_overrides),
                 "subject_overrides_sha256": overrides_sha,
                 "subject_overrides": subject_overrides}
@@ -843,7 +843,8 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             if evidence := current():
                 evidence.record("subject_config", sha256=fingerprint(Path(generated)))
             print(f"subject config rebuilt from {args.deployment_config} -> {generated}")
-            print(f"run {RUN_ID}: protocol rehearsal with case-owned external services")
+            measurement = getattr(args, "bound_measurement", None) or PROTOCOL
+            print(f"run {RUN_ID}: {measurement.phrase} with case-owned external services")
             # THE MEMORY SURFACE, RESOLVED, not assumed (DEC-316): the
             # generated config's own flag, or `--memory-index`. Cases are
             # selected for it and every subject is checked against it, so a
@@ -852,9 +853,8 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             # `materialise` has just written it; the per-case check
             # (`refuse_a_memory_surface_mismatch`) is the fail-closed backstop
             # should this ever read the wrong file.
-            written = Path(generated)
-            deployed = written.exists() and memory_index_enabled(
-                written.read_text(encoding="utf-8"))
+            deployed = Path(generated).exists() and memory_index_enabled(
+                Path(generated).read_text(encoding="utf-8"))
             graph = deployed or args.memory_index
             print(f"memory surface: {memory_surface_line(deployed, args.memory_index)}")
             print(pseudonyms.status())
@@ -901,7 +901,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                         services=(args.service_inputs.corpora.get(name)
                                   if args.service_inputs else None),
                         cohort=getattr(args, "bound_cohort", None),
-                    ) and ok
+                        measurement=measurement) and ok
                 # Successful Nora replies under fallback cannot pass the selector experiment.
                 ok = ok and not any("selector_error" in r for r in receipts)
             return 0 if ok else 1

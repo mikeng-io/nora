@@ -163,8 +163,10 @@ def test_the_journey_experiment_refuses_undeclared_judge_aliases(tmp_path):
 def test_the_journey_experiment_refuses_a_gateway_omitting_a_judge(tmp_path):
     """A plan's declared model gateway must name BOTH cohort judge
     identities — a dispatch naming the omitted alias would refuse
-    mid-run, so the binding refuses before any case composes."""
+    mid-run, so the binding refuses before any case composes. The
+    gateway-bearing plan only exists under the behavioral claim."""
     from evals.journey_cohort import load_cohort
+    from evals.measurement import BEHAVIORAL
     from nora.subject.journey_world import JourneyServices
     from nora.subject.model_gateway import ModelGateway
 
@@ -177,7 +179,76 @@ def test_the_journey_experiment_refuses_a_gateway_omitting_a_judge(tmp_path):
     with pytest.raises(ValueError, match="judge"):
         experiment_for(
             "autonomous_journey", source_url="postgresql://u@h/eval",
+            cohort=cohort, services={"the_outing": plan},
+            measurement=BEHAVIORAL)
+
+
+def test_the_journey_experiment_refuses_behavioral_without_a_gateway(
+        tmp_path):
+    """A behavioral measurement on a generated world is a promotion the
+    binding refuses — CausalProtocol/GeneratedJudge can only ever carry
+    a protocol claim."""
+    from evals.journey_cohort import load_cohort
+    from evals.measurement import BEHAVIORAL
+
+    cohort = load_cohort(_cohort_file(tmp_path), corpus="autonomous_journey")
+    with pytest.raises(ValueError, match="cannot promote"):
+        experiment_for(
+            "autonomous_journey", source_url="postgresql://u@h/eval",
+            cohort=cohort, services={"the_outing": _journey_services()},
+            measurement=BEHAVIORAL)
+
+
+def test_the_journey_experiment_refuses_a_gateway_under_the_default_claim(
+        tmp_path):
+    """A declared live boundary under protocol rehearsal is real
+    inference mislabeled as a rehearsal — refused rather than run."""
+    from evals.journey_cohort import load_cohort
+    from nora.subject.journey_world import JourneyServices
+    from nora.subject.model_gateway import ModelGateway
+
+    cohort = load_cohort(_cohort_file(tmp_path), corpus="autonomous_journey")
+    plan = JourneyServices(
+        policy="[rooms]\nallow = []", judge_models=("alpha", "beta"),
+        model_gateway=ModelGateway(
+            upstream="http://127.0.0.1:9/v1",
+            models=frozenset({"alpha", "beta", "nora"})))
+    with pytest.raises(ValueError, match="protocol rehearsal"):
+        experiment_for(
+            "autonomous_journey", source_url="postgresql://u@h/eval",
             cohort=cohort, services={"the_outing": plan})
+
+
+def test_the_behavioral_experiment_binds_the_live_clock_pair(tmp_path):
+    """The positive control: every selected case declaring its gateway
+    under the behavioral claim constructs the native pair — the bound
+    measurement reaching Spec."""
+    from evals.journey_cohort import load_cohort
+    from evals.measurement import BEHAVIORAL
+    from nora.subject.journey_world import JourneyServices
+    from nora.subject.model_gateway import ModelGateway
+
+    cohort = load_cohort(_cohort_file(tmp_path), corpus="autonomous_journey")
+    plan = JourneyServices(
+        policy="[rooms]\nallow = []", judge_models=("alpha", "beta"),
+        model_gateway=ModelGateway(
+            upstream="http://127.0.0.1:9/v1",
+            models=frozenset({"alpha", "beta", "nora"})))
+    experiment, task = experiment_for(
+        "autonomous_journey", source_url="postgresql://u@h/eval",
+        cohort=cohort, services={"the_outing": plan}, measurement=BEHAVIORAL)
+    assert [c.name for c in experiment.cases] == ["the_outing"]
+    assert callable(task)
+
+
+def test_a_behavioral_measurement_refuses_an_ordinary_corpus():
+    """The off-default claim binds the journey corpus only — an ordinary
+    corpus can never carry a behavioral measurement."""
+    from evals.measurement import BEHAVIORAL
+
+    with pytest.raises(ValueError, match="protocol rehearsal"):
+        experiment_for("no_trigger", source_url="postgresql://u@h/eval",
+                       measurement=BEHAVIORAL)
 
 
 def test_the_journey_experiment_refuses_without_the_cohort():

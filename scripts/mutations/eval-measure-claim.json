@@ -1,0 +1,65 @@
+[
+  {
+    "name": "a behavioral measurement cannot promote a generated world",
+    "file": "evals/journey_cohort.py",
+    "old": "        if (plan.model_gateway is not None) != measurement.behavioral:\n            if measurement.behavioral:",
+    "new": "        if (plan.model_gateway is not None) == measurement.behavioral:\n            if measurement.behavioral:",
+    "target": "tests/unit/test_eval_journey_cohort.py::test_the_journey_experiment_refuses_behavioral_without_a_gateway tests/unit/test_eval_journey_cohort.py::test_the_journey_experiment_refuses_a_gateway_under_the_default_claim"
+  },
+  {
+    "name": "a protocol run cannot silently spend a declared gateway",
+    "file": "evals/journey_cohort.py",
+    "old": "            if measurement.behavioral:\n                raise ValueError(\n                    f\"{corpus}: journey case {case.name!r} declares no \"",
+    "new": "            if not measurement.behavioral:\n                raise ValueError(\n                    f\"{corpus}: journey case {case.name!r} declares no \"",
+    "target": "tests/unit/test_eval_journey_cohort.py::test_the_journey_experiment_refuses_behavioral_without_a_gateway tests/unit/test_eval_main.py::test_a_behavioral_selection_cannot_promote_a_generated_world"
+  },
+  {
+    "name": "the behavioral claim binds the journey corpus only",
+    "file": "evals/journey_cohort.py",
+    "old": "    if not journey:\n        if measurement.behavioral:",
+    "new": "    if not journey:\n        if not measurement.behavioral:",
+    "target": "tests/unit/test_eval_main.py::test_a_behavioral_measurement_binds_the_journey_only"
+  },
+  {
+    "name": "an ordinary corpus cannot carry a behavioral measurement",
+    "file": "evals/scenarios.py",
+    "old": "    if measurement.behavioral and name not in JOURNEY_CORPORA:",
+    "new": "    if measurement.behavioral and name in JOURNEY_CORPORA:",
+    "target": "tests/unit/test_eval_journey_cohort.py::test_a_behavioral_measurement_refuses_an_ordinary_corpus"
+  },
+  {
+    "name": "a protocol draw never claims behavior",
+    "file": "evals/measurement.py",
+    "old": "        if not self.behavioral:\n            return UNMEASURED\n        if error:",
+    "new": "        if not self.behavioral:\n            return PASS\n        if error:",
+    "target": "tests/unit/test_eval_report_accounting.py::test_the_draw_state_stamps_the_bound_measurement_not_a_literal"
+  },
+  {
+    "name": "an errored draw is never a measured verdict",
+    "file": "evals/measurement.py",
+    "old": "        if error:\n            return ERROR",
+    "new": "        if error:\n            return PASS",
+    "target": "tests/unit/test_eval_report_accounting.py::test_the_draw_state_stamps_the_bound_measurement_not_a_literal"
+  },
+  {
+    "name": "an unanswered or errored measurement is never a quality score",
+    "file": "evals/measurement.py",
+    "old": "        if unanswered or verdicts.get(ERROR) or not any(verdicts.values()):",
+    "new": "        if False:",
+    "target": "tests/unit/test_eval_report_accounting.py::test_an_unanswered_row_can_never_become_a_behavioral_pass tests/unit/test_eval_report_accounting.py::test_a_behavioral_measurement_reports_the_evaluators_axis"
+  },
+  {
+    "name": "a behavioral pass requires an established measurement",
+    "file": "evals/measurement.py",
+    "old": "        if execution == PASS and validity == PASS:\n            return PASS\n        return UNKNOWN",
+    "new": "        if True:\n            return PASS\n        return UNKNOWN",
+    "target": "tests/unit/test_eval_report_accounting.py::test_a_behavioral_pass_cannot_stand_on_an_unestablished_measurement"
+  },
+  {
+    "name": "the axes' scope is the bound measurement, not a literal",
+    "file": "evals/accounting.py",
+    "old": "            scope=measurement.mode, verdicts=verdicts,",
+    "new": "            scope=None, verdicts=verdicts,",
+    "target": "tests/unit/test_eval_report_accounting.py::test_a_behavioral_measurement_reports_the_evaluators_axis tests/unit/test_eval_report_accounting.py::test_protocol_axes_keep_behavior_unmeasured_even_with_verdicts"
+  }
+]

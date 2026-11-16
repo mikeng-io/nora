@@ -16,8 +16,8 @@
   {
     "name": "the retained SDK report carries coverage and axes",
     "file": "evals/backbone.py",
-    "old": "               \"mode\": \"protocol-rehearsal\", \"behavior\": \"UNMEASURED\",\n               \"coverage\": coverage, \"outcome\": outcome}",
-    "new": "               \"mode\": \"protocol-rehearsal\", \"behavior\": \"UNMEASURED\"}",
+    "old": "               \"mode\": measurement.mode, \"coverage\": coverage,\n               \"behavior\": outcome[\"behavior\"][\"status\"], \"outcome\": outcome}",
+    "new": "               \"mode\": measurement.mode,\n               \"behavior\": outcome[\"behavior\"][\"status\"]}",
     "target": "tests/unit/test_eval_report_accounting.py::test_the_retained_report_carries_its_coverage_and_axes"
   },
   {
