@@ -69,6 +69,44 @@ def test_the_journey_producer_preserves_semantic_judgments(status):
     assert native.detailed_results[0][0].label == status
 
 
+def _request_event(model, ref):
+    return {"kind": "event", "name": "nora.model.request", "event_id": ref,
+            "attributes": {"nora.model.request.body": json.dumps({"model": model})}}
+
+
+def test_request_counts_come_from_canonical_requests_including_both_judges():
+    from nora.subject.request_evidence import request_census
+
+    events = [_request_event(model, f"e{i}")
+              for i, model in enumerate(("subject", "alpha", "beta", "subject"))]
+    events.append({"kind": "fixture_model_request", "model": "invented"})
+    actual = request_census(events, judges=["alpha", "beta"])
+    assert actual["status"] == "observed"
+    assert actual["model_requests"] == 4 and actual["judge_requests"] == 2
+    assert actual["by_model"] == {"subject": 2, "alpha": 1, "beta": 1}
+    assert actual["refs"] == ["e0", "e1", "e2", "e3"]
+    assert request_census([], judges=["alpha", "beta"])["model_requests"] == 0
+
+
+@pytest.mark.parametrize("damage", ["missing", "malformed", "untyped", "identity"])
+def test_invalid_request_evidence_is_unavailable_never_zero(damage):
+    from nora.subject.request_evidence import request_census
+
+    event = _request_event("subject", "e1")
+    if damage == "missing":
+        event["attributes"] = {}
+    elif damage == "malformed":
+        event["attributes"]["nora.model.request.body"] = "broken"
+    elif damage == "untyped":
+        event["attributes"]["nora.model.request.body"] = json.dumps({"model": None})
+    else:
+        event["event_id"] = None
+    actual = request_census([event], judges=["alpha", "beta"])
+    assert actual["status"] == "unavailable"
+    assert actual["cause"] == "model_request_census_invalid"
+    assert actual["model_requests"] is None and actual["judge_requests"] is None
+
+
 @pytest.mark.parametrize("status,reviewed,accepted", [
     ("PASS", 0, True), ("REVIEW", 1, False),
 ])

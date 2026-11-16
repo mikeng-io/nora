@@ -1,8 +1,34 @@
-"""Subject-visible instruction custody over canonical requests and settled wake receipts."""
+"""Canonical request custody, census and settled wake instruction receipts."""
 
+import json
+from collections import Counter
 from typing import Any
 
 from nora.subject.raw_model import instruction_messages
+
+
+def request_census(events: list[dict[str, Any]], *, judges: list[str]) -> dict[str, Any]:
+    """Count captured formatted requests, not inferred dispatches or billed usage."""
+    models: Counter[str] = Counter()
+    refs: list[str] = []
+    for event in events:
+        if event.get("name") != "nora.model.request":
+            continue
+        try:
+            body = json.loads(event["attributes"]["nora.model.request.body"])
+            model = body["model"]
+            ref = event.get("event_id")
+            if not isinstance(model, str) or not model or not isinstance(ref, str) or not ref:
+                raise ValueError
+        except (KeyError, TypeError, ValueError):
+            return {"status": "unavailable", "cause": "model_request_census_invalid",
+                    "model_requests": None, "judge_requests": None}
+        models[model] += 1
+        refs.append(ref)
+    return {"status": "observed", "basis": "captured-formatted-requests",
+            "model_requests": sum(models.values()),
+            "judge_requests": sum(models[model] for model in set(judges)),
+            "by_model": dict(models), "refs": refs}
 
 
 def subject_instructions(trajectory: dict[str, Any]) -> dict[str, Any]:

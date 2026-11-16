@@ -43,6 +43,7 @@ from nora.subject.journey import (
     declared_source,
     message_from_dict,
 )
+from nora.subject.request_evidence import request_census
 from scripts.cognition_loop import html as report_html
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.accounting import write_report
@@ -370,6 +371,7 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
                        error="the case's services are not a generated journey world")
     measurement = for_world(world, Measurement(
         mode=evidence.metadata.get("measurement", PROTOCOL.mode)))
+    cursor = evidence.cursor()
     plan = dict((case.metadata or {}).get("journey") or {})
     expectations = plan.get("expectations") or []
     output = evidence.path / f"journey-{case.name}"
@@ -419,16 +421,25 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
             "claim": "autonomous-live-journey",
             "execution": "live-clock",
             "judges": [str(m) for m in plan.get("judges") or ()],
-            "judge_requests": len(getattr(world.judge, "requests", []) or []),
-            "model_requests": len(getattr(world, "requests", []) or []),
             "wake_census": {"observed": produced,
                             "declared": plan.get("expected_wakes")},
         },
     }
     try:
-        receipt = validate_events(read_events(evidence.path), require_terminal=False)
+        events = read_events(evidence.path)
+        receipt = validate_events(events, require_terminal=False)
+        owned = ([e for e in events if e.get("case_id") == evidence.case_id]
+                 if evidence.case_id is not None else evidence.since(cursor))
+        census = request_census(owned, judges=report["run"]["judges"])
     except Exception:  # noqa: BLE001 — unreadable evidence is an ERROR receipt
         receipt = {"status": "ERROR", "causes": ["unreadable_record"]}
+        census = {"status": "unavailable", "cause": "unreadable_record",
+                  "model_requests": None, "judge_requests": None}
+    report["run"].update(request_census=census, model_requests=census["model_requests"],
+                         judge_requests=census["judge_requests"])
+    if census["status"] != "observed":
+        receipt = {**receipt, "status": "ERROR",
+                   "causes": [*receipt["causes"], census["cause"]]}
     report["evidence"] = {**receipt, "ref": evidence.path.name}
     report["receipts"] = await _receipts(subject)
     if report["receipts"].get("status") == "unavailable":
