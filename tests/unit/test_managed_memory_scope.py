@@ -1,6 +1,7 @@
 """Managed membership, social preferences and failure semantics at the
 memory consumer, without I/O."""
 
+import asyncio
 from typing import Any
 from uuid import uuid4
 
@@ -47,11 +48,13 @@ async def _world(
     *,
     social: dict[str, Any] | None = None,
     members: tuple[str, ...] = (PERSON,),
+    bindings: FakeBindingStore | None = None,
 ):
     """Seed explicit preferences, or omit selected traits to exercise malformed records."""
     if social is None:
         social = {PERSON: True, FOREIGN: True}
-    bindings = FakeBindingStore()
+    if bindings is None:
+        bindings = FakeBindingStore()
     backend = FakeAuthorityBackend()
     topology = FakeTopologySource(
         rooms={ROOM.id: (HERE.unit, False), "signal/generated-room-b": (THERE.unit, False)},
@@ -295,6 +298,187 @@ async def test_managed_source_names_are_screened_live_before_external_reads(
     state.persons = (PERSON,)
     assert (await call("volleyball news"))["status"] == "ok"
     assert calls == ["volleyball news", "volleyball news"]
+
+
+async def _screened_lookup(example_config, access, *, provider="web_search",
+                           persons=(PERSON,)):
+    """A `ComprehendRead` over `provider` as the managed session wires it."""
+    from nora.access import EMPTY_PERSONS
+    from nora.agent.comprehend_tools import ComprehendRead, LookupState
+    from nora.agent.fetch_watch import GraphFetched, _result_of
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.testing.comprehend import InMemoryComprehendRecords
+
+    class ManagedRecords(InMemoryComprehendRecords):
+        def __init__(self, access):
+            super().__init__()
+            self.access = access
+
+    memory = _graph_composition(EMPTY_PERSONS, access, example_config).cognition_memory
+    state = LookupState(
+        GraphFetched(), HERE.unit, 1, ManagedRecords(memory.records.access),
+        Metrics(), memory.private_names, persons=persons,
+    )
+    calls: list[str] = []
+
+    async def outbound(query: str) -> dict:
+        calls.append(query)
+        return {"status": "ok", "text": query}
+
+    tool = ComprehendRead(adapt(ToolSpec(
+        name=provider, description="", schema={}, call=outbound,
+    )), state)
+
+    async def call(query):
+        events = [event async for event in tool.stream({
+            "toolUseId": "generated-lookup", "name": provider,
+            "input": {"query": query},
+        }, {})]
+        return _result_of(events[-1])
+
+    return call, calls, state
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+async def test_a_blank_managed_source_name_makes_screened_reads_unavailable(
+    example_config, blank,
+):
+    """An empty authoritative display name is no name at all: the screen
+    cannot prove its privacy boundary, so the read is `unavailable` before
+    the provider runs — never silently reduced to the person id the
+    presentation fallback would render."""
+    from dataclasses import replace
+
+    bindings, access, _ = await _world()
+    bindings.people[PERSON] = replace(bindings.people[PERSON], display_name=blank)
+    call, calls, _ = await _screened_lookup(example_config, access)
+
+    assert (await call("volleyball news"))["status"] == "unavailable"
+    assert calls == []
+    bindings.people[PERSON] = replace(
+        bindings.people[PERSON], display_name="Generated Person")
+    assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news"]
+
+
+@pytest.mark.parametrize("retired", ["generated-retired-a", "generated-retired-b"])
+async def test_a_retired_id_of_a_source_person_is_screened_before_external_reads(
+    example_config, retired,
+):
+    """Every retired id the canonical person now answers for is private the
+    way its current id is: a query carrying any of them refuses before the
+    provider runs."""
+    bindings, access, _ = await _world()
+    for former in ("generated-retired-a", "generated-retired-b"):
+        assert (await bindings.add_alias(
+            former_id=former, person_id=PERSON
+        )).status is OutcomeStatus.COMPLETE
+    call, calls, _ = await _screened_lookup(example_config, access)
+
+    result = await call(f"lookup {retired}")
+    assert result["status"] == "refused"
+    assert result["reason"] == "private_person"
+    assert calls == []
+    assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news"]
+
+
+async def test_a_source_recorded_under_a_retired_id_is_screened_by_its_survivor(
+    example_config,
+):
+    """A source person whose rows carry a retired id is still that person:
+    its current name and its OTHER retired ids screen just the same."""
+    from dataclasses import replace
+
+    bindings, access, _ = await _world()
+    for former in ("generated-retired-a", "generated-retired-b"):
+        assert (await bindings.add_alias(
+            former_id=former, person_id=PERSON
+        )).status is OutcomeStatus.COMPLETE
+    bindings.people[PERSON] = replace(
+        bindings.people[PERSON], display_name="Generated Person")
+    call, calls, _ = await _screened_lookup(
+        example_config, access, persons=("generated-retired-a",))
+
+    named = await call("Generated Person news")
+    assert named["status"] == "refused" and named["reason"] == "private_person"
+    other = await call("lookup generated-retired-b")
+    assert other["status"] == "refused" and other["reason"] == "private_person"
+    assert calls == []
+    assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news"]
+
+
+async def test_an_alias_read_outage_makes_the_screen_unavailable_not_partial(
+    example_config,
+):
+    """A former-id read that fails is an authority failure: the screen
+    cannot claim it covered retired ids, so the read is `unavailable` —
+    never a screen with aliases silently omitted."""
+
+    class AliasDownBindings(FakeBindingStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.former_down = False
+
+        async def former_persons(self, person_id):
+            if self.former_down:
+                raise RuntimeError("alias read unavailable")
+            return await super().former_persons(person_id)
+
+    bindings = AliasDownBindings()
+    _, access, _ = await _world(bindings=bindings)
+    call, calls, _ = await _screened_lookup(example_config, access)
+
+    bindings.former_down = True
+    assert (await call("volleyball news"))["status"] == "unavailable"
+    assert calls == []
+    bindings.former_down = False
+    assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news"]
+
+
+async def test_a_source_person_exposed_mid_lookup_is_screened_before_the_provider_runs(
+    example_config,
+):
+    """A concurrent read's `on_rows` hands `fetched` a new source person
+    while the identity reads await; the re-scan must find and screen it, so
+    its private name never reaches the provider."""
+    from dataclasses import replace
+
+    from nora.domain.memory_graph import Source
+
+    started, release = asyncio.Event(), asyncio.Event()
+
+    class GatedBindings(FakeBindingStore):
+        async def person(self, person_id):
+            if not started.is_set():
+                started.set()
+                await release.wait()
+            return await super().person(person_id)
+
+    bindings, access, _ = await _world(bindings=GatedBindings())
+    bindings.people[FOREIGN] = replace(
+        bindings.people[FOREIGN], display_name="Generated Later")
+    call, calls, state = await _screened_lookup(example_config, access)
+
+    task = asyncio.create_task(call("Generated Later news"))
+    try:
+        await asyncio.wait_for(started.wait(), 10)
+        # The sibling read tool's `on_rows` callback lands its source here,
+        # inside the suspended identity read — the concurrent-executor path.
+        state.fetched.show(Source(
+            ("message", "generated-mid-row"), "record", HERE.unit, (FOREIGN,),
+            "A generated mid-read transcript row.",
+        ))
+    finally:
+        release.set()
+    result = await task
+    assert result["status"] == "refused"
+    assert result["reason"] == "private_person"
+    assert calls == []
+    assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news"]
 
 
 async def test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied(example_config):

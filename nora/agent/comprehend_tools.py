@@ -131,17 +131,35 @@ class ComprehendRead(AgentTool):
         if access is None or access.is_file_backend:
             return state.private_names
         names = set(state.private_names)
-        person_ids = set(state.persons)
-        for source in state.fetched.sources.values():
-            person_ids.update(source.persons)
-        for person_id in sorted(person_ids):
-            person = await access.person_ref(person_id)
-            if person is None or not person.name.strip():
-                raise LookupError("source person name unavailable")
-            names.update(name for name in (
-                person_id, person.person_id, person.name, person.first_name,
-                person.last_name, *person.aliases,
-            ) if name)
+        screened: set[str] = set()
+        # Concurrent read tools keep handing `fetched` sources via `on_rows`
+        # while the identity reads below await. `screened` only grows and the
+        # set is finite, so re-scanning until nothing is pending terminates.
+        while True:
+            person_ids = set(state.persons)
+            for source in state.fetched.sources.values():
+                person_ids.update(source.persons)
+            pending = sorted(person_ids - screened)
+            if not pending:
+                break
+            for person_id in pending:
+                # `person` is the authority's record: `display_name` is the
+                # name AS RECORDED — `person_ref`'s fallback (name = id)
+                # would read a blank one as a real name.
+                person = await access.person(person_id)
+                if person is None or not person.display_name.strip():
+                    raise LookupError("source person name unavailable")
+                names.update(
+                    name
+                    for name in (
+                        person_id,
+                        person.person_id,
+                        person.display_name,
+                        *await access.former_persons(person.person_id),
+                    )
+                    if name
+                )
+                screened.add(person_id)
         return tuple(names)
 
     async def stream(
