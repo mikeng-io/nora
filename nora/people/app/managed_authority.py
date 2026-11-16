@@ -200,7 +200,7 @@ class AuthorityService:
             if mark.observed_ms > payload.observed_ms:
                 return unavailable("observation-superseded")
             if (mark.observed_ms == payload.observed_ms
-                    and mark.effect != effect):
+                    and (mark.operation_id != op.operation_id or mark.effect != effect)):
                 return unavailable("observation-conflict")
         recorded = await self._bindings.record_observation(SourceObservation(
             service=service, collection=payload.collection,

@@ -31,6 +31,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people import RosterProvisioning
 from nora.people.app.managed import ManagedServices
+from nora.people.app.managed_authority import AuthorityService
 from nora.testing.managed import FakeAuthorityBackend, FakeIdentityRegistry, FakeTopologySource
 
 UNIT = Scope(ScopeKind.UNIT, "generated-unit")
@@ -168,3 +169,61 @@ async def test_the_observation_mark_orders_across_a_fresh_engine(engine, databas
         assert mark is not None and mark.observed_ms == now + 2_000
     finally:
         await restarted.dispose()
+
+
+async def test_independent_stores_arbitrate_observations_with_the_postgres_lock(engine, database):
+    marked, release, attempted = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class PausedMark(SqlBindingStore):
+        async def record_observation(self, observation):
+            result = await super().record_observation(observation)
+            marked.set()
+            await release.wait()
+            return result
+
+    graph, _ = services(engine, FakeIdentityRegistry(), FakeAuthorityBackend())
+    person_id = await _seed_member(graph)
+    newer = AuthorityService(PausedMark(engine), graph.backend, graph.topology)
+    other_engine = create_sql_engine(database)
+    older, _ = services(other_engine, FakeIdentityRegistry(), graph.backend)
+    waiter_pids = []
+
+    def before_execute(connection, cursor, statement, parameters, context, executemany):
+        if "pg_advisory_xact_lock" in statement:
+            waiter_pids.append(connection.exec_driver_sql("SELECT pg_backend_pid()").scalar_one())
+            attempted.set()
+
+    sa.event.listen(other_engine.sync_engine, "before_cursor_execute", before_execute)
+    now = int(time.time() * 1000)
+    new_task = asyncio.create_task(newer.apply(_sync("two-store-new", now, {MEMBER})))
+    old_task = None
+    try:
+        await asyncio.wait_for(marked.wait(), timeout=10)
+        old_task = asyncio.create_task(older.authority.apply(_sync("two-store-old", now - 1)))
+        await asyncio.wait_for(attempted.wait(), timeout=10)
+        async with engine.connect() as observer:
+            for _ in range(100):
+                blocked = await observer.scalar(sa.text(
+                    "SELECT EXISTS (SELECT 1 FROM pg_locks "
+                    "WHERE pid = :pid AND locktype = 'advisory' AND NOT granted)"
+                ), {"pid": waiter_pids[0]})
+                if blocked:
+                    break
+            assert blocked, "the independent store never contended on the database lock"
+        assert not old_task.done()
+        release.set()
+        assert (await new_task).status is OutcomeStatus.COMPLETE
+        refused = await old_task
+        assert refused.status is OutcomeStatus.UNAVAILABLE
+        assert refused.detail == "observation-superseded"
+        assert await older.bindings.operation("two-store-old") is None
+        mark = await older.bindings.observation_for(
+            service="generated-bridge", collection="generated-guild", scope=UNIT)
+        assert mark is not None and mark.operation_id == "two-store-new"
+        assert [m.person_id for m in await older.bindings.members_of(UNIT)] == [person_id]
+    finally:
+        release.set()
+        await asyncio.gather(new_task, *([old_task] if old_task is not None else []),
+                             return_exceptions=True)
+        sa.event.remove(other_engine.sync_engine, "before_cursor_execute", before_execute)
+        await other_engine.dispose()

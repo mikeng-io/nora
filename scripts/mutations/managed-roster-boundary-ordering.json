@@ -23,7 +23,7 @@
   {
     "name": "the same instant with different content is a conflict",
     "file": "nora/people/app/managed_authority.py",
-    "old": "            if (mark.observed_ms == payload.observed_ms\n                    and mark.effect != effect):",
+    "old": "            if (mark.observed_ms == payload.observed_ms\n                    and (mark.operation_id != op.operation_id or mark.effect != effect)):",
     "new": "            if False:",
     "target": "tests/unit/test_roster_observation.py::test_the_same_instant_with_different_content_is_a_conflict"
   },
@@ -40,5 +40,12 @@
     "old": "        if not isinstance(payload, RosterSync):\n            raise ManagedError(f\"{kind} payload is {type(payload).__name__}\")\n        refusal = self._observation_refusal(payload)\n        if refusal is not None:\n            return refusal\n        joined: set[str] = set()",
     "new": "        if not isinstance(payload, RosterSync):\n            raise ManagedError(f\"{kind} payload is {type(payload).__name__}\")\n        joined: set[str] = set()",
     "target": "tests/unit/test_roster_observation.py::test_reconstructed_roster_rechecks_freshness_before_departure"
+  },
+  {
+    "name": "equal-time observations retain the originally accepted operation",
+    "file": "nora/people/app/managed_authority.py",
+    "old": "            if (mark.observed_ms == payload.observed_ms\n                    and (mark.operation_id != op.operation_id or mark.effect != effect)):",
+    "new": "            if (mark.observed_ms == payload.observed_ms\n                    and mark.effect != effect):",
+    "target": "tests/unit/test_roster_observation.py::test_a_new_operation_cannot_reapply_an_accepted_observation"
   }
 ]

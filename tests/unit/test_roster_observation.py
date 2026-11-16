@@ -258,6 +258,30 @@ async def test_an_exact_retry_of_the_same_instant_replays():
     assert len(members) == 1
 
 
+async def test_a_new_operation_cannot_reapply_an_accepted_observation():
+    store, backend, svc = _service()
+    await _person(store, "person_member")
+    accepted = _roster("op-accepted", NOW - 10_000, members={MEMBER})
+    assert (await svc.apply(accepted)).status is OutcomeStatus.COMPLETE
+    source = 'sync:["generated-bridge","generated-roster"]'
+    await store.set_membership(person_id="person_member", scope=ROOM,
+                               member=False, source=source)
+    await backend.drop_relation(scope=ROOM, relation="member", person_id="person_member")
+    assert (await svc.apply(accepted)).status is OutcomeStatus.COMPLETE
+    assert not await store.members_of(ROOM)
+    duplicate = await svc.apply(_roster("op-replacement", NOW - 10_000, members={MEMBER}))
+    assert duplicate.status is OutcomeStatus.UNAVAILABLE
+    assert duplicate.detail == "observation-conflict"
+    assert await store.operation("op-replacement") is None
+    assert not await store.members_of(ROOM)
+    mark = await store.observation_for(service="generated-bridge",
+                                     collection="generated-roster", scope=ROOM)
+    assert mark is not None and mark.operation_id == accepted.operation_id
+    fresh = await svc.apply(_roster("op-fresh", NOW - 9_000, members={MEMBER}))
+    assert fresh.status is OutcomeStatus.COMPLETE
+    assert [m.person_id for m in await store.members_of(ROOM)] == ["person_member"]
+
+
 async def test_observation_marks_stay_inside_their_source():
     """(service, collection, scope) is the mark's whole key — a sibling
     service's, collection's or scope's history cannot refuse this one."""
