@@ -912,7 +912,7 @@ class WorkRunner:
                 absorbed = result.absorbed
                 unit = result.unit
                 row_id = result.row_id
-            self._maybe_observe_sender(person, work, envelope)
+            self._maybe_observe_sender(work, envelope)
             observation_status: str | None = None
             if envelope.observation is not None:
                 # Message + observation sidecar on ONE envelope: ONE
@@ -1005,8 +1005,8 @@ class WorkRunner:
                              trace=attempt[1] if attempt else None)
             await self._ack(work)
 
-    def _maybe_observe_sender(self, person: Any, work: Any, envelope: Any) -> None:
-        if person is None and self._onboarding is not None and envelope.sender_id:
+    def _maybe_observe_sender(self, work: Any, envelope: Any) -> None:
+        if self._onboarding is not None and envelope.sender_id:
             self._onboarding.notify_sender(
                 platform=work.platform, conversation_id=work.conversation_id,
                 sender_id=envelope.sender_id)

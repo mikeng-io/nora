@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
@@ -92,10 +94,10 @@ def _sender_ops(store: FakeBindingStore):
             if o.operation_id.startswith("onboard-sender:")]
 
 
-async def test_a_bound_senders_note_still_enriches_the_same_account():
-    """Sending the already-bound phone: the flat resolve used to stop the
-    note here, yet the roster pair proves a larger group — the uuid joins
-    the SAME account and person, and no membership is created."""
+@pytest.mark.parametrize("sender", [PHONE.value, ACI.value], ids=["known-phone", "new-uuid"])
+async def test_a_bound_senders_note_still_enriches_the_same_account(sender):
+    """Either sender form enriches the phone-only account with the paired
+    uuid, without changing the account/person or granting membership."""
     services, provisioning = _graph()
     rows: list[dict] = []
     onboarding, _ = _signal_onboarding(services, provisioning, rows)
@@ -104,7 +106,7 @@ async def test_a_bound_senders_note_still_enriches_the_same_account():
     rows.append(MEMBER)
 
     onboarding.notify_sender(
-        platform="signal", conversation_id=GROUP, sender_id=PHONE.value)
+        platform="signal", conversation_id=GROUP, sender_id=sender)
     await onboarding._drain()
 
     for ident in (PHONE, ACI):
@@ -118,8 +120,8 @@ async def test_a_bound_senders_note_still_enriches_the_same_account():
 
 
 async def test_sending_the_newly_seen_identifier_enriches_while_only_the_other_resolves():
-    """Sending the uuid: the group's target is the unbound phone while the
-    uuid already resolves — the pair still names the one account."""
+    """An already-bound uuid identifies the account even when the selected
+    group target is its unbound phone."""
     services, provisioning = _graph()
     rows: list[dict] = []
     onboarding, _ = _signal_onboarding(services, provisioning, rows)

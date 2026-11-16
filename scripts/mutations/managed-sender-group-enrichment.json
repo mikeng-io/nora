@@ -26,5 +26,12 @@
     "old": "                f\"onboard-sender:{rule.name}:{digest}\", \"observe_account\",",
     "new": "                f\"onboard-sender:{rule.name}:{value}\", \"observe_account\",",
     "target": "tests/unit/test_onboarding_sender_enrichment.py::test_a_sender_reobserved_with_a_larger_group_is_enriched"
+  },
+  {
+    "name": "a resolved bridge sender still queues group enrichment",
+    "file": "nora/app/bridge_queue.py",
+    "old": "            self._maybe_observe_sender(work, envelope)",
+    "new": "            if person is None:\n                self._maybe_observe_sender(work, envelope)",
+    "target": "tests/integration/test_onboarding_sender_bridge.py::test_a_resolved_bridged_sender_enriches_its_later_identifier_group"
   }
 ]
