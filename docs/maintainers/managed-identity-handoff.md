@@ -82,8 +82,14 @@ uv run python scripts/managed_identity_handoff.py apply \
 
 `--database-url` also accepts `DATABASE_URL`. Optional:
 `--kratos-admin-key-env`, `--keto-key-env`, `--timeout-seconds`.
-With all four target flags, `plan` additionally prints
-`target: fresh|resume|already-imported` or the refusal — without writing.
+With all four target flags, `plan` additionally runs the same non-mutating
+preflight apply runs — the durable attribution, the empty-or-owned reads
+and the Kratos absence/collision check — and prints `target: fresh`,
+`target: resume`, the completed import's recorded receipt or the refusal —
+without writing.
+`fresh` is reported only on an explicit absence answer for every imported
+person: a held external_id refuses, and a target that cannot answer is
+unavailable, never fresh.
 
 Exit codes: `0` complete/ok · `2` refused · `3` incomplete or unavailable
 (retry the same command).

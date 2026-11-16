@@ -2,8 +2,8 @@
   {
     "name": "the command binds one captured effect through setup",
     "file": "scripts/managed_identity_handoff.py",
-    "old": "            outcome = await admission.apply_prepared(prepared)",
-    "new": "            outcome = await admission.apply(Path(args.identity), Path(args.policy))",
+    "old": "                outcome = await admission.apply_prepared(prepared)",
+    "new": "                outcome = await admission.apply(Path(args.identity), Path(args.policy))",
     "target": "tests/unit/test_managed_identity_handoff.py::test_apply_binds_the_effect_captured_before_setup"
   },
   {
