@@ -15,7 +15,7 @@ from nora.subject.recorded_services import RecordedServices
 JOURNEY_KIND = "journey_world"
 _JOURNEY_KEYS = frozenset({
     "kind", "policy", "room", "identity", "overrides", "judges",
-    "model_gateway",
+    "model_gateway", "external",
 })
 
 
@@ -86,11 +86,28 @@ def _journey_plan(name: str, entry: dict[str, Any]) -> Any:
     if not isinstance(overrides, dict):
         raise ValueError(
             f"journey service plan for {name!r} declares no overrides object")
-    return JourneyServices(
-        policy=entry["policy"], room=(str(room[0]), str(room[1])),
-        identity=identity, overrides=dict(overrides),
-        judge_models=(judges[0], judges[1]),
-        model_gateway=_gateway(name, entry, judges))
+    external = entry.get("external")
+    recorded = None
+    if external is not None:
+        if not isinstance(external, dict):
+            raise ValueError(
+                f"journey service plan for {name!r} declares a malformed "
+                "external recording")
+        try:
+            recorded = RecordedServices(external)
+        except ValueError as exc:
+            raise ValueError(
+                f"journey service plan for {name!r} declares an invalid "
+                f"external recording: {exc}") from None
+    try:
+        return JourneyServices(
+            policy=entry["policy"], room=(str(room[0]), str(room[1])),
+            identity=identity, overrides=dict(overrides),
+            judge_models=(judges[0], judges[1]),
+            model_gateway=_gateway(name, entry, judges), external=recorded)
+    except ValueError as exc:
+        raise ValueError(
+            f"journey service plan for {name!r}: {exc}") from None
 
 
 def _plan_for(name: str, entry: Any) -> Any:

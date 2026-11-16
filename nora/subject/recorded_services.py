@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -93,12 +93,115 @@ def _same(left: Any, right: Any) -> bool:
     return bool(left == right)
 
 
+class Playback:
+    """One open of a snapshot: fresh consumption state and the environment
+    unrecorded requests report to.
+
+    Positions live on the playback, never the snapshot, so two openings of
+    one `RecordedServices` consume independently. `bind` attaches the one
+    `IsolatedServices` the served apps run inside — the caller composes it,
+    which is what lets a journey merge the recording with its own real
+    routes.
+    """
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        #: The declared config-path -> service-name map.
+        self.bindings: dict[str, str] = dict(data["bindings"])
+        self._services = data["services"]
+        self._positions = dict.fromkeys(self._services, 0)
+        self._locks = {name: asyncio.Lock() for name in self._services}
+        self.environment: IsolatedServices | None = None
+
+    def bind(self, environment: IsolatedServices) -> None:
+        """The one environment this playback reports unrecorded requests to."""
+        if self.environment is not None:
+            raise RuntimeError("a recorded playback serves one environment")
+        self.environment = environment
+
+    def applications(
+        self, *, before: Callable[[str, web.Application], None] | None = None
+    ) -> dict[str, web.Application]:
+        """The recorded catch-all app per declared service, keyed by service name.
+
+        `before(service, app)` registers the caller's own routes ahead of the
+        recording's, so a composed world keeps its real seams — a recorded
+        row can never stand in for them.
+        """
+        apps = {}
+        for name, rows in self._services.items():
+            app = web.Application()
+            if before is not None:
+                before(name, app)
+            app.router.add_route("*", "/{tail:.*}", self._handler(name, rows))
+            apps[name] = app
+        return apps
+
+    def check(self) -> None:
+        """Every declared response consumed exactly once, in order."""
+        if any(self._positions[name] != len(rows)
+               for name, rows in self._services.items()):
+            raise EvidenceError("external_response_not_consumed")
+
+    def _handler(self, name: str, rows: list[Any]) -> Any:
+        async def handle(request: web.Request) -> web.StreamResponse:
+            async with self._locks[name]:
+                position = self._positions[name]
+                row = rows[position] if position < len(rows) else None
+                matches = (
+                    row is not None
+                    and request.method == row["method"]
+                    and request.raw_path == row["path"]
+                )
+                if row is not None and matches and "request_json" in row:
+                    try:
+                        matches = _same(await request.json(), row["request_json"])
+                    except (ValueError, UnicodeDecodeError):
+                        matches = False
+                if row is None or not matches:
+                    environment = self.environment
+                    if environment is None:
+                        raise RuntimeError("recorded playback unbound")
+                    environment.unrecorded_response(
+                        service=name, position=str(position), method=request.method,
+                        path=request.raw_path,
+                        expected_method=row["method"] if row else "exhausted",
+                        expected_path=row["path"] if row else "exhausted")
+                    return web.Response(status=500, text="external response not recorded")
+                self._positions[name] += 1
+                response = row["response"]
+                headers = response.get("headers", {})
+                if "chunks" in response:
+                    stream = web.StreamResponse(status=response["status"], headers=headers)
+                    stream.headers.setdefault("Content-Type", "text/event-stream")
+                    await stream.prepare(request)
+                    for chunk in response["chunks"]:
+                        await stream.write(
+                            f"data: {json.dumps(chunk, separators=(',', ':'))}\n\n".encode()
+                        )
+                    await stream.write(b"data: [DONE]\n\n")
+                    return stream
+                if "json" in response:
+                    result = web.Response(
+                        body=json.dumps(response["json"]).encode(),
+                        status=response["status"], headers=headers,
+                    )
+                    result.headers.setdefault("Content-Type", "application/json")
+                    return result
+                return web.Response(status=response["status"], headers=headers)
+        return handle
+
+
 class RecordedServices:
     """A validated snapshot, reusable for independent isolated cases."""
 
     def __init__(self, data: dict[str, Any]) -> None:
         _validate(data)
         self._data = json.loads(json.dumps(data, allow_nan=False))
+
+    @property
+    def bindings(self) -> dict[str, str]:
+        """The declared config-path -> service-name map."""
+        return dict(self._data["bindings"])
 
     @classmethod
     def load(cls, path: str | Path) -> RecordedServices:
@@ -108,70 +211,23 @@ class RecordedServices:
         )
         return cls(data)
 
+    def playback(self) -> Playback:
+        """One open of this snapshot: its apps, bindings and consumption check."""
+        return Playback(self._data)
+
     @asynccontextmanager
     async def open(self, database_url: str, redis: bool = False) -> AsyncIterator[IsolatedServices]:
-        positions = dict.fromkeys(self._data["services"], 0)
-        locks = {name: asyncio.Lock() for name in positions}
-        applications = {}
-        environment: IsolatedServices
-        for name, rows in self._data["services"].items():
-            app = web.Application()
-
-            async def handle(
-                request: web.Request, name: str = name, rows: list[Any] = rows
-            ) -> web.StreamResponse:
-                async with locks[name]:
-                    position = positions[name]
-                    row = rows[position] if position < len(rows) else None
-                    matches = (
-                        row is not None
-                        and request.method == row["method"]
-                        and request.raw_path == row["path"]
-                    )
-                    if row is not None and matches and "request_json" in row:
-                        try:
-                            matches = _same(await request.json(), row["request_json"])
-                        except (ValueError, UnicodeDecodeError):
-                            matches = False
-                    if row is None or not matches:
-                        environment.unrecorded_response(
-                            service=name, position=str(position), method=request.method,
-                            path=request.raw_path,
-                            expected_method=row["method"] if row else "exhausted",
-                            expected_path=row["path"] if row else "exhausted")
-                        return web.Response(status=500, text="external response not recorded")
-                    positions[name] += 1
-                    response = row["response"]
-                    headers = response.get("headers", {})
-                    if "chunks" in response:
-                        stream = web.StreamResponse(status=response["status"], headers=headers)
-                        stream.headers.setdefault("Content-Type", "text/event-stream")
-                        await stream.prepare(request)
-                        for chunk in response["chunks"]:
-                            await stream.write(
-                                f"data: {json.dumps(chunk, separators=(',', ':'))}\n\n".encode()
-                            )
-                        await stream.write(b"data: [DONE]\n\n")
-                        return stream
-                    if "json" in response:
-                        result = web.Response(
-                            body=json.dumps(response["json"]).encode(),
-                            status=response["status"], headers=headers,
-                        )
-                        result.headers.setdefault("Content-Type", "application/json")
-                        return result
-                    return web.Response(status=response["status"], headers=headers)
-            app.router.add_route("*", "/{tail:.*}", handle)
-            applications[name] = app
+        playback = self.playback()
+        applications = playback.applications()
         environment = IsolatedServices(
             database_url=database_url,
             redis=redis,
             applications={
-                binding: applications[name] for binding, name in self._data["bindings"].items()
+                binding: applications[name] for binding, name in playback.bindings.items()
             },
         )
+        playback.bind(environment)
         async with environment:
             yield environment
             environment.check()
-            if any(positions[name] != len(rows) for name, rows in self._data["services"].items()):
-                raise EvidenceError("external_response_not_consumed")
+            playback.check()

@@ -32,6 +32,7 @@ from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import current
 from nora.subject.model_gateway import ModelGateway
 from nora.subject.obtain import SubjectSpec, build_config
+from nora.subject.recorded_services import RecordedServices
 from nora.testing.causal_protocol import CausalProtocol, texts
 from nora.testing.signal_daemon import FakeSignalDaemon
 
@@ -289,7 +290,8 @@ class JourneyServices:
     def __init__(self, *, policy: str, room: tuple[str, str] = ("signal", "g1"),
                  identity: str = "", overrides: dict[str, Any] | None = None,
                  judge_models: tuple[str, str] = ("generated-a", "generated-b"),
-                 model_gateway: ModelGateway | None = None) -> None:
+                 model_gateway: ModelGateway | None = None,
+                 external: RecordedServices | None = None) -> None:
         self.policy, self.room, self.identity = policy, room, identity
         self._overrides = dict(overrides or {})
         self.judge_models = tuple(judge_models)
@@ -297,6 +299,17 @@ class JourneyServices:
         #: subject/judge responders are never installed and every model
         #: dispatch is admitted to it — or refused — by the environment.
         self.model_gateway = model_gateway
+        #: The case's declared external recording; when set, the generated
+        #: Honcho/bridge responders are never installed — each declared
+        #: binding serves its recorded responses and the rest refuses.
+        if external is not None and any(
+                binding == "llm.base_url" or binding.startswith("providers.")
+                for binding in external.bindings):
+            raise ValueError(
+                "an external recording cannot serve model dispatch; subject "
+                "and judge aliases stay under the finite world or the "
+                "declared gateway")
+        self.external = external
         self.requests: list[dict] = []
         self.errors: list[tuple] = []
         self.feeds: list[dict] = []
@@ -338,6 +351,13 @@ class JourneyServices:
         return web.json_response(action_response(body["action_id"], result),
                                  status=action_http_status(result))
 
+    def _action_routes(self, application: web.Application) -> None:
+        """The bridge's live action/RPC routes, ahead of any recorded catch-all."""
+        if self.daemon is None:
+            raise RuntimeError("journey world bridge is unbound")
+        application.router.add_post("/v1/actions", self._actions)
+        application.router.add_post("/api/v1/rpc", self.daemon.rpc)
+
     def _bridge_app(self) -> web.Application:
         application = web.Application()
 
@@ -350,10 +370,7 @@ class JourneyServices:
 
         for path in ("/v1/self", "/v1/groups", "/v1/health"):
             application.router.add_get(path, read)
-        application.router.add_post("/v1/actions", self._actions)
-        if self.daemon is None:
-            raise RuntimeError("journey world bridge is unbound")
-        application.router.add_post("/api/v1/rpc", self.daemon.rpc)
+        self._action_routes(application)
         return application
 
     def _declared_config(self, database_url: str, workdir: Path) -> Any:
@@ -377,10 +394,29 @@ class JourneyServices:
         declared = Path(tempfile.mkdtemp(prefix="nora-journey-declared-"))
         cfg = self._declared_config(database_url, declared)
         self.daemon = FakeSignalDaemon(sent_at_ms=int(time.time() * 1000))
-        apps = {
-            "honcho.base_url": memory_service(self.feeds),
-            "platforms.signal.base_url": self._bridge_app(),
-        }
+        playback = self.external.playback() if self.external is not None else None
+        if playback is None:
+            apps = {
+                "honcho.base_url": memory_service(self.feeds),
+                "platforms.signal.base_url": self._bridge_app(),
+            }
+        else:
+            signal = playback.bindings.get("platforms.signal.base_url")
+
+            def before(name: str, app: web.Application) -> None:
+                if name == signal:
+                    self._action_routes(app)
+
+            recorded = playback.applications(before=before)
+            apps = {binding: recorded[name]
+                    for binding, name in playback.bindings.items()}
+            if signal is None:
+                # The case-owned action seam survives even when the
+                # recording binds no signal reads — writes only, never a
+                # generated identity or roster.
+                actions = web.Application()
+                self._action_routes(actions)
+                apps["platforms.signal.base_url"] = actions
         if self.model_gateway is None:
             self.protocol = CausalProtocol(cfg)
             self.judge = GeneratedJudge()
@@ -407,6 +443,11 @@ class JourneyServices:
         environment = IsolatedServices(
             database_url=database_url, applications=apps, redis=redis,
             model_gateway=self.model_gateway)
+        if playback is not None:
+            playback.bind(environment)
         async with environment as env:
             env.world = self
             yield env
+            if playback is not None:
+                environment.check()
+                playback.check()
