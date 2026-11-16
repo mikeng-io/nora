@@ -131,7 +131,7 @@ def bound_journey_services(
     bound to aliases the cohort did not declare all refuse before any
     case composes or a model is dispatched.
     """
-    from nora.testing.journey_world import JourneyServices
+    from nora.subject.journey_world import JourneyServices
 
     declared = dict(plans or {})
     bound: dict[str, Any] = {}

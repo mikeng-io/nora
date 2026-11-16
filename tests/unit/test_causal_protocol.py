@@ -12,6 +12,7 @@ import json
 
 import pytest
 
+from nora.subject.journey_world import GeneratedJudge, JourneyServices
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.testing.causal_protocol import (
     ANSWER,
@@ -22,7 +23,6 @@ from nora.testing.causal_protocol import (
     TITLE,
     CausalProtocol,
 )
-from nora.testing.journey_world import GeneratedJudge, JourneyServices
 
 _POLICY = (
     default_policy(("signal", "g1"), unit="generated-unit") + "home_room = true\nproactive = true\n"

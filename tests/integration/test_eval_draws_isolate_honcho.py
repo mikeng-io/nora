@@ -39,6 +39,7 @@ from nora.subject.eval_evidence import (
     read_events,
     validate_events,
 )
+from nora.subject.journey_world import memory_service
 from nora.subject.memory_workspace import (
     DRAW_MARKER,
     HonchoWorkspaces,
@@ -48,7 +49,6 @@ from nora.subject.memory_workspace import (
 )
 from nora.subject.recorded_services import RecordedServices
 from nora.subject.sandbox import eval_host_lock
-from nora.testing.journey_world import memory_service
 from scripts.memory_graph_spike import measured_run_budget
 from tests.fakes import FakeHoncho
 

@@ -21,10 +21,10 @@ from nora.platform.bridge.service import action_http_status, action_response
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
 from nora.subject.journey import envelope, settled_event
+from nora.subject.journey_world import action_service, memory_service
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 from nora.subject.sandbox import eval_host_lock
 from nora.testing.causal_protocol import completion
-from nora.testing.journey_world import action_service, memory_service
 from nora.testing.signal_daemon import FakeSignalDaemon
 from scripts.memory_graph_spike import measured_run_budget
 from tests.integration.subject.test_recorded_wake_runtime import services

@@ -134,8 +134,6 @@ class CausalProtocol:
         #: `fold_room`, `culture`, `character-*`. Served, not inferred —
         #: unmatched requests are in `errors`, never here.
         self.occasions: dict[str, int] = {}
-        self.app = web.Application()
-        self.app.router.add_post("/v1/chat/completions", self.respond)
 
     def tool(self, request, name, arguments):
         tools = {tool["function"]["name"]: tool["function"] for tool in request.get("tools", [])}
@@ -375,10 +373,6 @@ class CausalProtocol:
         except ValueError as exc:
             self.errors.append(("malformed_request", type(exc).__name__))
             return web.json_response({"error": "malformed generated journey request"}, status=400)
-        from nora.subject.eval_evidence import current
-
-        if evidence := current():
-            evidence.record("fixture_model_request", phase=self.phase, body=body)
         status, response = self.dispatch(body)
         if status != 200:
             return web.json_response(response, status=status)

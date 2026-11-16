@@ -23,13 +23,13 @@ from evals.rebuilt.journey_manifest import _plan_error
 from evals.rebuilt.journey_turns import (
     _freeze_turn,
     _judge_turn,
-    _stimulus_session,
     _turn_causes,
     _turn_error,
     _turn_outcome,
 )
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import COGNITION_WAKE_OUTCOME, STIMULUS_CLAIM
+from nora.subject.effects import stimulus_session
 from scripts.cognition_loop.cases import Expectation
 from scripts.cognition_loop.judges import observation_gap, turn_gap
 from scripts.cognition_loop.trajectory import bound_turn_events, turn_events
@@ -356,7 +356,7 @@ async def test_the_bound_session_is_the_stimuluss_own_closed_claim(
             await conn.execute(sa.insert(COGNITION_WAKE_OUTCOME).values(
                 wake_id=1, unit=UNIT, session_id=7, outcome="closed",
                 at_ms=1235))
-        bound = await _stimulus_session(engine, 5)
+        bound = await stimulus_session(engine, 5)
         assert bound["session_id"] == 7 and bound["wake_id"] == 1
         assert bound["session_conflict"] is None
     finally:
@@ -379,7 +379,7 @@ async def test_a_failed_claim_followed_by_a_closed_one_binds(
             await conn.execute(sa.insert(COGNITION_WAKE_OUTCOME).values(
                 wake_id=2, unit=UNIT, session_id=8, outcome="closed",
                 at_ms=1236))
-        bound = await _stimulus_session(engine, 5)
+        bound = await stimulus_session(engine, 5)
         assert bound["session_id"] == 8 and bound["wake_id"] == 2
         assert bound["session_conflict"] is None
     finally:
@@ -390,13 +390,13 @@ async def test_an_unclaimed_or_pending_stimulus_binds_no_session(
         clean_pg_url):
     engine = create_sql_engine(clean_pg_url)
     try:
-        bound = await _stimulus_session(engine, 5)
+        bound = await stimulus_session(engine, 5)
         assert bound["session_id"] is None
         assert bound["session_conflict"] is None
         async with engine.begin() as conn:
             await conn.execute(sa.insert(STIMULUS_CLAIM).values(
                 unit=UNIT, stimulus_id=5, wake_id=1))
-        bound = await _stimulus_session(engine, 5)
+        bound = await stimulus_session(engine, 5)
         assert bound["wake_id"] == 1 and bound["session_id"] is None
         assert bound["session_conflict"] is None
     finally:
@@ -424,7 +424,7 @@ async def test_conflicting_session_evidence_is_named_never_resolved(
                     COGNITION_WAKE_OUTCOME).values(
                         wake_id=wake_id, unit=UNIT, session_id=session_id,
                         outcome=outcome, at_ms=1235))
-        bound = await _stimulus_session(engine, 5)
+        bound = await stimulus_session(engine, 5)
         assert bound["session_conflict"]
         assert bound["session_id"] is None
     finally:

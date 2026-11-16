@@ -28,12 +28,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, cast
 
-import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.subject.effects import (
     frozen_reads,
     read_effects,
+    stimulus_session,
 )
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.availability import availability
@@ -58,50 +58,6 @@ def _now_ms() -> int:
 #: The `turn` work dispositions that explicitly record "no delivery".
 _NO_DELIVERY = ("silent", "vetoed")
 _SKIP = ("rejected", "queue_full")
-
-
-async def _stimulus_session(reads: Any, stimulus_id: int) -> dict[str, Any]:
-    """The claim and settled outcome for one stimulus row, on the cut."""
-    from nora.infra.sql.schema import COGNITION_WAKE_OUTCOME, STIMULUS_CLAIM
-
-    async def read(conn: Any) -> dict[str, Any]:
-        claims = [int(wid) for wid in (await conn.execute(
-            sa.select(STIMULUS_CLAIM.c.wake_id).where(
-                STIMULUS_CLAIM.c.stimulus_id == stimulus_id)
-            .order_by(STIMULUS_CLAIM.c.id))).scalars().all()]
-        outcomes: dict[int, dict[str, Any]] = {}
-        if claims:
-            for row in (await conn.execute(sa.select(COGNITION_WAKE_OUTCOME)
-                    .where(COGNITION_WAKE_OUTCOME.c.wake_id.in_(claims)))
-                    ).mappings().all():
-                outcomes[int(row["wake_id"])] = dict(row)
-        wake_id = claims[-1] if claims else None
-        outcome = outcomes.get(wake_id) if wake_id is not None else None
-        closed = [wid for wid in claims
-                  if (outcomes.get(wid) or {}).get("outcome") == "closed"]
-        # Two closed consumptions, or a closed claim a newer claim
-        # followed, contradict which session the stimulus settled to —
-        # conflicting evidence, never "the latest wins".
-        conflict = (
-            f"stimulus claims settle to conflicting sessions: {claims}"
-            if len(closed) > 1 or (closed and closed[0] != wake_id)
-            else None)
-        return {
-            "wake_id": wake_id,
-            "claims": claims,
-            "wake_outcome": (outcome or {}).get("outcome"),
-            "session_id": ((outcome or {}).get("session_id")
-                           if conflict is None
-                           and (outcome or {}).get("outcome") == "closed"
-                           else None),
-            "session_conflict": conflict,
-        }
-
-    if hasattr(reads, "connect"):
-        async with reads.connect() as conn:
-            return await read(conn)
-    async with reads.begin() as conn:
-        return await read(conn)
 
 
 def _turn_stimulus_id(work: list[dict[str, Any]]) -> int | None:
@@ -321,7 +277,7 @@ async def observed_turn(ctx: dict[str, Any], *, subject: Any, driver: Any,
                    "wake_id": None, "session_id": None, "wake_outcome": None,
                    "session_conflict": None}
         if stimulus_id is not None:
-            binding.update(await _stimulus_session(reads, stimulus_id))
+            binding.update(await stimulus_session(reads, stimulus_id))
         bound, traces = bound_turn_events(
             window, event_id=ctx["event_id"],
             session_id=binding["session_id"])
