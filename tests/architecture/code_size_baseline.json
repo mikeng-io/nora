@@ -264,8 +264,7 @@
   "comment_blocks": 40,
   "file_lines": 1405,
   "functions": {
-   "ToolRegistry.__init__": 453,
-   "ToolRegistry.specs": 149
+   "ToolRegistry.__init__": 453
   },
   "internal_docstrings": 5
  },

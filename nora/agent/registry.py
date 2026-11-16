@@ -381,16 +381,9 @@ class ToolRegistry:
         # answers where `culture` would, so the tool reads the accounts the
         # prompt's `<profile>` blocks render; both `None` withholds the tool.
         profile_read: ProfileHeads | None = None,
-        # The typed platform-observation Record (`ObservationStore`):
-        # `record_query`'s `kind` branch reads through it (poll discovery,
-        # room state, member and pin reads, object history). `None`
-        # answers those branches `unavailable`; the message branch is the
-        # Record read's own and does not consult it.
+        # Typed observation reads; None withholds them, not the message Record read.
         observations: Any = None,
-        # The people area's in-room management invocation — the ONE object
-        # `member_update` and the `!!!member` command share. Process-lifetime
-        # like `rooms`: the per-turn half (which message) is `specs`'s
-        # `message`. `None` leaves the tool answering `unavailable`.
+        # Shared management invocation; specs supplies the verified per-turn message.
         room_management: Any = None,
         content_checks: bool = True,
     ) -> None:
@@ -1139,51 +1132,16 @@ class ToolRegistry:
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
         message: Any = None,
     ) -> tuple[ToolSpec, ...]:
-        """The registered tools as plain `ToolSpec`s, closed over this tag's
-        dependencies, before any Strands adaptation.
+        """Build per-turn ToolSpecs before Strands adaptation.
 
-        `transit_source`/`route_source`/`vision_source`/`blob_store`/
-        `vision_cache`/`search_source`/`reminders`/`reminder_caps`/`clock`/
-        `versions` are NOT in this signature and must not become one: each is
-        the registry's own long-lived collaborator (or, for the cache, its own
-        per-process state), not something a tag brings with it. `reminder_caps`
-        and `clock` qualify for the same reason `ai_peer` does: both are
-        process-lifetime VALUES, fixed by the deployment, not by the turn.
-
-        `fire_turn` IS in this signature and does not violate that rule: it is a
-        per-turn VALUE, like `question` and `conversation_id`, not a
-        registry-owned collaborator. The heartbeat's fire path passes True; see
-        `nora.agent.tools.build_tool_specs` for what reads it.
-
-        `transcript` is in it for the same reason and is the most per-turn value
-        here: it is `TagContext.transcript`, the window the prefill rendered
-        `<transcript>` from, and `who_said` (DEC-146) answers out of it.
-        It must never become a registry field: a window living for the life of
-        the process would let one conversation's messages be searched from
-        another, which is a disclosure. Passing the SAME tuple the prefill used
-        keeps the tool and the block in the prompt one interpretation of one
-        window rather than two.
-
-        `links` is in it for the same reason and is the same KIND of thing:
-        per-TURN, not per-process (DEC-89). It must not become a registry
-        field: one `LinkCarry` living for the life of the process would offer a
-        link minted in one conversation to a reply being composed in another,
-        which is a disclosure. It comes from
-        `nora.engagement.stages.deliver.build`'s `DeliveryHandle`, which is also
-        where the `Deliverer` that consumes it is built.
-
-        `supplied_unit` is per-CALL for the same reason, from exactly one
-        caller: `nora.agent.dreamer.RegistryToolSource`, whose unit-keyed
-        adaptors ARE keyed on the unit and must SUPPLY it rather than let
-        the tool layer derive it from a room they do not have. It must not
-        become a registry field either: a unit fixed for the life of the
-        process is the cross-unit read `note_unit`'s own comment (above, in
-        `__init__`) exists to prevent. Every tag-path caller leaves it None
-        and the resolver answers from the room.
-
-        `dream_adaptor` is the second per-turn PROVENANCE beside `fire_turn`:
-        the Dreamer adaptor's NAME when `nora.agent.dreamer.RegistryToolSource`
-        built this set, `""` for every tag and every fire turn."""
+        Service clients, caches, reminder caps/clock and versions belong to this registry.
+        The verified message, question, fire_turn and dream_adaptor belong to this call.
+        Use the exact prefill transcript and lookup window; never re-read or retain them.
+        The turn's links come from its DeliveryHandle and must not become registry state.
+        supplied_unit is the unit-keyed Dreamer adaptor's explicit unit; tag calls leave
+        it unset and derive the unit from the actual room. Never retain a global unit.
+        dream_adaptor names that adaptor, or is empty for tag/fire calls; fire_turn
+        marks heartbeat provenance so reminders cannot recursively schedule reminders."""
         return build_tool_specs(
             display_name=self._display_name,
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
