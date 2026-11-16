@@ -200,5 +200,11 @@ async def test_fresh_engine_resumes_the_interrupted_import(engine, database, sou
         journal = await store.operation(plan(identity_path, policy_path).import_id)
         assert journal is not None
         assert journal.state is OperationJournalState.COMPLETE
+        identity_path.write_text("changed after import")
+        policy_path.write_text("changed after import")
+        assert "sources" in journal.snapshot
+        assert journal.snapshot["sources"] == {
+            "identity_toml": IDENTITY, "policy_toml": POLICY,
+        }
     finally:
         await restarted.dispose()

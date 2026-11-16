@@ -33,6 +33,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import MappingProxyType
 from typing import Any, Protocol
 
@@ -57,7 +58,7 @@ from nora.domain.managed import (
 from nora.domain.managed_ports import AuthorityBackend, BindingStore, IdentityRegistry
 from nora.domain.management import Scope, ScopeKind
 from nora.people.app.managed_ops import _finish, _pending, _step_done
-from nora.persons import PersonsError, load_persons
+from nora.persons import Persons, PersonsError, load_persons
 from nora.policy import Policy, PolicyError, load_policy
 
 log = logging.getLogger("nora.people.managed")
@@ -157,24 +158,42 @@ def _scope_key(scope: Scope) -> str:
     return f"{scope.kind.value}:{scope.id}"
 
 
+def _read_sources(
+    identity_path: Path, policy_path: Path,
+) -> tuple[Persons, Policy, bytes, bytes] | Outcome:
+    """Parse immutable private copies of the exact source bytes retained by the import."""
+    try:
+        identity_source = identity_path.read_bytes()
+        policy_source = policy_path.read_bytes()
+    except OSError as error:
+        return denied(f"unreadable-source:{type(error).__name__}")
+    with TemporaryDirectory(prefix="nora-admission-") as directory:
+        identity_copy = Path(directory) / "identity.toml"
+        policy_copy = Path(directory) / "policy.toml"
+        identity_copy.write_bytes(identity_source)
+        policy_copy.write_bytes(policy_source)
+        try:
+            persons = load_persons(identity_copy)
+        except (PersonsError, OSError, UnicodeError) as error:
+            return denied(f"invalid-identity-file:{type(error).__name__}")
+        try:
+            policy = load_policy(policy_copy)
+        except (PolicyError, OSError, UnicodeError) as error:
+            return denied(f"invalid-policy-file:{type(error).__name__}")
+    return persons, policy, identity_source, policy_source
+
+
 def _prepare(identity_path: Path, policy_path: Path) -> _Prepared | Outcome:
     """Load + validate the sources and compute the effect — refusals end here, pre-write."""
-    try:
-        persons = load_persons(identity_path)
-    except (PersonsError, OSError) as error:
-        return denied(f"invalid-identity-file:{type(error).__name__}")
-    try:
-        policy = load_policy(policy_path)
-    except (PolicyError, OSError) as error:
-        return denied(f"invalid-policy-file:{type(error).__name__}")
+    sources = _read_sources(identity_path, policy_path)
+    if isinstance(sources, Outcome):
+        return sources
+    persons, policy, identity_source, policy_source = sources
     refused = _unsupported(policy)
     if refused:
         return denied(";".join(refused))
-    try:
-        identity_sha = _digest(identity_path.read_bytes())
-        policy_sha = _digest(policy_path.read_bytes())
-    except OSError as error:
-        return denied(f"unreadable-source:{type(error).__name__}")
+    identity_sha = _digest(identity_source)
+    policy_sha = _digest(policy_source)
 
     listed: set[str] = set()
     for convo in policy.conversations:
@@ -224,6 +243,8 @@ def _prepare(identity_path: Path, policy_path: Path) -> _Prepared | Outcome:
     snapshot = _snapshot(
         identity_sha, policy_sha, people, accounts, aliases,
         pairs, room_scopes, containment,
+        identity_source=identity_source.decode("utf-8"),
+        policy_source=policy_source.decode("utf-8"),
     )
     return _Prepared(
         import_id=_import_id(identity_sha, policy_sha),
@@ -260,6 +281,7 @@ def _snapshot(
     memberships: set[tuple[str, Scope]] | frozenset[tuple[str, Scope]],
     room_scopes: dict[Scope, tuple[str, str]],
     containment: set[tuple[Scope, Scope]] | frozenset[tuple[Scope, Scope]],
+    *, identity_source: str, policy_source: str,
 ) -> MappingProxyType[str, Any]:
     """The durable effect: journaled rows digested, plus the bounded counts the plan reports."""
     rows: list[list[Any]] = []
@@ -290,6 +312,7 @@ def _snapshot(
         "identity_sha256": identity_sha,
         "policy_sha256": policy_sha,
         "effect_sha256": effect_sha,
+        "sources": {"identity_toml": identity_source, "policy_toml": policy_source},
         "people": sorted(people),
         "counts": {
             "people": len(people),

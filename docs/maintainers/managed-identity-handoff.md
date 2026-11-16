@@ -23,6 +23,9 @@ descriptive names, explicit social opt-outs, and the effective room
 `member` grants at their declared scopes. Both files' SHA-256 digests and
 the effect digest bind a durable import identity
 (`file-admission:<digest>`); the same bytes always name the same import.
+The loaders parse private temporary copies of those exact bytes. The import's
+private journal retains the original source text, including authored metadata
+and workspace bindings, for faithful export after the source paths change.
 
 `apply` then, under the shared mutation gate (`bindings.mutation()`):
 
@@ -76,8 +79,8 @@ per person, all typed identifiers per account, account `label`s,
 `former_person_ids` aliases, descriptive names, and the per-person social
 opt-out (Kratos trait `social`). Descriptive metadata with no managed
 home — `aliases` names, Instagram/Life360 metadata, Honcho workspace
-bindings — is bound by the source digests and stays in the files for a
-later export unit; it is never treated as ownership evidence.
+bindings — remains in the journal's private source snapshot for a later export
+unit; it is never treated as ownership evidence.
 
 Published: the effective file `speak`/`view` grants as room `member`
 relations (a `persons = "*"` room publishes `member` for every admitted

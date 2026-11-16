@@ -1,7 +1,9 @@
 """The initial file-to-managed admission — plan refusal, the claim probe,
 journaled resume and the fail-closed read-back, on the managed fakes."""
 
+import hashlib
 import uuid
+from pathlib import Path
 from types import MappingProxyType
 
 import pytest
@@ -10,6 +12,7 @@ from nora.domain.managed import (
     ManagedPerson,
     OperationJournalState,
     OperationRecord,
+    Outcome,
     OutcomeStatus,
     PersonLifecycle,
     Verdict,
@@ -25,6 +28,7 @@ from nora.people.app.managed_admission import (
     IMPORT_KIND,
     AdmissionFacts,
     FileAdmission,
+    _prepare,
     plan,
 )
 from nora.policy import load_policy
@@ -168,6 +172,37 @@ def test_plan_counts_the_exact_effect(tmp_path):
     }
     again = plan(identity_path, policy_path)
     assert again.import_id == result.import_id
+
+
+def test_admission_hashes_the_same_source_bytes_the_loaders_parse(tmp_path):
+    identity_path, policy_path = _sources(tmp_path)
+    changed = IDENTITY.replace('name = "Miles"', 'name = "Generated Changed"')
+
+    class ChangingPath(type(tmp_path)):
+        def read_bytes(self):
+            self.write_text(changed)
+            return super().read_bytes()
+
+    prepared = _prepare(ChangingPath(identity_path), policy_path)
+    assert not isinstance(prepared, Outcome)
+    source = Path(identity_path).read_bytes()
+    assert prepared.snapshot["identity_sha256"] == hashlib.sha256(source).hexdigest()
+    expected = "Generated Changed" if source.decode() == changed else "Miles"
+    assert prepared.people["miles"].display_name == expected
+
+
+async def test_admission_retains_authored_sources_for_faithful_export(tmp_path, graph):
+    store, _, _, admission = graph
+    identity_path, policy_path = _sources(tmp_path)
+    import_id = plan(identity_path, policy_path).import_id
+    outcome = await admission.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.COMPLETE
+    identity_path.write_text('changed after import')
+    policy_path.write_text('changed after import')
+    record = await store.operation(import_id)
+    assert record is not None
+    assert "sources" in record.snapshot
+    assert record.snapshot["sources"] == {"identity_toml": IDENTITY, "policy_toml": POLICY}
 
 
 def test_plan_refuses_a_guild_conversation(tmp_path):
