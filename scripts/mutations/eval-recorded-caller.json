@@ -22,9 +22,9 @@
   },
   {
     "name": "SDK protocol outcomes cannot claim model behavior",
-    "file": "evals/backbone.py",
-    "old": "        EnvironmentState(name=NORA_BEHAVIOR, state=\"UNMEASURED\"),",
-    "new": "        EnvironmentState(name=NORA_BEHAVIOR, state=\"PASS\"),",
+    "file": "evals/measurement.py",
+    "old": "        if not self.behavioral:\n            return UNMEASURED\n        if error:",
+    "new": "        if not self.behavioral:\n            return PASS\n        if error:",
     "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording"
   },
   {

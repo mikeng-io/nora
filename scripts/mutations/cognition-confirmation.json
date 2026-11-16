@@ -14,11 +14,11 @@
     "target": "tests/unit/test_eval_run_budget.py::test_finished_refuses_over_an_unreleased_reservation"
   },
   {
-    "name": "a wake that never settled is judged anyway in the live run",
+    "name": "unsettled wakes leave their expectations unjudged",
     "file": "scripts/cognition_loop/run.py",
-    "old": "    got[\"expectations\"] = (\n        [] if step_error is not None\n        else await _judge(\n            args, case, index, judges, diff, after, trajectory,\n            earlier_wakes))",
+    "old": "    got[\"expectations\"] = (\n        [] if got[\"step_error\"] is not None\n        else await _judge(\n            args, case, index, judges, diff, after, trajectory,\n            earlier_wakes))",
     "new": "    got[\"expectations\"] = await _judge(\n        args, case, index, judges, diff, after, trajectory,\n        earlier_wakes)",
-    "target": "tests/unit/test_cognition_loop_run.py::test_a_live_wake_that_never_settled_spends_no_judge_call"
+    "target": "tests/unit/test_cognition_loop_run_wake.py::test_a_live_wake_that_never_settled_spends_no_judge_call"
   },
   {
     "name": "rejudge spends judge calls on a wake it cannot measure",

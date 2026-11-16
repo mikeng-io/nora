@@ -280,7 +280,9 @@ async def test_a_prior_delivery_action_completed_inside_the_boundary_is_retained
                 completed_at=sa.func.clock_timestamp(), platform_ref="generated-native-ref",
                 platform_ms=NOW).where(BRIDGE_ACTION.c.action_id == "generated-prior-action"))
         result = await effects(engine, boundary)
-        [receipt] = [row for row in result["items"] if row["kind"] == "delivery"]
+        receipts = [row for row in result["items"] if row["kind"] == "delivery"]
+        assert len(receipts) == 1, "the completed prior action is missing from the effect cut"
+        receipt = receipts[0]
         assert receipt["source"] == "bridge_action"
         assert receipt["row"]["state"] == "confirmed"
         assert receipt["row"]["platform_ref"] == "generated-native-ref"

@@ -135,7 +135,9 @@ async def test_native_sdk_keeps_each_drive_and_gives_the_judge_the_first_effects
         assert failure["cause"] == "canonical_lifecycle_unavailable"
         assert failure["error_type"] == "RuntimeError"
         assert failure["frames"][-1]["function"] == "read"
-        [result] = [event["result"] for event in events if event["kind"] == "case_result"]
+        results = [event["result"] for event in events if event["kind"] == "case_result"]
+        assert len(results) == 1, "the failed SDK case lost its private task result"
+        result = results[0]
         captured = {state["name"]: state["state"] for state in result["environment_state"]}
         assert captured[backbone.NORA_ERROR] == state_of_from_row(row, backbone.NORA_ERROR)
         sdk_evidence.record("expected_invalid_capture")

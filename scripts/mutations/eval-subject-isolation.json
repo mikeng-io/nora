@@ -37,8 +37,8 @@
   {
     "name": "native HTTP and redirects bypass the dispatch boundary",
     "file": "nora/subject/environment.py",
-    "old": "                if not self.owns(str(request.url)):\n                    refuse(\"http\")\n                return await _original(client, request)",
-    "new": "                return await _original(client, request)",
+    "old": "        self._guard_requests()",
+    "new": "        pass",
     "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_http_dispatch_and_redirects_cannot_bypass_owned_services"
   },
   {
