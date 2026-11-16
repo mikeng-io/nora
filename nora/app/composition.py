@@ -745,6 +745,7 @@ async def _compose_dependencies(
     shared = _pipelines_shared.shared
     _media_sources = await _media_wire.sources(cfg=cfg)
     blobs = _media_sources.blobs
+    owner.own_blobs(blobs)
     media_sources = _media_sources.media_sources
     _models_lane = lane(cfg=cfg)
     client = _models_lane.client

@@ -18,6 +18,7 @@ def _push_close_order(
     *,
     audit: Any = None,
     memory: Any = None,
+    blobs: Any = None,
     model_clients: Iterable[Any] = (),
     client: Any = None,
     computer_close: CloseFn | None = None,
@@ -33,6 +34,9 @@ def _push_close_order(
     """Push every closable onto `stack` in the one close order (see `StartupOwner`)."""
     if audit is not None:
         stack.push_async_callback(audit.aclose)
+    blob_close = getattr(blobs, "aclose", None)
+    if blob_close is not None:
+        stack.push_async_callback(blob_close)
     memory_close = getattr(memory, "aclose", None)
     if memory_close is not None:
         stack.push_async_callback(memory_close)
@@ -66,6 +70,7 @@ async def close_dependencies(deps: Any, *, health_runner: Any = None) -> None:
         _push_close_order(
             closing,
             audit=deps.audit,
+            blobs=getattr(deps, "blobs", None),
             memory=getattr(deps, "memory", None),
             model_clients=deps.model_clients,
             client=deps.client,
@@ -137,6 +142,7 @@ class StartupOwner:
     def __init__(self) -> None:
         self._audit: Any = None
         self._memory: Any = None
+        self._blobs: Any = None
         self._model_clients: list[Any] | None = None
         self._client: Any = None
         self._computer_close: CloseFn | None = None
@@ -150,6 +156,9 @@ class StartupOwner:
 
     def own_audit(self, audit: Any) -> None:
         self._audit = audit
+
+    def own_blobs(self, blobs: Any) -> None:
+        self._blobs = blobs
 
     def own_memory(self, memory: Any) -> None:
         self._memory = memory
@@ -190,6 +199,7 @@ class StartupOwner:
             _push_close_order(
                 closing,
                 audit=self._audit,
+                blobs=self._blobs,
                 memory=self._memory,
                 model_clients=self._model_clients or (),
                 client=self._client,
