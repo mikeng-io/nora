@@ -67,12 +67,7 @@ def world(*, overrides=None):
             "platforms.signal.enabled": True,
             "cognition.enabled": True,
             "heartbeat.enabled": True,
-            # The deployment's own timers and thresholds compose this
-            # world — nothing shortened, nothing suppressed. The stated
-            # cue-quiet window wakes each send's stimulus on the app's own
-            # schedule, the finite protocol answers any background
-            # occasion production raises, and an occasion the plan never
-            # produced stays an ERROR, never hidden.
+            # Preserve deployment scheduling; unsupported occasions fail the finite world.
             **(overrides or {}),
         },
         judge_models=JUDGES)
@@ -83,18 +78,8 @@ def case():
                 expected_output="", metadata={"journey": dict(PLAN)})
 
 
-# The same generated world and the same production path, measured the
-# new way: the claims anchor the produced turns, not the state kind a
-# storage row landed in. `check` tokens are what the fixture itself
-# made observable — finite rehearsal binding, never a quality claim.
-#
-# Turn 0's claim is re-anchored: an earlier fixture asserted "the turn
-# asks which generated venue and time to select" while its window held
-# the reminder FIRE's delivery — a different occasion's work borrowing
-# this turn's observation. This input's own typed outcome is `recorded`
-# (admission declined); its own bound evidence is the settled session
-# SCHEDULING the question. The claim now names that. Identity changed,
-# denominators unchanged: 3 criteria, 6 judge answers.
+# These finite checks bind to the produced turn, never a storage kind or quality claim.
+# Turn 0 records admission and scheduling; the later turn owns the recall reply.
 PLAN_V2 = {
     "version": 2,
     "steps": [
@@ -313,10 +298,7 @@ async def test_sdk_autonomous_journey_version2_turns_through_real_app(
     spec = Spec(source_url=clean_pg_url, entry="autonomous_journey",
                 services={draw.name: plan})
     experiment = Experiment(cases=[draw], evaluators=[JourneyGrader()])
-    # The mirror is unconditional: a failed run's evidence is the
-    # diagnosis, and pytest's basetemp does not outlive the next worker's
-    # rotation — evidence that only survives a PASS is evidence lost on
-    # exactly the runs that need it.
+    # Retain failures too: pytest rotates its temporary evidence directories.
     try:
         report = await experiment.run_evaluations_async(
             task=nora_task(spec), max_workers=1)
@@ -351,10 +333,7 @@ def _assert_v2_report(draw: Any, report: Any, experiment: Any,
     # The wake denominator is honestly retained — each send's natural wake
     # is a row — but the behavior claims live on the turn rows.
     assert len(journey["wakes"]) == 2 and len(journey["turns"]) == 3
-    # Each turn's outcome is its own production decision, never silence
-    # guessed: the keep/correction sends' admissions explicitly declined
-    # engagement (their stimuli fed the wakes), and the tagged follow-up's
-    # durable turn delivered a bound confirmed reply.
+    # Declined admissions and the follow-up's confirmed reply are distinct outcomes.
     assert [t["outcome"] for t in journey["turns"]] == [
         "recorded", "recorded", "delivered"]
     first, second, third = journey["turns"]
@@ -391,11 +370,7 @@ def _assert_v2_report(draw: Any, report: Any, experiment: Any,
         (outputs / "turn-0.json").read_text())
 
     protocol, judge = plan.protocol, plan.judge
-    # The exact served census: six session calls (three per wake), two
-    # turn calls (the reminder fire's and the follow-up's), the unit
-    # fold each session closes with and the room fold the durable turn
-    # closes with — every served request a production occasion raised,
-    # in production's own order, nothing skipped or invented.
+    # Count every production occasion, separating scenario progress from background calls.
     assert protocol.phase == 11 and not protocol.errors
     # The scenario occasions are the eleven phase-advancing calls; every
     # other served occasion is counted background — a Dreamer pass raised
@@ -406,11 +381,7 @@ def _assert_v2_report(draw: Any, report: Any, experiment: Any,
     assert protocol.background == sum(
         v for k, v in protocol.occasions.items() if k not in scenario)
     assert len(protocol.requests) == 11 + protocol.background
-    # The later request carries its own recall source through the real
-    # context path: the turn call that names the follow-up (the one
-    # `send_reply`-carrying request whose messages contain it — the room
-    # fold's transcript renders it later but offers no tools) also
-    # carries the settled correction it answers on — nothing staged.
+    # Only the follow-up's send_reply request must carry its correction source.
     (followup_request,) = (
         body for body in protocol.requests
         if {t["function"]["name"] for t in body.get("tools", [])}
@@ -446,10 +417,7 @@ def _assert_v2_report(draw: Any, report: Any, experiment: Any,
     reminders = receipts["reminders"]
     assert len(reminders) == 1 and reminders[0]["state"] == "done"
     assert QUESTION in str(reminders[0])
-    # The fire's delivery is provenance inside turn 0's window — never
-    # the turn's own output: the typed outcome reads `recorded` with an
-    # empty `said`, while the receipt the claim no longer borrows sits
-    # plainly in the window's effects.
+    # The fire receipt is provenance; it cannot become turn 0's own output.
     assert first["trajectory"]["turn_outcome"]["said"] == []
     first_items = first["trajectory"]["effects"]["items"]
     assert any(item["kind"] == "delivery" and

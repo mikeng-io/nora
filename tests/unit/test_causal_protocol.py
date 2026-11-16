@@ -104,8 +104,7 @@ def _serve(protocol, body):
 
 
 def _drive_first_turn(protocol):
-    """Phases 0-2: the dream-model turn that writes the note and arms the
-    reminder, then its tools-less close."""
+    """Write the note, arm the reminder, then close the tool-less cycle."""
     assert (
         _call(
             _serve(

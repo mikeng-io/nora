@@ -246,10 +246,7 @@ async def test_rejudge_prerequisite_gap_spends_no_judge_on_the_affected(
     frozen_path = tmp_path / f"wake-1-{case.wakes[1]}.json"
     frozen = json.loads(frozen_path.read_text())
     if damage in ("terminal", "settlement"):
-        # A session-bound wake whose own settlement or terminal capture is
-        # absent: identity stays current (the row and the artifact agree on
-        # the session) so the refusal lands at the judge door, not the
-        # denominator preflight.
+        # Keep identity current so missing settlement fails at the judge evidence gate.
         source = tmp_path / "report.json"
         raw_report = json.loads(source.read_text())
         raw_report["cases"][0]["wakes"][1]["session_id"] = "s-7"

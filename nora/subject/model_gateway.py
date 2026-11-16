@@ -21,10 +21,7 @@ from urllib.parse import urlsplit
 
 _PORTS = {"http": 80, "https": 443}
 
-#: Stamped into an admitted request's `extensions` by the environment guard;
-#: httpx copies extensions into a redirect's request, so a request carrying
-#: the mark is a second attempt built from an admitted dispatch — never a
-#: caller-declared one.
+#: httpx copies this admission stamp into redirects, which must refuse replay.
 _ADMITTED_DISPATCH = "nora_admitted_dispatch"
 
 

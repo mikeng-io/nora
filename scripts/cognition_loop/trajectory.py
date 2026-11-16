@@ -108,9 +108,7 @@ def loop_counts(
 
 
 def _delivery_invocations(events: list[dict[str, Any]]) -> set[str]:
-    """Invocations whose requests were offered the `send_reply` surface —
-    a turn's own generation, beside the downstream work (a debrief fold
-    offers no tools) that shares its stamped trace."""
+    """Delivery invocations, excluding downstream tool-less folds in the same trace."""
     owners: set[str] = set()
     for event in events:
         if event.get("name") != "nora.model.request":

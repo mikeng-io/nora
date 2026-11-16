@@ -181,12 +181,7 @@ class IsolatedServices:
             egress.scheme, egress.host, egress.port)
 
     def _deny_dispatch(self, cause: str, request: Any) -> None:
-        """Refuse a dispatch against the declared gateway, visibly.
-
-        The cause lands in `denied` (so `check()` reports it) and in canonical
-        evidence when a run is recording; the request's headers and body are
-        never copied — credentials and prompts stay in the client.
-        """
+        """Record the refusal cause without copying request credentials or content."""
         self.denied.append({"operation": "http", "cause": cause})
         if cause != "external_dependency_not_isolated":
             from nora.subject.eval_evidence import current

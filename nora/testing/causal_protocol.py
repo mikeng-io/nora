@@ -28,17 +28,11 @@ ANSWER = "The selected generated venue is Cedar Hall."
 #: room fold (`{"standing": ...}` contract).
 _UNIT_SCOPE_MARKER = "Scope of this call: UNIT"
 
-#: The tag `DreamerRuntime` wraps each adaptor pass in
-#: (`nora.instructions.dreamer.OBJECTIVE_TAG`). The Cognition session is
-#: instructed by its objective BODY alone — no wrapper tag — so a tagged
-#: request is always a background adaptor pass, never scenario work.
+#: Tagged objectives identify adaptor work; untagged cognition owns scenario progress.
 _OBJECTIVE_TAG = re.compile(r'<dreamer_objective name="([^"]+)"')
 
-#: Dreamer objectives sharing `EntitySessions`' verbs whose finite answer is
-#: the designed "nothing to change" close — plain text, no tool call. A
-#: `character_no_change(entity=...)` needs the entity's name exactly as the
-#: session's inputs named it, which a generated world cannot invent; an
-#: unsettled close holds the adaptor's watermark, honestly.
+#: These EntitySessions objectives close without inventing an entity name.
+#: Their unsettled watermark remains pending.
 _SESSION_CLOSE_OBJECTIVES = frozenset({"character-person", "character-unit", "character-nora"})
 
 #: Total background calls the finite world answers. A workload bound, not a
@@ -163,11 +157,7 @@ class CausalProtocol:
         return next(int(mid) for mid, body in matches if words in html.unescape(body))
 
     def _fold(self, request, text):
-        """One tools-less `nora` call: the standing fold. The system message
-        names its scope — `Scope of this call: UNIT` asks for `items`, the
-        room fold asks for `standing` and a missing key is `malformed` in
-        production (`debrief._body`), so serving `items` to a room fold would
-        answer a different contract than the one offered."""
+        """Answer a unit or room fold with its declared response shape."""
         if _UNIT_SCOPE_MARKER in text:
             return "fold_unit", completion(request["model"], '{"items":[]}', stream=True)[
                 "response"
@@ -284,13 +274,7 @@ class CausalProtocol:
         raise UnmatchedError("exhausted", f"no generated journey phase {self.phase}")
 
     def _background(self, request, objective):
-        """One Dreamer adaptor pass, by the objective the request declares.
-
-        `culture` keeps its proven two-arm answer; the other wired
-        `EntitySessions` sessions get the designed no-tool close — an
-        unsettled run that holds their watermark rather than an invented
-        entity write. Any other objective is not wired in this world and
-        names a request production should not have made."""
+        """Answer the declared adaptor objective; an unsettled close holds its watermark."""
         if self.background >= _BACKGROUND_LIMIT:
             raise UnmatchedError("exhausted", f"background passes past {_BACKGROUND_LIMIT}")
         if objective == "culture":

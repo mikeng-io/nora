@@ -100,14 +100,7 @@ def _work_decision(w: dict[str, Any]) -> dict[str, Any] | None:
 
 def _turn_outcome(ctx: dict[str, Any], actions: list[dict[str, Any]],
                   effects: dict[str, Any]) -> dict[str, Any]:
-    """The turn's typed outcome, bound to its declared input.
-
-    `delivered` needs a confirmed action owned by this event's own `turn`
-    work; `intentional_non_delivery` needs that work's recorded
-    abstention; `recorded` needs the admission's own engage=False
-    decision. An unowned action in the interval, a storage row, or mere
-    quiet proves nothing — the middle is `unconfirmed`.
-    """
+    """The input's owned delivery, recorded abstention or declined engagement; else unconfirmed."""
     work = ctx.get("work") or []
     event = ctx.get("event") or {}
     owners = {f"w-{w.get('id')}" for w in work

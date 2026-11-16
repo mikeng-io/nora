@@ -95,10 +95,7 @@ def test_a_fat_turn_trajectory_still_yields_a_bounded_digest():
     """A turn's verbatim requests stay in its frozen artifact; the payload
     carries a bounded digest — the same budget a wake payload holds."""
     context = "the whole session context " * 60_000
-    # Each call's stack is ~2.4 MB once the tail repeats: undigested the
-    # payload is ~21 MB, digested it is tens of KB. The first call's
-    # system/developer stay small — they are quoted verbatim as
-    # `subject_instructions` by design.
+    # Repeated tails make raw calls megabytes; the digest retains quoted instructions.
     messages = [{"role": "system", "content": "generated subject rules"},
                 {"role": "developer", "content": "generated developer rules"},
                 {"role": "user", "content": context},
