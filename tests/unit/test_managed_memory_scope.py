@@ -474,8 +474,11 @@ async def test_a_source_person_exposed_mid_lookup_is_screened_before_the_provide
     finally:
         release.set()
     result = await task
-    assert result["status"] == "refused"
-    assert result["reason"] == "private_person"
+    assert result["status"] == "unavailable"
+    assert calls == []
+    settled = await call("Generated Later news")
+    assert settled["status"] == "refused"
+    assert settled["reason"] == "private_person"
     assert calls == []
     assert (await call("volleyball news"))["status"] == "ok"
     assert calls == ["volleyball news"]

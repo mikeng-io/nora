@@ -125,41 +125,29 @@ class ComprehendRead(AgentTool):
         envelope["status"] = "success"
         return ToolResultEvent(envelope)  # type: ignore[arg-type]
 
+    def _source_people(self) -> set[str]:
+        people = set(self._state.persons)
+        for source in self._state.fetched.sources.values():
+            people.update(source.persons)
+        return people
+
     async def _private_names(self) -> tuple[str, ...]:
         state = self._state
         access = getattr(state.records, "access", None)
         if access is None or access.is_file_backend:
             return state.private_names
         names = set(state.private_names)
-        screened: set[str] = set()
-        # Concurrent read tools keep handing `fetched` sources via `on_rows`
-        # while the identity reads below await. `screened` only grows and the
-        # set is finite, so re-scanning until nothing is pending terminates.
-        while True:
-            person_ids = set(state.persons)
-            for source in state.fetched.sources.values():
-                person_ids.update(source.persons)
-            pending = sorted(person_ids - screened)
-            if not pending:
-                break
-            for person_id in pending:
-                # `person` is the authority's record: `display_name` is the
-                # name AS RECORDED — `person_ref`'s fallback (name = id)
-                # would read a blank one as a real name.
-                person = await access.person(person_id)
-                if person is None or not person.display_name.strip():
-                    raise LookupError("source person name unavailable")
-                names.update(
-                    name
-                    for name in (
-                        person_id,
-                        person.person_id,
-                        person.display_name,
-                        *await access.former_persons(person.person_id),
-                    )
-                    if name
-                )
-                screened.add(person_id)
+        person_ids = self._source_people()
+        for person_id in sorted(person_ids):
+            person = await access.person(person_id)
+            if person is None or not person.display_name.strip():
+                raise LookupError("source person name unavailable")
+            names.update(name for name in (
+                person_id, person.person_id, person.display_name,
+                *await access.former_persons(person.person_id),
+            ) if name)
+        if self._source_people() - person_ids:
+            raise LookupError("source people changed during identity reads")
         return tuple(names)
 
     async def stream(
