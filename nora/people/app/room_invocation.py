@@ -197,8 +197,7 @@ def parse_room_command(message: NormalizedMessage) -> RoomRequest | str | None:
 
 
 def _guess_kind(platform: str, value: str) -> str | None:
-    """Which declared id kind `value` looks like on `platform`, or `None`
-    when the shape names none — the caller then treats it as a name."""
+    """The declared identifier kind matching this value, or None for a name."""
     kinds = id_kinds(platform)
     if re.fullmatch(r"\+\d{4,}", value) and "phone" in kinds:
         return "phone"
@@ -217,8 +216,7 @@ def _guess_kind(platform: str, value: str) -> str | None:
 
 
 def _typed_forms(platform: str, values: frozenset[str]) -> frozenset[Identifier]:
-    """The matchable `Identifier`s one raw id-form set carries — skipping
-    shapes no declared kind accepts rather than guessing one."""
+    """Type the accepted identifier shapes without guessing unknown kinds."""
     typed = set()
     for value in values:
         kind = _guess_kind(platform, value)
@@ -497,10 +495,7 @@ class RoomManagement:
                     bound = True
                     break
             if bound:
-                # A bound identifier refuses a NEW registration — but when
-                # the journal holds THIS message's registration of exactly
-                # these identifiers, the redelivery reaches the service so
-                # the recorded effect replays or resumes instead.
+                # A bound account is accepted only for this message's exact journaled effect.
                 record = await services.bindings.operation(operation_id)
                 if record is None:
                     return denied("account-already-registered")

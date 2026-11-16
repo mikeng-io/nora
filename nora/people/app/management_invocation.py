@@ -51,10 +51,7 @@ class HumanManagement:
         authentication: AccountAuthentication | RoomAuthentication,
         target: ResolvedTarget | None = None,
     ) -> Outcome:
-        # A session invocation retains a binding claim the gate revalidates;
-        # a room-message invocation carries transport provenance only — its
-        # binding is resolved live inside the gate, which is also where a
-        # change between the message and the write is caught.
+        # Retained sessions carry a binding claim; transport messages resolve it under the gate.
         authenticated = (
             (authentication.purpose == "session" and authentication.binding is not None)
             or (authentication.purpose == "message" and authentication.binding is None)

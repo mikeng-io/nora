@@ -476,33 +476,12 @@ async def build_dependencies(
     clock: Callable[[], datetime] = wall_clock,
     operational_clock: Callable[[], datetime] | None = None,
 ) -> Dependencies:
-    """Build the object graph from `cfg`.
+    """Build the process graph from cfg and return its runtime Dependencies.
 
-    This function is the only place in the codebase allowed to know `Config`'s
-    shape (besides `nora.__main__` itself, which only ever passes `cfg`
-    straight through here). Everything downstream takes a `Dependencies`.
-
-    **`clock` names a dependency the graph shares.** Many components take
-    `clock: Callable[[], datetime]` — `FirePath`, `HeartbeatLoop`,
-    `ComputePoller` and the rest — each for the reason `FirePath`'s own
-    docstring gives: *"a module that read the wall clock itself could not be
-    tested at a fixed instant."* This function states the clock once and hands
-    it to all of them; the default is `wall_clock`.
-
-    A caller can therefore say WHAT TIME IT IS. The proactive adaptor's whole
-    judgement is about time (is this note due, has this position gone stale,
-    is now the moment), and a harness asks it a question at a fixed instant by
-    passing a clock.
-
-    **`operational_clock` is the maintenance clock.** A frozen `clock` is a
-    semantic statement («the turn sees this instant»); it must not freeze the
-    queue's deadline, lease and idle arithmetic — under a frozen snapshot the
-    scoped computer's tasks would never time out and its tabs never idle.
-    The scoped-computer machinery (`ComputerAdmission`, `ComputerQueueRunner`,
-    `ScopeBrowserManager`, the deferred outbox's stamp) reads
-    `operational_clock`, which defaults to `clock`; the eval subject passes
-    the wall clock so maintenance keeps moving while the block's time stands
-    still.
+    Share clock (wall_clock by default) so replay can set a fixed semantic instant.
+    Queue deadlines, leases, computer idle expiry and outbox timestamps instead use
+    operational_clock, which defaults to clock. Replay supplies wall time there so
+    maintenance keeps progressing while the turn observes its fixed instant.
     """
     op_clock = operational_clock or clock
     content_checks = cfg.content_checks.enabled

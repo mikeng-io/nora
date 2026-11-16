@@ -1,16 +1,23 @@
 [
-  {
-    "name": "a non-complete registration journal row is resumed on the same operation",
-    "file": "nora/people/app/managed.py",
-    "old": "            resumed = await self._resume_registration(op)\n            if resumed is not None:\n                return resumed\n",
-    "new": "",
-    "target": "tests/unit/test_room_management.py::test_an_interrupted_register_redelivery_resumes_the_recorded_effect"
-  },
-  {
-    "name": "the bound-account refusal consults this message's own journal row first",
-    "file": "nora/people/app/room_invocation.py",
-    "old": "            if bound:\n                # A bound identifier refuses a NEW registration — but when\n                # the journal holds THIS message's registration of exactly\n                # these identifiers, the redelivery reaches the service so\n                # the recorded effect replays or resumes instead.\n                record = await services.bindings.operation(operation_id)\n                if record is None:\n                    return denied(\"account-already-registered\")\n                if record.kind != \"register_account\" or frozenset(\n                    _ident_from(i)\n                    for i in record.snapshot.get(\"identifiers\", ())\n                ) != identifiers:\n                    return denied(\"operation-conflict\")\n",
-    "new": "            if bound:\n                return denied(\"account-already-registered\")\n",
-    "target": "tests/unit/test_room_management.py::test_an_interrupted_register_redelivery_resumes_the_recorded_effect"
-  }
+ {
+  "name": "a non-complete registration journal row is resumed on the same operation",
+  "file": "nora/people/app/managed.py",
+  "old": "            resumed = await self._resume_registration(op)\n            if resumed is not None:\n                return resumed\n",
+  "new": "",
+  "target": "tests/unit/test_room_management.py::test_an_interrupted_register_redelivery_resumes_the_recorded_effect"
+ },
+ {
+  "name": "the bound-account refusal consults this message's own journal row first",
+  "file": "nora/people/app/room_invocation.py",
+  "old": "            if bound:\n                # A bound account is accepted only for this message's exact journaled effect.\n                record = await services.bindings.operation(operation_id)\n                if record is None:\n                    return denied(\"account-already-registered\")\n                if record.kind != \"register_account\" or frozenset(\n                    _ident_from(i)\n                    for i in record.snapshot.get(\"identifiers\", ())\n                ) != identifiers:\n                    return denied(\"operation-conflict\")\n",
+  "new": "            if bound:\n                return denied(\"account-already-registered\")\n",
+  "target": "tests/unit/test_room_management.py::test_an_interrupted_register_redelivery_resumes_the_recorded_effect"
+ },
+ {
+  "name": "an interrupted registration cannot outlive binding revocation or suspension",
+  "file": "nora/people/app/managed.py",
+  "old": "        if not _pending(recorded, \"binding\"):\n            if bound is None or bound.identifiers != payload.identifiers:\n                return denied(\"registration-binding-changed\")\n            lifecycle = await self._bindings.person_lifecycle(payload.person_id)\n            if lifecycle is not PersonLifecycle.ACTIVE:\n                return denied(\"person-suspended\")\n",
+  "new": "",
+  "target": "tests/unit/test_managed_registration.py::test_an_interrupted_registration_refuses_changed_binding_or_lifecycle"
+ }
 ]

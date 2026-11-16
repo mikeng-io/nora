@@ -640,17 +640,24 @@ async def test_a_retry_while_the_outage_continues_stays_incomplete():
     assert record.steps["kratos"] == "pending"
 
 
-async def test_an_interrupted_registration_does_not_complete_after_binding_revocation():
+@pytest.mark.parametrize("target_change", ["revoke", "suspend"])
+async def test_an_interrupted_registration_refuses_changed_binding_or_lifecycle(target_change):
     store, registry, svc = _service()
     registry.down = True
     interrupted = await _register(svc, "op-1")
     assert interrupted.status is OutcomeStatus.UNAVAILABLE
     assert await store.record_for(account=ACCT) is not None
-    await store.revoke_binding(account=ACCT)
+    if target_change == "revoke":
+        await store.revoke_binding(account=ACCT)
+    else:
+        await store.set_lifecycle(person_id=PERSON, lifecycle=PersonLifecycle.SUSPENDED)
     registry.down = False
     retried = await _register(svc, "op-1")
     assert retried.status is OutcomeStatus.DENIED
-    assert await store.record_for(account=ACCT) is None
+    if target_change == "revoke":
+        assert await store.record_for(account=ACCT) is None
+    else:
+        assert await store.person_lifecycle(PERSON) is PersonLifecycle.SUSPENDED
     assert (await store.person(PERSON)).kratos_identity_id is None
     assert PERSON not in registry.identities
     assert (await store.operation("op-1")).state is OperationJournalState.INCOMPLETE
