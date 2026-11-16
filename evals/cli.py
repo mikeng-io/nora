@@ -12,12 +12,36 @@ from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES
 BUDGET_MINUTES = 60
 
 
-def run_budget_for(value: str | None) -> Any | None:
-    """The parsed `--run-budget` bound, or None when the flag was not given."""
+def run_input_bytes(value: str) -> int:
+    """`--run-input-bytes`: a positive count of serialized wire bytes."""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "input byte bound must be an integer") from None
+    if n <= 0:
+        raise argparse.ArgumentTypeError(
+            "input byte bound must be positive")
+    return n
+
+
+def run_budget_for(value: str | None,
+                   input_bytes: int | None = None) -> Any | None:
+    """The parsed `--run-budget` bound, or None when the flag was not given.
+
+    `input_bytes` is the parsed `--run-input-bytes` cap on cumulative
+    serialized request bytes; it binds `RunBudget.max_input_bytes` and is
+    refused on its own — a byte bound with no installed budget would
+    silently gate nothing.
+    """
     if value is None:
+        if input_bytes is not None:
+            raise ValueError("--run-input-bytes requires --run-budget")
         return None
     from nora.domain.run_budget import RunBudget
 
+    if input_bytes is not None and input_bytes <= 0:
+        raise ValueError("--run-input-bytes must be a positive integer")
     parts = value.split(",")
     if not 1 <= len(parts) <= 4:
         raise ValueError("--run-budget takes 1-4 fields")
@@ -41,6 +65,7 @@ def run_budget_for(value: str | None) -> Any | None:
     return RunBudget(
         max_requests=vals[0], max_input_tokens=vals[1],
         max_output_tokens=vals[2],
+        max_input_bytes=input_bytes,
         deadline=time.monotonic() + vals[3] * 60,
         output_reserve=4000)
 
@@ -199,3 +224,11 @@ def _run_args(ap: argparse.ArgumentParser) -> None:
              "pre-dispatch measure and refuses every call. `chat.completions` "
              "calls that would cross it raise RunBudgetError BEFORE leaving — "
              "budget exhaustion is ERROR, never PASS.")
+    ap.add_argument(
+        "--run-input-bytes", type=run_input_bytes, metavar="BYTES",
+        help="cumulative bound on serialized model-request bytes for the "
+             "run, measured on the FINAL wire bodies at transport admission "
+             "(RunBudget.max_input_bytes) — a size cap in bytes, never a "
+             "provider-token or spend estimate. Requires --run-budget: the "
+             "flag alone installs nothing and refuses rather than being "
+             "ignored.")
