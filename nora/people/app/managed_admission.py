@@ -74,6 +74,7 @@ from nora.domain.managed_ports import (
     ScopedRelation,
 )
 from nora.domain.management import MANAGEMENT_PERMITS, Scope, ScopeKind
+from nora.people.app.managed_admission_capture import PreparedImport, _PersonPlan
 from nora.people.app.managed_admission_identity import (
     AdmissionKratos,
     admission_marker,
@@ -110,32 +111,6 @@ class AdmissionPlan:
         default_factory=lambda: MappingProxyType({})
     )
 
-
-@dataclass(frozen=True)
-class _PersonPlan:
-    person_id: str
-    display_name: str
-    social: bool
-
-
-@dataclass(frozen=True)
-class PreparedImport:
-    """The exact intended effect — captured and validated ONCE per
-    invocation, immutable for every consumer. The loaders' model, the
-    journaled snapshot, the retained private source text and the derived
-    effect rows all describe the same read: a source change during setup
-    either keeps this captured effect or never reaches a write — it never
-    substitutes a second read behind the plan the first one reported."""
-    import_id: str
-    snapshot: MappingProxyType[str, Any]
-    persons: Persons
-    policy: Policy
-    people: MappingProxyType[str, _PersonPlan]
-    accounts: MappingProxyType[str, tuple[BoundAccount, ...]]   # person_id -> accounts
-    aliases: MappingProxyType[str, tuple[str, ...]]            # person_id -> former ids
-    memberships: frozenset[tuple[str, Scope]]         # (person_id, room scope)
-    room_scopes: MappingProxyType[Scope, tuple[str, str]]       # scope -> (platform, conv_id)
-    containment: frozenset[tuple[Scope, Scope]]       # (child, parent)
 
 
 def _digest(data: bytes) -> str:
@@ -263,7 +238,7 @@ def prepare(identity_path: Path, policy_path: Path) -> PreparedImport | Outcome:
     )
     return PreparedImport(
         import_id=_import_id(identity_sha, policy_sha),
-        snapshot=snapshot,
+        _snapshot_json=json.dumps(dict(snapshot), separators=(",", ":")),
         persons=persons,
         policy=policy,
         people=MappingProxyType(people),
@@ -361,7 +336,11 @@ def plan(identity_path: Path, policy_path: Path) -> AdmissionPlan:
 
 def _receipt(record: OperationRecord) -> Outcome:
     """The journaled outcome of an exact completed match — a receipt, not revalidation."""
-    return Outcome(OutcomeStatus(record.outcome or "complete"), record.detail)
+    try:
+        status = OutcomeStatus(record.outcome)
+    except (ValueError, TypeError):
+        return unavailable("receipt-unconfirmed")
+    return Outcome(status, record.detail)
 
 
 @dataclass(frozen=True)
@@ -387,8 +366,18 @@ class FileAdmission:
         resumable, replayed or refused — never a write. The same attribution
         rule as `apply_prepared`: the durable journal is bound by kind and
         full snapshot, and an exact completed match is its own receipt."""
-        facts = await self.probe.facts()
+        try:
+            async with self.bindings.mutation():
+                return await self._assess(prepared)
+        except Exception:  # noqa: BLE001 — port errors must stay unavailable
+            return unavailable("store-failure")
+
+    async def _assess(self, prepared: PreparedImport) -> Outcome:
         record = await self.bindings.operation(prepared.import_id)
+        recorded = self._recorded(prepared, record)
+        if recorded is not None:
+            return recorded
+        facts = await self.probe.facts()
         claim = self._claim(facts, prepared, record)
         if isinstance(claim, Outcome):
             return claim
@@ -415,8 +404,11 @@ class FileAdmission:
             return unavailable("store-failure")
 
     async def _apply(self, prepared: PreparedImport) -> Outcome:
-        facts = await self.probe.facts()
         record = await self.bindings.operation(prepared.import_id)
+        recorded = self._recorded(prepared, record)
+        if recorded is not None:
+            return recorded
+        facts = await self.probe.facts()
         claim = self._claim(facts, prepared, record)
         if isinstance(claim, Outcome):
             return claim
@@ -464,17 +456,22 @@ class FileAdmission:
             return finished
         return complete(detail)
 
-    def _claim(
-        self, facts: AdmissionFacts, prepared: PreparedImport,
-        record: OperationRecord | None,
-    ) -> str | Outcome:
-        """The claim — "fresh"/"resume" or a refusal; an exact COMPLETE record is its receipt."""
+    def _recorded(
+        self, prepared: PreparedImport, record: OperationRecord | None,
+    ) -> Outcome | None:
         if record is not None:
             if record.kind != IMPORT_KIND or record.snapshot != prepared.snapshot:
                 return denied("effect-conflict")
             if record.state is OperationJournalState.COMPLETE:
                 return _receipt(record)
-        elif any(o == prepared.import_id for o, _, _ in facts.operations):
+        return None
+
+    def _claim(
+        self, facts: AdmissionFacts, prepared: PreparedImport,
+        record: OperationRecord | None,
+    ) -> str | Outcome:
+        """The fresh/resume target claim after durable effect attribution."""
+        if record is None and any(o == prepared.import_id for o, _, _ in facts.operations):
             return unavailable("journal-missing")
         imports = [o for o, kind, _ in facts.operations if kind == IMPORT_KIND]
         if [o for o in imports if o != prepared.import_id]:

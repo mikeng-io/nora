@@ -190,3 +190,77 @@ async def test_a_journal_read_failure_is_unavailable(tmp_path, graph):
     outcome = await admission.apply_prepared(prepared)
     assert outcome.status is OutcomeStatus.UNAVAILABLE
     assert outcome.detail == "store-failure"
+
+
+@pytest.mark.parametrize("outcome", [None, "", "not-an-outcome"])
+async def test_a_completed_record_without_an_explicit_valid_outcome_is_unavailable(
+    tmp_path, graph, outcome,
+):
+    store, _, _, admission = graph
+    prepared = prepare(*_sources(tmp_path))
+    assert not isinstance(prepared, Outcome)
+    store.operations[prepared.import_id] = OperationRecord(
+        prepared.import_id, IMPORT_KIND, OperationJournalState.COMPLETE,
+        MappingProxyType({}), outcome=outcome, snapshot=prepared.snapshot)
+    for attempt in (admission.apply_prepared, admission.assess_prepared):
+        result = await attempt(prepared)
+        assert result.status is OutcomeStatus.UNAVAILABLE
+        assert result.detail == "receipt-unconfirmed"
+    store.operations[prepared.import_id] = replace(
+        store.operations[prepared.import_id], outcome="complete")
+    assert (await admission.apply_prepared(prepared)).status is OutcomeStatus.COMPLETE
+
+
+async def test_capture_cannot_be_rewritten_through_nested_views_or_loader_indexes(tmp_path, graph):
+    store, _, _, admission = graph
+    prepared = prepare(*_sources(tmp_path))
+    assert not isinstance(prepared, Outcome)
+    expected = copy.deepcopy(dict(prepared.snapshot))
+    view = prepared.snapshot
+    view["counts"]["people"] = 999
+    view["sources"]["identity_toml"] = "changed-after-capture"
+    view["people"].append("injected-person")
+    assert prepared.snapshot == expected
+    with pytest.raises(TypeError):
+        prepared.persons.by_person["injected-person"] = prepared.persons.by_person["miles"]
+    with pytest.raises(TypeError):
+        prepared.policy._by_id[("signal", "generated-room-a")] = None
+    with pytest.raises(TypeError):
+        prepared.persons._subject_aliases["miles_old"] = "ada"
+    result = await admission.apply_prepared(prepared)
+    assert result.status is OutcomeStatus.COMPLETE, result.detail
+    assert store.operations[prepared.import_id].snapshot == expected
+    assert len(store.people) == expected["counts"]["people"]
+
+
+async def test_assess_reports_an_unreadable_store_as_unavailable(tmp_path, graph):
+    store, _, _, admission = graph
+    prepared = prepare(*_sources(tmp_path))
+    assert not isinstance(prepared, Outcome)
+    store.down = True
+    result = await admission.assess_prepared(prepared)
+    assert result.status is OutcomeStatus.UNAVAILABLE
+    assert result.detail == "store-failure"
+    store.down = False
+    assert (await admission.assess_prepared(prepared)).status is OutcomeStatus.COMPLETE
+
+
+class _UnreadableTarget(FakeAdmissionProbe):
+    async def facts(self):
+        raise RuntimeError("current target inventory is unavailable")
+
+
+async def test_an_exact_receipt_does_not_require_the_current_target_inventory(tmp_path, graph):
+    store, backend, registry, admission = graph
+    prepared = prepare(*_sources(tmp_path))
+    assert not isinstance(prepared, Outcome)
+    assert (await admission.apply_prepared(prepared)).status is OutcomeStatus.COMPLETE
+    record = store.operations[prepared.import_id]
+    replay = replace(admission, probe=_UnreadableTarget(store))
+    backend.down = True
+    registry.down = True
+    for attempt in (replay.apply_prepared, replay.assess_prepared):
+        result = await attempt(prepared)
+        assert result.status is OutcomeStatus.COMPLETE
+        assert result.detail == record.detail
+    assert store.operations[prepared.import_id] is record
