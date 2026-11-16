@@ -25,6 +25,10 @@ independence, dispositions and round limits. This skill is the procedure.
    - For recurring database reads, check generated history-size scaling with
      fixed pending work, admission/commit boundaries, held reader elections,
      foreground progress and release on failure/cancellation.
+   - For design-to-implementation audits, map each assigned promise to the
+     actual entry, wiring, observed behavior and evidence head. Distinguish
+     source presence from exercised behavior; mark unknowns without inventing
+     new implementation work. Include connected bundle contracts when affected.
    - For architecture/docs, inspect the assigned subject's owner and changed
      cross-references; assess contradictions or misplaced responsibilities,
      not unrelated style or a new architecture of the reviewer's own.

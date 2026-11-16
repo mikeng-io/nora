@@ -25,7 +25,11 @@ Keep one current brief in Linear, or in the PR for small direct work. Preserve
 existing work authority until its successor and owner are verified and linked.
 Record its link and source revision or update time read; code base and design revision are
 separate facts. Update authorized scope changes in place, not in a comment queue.
-Check: a fresh agent can state the outcome and completion conditions in one read.
+Before splitting implementation, compare each relevant design promise with
+actual entry/wiring and evidence at a named head. Summarize promise → observed
+implementation/evidence → met/unmet/unavailable → remaining work in the current
+brief/run, not a new inventory document. Implement only the actual remaining gap.
+Check: a fresh agent can state the outcome, completion conditions and known gap.
 
 ## 2. Choose the next unit
 
@@ -33,8 +37,21 @@ Do small work directly. Split only independently assignable/verifiable outcomes
 or real dependencies into sub-issues; each states its delta and links its parent.
 Use native ownership and blocking relations instead of a copied task table.
 Sequence shared write ownership. For an integrated change, units are review
-slices on its integration branch, not separate master releases.
+slices on its integration branch, not separate master releases. Use
+`nora-land`'s stacked-delivery path when dependent PR layers are useful; a child
+work item, PR layer and T3 worker need not have one-to-one identities.
 Check: the remaining completion conditions, including integration, have owners.
+
+For cross-session work, first follow linked related work/threads; use T3's
+project thread search/list only to find missing relevant owners, then read those
+threads' actual checkout/head and latest handoff. Check neighboring bundles when
+they share an interface/invariant. Do not preload all sessions or infer ownership
+from titles. Record the related work/thread links and shared seam in References.
+Agree with its active owner on who changes that seam and the dependency/base;
+sequence overlapping writes, parallelize independent work. Coordinate again at
+interface/base changes, blockers, restacks and handoff. Update the owning brief
+and notify affected sessions within the task's authority; read acknowledgments
+before dependent writes. Unavailable coordination blocks that seam, not all work.
 
 ## 3. Execute or delegate
 

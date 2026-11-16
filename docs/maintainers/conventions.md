@@ -290,6 +290,19 @@ is the short work brief from `nora-dispatch`:
 Intent, Done when, Boundaries, References. Keep current acceptance in that body;
 put progress/evidence links in a short handoff rather than a comment log.
 
+Done when describes observable outcomes under relevant inputs/preconditions,
+including must-not-happen boundaries where material, and the evidence that can
+establish them. "Add a function" or "tests green" alone is not acceptance. For
+example: "an authorized caller can complete X; a caller outside the unit cannot
+read it", with the relevant journey/check. The orchestrator derives checks from
+the agreed outcome; a reviewer cannot silently expand it.
+
+Create a parent only for work needing several separately owned/verifiable units;
+otherwise use one issue. Children state their own delta and link parent intent.
+Add blocks relations for real ordering; parent-child alone does not imply order.
+Reserve integration and whole-outcome acceptance for the parent owner. No child
+is created merely because a session, test command or PR layer exists.
+
 | property | convention |
 |---|---|
 | team | use the owning domain; Nora execution uses the existing `nora` / `NOR` team |

@@ -12,6 +12,11 @@ progress. `nora-work` owns continuation after design within the authorized task.
 
 ## 1. Is this an architecture change?
 
+First compare the relevant bundle promises with current entry points, wiring
+and existing evidence. Include connected bundles sharing the changed invariant;
+do not census every design. Use `nora-review`'s acceptance-audit mode if an
+independent comparison is required. A missing proof is not missing code.
+
 Ask: **would a reader of the bundle see a difference?** It is architecture when
 the change alters
 

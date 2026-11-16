@@ -6,10 +6,8 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 # nora-land
 
 Worktree → impact-based validation → PR → applicable review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
-Read logs/state after each step, not just its exit code; proceed unless blocked or missing an operator-only fact.
 `ORCHESTRATION.md` owns assignment/review policy; `nora-dispatch` owns worker
 handoffs. Workers stop at their assigned boundary; the parent owns acceptance.
-
 ```bash
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
 LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
@@ -119,6 +117,9 @@ Breaking markers stop automatic writes; major requires owner dispatch at an exac
 
 ## 6. Merged tree, push, PR
 
+For dependent PRs use [stacked delivery](reference.md#stacked-delivery) instead
+of steps 6–9's standalone-master commands; return here for the final master PR.
+
 ```bash
 git fetch origin; git rev-list --count HEAD..origin/master    # 0: branch is the merged tree
 git merge origin/master -m "merge: origin/master into $SLUG, <what came in>"   # if needed: inspect upstream delta; validate affected interactions
@@ -177,8 +178,8 @@ gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
 - Author the merge subject (`merge: <the arc> (#N)`) and body; GitHub's default
   subject does not follow this repository's convention.
 - `--merge` only, never `--squash` or `--rebase`.
-- Stacked PR: `gh pr edit <child> --base master` BEFORE merging its base with
-  `--delete-branch`, or the child is closed.
+- Do not retarget native stack members or delete their bases with standalone
+  branch-chain commands; use the stack procedure.
 ## 9. Read back
 
 ```bash
@@ -197,8 +198,7 @@ make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must 
 
 Fix a process failure found on the way in its owning skill or root document now
 (`ORCHESTRATION.md` «The lifecycle»). Reconcile the Linear work brief with met/unmet/unavailable evidence and remaining scope. Link the PR/result; close only a fully satisfied outcome. GitHub defect reports keep their separate resolution.
-Report completed/unmet obligations separately; keep required read-back, add no extra
-research/deployment, and stop when the completion rule holds.
+Report completed/unmet obligations; keep required read-back and stop at the agreed boundary.
 The next change starts in a new worktree; cleanup: `docs/maintainers/conventions.md`. Deploying: nora-deploy.
 
 Tool-specific workarounds and Claude commit footers: `nora-land/reference.md`.

@@ -94,6 +94,19 @@ This is skill-guided reinforcement. Existing tools perform the operations;
 there is no lifecycle engine, phase lock or automatic session wakeup. Scripts
 are for useful repeated reads/writes, not for deciding scope or completion.
 
+## Coordination and decisions
+
+The operator owns intended outcomes, scope amendments and explicit exceptions.
+The outcome orchestrator chooses units, workers, review lenses/tier and next
+steps within that authority, and reconciles evidence before closing work.
+Builders implement their assigned slice; reviewers judge it without adding
+requirements or authorizing repairs. Required hosted checks remain applicable.
+
+For shared designs, interfaces or migrations, read related active work and T3
+threads before assigning writes; `nora-dispatch` owns that coordination procedure.
+A thread link is context access, not shared memory or automatic synchronization.
+One outcome owner integrates; one writer owns a shared seam at a time.
+
 ## Execution tier
 
 Pick the lowest tier that covers the ambiguity and the cost of a miss; disclosure,
