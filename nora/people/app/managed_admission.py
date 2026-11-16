@@ -566,7 +566,7 @@ class FileAdmission:
             ("authority", lambda: self._authority_step(prepared)),
             ("readback", lambda: self._readback_step(prepared)),
         ):
-            if not _pending(record, step):
+            if step != "holds" and not _pending(record, step):
                 continue
             outcome = await effect()
             if outcome.status is not OutcomeStatus.COMPLETE:

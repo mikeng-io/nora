@@ -42,6 +42,8 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
             "pyproject.toml", "uv.lock",
             "tests/contract/test_authority_backend_contract.py",
             "tests/contract/test_admission_identity_contract.py",
+            "tests/contract/test_admission_probe_contract.py",
+            "tests/infra/test_managed_admission_sql.py",
             "tests/integration/test_managed_admission_ory.py",
         }:
             plan["ory"] = True

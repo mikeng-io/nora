@@ -11,6 +11,8 @@ from scripts import ci_plan
     "nora/domain/management.py", "scripts/check_ory_clients.py", "uv.lock",
     "tests/contract/test_authority_backend_contract.py",
     "tests/contract/test_admission_identity_contract.py",
+    "tests/contract/test_admission_probe_contract.py",
+    "tests/infra/test_managed_admission_sql.py",
     "tests/integration/test_managed_admission_ory.py",
 ])
 def test_managed_identity_changes_require_the_real_ory_job(path):

@@ -10,6 +10,7 @@ from types import MappingProxyType
 import pytest
 import sqlalchemy as sa
 
+from nora.access import IdentityAccess
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
@@ -19,15 +20,19 @@ from nora.domain.managed import (
     OperationRecord,
     OutcomeStatus,
     PersonLifecycle,
+    Verdict,
     room_scope_id,
     unavailable,
 )
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
+from nora.people.adapters.file_backend import FileTopologySource
 from nora.people.adapters.managed_handoff import SqlAdmissionProbe
 from nora.people.app.managed_admission import FileAdmission, plan
-from nora.testing.managed import FakeAuthorityBackend
+from nora.people.app.managed_authority import AuthorityService
+from nora.policy import load_policy
+from nora.testing.managed import FakeAuthorityBackend, FakeIdentityRegistry
 from tests.fakes import FakeAdmissionKratos
 
 IDENTITY = """\
@@ -297,18 +302,17 @@ async def _drop_trigger(engine, name):
             f"DROP FUNCTION IF EXISTS test_{name}"))
 
 
-async def _blocked_on_advisory(engine) -> None:
+async def _blocked_on_advisory(engine, lock_key) -> None:
     """Wait until a session waits on an advisory lock — the writer's open transaction."""
     for _ in range(200):
         async with engine.connect() as conn:
             waiting = await conn.scalar(sa.text(
                 "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'"
-                " AND NOT granted AND database = ("
+                " AND objid = :lock_key AND NOT granted AND database = ("
                 "  SELECT oid FROM pg_database"
-                "  WHERE datname = current_database())"))
+                "  WHERE datname = current_database())"), {"lock_key": lock_key})
         if waiting:
             return
-        await asyncio.sleep(0.05)
     raise AssertionError("the writer never reached the advisory lock")
 
 
@@ -341,7 +345,7 @@ async def test_an_independent_reader_never_sees_an_unheld_person(
                 writer = asyncio.ensure_future(probe.publish_held_person(
                     person=person, accounts=(account,),
                     operation_id="blocked-import"))
-                await _blocked_on_advisory(reader)
+                await _blocked_on_advisory(reader, _PUBLISH_LOCK)
                 store = SqlBindingStore(reader)
                 assert await store.person("blocked") is None
                 assert await store.resolve("signal", "+85200000007") is None
@@ -377,16 +381,24 @@ async def test_complete_and_release_become_visible_together(
                 await conn.execute(sa.text(
                     f"SELECT pg_advisory_lock({_COMPLETE_LOCK})"))
                 identity_path, policy_path = sources
-                service = admission(engine)
+                backend = FakeAuthorityBackend()
+                service = admission(engine, backend)
+                access = _reader_access(reader, backend, policy_path)
+                room = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
                 writer = asyncio.ensure_future(
                     service.apply(identity_path, policy_path))
-                await _blocked_on_advisory(reader)
+                await _blocked_on_advisory(reader, _COMPLETE_LOCK)
                 store = SqlBindingStore(reader)
                 journal = await store.operation(
                     plan(identity_path, policy_path).import_id)
                 assert journal is not None
                 assert journal.state is OperationJournalState.INCOMPLETE
                 assert await store.person("miles") is not None
+                assert (await backend.check(
+                    scope=room, person_id="miles", permit="view")).verdict is Verdict.ALLOWED
+                protected = await access.check(scope=room, person_id="miles", permit="view")
+                assert protected.verdict is Verdict.UNAVAILABLE
+                assert protected.detail == "identity-publication-pending"
                 assert all([
                     await store.identity_held(pid)
                     for pid in ("miles", "ada", "listed_only")
@@ -399,6 +411,8 @@ async def test_complete_and_release_become_visible_together(
                     plan(identity_path, policy_path).import_id)
                 assert journal is not None
                 assert journal.state is OperationJournalState.COMPLETE
+                assert (await access.check(
+                    scope=room, person_id="miles", permit="view")).verdict is Verdict.ALLOWED
                 assert not any([
                     await store.identity_held(pid)
                     for pid in ("miles", "ada", "listed_only")
@@ -421,10 +435,17 @@ async def test_a_completion_commit_failure_leaves_incomplete_and_held(
         body="RAISE EXCEPTION 'injected hold-delete failure';")
     try:
         identity_path, policy_path = sources
-        service = admission(engine)
+        backend = FakeAuthorityBackend()
+        service = admission(engine, backend)
         outcome = await service.apply(identity_path, policy_path)
         assert outcome.status is OutcomeStatus.UNAVAILABLE
         store = SqlBindingStore(engine)
+        access = _reader_access(engine, backend, policy_path)
+        room = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+        assert (await backend.check(
+            scope=room, person_id="miles", permit="view")).verdict is Verdict.ALLOWED
+        assert (await access.check(
+            scope=room, person_id="miles", permit="view")).verdict is Verdict.UNAVAILABLE
         journal = await store.operation(
             plan(identity_path, policy_path).import_id)
         assert journal is not None
@@ -445,3 +466,38 @@ async def test_a_completion_commit_failure_leaves_incomplete_and_held(
         await store.identity_held(pid)
         for pid in ("miles", "ada", "listed_only")
     ])
+
+
+def _reader_access(engine, backend, policy_path):
+    store = SqlBindingStore(engine)
+    topology = FileTopologySource(load_policy(policy_path))
+    return IdentityAccess(
+        bindings=store, authority=AuthorityService(store, backend, topology),
+        topology=topology, registry=FakeIdentityRegistry())
+
+
+async def test_a_hold_insert_failure_never_publishes_the_person(engine, database, sources):
+    await _install_trigger(
+        engine, name="fail_hold_insert", event="INSERT",
+        body="RAISE EXCEPTION 'injected hold-insert failure';")
+    identity, policy = sources
+    service = admission(engine)
+    reader = create_sql_engine(database)
+    try:
+        try:
+            outcome = await service.apply(identity, policy)
+            assert outcome.status is OutcomeStatus.UNAVAILABLE
+            store = SqlBindingStore(reader)
+            assert await store.person("ada") is None
+            assert await store.resolve("signal", "+85200000003") is None
+            journal = await store.operation(plan(identity, policy).import_id)
+            assert journal is not None and journal.state is not OperationJournalState.COMPLETE
+        finally:
+            await _drop_trigger(engine, "fail_hold_insert")
+        outcome = await service.apply(identity, policy)
+        assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+        assert await store.person("ada") is not None
+        assert await store.resolve("signal", "+85200000003") is not None
+        assert not await store.identity_held("ada")
+    finally:
+        await reader.dispose()

@@ -22,11 +22,14 @@ from nora.domain.managed import (
     OperationRecord,
     OutcomeStatus,
     PersonLifecycle,
+    Verdict,
 )
+from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people.adapters.managed_handoff import SqlAdmissionProbe
-from nora.testing.managed import FakeBindingStore
+from nora.people.app.managed_authority import AuthorityService
+from nora.testing.managed import FakeAuthorityBackend, FakeBindingStore, FakeTopologySource
 from tests.fakes import FakeAdmissionProbe
 
 OPERATION = "generated-import"
@@ -164,6 +167,22 @@ async def test_completion_commits_the_journal_and_only_own_release(seam):
     assert journal.outcome == "complete" and journal.detail == "people=2"
     assert await store.identity_held("held-one")      # the foreign hold remains
     assert not await store.identity_held("held-two")
+    room = Scope(ScopeKind.ROOM, "signal/generated-room")
+    backend = FakeAuthorityBackend()
+    topology = FakeTopologySource(
+        rooms={room.id: ("generated-unit", False)},
+        units={"generated-unit": "generated-workspace"}, workspaces={"generated-workspace"})
+    authority = AuthorityService(store, backend, topology)
+    for pid in ("held-one", "held-two"):
+        assert (await backend.put_relation(
+            scope=room, relation="member", person_id=pid)).status is OutcomeStatus.COMPLETE
+        assert (await backend.check(
+            scope=room, person_id=pid, permit="view")).verdict is Verdict.ALLOWED
+    protected = await authority.check(scope=room, person_id="held-one", permit="view")
+    assert protected.verdict is Verdict.UNAVAILABLE
+    assert protected.detail == "identity-publication-pending"
+    assert (await authority.check(
+        scope=room, person_id="held-two", permit="view")).verdict is Verdict.ALLOWED
 
 
 async def test_a_journal_the_completion_cannot_land_is_refused(seam):

@@ -213,3 +213,23 @@ async def test_completion_releases_only_this_imports_holds(tmp_path, graph):
     assert store.identity_holds == {("miles", "foreign-operation")}
     assert await store.identity_held("miles")
     assert not await store.identity_held("ada")
+
+
+async def test_retry_reasserts_done_holds_after_a_partial_legacy_release(tmp_path):
+    store, backend = FakeBindingStore(), _NoWrites()
+    kratos = FakeAdmissionKratos()
+    admission = FileAdmission(
+        bindings=store, backend=backend, kratos=kratos, probe=FakeAdmissionProbe(store))
+    identity, policy = _sources(tmp_path)
+    first = await admission.apply(identity, policy)
+    assert first.status is OutcomeStatus.UNAVAILABLE
+    record = next(iter(store.operations.values()))
+    assert record.steps["holds"] == "done"
+    await store.release_identity_hold(person_id="miles", operation_id=record.operation_id)
+    assert not await store.identity_held("miles")
+    second = await admission.apply(identity, policy)
+    assert second.status is OutcomeStatus.UNAVAILABLE
+    assert await store.identity_held("miles")
+    backend.writes_ok = True
+    assert (await admission.apply(identity, policy)).status is OutcomeStatus.COMPLETE
+    assert not store.identity_holds
