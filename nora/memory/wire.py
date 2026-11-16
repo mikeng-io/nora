@@ -173,6 +173,23 @@ class GraphWiring:
     cognition_memory: Any
 
 
+def _private_names(persons: Any, access: Any) -> tuple[str, ...]:
+    """File-mode names/handles for WakeMemory's screen; managed has no file name data."""
+    if access is not None and not access.is_file_backend:
+        return ()
+    return tuple(
+        {
+            name
+            for p in persons.by_person.values()
+            for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases)
+            if name
+        }
+        | {value for (_, value) in persons.index}
+        | set(persons._instagram_handles.values())
+        | set(persons._instagram_usernames)
+    )
+
+
 def graph(
     allowlist,
     cfg,
@@ -219,7 +236,7 @@ def graph(
                     for u in unit_scopes()
                 }
             ),
-            social_off_ids=persons.social_off_ids(),
+            access=access,
             can_release_place=place_release(
                 rooms_of=lambda u: [
                     (c.platform, c.primary_id, c.location)
@@ -274,16 +291,6 @@ def graph(
             content_checks=content_checks,
             profile=wake_profile_store,
             listed_rooms=(lambda u, p: wake_listed_rooms.get((u, p))),
-            private_names=tuple(
-                {
-                    name
-                    for p in persons.by_person.values()
-                    for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases)
-                    if name
-                }
-                | {value for (_, value) in persons.index}
-                | set(persons._instagram_handles.values())
-                | set(persons._instagram_usernames)
-            ),
+            private_names=_private_names(persons, access),
         )
     return GraphWiring(cognition_memory=cognition_memory)

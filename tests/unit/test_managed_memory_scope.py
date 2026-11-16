@@ -189,6 +189,43 @@ async def test_a_social_opt_out_excludes_social_items_but_keeps_enabled_and_non_
         ("social", "generated-enabled"), ("message", "generated-opted-out-chat")}
 
 
+async def test_graph_composition_wires_and_starts_under_the_managed_backend():
+    """The real `wire.graph` a managed deployment walks: graph+comprehend
+    enabled, `EMPTY_PERSONS` on the sync surface, the selected `access`
+    carrying membership/preferences. It used to die asking
+    `EMPTY_PERSONS.social_off_ids()` globally at boot; now the managed
+    answers are read where they are needed."""
+    from types import SimpleNamespace
+
+    from nora.access import EMPTY_PERSONS
+    from nora.memory.wire import graph as wire_graph
+
+    _, access, _ = await _world()
+    allowlist = SimpleNamespace(
+        rooms=lambda: [
+            SimpleNamespace(
+                platform="signal", primary_id="generated-room-a",
+                unit=HERE.unit, persons=frozenset({PERSON}), location=False)
+        ],
+        home_rooms=lambda: frozenset(),
+    )
+    cfg = SimpleNamespace(
+        memory=SimpleNamespace(
+            graph=SimpleNamespace(
+                enabled=True, comprehend=SimpleNamespace(enabled=True))),
+        cognition=SimpleNamespace(enabled=True),
+    )
+    wired = wire_graph(
+        allowlist=allowlist, cfg=cfg, content_checks=False, engine=object(),
+        media_join=SimpleNamespace(), metrics=Metrics(), persons=EMPTY_PERSONS,
+        presence_circles=(), profile_index=False,
+        registry=SimpleNamespace(self_aliases=lambda: frozenset()),
+        rosters={}, route_model=lambda occasion, model: "generated-model",
+        tier=SimpleNamespace(model="generated-model"),
+        unit_scopes=lambda: (HERE.unit,), access=access)
+    assert wired.cognition_memory is not None
+
+
 async def test_an_opted_out_retired_identity_still_excludes_the_survivors_social_items():
     """Linking retires the former's Kratos identity; its recorded opt-out
     stays effective on every id the folded person may be recorded under —
