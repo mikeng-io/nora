@@ -133,12 +133,7 @@ async def run(
         indicate.resolve(
             indicator=indicator, delivered=delivered, spawn=spawn,
         )
-        # Released on every DIRECT-path exit for the reason the module
-        # docstring gives — the same ONE call the tag path's `finally`
-        # makes: the release and the queued request's dispatch are not
-        # separable. The durable caller (`disposition`) already acquired
-        # the slot its own `finally` releases; releasing here too is the
-        # double-release the second review found.
+        # The durable worker owns its slot; only direct calls release here.
         if disposition is None:
             slots.release_and_dispatch(key)
         annotate(**{

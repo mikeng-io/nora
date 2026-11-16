@@ -86,10 +86,7 @@ class _TargetRefusedError(Exception):
 
 @asynccontextmanager
 async def _target_services(args: argparse.Namespace) -> AsyncIterator[ManagedExport]:
-    """The real managed wiring plus the SQL-aware probe, lazily imported —
-    all over ONE immutable topology snapshot: the file is read once, the
-    parsed `Policy` wires the services, and the same `(policy, source)`
-    drives the export's derivation, comparison and publication."""
+    """Live managed services over one immutable topology snapshot."""
     import aiohttp
 
     from nora.config_identity import ManagedOryConfig
@@ -149,9 +146,7 @@ RuntimeFactory = Callable[[], AbstractAsyncContextManager[ManagedExport]]
 
 
 def _report(report) -> int:
-    """Bounded output only — refusal `code`s, counts, digests, statuses.
-    Identifying specifics live in each refusal's private `detail`, never
-    on stdout."""
+    """Bounded refusal codes, counts and digests."""
     for code in dict.fromkeys(r.code for r in report.refusals):
         print(f"refused: {code}")
     status = report.outcome.status

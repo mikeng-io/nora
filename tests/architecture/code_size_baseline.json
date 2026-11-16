@@ -141,7 +141,7 @@
  "nora/__main__.py": {
   "comment_blocks": 19,
   "functions": {
-   "App.run": 283
+   "App.run": 282
   },
   "internal_docstrings": 2
  },
@@ -222,9 +222,9 @@
  },
  "nora/agent/memory_search.py": {
   "comment_blocks": 15,
-  "file_lines": 1259,
+  "file_lines": 1207,
   "functions": {
-   "MemorySearch.read": 171,
+   "MemorySearch.read": 170,
    "walk": 159
   },
   "internal_docstrings": 6
@@ -261,17 +261,17 @@
   "internal_docstrings": 4
  },
  "nora/agent/registry.py": {
-  "comment_blocks": 40,
-  "file_lines": 1405,
+  "comment_blocks": 39,
+  "file_lines": 1374,
   "functions": {
-   "ToolRegistry.__init__": 453
+   "ToolRegistry.__init__": 452
   },
   "internal_docstrings": 5
  },
  "nora/agent/relay.py": {
   "comment_blocks": 2,
   "functions": {
-   "Relay.send": 156
+   "Relay.send": 149
   }
  },
  "nora/agent/rollup_read.py": {
@@ -325,10 +325,9 @@
   "internal_docstrings": 1
  },
  "nora/agent/tools.py": {
-  "comment_blocks": 16,
-  "file_lines": 827,
+  "comment_blocks": 15,
   "functions": {
-   "build_tool_specs": 456,
+   "build_tool_specs": 372,
    "build_tools": 133
   }
  },
@@ -380,12 +379,12 @@
   "internal_docstrings": 1
  },
  "nora/app/bridge_queue.py": {
-  "comment_blocks": 27,
-  "file_lines": 1793,
+  "comment_blocks": 26,
+  "file_lines": 1690,
   "functions": {
-   "WorkRunner._run_ingest": 291
+   "WorkRunner._run_ingest": 221
   },
-  "internal_docstrings": 22
+  "internal_docstrings": 18
  },
  "nora/app/cli.py": {
   "comment_blocks": 13,
@@ -435,9 +434,9 @@
  },
  "nora/app/composition.py": {
   "comment_blocks": 23,
-  "file_lines": 1484,
+  "file_lines": 1470,
   "functions": {
-   "build_dependencies": 1003
+   "build_dependencies": 975
   },
   "internal_docstrings": 1
  },
@@ -482,7 +481,7 @@
    "FirePath.__init__": 248,
    "FirePath._invoke": 231,
    "FirePath._turn": 402,
-   "FirePath.build_context": 198,
+   "FirePath.build_context": 197,
    "FirePath.speak": 142
   },
   "internal_docstrings": 30
@@ -517,7 +516,7 @@
  },
  "nora/app/otp.py": {
   "comment_blocks": 2,
-  "internal_docstrings": 2
+  "internal_docstrings": 1
  },
  "nora/app/participation.py": {
   "comment_blocks": 14,
@@ -598,7 +597,7 @@
  },
  "nora/config.py": {
   "comment_blocks": 109,
-  "file_lines": 4755,
+  "file_lines": 4753,
   "internal_docstrings": 23
  },
  "nora/doctrine/loader.py": {
@@ -867,8 +866,8 @@
   "file_lines": 1492,
   "functions": {
    "TranscriptInjection.__init__": 137,
-   "TranscriptInjection._observation_reads": 153,
-   "TranscriptInjection.assemble": 133
+   "TranscriptInjection._observation_reads": 147,
+   "TranscriptInjection.assemble": 132
   },
   "internal_docstrings": 23
  },
@@ -882,8 +881,8 @@
   "internal_docstrings": 1
  },
  "nora/engagement/pipeline.py": {
-  "comment_blocks": 58,
-  "file_lines": 1426,
+  "comment_blocks": 52,
+  "file_lines": 1417,
   "functions": {
    "EngagementPipeline._run_turn": 776
   },
@@ -1137,7 +1136,7 @@
  },
  "nora/infra/sql/comprehend.py": {
   "functions": {
-   "SqlComprehendRecords.load": 356
+   "SqlComprehendRecords.load": 353
   },
   "internal_docstrings": 1
  },
@@ -1197,7 +1196,7 @@
  },
  "nora/infra/sql/memory_index.py": {
   "comment_blocks": 8,
-  "file_lines": 2767,
+  "file_lines": 2764,
   "internal_docstrings": 42
  },
  "nora/infra/sql/memory_read.py": {
@@ -1385,7 +1384,7 @@
  },
  "nora/infra/sql/schema.py": {
   "comment_blocks": 190,
-  "file_lines": 5927,
+  "file_lines": 5925,
   "internal_docstrings": 4
  },
  "nora/infra/sql/snapshot.py": {
@@ -1496,9 +1495,9 @@
   "comment_blocks": 1
  },
  "nora/ingest/pipeline.py": {
-  "comment_blocks": 14,
+  "comment_blocks": 12,
   "functions": {
-   "IngestPipeline._run": 153
+   "IngestPipeline._run": 150
   },
   "internal_docstrings": 5
  },
@@ -1653,7 +1652,7 @@
  "nora/persons.py": {
   "comment_blocks": 10,
   "functions": {
-   "load_persons": 159
+   "load_persons": 149
   },
   "internal_docstrings": 1
  },
@@ -1700,7 +1699,7 @@
  "nora/platform/discord/adapter.py": {
   "comment_blocks": 16,
   "functions": {
-   "DiscordAdapter.listen": 132
+   "DiscordAdapter.listen": 131
   }
  },
  "nora/platform/discord/bridge_app.py": {
@@ -1726,7 +1725,7 @@
  "nora/platform/discord/listener.py": {
   "comment_blocks": 4,
   "functions": {
-   "DiscordListener.listen": 180
+   "DiscordListener.listen": 169
   }
  },
  "nora/platform/discord/media.py": {
@@ -1805,7 +1804,7 @@
  "nora/platform/registry.py": {
   "comment_blocks": 4,
   "functions": {
-   "AdapterRegistry.from_config": 229
+   "AdapterRegistry.from_config": 205
   },
   "internal_docstrings": 1
  },
@@ -3189,7 +3188,7 @@
  },
  "tests/unit/test_engagement_pipeline.py": {
   "comment_blocks": 20,
-  "file_lines": 3208,
+  "file_lines": 3207,
   "internal_docstrings": 6
  },
  "tests/unit/test_eval_backbone.py": {
@@ -3231,12 +3230,12 @@
  },
  "tests/unit/test_heartbeat_loop.py": {
   "comment_blocks": 5,
-  "file_lines": 1025,
+  "file_lines": 1021,
   "internal_docstrings": 1
  },
  "tests/unit/test_ingest_pipeline.py": {
   "comment_blocks": 3,
-  "file_lines": 1113,
+  "file_lines": 1098,
   "internal_docstrings": 8
  },
  "tests/unit/test_ingest_stages.py": {

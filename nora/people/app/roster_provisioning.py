@@ -147,10 +147,7 @@ class RosterProvisioning:
             return denied("identifier-conflict")
         if outcome.status is not OutcomeStatus.COMPLETE:
             return outcome
-        # Read back EVERY supplied identifier as the SAME exact account —
-        # the group the observation committed, not only the selected
-        # target. A group that resolves anywhere else, or nowhere, never
-        # reaches membership sync.
+        # Every supplied identifier must still name the same exact account before sync.
         owners: dict[str, str] = {}
         for ident in group:
             record = await self.bindings.record_for(account=ident)

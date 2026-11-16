@@ -18,7 +18,7 @@
     "file": "nora/engagement/pipeline.py",
     "old": "                    if disposition is None:\n                        self._slots.release_and_dispatch(key)\n",
     "new": "                    self._slots.release_and_dispatch(key)\n",
-    "target": "tests/unit/test_engagement_pipeline.py::test_a_durable_tag_leaves_the_slot_release_to_its_worker"
+    "target": "tests/unit/test_engagement_room_command.py::test_a_durable_tag_leaves_the_slot_release_to_its_worker"
   },
   {
     "name": "a bare room command is enqueued as durable command work off the verified message",

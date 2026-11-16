@@ -46,6 +46,6 @@
     "file": "nora/people/app/managed_ops.py",
     "old": "    if record.kind != op.kind or record.snapshot != _op_snapshot(op):\n        return denied(\"operation-conflict\")\n",
     "new": "",
-    "target": "tests/unit/test_managed_registration.py::test_exception_recovery_attributes_only_the_exact_recorded_effect"
+    "target": "tests/unit/test_managed_journal_recovery.py::test_exception_recovery_attributes_only_the_exact_recorded_effect"
   }
 ]

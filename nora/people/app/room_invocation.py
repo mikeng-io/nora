@@ -392,10 +392,7 @@ class RoomManagement:
                 message.timestamp / 1000, tz=UTC
             ),
         )
-        # Full registry-backed authentication precedes EVERY target read:
-        # an inactive or unverifiable identity with a retained grant gets
-        # this refusal, never a resolution it could read as an oracle.
-        # `apply` re-runs the same check inside the mutation gate.
+        # Authenticate before target reads; apply rechecks inside the mutation gate.
         verified = await self._human.authenticate(authentication)
         if verified.verdict is Verdict.UNAVAILABLE:
             return unavailable("authentication-unavailable")
@@ -461,10 +458,7 @@ class RoomManagement:
         services = self._services
         if services is None:  # unreachable — invoke denies file mode first
             return unavailable("bindings-unavailable")
-        # EVERY reference the request carries is reconciled as one set: the
-        # message's own mentions AND an explicit account the caller named.
-        # A repeated identifier deduplicates to the one intended target; a
-        # second distinct account or an unreadable reference asks, never picks.
+        # Mentions and explicit references must agree on one exact account.
         forms, unresolved = await self._account_forms(message)
         if unresolved:
             return Clarify(

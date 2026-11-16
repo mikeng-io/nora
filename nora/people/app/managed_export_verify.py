@@ -69,13 +69,7 @@ def _derive_rooms(
     active_ids: frozenset[str],
     known_ids: frozenset[str],
 ) -> tuple[dict[tuple[str, str], Any], list[ExportRefusal]]:
-    """Each convo's emitted `persons` — the allowed list — plus divergences.
-
-    A `persons = "*"` convo is always refused, never frozen: file `*`
-    admits every presented identifier, including identities managed has
-    never registered — a widening no allowed-list can express, and listing
-    the currently-allowed would close the room to senders managed admits
-    dynamically. Neither shape is faithful, so the whole export refuses."""
+    """Faithful room allowlists, refusing unrepresentable wildcard admission."""
     derived: dict[tuple[str, str], Any] = {}
     refused: list[ExportRefusal] = []
     for convo in policy.rooms():
@@ -151,10 +145,7 @@ async def _compare(
     revoked_identifiers: tuple[tuple[str, str], ...],
     active_ids: frozenset[str],
 ) -> Outcome:
-    """The generated file predicate against the live managed verdicts —
-    every matrix cell, known person and never-registered probe alike. The
-    identifying specifics stay in the refusal detail; the verdict carries
-    only the bounded category."""
+    """Compare every generated file predicate with current managed authority."""
     file_access = IdentityAccess.for_files(persons, policy)
     for (scope, person_id, permit), verdict in matrix.items():
         result = await file_access.check(
@@ -213,10 +204,7 @@ def _manifest(
     folded: list[tuple[str, str, str]],
     dropped: list[str], nonportable: list[str],
 ) -> str:
-    """The private provenance record — digests plus every fact the file
-    pair cannot carry: Kratos labels, suspended/revoked bindings with
-    their identifiers, folded relations, memberships. This is the one
-    artifact identifying specifics may live in."""
+    """Private digests and retained non-portable identity provenance."""
     archive = inv.archive
     return json.dumps({
         "format": "nora-managed-export/1",

@@ -95,8 +95,7 @@ async def _seed(
     *,
     revoked: bool = False,
 ) -> ManagedAccount:
-    """Independent accounts only ever arrive through store-legal paths —
-    seeding uses `register`, the same authority the service does."""
+    """Seed an independent account through the shared store contract."""
     account = ManagedAccount(
         account_id=str(uuid4()),
         person_id=person_id,

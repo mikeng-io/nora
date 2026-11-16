@@ -1407,38 +1407,6 @@ async def test_a_debounced_tag_is_never_admitted_and_never_releases_a_lock():
     assert _held(pipeline) is False
 
 
-async def test_a_durable_tag_leaves_the_slot_release_to_its_worker():
-    """`run_durable` hands `_run_turn` a `disposition` — the marker that
-    the bridge worker already holds the slot and owns its release. A turn
-    that ALSO released would dispatch the queued tag AND free the slot it
-    believes held, so the worker's matching `finally` would pop a SECOND
-    queued tag — two follow-ups overlapped."""
-    adapter = _FakeAdapter()
-    runner = ScriptedRunner(_reply_turns("the answer"))
-    pipeline, _, _, _, background = _build_pipeline(
-        adapter=adapter, runner=runner)
-
-    pipeline._slots.acquire(G1)   # the worker's try_acquire
-    await pipeline.run(_req(body="queued tag", tag_id="queued"))
-    assert _depth(pipeline) == 1
-
-    disposition = await pipeline.run_durable(
-        _req(body="durable tag", tag_id="durable"))
-    assert disposition == "send_reply"
-    # Exactly one model invoke and one reply — the queued tag still waits
-    # and the slot is still held: the stage did not release the worker's
-    # acquisition. A second release here is the double-release reviewed.
-    assert adapter.texts == ["the answer"]
-    assert len(runner.calls) == 1
-    assert _held(pipeline) and _depth(pipeline) == 1
-
-    pipeline._slots.release_and_dispatch(G1)
-    await _drain(background)
-    assert adapter.texts == ["the answer", "the answer"]
-    assert len(runner.calls) == 2
-    assert not _held(pipeline) and _depth(pipeline) == 0
-
-
 async def test_a_self_tag_is_refused_and_admission_never_runs_the_pipeline():
     pipeline, metrics, _audit, _memory, _background = _build_pipeline(
         adapter=_FakeAdapter(account="+852111"),

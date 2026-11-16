@@ -160,9 +160,7 @@ def _discovery_for(
 
 
 def _observed_ms(data: dict[str, Any]) -> int | None:
-    """A bridge envelope's `observed_ms` — the bridge's own stamp on its
-    read, or `None` when it carries none: an unestablished instant is
-    never guessed."""
+    """The producer timestamp, or zero when no timestamp is present."""
     stamp = data.get("observed_ms")
     return stamp if isinstance(stamp, int) and stamp > 0 else None
 
@@ -170,8 +168,7 @@ def _observed_ms(data: dict[str, Any]) -> int | None:
 def _signal_bridge_fetch(
     endpoint: BridgeEndpoint,
 ) -> Callable[[str], Awaitable[ObservedRows | None]]:
-    """`POST /v1/reads {op: "roster"}` → raw member rows plus the bridge's
-    own read stamp; `None` on transport failure."""
+    """The Signal bridge roster and its producer timestamp."""
     timeout = aiohttp.ClientTimeout(total=30.0)
 
     async def fetch(collection: str) -> ObservedRows | None:

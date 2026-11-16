@@ -217,12 +217,7 @@ def _scope_key(scope: Scope) -> str:
 
 
 def _read_policy(policy_path: Path) -> tuple[Policy, str] | Outcome:
-    """The topology read exactly ONCE — one immutable snapshot for room
-    derivation, verdict comparison, document building and publication.
-    The `Policy` is parsed from those same bytes through a staged file (the
-    real loader takes a path), never the path again: a source that changes
-    between two reads cannot leave an unchecked room's allowlist verbatim
-    in the output."""
+    """Parse one immutable topology snapshot through the real loader."""
     try:
         raw = policy_path.read_bytes()
         source = raw.decode("utf-8")
@@ -239,9 +234,7 @@ def _read_policy(policy_path: Path) -> tuple[Policy, str] | Outcome:
 
 
 def _source_unchanged(policy_path: Path, source: str) -> bool | Outcome:
-    """The pre-publication read-back of the immutable topology snapshot —
-    `False` when the file moved on mid-run, `unavailable` when it cannot
-    be re-read."""
+    """Whether the source still matches the validated snapshot."""
     try:
         return policy_path.read_bytes() == source.encode("utf-8")
     except OSError:
@@ -266,9 +259,7 @@ def _topology_refusals(policy: Policy) -> list[ExportRefusal]:
 
 
 def _inventory_refusals(inv: ExportInventory) -> list[ExportRefusal]:
-    """Incomplete publication and ambiguity the binding rows alone prove —
-    `code` is the bounded vocabulary the command prints; `detail` keeps the
-    identifying specifics in the private report artifact only."""
+    """Incomplete publication and ownership ambiguity in the full inventory."""
     refused: list[ExportRefusal] = []
     live_ids = {p.person_id for p in inv.persons}
 
@@ -353,13 +344,7 @@ def _inventory_refusals(inv: ExportInventory) -> list[ExportRefusal]:
 async def _read_identities(
     probe: ExportProbe, people: tuple[InventoryPerson, ...],
 ) -> tuple[dict[str, dict[str, Any]], list[ExportRefusal]] | Outcome:
-    """The correlated Kratos record for every person, read through the
-    probe's read-only snapshot by the SQL-recorded `kratos_identity_id` —
-    verified to point back at the same person and to carry the lifecycle
-    the SQL row claims. Traits come from that verified snapshot: an active
-    person's missing, mismatched, stale or malformed record refuses; an
-    unreachable service is `unavailable` (retry). Suspended people keep
-    their traits private — the manifest, never file accounts."""
+    """Read and verify current Kratos correlation, lifecycle and traits."""
     traits: dict[str, dict[str, Any]] = {}
     refused: list[ExportRefusal] = []
     for person in people:
@@ -454,15 +439,7 @@ def _archive_index(
     dict[str, tuple[str, list[tuple[str, str]]]],
     list[str],
 ]:
-    """(bound account_id) -> (archived owner, metadata) plus conflicts.
-
-    An archived account block's matchable identifiers are resolved against
-    the LIVE bindings: every still-bound one must name exactly one account,
-    whose owner must be the archived owner (followed through live aliases).
-    That verified-ownership match — never exact identifier-set equality —
-    is what lets metadata survive a verified account gaining another
-    identifier. Identifiers resolving nowhere carry no live anchor and
-    apply nothing; scattered, cross-person or competing matches refuse."""
+    """Ownership-verified archived metadata indexed by current account."""
     index: dict[str, tuple[str, list[tuple[str, str]]]] = {}
     conflicts: list[str] = []
     alias_map = dict(inv.aliases)
@@ -539,6 +516,27 @@ def _emit_account(
         metadata=tuple(overlay[1] if overlay else ())), None
 
 
+def _group_accounts(
+    inv: ExportInventory, identifiers_by_account: dict[str, list[InventoryIdentifier]],
+) -> tuple[dict[str, list[InventoryAccount]],
+           list[tuple[str, str, str | None, list[tuple[str, str]]]]]:
+    """Group live accounts by person and retain revoked provenance separately."""
+    accounts_by_person: dict[str, list[InventoryAccount]] = {}
+    revoked_accounts: list[tuple[str, str, str | None, list[tuple[str, str]]]] = []
+    for account in inv.accounts:
+        row = (
+            account.account_id, account.platform, account.label,
+            sorted((i.kind, i.value)
+                   for i in identifiers_by_account.get(account.account_id, ())),
+        )
+        if account.state == "revoked":
+            revoked_accounts.append(row)
+            continue
+        accounts_by_person.setdefault(account.person_id, []).append(account)
+
+    return accounts_by_person, revoked_accounts
+
+
 def _emit_people(
     inv: ExportInventory,
     traits: dict[str, dict[str, Any]],
@@ -574,20 +572,9 @@ def _emit_people(
     for ident in inv.identifiers:
         identifiers_by_account.setdefault(ident.account_id, []).append(ident)
 
-    accounts_by_person: dict[str, list[InventoryAccount]] = {}
-    revoked_accounts: list[tuple[str, str, str | None, list[tuple[str, str]]]] = []
+    accounts_by_person, revoked_accounts = _group_accounts(inv, identifiers_by_account)
     suspended_accounts: list[tuple[str, str, str | None, str,
                                  list[tuple[str, str]]]] = []
-    for account in inv.accounts:
-        row = (
-            account.account_id, account.platform, account.label,
-            sorted((i.kind, i.value)
-                   for i in identifiers_by_account.get(account.account_id, ())),
-        )
-        if account.state == "revoked":
-            revoked_accounts.append(row)
-            continue
-        accounts_by_person.setdefault(account.person_id, []).append(account)
 
     people: list[_EmitPerson] = []
     for person in sorted(inv.persons, key=lambda p: p.person_id):

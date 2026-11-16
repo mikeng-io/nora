@@ -1346,15 +1346,10 @@ class EngagementPipeline:
                                 "tag trace save failed (tag=%s)", request.tag_id,
                             )
                 finally:
-                    # The durable worker owns the release for the slot it
-                    # `try_acquire`d — `disposition` marks that path; a
-                    # second release here would dispatch a queued turn
-                    # under the slot the worker then releases anyway.
+                    # Only direct turns release here; the durable worker owns its slot.
                     if disposition is None:
                         self._slots.release_and_dispatch(key)
-            # `total` was read BEFORE the debrief, above — see the comment
-            # there. Observed here so the two histograms below stay adjacent
-            # and keep reading off one number.
+            # Both latency histograms use the same pre-debrief total.
             self._metrics.observe("nora_tag_latency_seconds", total)
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
             # One observation per ADMITTED tag, silent turns included as 0 —

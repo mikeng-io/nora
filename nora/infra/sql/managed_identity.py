@@ -50,6 +50,7 @@ from nora.infra.sql.managed_registration import (
     _insert_account,
     _insert_person,
     _rebind_revoked,
+    bind_identifiers,
 )
 from nora.infra.sql.managed_rows import (
     _block_from,
@@ -327,13 +328,9 @@ class SqlBindingStore:
         self, *, person: ManagedPerson, account: ManagedAccount,
         membership: ManagedMembership | None = None,
     ) -> Outcome:
-        """The atomic registration — person, account, every identifier and
-        the optional onboarding membership in ONE transaction.
+        """Atomically register person, account, identifiers and optional membership.
 
-        Idempotent: replaying the same effect returns `complete`; an
-        identifier already owned by a DIFFERENT account raises
-        `IdentifierConflictError` (never a merge), and an identifier owned
-        by a REVOKED binding on the same person re-binds it.
+        Exact replays are idempotent; foreign ownership conflicts, while this person's revoked binding rebinds.
         """
         async with self._engine.begin() as conn:
             await _insert_person(conn, person)
@@ -365,69 +362,7 @@ class SqlBindingStore:
     async def bind_identifiers(
         self, *, account_id: str, identifiers: frozenset[Identifier]
     ) -> Outcome:
-        """Enrich ONE bound account with more of its own matchable
-        identifiers, atomically — the grouped-observation write.
-
-        One owner, ever: an identifier row naming a DIFFERENT account is an
-        `IdentifierConflictError`, bound owner or revoked — a revoked
-        binding keeps its ownership reserved; nothing here re-points it.
-        An identifier the account already holds is a no-op, and a
-        concurrent claim surfaces through the identifier primary key as the
-        same conflict."""
-        wanted = frozenset(identifiers)
-        if not wanted:
-            return complete()
-        async with self._engine.begin() as conn:
-            row = (
-                await conn.execute(
-                    sa.select(
-                        MANAGED_ACCOUNT.c.platform,
-                        MANAGED_ACCOUNT.c.state,
-                    ).where(MANAGED_ACCOUNT.c.account_id == account_id)
-                )
-            ).fetchone()
-            if row is None or row.state != AccountState.BOUND.value:
-                return denied("account-not-bound")
-            for ident in wanted:
-                if ident.platform != row.platform:
-                    raise ManagedError(
-                        "an identifier disagrees with the account's platform"
-                    )
-            owners = await _identifier_owners(conn, wanted)
-            if any(
-                owner is not None and str(owner.account_id) != account_id
-                for owner in owners.values()
-            ):
-                raise IdentifierConflictError(
-                    "an identifier is owned by another account"
-                )
-            added = False
-            try:
-                for ident, owner in owners.items():
-                    if owner is not None:
-                        continue
-                    await conn.execute(
-                        sa.insert(MANAGED_IDENTIFIER).values(
-                            platform=ident.platform,
-                            kind=ident.kind,
-                            value=ident.value,
-                            account_id=account_id,
-                        )
-                    )
-                    added = True
-            except IntegrityError as exc:
-                if _PG_UNIQUE_VIOLATION in str(getattr(exc, "orig", exc)):
-                    raise IdentifierConflictError(
-                        "an identifier is owned by another account"
-                    ) from exc
-                raise
-            if added:
-                await conn.execute(
-                    sa.update(MANAGED_ACCOUNT)
-                    .where(MANAGED_ACCOUNT.c.account_id == account_id)
-                    .values(revision=MANAGED_ACCOUNT.c.revision + 1)
-                )
-        return complete()
+        return await bind_identifiers(self._engine, account_id=account_id, identifiers=identifiers)
 
     async def correlate_kratos(
         self, *, person_id: str, kratos_identity_id: str

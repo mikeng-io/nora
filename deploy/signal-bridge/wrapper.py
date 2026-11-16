@@ -682,17 +682,12 @@ class Bridge:
         body = await req.json()
         if body["op"] == "roster":
             groups = await self._rpc("listGroups", {})
-            # The daemon answered just now — the read's own instant is the
-            # only honest observation time this envelope can carry.
+            # Stamp the completed daemon read, never the caller's receipt time.
             observed_ms = int(time.time() * 1000)
             gid = (body.get("params") or {}).get("conversation_id")
-            for g in groups or []:
-                if g.get("id") == gid or g.get("groupId") == gid:
-                    members = g.get("members") or []
-                    return web.json_response({"available": True,
-                                              "members": members,
-                                              "observed_ms": observed_ms})
-            return web.json_response({"available": False, "members": [],
+            members = next((g.get("members") or [] for g in groups or []
+                            if g.get("id") == gid or g.get("groupId") == gid), None)
+            return web.json_response({"available": members is not None, "members": members or [],
                                       "observed_ms": observed_ms})
         return web.json_response({"error": "unknown read"}, status=404)
 

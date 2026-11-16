@@ -111,11 +111,7 @@ class ManagedServices:
             bindings, backend, topology, registry, links,
         )
         self.profile = ProfileService(bindings, registry, self.publication)
-        # The consumer read surface (`nora.access`): the SAME bindings/
-        # authority/topology/registry. `file_services` passes the
-        # file-backed form; managed mode leaves file people/grants
-        # unattached — never a fallback for descriptive reads, which
-        # answer an honest absence.
+        # Consumer reads use these same authorities; managed reads never fall back to files.
         self.access = access or IdentityAccess(
             bindings=bindings, authority=self.authority, topology=topology,
             registry=registry,
@@ -261,10 +257,7 @@ class RegistrationService:
         resuming = recorded is not None and (
             recorded.state is not OperationJournalState.COMPLETE
         )
-        # The group is the claim: EVERY supplied identifier resolves, and
-        # all of them must name ONE bound account — even under one
-        # canonical person, two accounts each owning part of the group is
-        # a link claim, never an observation.
+        # Every identifier must name one exact account; joining accounts requires bilateral linking.
         resolved: dict[str, ManagedAccount] = {}
         for ident in payload.identifiers:
             record = await self._bindings.record_for(account=ident)
