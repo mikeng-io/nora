@@ -83,8 +83,7 @@ bindings — remains in the journal's private source snapshot for a later export
 unit; it is never treated as ownership evidence.
 
 Published: the effective file `speak`/`view` grants as room `member`
-relations (a `persons = "*"` room publishes `member` for every admitted
-person, and unmapped senders stay admitted by the room's open flag), plus
+relations for explicit person lists, plus
 Nora-validated room→unit→workspace containment. Nothing is granted at
 unit or workspace level, and no management permit is inferred.
 
@@ -92,13 +91,12 @@ Refused before any write — the whole plan fails, naming the limit:
 
 - a `server`/`guild` conversation (dynamic channel sets have no exact
   scoped representation),
+- a `persons = "*"` conversation (enumerating today's people would change
+  the dynamic grant for people registered later),
 - a non-empty `[dm]` admission list,
 - any file the loaders reject (invalid shapes, ambiguous identifier
   ownership), or a changed source on retry,
 - a target that holds anything the import does not own.
 
-Post-import behaviour differs from file mode in one documented way: a
-person registered *after* admission is not a member of `persons = "*"`
-rooms by default — membership is then managed explicitly, which is the
-point of the managed backend. Managed-to-file export and initial
-administrative delegation are separate units and are not performed here.
+Managed-to-file export and initial administrative delegation are separate
+units and are not performed here.

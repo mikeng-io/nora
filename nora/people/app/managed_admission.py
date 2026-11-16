@@ -262,6 +262,11 @@ def _unsupported(policy: Policy) -> list[str]:
     """Inputs the managed model cannot represent exactly — named, never silently subset."""
     refused: list[str] = []
     for convo in policy.conversations:
+        if convo.persons is None and not convo.guild:
+            refused.append(
+                f"unsupported-input:dynamic-membership:{convo.platform}"
+                f"/{convo.label or convo.primary_id}"
+            )
         if convo.guild:
             refused.append(
                 f"unsupported-input:guild:{convo.platform}"
