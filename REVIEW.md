@@ -18,12 +18,19 @@ from the diff and available requirements; missing intent remains a limitation.
 
 ```
 Question   what this review must decide; change / repair re-check / acceptance audit
-Basis      work/operator brief, design invariant or API contract; base/head
+Basis      original outcome and completion conditions, approved amendments; source revision and base/head
 Surface    changed behavior and affected callers; prior findings for a re-check
 Lenses     relevant risks and the concrete question for each; tier is depth
 Evidence   relevant receipts and allowed checks; what would disprove the claim
 Exclude    unrelated areas, settled decisions and action/spending limits
 ```
+
+Carry the same outcome, completion conditions and boundaries through every
+repair review; include the relevant conditions in the brief, not just an archive
+link or the latest findings. Findings do not replace acceptance. An authorized
+amendment states what changed and which earlier conclusions need reassessment;
+otherwise the anchor stays unchanged. A re-check names its subset; conditions
+outside that subset are not newly reviewed or implicitly passed.
 
 Select lenses from what changed and what it can break, not a fixed panel:
 
@@ -52,7 +59,9 @@ unless separately assigned.
 - Admit a defect only with **basis, reachability and consequence**: the violated
   requirement/contract/trust boundary; an actual caller, supported input/state
   or credible attacker entry; and concrete harm. Show whether this candidate
-  introduced it or left an original completion condition unmet. NONE is valid.
+  introduced it or left an original completion condition unmet. Name that
+  condition or the existing contract/trust boundary the candidate regresses;
+  a proposed new capability is not a repair requirement. NONE is valid.
 - An extreme input is not a defect merely because a direct function call can
   construct it. Check real entry validation, supported config and lifetime.
   Rare concurrency or adversarial cases still count when reachable across a
@@ -89,6 +98,8 @@ Return only:
 2. **Findings:** severity and disposition, file:line, trigger → harm, failed C,
    evidence, smallest remedy, and introduced / pre-existing / repair-induced.
 3. **Limits:** what was not inspected or executed and any required evidence gap.
+   An incomplete review lists the specific unanswered conditions and why; its
+   completion answers those questions, not a restarted broad audit.
 
 REQUEST CHANGES means a supported blocker or a required review-evidence gap;
 identify which. APPROVE is not task completion, green CI, merge or deployment.

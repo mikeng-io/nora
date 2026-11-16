@@ -11,7 +11,9 @@ independence, dispositions and round limits. This skill is the procedure.
 
 1. **Identify the review.** Use REVIEW.md's brief: confirm the question, basis,
    surface, relevant lenses, evidence and exclusions. Read its source requirements;
-   record the review type, tier and base/head. State any inferred scope.
+   record the review type, tier and base/head. Recover the original outcome and
+   approved amendments before reading prior findings; retain this basis on
+   re-checks and name the selected subset. State any inferred scope.
    Check: the requested result is understandable without deriving intent from
    the candidate. Missing material requirements return to scoping.
 2. **Inspect the candidate.** Verify checkout/head/status; read

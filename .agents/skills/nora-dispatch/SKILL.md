@@ -24,7 +24,9 @@ only what the next actor needs; follow design and evidence links on demand.
 Keep one current brief in Linear, or in the PR for small direct work. Preserve
 existing work authority until its successor and owner are verified and linked.
 Record its link and source revision or update time read; code base and design revision are
-separate facts. Update authorized scope changes in place, not in a comment queue.
+separate facts. Keep current completion conditions and amendments understandable
+without reconstructing archived discussion. Update authorized scope changes in
+place, naming what changed and any evidence invalidated, not in a comment queue.
 Before splitting implementation, compare each relevant design promise with
 actual entry/wiring and evidence at a named head. Summarize promise → observed
 implementation/evidence → met/unmet/unavailable → remaining work in the current
@@ -66,14 +68,24 @@ Check: the execution has started on the intended input, with a finite boundary.
 ## 4. Reconcile and continue
 
 Read the actual diff and named checks with exit codes. Mark required results
-met, unmet or unavailable, with evidence locators and their limits.
+met, unmet or unavailable, with evidence locators and their limits. Before the
+next dispatch, reconcile each result against the original parent outcome in the
+current brief: what is now evidenced at the integrated/candidate head, what
+remains, and which condition the next action advances. Repair findings and review
+rounds never replace that outcome. Carry forward still-valid evidence; do not
+rerun settled checks unless the change affects their basis.
 
 - Before authorizing a repair, check the finding's requirement, real trigger,
   harm and relation to the candidate. Repair only an admitted in-scope defect
   or unmet original condition; choose the smallest correction and proving check.
+  Distinguish an amended requirement, implementation defect, unfinished wiring
+  and unavailable proof before choosing the action; a probe alone adds no goal.
 - Keep adjacent improvements outside it; defer once under the Linear convention:
   owner, next action and revisit trigger, otherwise a review limitation.
 - Resolve unknowns with the smallest useful check; they are not new requirements.
+  Incomplete reviews retain exact unanswered conditions and round limits.
+- Apply a hold only to the action it restricts; continue other authorized work.
+  A reviewer exception wait is not automatically an implementation-wide hold.
 - For repeated blockers in the same seam, revisit the intent and real flow
   before another repair. Preserve review limits; scope changes need authority.
 
