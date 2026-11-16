@@ -494,7 +494,10 @@ async def test_a_room_member_can_be_named_for_membership():
     await _operator(bindings, backend, registry)
     await _person(
         bindings, registry, ALICE_PERSON, ALICE_ID,
-        member=True, display_name="Alice",
+        display_name="Alice",
+    )
+    await bindings.set_membership(
+        person_id=ALICE_PERSON, scope=ROOM, member=True, source="delegation"
     )
     management = RoomManagement(services)
     outcome = await management.invoke(
