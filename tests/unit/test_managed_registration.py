@@ -486,7 +486,7 @@ async def test_an_observation_retry_keeps_the_recorded_social_preference():
         )
 
     registry.down = True
-    assert (await svc.apply(observe("0"))).status is OutcomeStatus.UNAVAILABLE
+    assert (await svc.apply(observe("0"))).status is OutcomeStatus.INCOMPLETE
     (person_id,) = store.people
     bound = await store.record_for(account=ACCT)
     assert bound is not None

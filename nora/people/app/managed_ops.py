@@ -25,6 +25,7 @@ from nora.domain.managed import (
     Outcome,
     OutcomeStatus,
     check_unavailable,
+    complete,
     denied,
     incomplete,
     unavailable,

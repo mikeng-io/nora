@@ -175,7 +175,7 @@ async def test_a_fresh_engine_resumes_the_interrupted_registration(
     await seed_operator(store, backend, registry)
     message = register_message()
     interrupted = await management.invoke(message, RoomRequest(kind="register"))
-    assert interrupted.status is OutcomeStatus.UNAVAILABLE
+    assert interrupted.status is OutcomeStatus.INCOMPLETE
     record = await graph.bindings.operation(OPERATION_ID)
     assert record is not None
     assert record.state is OperationJournalState.INCOMPLETE
@@ -229,7 +229,7 @@ async def test_a_fresh_engine_resumes_after_the_kratos_outage(engine, database):
     message = register_message()
     registry.ensures_down = True
     interrupted = await management.invoke(message, RoomRequest(kind="register"))
-    assert interrupted.status is OutcomeStatus.UNAVAILABLE
+    assert interrupted.status is OutcomeStatus.INCOMPLETE
     record = await graph.bindings.operation(OPERATION_ID)
     assert record is not None
     assert record.state is OperationJournalState.INCOMPLETE
