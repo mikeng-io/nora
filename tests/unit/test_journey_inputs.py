@@ -3,6 +3,7 @@ frozen-identity damage — pure controls, no App, no store."""
 
 import pytest
 
+from evals.rebuilt.autonomous_journey import _input_ctx
 from evals.rebuilt.journey_manifest import _plan_error
 from evals.rebuilt.journey_turns import _declared_input, declared_source
 from nora.domain.models import NormalizedMessage
@@ -144,6 +145,16 @@ def test_declared_source_projects_actor_source_and_clock():
     assert source["time_quality"] == "upstream"
     assert source["message_id"] == "upstream-42"
     assert source["mention_names"] == ["generated-self"]
+
+
+def test_input_ctx_binds_the_declared_declaration_and_instant():
+    ctx = _input_ctx({"envelope": _fields()}, sent=1, engine=None,
+                     boundary=None, cursor=None)
+    assert ctx["at_ms"] == SENT
+    assert ctx["input"] == "the declared body"
+    assert ctx["envelope"].sender_id == ACTOR
+    assert ctx["source"]["actor"] == ACTOR
+    assert ctx["source"]["sent_ms"] == SENT
 
 
 def test_declared_input_carries_source_only_for_declared_envelopes():
