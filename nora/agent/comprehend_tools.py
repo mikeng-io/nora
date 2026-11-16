@@ -131,7 +131,10 @@ class ComprehendRead(AgentTool):
         if access is None or access.is_file_backend:
             return state.private_names
         names = set(state.private_names)
-        for person_id in state.persons:
+        person_ids = set(state.persons)
+        for source in state.fetched.sources.values():
+            person_ids.update(source.persons)
+        for person_id in sorted(person_ids):
             person = await access.person_ref(person_id)
             if person is None or not person.name.strip():
                 raise LookupError("source person name unavailable")

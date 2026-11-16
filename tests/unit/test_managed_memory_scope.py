@@ -235,6 +235,7 @@ async def test_managed_source_names_are_screened_live_before_external_reads(
     from nora.agent.comprehend_tools import ComprehendRead, LookupState
     from nora.agent.fetch_watch import GraphFetched, _result_of
     from nora.agent.ports import ToolSpec, adapt
+    from nora.domain.memory_graph import Source
     from nora.testing.comprehend import InMemoryComprehendRecords
 
     class ManagedRecords(InMemoryComprehendRecords):
@@ -271,6 +272,15 @@ async def test_managed_source_names_are_screened_live_before_external_reads(
     assert private["reason"] == "private_person"
     assert calls == []
     assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news"]
+    bindings.people[FOREIGN] = replace(bindings.people[FOREIGN], display_name="Generated Later")
+    state.fetched.show(Source(
+        ("message", "generated-later-row"), "record", HERE.unit, (FOREIGN,),
+        "A generated later transcript read.",
+    ))
+    later = await call("Generated Later news")
+    assert later["status"] == "refused"
+    assert later["reason"] == "private_person"
     assert calls == ["volleyball news"]
     bindings.people[PERSON] = replace(bindings.people[PERSON], display_name="Generated Renamed")
     renamed = await call("Generated Renamed news")

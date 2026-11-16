@@ -47,5 +47,12 @@
   "old": "private_names = await self._private_names()",
   "new": "private_names = state.private_names",
   "target": "tests/unit/test_managed_memory_scope.py::test_managed_source_names_are_screened_live_before_external_reads"
+ },
+ {
+  "name": "later transcript sources contribute their private person names before egress",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "        for source in state.fetched.sources.values():\n            person_ids.update(source.persons)\n",
+  "new": "        person_ids.update(())\n",
+  "target": "tests/unit/test_managed_memory_scope.py::test_managed_source_names_are_screened_live_before_external_reads"
  }
 ]
