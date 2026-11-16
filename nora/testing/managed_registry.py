@@ -96,6 +96,17 @@ class FakeIdentityRegistry(IdentityRegistry):
         ident["state"] = "active" if active else "inactive"
         return complete()
 
+    async def set_display_name(
+        self, *, external_id: str, display_name: str
+    ) -> Outcome:
+        if self.down:
+            return unavailable_outcome()
+        ident = self.identities.get(external_id)
+        if ident is None:
+            return denied("absent")
+        ident["traits"]["display_name"] = display_name
+        return complete()
+
     async def drop_sessions(self, *, external_id: str) -> Outcome:
         if self.down:
             return unavailable_outcome()

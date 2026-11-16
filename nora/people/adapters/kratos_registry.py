@@ -58,6 +58,16 @@ class KratosIdentityRegistry(IdentityRegistry):
             identity_id=identity.identity_id, active=active
         )
 
+    async def set_display_name(
+        self, *, external_id: str, display_name: str
+    ) -> Outcome:
+        outcome, identity = await self._client.get_by_external_id(external_id)
+        if identity is None:
+            return outcome
+        return await self._client.set_display_name(
+            identity_id=identity.identity_id, display_name=display_name
+        )
+
     async def drop_sessions(self, *, external_id: str) -> Outcome:
         outcome, identity = await self._client.get_by_external_id(external_id)
         if identity is None:

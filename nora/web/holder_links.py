@@ -21,7 +21,7 @@ from nora.domain.authentication import AccountAuthentication
 from nora.domain.identity import Identifier
 from nora.domain.managed import Outcome, OutcomeStatus
 from nora.people import HolderLinkService, HolderLinkView
-from nora.web.management_auth import AuthenticationRefusedError, AuthenticationVerifier
+from nora.web.management_auth import AuthenticationVerifier, verified_authentication
 
 _HEADERS = {"Cache-Control": "no-store"}
 
@@ -105,22 +105,8 @@ def register_holder_routes(
     async def authenticate(
         request: web.Request, *, purposes: frozenset[str]
     ) -> tuple[AccountAuthentication, bytes] | web.Response:
-        authorization = request.headers.get("Authorization", "")
-        raw = await request.read()
-        if not authorization.startswith("Nora-Authentication "):
-            return web.json_response({"status": "denied"}, status=401,
-                                     headers=_HEADERS)
-        try:
-            authentication = verifier.verify(
-                authorization.removeprefix("Nora-Authentication "),
-                method=request.method, path=request.raw_path, body=raw)
-            if authentication.purpose not in purposes:
-                raise AuthenticationRefusedError(
-                    "unexpected authentication purpose")
-        except AuthenticationRefusedError:
-            return web.json_response({"status": "denied"}, status=401,
-                                     headers=_HEADERS)
-        return authentication, raw
+        return await verified_authentication(
+            request, verifier=verifier, purposes=purposes, headers=_HEADERS)
 
     def _parse(raw: bytes, model: type[_Body]) -> _Body | web.Response:
         try:

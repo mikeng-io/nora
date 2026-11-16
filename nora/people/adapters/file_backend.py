@@ -149,6 +149,11 @@ class FileBindingStore(BindingStore):
     ) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
 
+    async def set_display_name(
+        self, *, person_id: str, display_name: str
+    ) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
     async def revoke_binding(self, *, account: Identifier) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
 
@@ -188,6 +193,11 @@ class FileBindingStore(BindingStore):
 
     async def incomplete_operations(self) -> tuple[OperationRecord, ...]:
         return ()
+
+    async def latest_profile_operation(
+        self, person_id: str
+    ) -> OperationRecord | None:
+        return None
 
     async def block_authority(self, block: AuthorityBlock) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
@@ -336,6 +346,11 @@ class FileIdentityRegistry:
         return denied(_OPERATOR_MAINTAINED), None
 
     async def set_state(self, *, external_id: str, active: bool) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
+    async def set_display_name(
+        self, *, external_id: str, display_name: str
+    ) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
 
     async def drop_sessions(self, *, external_id: str) -> Outcome:

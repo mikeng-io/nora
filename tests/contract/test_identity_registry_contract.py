@@ -59,7 +59,11 @@ async def registry(request, aiohttp_server):
             for ident in identities.values():
                 if ident["id"] == identity_id:
                     patch = await request.json()
-                    ident["state"] = patch[0]["value"]
+                    for entry in patch:
+                        if entry["path"] == "/state":
+                            ident["state"] = entry["value"]
+                        elif entry["path"].startswith("/traits/"):
+                            ident["traits"][entry["path"].rsplit("/", 1)[-1]] = entry["value"]
                     return web.json_response(ident)
             return web.json_response({"error": "absent"}, status=404)
         return web.json_response({"error": "absent"}, status=404)
@@ -121,6 +125,46 @@ async def test_identity_traits_is_unavailable_when_the_service_cannot_answer(reg
     down(False)
     outcome, traits = await reg.identity_traits(external_id="generated-person")
     assert outcome.status is OutcomeStatus.COMPLETE and traits is not None
+
+
+async def test_set_display_name_patches_only_the_name_trait(registry):
+    """`set_display_name` writes `/traits/display_name` and nothing else —
+    the social preference, labels, state and the identity record itself
+    survive, and the answer is read back before `complete`."""
+    reg, _ = registry
+    outcome, _ = await reg.ensure_identity(
+        external_id="generated-person",
+        traits={"display_name": "Generated Old", "social": False,
+                "labels": {"generated": "label"}},
+    )
+    assert outcome.status is OutcomeStatus.COMPLETE
+    outcome = await reg.set_display_name(
+        external_id="generated-person", display_name="Generated New")
+    assert outcome.status is OutcomeStatus.COMPLETE
+    outcome, traits = await reg.identity_traits(external_id="generated-person")
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert traits == {"display_name": "Generated New", "social": False,
+                      "labels": {"generated": "label"}}
+
+
+async def test_set_display_name_on_an_absent_identity_is_denied(registry):
+    reg, _ = registry
+    outcome = await reg.set_display_name(
+        external_id="generated-absent", display_name="Generated")
+    assert outcome.status is OutcomeStatus.DENIED
+
+
+async def test_set_display_name_is_unavailable_when_the_service_cannot_answer(registry):
+    reg, down = registry
+    await reg.ensure_identity(
+        external_id="generated-person", traits={"display_name": "Generated"})
+    down(True)
+    outcome = await reg.set_display_name(
+        external_id="generated-person", display_name="Generated New")
+    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    down(False)
+    outcome, traits = await reg.identity_traits(external_id="generated-person")
+    assert traits is not None and traits["display_name"] == "Generated"
 
 
 async def test_an_ensure_identity_retry_keeps_the_recorded_traits(registry):

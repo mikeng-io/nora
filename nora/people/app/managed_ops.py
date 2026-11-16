@@ -25,7 +25,6 @@ from nora.domain.managed import (
     Outcome,
     OutcomeStatus,
     check_unavailable,
-    complete,
     denied,
     incomplete,
     unavailable,
@@ -43,6 +42,7 @@ from nora.domain.management import (
     Delegation,
     MembershipStanding,
     Operation,
+    ProfileEdit,
     RosterSync,
     Scope,
     ScopeKind,
@@ -129,6 +129,12 @@ def _op_snapshot(op: Operation) -> MappingProxyType[str, Any]:
         snap["permits"] = sorted(payload.permits)
     elif isinstance(payload, Unlink):
         snap["expected_person"] = payload.expected_person
+    elif isinstance(payload, ProfileEdit):
+        if payload.display_name is not None:
+            snap["display_name"] = payload.display_name
+        if payload.scope is not None:
+            snap["profile_scope"] = _scope_snapshot(payload.scope)
+            snap["nickname"] = payload.nickname
     if op.target.account is not None:
         snap["account"] = _ident_snapshot(op.target.account)
     if op.target.person_id is not None:
@@ -200,7 +206,9 @@ async def _recorded_replay(store: BindingStore, op: Operation) -> Outcome | None
     if recorded.kind != op.kind or recorded.snapshot != _op_snapshot(op):
         return denied("operation-conflict")
     if recorded.state is OperationJournalState.COMPLETE:
-        return complete(recorded.detail or "replayed")
+        return Outcome(
+            OutcomeStatus(recorded.outcome or "complete"),
+            recorded.detail or "replayed")
     return incomplete("replayed: still incomplete")
 
 

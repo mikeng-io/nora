@@ -52,4 +52,9 @@ def mount_authentication(
         holder=importlib.import_module("nora.people").wire.holder_links(
             services, signal_delivery=delivery),
         verifier=verifier)
+    # The holder's own global display-name update — the same verified
+    # session, the same retained-binding revalidation.
+    from nora.web.holder_profile import register_profile_routes
+
+    register_profile_routes(app, profile=services.profile, verifier=verifier)
     return verifier

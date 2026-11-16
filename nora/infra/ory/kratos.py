@@ -196,6 +196,40 @@ class KratosClient:
             return denied("absent")
         return unavailable(result.detail)
 
+    async def set_display_name(
+        self, *, identity_id: str, display_name: str
+    ) -> Outcome:
+        """`PATCH /admin/identities/{id}` — JSON-patch only
+        `/traits/display_name`, so every other trait, credential and the
+        record itself is preserved; the patched body must read the new
+        name back before `complete`."""
+        result = await request(
+            self.session,
+            "PATCH",
+            _path(self.admin_url, "admin", "identities", identity_id),
+            json_body=[
+                {
+                    # `add` covers a never-set display_name as well as a
+                    # rename — RFC 6902 `add` replaces an existing member.
+                    "op": "add",
+                    "path": "/traits/display_name",
+                    "value": display_name,
+                }
+            ],
+            api_key=self.api_key,
+            timeout_seconds=self.timeout_seconds,
+            expected={200: HttpStatus.OK, 404: HttpStatus.ABSENT},
+        )
+        if result.status is HttpStatus.OK:
+            identity = _parse_identity(result.body)
+            if (identity is None or identity.identity_id != identity_id
+                    or identity.traits.get("display_name") != display_name):
+                return unavailable("display-name-readback-mismatch")
+            return complete()
+        if result.status is HttpStatus.ABSENT:
+            return denied("absent")
+        return unavailable(result.detail)
+
     async def drop_sessions(self, *, identity_id: str) -> Outcome:
         """Delete sessions; a zero-row 404 requires an empty-list read-back."""
         result = await request(

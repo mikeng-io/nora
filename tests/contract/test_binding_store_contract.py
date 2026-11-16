@@ -84,6 +84,7 @@ class _Store(Protocol):
     async def resolve(self, platform: str, value: str) -> Any: ...
     async def accounts_for(self, person_id: str) -> Any: ...
     async def set_lifecycle(self, **kw: Any) -> Any: ...
+    async def set_display_name(self, **kw: Any) -> Any: ...
     async def person_lifecycle(self, person_id: str) -> Any: ...
     async def set_membership(self, **kw: Any) -> Any: ...
     async def drop_membership_support(self, **kw: Any) -> Any: ...
@@ -98,6 +99,7 @@ class _Store(Protocol):
     async def operation(self, operation_id: str) -> Any: ...
     async def update_operation(self, record: OperationRecord) -> Any: ...
     async def incomplete_operations(self) -> Any: ...
+    async def latest_profile_operation(self, person_id: str) -> Any: ...
     async def block_authority(self, block: AuthorityBlock) -> Any: ...
     async def authority_blocks(self) -> Any: ...
     async def clear_block(self, *, person_id: str, scope: Scope) -> Any: ...
@@ -276,6 +278,57 @@ async def test_revoked_bindings_stop_resolving_and_never_rebind_elsewhere(
             ),
             membership=None,
         )
+
+
+async def test_display_name_projects_descriptively_without_a_revision(store: _Store):
+    """`set_display_name` is the projection write that follows the
+    authoritative Kratos patch — descriptive, so the person revision a
+    session binding observed does NOT move."""
+    await store.register(
+        person=replace(_person(), display_name="Generated Original"),
+        account=_account(ACCOUNT_1), membership=None)
+    before = await store.person(PERSON)
+    outcome = await store.set_display_name(
+        person_id=PERSON, display_name="Generated New")
+    assert outcome.status is OutcomeStatus.COMPLETE
+    after = await store.person(PERSON)
+    assert after is not None and after.display_name == "Generated New"
+    assert before is not None and after.revision == before.revision
+    # A same-effect replay is a no-op; an absent person refuses.
+    assert (await store.set_display_name(
+        person_id=PERSON, display_name="Generated New")).status is OutcomeStatus.COMPLETE
+    assert (await store.set_display_name(
+        person_id="generated-absent", display_name="Generated")).status is OutcomeStatus.DENIED
+
+
+async def test_latest_profile_operation_is_the_newest_journaled_intent(store: _Store):
+    """`update_profile` replays consult the journal's order: the newest
+    recorded intent owns the name — earlier records, another person's ops
+    and other kinds never supersede."""
+    def _record(
+        op_id: str, *, kind: str = "update_profile", person: str = PERSON
+    ) -> OperationRecord:
+        return OperationRecord(
+            operation_id=op_id, kind=kind,
+            state=OperationJournalState.PENDING,
+            steps=MappingProxyType({"kratos": "pending"}),
+            snapshot=MappingProxyType(
+                {"target_person": person, "display_name": "Generated"}))
+
+    assert await store.latest_profile_operation(PERSON) is None
+    await store.record_operation(_record("generated-op-1"))
+    await store.record_operation(_record("generated-op-2", person="person_other"))
+    await store.record_operation(_record("generated-op-3", kind="publish_link"))
+    latest = await store.latest_profile_operation(PERSON)
+    assert latest is not None and latest.operation_id == "generated-op-1"
+    # A completed newer op still supersedes — any journal state counts.
+    await store.record_operation(_record("generated-op-4"))
+    record = await store.operation("generated-op-4")
+    assert record is not None
+    await store.update_operation(
+        replace(record, state=OperationJournalState.COMPLETE))
+    latest = await store.latest_profile_operation(PERSON)
+    assert latest is not None and latest.operation_id == "generated-op-4"
 
 
 async def test_lifecycle_changes_revise_the_person(store: _Store):

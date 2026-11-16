@@ -292,6 +292,21 @@ class FakeBindingStore(BindingStore):
         )
         return complete()
 
+    async def set_display_name(
+        self, *, person_id: str, display_name: str
+    ) -> Outcome:
+        self._up()
+        person = self.people.get(self._canonical(person_id))
+        if person is None:
+            return denied("absent")
+        self.people[person.person_id] = ManagedPerson(
+            person_id=person.person_id, lifecycle=person.lifecycle,
+            kratos_identity_id=person.kratos_identity_id,
+            display_name=display_name,
+            revision=person.revision,
+        )
+        return complete()
+
     async def revoke_binding(self, *, account: Identifier) -> Outcome:
         self._up()
         account_id = self.owners.get(account)
@@ -468,6 +483,18 @@ class FakeBindingStore(BindingStore):
             r for r in self.operations.values()
             if r.state is not OperationJournalState.COMPLETE
         )
+
+    async def latest_profile_operation(
+        self, person_id: str
+    ) -> OperationRecord | None:
+        self._up()
+        # `operations` is an insertion-ordered journal: the last matching
+        # record is the newest intent.
+        for record in reversed(list(self.operations.values())):
+            if (record.kind == "update_profile"
+                    and record.snapshot.get("target_person") == person_id):
+                return record
+        return None
 
     async def block_authority(self, block: AuthorityBlock) -> Outcome:
         self._up()

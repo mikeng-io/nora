@@ -74,6 +74,7 @@ from nora.people.app.managed_ops import (
     _revisions_fresh,
     _step_done,
 )
+from nora.people.app.managed_profile import ProfileService
 
 log = logging.getLogger("nora.people.managed")
 
@@ -103,6 +104,7 @@ class ManagedServices:
         self.publication = LinkPublicationService(
             bindings, backend, topology, registry, links,
         )
+        self.profile = ProfileService(bindings, registry, self.publication)
         # The consumer read surface (`nora.access`): the SAME bindings/
         # authority/topology/registry. `file_services` passes the
         # file-backed form; managed mode leaves file people/grants
