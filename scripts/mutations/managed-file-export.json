@@ -1,0 +1,44 @@
+[
+  {
+    "name": "export emits no suspended person's accounts",
+    "file": "nora/people/app/managed_export_prepare.py",
+    "old": "        if not suspended:  # a suspended person holds no accounts in file mode",
+    "new": "        if True:  # a suspended person holds no accounts in file mode",
+    "target": "tests/unit/test_managed_export.py::test_export_keeps_suspended_people_out_of_every_grant"
+  },
+  {
+    "name": "export refuses an open room that denies a known person",
+    "file": "nora/people/app/managed_export_verify.py",
+    "old": "            denied_known = [\n                pid for pid in sorted(known_ids)\n                if matrix[(scope0, pid, \"speak\")] is not Verdict.ALLOWED]",
+    "new": "            denied_known = []",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_an_open_room_that_denies_someone"
+  },
+  {
+    "name": "export refuses delegated management authority",
+    "file": "nora/people/app/managed_export_prepare.py",
+    "old": "            if relation == \"admin\" or relation in granted_management:",
+    "new": "            if relation == \"admin\":",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_management_authority"
+  },
+  {
+    "name": "export refuses an unfinished journal",
+    "file": "nora/people/app/managed_export_prepare.py",
+    "old": "        elif op.state in _OPEN_OPERATIONS:\n            refused.append(f\"incomplete-publication:operation:{op.kind}\")",
+    "new": "        elif False:\n            refused.append(f\"incomplete-publication:operation:{op.kind}\")",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_incomplete_publication"
+  },
+  {
+    "name": "export refuses a cross-person identifier claim",
+    "file": "nora/people/app/managed_export_prepare.py",
+    "old": "        if len(account_ids) < 2:\n            continue",
+    "new": "        if True:\n            continue",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_conflicting_ownership"
+  },
+  {
+    "name": "export refuses speak/view divergence",
+    "file": "nora/people/app/managed_export_verify.py",
+    "old": "                if speak is not view:",
+    "new": "                if False:",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_speak_view_divergence"
+  }
+]
