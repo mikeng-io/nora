@@ -139,16 +139,28 @@ async def test_a_missing_response_fails_closed_never_a_generated_fill(
     plan = _manifest(tmp_path, recording)
     with pytest.raises(EvidenceError, match="external_response_not_recorded"):
         async with plan.open(clean_pg_url) as env:
-            async with aiohttp.ClientSession() as client:
-                async with client.get(
-                        env.urls["honcho.base_url"]
-                        + "/v3/workspaces/generated-ws/peers/miles_novak/card") as r:
-                    assert r.status == 200
-                async with client.get(
-                        env.urls["platforms.signal.base_url"] + "/v1/self") as r:
-                    assert r.status == 404
-                    assert "generated-self" not in await r.text()
-            env.check()
+            signal = env.urls.get("platforms.signal.base_url")
+            assert signal is not None, "the candidate action boundary is missing"
+            engine, store = _wire_actions(plan, env, clean_pg_url)
+            try:
+                rid = await _pending_row(store)
+                async with aiohttp.ClientSession() as client:
+                    async with client.get(
+                            env.urls["honcho.base_url"]
+                            + "/v3/workspaces/generated-ws/peers/miles_novak/card") as r:
+                        assert r.status == 200
+                    async with client.post(
+                            signal + "/v1/actions",
+                            json=_send("generated-action-3", rid)) as r:
+                        reply = await r.json()
+                        assert reply["state"] == "confirmed"
+                    assert plan.daemon is not None and plan.daemon.rpc_calls == ["send"]
+                    async with client.get(signal + "/v1/self") as r:
+                        assert r.status == 404
+                        assert "generated-self" not in await r.text()
+                env.check()
+            finally:
+                await engine.dispose()
 
 
 async def test_a_mismatched_request_is_a_named_error_after_the_caught_500(

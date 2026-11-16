@@ -84,6 +84,8 @@ async def test_json_sse_shared_and_planned_404(tmp_path):
         async with aiohttp.ClientSession() as client:
             url = env.urls["llm.base_url"] + "/v1?q=1"
             async with client.post(url, json={"id": "generated"}) as result:
+                assert result.status == 200
+                assert result.content_type == "application/json"
                 assert await result.json() == {"id": "generated"}
             async with client.post(url, json={"id": "generated"}) as result:
                 assert result.status == 404 and await result.read() == b""
