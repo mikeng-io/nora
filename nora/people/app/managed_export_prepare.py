@@ -17,6 +17,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Protocol
 
 import tomlkit
@@ -30,11 +31,9 @@ from nora.domain.identity import (
 from nora.domain.managed import (
     Outcome,
     OutcomeStatus,
-    Verdict,
     denied,
     unavailable,
 )
-from nora.domain.managed_ports import IdentityRegistry
 from nora.domain.management import MANAGEMENT_PERMITS, PERMITS, Scope
 from nora.persons import PLATFORM_FIELDS
 from nora.policy import Policy, PolicyError, load_policy
@@ -142,12 +141,41 @@ class ExportInventory:
     archive: tuple[str, str, str] | None
 
 
+@dataclass(frozen=True)
+class IdentitySnapshot:
+    """The correlated Kratos record the export verifies against the SQL
+    correlation — the concrete adapter's read-only proof (never an
+    ensure/create)."""
+    identity_id: str
+    external_id: str | None
+    state: str
+    traits: dict[str, Any]
+
+
 class ExportProbe(Protocol):
     """The concrete installation-state seam — the complete inventory no
-    public port read can give (`AdmissionProbe`'s export counterpart)."""
+    public port read can give (`AdmissionProbe`'s export counterpart),
+    plus the read-only correlated-identity proof."""
 
     async def inventory(self) -> ExportInventory:
         """Every managed row the export must reason over."""
+
+    async def identity_snapshot(
+        self, identity_id: str
+    ) -> tuple[Outcome, IdentitySnapshot | None]:
+        """The Kratos identity at `identity_id` — id, external_id, lifecycle
+        and traits — `denied` when absent, `unavailable` when the service
+        cannot answer. Read-only: it never creates or mutates a record."""
+
+
+@dataclass(frozen=True)
+class ExportRefusal:
+    """One refusal. `code` is the bounded vocabulary the command prints;
+    `detail` carries the identifying specifics (person ids, scope ids,
+    identifier values) and lives only in the private report artifact —
+    never on stdout, stderr or in exception logs."""
+    code: str
+    detail: str = ""
 
 
 # -- the emit model (pure) ----------------------------------------------------
@@ -170,6 +198,7 @@ class _EmitPerson:
     last_name: str
     aliases: tuple[str, ...]
     former_ids: tuple[str, ...]
+    labels: tuple[tuple[str, str], ...]    # Kratos labels — manifest only
     social: bool                           # False emits `social = false`
     suspended: bool
     accounts: tuple[_EmitAccount, ...]
@@ -188,59 +217,89 @@ def _scope_key(scope: Scope) -> str:
 
 
 def _read_policy(policy_path: Path) -> tuple[Policy, str] | Outcome:
-    """The topology via the real loader, kept verbatim for the tomlkit overlay."""
+    """The topology read exactly ONCE — one immutable snapshot for room
+    derivation, verdict comparison, document building and publication.
+    The `Policy` is parsed from those same bytes through a staged file (the
+    real loader takes a path), never the path again: a source that changes
+    between two reads cannot leave an unchecked room's allowlist verbatim
+    in the output."""
     try:
-        source = policy_path.read_bytes()
-    except OSError as error:
-        return denied(f"unreadable-source:{type(error).__name__}")
-    try:
-        policy = load_policy(policy_path)
-    except (PolicyError, OSError, UnicodeError) as error:
+        raw = policy_path.read_bytes()
+        source = raw.decode("utf-8")
+    except (OSError, UnicodeError) as error:
         return denied(f"invalid-policy-file:{type(error).__name__}")
-    return policy, source.decode("utf-8")
+    try:
+        with TemporaryDirectory(prefix="nora-export-src-") as hold:
+            staged = Path(hold) / "policy.toml"
+            staged.write_bytes(raw)
+            policy = load_policy(staged)
+    except (PolicyError, OSError) as error:
+        return denied(f"invalid-policy-file:{type(error).__name__}")
+    return policy, source
 
 
-def _topology_refusals(policy: Policy) -> list[str]:
+def _source_unchanged(policy_path: Path, source: str) -> bool | Outcome:
+    """The pre-publication read-back of the immutable topology snapshot —
+    `False` when the file moved on mid-run, `unavailable` when it cannot
+    be re-read."""
+    try:
+        return policy_path.read_bytes() == source.encode("utf-8")
+    except OSError:
+        return unavailable("source-read")
+
+
+def _topology_refusals(policy: Policy) -> list[ExportRefusal]:
     """Topology shapes the export cannot evaluate — guild rooms and `[dm]`."""
-    refused: list[str] = []
+    refused: list[ExportRefusal] = []
     for convo in policy.conversations:
         if convo.guild:
-            refused.append(
-                f"unsupported-input:guild:{convo.platform}"
-                f"/{convo.label or convo.guild}"
-            )
+            refused.append(ExportRefusal(
+                "unsupported-input:guild",
+                f"{convo.platform}/{convo.label or convo.guild}"))
     if policy.dm_persons:
-        refused.append(
-            f"unsupported-input:dm-admission:{len(policy.dm_persons)}-persons"
-        )
+        refused.append(ExportRefusal(
+            f"unsupported-input:dm-admission:{len(policy.dm_persons)}-persons"))
     return refused
 
 
 # -- phase 1: the SQL inventory's own refusals ---------------------------------
 
 
-def _inventory_refusals(inv: ExportInventory) -> list[str]:
-    """Incomplete publication and ambiguity the binding rows alone prove."""
-    refused: list[str] = []
+def _inventory_refusals(inv: ExportInventory) -> list[ExportRefusal]:
+    """Incomplete publication and ambiguity the binding rows alone prove —
+    `code` is the bounded vocabulary the command prints; `detail` keeps the
+    identifying specifics in the private report artifact only."""
+    refused: list[ExportRefusal] = []
     live_ids = {p.person_id for p in inv.persons}
 
-    if any(p.lifecycle not in _LIFECYCLES for p in inv.persons):
-        refused.append("untrustworthy:unknown-lifecycle")
+    for person in inv.persons:
+        if person.lifecycle not in _LIFECYCLES:
+            refused.append(ExportRefusal(
+                "untrustworthy:unknown-lifecycle",
+                f"person:{person.person_id}"))
     kratos_ids = [p.kratos_identity_id for p in inv.persons
                   if p.kratos_identity_id is not None]
     if len(set(kratos_ids)) != len(kratos_ids):
-        refused.append("ambiguous-ownership:shared-kratos-identity")
+        refused.append(ExportRefusal(
+            "ambiguous-ownership:shared-kratos-identity"))
     for pid in live_ids:
         if not _PERSON_ID_RE.match(pid):
-            refused.append(f"unrepresentable:person-id:{pid}")
+            refused.append(ExportRefusal(
+                "unrepresentable:person-id", f"person:{pid}"))
     for former, _target in inv.aliases:
         if former in live_ids:
-            refused.append(f"ambiguous-ownership:alias-is-live:{former}")
+            refused.append(ExportRefusal(
+                "ambiguous-ownership:alias-is-live", f"alias:{former}"))
 
-    if any(a.state not in _ACCOUNT_STATES for a in inv.accounts):
-        refused.append("untrustworthy:unknown-account-state")
-    if any(a.person_id not in live_ids for a in inv.accounts):
-        refused.append("untrustworthy:dangling-account")
+    for account in inv.accounts:
+        if account.state not in _ACCOUNT_STATES:
+            refused.append(ExportRefusal(
+                "untrustworthy:unknown-account-state",
+                f"account:{account.account_id} state:{account.state}"))
+        if account.person_id not in live_ids:
+            refused.append(ExportRefusal(
+                "untrustworthy:dangling-account",
+                f"account:{account.account_id}"))
 
     # The file index flattens kind away and managed's own resolve() answers
     # .limit(1): the same value on two accounts is ambiguous EVERYWHERE, so
@@ -253,64 +312,84 @@ def _inventory_refusals(inv: ExportInventory) -> list[str]:
             continue
         claimants.setdefault((ident.platform, ident.value), set()).add(
             ident.account_id)
-    for (platform, _value), account_ids in sorted(claimants.items()):
+    for (platform, value), account_ids in sorted(claimants.items()):
         if len(account_ids) < 2:
             continue
         if len({account_owner[a] for a in account_ids}) > 1:
-            refused.append(f"conflicting-ownership:{platform}")
+            refused.append(ExportRefusal(
+                "conflicting-ownership", f"{platform}:{value}"))
         else:
-            refused.append(
-                f"ambiguous-ownership:cross-account-identifier:{platform}")
+            refused.append(ExportRefusal(
+                "ambiguous-ownership:cross-account-identifier",
+                f"{platform}:{value}"))
 
     for op in inv.operations:
         if op.state not in _OPERATION_STATES:
-            refused.append("untrustworthy:unknown-operation-state")
+            refused.append(ExportRefusal(
+                "untrustworthy:unknown-operation-state",
+                f"operation:{op.operation_id} state:{op.state}"))
         elif op.state in _OPEN_OPERATIONS:
-            refused.append(f"incomplete-publication:operation:{op.kind}")
+            refused.append(ExportRefusal(
+                "incomplete-publication:operation", f"kind:{op.kind}"))
     if inv.holds:
-        refused.append(f"incomplete-publication:holds:{len(inv.holds)}")
+        refused.append(ExportRefusal(
+            f"incomplete-publication:holds:{len(inv.holds)}"))
     if inv.blocks:
-        refused.append(
-            f"incomplete-publication:authority-blocks:{len(inv.blocks)}")
+        refused.append(ExportRefusal(
+            f"incomplete-publication:authority-blocks:{len(inv.blocks)}"))
     for _request_id, state in inv.link_states:
         if state not in _TERMINAL_LINK_STATES:
-            refused.append(f"incomplete-publication:link:{state or 'malformed'}")
+            refused.append(ExportRefusal(
+                "incomplete-publication:link",
+                f"state:{state or 'malformed'}"))
     if any(m.state not in _MEMBERSHIP_STATES for m in inv.memberships):
-        refused.append("untrustworthy:unknown-membership-state")
+        refused.append(ExportRefusal("untrustworthy:unknown-membership-state"))
     return refused
 
 
-# -- phase 2: Kratos (descriptive truth, fail-closed) --------------------------
+# -- phase 2: Kratos (verified correlation + descriptive truth, fail-closed) ----
 
 
-async def _read_traits(
-    registry: IdentityRegistry, people: tuple[InventoryPerson, ...],
-) -> tuple[dict[str, dict[str, Any]], list[str]] | Outcome:
-    """Current traits per person — active fail closed, suspended best-effort."""
+async def _read_identities(
+    probe: ExportProbe, people: tuple[InventoryPerson, ...],
+) -> tuple[dict[str, dict[str, Any]], list[ExportRefusal]] | Outcome:
+    """The correlated Kratos record for every person, read through the
+    probe's read-only snapshot by the SQL-recorded `kratos_identity_id` —
+    verified to point back at the same person and to carry the lifecycle
+    the SQL row claims. Traits come from that verified snapshot: an active
+    person's missing, mismatched, stale or malformed record refuses; an
+    unreachable service is `unavailable` (retry). Suspended people keep
+    their traits private — the manifest, never file accounts."""
     traits: dict[str, dict[str, Any]] = {}
-    refused: list[str] = []
+    refused: list[ExportRefusal] = []
     for person in people:
         pid = person.person_id
-        if person.lifecycle == "active":
-            if person.kratos_identity_id is None:
-                refused.append(f"untrustworthy:uncorrelated-person:{pid}")
-                continue
-            state = await registry.identity_state(external_id=pid)
-            if state.verdict is Verdict.UNAVAILABLE:
-                return unavailable(state.detail)
-            if state.verdict is Verdict.UNKNOWN_SCOPE:
-                refused.append(f"untrustworthy:kratos-correlation-missing:{pid}")
-                continue
-            if state.verdict is not Verdict.ALLOWED:
-                refused.append(f"untrustworthy:state-disagreement:{pid}")
-                continue
-        outcome, raw = await registry.identity_traits(external_id=pid)
-        if raw is None:
-            if outcome.status is OutcomeStatus.UNAVAILABLE:
-                return unavailable(outcome.detail)
+        kid = person.kratos_identity_id
+        if kid is None:
             if person.lifecycle == "active":
-                refused.append(f"untrustworthy:kratos-correlation-missing:{pid}")
+                refused.append(ExportRefusal(
+                    "untrustworthy:uncorrelated-person", f"person:{pid}"))
+            continue
+        outcome, snapshot = await probe.identity_snapshot(kid)
+        if outcome.status is OutcomeStatus.UNAVAILABLE:
+            return unavailable(outcome.detail)
+        if snapshot is None:
+            if person.lifecycle == "active":
+                refused.append(ExportRefusal(
+                    "untrustworthy:kratos-correlation-missing",
+                    f"person:{pid}"))
             continue  # suspended + absent: the SQL display name carries them
+        if snapshot.identity_id != kid or snapshot.external_id != pid:
+            refused.append(ExportRefusal(
+                "untrustworthy:kratos-correlation-mismatch",
+                f"person:{pid}"))
+            continue
+        want = "active" if person.lifecycle == "active" else "inactive"
+        if snapshot.state != want:
+            refused.append(ExportRefusal(
+                "untrustworthy:state-disagreement", f"person:{pid}"))
+            continue
+        raw = snapshot.traits
         if (not isinstance(raw, dict) or not set(raw) <= _TRAIT_KEYS
                 or not isinstance(raw.get("display_name"), str)
                 or not isinstance(raw.get("social"), bool)
@@ -318,7 +397,8 @@ async def _read_traits(
                     not isinstance(raw["labels"], dict)
                     or not all(isinstance(k, str) and isinstance(v, str)
                                for k, v in raw["labels"].items())))):
-            refused.append(f"untrustworthy:malformed-traits:{pid}")
+            refused.append(ExportRefusal(
+                "untrustworthy:malformed-traits", f"person:{pid}"))
             continue
         traits[pid] = raw
     return traits, refused
@@ -329,9 +409,9 @@ async def _read_traits(
 
 def _classify_relations(
     relations: dict[Scope, frozenset[tuple[str, str]]],
-) -> tuple[list[str], list[tuple[str, str, str]]]:
+) -> tuple[list[ExportRefusal], list[tuple[str, str, str]]]:
     """Management authority and unknown relations refuse; the rest fold."""
-    refused: list[str] = []
+    refused: list[ExportRefusal] = []
     folded: list[tuple[str, str, str]] = []
     permit_relations = {
         f"{direction}_{permit}"
@@ -343,11 +423,13 @@ def _classify_relations(
     for scope, rows in relations.items():
         for relation, subject in sorted(rows):
             if relation == "admin" or relation in granted_management:
-                refused.append(
-                    f"unfaithful:management-authority:{_scope_key(scope)}:{relation}")
+                refused.append(ExportRefusal(
+                    "unfaithful:management-authority",
+                    f"{_scope_key(scope)}:{relation}"))
             elif relation not in _FOLDABLE_STRUCTURAL | permit_relations:
-                refused.append(
-                    f"unfaithful:unknown-relation:{_scope_key(scope)}:{relation}")
+                refused.append(ExportRefusal(
+                    "unfaithful:unknown-relation",
+                    f"{_scope_key(scope)}:{relation}"))
             else:
                 folded.append((_scope_key(scope), relation, subject))
     return refused, folded
@@ -368,11 +450,27 @@ def _parse_archive(inv: ExportInventory) -> dict[str, Any] | str | None:
 
 def _archive_index(
     archive_persons: dict[str, Any], inv: ExportInventory,
-) -> dict[tuple[str, frozenset[tuple[str, str]]], tuple[str, list[tuple[str, str]]]]:
-    """(platform, identifier-set) -> (owner, metadata) — the overlay key."""
-    index: dict[tuple[str, frozenset[tuple[str, str]]],
-                tuple[str, list[tuple[str, str]]]] = {}
+) -> tuple[
+    dict[str, tuple[str, list[tuple[str, str]]]],
+    list[str],
+]:
+    """(bound account_id) -> (archived owner, metadata) plus conflicts.
+
+    An archived account block's matchable identifiers are resolved against
+    the LIVE bindings: every still-bound one must name exactly one account,
+    whose owner must be the archived owner (followed through live aliases).
+    That verified-ownership match — never exact identifier-set equality —
+    is what lets metadata survive a verified account gaining another
+    identifier. Identifiers resolving nowhere carry no live anchor and
+    apply nothing; scattered, cross-person or competing matches refuse."""
+    index: dict[str, tuple[str, list[tuple[str, str]]]] = {}
+    conflicts: list[str] = []
     alias_map = dict(inv.aliases)
+    account_owner = {
+        a.account_id: a.person_id for a in inv.accounts if a.state == "bound"}
+    bound_owner: dict[tuple[str, str, str], str] = {
+        (i.platform, i.kind, i.value): i.account_id
+        for i in inv.identifiers if i.account_id in account_owner}
     for archived_pid, entry in archive_persons.items():
         if not isinstance(entry, dict):
             continue
@@ -381,41 +479,60 @@ def _archive_index(
             for block in entry.get(platform) or ():
                 if not isinstance(block, dict):
                     continue
-                matchable = frozenset(
+                matchable = [
                     (kind, str(value)) for kind, value in block.items()
-                    if kind in id_kinds(platform))
+                    if kind in id_kinds(platform)]
                 if not matchable:
                     continue
                 metadata = sorted(
                     (kind, str(value)) for kind, value in block.items()
                     if kind in metadata_keys(platform))
-                index[(platform, matchable)] = (canonical, metadata)
-    return index
+                owners = {
+                    bound_owner[(platform, kind, value)]
+                    for kind, value in matchable
+                    if (platform, kind, value) in bound_owner}
+                if len(owners) > 1 or (
+                    owners
+                    and (account_owner[next(iter(owners))] != canonical
+                         or next(iter(owners)) in index)
+                ):
+                    # Identifiers scattered across live accounts, or the
+                    # account moved to another person, or two archived
+                    # blocks claim the same binding — refuse, never guess.
+                    conflicts.append(f"{platform}:{archived_pid}")
+                    continue
+                if owners:
+                    index[next(iter(owners))] = (canonical, metadata)
+    return index, conflicts
 
 
 def _emit_account(
     account: InventoryAccount, rows: list[InventoryIdentifier],
-    account_index: dict[tuple[str, frozenset[tuple[str, str]]],
-                        tuple[str, list[tuple[str, str]]]],
+    account_index: dict[str, tuple[str, list[tuple[str, str]]]],
     owner: str,
-) -> tuple[_EmitAccount | None, str | None]:
+) -> tuple[_EmitAccount | None, ExportRefusal | None]:
     """One bound account's emitted identifiers plus applicable archived metadata."""
     platform = account.platform
     if platform not in PLATFORM_FIELDS:
-        return None, f"unrepresentable:platform:{platform}"
+        return None, ExportRefusal(
+            "unrepresentable:platform", f"{platform}:{account.account_id}")
     if not rows:
-        return None, f"unfaithful:unidentifiable-account:{account.account_id}"
+        return None, ExportRefusal(
+            "unfaithful:unidentifiable-account", f"account:{account.account_id}")
     bad = [i.kind for i in rows if i.kind not in id_kinds(platform)]
     if bad:
-        return None, f"unrepresentable:identifier-kind:{platform}.{bad[0]}"
+        return None, ExportRefusal(
+            "unrepresentable:identifier-kind",
+            f"{platform}.{bad[0]}:{account.account_id}")
     emitted = tuple(sorted(
         (Identifier(platform=platform, kind=i.kind, value=i.value)
          for i in rows),
         key=lambda i: (i.kind, i.value)))
-    overlay = account_index.get(
-        (platform, frozenset((i.kind, i.value) for i in emitted)))
+    overlay = account_index.get(account.account_id)
     if overlay is not None and overlay[0] != owner:
-        return None, f"ambiguous-ownership:archived-binding-conflict:{platform}"
+        return None, ExportRefusal(
+            "ambiguous-ownership:archived-binding-conflict",
+            f"{platform}:{account.account_id}")
     return _EmitAccount(
         account_id=account.account_id, platform=platform,
         label=account.label, identifiers=emitted,
@@ -427,21 +544,26 @@ def _emit_people(
     traits: dict[str, dict[str, Any]],
     workspace_names: frozenset[str],
 ) -> tuple[list[_EmitPerson], list[tuple[str, str, str | None,
-            list[tuple[str, str]]]], list[str], list[str], list[str],
+            list[tuple[str, str]]]], list[tuple[str, str, str | None, str,
+            list[tuple[str, str]]]], list[ExportRefusal], list[str], list[str],
            list[tuple[str, str]]]:
     """The `identity.toml` model — live ownership, Kratos fields, archive overlay."""
-    refused: list[str] = []
+    refused: list[ExportRefusal] = []
     dropped: list[str] = []
     nonportable: list[str] = []
     workspace_rows: list[tuple[str, str]] = []
 
     archived = _parse_archive(inv)
     if isinstance(archived, str):
-        refused.append("untrustworthy:malformed-archive")
+        refused.append(ExportRefusal("untrustworthy:malformed-archive"))
         archived = None
     archive_persons = (archived or {}).get("persons", {})
     archive_workspaces = (archived or {}).get("workspaces", {})
-    account_index = _archive_index(archive_persons, inv) if archive_persons else {}
+    account_index, archive_conflicts = (
+        _archive_index(archive_persons, inv) if archive_persons else ({}, []))
+    for conflict in archive_conflicts:
+        refused.append(ExportRefusal(
+            "ambiguous-ownership:archived-binding-conflict", conflict))
 
     live_ids = {p.person_id for p in inv.persons}
     for former, target in inv.aliases:
@@ -454,13 +576,16 @@ def _emit_people(
 
     accounts_by_person: dict[str, list[InventoryAccount]] = {}
     revoked_accounts: list[tuple[str, str, str | None, list[tuple[str, str]]]] = []
+    suspended_accounts: list[tuple[str, str, str | None, str,
+                                 list[tuple[str, str]]]] = []
     for account in inv.accounts:
+        row = (
+            account.account_id, account.platform, account.label,
+            sorted((i.kind, i.value)
+                   for i in identifiers_by_account.get(account.account_id, ())),
+        )
         if account.state == "revoked":
-            revoked_accounts.append((
-                account.account_id, account.platform, account.label,
-                sorted((i.kind, i.value)
-                       for i in identifiers_by_account.get(account.account_id, ())),
-            ))
+            revoked_accounts.append(row)
             continue
         accounts_by_person.setdefault(account.person_id, []).append(account)
 
@@ -469,38 +594,49 @@ def _emit_people(
         pid = person.person_id
         suspended = person.lifecycle == "suspended"
         trait = traits.get(pid, {})
-        if trait.get("labels"):
-            nonportable.append(f"labels:{pid}:{len(trait['labels'])}")
+        labels = trait.get("labels") or {}
+        if labels:
+            # The file carries no labels; the manifest preserves them whole.
+            nonportable.append(f"labels:{pid}:{len(labels)}")
         name = trait.get("display_name", "") or person.display_name
 
         former_ids = tuple(sorted(f for f, t in inv.aliases if t == pid))
         authored = _archived_person_fields(archive_persons, pid, former_ids)
 
         emit_accounts: list[_EmitAccount] = []
-        if not suspended:  # a suspended person holds no accounts in file mode
-            for account in sorted(
-                accounts_by_person.get(pid, []),
-                key=lambda a: (a.platform, a.account_id),
-            ):
-                emitted, refusal = _emit_account(
-                    account, identifiers_by_account.get(account.account_id, []),
-                    account_index, pid)
-                if refusal is not None:
-                    refused.append(refusal)
-                elif emitted is not None:
-                    emit_accounts.append(emitted)
+        for account in sorted(
+            accounts_by_person.get(pid, []),
+            key=lambda a: (a.platform, a.account_id),
+        ):
+            if suspended:
+                # A suspended person holds no accounts in file mode — the
+                # binding stays private provenance in the manifest instead.
+                suspended_accounts.append((
+                    account.account_id, account.platform, account.label, pid,
+                    sorted((i.kind, i.value) for i in
+                           identifiers_by_account.get(account.account_id, ())),
+                ))
+                continue
+            emitted, refusal = _emit_account(
+                account, identifiers_by_account.get(account.account_id, []),
+                account_index, pid)
+            if refusal is not None:
+                refused.append(refusal)
+            elif emitted is not None:
+                emit_accounts.append(emitted)
         # The file validator needs a distinct non-blank `label` per block
         # once a person holds two accounts on one platform.
         labels_by_platform: dict[str, list[str]] = {}
         for a in emit_accounts:
             labels_by_platform.setdefault(a.platform, []).append(a.label or "")
-        for platform, labels in labels_by_platform.items():
-            if len(labels) > 1 and (
-                any(not label.strip() for label in labels)
-                or len(set(labels)) != len(labels)
+        for platform, labels_for in labels_by_platform.items():
+            if len(labels_for) > 1 and (
+                any(not label.strip() for label in labels_for)
+                or len(set(labels_for)) != len(labels_for)
             ):
-                refused.append(
-                    f"unrepresentable:unlabeled-accounts:{pid}:{platform}")
+                refused.append(ExportRefusal(
+                    "unrepresentable:unlabeled-accounts",
+                    f"{pid}:{platform}"))
 
         people.append(_EmitPerson(
             person_id=pid,
@@ -509,6 +645,7 @@ def _emit_people(
             last_name=authored.get("last_name", ""),
             aliases=tuple(authored.get("aliases", ())),
             former_ids=former_ids,
+            labels=tuple(sorted(labels.items())),
             social=bool(trait.get("social")) and not suspended,
             suspended=suspended,
             accounts=tuple(sorted(
@@ -528,8 +665,8 @@ def _emit_people(
             dropped.append(f"workspaces:{name}")
             continue
         workspace_rows.append((name, value))
-    return (people, revoked_accounts, refused, dropped, nonportable,
-            workspace_rows)
+    return (people, revoked_accounts, suspended_accounts, refused, dropped,
+            nonportable, workspace_rows)
 
 
 def _archived_person_fields(

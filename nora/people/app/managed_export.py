@@ -41,7 +41,6 @@ from nora.domain.managed import (
 from nora.domain.managed_ports import (
     AuthorityBackend,
     BindingStore,
-    IdentityRegistry,
     TopologySource,
 )
 from nora.domain.management import Scope, ScopeKind
@@ -49,14 +48,16 @@ from nora.people.app.managed_export_prepare import (
     _PROBE_ID,
     ExportInventory,
     ExportProbe,
+    ExportRefusal,
     _build_identity,
     _build_policy,
     _classify_relations,
     _digest,
     _emit_people,
     _inventory_refusals,
+    _read_identities,
     _read_policy,
-    _read_traits,
+    _source_unchanged,
     _topology_refusals,
 )
 from nora.people.app.managed_export_verify import (
@@ -85,14 +86,19 @@ class ExportBundle:
 @dataclass(frozen=True)
 class ExportReport:
     """The three-state export verdict: `complete` (the bundle is faithful),
-    `denied` (authoritative refusal — `refusals` names every limit found),
+    `denied` (authoritative refusal — `refusals` names every limit found
+    by bounded `code`, with identifying specifics kept in `detail`),
     `unavailable` (a store could not answer — retryable)."""
     outcome: Outcome
-    refusals: tuple[str, ...] = ()
+    refusals: tuple[ExportRefusal, ...] = ()
     counts: MappingProxyType[str, int] = field(
         default_factory=lambda: MappingProxyType({}))
     digest: str = ""
     bundle: ExportBundle | None = None
+
+
+def _denied(refused: tuple[ExportRefusal, ...] | list[ExportRefusal]) -> Outcome:
+    return denied(";".join(dict.fromkeys(r.code for r in refused)))
 
 
 # -- the service ----------------------------------------------------------------
@@ -101,15 +107,21 @@ class ExportReport:
 @dataclass(frozen=True)
 class ManagedExport:
     """The installation-only export service. `bindings`/`backend`/
-    `topology`/`registry`/`access` are the managed backend's own objects —
-    the same graph `managed_services` composes — and `probe` the SQL-aware
-    inventory seam."""
+    `topology`/`access` are the managed backend's own objects — the same
+    graph `managed_services` composes — and `probe` the SQL-aware
+    inventory plus read-only correlated-identity seam.
+
+    `source_snapshot` optionally carries the command's already-parsed
+    `(policy, source_text)` — when set, the SAME immutable topology the
+    wiring consumed drives derivation, comparison and publication rather
+    than a second read of the path. Either way the source is re-read once
+    more before a bundle may appear: a changed file refuses."""
     bindings: BindingStore
     backend: AuthorityBackend
     topology: TopologySource
-    registry: IdentityRegistry
     access: IdentityAccess
     probe: ExportProbe
+    source_snapshot: tuple[Policy, str] | None = None
 
     async def assess(self, policy_path: Path) -> ExportReport:
         """The read-only plan/validation path — the whole pipeline except
@@ -120,29 +132,34 @@ class ManagedExport:
         return await self._run(policy_path, publish=True)
 
     async def _run(self, policy_path: Path, *, publish: bool) -> ExportReport:
-        loaded = _read_policy(policy_path)
-        if isinstance(loaded, Outcome):
-            return ExportReport(outcome=loaded)
-        policy, source = loaded
+        if self.source_snapshot is not None:
+            policy, source = self.source_snapshot
+        else:
+            loaded = _read_policy(policy_path)
+            if isinstance(loaded, Outcome):
+                return ExportReport(outcome=loaded)
+            policy, source = loaded
         refused = _topology_refusals(policy)
         if refused:
-            return ExportReport(outcome=denied(";".join(refused)),
+            return ExportReport(outcome=_denied(refused),
                                 refusals=tuple(refused))
         try:
             async with self.bindings.mutation():
-                return await self._export(policy, source, publish=publish)
-        except Exception:
-            log.exception("managed export failed")
+                return await self._export(
+                    policy, source, policy_path, publish=publish)
+        except Exception as error:  # noqa: BLE001 — fail-closed boundary: the
+            # type name only, never the message — it may carry identifiers.
+            log.error("managed export failed: %s", type(error).__name__)
             return ExportReport(outcome=unavailable("store-failure"))
 
     async def _export(
-        self, policy: Policy, source: str, *, publish: bool
+        self, policy: Policy, source: str, policy_path: Path, *, publish: bool
     ) -> ExportReport:
-        refused: list[str] = []
+        refused: list[ExportRefusal] = []
         inv: ExportInventory = await self.probe.inventory()
         refused += _inventory_refusals(inv)
 
-        gathered = await _read_traits(self.registry, inv.persons)
+        gathered = await _read_identities(self.probe, inv.persons)
         if isinstance(gathered, Outcome):
             return ExportReport(outcome=gathered)
         traits, kratos_refusals = gathered
@@ -158,12 +175,12 @@ class ManagedExport:
         refused += rel_refusals
 
         workspace_names = frozenset(policy.unit_workspaces().values()) | {"default"}
-        (people, revoked_accounts, emit_refusals,
+        (people, revoked_accounts, suspended_accounts, emit_refusals,
          dropped, nonportable, workspaces) = _emit_people(
             inv, traits, workspace_names)
         refused += emit_refusals
         if refused:
-            return ExportReport(outcome=denied(";".join(refused)),
+            return ExportReport(outcome=_denied(refused),
                                 refusals=tuple(refused))
 
         live_ids = frozenset(p.person_id for p in inv.persons)
@@ -188,7 +205,7 @@ class ManagedExport:
             active_ids=active_ids, known_ids=known_ids)
         if derive_refusals:
             return ExportReport(
-                outcome=denied(";".join(derive_refusals)),
+                outcome=_denied(derive_refusals),
                 refusals=tuple(derive_refusals))
 
         identity_toml = _build_identity(tuple(people), tuple(workspaces))
@@ -198,13 +215,9 @@ class ManagedExport:
             return ExportReport(outcome=loaded_pair)
         persons, generated_policy = loaded_pair
 
-        open_scope_ids = frozenset(
-            room_scope_id(convo.platform, cid)
-            for convo in convos if convo.persons is None for cid in convo.ids)
         outcome = await _compare(
             managed=self.access, persons=persons, policy=generated_policy,
             matrix=matrix, convos=convos, person_ids=person_ids,
-            open_scope_ids=open_scope_ids,
             emit_identifiers=tuple(
                 i for p in people for a in p.accounts for i in a.identifiers),
             suspended_identifiers=tuple(
@@ -221,10 +234,22 @@ class ManagedExport:
         if outcome.status is not OutcomeStatus.COMPLETE:
             return ExportReport(outcome=outcome)
 
+        # The immutable snapshot carried every phase — one last read of the
+        # source before a usable bundle may appear: a file that changed
+        # mid-run refuses rather than publishing a stale cut.
+        unchanged = _source_unchanged(policy_path, source)
+        if isinstance(unchanged, Outcome):
+            return ExportReport(outcome=unchanged)
+        if not unchanged:
+            refusal = ExportRefusal("untrustworthy:source-changed")
+            return ExportReport(
+                outcome=_denied([refusal]), refusals=(refusal,))
+
         manifest = _manifest(
             identity_toml=identity_toml, policy_toml=policy_toml,
             topology_source=source, inv=inv, people=tuple(people),
-            revoked_accounts=revoked_accounts, folded=folded,
+            revoked_accounts=revoked_accounts,
+            suspended_accounts=suspended_accounts, folded=folded,
             dropped=dropped, nonportable=nonportable)
         digest = f"export:{_digest((identity_toml + policy_toml).encode())[:24]}"
         counts = MappingProxyType({
@@ -235,6 +260,7 @@ class ManagedExport:
                 len(a.identifiers) for p in people for a in p.accounts),
             "aliases": sum(len(p.former_ids) for p in people),
             "revoked_accounts": len(revoked_accounts),
+            "suspended_accounts": len(suspended_accounts),
             "rooms": len(rooms),
             "folded_relations": len(folded),
         })

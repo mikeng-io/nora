@@ -37,18 +37,28 @@ uv run scripts/managed_identity_export.py export \
 - `--policy` is the deployment's CURRENT policy file — its room
   declarations, unit bindings, labels and flags. It is a topology input,
   not grant authority: the emitted `persons` lists are re-derived from
-  live managed verdicts, and `[dm]` admission lists or guild rooms refuse.
+  live managed verdicts, and `[dm]` admission lists or guild rooms
+  refuse. The file is read ONCE — one immutable snapshot wires the
+  managed services and drives room derivation, verdict comparison,
+  document building and the emitted `policy.toml` text; before a bundle
+  may appear the source is read back once more and a file that changed
+  mid-run refuses (`untrustworthy:source-changed`).
 - Kratos/Keto keys come from `--kratos-admin-key-env`/`--keto-key-env`
   naming the environment variable, same as the admission command.
-- The output directory must be new or empty. The bundle is staged beside
-  it and renamed in one step, so a crash never leaves a partial bundle
-  that looks complete. The manifest is written last — it is the bundle's
-  completeness mark.
+- The output directory must be ABSENT — an existing file, link or
+  directory (even an empty one) is refused, never written through. The
+  bundle lands in one `mkdir`: the directory is mode `0700` and every
+  file mode `0600` from creation, whatever the operator's umask, and the
+  manifest is written last — it is the bundle's completeness mark. A
+  failed write removes only the files that invocation staged.
 
 Exit codes: `0` complete · `2` refused (unsupported, ambiguous or
 unfaithful state; occupied destination) · `3` unavailable (a store could
-not answer — retryable). Print output is bounded counts, named refusals
-and digests only — never identifiers, keys or account values.
+not answer — retryable). Print output is bounded counts, named refusal
+codes and digests only — never identifiers, keys, person ids, room ids
+or account values. The identifying specifics stay inside each refusal's
+private detail and the private manifest; exception paths report the
+error's TYPE name only.
 
 ## What the export does
 
@@ -59,18 +69,30 @@ serialises on, so the bundle is one coherent cut — the command:
    suspended), accounts (including revoked), identifiers, former-person
    aliases, memberships and their support provenance, operation journals,
    identity holds, authority blocks, and link-request state;
-2. reads current descriptive traits (`display_name`, `social`, labels)
-   from Kratos per person — an unreachable or inconsistent Kratos is
-   `unavailable`/`refused`, never guessed;
+2. verifies every person's Kratos record through the correlated
+   `kratos_identity_id` — a read-only `GET /admin/identities/{id}`, never
+   an ensure/create — checking the returned record's id, `external_id`
+   and lifecycle (`active`/`inactive` for suspended) against the SQL row,
+   then reads descriptive traits (`display_name`, `social`, labels) from
+   that verified snapshot. An unreachable Kratos is `unavailable`, a
+   missing/mismatched/stale record a refusal — never guessed;
 3. reads every relation tuple on each declared scope from Keto;
 4. computes the verdict matrix — `access.check` for every room, every
    known person (live ids AND retired aliases, which fold identically)
    and a never-registered probe id, for all five permits — and derives
-   each room's emitted `persons` list from it;
+   each room's emitted `persons` list from it. A `persons = "*"` convo
+   always refuses: the file wildcard would admit identifiers managed has
+   never registered, and freezing the current roster would close the room
+   — neither shape is faithful;
 5. builds `identity.toml` (live bindings, archived authored metadata
-   overlaid where it still applies, `former_person_ids` for aliases,
-   `social = false` for opted-out and suspended people) and `policy.toml`
-   (the input topology verbatim, only `persons` re-derived);
+   overlaid where the archived identifiers verify against CURRENT live
+   ownership — never identifier-set equality, never restored ownership —
+   `former_person_ids` for aliases, `social = false` for opted-out and
+   suspended people) and `policy.toml` (the snapshot's text verbatim,
+   only `persons` re-derived). Suspended people's accounts are never
+   emitted: they stay private provenance in the manifest, identifiers and
+   grouping intact, alongside the actual current Kratos labels the file
+   cannot carry;
 6. loads the generated pair through the REAL `load_persons`/`load_policy`,
    then compares the file predicate against managed: every matrix cell
    must agree, open admission must agree, every emitted identifier must
@@ -97,9 +119,12 @@ serialises on, so the bundle is one coherent cut — the command:
   identifier kind the file format has no field for, two same-platform
   accounts without distinct labels;
 - `unfaithful:*` — management authority or an unknown relation on a
-  declared scope, speak/view divergence, an open room denying a known
-  person, `also_ids` forms disagreeing, an account with no identifier —
-  anything file mode cannot express exactly;
+  declared scope, speak/view divergence, an open room (`*`) in any shape
+  (it denies a known person, or is simply unrepresentable dynamically),
+  `also_ids` forms disagreeing, an account with no identifier — anything
+  file mode cannot express exactly;
+- `untrustworthy:source-changed` — the topology file changed between the
+  snapshot and the pre-publication read-back;
 - `generated-invalid-*` — the generated pair failed the real loaders
   (self-check failure);
 - `unfaithful:verdict-mismatch` / `resolve-mismatch` /

@@ -3,6 +3,7 @@ references, generated-file validation and the no-widening comparison, on
 the managed fakes (`nora/testing/managed.py`, whose authority fake runs the
 committed OPL's evaluator)."""
 
+import json
 import tomllib
 import uuid
 from pathlib import Path
@@ -20,9 +21,13 @@ from nora.domain.managed import (
     MembershipState,
     OperationJournalState,
     OperationRecord,
+    Outcome,
     OutcomeStatus,
     PersonLifecycle,
+    complete,
+    denied,
     room_scope_id,
+    unavailable,
 )
 from nora.domain.management import Scope, ScopeKind
 from nora.people.adapters.file_backend import FileTopologySource
@@ -30,6 +35,7 @@ from nora.people.app.managed import ManagedServices
 from nora.people.app.managed_export import ManagedExport
 from nora.people.app.managed_export_prepare import (
     ExportInventory,
+    IdentitySnapshot,
     InventoryAccount,
     InventoryBlock,
     InventoryIdentifier,
@@ -95,10 +101,14 @@ def _policy_file(tmp_path, text=POLICY):
 
 class _Probe:
     """The ExportProbe seam over `FakeBindingStore`'s internals — including
-    the rows the port reads hide (holds, journals, revoked, suspended)."""
+    the rows the port reads hide (holds, journals, revoked, suspended) —
+    plus the read-only correlated-Kratos snapshot the export verifies."""
 
-    def __init__(self, store: FakeBindingStore, *, links=(), archive=None) -> None:
+    def __init__(self, store: FakeBindingStore,
+                 registry: FakeIdentityRegistry | None = None,
+                 *, links=(), archive=None) -> None:
         self._store = store
+        self._registry = registry
         self._links = links
         self._archive = archive
 
@@ -140,6 +150,24 @@ class _Probe:
             link_states=self._links,
             archive=self._archive,
         )
+
+    async def identity_snapshot(
+        self, identity_id: str
+    ) -> tuple[Outcome, IdentitySnapshot | None]:
+        """The correlated Kratos record looked up BY identity id — the same
+        by-id proof `SqlExportProbe` takes from `KratosClient.get_identity`."""
+        registry = self._registry
+        if registry is None or registry.down:
+            return unavailable("no-identity-reader"), None
+        for external_id, ident in registry.identities.items():
+            if ident["id"] == identity_id:
+                return complete(), IdentitySnapshot(
+                    identity_id=identity_id,
+                    external_id=external_id,
+                    state=ident["state"],
+                    traits=dict(ident["traits"]),
+                )
+        return denied("absent"), None
 
 
 def _person(store, registry, person_id, *, name="", social=True,
@@ -200,8 +228,8 @@ def _export_for(store, backend, registry, policy_path, *, probe=None):
         store, backend, topology, registry, FakeLinkRequests())
     return ManagedExport(
         bindings=store, backend=backend, topology=topology,
-        registry=registry, access=services.access,
-        probe=probe or _Probe(store))
+        access=services.access,
+        probe=probe or _Probe(store, registry))
 
 
 @pytest.fixture
@@ -304,11 +332,11 @@ async def test_export_refuses_incomplete_publication(graph):
     *_, policy_path, export = graph
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("incomplete-publication:operation")
+    assert any(r.code.startswith("incomplete-publication:operation")
                for r in report.refusals)
-    assert any(r.startswith("incomplete-publication:holds")
+    assert any(r.code.startswith("incomplete-publication:holds")
                for r in report.refusals)
-    assert any(r.startswith("incomplete-publication:authority-blocks")
+    assert any(r.code.startswith("incomplete-publication:authority-blocks")
                for r in report.refusals)
 
 
@@ -316,10 +344,11 @@ async def test_export_refuses_a_pending_link(graph):
     _seed(graph)
     store, backend, registry, policy_path, _ = graph
     export = _export_for(store, backend, registry, policy_path,
-                         probe=_Probe(store, links=[("req-1", "pending")]))
+                         probe=_Probe(store, registry,
+                                      links=[("req-1", "pending")]))
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("incomplete-publication:link")
+    assert any(r.code.startswith("incomplete-publication:link")
                for r in report.refusals)
 
 
@@ -331,7 +360,7 @@ async def test_export_refuses_conflicting_ownership(graph):
     *_, policy_path, export = graph
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("conflicting-ownership") for r in report.refusals)
+    assert any(r.code.startswith("conflicting-ownership") for r in report.refusals)
 
 
 async def test_export_refuses_management_authority(graph):
@@ -343,7 +372,7 @@ async def test_export_refuses_management_authority(graph):
     *_, policy_path, export = graph
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("unfaithful:management-authority")
+    assert any(r.code.startswith("unfaithful:management-authority")
                for r in report.refusals)
 
 
@@ -357,7 +386,7 @@ async def test_export_refuses_speak_view_divergence(graph):
     *_, policy_path, export = graph
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("unfaithful:speak-view-divergence")
+    assert any(r.code.startswith("unfaithful:speak-view-divergence")
                for r in report.refusals)
 
 
@@ -374,7 +403,7 @@ async def test_export_refuses_an_open_room_that_denies_someone(tmp_path):
     _member(store, backend, "miles", OPEN_ROOM)   # ada has no grant
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("unfaithful:open-room-denial")
+    assert any(r.code.startswith("unfaithful:open-room-denial")
                for r in report.refusals)
 
 
@@ -394,9 +423,14 @@ async def test_export_keeps_suspended_people_out_of_every_grant(graph):
     assert not persons.accounts_for("eve")        # but no bound surface
     assert persons.social_off("eve")              # and opted out
     assert _resolve(persons, "signal", "+85200000007") is None
+    assert "+85200000007" not in report.bundle.identity_toml
     room_a = load_policy(out / "policy.toml")\
         .conversation("signal", "generated-room-a")
     assert "eve" not in room_a.persons
+    # The suspended binding is not lost: the private manifest carries the
+    # account, its owner and its identifiers.
+    assert '"suspended_accounts"' in report.bundle.manifest_json
+    assert "+85200000007" in report.bundle.manifest_json
 
 
 async def test_export_never_emits_a_revoked_identifier(graph):
@@ -430,7 +464,7 @@ async def test_export_refuses_an_unidentifiable_account(graph):
     *_, policy_path, export = graph
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("unfaithful:unidentifiable-account")
+    assert any(r.code.startswith("unfaithful:unidentifiable-account")
                for r in report.refusals)
 
 
@@ -448,13 +482,13 @@ phone = "+85200000003"
 username = "stale"
 """
     # +85200000003 is ada's live binding — archived under miles.
-    probe = _Probe(store, archive=(
+    *_, policy_path, _export = graph
+    probe = _Probe(store, graph[2], archive=(
         "op-archive", archive_identity, "default = \"deny\"\n"))
-    *_, policy_path, export = graph
     export = _export_for(store, graph[1], graph[2], policy_path, probe=probe)
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("ambiguous-ownership:archived-binding-conflict")
+    assert any(r.code.startswith("ambiguous-ownership:archived-binding-conflict")
                for r in report.refusals)
 
 
@@ -476,7 +510,7 @@ phone = "+85200000001"
 uuid = "{SIGNAL_UUID}"
 username = "generated-handle"
 """
-    probe = _Probe(store, archive=(
+    probe = _Probe(store, graph[2], archive=(
         "op-archive", archive_identity, "default = \"deny\"\n"))
     *_, policy_path, export = graph
     export = _export_for(store, graph[1], graph[2], policy_path, probe=probe)
@@ -520,7 +554,7 @@ async def test_export_refuses_an_active_person_without_kratos_correlation(
     *_, policy_path, export = graph
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("untrustworthy:uncorrelated-person")
+    assert any(r.code.startswith("untrustworthy:uncorrelated-person")
                for r in report.refusals)
 
 
@@ -532,7 +566,7 @@ async def test_export_refuses_a_live_alias(graph):
     *_, policy_path, export = graph
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("ambiguous-ownership:alias-is-live")
+    assert any(r.code.startswith("ambiguous-ownership:alias-is-live")
                for r in report.refusals)
 
 
@@ -556,7 +590,7 @@ async def test_export_refuses_guild_and_dm_topology(tmp_path):
         export = _export_for(store, backend, registry, policy_path)
         report = await export.export(policy_path)
         assert report.outcome.status is OutcomeStatus.DENIED
-        assert any(r.startswith(want) for r in report.refusals)
+        assert any(r.code.startswith(want) for r in report.refusals)
 
 
 async def test_export_refuses_a_shared_kratos_identity(graph):
@@ -569,5 +603,135 @@ async def test_export_refuses_a_shared_kratos_identity(graph):
     *_, policy_path, export = graph
     report = await export.export(policy_path)
     assert report.outcome.status is OutcomeStatus.DENIED
-    assert any(r.startswith("ambiguous-ownership:shared-kratos-identity")
+    assert any(r.code.startswith("ambiguous-ownership:shared-kratos-identity")
                for r in report.refusals)
+
+
+async def test_export_refuses_an_open_room_even_when_everyone_is_allowed(
+    tmp_path,
+):
+    """`persons = "*"` is never frozen and never re-emitted: file `*`
+    admits identifiers managed has never registered — a widening no
+    allowlist can express — and the current roster would close the room
+    to senders managed admits dynamically. The whole export refuses."""
+    store = FakeBindingStore()
+    backend = FakeAuthorityBackend()
+    registry = FakeIdentityRegistry()
+    policy_path = _policy_file(tmp_path, OPEN_POLICY)
+    export = _export_for(store, backend, registry, policy_path)
+    _person(store, registry, "miles")
+    _person(store, registry, "ada")
+    _member(store, backend, "miles", OPEN_ROOM)
+    _member(store, backend, "ada", OPEN_ROOM)
+
+    report = await export.export(policy_path)
+    assert report.outcome.status is OutcomeStatus.DENIED
+    assert any(r.code == "unfaithful:open-room-dynamic"
+               for r in report.refusals)
+    assert report.bundle is None
+
+
+async def test_export_refuses_when_the_kratos_id_correlates_elsewhere(
+    graph,
+):
+    """The SQL correlation must lead to THIS person's record — a live
+    identity answering for another external id is a mismatch, not a fold."""
+    store, *_ = _seed(graph)
+    *_, registry, policy_path, export = graph
+    store.people["miles"] = ManagedPerson(
+        person_id="miles", lifecycle=PersonLifecycle.ACTIVE,
+        kratos_identity_id=registry.identities["ada"]["id"],
+        display_name="Miles")
+
+    report = await export.export(policy_path)
+    assert report.outcome.status is OutcomeStatus.DENIED
+    assert any(r.code == "untrustworthy:kratos-correlation-mismatch"
+               for r in report.refusals)
+
+
+async def test_export_refuses_when_the_correlated_identity_is_gone(graph):
+    store, *_ = _seed(graph)
+    *_, policy_path, export = graph
+    store.people["miles"] = ManagedPerson(
+        person_id="miles", lifecycle=PersonLifecycle.ACTIVE,
+        kratos_identity_id="kid-absent", display_name="Miles")
+
+    report = await export.export(policy_path)
+    assert report.outcome.status is OutcomeStatus.DENIED
+    assert any(r.code == "untrustworthy:kratos-correlation-missing"
+               for r in report.refusals)
+
+
+async def test_export_refuses_an_inactive_record_for_an_active_person(graph):
+    _seed(graph)
+    *_, registry, policy_path, export = graph
+    registry.identities["miles"]["state"] = "inactive"
+
+    report = await export.export(policy_path)
+    assert report.outcome.status is OutcomeStatus.DENIED
+    assert any(r.code == "untrustworthy:state-disagreement"
+               for r in report.refusals)
+
+
+async def test_export_refuses_when_the_topology_source_changed(graph):
+    """One immutable snapshot drives every phase; the source is re-read
+    before a bundle may appear — a changed file refuses rather than
+    publishing a stale cut. The snapshot here is self-consistent (a real
+    mid-run race's is); only the file on disk moved on."""
+    _seed(graph)
+    *_, policy_path, export = graph
+    stale = ManagedExport(
+        bindings=export.bindings, backend=export.backend,
+        topology=export.topology, access=export.access, probe=export.probe,
+        source_snapshot=(
+            load_policy(policy_path),
+            policy_path.read_text() + "\n# a later edit\n"))
+
+    report = await stale.export(policy_path)
+    assert report.outcome.status is OutcomeStatus.DENIED
+    assert any(r.code == "untrustworthy:source-changed"
+               for r in report.refusals)
+    assert report.bundle is None
+
+
+async def test_export_applies_archived_metadata_on_a_verified_subset(
+    graph,
+):
+    """Verified ownership, not identifier-set equality: the archived block
+    names ONE live identifier of a two-identifier account — the same
+    verified account owns both, so the authored username still applies."""
+    store, *_ = _seed(graph)
+    archive_identity = """\
+[persons.miles]
+name = "Miles"
+
+[[persons.miles.signal]]
+phone = "+85200000001"
+username = "generated-handle"
+"""
+    *_, policy_path, export = graph
+    probe = _Probe(store, graph[2], archive=(
+        "op-archive", archive_identity, "default = \"deny\"\n"))
+    export = _export_for(store, graph[1], graph[2], policy_path, probe=probe)
+
+    report = await export.export(policy_path)
+    assert report.outcome.status is OutcomeStatus.COMPLETE, report.refusals
+    emitted = tomllib.loads(report.bundle.identity_toml)
+    signal_blocks = emitted["persons"]["miles"]["signal"]
+    assert signal_blocks[0]["username"] == "generated-handle"
+
+
+async def test_export_preserves_the_kratos_labels_in_the_manifest(graph):
+    """Current Kratos labels have no file surface — the private manifest
+    carries the actual values, not a count."""
+    _seed(graph)
+    *_, registry, policy_path, export = graph
+    registry.identities["miles"]["traits"]["labels"] = {
+        "work": "Miles W", "home": "M"}
+
+    report = await export.export(policy_path)
+    assert report.outcome.status is OutcomeStatus.COMPLETE, report.refusals
+    manifest = json.loads(report.bundle.manifest_json)
+    miles = next(p for p in manifest["people"] if p["person_id"] == "miles")
+    assert miles["labels"] == {"home": "M", "work": "Miles W"}
+    assert "Miles W" not in report.bundle.identity_toml

@@ -2,8 +2,8 @@
   {
     "name": "export emits no suspended person's accounts",
     "file": "nora/people/app/managed_export_prepare.py",
-    "old": "        if not suspended:  # a suspended person holds no accounts in file mode",
-    "new": "        if True:  # a suspended person holds no accounts in file mode",
+    "old": "            if suspended:\n                # A suspended person holds no accounts in file mode — the",
+    "new": "            if False:\n                # A suspended person holds no accounts in file mode — the",
     "target": "tests/unit/test_managed_export.py::test_export_keeps_suspended_people_out_of_every_grant"
   },
   {
@@ -12,6 +12,13 @@
     "old": "            denied_known = [\n                pid for pid in sorted(known_ids)\n                if matrix[(scope0, pid, \"speak\")] is not Verdict.ALLOWED]",
     "new": "            denied_known = []",
     "target": "tests/unit/test_managed_export.py::test_export_refuses_an_open_room_that_denies_someone"
+  },
+  {
+    "name": "export never re-emits or freezes an open room",
+    "file": "nora/people/app/managed_export_verify.py",
+    "old": "            else:\n                refused.append(ExportRefusal(\n                    \"unfaithful:open-room-dynamic\", scope0.id))",
+    "new": "            else:\n                derived[(convo.platform, convo.primary_id)] = \"*\"",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_an_open_room_even_when_everyone_is_allowed"
   },
   {
     "name": "export refuses delegated management authority",
@@ -23,8 +30,8 @@
   {
     "name": "export refuses an unfinished journal",
     "file": "nora/people/app/managed_export_prepare.py",
-    "old": "        elif op.state in _OPEN_OPERATIONS:\n            refused.append(f\"incomplete-publication:operation:{op.kind}\")",
-    "new": "        elif False:\n            refused.append(f\"incomplete-publication:operation:{op.kind}\")",
+    "old": "        elif op.state in _OPEN_OPERATIONS:\n            refused.append(ExportRefusal(\n                \"incomplete-publication:operation\", f\"kind:{op.kind}\"))",
+    "new": "        elif False:\n            refused.append(ExportRefusal(\n                \"incomplete-publication:operation\", f\"kind:{op.kind}\"))",
     "target": "tests/unit/test_managed_export.py::test_export_refuses_incomplete_publication"
   },
   {
@@ -40,5 +47,40 @@
     "old": "                if speak is not view:",
     "new": "                if False:",
     "target": "tests/unit/test_managed_export.py::test_export_refuses_speak_view_divergence"
+  },
+  {
+    "name": "export verifies the correlated identity answers for this person",
+    "file": "nora/people/app/managed_export_prepare.py",
+    "old": "        if snapshot.identity_id != kid or snapshot.external_id != pid:",
+    "new": "        if False:",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_when_the_kratos_id_correlates_elsewhere"
+  },
+  {
+    "name": "export refuses a changed topology source before publishing",
+    "file": "nora/people/app/managed_export.py",
+    "old": "        if not unchanged:\n            refusal = ExportRefusal(\"untrustworthy:source-changed\")",
+    "new": "        if False:\n            refusal = ExportRefusal(\"untrustworthy:source-changed\")",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_when_the_topology_source_changed"
+  },
+  {
+    "name": "export verifies archived ownership before applying metadata",
+    "file": "nora/people/app/managed_export_prepare.py",
+    "old": "                if len(owners) > 1 or (\n                    owners\n                    and (account_owner[next(iter(owners))] != canonical\n                         or next(iter(owners)) in index)\n                ):",
+    "new": "                if len(owners) > 1:",
+    "target": "tests/unit/test_managed_export.py::test_export_refuses_an_archived_binding_that_moved"
+  },
+  {
+    "name": "the command prints bounded refusal codes only",
+    "file": "scripts/managed_identity_export.py",
+    "old": "    for code in dict.fromkeys(r.code for r in report.refusals):\n        print(f\"refused: {code}\")",
+    "new": "    for r in report.refusals:\n        print(f\"refused: {r.code}:{r.detail}\")",
+    "target": "tests/unit/test_managed_identity_export.py::test_refused_output_never_names_a_person_or_room"
+  },
+  {
+    "name": "the bundle publishes only into a fresh directory",
+    "file": "scripts/managed_identity_export.py",
+    "old": "        output.mkdir(mode=0o700, parents=True)",
+    "new": "        output.mkdir(mode=0o700, parents=True, exist_ok=True)",
+    "target": "tests/unit/test_managed_identity_export.py::test_export_refuses_an_empty_existing_directory"
   }
 ]

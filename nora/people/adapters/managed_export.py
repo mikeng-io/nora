@@ -5,12 +5,17 @@ adapts `managed_handoff` for the initial import."""
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.managed import Outcome, complete, unavailable
 from nora.domain.management import Scope, ScopeKind
+from nora.infra.ory import KratosIdentity
 from nora.infra.sql import managed_export
 from nora.people.app.managed_export_prepare import (
     ExportInventory,
+    IdentitySnapshot,
     InventoryAccount,
     InventoryBlock,
     InventoryIdentifier,
@@ -20,16 +25,46 @@ from nora.people.app.managed_export_prepare import (
 )
 
 
+class _KratosReader(Protocol):
+    """The read-only correlated-identity proof the export needs — satisfied
+    by the existing `KratosClient` (and by test readers over the fake
+    registry's records). `get_identity` never creates or mutates."""
+
+    async def get_identity(
+        self, identity_id: str
+    ) -> tuple[Outcome, KratosIdentity | None]: ...
+
+
 def _scope(kind: str, scope_id: str) -> Scope:
     return Scope(ScopeKind(kind), scope_id)
 
 
 class SqlExportProbe:
     """Probe the concrete installation — the complete inventory, including
-    the hidden rows the public port reads omit."""
+    the hidden rows the public port reads omit, and the correlated Kratos
+    record behind each `kratos_identity_id`."""
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(
+        self, engine: AsyncEngine, kratos: _KratosReader | None = None
+    ) -> None:
         self._engine = engine
+        self._kratos = kratos
+
+    async def identity_snapshot(
+        self, identity_id: str
+    ) -> tuple[Outcome, IdentitySnapshot | None]:
+        """The Kratos record at `identity_id` — read-only correlation proof."""
+        if self._kratos is None:
+            return unavailable("no-kratos-reader"), None
+        outcome, identity = await self._kratos.get_identity(identity_id)
+        if identity is None:
+            return outcome, None
+        return complete(), IdentitySnapshot(
+            identity_id=identity.identity_id,
+            external_id=identity.external_id,
+            state=identity.state,
+            traits=identity.traits,
+        )
 
     async def inventory(self) -> ExportInventory:
         rows = await managed_export.export_rows(self._engine)
