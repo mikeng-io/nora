@@ -64,7 +64,7 @@
   },
   {
     "name": "Discord roster result does not claim channel audience",
-    "file": "nora/people/adapters/tools.py",
+    "file": "nora/people/adapters/tools/__init__.py",
     "old": "if room.platform == \"discord\"\n                else \"this conversation\"",
     "new": "                if False else \"this conversation\"",
     "target": "tests/test_room_tools.py::test_group_members_on_discord_labels_the_guild_scope_not_the_channel"
