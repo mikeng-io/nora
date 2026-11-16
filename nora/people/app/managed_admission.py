@@ -730,13 +730,16 @@ class FileAdmission:
         checked = set(prepared.people)
         for formers in prepared.aliases.values():
             checked.update(formers)
+        unknown = f"{prepared.import_id}:unknown"
+        while unknown in checked:
+            unknown += ":unknown"
+        checked.add(unknown)
         for checked_id in sorted(checked):
             person_id = prepared.persons.subject_id_for(checked_id)
-            for scope, (platform, cid) in sorted(
-                prepared.room_scopes.items(), key=lambda kv: _scope_key(kv[0])
-            ):
-                expected = prepared.policy.is_allowed(
-                    platform=platform, conversation_id=cid, person_id=person_id)
+            for scope in sorted(wanted, key=_scope_key):
+                room = prepared.room_scopes.get(scope)
+                expected = room is not None and prepared.policy.is_allowed(
+                    platform=room[0], conversation_id=room[1], person_id=person_id)
                 for permit in ("speak", "view"):
                     verdict = await self.backend.check(
                         scope=scope, person_id=person_id, permit=permit)

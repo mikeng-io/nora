@@ -2,7 +2,7 @@
   {
     "name": "the authored allowlist is never canonicalized into a grant",
     "file": "nora/people/app/managed_admission.py",
-    "old": "            else {\n                # The file predicate answers on the CHECKED person's\n                # canonical id against the AUTHORED list — a retired-only\n                # entry therefore denies the survivor, never grants it.\n                pid for pid in people\n                if policy.is_allowed(\n                    platform=convo.platform,\n                    conversation_id=sorted(convo.ids)[0],\n                    person_id=pid,\n                )\n            }",
+    "old": "            else {\n                # The file predicate answers on the CHECKED person's\n                # canonical id against the AUTHORED list \u2014 a retired-only\n                # entry therefore denies the survivor, never grants it.\n                pid for pid in people\n                if policy.is_allowed(\n                    platform=convo.platform,\n                    conversation_id=sorted(convo.ids)[0],\n                    person_id=pid,\n                )\n            }",
     "new": "            else {persons.subject_id_for(pid) for pid in convo.persons}",
     "target": "tests/unit/test_managed_admission.py::test_apply_preserves_the_file_predicates_retired_id_semantics"
   },
@@ -40,5 +40,19 @@
     "old": "            return check_unavailable(\"unsupported subject shape\")",
     "new": "            continue",
     "target": "tests/unit/test_managed_admission.py::test_apply_reports_unavailable_for_a_subject_shape_it_cannot_name"
+  },
+  {
+    "name": "unknown subjects cannot receive access at readback",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "        checked.add(unknown)\n",
+    "new": "",
+    "target": "tests/unit/test_managed_admission.py::test_readback_refuses_access_outside_the_file_predicate[unknown]"
+  },
+  {
+    "name": "ancestor access must be denied at readback",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "            for scope in sorted(wanted, key=_scope_key):\n                room = prepared.room_scopes.get(scope)",
+    "new": "            for scope in sorted(prepared.room_scopes, key=_scope_key):\n                room = prepared.room_scopes.get(scope)",
+    "target": "tests/unit/test_managed_admission.py::test_readback_refuses_access_outside_the_file_predicate[ancestor]"
   }
 ]

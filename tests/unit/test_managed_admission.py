@@ -17,6 +17,7 @@ from nora.domain.managed import (
     OutcomeStatus,
     PersonLifecycle,
     Verdict,
+    allowed,
     complete,
     room_scope_id,
     unavailable,
@@ -642,3 +643,66 @@ async def test_readback_fails_closed_on_a_missing_containment_link(
     assert outcome.detail == "read-back-mismatch"
     journal = next(iter(store.operations.values()))
     assert journal.state is OperationJournalState.INCOMPLETE
+
+
+@pytest.mark.parametrize("resume", [False, True])
+@pytest.mark.parametrize("scope", [
+    Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a")),
+    Scope(ScopeKind.UNIT, "family"),
+    Scope(ScopeKind.WORKSPACE, "home"),
+])
+async def test_foreign_containment_on_every_scope_refuses_fresh_and_resume(
+    tmp_path, graph, scope, resume,
+):
+    store, backend, registry, admission = graph
+    identity, policy = _sources(tmp_path)
+    prepared = _prepare(identity, policy)
+    assert not isinstance(prepared, Outcome)
+    if resume:
+        await store.record_operation(OperationRecord(
+            operation_id=prepared.import_id, kind=IMPORT_KIND,
+            state=OperationJournalState.INCOMPLETE,
+            steps=MappingProxyType({}), snapshot=prepared.snapshot,
+        ))
+    before = dict(store.operations)
+    namespace = {ScopeKind.ROOM: "Room", ScopeKind.UNIT: "Unit", ScopeKind.WORKSPACE: "Workspace"}
+    backend.tuples.add((namespace[scope.kind], scope.id, "foreign", (
+        "subjectset", "Workspace", "generated-foreign-workspace")))
+    before_tuples = set(backend.tuples)
+    result = await admission.apply(identity, policy)
+    assert result.status is OutcomeStatus.DENIED
+    assert result.detail == "foreign-authority-state"
+    assert store.operations == before
+    assert not store.people and not store.accounts and not store.identity_holds
+    assert not registry.identities and backend.tuples == before_tuples
+    backend.tuples = set()
+    result = await admission.apply(identity, policy)
+    assert result.status is OutcomeStatus.COMPLETE, result.detail
+    assert store.people and registry.identities
+
+
+class _OvergrantOutsideFile(FakeAuthorityBackend):
+    def __init__(self, leak):
+        super().__init__()
+        self.leak = leak
+
+    async def check(self, *, scope, person_id, permit):
+        if permit == "view" and (
+            (self.leak == "unknown" and person_id.endswith(":unknown"))
+            or (self.leak == "ancestor" and scope.kind is ScopeKind.UNIT)
+        ):
+            return allowed()
+        return await super().check(scope=scope, person_id=person_id, permit=permit)
+
+
+@pytest.mark.parametrize("leak", ["unknown", "ancestor"])
+async def test_readback_refuses_access_outside_the_file_predicate(tmp_path, graph, leak):
+    store, _, registry, _ = graph
+    backend = _OvergrantOutsideFile(leak)
+    admission = FileAdmission(
+        bindings=store, backend=backend, registry=registry, probe=_Probe(store))
+    identity, policy = _sources(tmp_path)
+    outcome = await admission.apply(identity, policy)
+    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert outcome.detail == "read-back-mismatch"
+    assert next(iter(store.operations.values())).state is OperationJournalState.INCOMPLETE
