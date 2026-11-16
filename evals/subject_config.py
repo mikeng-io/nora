@@ -55,6 +55,7 @@ def forced_off(values: dict[str, object]) -> tuple[str, ...]:
     return FORCE_OFF
 
 _KEY = re.compile(r"^(\s*)([A-Za-z_][\w-]*)(\s*=\s*)(.*)$")
+_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def _flat(table: dict, prefix: str = ""):
@@ -71,6 +72,13 @@ def _fmt(value: object) -> str:
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return repr(value)
+    if isinstance(value, dict):
+        # A table stays a table. Quoting str(value) would emit "{'a': 1}",
+        # which parses back as a string and the drift check refuses.
+        return "{" + ", ".join(
+            f"{key if _BARE_KEY.match(key) else _fmt(key)} = {_fmt(item)}"
+            for key, item in value.items()
+        ) + "}"
     if isinstance(value, (list, tuple)):
         # An array stays an array. Quoting its repr would turn
         # `sources = ["google_drive"]` into the STRING "['google_drive']", which the
