@@ -183,23 +183,21 @@ from master.
 
 ## Bounded independent review
 
-Reviewers report every finding they can ground; NONE is valid. Each names a
-reachable path, the harm, the failed C and whether this diff caused it, and
-pre-existing findings are marked. The orchestrator triages them and carries at
-most six into the PR, most severe first.
+`REVIEW.md` owns review scope, finding quality and the return format;
+`nora-review` owns the steps. The orchestrator preserves all grounded findings
+in the review receipt, and groups at most six classes in the PR summary with
+a link to the rest. Non-blocking findings are useful input, not new scope.
 
 | Verdict | Consequence |
 |---|---|
-| BLOCKER: this diff causes reachable wrong output, data loss, disclosure, crash or a weakened gate | Fix and verify; only this verdict buys another round |
+| BLOCKER: this diff materially defeats agreed completion, causes reachable data loss, disclosure or crash, or weakens a required gate | Fix and verify; only this verdict buys another round |
 | FIX-IF-CHEAP: a real in-diff defect with bounded harm | Fix if it takes minutes within the slice; otherwise record a limitation; no new round |
 | ISSUE: real but pre-existing or out of scope | Use the existing Linear work item or GitHub defect report; file only actionable work with no home (`nora-decision`); never blocks |
 | DROP: hypothetical, contrived, style or unrelated | One-line disposition |
 
-- Severity follows reachable consequence, not recurrence, confidence or repair
-  effort. One remedy for several instances is one defect class: group siblings
-  on the first report, and do not buy rounds by finding new inputs for a known
-  class. A repair-induced finding names its predecessor and its distinct
-  failure.
+- Severity measures consequence; disposition determines action. Preserve the
+  source finding when triaging it. A low-severity observation cannot become a
+  blocker merely by recurring; a material failure needs its scenario and impact.
 - Verify each finding at the cited line with the right check; production fixes
   follow `nora-prove-fix`. A clean review does not replace the gate or a
   required live read-back.

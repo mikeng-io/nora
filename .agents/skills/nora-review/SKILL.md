@@ -1,46 +1,37 @@
 ---
 name: nora-review
-description: Review a Nora change against its original scope and acceptance at an assigned none/light/full tier. Load for code review, fix-diff review or scope-drift audit. Not for implementing fixes, running an unrequested repository-wide audit, merging or deploying.
+description: Review an agreed Nora change, re-check a repair delta, or audit scope/acceptance at the assigned tier. Return coverage, grounded findings and limits under REVIEW.md; no implementation or unrequested repository audit.
 ---
 
-# nora-review
+# Nora review
 
-For recurring database reads, inspect work as history grows with a fixed pending
-batch, and admission across cursor/input/commit boundaries. Account for held
-reader elections; verify foreground progress and release on failure/cancellation.
+Read [REVIEW.md](../../../REVIEW.md) for the review contract and
+[ORCHESTRATION.md](../../../ORCHESTRATION.md#bounded-independent-review) for tier,
+independence, dispositions and round limits. This skill is the procedure.
 
-`ORCHESTRATION.md` owns tier selection, independence, finding dispositions and
-stopping rules; `REVIEW.md` is the shared reviewer contract. Read both first.
-This skill supplies the order, not another policy or automatic enforcement.
-
-1. **Bind the input.** Read the original Linear work brief (or direct operator brief) and
-   referenced design invariants at their named revision, then the PR's delivery claims.
-   Record the outcome, non-goals, obligations, assigned tier and review base/head.
-   Check: missing or conflicting requirements return to scoping; do not invent a
-   specification from the implementation or expand the brief's unknowns.
-2. **Read the actual candidate.** Confirm checkout/head/status and inspect
-   `git diff <base>...<head>`. For round two use exactly
-   `git diff <previously-reviewed-head>..<head>` and prior findings.
-   Check: the inspected objects match the brief. Preserve unrelated work and
-   report any unreviewed delta; do not repair or change the candidate.
-3. **Measure the agreed obligations.** At the assigned tier's policy depth, trace
-   the changed behavior through affected callers and inspect actual tests/results,
-   model inputs or runtime read-back as the obligation requires. Reuse applicable
-   evidence with its revision and limits; run only necessary authorized focused
-   checks. A refused test lease is unavailable; never bypass it.
-   Check: classify each obligation met, unmet or unavailable with a locator.
-   A structural check proves structure, not runtime behavior. Missing evidence
-   does not establish missing code, and passing tests do not establish deployment.
-   **Documents and comments** (`nora-design`, AGENTS.md «Design, documents
-   and comments»): new text placed beside the section that already owns its
-   subject, or repeating or contradicting it, is a finding; so is a bundle
-   holding spec, plan, log or status claims, an architecture change with no
-   bundle edit, or a comment that retells history.
-4. **Report and stop.** Apply `REVIEW.md`'s finding contract and the policy's
-   dispositions/class grouping. Lead with APPROVE or REQUEST CHANGES, name the
-   base/head/tier, and give acceptance coverage, findings and unverified limits.
-   Check: each finding is grounded in a requirement/rule and reachable harm;
-   NONE is valid. Return the report to the orchestrator without auto-fixing,
-   launching another reviewer, filing follow-up issues or declaring the task Done.
-   The orchestrator triages and closes or routes bounded repair/replanning under
-   the policy; the reviewer does not extend the round sequence.
+1. **Identify the review.** Read the work/operator brief and required design
+   references. Record review type, obligations, non-goals, tier and base/head.
+   Check: the requested result is understandable without deriving intent from
+   the candidate. Missing material requirements return to scoping.
+2. **Inspect the candidate.** Verify checkout/head/status; read
+   `git diff <base>...<head>`. A repair re-check uses
+   `git diff <previously-reviewed-head>..<head>` plus unresolved findings.
+   Check: the actual candidate matches the assignment; preserve unrelated work.
+3. **Test the claims.** Trace affected callers and failure paths to the tier's
+   depth. Read actual checks/results and model inputs or runtime evidence only
+   where the claim needs them. Run only necessary authorized focused checks;
+   a refused test lease is unavailable, never bypassed.
+   - For recurring database reads, check generated history-size scaling with
+     fixed pending work, admission/commit boundaries, held reader elections,
+     foreground progress and release on failure/cancellation.
+   - For architecture/docs, inspect the assigned subject's owner and changed
+     cross-references; assess contradictions or misplaced responsibilities,
+     not unrelated style or a new architecture of the reviewer's own.
+   Check: every required condition has met/unmet/unavailable evidence and limits;
+   inspect relevant siblings before first reporting a defect class.
+4. **Return and stop.** Use REVIEW.md's coverage/findings/limits format. Complete
+   the assigned coverage rather than stopping at the first finding. For a
+   re-check, distinguish unresolved classes from genuinely new repair defects.
+   Check: only supported blockers or required review-evidence gaps cause
+   REQUEST CHANGES; non-blocking harvest does not trigger another round.
+   Return to the orchestrator without repairing, filing tasks or closing work.
