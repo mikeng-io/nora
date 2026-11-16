@@ -286,6 +286,24 @@ async def test_missing_recording_is_an_sdk_error_without_obtaining_a_subject(
     sdk_evidence.record("expected_invalid_capture")
 
 
+async def test_a_conflicting_measurement_refuses_before_sdk_composition(sdk_evidence):
+    from evals.measurement import BEHAVIORAL, PROTOCOL
+
+    PROTOCOL.bind(sdk_evidence)
+    PROTOCOL.bind(sdk_evidence)
+    before = read_events(sdk_evidence.path)
+    bindings = [e for e in before if e["kind"] == "measurement_bound"]
+    assert len(bindings) == 1
+    assert bindings[0]["measurement"] == "protocol-rehearsal"
+    assert sdk_evidence.metadata["measurement"] == "protocol-rehearsal"
+    with pytest.raises(EvidenceError) as refused:
+        await backbone._drive(Case(name="foreign-claim", input="generated"),
+                              Spec(source_url="unused", measurement=BEHAVIORAL))
+    added = read_events(sdk_evidence.path)[len(before):]
+    assert added == []
+    assert str(refused.value) == "measurement_claim_conflict"
+
+
 def test_canonical_cursor_reads_only_new_private_bytes(sdk_evidence, tmp_path, monkeypatch):
     import io
     import shutil

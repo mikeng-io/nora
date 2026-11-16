@@ -206,6 +206,60 @@ def test_the_saved_report_serializes_the_three_axes_once(tmp_path):
         assert status in html
 
 
+@pytest.mark.parametrize("mode", ["protocol-rehearsal", "behavioral-evaluation"])
+@pytest.mark.parametrize("verdict", ["PASS", "FAIL", "REVIEW"])
+def test_the_declared_measurement_reaches_cognition_json_and_html(tmp_path, mode, verdict):
+    report = complete_report(tmp_path)
+    report.update(status=verdict, run={"measurement": mode})
+    wake = report["cases"][0]["wakes"][0]
+    wake["expectations"][0]["verdict"] = verdict
+    path = tmp_path / "wake-0-11.json"
+    frozen = json.loads(path.read_text())
+    frozen["expectations"] = wake["expectations"]
+    path.write_text(json.dumps(frozen))
+    write_report(tmp_path, report)
+    saved = json.loads((tmp_path / "report.json").read_text())
+    expected = verdict if mode == "behavioral-evaluation" else "UNMEASURED"
+    assert saved["coverage"]["status"] == "PASS"
+    assert saved["outcome"]["execution"]["status"] == "PASS"
+    assert saved["outcome"]["validity"]["status"] == "PASS"
+    assert saved["status"] == verdict
+    assert saved["behavior"] == saved["run"]["behavior"] == expected
+    assert saved["outcome"]["behavior"]["status"] == expected
+    assert saved["outcome"]["behavior"]["scope"] == mode
+    html = render(tmp_path).read_text()
+    assert mode in html
+    assert f"<th>behaviour</th><td>{expected}</td>" in html
+
+
+@pytest.mark.parametrize("receipt,expected", [(None, "UNKNOWN"), ("ERROR", "ERROR")])
+def test_cognition_behavior_requires_valid_evidence(tmp_path, receipt, expected):
+    report = complete_report(tmp_path)
+    report["run"] = {"measurement": "behavioral-evaluation"}
+    report["evidence"] = {"status": receipt}
+    write_report(tmp_path, report)
+    saved = json.loads((tmp_path / "report.json").read_text())
+    assert saved["outcome"]["execution"]["status"] == "PASS"
+    assert saved["outcome"]["behavior"]["status"] == expected
+    assert saved["behavior"] == saved["run"]["behavior"] == expected
+    assert saved["status"] == "ERROR"
+
+
+def test_rejudging_does_not_inherit_the_original_behavioral_claim(tmp_path):
+    report = complete_report(tmp_path)
+    report["run"] = {"measurement": "behavioral-evaluation"}
+    report["rejudged"] = {"execution": "PASS"}
+    report["rejudge_evidence"] = {"status": "PASS"}
+    write_report(tmp_path, report)
+    saved = json.loads((tmp_path / "report.json").read_text())
+    assert saved["outcome"]["execution"]["status"] == "PASS"
+    assert saved["outcome"]["validity"]["status"] == "PASS"
+    assert saved["behavior"] == "UNMEASURED"
+    assert saved["rejudged"]["behavior"] == "UNMEASURED"
+    assert saved["rejudged"]["measurement"] == "protocol-rehearsal"
+    assert saved["run"] == {"measurement": "behavioral-evaluation"}
+
+
 def test_an_unsettled_wake_is_execution_unknown_not_pass(tmp_path):
     report = complete_report(tmp_path)
     report["cases"][0]["wakes"][1] = {

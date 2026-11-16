@@ -27,6 +27,7 @@ from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from evals.measurement import PROTOCOL, Measurement, for_world
 from nora.subject.circle import create_sql_engine
 from nora.subject.effects import (
     effect_boundary,
@@ -48,7 +49,7 @@ from scripts.cognition_loop.accounting import write_report
 from scripts.cognition_loop.cases import Expectation
 from scripts.cognition_loop.egress import assert_no_egress
 from scripts.cognition_loop.judges import judge_history_entry
-from scripts.cognition_loop.verdicts import ERROR, WAKE_ERRED, Rollup
+from scripts.cognition_loop.verdicts import ERROR, FAIL, PASS, REVIEW, WAKE_ERRED, Rollup
 from scripts.memory_graph_spike import Judges
 
 from .domain import Case, Outcome
@@ -76,7 +77,7 @@ def _report(case: Case, unit: str, roll: Rollup,
         for expectation in occasion.get("expectations", []):
             expectation.pop("verdict_obj", None)
     return {
-        "status": roll.verdict, "mode": _MODE, "behavior": "UNMEASURED",
+        "status": roll.verdict, "mode": _MODE,
         "version": version,
         "case": case.name, "unit": unit,
         "errors": roll.errors,
@@ -367,6 +368,8 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
     if world is None or getattr(world, "wire_actions", None) is None:
         return Outcome(admitted=None, source="fail_closed",
                        error="the case's services are not a generated journey world")
+    measurement = for_world(world, Measurement(
+        mode=evidence.metadata.get("measurement", PROTOCOL.mode)))
     plan = dict((case.metadata or {}).get("journey") or {})
     expectations = plan.get("expectations") or []
     output = evidence.path / f"journey-{case.name}"
@@ -406,14 +409,13 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
     report = {
         "status": roll.verdict,
         "mode": _MODE,
-        "behavior": "UNMEASURED",
         "version": version,
         "expected_cases": json.loads(json.dumps([expected])),
         "cases": [case_report],
         "errors": roll.errors,
         "run": {
             "mode": _MODE,
-            "behavior": "UNMEASURED",
+            "measurement": measurement.mode,
             "claim": "autonomous-live-journey",
             "execution": "live-clock",
             "judges": [str(m) for m in plan.get("judges") or ()],
@@ -443,13 +445,18 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
     evidence.record("journey_report", status=report["status"], ref=output.name,
                     expectations=len(expectations),
                     wakes=len(wakes_report))
-    said: tuple[str, ...] = ()
+    said = (tuple(await read_messages(subject))
+            if report["status"] in (PASS, FAIL, REVIEW) else ())
+    return _journey_result(report, said=said)
+
+
+def _journey_result(report: dict[str, Any], *, said: tuple[str, ...]) -> Outcome:
+    """Valid semantic FAIL/REVIEW is a judgment, not a task execution error."""
     error = None
-    if report["status"] != "PASS":
+    if report["status"] not in (PASS, FAIL, REVIEW):
         error = f"autonomous journey {report['status'].lower()}: " + (
-            "; ".join(str(e) for e in roll.errors) or "see the retained report")
-    else:
-        said = tuple(await read_messages(subject))
+            "; ".join(str(e) for e in report.get("errors") or [])
+            or "see the retained report")
     return Outcome(admitted=None, said=said, error=error,
                    source="model" if error is None else "fail_closed",
                    judged="" if error is not None else report["status"],

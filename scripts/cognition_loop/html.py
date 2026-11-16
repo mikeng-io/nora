@@ -103,6 +103,7 @@ def _run(report: dict[str, Any], budget: dict[str, Any] | None) -> str:
             ("diff sha256", run.get("diff_sha256")),
             ("lockfile sha256", run.get("lockfile_sha256")),
             ("mode", run.get("mode")),
+            ("measurement", run.get("measurement")),
             ("model behavior", run.get("behavior")),
             ("config sha256", run.get("config_sha256")),
             ("subject config sha256", run.get("subject_config_sha256")),
@@ -147,6 +148,7 @@ def _run(report: dict[str, Any], budget: dict[str, Any] | None) -> str:
         measurement = report["rejudged"]
         parts.insert(1, "<h3>Rejudgement</h3>" + _kv([
             ("case", measurement.get("case")), ("mode", measurement.get("mode")),
+            ("measurement", measurement.get("measurement")),
             ("execution", measurement.get("execution")),
             ("model behavior", measurement.get("behavior")),
         ]))

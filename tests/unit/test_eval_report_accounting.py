@@ -56,6 +56,19 @@ def test_journey_task_error_cannot_be_cleared_by_a_retained_verdict():
     assert report.detailed_results[0][0].label == "ERROR"
 
 
+@pytest.mark.parametrize("status", ["PASS", "FAIL", "REVIEW", "ERROR"])
+def test_the_journey_producer_preserves_semantic_judgments(status):
+    from evals.rebuilt.autonomous_journey import _journey_result
+
+    outcome = _journey_result({"status": status, "errors": []}, said=("generated",))
+    valid = status != "ERROR"
+    assert (outcome.error is None) is valid
+    assert outcome.judged == (status if valid else "")
+    assert outcome.said == ("generated",)
+    _, native = _journey_report(outcome.judged, error=outcome.error)
+    assert native.detailed_results[0][0].label == status
+
+
 @pytest.mark.parametrize("status,reviewed,accepted", [
     ("PASS", 0, True), ("REVIEW", 1, False),
 ])

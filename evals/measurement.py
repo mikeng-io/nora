@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from evals.outcome import ERROR, FAIL, PASS, REVIEW, UNKNOWN, UNMEASURED
+from nora.subject.eval_evidence import EvidenceError
 
 #: The claim a run binds into its grading selection and stamps per draw.
 PROTOCOL_REHEARSAL = "protocol-rehearsal"
@@ -45,6 +46,15 @@ class Measurement:
     def phrase(self) -> str:
         """The run line's prose form (`mode: <phrase>`)."""
         return "behavioral evaluation" if self.behavioral else "protocol rehearsal"
+
+    def bind(self, evidence: Any) -> None:
+        """Bind before dispatch; a run cannot change its measurement claim."""
+        declared = evidence.metadata.get("measurement")
+        if declared is not None and declared != self.mode:
+            raise EvidenceError("measurement_claim_conflict")
+        if declared is None:
+            evidence.record("measurement_bound", measurement=self.mode)
+            evidence.metadata["measurement"] = self.mode
 
     def per_draw(self, *, error: Any, judged: Any) -> str:
         """`NORA_BEHAVIOR` on one draw's `environment_state`.

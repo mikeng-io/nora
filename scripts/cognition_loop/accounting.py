@@ -8,7 +8,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from evals.outcome import UNKNOWN, UNMEASURED, axis
+from evals.measurement import PROTOCOL, Measurement
+from evals.outcome import UNKNOWN, axis
 from nora.subject.eval_evidence import EvidenceError
 from scripts.cognition_loop.cases import Case, DeclaredTurn
 
@@ -367,21 +368,11 @@ def _canonical_outcome(trajectory: Any, *, unit: Any, wake_id: Any,
 
 
 def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
-    """The three result axes, from the same rows the denominators counted.
-
-    Execution answers whether every expected wake ran and settled — a
-    wake counts only on the closed `cognition_wake_outcome` its own
-    captured effects recorded for its candidate wake, unit and session
-    (NULL for a typed no-session); a failed or foreign receipt is an
-    error, a missing one stays unestablished, never assumed. Validity
-    answers whether the measurement reached its consumers intact:
-    coverage plus the evidence receipt together, never paired event
-    counts alone. Behaviour carries the protocol verdict counts under
-    the path's own claim scope — `UNMEASURED` as a production behaviour
-    claim.
-    """
+    """Canonical execution, validity and declared behavior from reconciled rows."""
     rejudged = report.get("rejudged")
     run = report.get("run") or {}
+    measurement = Measurement(mode=(rejudged if rejudged is not None else run).get(
+        "measurement", PROTOCOL.mode))
     mode = run.get("mode") or ("protocol-rehearsal" if rejudged else None)
     scope = ("protocol-rehearsal" if rejudged
              else "inspect-only" if mode == "inspect-only"
@@ -484,7 +475,10 @@ def outcome(report: dict[str, Any], coverage: dict[str, Any]) -> dict[str, Any]:
     return {
         "execution": execution,
         "validity": axis(valid, scope=scope, causes=validity_causes),
-        "behavior": axis(UNMEASURED, scope=scope, verdicts=verdicts),
+        "behavior": axis(measurement.behavior_status(
+            verdicts=verdicts, unanswered=0,
+            execution=execution["status"], validity=valid),
+            scope=measurement.mode, verdicts=verdicts),
     }
 
 
@@ -502,5 +496,11 @@ def write_report(output: Path, report: dict[str, Any]) -> None:
             or report["outcome"]["validity"]["status"] != "PASS":
         # A required axis still unknown or errored is never a report PASS.
         report["status"] = "ERROR"
+    report["behavior"] = report["outcome"]["behavior"]["status"]
+    current = report.get("rejudged") if report.get("rejudged") is not None else report.get("run")
+    if isinstance(current, dict):
+        current["behavior"] = report["behavior"]
+        if scope := report["outcome"]["behavior"].get("scope"):
+            current["measurement"] = scope
     (output / "report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")

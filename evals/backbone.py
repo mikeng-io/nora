@@ -1598,6 +1598,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
 
     if (evidence := current()) is None:
         return _measured_result(await _drive_uncaptured(case, spec), spec.measurement)
+    spec.measurement.bind(evidence)
     with evidence.case(
             case.name or "unnamed", input=case.input,
             metadata={"case": case.model_dump(mode="json"), "entry": spec.entry}):
@@ -2149,8 +2150,7 @@ async def _drive_journey(case: Case, spec: Spec, *, recording: Any) -> dict[str,
                               trigger=subject.cfg.engagement.trigger.text),
                 now_ms=int(now.timestamp() * 1000),
             )
-            if environment.guarded:
-                environment.check()
+            environment.check()
             report_ref = None
             if evidence is not None:
                 for event in reversed(read_events(evidence.path)):
