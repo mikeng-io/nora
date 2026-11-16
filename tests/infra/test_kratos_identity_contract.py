@@ -10,13 +10,14 @@ from aiohttp import web
 from nora.domain.managed import OutcomeStatus
 from nora.infra.ory.kratos import KratosClient
 from nora.people.adapters.kratos_registry import KratosIdentityRegistry
+from nora.people.adapters.managed_handoff import KratosAdmission
 
 
 @pytest.fixture
 async def api(aiohttp_server):
     state = {"external": "generated-person", "identity": str(uuid4()),
              "body": None, "paths": [], "session_delete": 204, "sessions": [],
-             "identity_get": 200}
+             "identity_get": 200, "supplied": None}
 
     async def handler(request):
         state["paths"].append(request.raw_path)
@@ -27,6 +28,9 @@ async def api(aiohttp_server):
         if request.method == "POST" and request.path == "/admin/identities":
             supplied = await request.json()
             assert supplied["external_id"] == state["external"]
+            state["supplied"] = supplied
+            if "metadata_admin" in supplied:
+                body["metadata_admin"] = supplied["metadata_admin"]
             return web.json_response(body if state["body"] is None else state["body"], status=201)
         prefix = "/admin/identities/by/external/"
         if request.method == "GET" and request.raw_path.startswith(prefix):
@@ -90,6 +94,53 @@ async def test_create_cannot_correlate_the_person_to_a_foreign_response(api):
     state["body"] = {"id": state["identity"], "external_id": "another-person",
                      "state": "active", "traits": {}}
     outcome, identity = await client.create_identity(external_id=state["external"], traits={})
+    assert outcome.status is OutcomeStatus.UNAVAILABLE and identity is None
+
+
+async def test_create_writes_admin_metadata_and_the_read_surfaces_it(api):
+    """The durable admission marker rides the remote write itself and comes
+    back on both the create response and the external-id read."""
+    client, state = api
+    marker = {"nora_admission": {
+        "import_id": "file-admission:generated", "effect_sha256": "generated-effect"}}
+    outcome, identity = await client.create_identity(
+        external_id=state["external"], traits={}, metadata_admin=marker)
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert state["supplied"]["metadata_admin"] == marker
+    assert identity is not None and identity.metadata_admin == marker
+    state["body"] = {"id": state["identity"], "external_id": state["external"],
+                     "state": "active", "traits": {}, "metadata_admin": marker}
+    outcome, identity = await client.get_by_external_id(state["external"])
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert identity is not None and identity.metadata_admin == marker
+
+
+async def test_admission_seam_moves_the_marker_as_typed_values(api):
+    """`KratosAdmission` carries the owner marker into the remote create and
+    returns the concrete record — typed values only, the judgement stays
+    with the caller."""
+    client, state = api
+    admission = KratosAdmission(client)
+    marker = {"nora_admission": {
+        "import_id": "file-admission:generated", "effect_sha256": "generated-effect"}}
+    outcome, view = await admission.create(
+        external_id=state["external"], traits={}, owner=marker)
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert state["supplied"]["metadata_admin"] == marker
+    assert view is not None and view.metadata_admin == marker
+    state["body"] = {"id": state["identity"], "external_id": state["external"],
+                     "state": "active", "traits": {}, "metadata_admin": marker}
+    outcome, view = await admission.read(external_id=state["external"])
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert (view is not None and view.identity_id == state["identity"]
+            and view.metadata_admin == marker)
+
+
+async def test_a_non_object_admin_metadata_is_malformed(api):
+    client, state = api
+    state["body"] = {"id": state["identity"], "external_id": state["external"],
+                     "state": "active", "traits": {}, "metadata_admin": "not-an-object"}
+    outcome, identity = await client.get_by_external_id(state["external"])
     assert outcome.status is OutcomeStatus.UNAVAILABLE and identity is None
 
 

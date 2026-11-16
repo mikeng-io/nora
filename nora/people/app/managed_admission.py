@@ -59,10 +59,16 @@ from nora.domain.managed import (
 from nora.domain.managed_ports import (
     AuthorityBackend,
     BindingStore,
-    IdentityRegistry,
     ScopedRelation,
 )
 from nora.domain.management import MANAGEMENT_PERMITS, Scope, ScopeKind
+from nora.people.app.managed_admission_identity import (
+    AdmissionKratos,
+    admission_marker,
+    ensure_owned,
+    identity_owned,
+    initial_traits_match,
+)
 from nora.people.app.managed_ops import _finish, _pending, _step_done
 from nora.persons import Persons, PersonsError, load_persons
 from nora.policy import Policy, PolicyError, load_policy
@@ -364,12 +370,13 @@ def plan(identity_path: Path, policy_path: Path) -> AdmissionPlan:
 
 @dataclass(frozen=True)
 class FileAdmission:
-    """The installation-only admission service. `bindings`/`backend`/
-    `registry` are the managed backend's own ports — the same objects
-    `managed_services` composes — and `probe` the SQL-aware target seam."""
+    """The installation-only admission service. `bindings`/`backend` are the
+    managed backend's own ports — the same objects `managed_services`
+    composes — `kratos` the concrete owned-create/read seam, and `probe`
+    the SQL-aware target seam."""
     bindings: BindingStore
     backend: AuthorityBackend
-    registry: IdentityRegistry
+    kratos: AdmissionKratos
     probe: AdmissionProbe
 
     async def assess(self, identity_path: Path, policy_path: Path) -> Outcome:
@@ -553,14 +560,13 @@ class FileAdmission:
         return None
 
     async def _kratos_fresh(self, prepared: _Prepared) -> Outcome | None:
-        """A fresh claim refuses an identity already holding an imported person's external_id."""
+        """A fresh claim refuses a held external_id — every record there is foreign."""
         for person_id in sorted(prepared.people):
-            state = await self.registry.identity_state(external_id=person_id)
-            if state.verdict is Verdict.UNKNOWN_SCOPE:
-                continue
-            if state.verdict is Verdict.UNAVAILABLE:
-                return unavailable(state.detail)
-            return denied("kratos-correlation-present")
+            outcome, view = await self.kratos.read(external_id=person_id)
+            if view is not None:
+                return denied("kratos-correlation-present")
+            if outcome.status is not OutcomeStatus.DENIED:
+                return unavailable(outcome.detail or "identity-unconfirmed")
         return None
 
     # -- the journaled steps ----------------------------------------------------
@@ -623,15 +629,20 @@ class FileAdmission:
         return complete()
 
     async def _identities_step(self, prepared: _Prepared) -> Outcome:
+        """Create each identity stamped with this import's durable marker."""
+        marker = admission_marker(
+            import_id=prepared.import_id,
+            effect_sha256=prepared.snapshot["effect_sha256"],
+        )
         for person_id, plan in sorted(prepared.people.items()):
-            outcome, identity_id = await self.registry.ensure_identity(
+            outcome, identity_id = await ensure_owned(
+                self.kratos,
                 external_id=person_id,
                 traits={"display_name": plan.display_name, "social": plan.social},
+                marker=marker,
             )
-            if outcome.status is not OutcomeStatus.COMPLETE:
-                return outcome
             if identity_id is None:
-                return unavailable("identity-unconfirmed")
+                return outcome
             outcome = await self.bindings.correlate_kratos(
                 person_id=person_id, kratos_identity_id=identity_id)
             if outcome.status is not OutcomeStatus.COMPLETE:
@@ -684,15 +695,30 @@ class FileAdmission:
         return complete()
 
     async def _readback_step(self, prepared: _Prepared) -> Outcome:
-        """Fail-closed agreement: bindings, Kratos, memberships, Keto facts, verdict matrix."""
+        """Fail-closed agreement: bindings, owned Kratos records, memberships, Keto."""
+        marker = admission_marker(
+            import_id=prepared.import_id,
+            effect_sha256=prepared.snapshot["effect_sha256"],
+        )
         for person_id in sorted(prepared.people):
+            plan = prepared.people[person_id]
             person = await self.bindings.person(person_id)
             if (person is None or person.lifecycle is not PersonLifecycle.ACTIVE
                     or person.kratos_identity_id is None):
                 return unavailable("read-back-mismatch")
-            state = await self.registry.identity_state(external_id=person_id)
-            if state.verdict is not Verdict.ALLOWED:
-                return unavailable("identity-unconfirmed")
+            outcome, view = await self.kratos.read(external_id=person_id)
+            if view is None:
+                if outcome.status is OutcomeStatus.DENIED:
+                    return unavailable("identity-absent")
+                return unavailable(outcome.detail)
+            if (view.external_id != person_id
+                    or view.identity_id != person.kratos_identity_id
+                    or view.state != "active"
+                    or not identity_owned(view, marker)
+                    or not initial_traits_match(
+                        view,
+                        display_name=plan.display_name, social=plan.social)):
+                return unavailable("read-back-mismatch")
             member_scopes = {
                 scope for pid, scope in prepared.memberships if pid == person_id
             }

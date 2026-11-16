@@ -24,7 +24,8 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people.adapters.managed_handoff import SqlAdmissionProbe
 from nora.people.app.managed_admission import FileAdmission, plan
-from nora.testing.managed import FakeAuthorityBackend, FakeIdentityRegistry
+from nora.testing.managed import FakeAuthorityBackend
+from tests.fakes import FakeAdmissionKratos
 
 IDENTITY = """\
 [persons.miles]
@@ -97,11 +98,11 @@ def sources(tmp_path):
     return identity_path, policy_path
 
 
-def admission(engine, backend=None, registry=None):
+def admission(engine, backend=None, kratos=None):
     return FileAdmission(
         bindings=SqlBindingStore(engine),
         backend=backend or FakeAuthorityBackend(),
-        registry=registry or FakeIdentityRegistry(),
+        kratos=kratos or FakeAdmissionKratos(),
         probe=SqlAdmissionProbe(engine),
     )
 
@@ -180,8 +181,8 @@ async def test_fresh_engine_resumes_the_interrupted_import(engine, database, sou
     """An outage mid-run leaves the journaled steps; a fresh engine and
     service finish exactly the missing work."""
     backend = _NoWrites()
-    registry = FakeIdentityRegistry()   # Kratos persists — only the process/engine restarts
-    service = admission(engine, backend, registry)
+    kratos = FakeAdmissionKratos()   # Kratos persists — only the process/engine restarts
+    service = admission(engine, backend, kratos)
     identity_path, policy_path = sources
     first = await service.apply(identity_path, policy_path)
     assert first.status is OutcomeStatus.UNAVAILABLE
@@ -191,7 +192,7 @@ async def test_fresh_engine_resumes_the_interrupted_import(engine, database, sou
     restarted = create_sql_engine(database)
     try:
         backend.writes_ok = True
-        resumed = admission(restarted, backend, registry)
+        resumed = admission(restarted, backend, kratos)
         outcome = await resumed.apply(identity_path, policy_path)
         assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
         store = SqlBindingStore(restarted)
@@ -206,5 +207,64 @@ async def test_fresh_engine_resumes_the_interrupted_import(engine, database, sou
         assert journal.snapshot["sources"] == {
             "identity_toml": IDENTITY, "policy_toml": POLICY,
         }
+    finally:
+        await restarted.dispose()
+
+
+class _DropFirstCorrelate:
+    """The real `SqlBindingStore` behind a one-shot fault — the first
+    correlation write reports the process loss the remote create outlived."""
+
+    def __init__(self, store: SqlBindingStore) -> None:
+        self._store = store
+        self.dropped = False
+
+    def __getattr__(self, name):
+        return getattr(self._store, name)
+
+    async def correlate_kratos(self, *, person_id, kratos_identity_id):
+        if not self.dropped:
+            self.dropped = True
+            return unavailable("process-lost")
+        return await self._store.correlate_kratos(
+            person_id=person_id, kratos_identity_id=kratos_identity_id)
+
+
+async def test_fresh_engine_recovers_an_owned_create_after_process_loss(
+    engine, database, sources,
+):
+    """The create committed remotely; the process died before its SQL
+    correlation. A new engine, store and seam read the durable marker,
+    adopt exactly that record and finish — one identity, no rewrite."""
+    store = SqlBindingStore(engine)
+    backend = FakeAuthorityBackend()
+    identities: dict = {}
+    identity_path, policy_path = sources
+    service = FileAdmission(
+        bindings=_DropFirstCorrelate(store), backend=backend,
+        kratos=FakeAdmissionKratos(identities), probe=SqlAdmissionProbe(engine))
+    first = await service.apply(identity_path, policy_path)
+    assert first.status is OutcomeStatus.UNAVAILABLE
+    created = identities["ada"]
+    ada = await store.person("ada")
+    assert ada is not None and ada.kratos_identity_id is None
+    await engine.dispose()
+    restarted = create_sql_engine(database)
+    try:
+        resumed = FileAdmission(
+            bindings=SqlBindingStore(restarted), backend=backend,
+            kratos=FakeAdmissionKratos(identities),
+            probe=SqlAdmissionProbe(restarted))
+        outcome = await resumed.apply(identity_path, policy_path)
+        assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+        store = SqlBindingStore(restarted)
+        ada = await store.person("ada")
+        assert ada is not None and ada.kratos_identity_id == created["id"]
+        assert set(identities) == {"ada", "listed_only", "miles"}
+        assert identities["miles"]["traits"]["social"] is False
+        journal = await store.operation(
+            plan(identity_path, policy_path).import_id)
+        assert journal is not None
+        assert journal.state is OperationJournalState.COMPLETE
     finally:
         await restarted.dispose()

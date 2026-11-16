@@ -1,0 +1,65 @@
+[
+  {
+    "name": "a collision without this import's marker is foreign, not recovered",
+    "file": "nora/people/app/managed_admission_identity.py",
+    "old": "    metadata = view.metadata_admin\n    return (\n        isinstance(metadata, dict)\n        and metadata.get(OWNER_KEY) == marker[OWNER_KEY]\n    )",
+    "new": "    metadata = view.metadata_admin\n    return isinstance(metadata, dict)",
+    "target": "tests/unit/test_managed_admission_identity.py::test_resume_refuses_a_collision_without_this_imports_marker"
+  },
+  {
+    "name": "a 409 resolves through the concrete read, never adoption",
+    "file": "nora/people/app/managed_admission_identity.py",
+    "old": "    if outcome.detail != \"external-id-conflict\":\n        return outcome, None",
+    "new": "    return outcome, None",
+    "target": "tests/unit/test_managed_admission_identity.py::test_an_owned_create_recovers_under_a_new_service_and_stays_single"
+  },
+  {
+    "name": "a created record whose echo lacks the marker is not adopted",
+    "file": "nora/people/app/managed_admission_identity.py",
+    "old": "        if (view.external_id != external_id or not identity_owned(view, marker)\n                or view.state != \"active\"):\n            return unavailable(\"owner-evidence-mismatch\"), None",
+    "new": "        if view.external_id != external_id or view.state != \"active\":\n            return unavailable(\"owner-evidence-mismatch\"), None",
+    "target": "tests/unit/test_managed_admission_identity.py::test_a_create_response_without_the_marker_fails_closed"
+  },
+  {
+    "name": "the durable marker rides the remote write itself",
+    "file": "nora/infra/ory/kratos.py",
+    "old": "        if metadata_admin is not None:\n            body[\"metadata_admin\"] = metadata_admin\n",
+    "new": "",
+    "target": "tests/infra/test_kratos_identity_contract.py::test_create_writes_admin_metadata_and_the_read_surfaces_it"
+  },
+  {
+    "name": "a non-object metadata_admin is malformed, not owned",
+    "file": "nora/infra/ory/kratos.py",
+    "old": "    ) or (\n        metadata_admin is not None and not isinstance(metadata_admin, dict)\n    ):",
+    "new": "    ):",
+    "target": "tests/infra/test_kratos_identity_contract.py::test_a_non_object_admin_metadata_is_malformed"
+  },
+  {
+    "name": "the read-back binds the concrete Kratos id to the SQL correlation",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "            if (view.external_id != person_id\n                    or view.identity_id != person.kratos_identity_id\n                    or view.state != \"active\"",
+    "new": "            if (view.external_id != person_id\n                    or view.state != \"active\"",
+    "target": "tests/unit/test_managed_admission_identity.py::test_readback_fails_closed_when_the_owned_record_drifted"
+  },
+  {
+    "name": "the social trait binds by identity, never a coerced default",
+    "file": "nora/people/app/managed_admission_identity.py",
+    "old": "        view.traits.get(\"display_name\") == display_name\n        and view.traits.get(\"social\") is social",
+    "new": "        view.traits.get(\"display_name\") == display_name\n        and bool(view.traits.get(\"social\")) is social",
+    "target": "tests/unit/test_managed_admission_identity.py::test_readback_fails_closed_when_the_owned_record_drifted"
+  },
+  {
+    "name": "a fresh claim refuses a held external_id before any write",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "            outcome, view = await self.kratos.read(external_id=person_id)\n            if view is not None:\n                return denied(\"kratos-correlation-present\")",
+    "new": "            outcome, view = await self.kratos.read(external_id=person_id)\n            if outcome.status is not OutcomeStatus.COMPLETE and view is not None:\n                return denied(\"kratos-correlation-present\")",
+    "target": "tests/unit/test_managed_admission.py::test_apply_refuses_a_kratos_correlation_on_a_fresh_claim"
+  },
+  {
+    "name": "the adapter carries the owner marker into the remote create",
+    "file": "nora/people/adapters/managed_handoff.py",
+    "old": "        outcome, identity = await self._client.create_identity(\n            external_id=external_id, traits=traits, metadata_admin=owner)",
+    "new": "        outcome, identity = await self._client.create_identity(\n            external_id=external_id, traits=traits)",
+    "target": "tests/infra/test_kratos_identity_contract.py::test_admission_seam_moves_the_marker_as_typed_values"
+  }
+]

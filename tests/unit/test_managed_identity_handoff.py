@@ -17,6 +17,7 @@ from nora.testing.managed import (
     FakeIdentityRegistry,
 )
 from scripts.managed_identity_handoff import COMPLETE, REFUSED, RETRYABLE, run
+from tests.fakes import FakeAdmissionKratos
 
 IDENTITY = """\
 [persons.miles]
@@ -94,7 +95,8 @@ def _services(store=None, backend=None, registry=None):
     @asynccontextmanager
     async def factory():
         yield FileAdmission(
-            bindings=store, backend=backend, registry=registry,
+            bindings=store, backend=backend,
+            kratos=FakeAdmissionKratos(registry.identities),
             probe=_Probe(store),
         )
     return factory, store, backend

@@ -38,6 +38,7 @@ from nora.testing.managed import (
     FakeIdentityRegistry,
     FakeLinkRequests,
 )
+from tests.fakes import FakeAdmissionKratos
 
 IDENTITY = f"""\
 [persons.miles]
@@ -160,7 +161,8 @@ async def _admit(engine, sources):
     backend = FakeAuthorityBackend()
     registry = FakeIdentityRegistry()
     admission = FileAdmission(
-        bindings=SqlBindingStore(engine), backend=backend, registry=registry,
+        bindings=SqlBindingStore(engine), backend=backend,
+        kratos=FakeAdmissionKratos(registry.identities),
         probe=SqlAdmissionProbe(engine))
     outcome = await admission.apply(*sources)
     assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
