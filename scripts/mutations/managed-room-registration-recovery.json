@@ -1,0 +1,16 @@
+[
+  {
+    "name": "a non-complete registration journal row is resumed on the same operation",
+    "file": "nora/people/app/managed.py",
+    "old": "            resumed = await self._resume_registration(op)\n            if resumed is not None:\n                return resumed\n",
+    "new": "",
+    "target": "tests/unit/test_room_management.py::test_an_interrupted_register_redelivery_resumes_the_recorded_effect"
+  },
+  {
+    "name": "the bound-account refusal consults this message's own journal row first",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "            if bound:\n                # A bound identifier refuses a NEW registration — but when\n                # the journal holds THIS message's registration of exactly\n                # these identifiers, the redelivery reaches the service so\n                # the recorded effect replays or resumes instead.\n                record = await services.bindings.operation(operation_id)\n                if record is None:\n                    return denied(\"account-already-registered\")\n                if record.kind != \"register_account\" or frozenset(\n                    _ident_from(i)\n                    for i in record.snapshot.get(\"identifiers\", ())\n                ) != identifiers:\n                    return denied(\"operation-conflict\")\n",
+    "new": "            if bound:\n                return denied(\"account-already-registered\")\n",
+    "target": "tests/unit/test_room_management.py::test_an_interrupted_register_redelivery_resumes_the_recorded_effect"
+  }
+]

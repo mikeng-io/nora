@@ -73,7 +73,7 @@ from nora.domain.models import MENTION_PLACEHOLDER, NormalizedMessage
 from nora.domain.ports import RosterSource
 from nora.people.app.managed import ManagedServices
 from nora.people.app.managed_authority import _REQUIRED_PERMIT
-from nora.people.app.managed_ops import _scope_authority
+from nora.people.app.managed_ops import _ident_from, _scope_authority
 from nora.people.app.management_invocation import (
     HumanManagement,
     ResolvedTarget,
@@ -309,7 +309,7 @@ class RoomManagement:
 
         target: ResolvedTarget | None = None
         if request.kind == "register":
-            resolved = await self._account_target(message, request)
+            resolved = await self._account_target(message, request, operation_id)
             if isinstance(resolved, (Outcome, Clarify)):
                 return resolved
             identifiers = resolved
@@ -452,7 +452,8 @@ class RoomManagement:
         return tuple(forms), tuple(unresolved)
 
     async def _account_target(
-        self, message: NormalizedMessage, request: RoomRequest
+        self, message: NormalizedMessage, request: RoomRequest,
+        operation_id: str,
     ) -> frozenset[Identifier] | Outcome | Clarify:
         """The one unbound account a register targets, or why it cannot."""
         services = self._services
@@ -488,11 +489,26 @@ class RoomManagement:
                 )
             identifiers = typed
         try:
+            bound = False
             for ident in identifiers:
                 if await services.bindings.resolve(
                     ident.platform, ident.value
                 ) is not None:
+                    bound = True
+                    break
+            if bound:
+                # A bound identifier refuses a NEW registration — but when
+                # the journal holds THIS message's registration of exactly
+                # these identifiers, the redelivery reaches the service so
+                # the recorded effect replays or resumes instead.
+                record = await services.bindings.operation(operation_id)
+                if record is None:
                     return denied("account-already-registered")
+                if record.kind != "register_account" or frozenset(
+                    _ident_from(i)
+                    for i in record.snapshot.get("identifiers", ())
+                ) != identifiers:
+                    return denied("operation-conflict")
         except Exception:  # noqa: BLE001
             return unavailable("bindings-unavailable")
         return identifiers

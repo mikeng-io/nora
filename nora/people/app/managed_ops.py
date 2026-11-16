@@ -106,11 +106,13 @@ def _op_snapshot(op: Operation) -> MappingProxyType[str, Any]:
     payload = op.payload
     snap: dict[str, Any] = {"kind": op.kind}
     if isinstance(payload, AccountObservation):
-        snap["identifiers"] = [_ident_snapshot(i) for i in payload.identifiers]
+        snap["identifiers"] = [_ident_snapshot(i) for i in sorted(
+            payload.identifiers, key=lambda i: (i.platform, i.kind, i.value))]
     elif isinstance(payload, AccountRegistration):
         snap["person_id"] = payload.person_id
         snap["scope"] = _scope_snapshot(payload.scope)
-        snap["identifiers"] = [_ident_snapshot(i) for i in payload.identifiers]
+        snap["identifiers"] = [_ident_snapshot(i) for i in sorted(
+            payload.identifiers, key=lambda i: (i.platform, i.kind, i.value))]
     elif isinstance(payload, RosterSync):
         snap["members"] = [_ident_snapshot(i) for i in sorted(
             payload.members, key=lambda i: (i.platform, i.kind, i.value))]
