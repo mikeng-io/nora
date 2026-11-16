@@ -29,6 +29,19 @@ def _same(actual: Any, expected: Any) -> bool:
     return type(actual) is type(expected) and actual == expected
 
 
+def _input_same(actual: Any, expected: Any) -> bool:
+    """Deep typed identity for a recorded input projection."""
+    if isinstance(actual, dict) and isinstance(expected, dict):
+        return (set(actual) == set(expected)
+                and all(_input_same(actual[key], expected[key])
+                        for key in actual))
+    if isinstance(actual, list) and isinstance(expected, list):
+        return (len(actual) == len(expected)
+                and all(_input_same(a, e)
+                        for a, e in zip(actual, expected, strict=True)))
+    return _same(actual, expected)
+
+
 def frozen_wake_identity(frozen: dict[str, Any], *, unit: Any,
                          recorded_wake_id: Any, at_ms: Any = None,
                          step: Any = None, wake_id: Any = None,
@@ -104,13 +117,17 @@ def frozen_wake_identity(frozen: dict[str, Any], *, unit: Any,
 
 def frozen_turn_identity(frozen: dict[str, Any], *, unit: Any, turn: Any,
                          declared_input: Any, step: Any = None,
-                         session_id: Any = None) -> str | None:
+                         session_id: Any = None,
+                         recorded_input: Any = None) -> str | None:
     """Why a frozen artifact cannot stand in for this case/unit/turn, else
     None. The artifact proves it belongs by content: its own turn index,
     unit and declared input text under typed identity, its error step
     equal to the row's, and its trajectory's `session_id` equal to the
     row's — None for an input that bound no session, the bound session's
-    own identity when its stimulus settled to one.
+    own identity when its stimulus settled to one. A declared-envelope
+    input proves its actor, source event, room and source clock too: the
+    frozen `declared_input` must equal the report row's exactly, and a
+    source-bearing artifact the row never recorded is foreign.
     """
     if not isinstance(frozen, dict):
         return "frozen turn is not an object"
@@ -128,6 +145,14 @@ def frozen_turn_identity(frozen: dict[str, Any], *, unit: Any, turn: Any,
     declared = frozen.get("declared_input")
     required(declared.get("text") if isinstance(declared, dict) else None,
              declared_input, "declared_input")
+    frozen_source = (isinstance(declared, dict)
+                     and declared.get("source") is not None)
+    if isinstance(recorded_input, dict):
+        if (not isinstance(declared, dict)
+                or not _input_same(declared, recorded_input)):
+            foreign.append("declared_input")
+    elif frozen_source:
+        foreign.append("declared_input")
     error = frozen.get("error")
     raw_step = error.get("step") if isinstance(error, dict) else None
     if ((error is not None and not isinstance(error, dict))
@@ -258,7 +283,8 @@ def _reconcile(report: dict[str, Any], output: Path, *, judgments: bool) -> dict
             identity = frozen_turn_identity(
                 frozen, unit=case["unit"], turn=index,
                 declared_input=declared_input, step=turn.get("step"),
-                session_id=turn.get("session_id"))
+                session_id=turn.get("session_id"),
+                recorded_input=turn.get("declared_input"))
             if identity is not None:
                 errors.append(f"{identity}: {name}")
             if judgments:

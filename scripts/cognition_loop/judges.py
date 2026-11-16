@@ -543,6 +543,16 @@ def turn_gap(trajectory: Any) -> list[str]:
             or not declared["text"].strip()
             or not declared.get("event_id")):
         causes.append("declared_input_unbound")
+    elif "source" in declared:
+        # A declared-envelope input binds actor, source event, room and
+        # source clock beside the body — a projection that lost any of
+        # them cannot judge "who said what, when" and is unbound.
+        source = declared.get("source")
+        if (not isinstance(source, dict)
+                or any(source.get(field) in (None, "") for field in (
+                        "actor", "event_id", "conversation_id", "platform",
+                        "account_key", "sent_ms"))):
+            causes.append("declared_input_unbound")
     if "session_id" not in trajectory:
         causes.append("turn_session_unbound")
     bound = trajectory.get("bound")

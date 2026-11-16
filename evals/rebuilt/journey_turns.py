@@ -35,6 +35,7 @@ from nora.subject.effects import (
     read_effects,
     stimulus_session,
 )
+from nora.subject.journey import Envelope, message_from_dict
 from scripts.cognition_loop import state as state_mod
 from scripts.cognition_loop.availability import availability
 from scripts.cognition_loop.judges import (
@@ -58,6 +59,41 @@ def _now_ms() -> int:
 #: The `turn` work dispositions that explicitly record "no delivery".
 _NO_DELIVERY = ("silent", "vetoed")
 _SKIP = ("rejected", "queue_full")
+
+
+def declared_source(declared: Envelope) -> dict[str, Any]:
+    """The actor/source/clock facts a declared input binds downstream.
+
+    The judge digests and the frozen identity compare both read this
+    projection: the same text from a different actor, event, room or
+    source instant is a different input, never equal body text.
+    """
+    message = message_from_dict(declared.message or {})
+    return {
+        "platform": declared.platform,
+        "account_key": declared.account_key,
+        "conversation_id": declared.conversation_id,
+        "conversation_type": declared.conversation_type,
+        "actor": declared.sender_id,
+        "handle": declared.sender_name,
+        "event_id": declared.event_id,
+        "source_key": declared.source_key,
+        "sent_ms": declared.sent_ms,
+        "received_ms": declared.received_ms,
+        "queued_ms": declared.queued_ms,
+        "time_quality": declared.time_quality,
+        "message_id": message.message_id,
+        "mention_names": sorted(message.mentions),
+    }
+
+
+def _declared_input(ctx: dict[str, Any]) -> dict[str, Any]:
+    """The turn's input as declared; a declared envelope adds its source."""
+    declared = {"text": ctx["input"], "event_id": ctx["event_id"],
+                "at_ms": ctx["at_ms"]}
+    if ctx.get("source") is not None:
+        declared["source"] = ctx["source"]
+    return declared
 
 
 def _turn_stimulus_id(work: list[dict[str, Any]]) -> int | None:
@@ -199,11 +235,13 @@ def _freeze_turn(output: Path, ctx: dict[str, Any],
     from scripts.cognition_loop.run import _wake_status
 
     index = ctx["index"]
-    declared = {"text": ctx["input"], "event_id": ctx["event_id"],
-                "at_ms": ctx["at_ms"]}
+    declared = _declared_input(ctx)
     freeze(output / f"turn-{index}.json", {
         "turn": index, "unit": unit, "at_ms": ctx["at_ms"],
         "declared_input": declared,
+        "declared_envelope": (
+            ctx["envelope"].to_fields()
+            if ctx.get("envelope") is not None else None),
         "error": ({"step": step_error[0], "message": step_error[1]}
                   if step_error is not None else None),
         "trajectory": trajectory,
@@ -222,6 +260,7 @@ def _freeze_turn(output: Path, ctx: dict[str, Any],
     outcome = (trajectory.get("turn_outcome") or {}).get("status")
     return {
         "turn": index, "input": ctx["input"], "at_ms": ctx["at_ms"],
+        "declared_input": declared,
         "status": _wake_status(step_error, expectations),
         "step": step_error[0] if step_error is not None else None,
         "error": step_error[1] if step_error is not None else None,
@@ -238,16 +277,19 @@ def _turn_error(output: Path, index: int, ctx: dict[str, Any], *, step: str,
                 message: str, unit: str,
                 trajectory: dict[str, Any] | None = None) -> dict[str, Any]:
     """An ERROR turn row: the step is named, never folded into another's."""
-    declared = {"text": ctx["input"], "event_id": ctx["event_id"],
-                "at_ms": ctx["at_ms"]}
+    declared = _declared_input(ctx)
     freeze(output / f"turn-{index}.json", {
         "turn": index, "unit": unit, "at_ms": ctx["at_ms"],
         "declared_input": declared,
+        "declared_envelope": (
+            ctx["envelope"].to_fields()
+            if ctx.get("envelope") is not None else None),
         "error": {"step": step, "message": message},
         "trajectory": trajectory,
     })
     return {
         "turn": index, "input": ctx["input"], "at_ms": ctx["at_ms"],
+        "declared_input": declared,
         "status": ERROR, "step": step, "error": message,
         "outcome": (trajectory or {}).get("turn_outcome", {}).get("status"),
         "session_id": (trajectory or {}).get("session_id"),
@@ -296,9 +338,7 @@ async def observed_turn(ctx: dict[str, Any], *, subject: Any, driver: Any,
     trajectory["at_ms"] = int(ctx["at_ms"])
     trajectory["unit"] = scope.unit
     trajectory["unit_rooms"] = list(scope.rooms)
-    trajectory["declared_input"] = {
-        "text": ctx["input"], "event_id": ctx["event_id"],
-        "at_ms": int(ctx["at_ms"])}
+    trajectory["declared_input"] = _declared_input(ctx)
     trajectory["session_settlement"] = trajectory.pop("settlement")
     trajectory["settlement"] = {
         "status": "observed", "event": (ctx["event"] or {}).get("state"),
@@ -326,11 +366,13 @@ async def observed_turn(ctx: dict[str, Any], *, subject: Any, driver: Any,
 
 
 __all__ = [
+    "_declared_input",
     "_freeze_turn",
     "_judge_turn",
     "_turn_causes",
     "_turn_error",
     "_turn_outcome",
+    "declared_source",
     "observed_turn",
     "turn_events",
 ]

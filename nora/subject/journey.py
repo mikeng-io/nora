@@ -1,11 +1,15 @@
-"""Drive the composed subject's real `App` over generated bridge input.
+"""Drive the composed subject's real `App` over generated or declared input.
 
 A complete live-clock journey: real bridge ingress and admission, the
 deployment's own scheduling timers waking Cognition, fire and delivery,
 then a later correction through the same ingress — never a forced wake
-and never a constructed session. The driver owns the `App`'s lifecycle
-and the SQL-visible completion signals only; the generated world the
-model and services come from belongs to the case-owned environment.
+and never a constructed session. A version-2 input step may instead
+declare a production `Envelope` verbatim (`declared_envelope`,
+`ingress_declared`): its actor, source identity and clock cross the same
+producer and admission unsubstituted. The driver owns the `App`'s
+lifecycle and the SQL-visible completion signals only; the generated
+world the model and services come from belongs to the case-owned
+environment.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from nora.infra.sql.schema import (
 )
 from nora.platform.bridge.envelope import Envelope, canonical_source_key
 from nora.platform.bridge.queue import StreamProducer
-from nora.platform.bridge.rehydrate import message_to_dict
+from nora.platform.bridge.rehydrate import message_from_dict, message_to_dict
 from nora.subject.effects import prepare_effect_reads
 from nora.subject.eval_evidence import EvidenceError
 
@@ -54,6 +58,58 @@ def envelope(
         conversation_type="group", sender_id="+852111", sender_name="Miles",
         sent_ms=timestamp, received_ms=timestamp, queued_ms=timestamp,
         time_quality="upstream", message=message_to_dict(message), admission_rev=1)
+
+
+def declared_envelope(fields: Any) -> Envelope:
+    """The production `Envelope` a version-2 input step declares, or a
+    `ValueError` naming why it cannot be one.
+
+    The declaration is comprehended once into the production type:
+    `Envelope.from_fields` accepts the wire shape, `message_from_dict`
+    rehydrates the carried utterance, and the outer identity must not
+    contradict what the message and the canonical `source_key` say. The
+    causes are fixed strings — a refused declaration never leaks its
+    private values into the plan error.
+    """
+    if not isinstance(fields, dict):
+        raise ValueError("a declared journey input is not an envelope object")
+    allowed = set(Envelope.__dataclass_fields__) | {"v"}
+    if set(fields) - allowed:
+        raise ValueError("a declared journey input carries unknown fields")
+    try:
+        declared = Envelope.from_fields(dict(fields))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "a declared journey input is not a valid production envelope"
+        ) from exc
+    try:
+        source = canonical_source_key(
+            declared.platform, declared.account_key, declared.conversation_id,
+            declared.kind, declared.source_key.rsplit("\x1f", 1)[-1])
+    except ValueError as exc:
+        raise ValueError(
+            "a declared journey input's source key is not canonical") from exc
+    if source != declared.source_key:
+        raise ValueError(
+            "a declared journey input's source key contradicts its identity")
+    if declared.message is None:
+        raise ValueError("a declared journey input carries no message")
+    try:
+        message = message_from_dict(declared.message)
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise ValueError(
+            "a declared journey input carries no valid message") from exc
+    if not message.body.strip():
+        raise ValueError("a declared journey input's message body is empty")
+    if (message.platform != declared.platform
+            or message.conversation_id != declared.conversation_id
+            or message.conversation_type != declared.conversation_type
+            or message.sender_id != declared.sender_id
+            or message.sender_name != declared.sender_name
+            or message.timestamp != declared.sent_ms):
+        raise ValueError(
+            "a declared journey input's outer and message identity disagree")
+    return declared
 
 
 async def settled_event(engine: Any, canonical: Any, task: asyncio.Task) -> tuple[Any, Any]:
@@ -146,6 +202,31 @@ class JourneyDriver:
         if event["state"] != "done":
             raise EvidenceError(f"bridge admission ended {event['state']!r}")
         return incoming, dict(event), [dict(row) for row in work]
+
+    def _declared_reader(self, declared: Envelope) -> Any:
+        """The reader owning the declared stream; a foreign (platform, account) is unavailable."""
+        reader = next((r for r in self.runtime.readers
+                       if r._platform == declared.platform
+                       and r._account_key == declared.account_key), None)
+        if reader is None:
+            raise EvidenceError(
+                "the declared input names no running bridge reader")
+        return reader
+
+    async def ingress_declared(self, declared: Envelope) -> tuple[Envelope, Any, Any]:
+        """One declared production envelope through the same ingress: the
+        reader that owns its (platform, account) stream, the journaled
+        producer and the real admission settlement — its declared actor,
+        identity and sent/received/queued clock cross unsubstituted."""
+        reader = self._declared_reader(declared)
+        producer = StreamProducer(self.runtime.redis, reader.stream)
+        _, canonical = await producer.enqueue(declared)
+        if self.task is None:
+            raise EvidenceError("the app never started for this journey")
+        event, work = await settled_event(self.engine, canonical, self.task)
+        if event["state"] != "done":
+            raise EvidenceError(f"bridge admission ended {event['state']!r}")
+        return declared, dict(event), [dict(row) for row in work]
 
     async def wait_turn_settled(self, since_ms: int, *, seconds: float) -> list[Any]:
         """Every bridge action the turn queued, settled — confirmed, or a
