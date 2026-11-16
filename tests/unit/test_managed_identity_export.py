@@ -234,23 +234,52 @@ async def test_export_publishes_private_modes_under_an_ordinary_umask(
         assert stat.S_IMODE(path.stat().st_mode) == 0o600, path
 
 
+@pytest.mark.parametrize("failure", ["open", "write", "close"])
 async def test_export_removes_its_own_partial_bundle_on_a_write_failure(
-    sources, tmp_path, capsys, monkeypatch,
+    sources, tmp_path, capsys, monkeypatch, failure,
 ):
     """A mid-write failure leaves nothing that looks complete: only the
     files THIS invocation staged are removed, then the fresh directory."""
     import scripts.managed_identity_export as cli
 
     real_open = os.open
+    real_fdopen = os.fdopen
     output = tmp_path / "bundle"
+    policy_fd = None
 
     def flaky_open(path, flags, mode=0o777, **kwargs):
+        nonlocal policy_fd
         if (flags & os.O_CREAT and Path(path).parent == output
                 and Path(path).name == "policy.toml"):
-            raise OSError("generated disk-full")
+            if failure == "open":
+                raise OSError("generated disk-full")
+            policy_fd = real_open(path, flags, mode, **kwargs)
+            return policy_fd
         return real_open(path, flags, mode, **kwargs)
 
+    class FailingWriter:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def write(self, text):
+            self.handle.write(text)
+            if failure == "write":
+                raise OSError("generated write failure")
+
+        def __exit__(self, *args):
+            self.handle.close()
+            if failure == "close":
+                raise OSError("generated flush failure")
+
+    def flaky_fdopen(fd, *args, **kwargs):
+        handle = real_fdopen(fd, *args, **kwargs)
+        return FailingWriter(handle) if fd == policy_fd else handle
+
     monkeypatch.setattr(cli.os, "open", flaky_open)
+    monkeypatch.setattr(cli.os, "fdopen", flaky_fdopen)
     rc = await run([
         "export", "--policy", str(sources), "--output", str(output),
         "--database-url", "x", "--kratos-admin-url", "x",

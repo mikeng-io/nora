@@ -78,7 +78,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-class _TargetRefused(Exception):
+class _TargetRefusedError(Exception):
     """The target could not be wired at all — a bounded refusal, not a
     retryable failure. Carries only a refusal code, never a path or id."""
 
@@ -101,7 +101,7 @@ async def _target_services(args: argparse.Namespace) -> AsyncIterator[ManagedExp
 
     loaded = _read_policy(Path(args.policy))
     if isinstance(loaded, Outcome):
-        raise _TargetRefused("invalid-policy-file")
+        raise _TargetRefusedError("invalid-policy-file")
     policy, source = loaded
     managed = ManagedOryConfig(
         kratos_admin_url=args.kratos_admin_url,
@@ -190,9 +190,9 @@ def _publish(output: Path, bundle) -> int:
         ):
             path = output / name
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            written.append(path)
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(text)
-            written.append(path)
     except OSError as error:
         for path in written:
             with suppress(OSError):
@@ -233,7 +233,7 @@ async def run(
                 report = await export.assess(Path(args.policy))
             else:
                 report = await export.export(Path(args.policy))
-    except _TargetRefused as error:
+    except _TargetRefusedError as error:
         print(f"refused: {error}")
         return REFUSED
     except Exception as error:  # noqa: BLE001 — fail closed, bounded:
