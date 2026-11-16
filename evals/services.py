@@ -31,13 +31,7 @@ class ServiceInputs:
 
 
 def _gateway(name: str, entry: dict[str, Any], judges: list) -> Any:
-    """The plan's declared model boundary, or None — never a live default.
-
-    `model_gateway` holds an upstream and the model identities a dispatch
-    may name, which must include both declared judge aliases. It is
-    credential-free by construction: the manifest can name no key, and
-    `ModelGateway` itself refuses userinfo, query and fragment.
-    """
+    """The plan's credential-free model boundary, including both judges, or None."""
     from nora.subject.model_gateway import ModelGateway
 
     declared = entry.get("model_gateway")
