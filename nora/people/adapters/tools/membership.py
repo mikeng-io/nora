@@ -51,6 +51,7 @@ def _make_member_update(deps):
                 "you cannot do that in this deployment.",
             }
         reference = (target or "").strip() or None
+        kind: Literal["mention", "account", "name"]
         if target_kind is None:
             if reference is None:
                 kind = "mention"

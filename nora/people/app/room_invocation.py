@@ -45,7 +45,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, cast
 
 from nora.domain.authentication import RoomAuthentication
 from nora.domain.identity import Identifier, UnmatchableIdentifierError, id_kinds
@@ -177,7 +177,7 @@ def parse_room_command(message: NormalizedMessage) -> RoomRequest | str | None:
     tokens = message.body.strip().split()
     if len(tokens) < 2 or tokens[1].lower() not in _KIND_VERBS:
         return _USAGE
-    kind = tokens[1].lower()
+    kind = cast(RequestKind, tokens[1].lower())
     reference = " ".join(tokens[2:]).strip() or None
     if reference is None or reference == MENTION_PLACEHOLDER:
         return RoomRequest(kind=kind)  # the message's own @-mention
