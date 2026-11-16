@@ -18,7 +18,7 @@ from collections import Counter
 from typing import Any
 
 from evals.backbone import ERROR, FAIL, NORA_ERROR, PASS
-from evals.outcome import UNKNOWN, UNMEASURED, axis
+from evals.outcome import REVIEW, UNKNOWN, UNMEASURED, axis
 
 ALIGNED_FIELDS = ("scores", "test_passes", "reasons")
 
@@ -189,7 +189,7 @@ def report_outcome(report: Any, coverage: dict[str, Any], *,
     else:
         valid = UNKNOWN
     detailed = list(getattr(report, "detailed_results", None) or [])
-    verdicts = {PASS: 0, FAIL: 0, ERROR: 0}
+    verdicts = {PASS: 0, FAIL: 0, REVIEW: 0, ERROR: 0}
     for outputs in detailed:
         for out in outputs:
             label = getattr(out, "label", None)

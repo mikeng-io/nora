@@ -57,6 +57,7 @@ from strands_evals.types.evaluation import (
 )
 
 from evals import pseudonyms
+from evals.outcome import REVIEW
 from evals.recall import recall_facts
 from evals.situation import (
     deployment_handles,
@@ -2485,16 +2486,10 @@ class AbsenceGrader(Evaluator):
 
 
 class JourneyGrader(Evaluator):
-    """The autonomous-journey entry's grader — the retained canonical verdict.
+    """The retained canonical verdict, including unresolved REVIEW judgments.
 
-    It judges nothing itself: `report.json` written inside the drive holds
-    the fail-closed rollup the per-wake frozen evidence and both judges
-    produced. This evaluator carries that verdict into the SDK report —
-    `NORA_ERROR` (the drive never settled) is ERROR first, a missing
-    `NORA_JOURNEY` status is ERROR (the report was never retained), and
-    the status itself is the label otherwise. Behaviour stays UNMEASURED:
-    a PASS here means the protocol and its evidence completed, never that
-    the journey's behaviour was judged good.
+    A task error or missing/unknown verdict is ERROR. Protocol completion
+    remains UNMEASURED as a production-behavior claim.
     """
 
     def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
@@ -2517,7 +2512,7 @@ class JourneyGrader(Evaluator):
             test_pass=status == PASS,
             reason=f"retained journey verdict {status}"
                    + (f" ({report})" if report else ""),
-            label=status if status in (PASS, FAIL, ERROR) else FAIL,
+            label=status if status in (PASS, FAIL, REVIEW, ERROR) else ERROR,
         )]
 
     async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:

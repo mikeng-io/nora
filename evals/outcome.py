@@ -18,6 +18,7 @@ AXES = ("execution", "validity", "behavior")
 
 UNKNOWN = "UNKNOWN"
 UNMEASURED = "UNMEASURED"
+REVIEW = "REVIEW"
 
 
 def axis(status: str, *, scope: str | None = None,

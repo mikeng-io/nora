@@ -22,8 +22,6 @@ from typing import Any
 from evals import pseudonyms
 from evals.accounting import accepted, accounted, describe_outcome
 from evals.backbone import (
-    ERROR,
-    FAIL,
     NORA_ERROR,
     NORA_POSITION,
     NORA_SHOWN,
@@ -40,7 +38,7 @@ from evals.backbone import (
 from evals.cli import BUDGET_MINUTES, eval_parser, run_budget_for
 from evals.grading_contract import GradingContract
 from evals.journey_cohort import bound_selection
-from evals.reading import UNSTABLE, base_name, read, sample_read
+from evals.reading import base_name, read, sample_read
 from evals.rebuilt.grading import DEFAULT_SAMPLES, Judge
 from evals.scenarios import (
     CORPUS_ENTRY,
@@ -450,12 +448,7 @@ def _run_one(
         _print_positions(report)
     if sample > 1:
         readings = sample_read(report)
-        # THE SPLIT, not just the verdict. `UNSTABLE` says the draws
-        # disagreed and nothing more; 2 PASS / 1 FAIL and 1 PASS / 2 ERROR
-        # are different facts about the same word, and the second is a case
-        # that mostly did not RUN. Printed for every non-PASS verdict, so
-        # the next question ("how unstable, and was any draw an error?") does
-        # not cost another run of the corpus.
+        # Keep unresolved judgments distinct from failures and errored draws.
         reasons: dict[str, list[str]] = {}
         for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
             for out in outputs:
@@ -465,22 +458,24 @@ def _run_one(
         ok = True
         for case_name, r in sorted(readings.items()):
             split = ("" if r.verdict == PASS else
-                     f"  [{r.passed} pass / {r.failed} fail / {r.errored} error]")
+                     f"  [{r.passed} pass / {r.failed} fail / "
+                     f"{r.reviewed} review / {r.errored} error]")
             print(f"  {case_name:40} {r.verdict}{split}")
             # One line per DISTINCT reason: three draws failing the same way
             # is one fact, and printing it three times hides that it is.
             for reason in dict.fromkeys(reasons.get(case_name, ())):
                 print(f"      {reason}")
-            ok = ok and r.verdict not in (FAIL, ERROR, UNSTABLE)
+            ok = ok and r.verdict == PASS
         return ok and context_complete and accepted(coverage, outcome)
     reading = read(report)
-    print(f"  passed={reading.passed} failed={reading.failed} errored={reading.errored}")
-    if reading.failed or reading.errored:
+    print(f"  passed={reading.passed} failed={reading.failed} "
+          f"reviewed={reading.reviewed} errored={reading.errored}")
+    if not reading.accepted:
         for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
             for out in outputs:
                 if getattr(out, "label", None) != PASS:
                     print(f"  {case_row['name']:40} {out.label:6} {out.reason}")
-    return (reading.failed == 0 and reading.errored == 0
+    return (reading.accepted
             and context_complete and accepted(coverage, outcome))
 
 

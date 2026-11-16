@@ -11,13 +11,86 @@ PASS.
 import json
 from types import SimpleNamespace
 
+import pytest
 from strands_evals import Case, Experiment
 from strands_evals.evaluators.evaluator import Evaluator
-from strands_evals.types.evaluation import EvaluationOutput
+from strands_evals.types.evaluation import EnvironmentState, EvaluationData, EvaluationOutput
 
 from evals.accounting import case_settlement, reconcile_report, report_outcome
 from evals.backbone import ERROR, PASS
 from evals.reading import read, sample_read
+
+
+def _journey_report(status, *, error=None):
+    from evals.backbone import NORA_ERROR, NORA_JOURNEY, JourneyGrader
+
+    states = [EnvironmentState(name=NORA_JOURNEY, state=status),
+              EnvironmentState(name=NORA_ERROR, state=error)]
+    grader = JourneyGrader()
+    outputs = grader.evaluate(EvaluationData(
+        input="generated", actual_environment_state=states))
+    row = {"name": "generated-draw", "evaluator": grader.get_name(),
+           "actual_output": "generated", "actual_environment_state": states}
+    report = SimpleNamespace(
+        cases=[row], detailed_results=[outputs],
+        scores=[outputs[0].score], test_passes=[outputs[0].test_pass],
+        reasons=[outputs[0].reason])
+    experiment = SimpleNamespace(
+        cases=[Case(name="generated-draw", input="generated")], evaluators=[grader])
+    return experiment, report
+
+
+@pytest.mark.parametrize("status,expected", [
+    ("PASS", "PASS"), ("FAIL", "FAIL"), ("REVIEW", "REVIEW"),
+    ("ERROR", "ERROR"), ("foreign-status", "ERROR"), (None, "ERROR"),
+])
+def test_journey_grader_preserves_the_retained_judgment(status, expected):
+    _, report = _journey_report(status)
+    answer = report.detailed_results[0][0]
+    assert answer.label == expected
+    assert answer.test_pass is (expected == "PASS")
+
+
+def test_journey_task_error_cannot_be_cleared_by_a_retained_verdict():
+    _, report = _journey_report("REVIEW", error="generated failure")
+    assert report.detailed_results[0][0].label == "ERROR"
+
+
+@pytest.mark.parametrize("status,reviewed,accepted", [
+    ("PASS", 0, True), ("REVIEW", 1, False),
+])
+def test_journey_review_is_counted_without_changing_the_execution_axes(
+        status, reviewed, accepted):
+    experiment, report = _journey_report(status)
+    coverage = reconcile_report(experiment, report)
+    axes = report_outcome(
+        report, coverage, experiment=experiment,
+        evidence={"receipt": {"status": "PASS"},
+                  "settlement": {"generated-draw": "settled"}})
+    assert axes["execution"]["status"] == "PASS"
+    assert axes["validity"]["status"] == "PASS"
+    assert axes["behavior"]["status"] == "UNMEASURED"
+    assert axes["behavior"]["verdicts"].get("REVIEW") == reviewed
+    flat = read(report)
+    assert (flat.failed, flat.errored, getattr(flat, "reviewed", None)) == (0, 0, reviewed)
+    assert flat.accepted is accepted
+    sampled = sample_read(report)["generated-draw"]
+    assert sampled.verdict == status
+    assert (sampled.failed, sampled.errored, getattr(sampled, "reviewed", None)) == (0, 0, reviewed)
+
+
+def test_sampled_review_is_unresolved_and_a_mixed_judgment_stays_unstable():
+    _, report = _journey_report("REVIEW")
+    report.cases *= 2
+    report.detailed_results *= 2
+    stable = sample_read(report)["generated-draw"]
+    assert stable.verdict == "REVIEW" and getattr(stable, "reviewed", None) == 2
+    _, passing = _journey_report("PASS")
+    report.detailed_results[1] = passing.detailed_results[0]
+    mixed = sample_read(report)["generated-draw"]
+    assert mixed.verdict == "UNSTABLE"
+    assert (mixed.passed, mixed.errored, mixed.reviewed) == (1, 0, 1)
+    assert read(report).accepted is False
 
 
 class _Verdict(Evaluator):
@@ -96,7 +169,7 @@ def test_a_native_sdk_report_reconciles_to_its_declared_rows(tmp_path):
     assert axes["execution"]["status"] == "PASS"
     assert axes["validity"]["status"] == "PASS"
     assert axes["behavior"]["status"] == "UNMEASURED"
-    assert axes["behavior"]["verdicts"] == {"PASS": 1, "FAIL": 0, "ERROR": 0}
+    assert axes["behavior"]["verdicts"] == {"PASS": 1, "FAIL": 0, "REVIEW": 0, "ERROR": 0}
     assert read(report).passed == 1 and read(report).errored == 0
 
 

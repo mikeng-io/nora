@@ -14,26 +14,33 @@ from typing import Any
 from strands_evals import Case
 
 from evals.backbone import ERROR, FAIL, PASS
+from evals.outcome import REVIEW
 
 
 @dataclass(frozen=True)
 class Reading:
-    """What a report says once ERROR is taken out of the denominator."""
+    """Decidable verdicts, unresolved judgments and execution errors."""
 
     passed: int
     failed: int
     errored: int
+    reviewed: int = 0
+
+    @property
+    def accepted(self) -> bool:
+        return self.passed > 0 and not (self.failed or self.errored or self.reviewed)
 
     @property
     def gradable(self) -> int:
         return self.passed + self.failed
 
     def __str__(self) -> str:
-        return (
+        result = (
             f"{self.passed}/{self.gradable} graded, {self.errored} ERROR"
-            if self.gradable
+            if self.gradable or self.reviewed
             else f"0/0 graded, {self.errored} ERROR — nothing was measured"
         )
+        return result + (f", {self.reviewed} REVIEW" if self.reviewed else "")
 
 
 def read(report: Any) -> Reading:
@@ -49,7 +56,7 @@ def read(report: Any) -> Reading:
 
     That is why this function exists rather than a one-line property read.
     """
-    counts = {PASS: 0, FAIL: 0, ERROR: 0}
+    counts = {PASS: 0, FAIL: 0, REVIEW: 0, ERROR: 0}
     for outputs in report.detailed_results:
         if not outputs:
             # A (case, evaluator) row whose evaluator produced no verdict —
@@ -59,10 +66,11 @@ def read(report: Any) -> Reading:
         for out in outputs:
             label = getattr(out, "label", None)
             counts[label if label in counts else ERROR] += 1
-    return Reading(passed=counts[PASS], failed=counts[FAIL], errored=counts[ERROR])
+    return Reading(passed=counts[PASS], failed=counts[FAIL], errored=counts[ERROR],
+                   reviewed=counts[REVIEW])
 
 
-#: A fourth answer, alongside `PASS`/`FAIL`/`ERROR` — see `sample_read()`.
+#: Different draws disagreed; no majority vote.
 UNSTABLE = "UNSTABLE"
 
 
@@ -94,10 +102,11 @@ def base_name(name: str) -> str:
 class SampleReading:
     """One base case's verdict across its `sampled()` draws."""
 
-    verdict: str  # PASS | FAIL | ERROR | UNSTABLE
+    verdict: str  # PASS | FAIL | REVIEW | ERROR | UNSTABLE
     passed: int
     failed: int
     errored: int
+    reviewed: int = 0
 
 
 def sample_read(report: Any) -> dict[str, SampleReading]:
@@ -112,14 +121,8 @@ def sample_read(report: Any) -> dict[str, SampleReading]:
     `read()`'s flat tally never needs this distinction; grouping draws back
     into their base case does.
 
-    **`UNSTABLE` is a fourth answer, deliberately not a majority vote.** A
-    case only reads `PASS` or `FAIL` here when every draw agreed. Collapsing
-    disagreement into whichever verdict happened to win would hide exactly
-    the instability, which should be surfaced, not smoothed over.
-    `ERROR` is the ONE exception: if EVERY draw for a base case reads ERROR,
-    the group is `ERROR`, matching rule 3 (ERROR is not FAIL and is never
-    PASS) rather than reading a case that never once ran as merely
-    "unstable."
+    Unanimous draws retain their verdict, including REVIEW and ERROR.
+    Different verdicts are UNSTABLE, never a majority vote.
     """
     groups: dict[str, list[str]] = {}
     for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
@@ -130,7 +133,8 @@ def sample_read(report: Any) -> dict[str, SampleReading]:
             groups.setdefault(base, []).append(ERROR)
         for out in outputs:
             label = getattr(out, "label", None)
-            groups.setdefault(base, []).append(label if label in (PASS, FAIL, ERROR) else ERROR)
+            groups.setdefault(base, []).append(
+                label if label in (PASS, FAIL, REVIEW, ERROR) else ERROR)
 
     readings: dict[str, SampleReading] = {}
     for base, labels in groups.items():
@@ -141,5 +145,6 @@ def sample_read(report: Any) -> dict[str, SampleReading]:
             passed=labels.count(PASS),
             failed=labels.count(FAIL),
             errored=labels.count(ERROR),
+            reviewed=labels.count(REVIEW),
         )
     return readings
