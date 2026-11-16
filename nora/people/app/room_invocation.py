@@ -341,7 +341,7 @@ class RoomManagement:
                 return resolved
             identifiers = resolved
             new_person = "person_" + hashlib.sha256(
-                "\n".join(sorted(f"{i.kind}:{i.value}" for i in identifiers))
+                "\n".join(sorted(f"{i.platform}:{i.kind}:{i.value}" for i in identifiers))
                 .encode()
             ).hexdigest()[:20]
             target_id = next(
