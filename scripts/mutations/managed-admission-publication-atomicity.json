@@ -1,0 +1,44 @@
+[
+  {
+    "name": "person publication and hold cannot be separate commits",
+    "file": "nora/infra/sql/managed_handoff.py",
+    "old": "        await conn.execute(pg_insert(MANAGED_IDENTITY_HOLD).values(\n            person_id=person.person_id, operation_id=operation_id,\n        ).on_conflict_do_nothing())",
+    "new": "    async with engine.begin() as conn:\n        await conn.execute(pg_insert(MANAGED_IDENTITY_HOLD).values(\n            person_id=person.person_id, operation_id=operation_id,\n        ).on_conflict_do_nothing())",
+    "target": "tests/infra/test_managed_admission_sql.py::test_an_independent_reader_never_sees_an_unheld_person"
+  },
+  {
+    "name": "complete journal and release cannot be separate commits",
+    "file": "nora/infra/sql/managed_handoff.py",
+    "old": "        if person_ids:\n            await conn.execute(sa.delete(MANAGED_IDENTITY_HOLD).where(\n                MANAGED_IDENTITY_HOLD.c.operation_id == record.operation_id,\n                MANAGED_IDENTITY_HOLD.c.person_id.in_(person_ids),\n            ))",
+    "new": "    if person_ids:\n        async with engine.begin() as conn:\n            await conn.execute(sa.delete(MANAGED_IDENTITY_HOLD).where(\n                MANAGED_IDENTITY_HOLD.c.operation_id == record.operation_id,\n                MANAGED_IDENTITY_HOLD.c.person_id.in_(person_ids),\n            ))",
+    "target": "tests/infra/test_managed_admission_sql.py::test_complete_and_release_become_visible_together"
+  },
+  {
+    "name": "an absent completion journal cannot report complete",
+    "file": "nora/infra/sql/managed_handoff.py",
+    "old": "        if not result.rowcount:\n            return denied(\"absent-operation\")\n",
+    "new": "",
+    "target": "tests/contract/test_admission_probe_contract.py::test_a_journal_the_completion_cannot_land_is_refused[sql]"
+  },
+  {
+    "name": "completion persistence refusal must reach caller",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "        if finished.status is not OutcomeStatus.COMPLETE:",
+    "new": "        if False:",
+    "target": "tests/unit/test_managed_admission_publication.py::test_a_journal_the_completion_cannot_land_is_never_complete"
+  },
+  {
+    "name": "unrelated holds survive completion",
+    "file": "nora/infra/sql/managed_handoff.py",
+    "old": "                MANAGED_IDENTITY_HOLD.c.operation_id == record.operation_id,\n",
+    "new": "",
+    "target": "tests/contract/test_admission_probe_contract.py::test_completion_commits_the_journal_and_only_own_release[sql]"
+  },
+  {
+    "name": "retry reasserts already recorded holds",
+    "file": "nora/people/app/managed_admission.py",
+    "old": "            if step != \"holds\" and not _pending(record, step):",
+    "new": "            if not _pending(record, step):",
+    "target": "tests/unit/test_managed_admission_publication.py::test_retry_reasserts_done_holds_after_a_partial_legacy_release"
+  }
+]

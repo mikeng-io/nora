@@ -1,12 +1,16 @@
 """The initial file admission against real PostgreSQL — the target probe sees
-the rows the port reads hide, and an interrupted import resumes on a fresh
-engine without duplicating a single effect."""
+the rows the port reads hide, an interrupted import resumes on a fresh
+engine without duplicating a single effect, and the durable publication
+boundaries hold under independent readers: a person is never readable
+unheld, and complete-plus-released never lands half-visible."""
 
+import asyncio
 from types import MappingProxyType
 
 import pytest
 import sqlalchemy as sa
 
+from nora.access import IdentityAccess
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
@@ -16,15 +20,19 @@ from nora.domain.managed import (
     OperationRecord,
     OutcomeStatus,
     PersonLifecycle,
+    Verdict,
     room_scope_id,
     unavailable,
 )
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
+from nora.people.adapters.file_backend import FileTopologySource
 from nora.people.adapters.managed_handoff import SqlAdmissionProbe
 from nora.people.app.managed_admission import FileAdmission, plan
-from nora.testing.managed import FakeAuthorityBackend
+from nora.people.app.managed_authority import AuthorityService
+from nora.policy import load_policy
+from nora.testing.managed import FakeAuthorityBackend, FakeIdentityRegistry
 from tests.fakes import FakeAdmissionKratos
 
 IDENTITY = """\
@@ -268,3 +276,228 @@ async def test_fresh_engine_recovers_an_owned_create_after_process_loss(
         assert journal.state is OperationJournalState.COMPLETE
     finally:
         await restarted.dispose()
+
+
+_PUBLISH_LOCK = 770001
+_COMPLETE_LOCK = 770002
+
+
+async def _install_trigger(engine, *, name, event, body):
+    ret = "NEW" if event == "INSERT" else "OLD"
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(f"""
+            CREATE OR REPLACE FUNCTION test_{name}() RETURNS trigger AS $$
+            BEGIN {body} RETURN {ret};
+            END; $$ LANGUAGE plpgsql"""))
+        await conn.execute(sa.text(
+            f"CREATE TRIGGER {name} BEFORE {event} ON managed_identity_hold"
+            f" FOR EACH ROW EXECUTE FUNCTION test_{name}()"))
+
+
+async def _drop_trigger(engine, name):
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            f"DROP TRIGGER IF EXISTS {name} ON managed_identity_hold"))
+        await conn.execute(sa.text(
+            f"DROP FUNCTION IF EXISTS test_{name}"))
+
+
+async def _blocked_on_advisory(engine, lock_key) -> None:
+    """Wait until a session waits on an advisory lock — the writer's open transaction."""
+    for _ in range(200):
+        async with engine.connect() as conn:
+            waiting = await conn.scalar(sa.text(
+                "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'"
+                " AND objid = :lock_key AND NOT granted AND database = ("
+                "  SELECT oid FROM pg_database"
+                "  WHERE datname = current_database())"), {"lock_key": lock_key})
+        if waiting:
+            return
+    raise AssertionError("the writer never reached the advisory lock")
+
+
+async def test_an_independent_reader_never_sees_an_unheld_person(
+    engine, database,
+):
+    """The publication transaction is open past the person and account
+    inserts but cannot commit — the independent reader sees NO part of
+    that person; once the commit lands, person and hold appear together."""
+    await _install_trigger(
+        engine, name="gate_hold_insert", event="INSERT",
+        body=f"PERFORM pg_advisory_lock({_PUBLISH_LOCK});"
+             f" PERFORM pg_advisory_unlock({_PUBLISH_LOCK});")
+    try:
+        controller = create_sql_engine(database)
+        reader = create_sql_engine(database)
+        try:
+            async with controller.connect() as conn:
+                await conn.execute(sa.text(
+                    f"SELECT pg_advisory_lock({_PUBLISH_LOCK})"))
+                probe = SqlAdmissionProbe(engine)
+                person = ManagedPerson(
+                    person_id="blocked", lifecycle=PersonLifecycle.ACTIVE)
+                account = ManagedAccount(
+                    account_id="00000000-0000-0000-0000-0000000000aa",
+                    person_id="blocked", platform="signal",
+                    identifiers=frozenset(
+                        {Identifier("signal", "phone", "+85200000007")}),
+                    state=AccountState.BOUND)
+                writer = asyncio.ensure_future(probe.publish_held_person(
+                    person=person, accounts=(account,),
+                    operation_id="blocked-import"))
+                await _blocked_on_advisory(reader, _PUBLISH_LOCK)
+                store = SqlBindingStore(reader)
+                assert await store.person("blocked") is None
+                assert await store.resolve("signal", "+85200000007") is None
+                assert not await store.identity_held("blocked")
+                await conn.execute(sa.text(
+                    f"SELECT pg_advisory_unlock({_PUBLISH_LOCK})"))
+                outcome = await writer
+                assert outcome.status is OutcomeStatus.COMPLETE
+                assert await store.person("blocked") is not None
+                assert await store.identity_held("blocked")
+        finally:
+            await reader.dispose()
+            await controller.dispose()
+    finally:
+        await _drop_trigger(engine, "gate_hold_insert")
+
+
+async def test_complete_and_release_become_visible_together(
+    engine, database, sources,
+):
+    """An apply blocked INSIDE its completion commit leaves the outside
+    world at incomplete-plus-held; released, it lands complete-plus-
+    unheld — never one without the other."""
+    await _install_trigger(
+        engine, name="gate_hold_delete", event="DELETE",
+        body=f"PERFORM pg_advisory_lock({_COMPLETE_LOCK});"
+             f" PERFORM pg_advisory_unlock({_COMPLETE_LOCK});")
+    try:
+        controller = create_sql_engine(database)
+        reader = create_sql_engine(database)
+        try:
+            async with controller.connect() as conn:
+                await conn.execute(sa.text(
+                    f"SELECT pg_advisory_lock({_COMPLETE_LOCK})"))
+                identity_path, policy_path = sources
+                backend = FakeAuthorityBackend()
+                service = admission(engine, backend)
+                access = _reader_access(reader, backend, policy_path)
+                room = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+                writer = asyncio.ensure_future(
+                    service.apply(identity_path, policy_path))
+                await _blocked_on_advisory(reader, _COMPLETE_LOCK)
+                store = SqlBindingStore(reader)
+                journal = await store.operation(
+                    plan(identity_path, policy_path).import_id)
+                assert journal is not None
+                assert journal.state is OperationJournalState.INCOMPLETE
+                assert await store.person("miles") is not None
+                assert (await backend.check(
+                    scope=room, person_id="miles", permit="view")).verdict is Verdict.ALLOWED
+                protected = await access.check(scope=room, person_id="miles", permit="view")
+                assert protected.verdict is Verdict.UNAVAILABLE
+                assert protected.detail == "identity-publication-pending"
+                assert all([
+                    await store.identity_held(pid)
+                    for pid in ("miles", "ada", "listed_only")
+                ])
+                await conn.execute(sa.text(
+                    f"SELECT pg_advisory_unlock({_COMPLETE_LOCK})"))
+                outcome = await writer
+                assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+                journal = await store.operation(
+                    plan(identity_path, policy_path).import_id)
+                assert journal is not None
+                assert journal.state is OperationJournalState.COMPLETE
+                assert (await access.check(
+                    scope=room, person_id="miles", permit="view")).verdict is Verdict.ALLOWED
+                assert not any([
+                    await store.identity_held(pid)
+                    for pid in ("miles", "ada", "listed_only")
+                ])
+        finally:
+            await reader.dispose()
+            await controller.dispose()
+    finally:
+        await _drop_trigger(engine, "gate_hold_delete")
+
+
+async def test_a_completion_commit_failure_leaves_incomplete_and_held(
+    engine, sources,
+):
+    """A failure inside the completion transaction reports unavailable —
+    never complete — leaves journal and holds exactly as before, and the
+    own retry still lands complete-plus-unheld."""
+    await _install_trigger(
+        engine, name="fail_hold_delete", event="DELETE",
+        body="RAISE EXCEPTION 'injected hold-delete failure';")
+    try:
+        identity_path, policy_path = sources
+        backend = FakeAuthorityBackend()
+        service = admission(engine, backend)
+        outcome = await service.apply(identity_path, policy_path)
+        assert outcome.status is OutcomeStatus.UNAVAILABLE
+        store = SqlBindingStore(engine)
+        access = _reader_access(engine, backend, policy_path)
+        room = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+        assert (await backend.check(
+            scope=room, person_id="miles", permit="view")).verdict is Verdict.ALLOWED
+        assert (await access.check(
+            scope=room, person_id="miles", permit="view")).verdict is Verdict.UNAVAILABLE
+        journal = await store.operation(
+            plan(identity_path, policy_path).import_id)
+        assert journal is not None
+        assert journal.state is OperationJournalState.INCOMPLETE
+        assert all([
+            await store.identity_held(pid)
+            for pid in ("miles", "ada", "listed_only")
+        ])
+    finally:
+        await _drop_trigger(engine, "fail_hold_delete")
+    outcome = await service.apply(identity_path, policy_path)
+    assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+    journal = await store.operation(
+        plan(identity_path, policy_path).import_id)
+    assert journal is not None
+    assert journal.state is OperationJournalState.COMPLETE
+    assert not any([
+        await store.identity_held(pid)
+        for pid in ("miles", "ada", "listed_only")
+    ])
+
+
+def _reader_access(engine, backend, policy_path):
+    store = SqlBindingStore(engine)
+    topology = FileTopologySource(load_policy(policy_path))
+    return IdentityAccess(
+        bindings=store, authority=AuthorityService(store, backend, topology),
+        topology=topology, registry=FakeIdentityRegistry())
+
+
+async def test_a_hold_insert_failure_never_publishes_the_person(engine, database, sources):
+    await _install_trigger(
+        engine, name="fail_hold_insert", event="INSERT",
+        body="RAISE EXCEPTION 'injected hold-insert failure';")
+    identity, policy = sources
+    service = admission(engine)
+    reader = create_sql_engine(database)
+    try:
+        try:
+            outcome = await service.apply(identity, policy)
+            assert outcome.status is OutcomeStatus.UNAVAILABLE
+            store = SqlBindingStore(reader)
+            assert await store.person("ada") is None
+            assert await store.resolve("signal", "+85200000003") is None
+            journal = await store.operation(plan(identity, policy).import_id)
+            assert journal is not None and journal.state is not OperationJournalState.COMPLETE
+        finally:
+            await _drop_trigger(engine, "fail_hold_insert")
+        outcome = await service.apply(identity, policy)
+        assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+        assert await store.person("ada") is not None
+        assert await store.resolve("signal", "+85200000003") is not None
+        assert not await store.identity_held("ada")
+    finally:
+        await reader.dispose()

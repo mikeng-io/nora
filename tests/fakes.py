@@ -12,7 +12,17 @@ from typing import Any
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nora.domain.managed import Outcome, complete, denied, unavailable
+from nora.domain.managed import (
+    ManagedAccount,
+    ManagedError,
+    ManagedPerson,
+    OperationRecord,
+    Outcome,
+    OutcomeStatus,
+    complete,
+    denied,
+    unavailable,
+)
 from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.domain.ports import (
     AdapterHealth,
@@ -20,6 +30,8 @@ from nora.domain.ports import (
     SendResult,
 )
 from nora.people.app.managed_admission_identity import AdmissionIdentity
+from nora.people.app.managed_admission_probe import AdmissionFacts
+from nora.testing.managed import FakeBindingStore
 
 
 class SinkSender:
@@ -465,6 +477,95 @@ class FakeHoncho:
         if rest == ["peers"]:
             return web.json_response({"id": (body or {}).get("id"), "workspace_id": workspace})
         return web.json_response({"ok": True})
+
+
+class FakeAdmissionProbe:
+    """The `AdmissionProbe` seam over a `FakeBindingStore` — exposes the
+    rows the port reads hide (holds, journals, revoked accounts, suspended
+    people) and models the two durable publication transactions: a failure
+    inside `publish_held_person` or `complete_import` leaves nothing
+    behind, exactly like the SQL rollback. `fail_hold`/`fail_finish`
+    inject those pre-commit failures."""
+
+    def __init__(self, store: FakeBindingStore) -> None:
+        self._store = store
+        self.fail_hold = False
+        self.fail_finish = False
+
+    async def facts(self) -> AdmissionFacts:
+        store = self._store
+        return AdmissionFacts(
+            persons=frozenset(
+                (p.person_id, p.lifecycle.value, p.kratos_identity_id is not None)
+                for p in store.people.values()
+            ),
+            accounts=frozenset(
+                (a.account_id, a.person_id, a.state.value)
+                for a in store.accounts.values()
+            ),
+            identifiers=frozenset(
+                (i.platform, i.kind, i.value) for i in store.owners
+            ),
+            aliases=frozenset(store.aliases.items()),
+            memberships=frozenset(
+                (pid, scope.kind.value, scope.id, m.state.value)
+                for (pid, scope), m in store.memberships.items()
+            ),
+            supports=frozenset(
+                (pid, scope.kind.value, scope.id, source)
+                for (pid, scope), sources in store.supports.items()
+                for source in sources
+            ),
+            operations=frozenset(
+                (r.operation_id, r.kind, r.state.value)
+                for r in store.operations.values()
+            ),
+            holds=frozenset(store.identity_holds),
+            blocks=len(store.blocks),
+            link_rows=0,
+        )
+
+    async def publish_held_person(
+        self, *, person: ManagedPerson, accounts: tuple[ManagedAccount, ...],
+        operation_id: str,
+    ) -> Outcome:
+        store = self._store
+        store._up()
+        if not operation_id.strip():
+            raise ManagedError("an identity hold requires an owning operation")
+        # One durable commit, modelled: the store writes land on snapshots
+        # and any failure — a foreign claim or the injected hold outage —
+        # restores them, so no part of the person survives a failed commit.
+        saved = (dict(store.people), dict(store.accounts), dict(store.owners))
+        try:
+            if not accounts:
+                store.people.setdefault(person.person_id, person)
+            for account in accounts:
+                outcome = await store.register(person=person, account=account)
+                if outcome.status is not OutcomeStatus.COMPLETE:
+                    raise ManagedError(outcome.detail)
+            if self.fail_hold:
+                raise RuntimeError("injected hold failure")
+        except Exception:
+            store.people, store.accounts, store.owners = saved
+            raise
+        store.identity_holds.add((person.person_id, operation_id))
+        return complete()
+
+    async def complete_import(
+        self, record: OperationRecord, *, person_ids: tuple[str, ...]
+    ) -> Outcome:
+        store = self._store
+        store._up()
+        if record.operation_id not in store.operations:
+            return denied("absent-operation")
+        if self.fail_finish:
+            raise RuntimeError("injected finish failure")
+        store.operations[record.operation_id] = record
+        store.identity_holds -= {
+            (pid, record.operation_id) for pid in person_ids
+        }
+        return complete()
 
 
 class FakeAdmissionKratos:

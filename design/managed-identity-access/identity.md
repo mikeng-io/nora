@@ -159,8 +159,12 @@ before the first `serve`.
 Selecting managed mode admits a validated mapping of existing people and grants
 under operator authority. It preserves person references and rejects ambiguous
 account ownership. Selection alone neither infers links nor broadens grants.
-Returning to file mode requires an explicit validated authority handoff; a stale
-file is not an emergency authorization source.
+Each admitted identity is protected from its first durable publication — the
+person, its account bindings and the import's identity hold commit as one —
+and remains unavailable to dependent access until the import's proven-complete
+journal outcome commits together with the release of exactly that import's
+holds. Returning to file mode requires an explicit validated authority
+handoff; a stale file is not an emergency authorization source.
 
 Leaving a room or unit ends that membership, not the global identity. Revoking an
 account binding removes that account's ability to act as the person. Global

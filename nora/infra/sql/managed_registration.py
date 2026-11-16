@@ -33,6 +33,11 @@ from nora.infra.sql.schema_managed import (
 
 _OwnerRow = Row[Any, Any, Any]
 
+# PostgreSQL SQLSTATE 23505, unique_violation — matched EXACTLY, the same
+# rule `nora.infra.sql.reminders` applies: a CHECK violation is also an
+# IntegrityError and must not be misread as a duplicate.
+_PG_UNIQUE_VIOLATION = "23505"
+
 
 async def _insert_person(conn: AsyncConnection, person: ManagedPerson) -> None:
     # Idempotent insert — a replay never touches an existing person's
@@ -169,6 +174,23 @@ async def _insert_account(
                 account_id=account.account_id,
             )
         )
+
+
+async def _bind_account(
+    conn: AsyncConnection, *, person: ManagedPerson, account: ManagedAccount
+) -> None:
+    """`register`'s account write on the caller's transaction."""
+    owners = await _identifier_owners(conn, account.identifiers)
+    _check_ownership(owners, person, account)
+    await _rebind_revoked(conn, owners, account)
+    try:
+        await _insert_account(conn, account, owners)
+    except IntegrityError as exc:
+        if _PG_UNIQUE_VIOLATION in str(getattr(exc, "orig", exc)):
+            raise IdentifierConflictError(
+                "an identifier is owned by another account"
+            ) from exc
+        raise
 
 
 async def bind_identifiers(

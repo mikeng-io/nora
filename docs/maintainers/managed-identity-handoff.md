@@ -38,11 +38,15 @@ and workspace bindings, for faithful export after the source paths change.
 2. **Journals the effect** before any write (`file_admission` operation
    row), then runs journaled steps: people → identity holds → Kratos
    identities + correlation → aliases → memberships → containment +
-   `member` relations → read-back. Holds keep every imported person
-   `unavailable` to dependent managed access until the read-back proves
-   bindings, Kratos, memberships, Keto facts, and the full
-   person×room verdict matrix agree with the file predicate; only this
-   import's holds are released.
+   `member` relations → read-back. Each person commits WITH this
+   import's identity hold in one transaction — never readable
+   unprotected — and holds keep every imported person `unavailable` to
+   dependent managed access until the read-back proves bindings,
+   Kratos, memberships, Keto facts, and the full person×room verdict
+   matrix agree with the file predicate. The `complete` journal outcome
+   and the release of all and only this import's holds then commit
+   together: an outside reader sees complete-plus-unheld or keeps
+   incomplete-plus-held, never one without the other.
 3. **Reports** `complete` only after that read-back. A crash or outage
    leaves an `incomplete` journal and re-running the *same* command with
    the *same* files resumes the exact journaled steps — no new people or
