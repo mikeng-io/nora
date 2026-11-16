@@ -36,13 +36,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
+import json
 import os
 import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import (
     AbstractAsyncContextManager,
     asynccontextmanager,
-    suppress,
 )
 from pathlib import Path
 
@@ -166,12 +167,19 @@ def _report(report) -> int:
     return RETRYABLE
 
 
-def _publish(output: Path, bundle) -> int:
-    """Create the FRESH private bundle directory atomically — mode 0700,
-    files mode 0600 whatever the operator's umask, manifest written LAST
-    (it is the completeness mark). Any existing path — file, link or
-    directory, empty or not — refuses; a failed write removes only the
-    files this invocation staged, never operator content."""
+def _cleanup(output: Path, written: list[Path]) -> bool:
+    failed = False
+    for path in [*reversed(written), output]:
+        try:
+            path.rmdir() if path == output else path.unlink()
+        except OSError as error:
+            print(f"unavailable: destination-cleanup:{type(error).__name__}")
+            failed = True
+    return not failed
+
+
+def _publish(output: Path, bundle, policy_path: Path) -> int:
+    """Stage privately, then link the closed manifest as the atomic completeness mark."""
     try:
         output.mkdir(mode=0o700, parents=True)
     except FileExistsError:
@@ -185,23 +193,27 @@ def _publish(output: Path, bundle) -> int:
         for name, text in (
             ("identity.toml", bundle.identity_toml),
             ("policy.toml", bundle.policy_toml),
-            # The manifest is written LAST — it is the bundle's completeness mark.
-            ("export-manifest.json", bundle.manifest_json),
+            (".export-manifest.pending", bundle.manifest_json),
         ):
             path = output / name
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             written.append(path)
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(text)
+        source_digest = hashlib.sha256(policy_path.read_bytes()).hexdigest()
+        if source_digest != json.loads(bundle.manifest_json)["topology_sha256"]:
+            print("refused: untrustworthy:source-changed")
+            return REFUSED if _cleanup(output, written) else RETRYABLE
+        os.link(output / ".export-manifest.pending", output / "export-manifest.json")
     except OSError as error:
-        for path in written:
-            with suppress(OSError):
-                path.unlink()
-        with suppress(OSError):
-            output.rmdir()
+        _cleanup(output, written)
         print(f"unavailable: destination-write:{type(error).__name__}")
         return RETRYABLE
-    print(f"export: complete {output}")
+    try:
+        (output / ".export-manifest.pending").unlink()
+    except OSError as error:
+        print(f"warning: staging-cleanup:{type(error).__name__}")
+    print("export: complete")
     return COMPLETE
 
 
@@ -230,9 +242,15 @@ async def run(
     try:
         async with factory() as export:
             if args.command == "plan":
-                report = await export.assess(Path(args.policy))
-            else:
-                report = await export.export(Path(args.policy))
+                return _report(await export.assess(Path(args.policy)))
+            async with export.prepared(Path(args.policy)) as report:
+                rc = _report(report)
+                if rc != COMPLETE:
+                    return rc
+                if report.bundle is None:
+                    print("unavailable: empty-bundle")
+                    return RETRYABLE
+                return _publish(Path(args.output), report.bundle, Path(args.policy))
     except _TargetRefusedError as error:
         print(f"refused: {error}")
         return REFUSED
@@ -240,15 +258,6 @@ async def run(
         # the exception's TYPE name only, never its message (identifiers).
         print(f"unavailable: target-init:{type(error).__name__}")
         return RETRYABLE
-    rc = _report(report)
-    if rc != COMPLETE or args.command == "plan":
-        return rc
-    if report.bundle is None:
-        # A complete export always carries the bundle — its absence is a
-        # broken pipeline, reported as retryable rather than asserted away.
-        print("unavailable: empty-bundle")
-        return RETRYABLE
-    return _publish(Path(args.output), report.bundle)
 
 
 def main() -> None:

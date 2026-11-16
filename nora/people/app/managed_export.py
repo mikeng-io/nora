@@ -24,6 +24,8 @@ dropped fact — the modules' docstrings spell the refusal list out.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -132,25 +134,35 @@ class ManagedExport:
         return await self._run(policy_path, publish=True)
 
     async def _run(self, policy_path: Path, *, publish: bool) -> ExportReport:
+        async with self.prepared(policy_path, publish=publish) as report:
+            return report
+
+    @asynccontextmanager
+    async def prepared(
+        self, policy_path: Path, *, publish: bool = True
+    ) -> AsyncIterator[ExportReport]:
+        """Hold the managed mutation gate through the caller's publication decision."""
         if self.source_snapshot is not None:
             policy, source = self.source_snapshot
         else:
             loaded = _read_policy(policy_path)
             if isinstance(loaded, Outcome):
-                return ExportReport(outcome=loaded)
+                yield ExportReport(outcome=loaded)
+                return
             policy, source = loaded
         refused = _topology_refusals(policy)
         if refused:
-            return ExportReport(outcome=_denied(refused),
-                                refusals=tuple(refused))
-        try:
-            async with self.bindings.mutation():
-                return await self._export(
+            yield ExportReport(outcome=_denied(refused), refusals=tuple(refused))
+            return
+        async with AsyncExitStack() as stack:
+            try:
+                await stack.enter_async_context(self.bindings.mutation())
+                report = await self._export(
                     policy, source, policy_path, publish=publish)
-        except Exception as error:  # noqa: BLE001 — fail-closed boundary: the
-            # type name only, never the message — it may carry identifiers.
-            log.error("managed export failed: %s", type(error).__name__)
-            return ExportReport(outcome=unavailable("store-failure"))
+            except Exception as error:  # noqa: BLE001 — bounded private diagnostics
+                log.error("managed export failed: %s", type(error).__name__)
+                report = ExportReport(outcome=unavailable("store-failure"))
+            yield report
 
     async def _export(
         self, policy: Policy, source: str, policy_path: Path, *, publish: bool

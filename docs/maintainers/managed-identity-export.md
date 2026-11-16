@@ -47,10 +47,11 @@ uv run scripts/managed_identity_export.py export \
   naming the environment variable, same as the admission command.
 - The output directory must be ABSENT — an existing file, link or
   directory (even an empty one) is refused, never written through. The
-  bundle lands in one `mkdir`: the directory is mode `0700` and every
-  file mode `0600` from creation, whatever the operator's umask, and the
-  manifest is written last — it is the bundle's completeness mark. A
-  failed write removes only the files that invocation staged.
+  directory is mode `0700` and every file mode `0600` from creation,
+  whatever the operator's umask. The manifest is staged privately and
+  closed before an atomic no-overwrite link publishes `export-manifest.json`,
+  the completeness mark. A failed write never publishes that mark; cleanup
+  errors are reported explicitly and any remaining private staging is incomplete.
 
 Exit codes: `0` complete · `2` refused (unsupported, ambiguous or
 unfaithful state; occupied destination) · `3` unavailable (a store could
@@ -98,7 +99,10 @@ serialises on, so the bundle is one coherent cut — the command:
    must agree, open admission must agree, every emitted identifier must
    resolve to the same person in both backends, and no suspended or
    revoked identifier may resolve at all;
-7. only then hands back the bundle for publication.
+7. keeps the mutation gate and live service context through command publication;
+   after staging closes, rechecks the topology source immediately before
+   publishing the completeness mark. `assess` and the in-memory `export` report
+   do not publish files; only the command owns this filesystem boundary.
 
 ## Refusals — the whole export refuses when
 

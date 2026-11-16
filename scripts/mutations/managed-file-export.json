@@ -2,8 +2,8 @@
   {
     "name": "export emits no suspended person's accounts",
     "file": "nora/people/app/managed_export_prepare.py",
-    "old": "            if suspended:\n                # A suspended person holds no accounts in file mode — the",
-    "new": "            if False:\n                # A suspended person holds no accounts in file mode — the",
+    "old": "            if suspended:\n                # A suspended person holds no accounts in file mode \u2014 the",
+    "new": "            if False:\n                # A suspended person holds no accounts in file mode \u2014 the",
     "target": "tests/unit/test_managed_export.py::test_export_keeps_suspended_people_out_of_every_grant"
   },
   {
@@ -82,5 +82,33 @@
     "old": "        output.mkdir(mode=0o700, parents=True)",
     "new": "        output.mkdir(mode=0o700, parents=True, exist_ok=True)",
     "target": "tests/unit/test_managed_identity_export.py::test_export_refuses_an_empty_existing_directory"
+  },
+  {
+    "name": "manifest close failure never publishes a completeness mark",
+    "file": "scripts/managed_identity_export.py",
+    "old": "            (\".export-manifest.pending\", bundle.manifest_json),",
+    "new": "            (\"export-manifest.json\", bundle.manifest_json),",
+    "target": "tests/unit/test_managed_identity_export.py::test_manifest_close_and_cleanup_failure_never_publish_a_completeness_mark"
+  },
+  {
+    "name": "export retains its mutation gate through publication",
+    "file": "nora/people/app/managed_export.py",
+    "old": "            yield report\n",
+    "new": "        yield report\n",
+    "target": "tests/unit/test_managed_identity_export.py::test_publication_keeps_the_gate_and_live_services_until_the_mark_exists"
+  },
+  {
+    "name": "export rechecks topology after staging before its completeness mark",
+    "file": "scripts/managed_identity_export.py",
+    "old": "        if source_digest != json.loads(bundle.manifest_json)[\"topology_sha256\"]:",
+    "new": "        if False:",
+    "target": "tests/unit/test_managed_identity_export.py::test_topology_changed_during_staging_refuses_the_publication_mark"
+  },
+  {
+    "name": "successful export output omits the private destination",
+    "file": "scripts/managed_identity_export.py",
+    "old": "    print(\"export: complete\")",
+    "new": "    print(f\"export: complete {output}\")",
+    "target": "tests/unit/test_managed_identity_export.py::test_export_publishes_the_bundle_into_a_fresh_directory"
   }
 ]

@@ -147,7 +147,8 @@ async def test_export_publishes_the_bundle_into_a_fresh_directory(
     ], services=factory)
     assert rc == COMPLETE
     out = capsys.readouterr().out
-    assert f"export: complete {output}" in out
+    assert "export: complete" in out
+    assert str(output) not in out
     assert sorted(p.name for p in output.iterdir()) == [
         "export-manifest.json", "identity.toml", "policy.toml",
     ]
@@ -352,3 +353,128 @@ def test_plan_subprocess_refuses_an_invalid_policy(tmp_path):
     )
     assert result.returncode == REFUSED
     assert "refused" in result.stdout
+
+
+async def test_manifest_close_and_cleanup_failure_never_publish_a_completeness_mark(
+    sources, tmp_path, capsys, monkeypatch,
+):
+    output = tmp_path / 'private-person-room'
+    real_open, real_fdopen, real_unlink = os.open, os.fdopen, Path.unlink
+    pending_fd = None
+
+    def track_open(path, flags, mode=0o777, **kwargs):
+        nonlocal pending_fd
+        fd = real_open(path, flags, mode, **kwargs)
+        if Path(path).parent == output and 'manifest' in Path(path).name:
+            pending_fd = fd
+        return fd
+
+    class FailedClose:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self.handle
+
+        def __exit__(self, *args):
+            self.handle.close()
+            raise OSError('generated close failure')
+
+    def fail_close(fd, *args, **kwargs):
+        handle = real_fdopen(fd, *args, **kwargs)
+        return FailedClose(handle) if fd == pending_fd else handle
+
+    def fail_unlink(path, *args, **kwargs):
+        if path.parent == output:
+            raise PermissionError('generated cleanup failure')
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, 'open', track_open)
+    monkeypatch.setattr(os, 'fdopen', fail_close)
+    monkeypatch.setattr(Path, 'unlink', fail_unlink)
+    rc = await run([
+        'export', '--policy', str(sources), '--output', str(output),
+        '--database-url', 'x', '--kratos-admin-url', 'x', '--keto-read-url', 'x',
+    ], services=_services(*_seeded(), sources))
+    assert rc == RETRYABLE
+    assert (output / 'identity.toml').exists()
+    assert (output / 'policy.toml').exists()
+    assert not (output / 'export-manifest.json').exists()
+    out = capsys.readouterr().out
+    assert 'destination-cleanup:PermissionError' in out
+    assert 'export: complete' not in out and str(output) not in out
+
+
+async def test_publication_keeps_the_gate_and_live_services_until_the_mark_exists(
+    sources, tmp_path, capsys, monkeypatch,
+):
+    store, backend, registry = _seeded()
+    output = tmp_path / 'private-person-room'
+    closed = False
+    published = []
+    real_link = os.link
+
+    @asynccontextmanager
+    async def factory():
+        nonlocal closed
+        async with _services(store, backend, registry, sources)() as export:
+            yield export
+            assert (output / 'export-manifest.json').exists()
+            closed = True
+
+    def observe_link(source, target, *args, **kwargs):
+        assert store._mutation_lock.locked(), 'publication released the identity gate'
+        assert not closed
+        real_link(source, target, *args, **kwargs)
+        published.append(target)
+
+    monkeypatch.setattr(os, 'link', observe_link)
+    rc = await run([
+        'export', '--policy', str(sources), '--output', str(output),
+        '--database-url', 'x', '--kratos-admin-url', 'x', '--keto-read-url', 'x',
+    ], services=factory)
+    assert rc == COMPLETE and closed
+    assert published == [output / 'export-manifest.json']
+    assert not store._mutation_lock.locked()
+    out = capsys.readouterr().out
+    assert 'export: complete' in out and str(output) not in out
+
+
+async def test_topology_changed_during_staging_refuses_the_publication_mark(
+    sources, tmp_path, capsys, monkeypatch,
+):
+    output = tmp_path / 'bundle'
+    real_open, real_fdopen = os.open, os.fdopen
+    pending_fd = None
+
+    def track_open(path, flags, mode=0o777, **kwargs):
+        nonlocal pending_fd
+        fd = real_open(path, flags, mode, **kwargs)
+        if Path(path).parent == output and 'manifest' in Path(path).name:
+            pending_fd = fd
+        return fd
+
+    class ChangedSource:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self.handle
+
+        def __exit__(self, *args):
+            self.handle.close()
+            sources.write_text(POLICY + '\n# generated topology edit\n')
+
+    def change_after_close(fd, *args, **kwargs):
+        handle = real_fdopen(fd, *args, **kwargs)
+        return ChangedSource(handle) if fd == pending_fd else handle
+
+    monkeypatch.setattr(os, 'open', track_open)
+    monkeypatch.setattr(os, 'fdopen', change_after_close)
+    rc = await run([
+        'export', '--policy', str(sources), '--output', str(output),
+        '--database-url', 'x', '--kratos-admin-url', 'x', '--keto-read-url', 'x',
+    ], services=_services(*_seeded(), sources))
+    assert rc == REFUSED
+    assert not output.exists()
+    assert 'untrustworthy:source-changed' in capsys.readouterr().out
