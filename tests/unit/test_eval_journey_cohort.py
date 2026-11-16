@@ -37,7 +37,7 @@ def _cohort_file(tmp_path, cases=None, judges=None, **overrides):
 
 
 def _journey_services(*, judges=("alpha", "beta")):
-    from nora.testing.journey_world import JourneyServices
+    from nora.subject.journey_world import JourneyServices
 
     return JourneyServices(policy="[rooms]\nallow = []",
                            judge_models=judges)

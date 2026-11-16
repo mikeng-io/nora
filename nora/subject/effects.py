@@ -19,6 +19,7 @@ from nora.infra.sql.schema import (
     COGNITION_WAKE_OUTCOME,
     METADATA,
     ROW_HISTORY,
+    STIMULUS_CLAIM,
 )
 from nora.subject.environment import IsolatedServices
 
@@ -360,6 +361,48 @@ def tool_effects(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
              "error_type": event.get("error_type"), "retry": event.get("retry"),
              "argument_validation": event.get("argument_validation")}
             for event in events if event.get("kind") == "tool_finished"]
+
+
+async def stimulus_session(reads: Any, stimulus_id: int) -> dict[str, Any]:
+    """The claim and settled outcome for one stimulus row, on the cut."""
+    async def read(conn: Any) -> dict[str, Any]:
+        claims = [int(wid) for wid in (await conn.execute(
+            sa.select(STIMULUS_CLAIM.c.wake_id).where(
+                STIMULUS_CLAIM.c.stimulus_id == stimulus_id)
+            .order_by(STIMULUS_CLAIM.c.id))).scalars().all()]
+        outcomes: dict[int, dict[str, Any]] = {}
+        if claims:
+            for row in (await conn.execute(sa.select(COGNITION_WAKE_OUTCOME)
+                    .where(COGNITION_WAKE_OUTCOME.c.wake_id.in_(claims)))
+                    ).mappings().all():
+                outcomes[int(row["wake_id"])] = dict(row)
+        wake_id = claims[-1] if claims else None
+        outcome = outcomes.get(wake_id) if wake_id is not None else None
+        closed = [wid for wid in claims
+                  if (outcomes.get(wid) or {}).get("outcome") == "closed"]
+        # Two closed consumptions, or a closed claim a newer claim
+        # followed, contradict which session the stimulus settled to —
+        # conflicting evidence, never "the latest wins".
+        conflict = (
+            f"stimulus claims settle to conflicting sessions: {claims}"
+            if len(closed) > 1 or (closed and closed[0] != wake_id)
+            else None)
+        return {
+            "wake_id": wake_id,
+            "claims": claims,
+            "wake_outcome": (outcome or {}).get("outcome"),
+            "session_id": ((outcome or {}).get("session_id")
+                           if conflict is None
+                           and (outcome or {}).get("outcome") == "closed"
+                           else None),
+            "session_conflict": conflict,
+        }
+
+    if hasattr(reads, "connect"):
+        async with reads.connect() as conn:
+            return await read(conn)
+    async with reads.begin() as conn:
+        return await read(conn)
 
 
 async def cognition_wakes(engine: Any) -> list[dict[str, Any]]:

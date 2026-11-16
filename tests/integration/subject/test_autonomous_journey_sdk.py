@@ -19,6 +19,7 @@ from evals.accounting import accepted, accounted, evidence_outcome
 from evals.backbone import JourneyGrader, Spec, nora_task
 from evals.rebuilt.entry import ENTRY_POINTS
 from nora.subject.eval_evidence import EvidenceError, read_events
+from nora.subject.journey_world import JourneyServices
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.subject.recorded_services import RecordedServices
 from nora.testing.causal_protocol import (
@@ -29,7 +30,6 @@ from nora.testing.causal_protocol import (
     QUESTION,
     TITLE,
 )
-from nora.testing.journey_world import JourneyServices
 from tests.integration.subject.test_sdk_recorded_caller import (
     sdk_evidence as sdk_evidence,
 )

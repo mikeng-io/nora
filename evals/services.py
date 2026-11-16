@@ -31,7 +31,7 @@ class ServiceInputs:
 
 def _journey_plan(name: str, entry: dict[str, Any]) -> Any:
     """One declarative `JourneyServices`, or a refusal of its plan."""
-    from nora.testing.journey_world import JourneyServices
+    from nora.subject.journey_world import JourneyServices
 
     if set(entry) - _JOURNEY_KEYS or not {"kind", "policy", "judges"} <= set(entry):
         raise ValueError(f"journey service plan for {name!r} is malformed")

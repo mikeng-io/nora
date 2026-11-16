@@ -29,9 +29,38 @@ from nora.platform.bridge.service import DurableActionService, action_http_statu
 from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
 from nora.subject.environment import IsolatedServices
+from nora.subject.eval_evidence import current
 from nora.subject.obtain import SubjectSpec, build_config
 from nora.testing.causal_protocol import CausalProtocol, texts
 from nora.testing.signal_daemon import FakeSignalDaemon
+
+
+def _record_request(protocol: CausalProtocol, body: dict) -> None:
+    """`fixture_model_request`: each request the finite world received."""
+    if evidence := current():
+        evidence.record("fixture_model_request", phase=protocol.phase, body=body)
+
+
+def finite_boundary(protocol: CausalProtocol) -> web.Application:
+    """The served model endpoint of a finite protocol.
+
+    The subject, not the protocol, owns the served boundary: each
+    received request is recorded as case evidence before the protocol
+    names and answers it.
+    """
+    application = web.Application()
+
+    async def respond(request: web.Request) -> web.StreamResponse:
+        try:
+            body = await request.json()
+        except ValueError:
+            pass  # `protocol.respond` names the malformed case itself.
+        else:
+            _record_request(protocol, body)
+        return await protocol.respond(request)
+
+    application.router.add_post("/v1/chat/completions", respond)
+    return application
 
 
 def _wrapper() -> Any:
@@ -322,7 +351,8 @@ class JourneyServices:
         for path in ("/v1/self", "/v1/groups", "/v1/health"):
             application.router.add_get(path, read)
         application.router.add_post("/v1/actions", self._actions)
-        assert self.daemon is not None
+        if self.daemon is None:
+            raise RuntimeError("journey world bridge is unbound")
         application.router.add_post("/api/v1/rpc", self.daemon.rpc)
         return application
 
@@ -342,9 +372,11 @@ class JourneyServices:
         reaches `CausalProtocol`, which names it into `errors` — it never
         lands on the judge by accident."""
         if body.get("model") in self.judge_models:
-            assert self.judge is not None
+            if self.judge is None:
+                raise RuntimeError("journey world judge is unbound")
             return self.judge.respond
-        assert self.protocol is not None
+        if self.protocol is None:
+            raise RuntimeError("journey world protocol is unbound")
         return self.protocol.respond
 
     @asynccontextmanager
@@ -367,7 +399,10 @@ class JourneyServices:
             self.requests.append(body)
             if self.protocol is None or self.judge is None:
                 return web.json_response({"error": "world unbound"}, status=503)
-            return await self._destination(body)(request)
+            destination = self._destination(body)
+            if destination == self.protocol.respond:
+                _record_request(self.protocol, body)
+            return await destination(request)
 
         model.router.add_post("/v1/chat/completions", respond)
         apps = {
