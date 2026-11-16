@@ -43,10 +43,11 @@ async def test_direct_withdrawal_preserves_every_other_membership_support(other_
     operation = _op("generated-direct-withdrawal", "set_membership",
         target=Target(TargetKind.MEMBERSHIP, person_id=PERSON, scope=ROOM),
         payload=MembershipStanding(member=False))
-    assert (await service.apply(operation)).status is OutcomeStatus.COMPLETE
+    outcome = await service.apply(operation)
     memberships = {m.scope: m for m in await store.memberships_for(PERSON)}
     standing = memberships[ROOM]
     assert standing.sources == other_sources
+    assert outcome.status is OutcomeStatus.COMPLETE
     expected = MembershipState.MEMBER if other_sources else MembershipState.LEFT
     assert standing.state is expected
     assert memberships[UNIT] == unit_before
