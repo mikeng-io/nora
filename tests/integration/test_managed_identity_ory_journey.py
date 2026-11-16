@@ -29,15 +29,11 @@ import hashlib
 import json
 import logging
 import re
-import subprocess
 import time
-import urllib.error
-import urllib.request
 import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -70,25 +66,14 @@ from nora.web.management_api import ProvisioningCredential, register_management_
 from nora.web.management_auth import AuthenticationIssuer, AuthenticationVerifier
 from nora.web.management_sessions import register_session_routes
 from tests.fakes import SinkSender
+from tests.integration.managed_ory import _Ory
+from tests.integration.managed_ory import ory as ory
 from tests.unit.test_management_authentication import ISSUER, KEY, claims, signed
 
 log = logging.getLogger(__name__)
 
-# The pinned Ory images deploy/ory/compose.yaml declares — image identity by
-# digest, never a floating tag.
-KRATOS_IMAGE = (
-    "oryd/kratos:v26.2.0"
-    "@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643"
-)
-KETO_IMAGE = (
-    "oryd/keto:v26.2.0"
-    "@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2"
-)
 
-# ---------------------------------------------------------------------------
-# Generated identity material — every value is generated for this journey; no
-# production name, number, id, room or coordinate appears.
-# ---------------------------------------------------------------------------
+# Generated journey identity material.
 
 OWN_ACCOUNT = "gen-svc-signal"            # the generated signal-cli service account
 SIG_PHONE = Identifier("signal", "phone", "gen-sig-num-0001")
@@ -155,143 +140,6 @@ _POLICY = Policy(
 )
 
 
-def _docker(*args: str, timeout: int = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(  # noqa: S603 — fixed docker argv, owned names
-        ["docker", *args], check=True, capture_output=True, text=True,
-        timeout=timeout,
-    )
-
-
-def _mapped_port(name: str, container_port: int) -> str:
-    out = _docker("port", name, f"{container_port}/tcp").stdout.strip()
-    return out.rsplit(":", 1)[-1]
-
-
-def _wait_ready(
-    urls: dict[str, str],
-    containers: dict[str, str],
-    *,
-    deadline_seconds: float = 90.0,
-) -> None:
-    """Bounded container-readiness wait — infrastructure start-up, never the
-    state ordering of the journey itself (no sleeps order test state)."""
-    started = time.monotonic()
-    pending = dict(urls)
-    while pending:
-        for name, url in list(pending.items()):
-            try:
-                with urllib.request.urlopen(  # noqa: S310 — owned loopback health URLs
-                        url, timeout=2) as response:
-                    if response.status == 200:
-                        pending.pop(name)
-                        continue
-            except (OSError, urllib.error.URLError):
-                pass
-        if not pending:
-            return
-        if time.monotonic() - started > deadline_seconds:
-            logs = {
-                name: _docker("logs", "--tail", "20", containers[name]).stdout[-1500:]
-                for name in pending
-            }
-            pytest.fail(
-                f"Ory containers not ready after {deadline_seconds}s: "
-                f"{sorted(pending)}; tails: {logs}"
-            )
-        time.sleep(0.25)
-
-
-@dataclass
-class _Ory:
-    kratos_admin: str
-    kratos_public: str
-    keto_read: str
-    keto_write: str
-
-
-@pytest.fixture
-def ory() -> Iterator[_Ory]:
-    """Disposable pinned Ory containers on dynamic loopback ports — owned
-    entirely by this journey and removed by name in teardown. The lifecycle
-    mirrors deploy/ory/compose.yaml step for step: data volumes, owner fix,
-    one-shot migrations, then serving containers."""
-    tag = f"nora-mit-{uuid.uuid4().hex[:10]}"
-    keto_vol, kratos_vol = f"{tag}-keto", f"{tag}-kratos"
-    keto_name, kratos_name = f"{tag}-keto", f"{tag}-kratos"
-    root = Path(__file__).resolve().parents[2]
-    keto_cfg, kratos_cfg = f"{root}/deploy/ory/keto", f"{root}/deploy/ory/kratos"
-    _docker("volume", "create", keto_vol)
-    _docker("volume", "create", kratos_vol)
-    try:
-        for image, vol in ((KETO_IMAGE, keto_vol), (KRATOS_IMAGE, kratos_vol)):
-            _docker("run", "--rm", "--user", "0:0",
-                    "--entrypoint", "chown", "-v",
-                    f"{vol}:/home/ory/data", image,
-                    "ory:ory", "/home/ory/data")
-        _docker("run", "--rm",
-                "-v", f"{keto_cfg}:/etc/keto:ro", "-v",
-                f"{keto_vol}:/home/ory/data",
-                "-e", "DSN=sqlite:///home/ory/data/keto.db?_fk=true",
-                "--entrypoint", "keto", KETO_IMAGE,
-                "migrate", "up", "-c", "/etc/keto/keto.dev.yaml", "--yes")
-        _docker("run", "--rm",
-                "-v", f"{kratos_cfg}:/etc/kratos:ro", "-v",
-                f"{kratos_vol}:/home/ory/data",
-                "-e", "DSN=sqlite:///home/ory/data/kratos.db?_fk=true",
-                "--entrypoint", "kratos", KRATOS_IMAGE,
-                "migrate", "sql", "-e", "--yes")
-        _docker("run", "-d", "--name", keto_name,
-                "-v", f"{keto_cfg}:/etc/keto:ro", "-v",
-                f"{keto_vol}:/home/ory/data",
-                "-e", "DSN=sqlite:///home/ory/data/keto.db?_fk=true",
-                "-e", "SERVE_READ_HOST=0.0.0.0",
-                "-e", "SERVE_WRITE_HOST=0.0.0.0",
-                "-p", "127.0.0.1:0:4466", "-p", "127.0.0.1:0:4467",
-                KETO_IMAGE, "serve", "-c", "/etc/keto/keto.dev.yaml")
-        _docker("run", "-d", "--name", kratos_name,
-                "-v", f"{kratos_cfg}:/etc/kratos:ro", "-v",
-                f"{kratos_vol}:/home/ory/data",
-                "-e", "DSN=sqlite:///home/ory/data/kratos.db?_fk=true",
-                "-e", "SERVE_PUBLIC_HOST=0.0.0.0",
-                "-e", "SERVE_ADMIN_HOST=0.0.0.0",
-                "-p", "127.0.0.1:0:4433", "-p", "127.0.0.1:0:4434",
-                KRATOS_IMAGE, "serve", "--dev", "-c",
-                "/etc/kratos/kratos.dev.yaml")
-        keto_read = _mapped_port(keto_name, 4466)
-        keto_write = _mapped_port(keto_name, 4467)
-        kratos_public = _mapped_port(kratos_name, 4433)
-        kratos_admin = _mapped_port(kratos_name, 4434)
-        # The same readiness endpoints the compose healthchecks use.
-        _wait_ready(
-            {
-                "keto": f"http://127.0.0.1:{keto_read}/health/ready",
-                "kratos": f"http://127.0.0.1:{kratos_admin}/admin/health/ready",
-            },
-            {"keto": keto_name, "kratos": kratos_name},
-        )
-        yield _Ory(
-            kratos_admin=f"http://127.0.0.1:{kratos_admin}",
-            kratos_public=f"http://127.0.0.1:{kratos_public}",
-            keto_read=f"http://127.0.0.1:{keto_read}",
-            keto_write=f"http://127.0.0.1:{keto_write}",
-        )
-    finally:
-        # Teardown removes exactly the resources this journey named — never a
-        # wildcard sweep over somebody else's containers.
-        subprocess.run(  # noqa: S603 — exact owned container names
-            ["docker", "rm", "-f", keto_name, kratos_name],
-            capture_output=True, timeout=60)
-        subprocess.run(  # noqa: S603 — the journey's own volume names
-            ["docker", "volume", "rm", keto_vol, kratos_vol],
-            capture_output=True, timeout=60)
-        remaining = _docker("ps", "-aq", "--filter", f"name={tag}-")
-        assert not remaining.stdout.split(), (
-            f"journey teardown left containers behind: {remaining.stdout!r}")
-        left = _docker("volume", "ls", "-q", "--filter", f"name={tag}-")
-        assert not left.stdout.split(), (
-            f"journey teardown left volumes behind: {left.stdout!r}")
-
-
 class _Clock:
     """The explicit data clock the journey injects — ordering is constructor
     collaboration, never a sleep. Whole-second real time offset ten seconds
@@ -312,8 +160,7 @@ def _ident_json(account: Identifier) -> dict[str, str]:
 def _assertion(
     account: Identifier, *, purpose: str, binding: dict | None = None,
 ) -> Callable[..., str]:
-    """A generated gateway assertion — the trusted-boundary input; see the
-    module docstring for what this does not prove."""
+    """Mint a generated trusted-gateway assertion, not a provider proof."""
     def build(*, path: str, body: bytes, method: str = "POST") -> str:
         value = claims(
             account=_ident_json(account),
@@ -544,13 +391,8 @@ def _signal_challenge(pushed: FakeLinkChallengeDelivery,
     return match[1]
 
 
-async def test_managed_identity_ory_journey(journey: _Journey) -> None:
-    """Independent registration → bilateral consolidation → scoped access →
-    holder unlink → completed-request replay, over real Postgres/Kratos/Keto."""
-    j = journey
-    bindings, services = j.services.bindings, j.services
-
-    # -- registration ---------------------------------------------------------
+async def _register_accounts(j: _Journey):
+    bindings = j.services.bindings
     # Absence first: an unregistered account answers `nothing_found`, so the
     # resolutions below are measured against a real negative.
     status, body = await j.resolve(DC1, SCOPE_DC)
@@ -586,8 +428,11 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
         **{a: await j.sign_in(a) for a in (TG, DC1, DC2)},
     }
     retained_tg = sessions[TG]  # obsolete after consolidation — kept to prove it
+    return sessions, retained_tg
 
-    # -- link A: Discord-1 initiates; the Signal holder approves privately ------
+
+async def _link_signal(j: _Journey, sessions: dict):
+    bindings = j.services.bindings
     req_a = f"gen-link-a-{uuid.uuid4().hex[:8]}"
     status, body = await j.post(LINK_REQUESTS, {
         "request_id": req_a, "receiving": _ident_json(SIG_PHONE),
@@ -596,6 +441,18 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
     assert status == 200, body
     dc_nonce = body["request"]["challenge"]["nonce"]
     assert body["request"]["side"] == "initiating"
+    initiating_view = body
+    status, receiving_view = await j.get(
+        f"{LINK_REQUESTS}/{req_a}", auth=sessions[SIG_PHONE])
+    assert status == 200
+    assert receiving_view["request"]["side"] == "receiving"
+    receiving_nonce = receiving_view["request"]["challenge"]["nonce"]
+    assert receiving_nonce != dc_nonce
+    assert receiving_nonce not in json.dumps(initiating_view)
+    assert dc_nonce not in json.dumps(receiving_view)
+    status, foreign_view = await j.get(
+        f"{LINK_REQUESTS}/{req_a}", auth=sessions[TG])
+    assert status == 403 and "request" not in foreign_view
 
     # Refusals, each beside its positive control below:
     # a retained session is never consent — the decision route wants sign_in.
@@ -636,6 +493,7 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
     # The Signal side answers over its trusted private transport — the real
     # signal-cli envelope path, challenge pushed through the shared fake.
     sig_nonce = _signal_challenge(j.pushed, req_a)
+    assert sig_nonce == receiving_nonce
     assert await j.consent.dispatch(
         _consent_envelope(request_id=req_a, nonce=sig_nonce)) is True
     assert j.sink.sent, "the private consent reply never left the handler"
@@ -654,8 +512,10 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
     assert await bindings.canonical_person(P_SIG) == P_DC1
     assert await j.kratos_state(P_SIG) is Verdict.DENIED  # retired → inactive
     assert await j.kratos_state(P_DC1) is Verdict.ALLOWED
+    return req_a, dc_nonce
 
-    # -- link B: Telegram initiates; both decisions are fresh sign_in -----------
+
+async def _link_telegram(j: _Journey, sessions: dict):
     req_b = f"gen-link-b-{uuid.uuid4().hex[:8]}"
     status, body = await j.post(LINK_REQUESTS, {
         "request_id": req_b, "receiving": _ident_json(DC1),
@@ -679,7 +539,9 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
     assert body["person_id"] == P_DC1
     assert await j.kratos_state(P_TG) is Verdict.DENIED
 
-    # -- scoped access in two units -------------------------------------------
+
+async def _grant_scoped_access(j: _Journey):
+    services = j.services
     # The installation's out-of-band delegation seeds operator standing; the
     # holder then runs the supported scoped operations over the private HTTP
     # boundary under their retained session.
@@ -739,7 +601,9 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
         person == P_DC2 and relation != "member"
         for relation, person in relations), relations
 
-    # -- the generated historical author row -----------------------------------
+
+async def _link_discord_with_history(j: _Journey, sessions: dict):
+    bindings = j.services.bindings
     row_id = await j.audit.append(
         message=NormalizedMessage(
             platform="discord", conversation_id=ROOM_DC,
@@ -750,7 +614,6 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
         person_id=P_DC2,
     )
 
-    # -- link C: Discord-2 merges under the same survivor ------------------------
     req_c = f"gen-link-c-{uuid.uuid4().hex[:8]}"
     status, body = await j.post(LINK_REQUESTS, {
         "request_id": req_c, "receiving": _ident_json(DC1),
@@ -799,7 +662,8 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
     assert stored == P_DC2
     assert await bindings.canonical_person(stored) == P_DC1
 
-    # -- retained bindings: obsolete ones refuse, fresh ones rebind --------------
+
+async def _rebind_retained_session(j: _Journey, retained_tg: Callable[..., str]):
     status, body = await j.post(CHECK, {}, auth=retained_tg)
     assert status == 403 and body["status"] == "denied"
     rebound_tg = await j.sign_in(TG)
@@ -814,7 +678,8 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
         payload={"member": True})
     assert status == 200, body
 
-    # -- holder unlink: one exact account leaves, the survivor stands ------------
+
+async def _unlink_account(j: _Journey):
     dc2_session = await j.sign_in(DC2)
     status, body = await j.post(UNLINK, {
         "operation_id": f"gen-unlink-{uuid.uuid4().hex[:8]}",
@@ -831,7 +696,9 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
     status, body = await j.post(CHECK, {}, auth=rebound_dc1)
     assert status == 200 and body["binding"]["person_id"] == P_DC1
 
-    # -- replay: the completed request publishes nothing twice ------------------
+
+async def _replay_link(j: _Journey, req_a: str, dc_nonce: str):
+    bindings, services = j.services.bindings, j.services
     # The EXACT initiating approval replayed verbatim — same operation id,
     # same effect — replays the recorded result; a second decision under a
     # fresh operation id is refused, and neither publishes the merge again.
@@ -850,7 +717,9 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
     assert status == 200
     assert body["person_id"] == P_DC1
 
-    # -- bounded ownership evidence ---------------------------------------------
+
+async def _check_owned_state(j: _Journey):
+    bindings, services = j.services.bindings, j.services
     # Kratos answers for exactly the generated persons; Keto tuples name only
     # generated persons; the link store holds only generated requests.
     async with j.ory_session.get(
@@ -867,3 +736,16 @@ async def test_managed_identity_ory_journey(journey: _Journey) -> None:
             GENERATED_PERSONS | {P_DC1}), relations
     journal = await bindings.operation(f"gen-reg-{P_DC1}")
     assert journal is not None and journal.state.value == "complete"
+
+
+async def test_managed_identity_ory_journey(journey: _Journey) -> None:
+    """Register, link bilaterally, enforce scope, preserve history and revoke over real Ory."""
+    sessions, retained_tg = await _register_accounts(journey)
+    request_id, nonce = await _link_signal(journey, sessions)
+    await _link_telegram(journey, sessions)
+    await _grant_scoped_access(journey)
+    await _link_discord_with_history(journey, sessions)
+    await _rebind_retained_session(journey, retained_tg)
+    await _unlink_account(journey)
+    await _replay_link(journey, request_id, nonce)
+    await _check_owned_state(journey)
