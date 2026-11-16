@@ -39,6 +39,7 @@ from typing import Any, Protocol
 
 from nora.domain.identity import BoundAccount
 from nora.domain.managed import (
+    CONTAINMENT_RELATIONS,
     AccountState,
     CheckResult,
     ManagedAccount,
@@ -55,8 +56,13 @@ from nora.domain.managed import (
     room_scope_id,
     unavailable,
 )
-from nora.domain.managed_ports import AuthorityBackend, BindingStore, IdentityRegistry
-from nora.domain.management import Scope, ScopeKind
+from nora.domain.managed_ports import (
+    AuthorityBackend,
+    BindingStore,
+    IdentityRegistry,
+    ScopedRelation,
+)
+from nora.domain.management import MANAGEMENT_PERMITS, Scope, ScopeKind
 from nora.people.app.managed_ops import _finish, _pending, _step_done
 from nora.persons import Persons, PersonsError, load_persons
 from nora.policy import Policy, PolicyError, load_policy
@@ -125,6 +131,8 @@ class _Prepared:
     """The exact intended effect — computed once per call, bound by digest."""
     import_id: str
     snapshot: MappingProxyType[str, Any]
+    persons: Persons
+    policy: Policy
     people: dict[str, _PersonPlan]
     accounts: dict[str, tuple[BoundAccount, ...]]      # person_id -> accounts
     aliases: dict[str, tuple[str, ...]]               # person_id -> former ids
@@ -220,7 +228,17 @@ def _prepare(identity_path: Path, policy_path: Path) -> _Prepared | Outcome:
             room_scopes[scope] = (convo.platform, cid)
         admitted = (
             set(people) if convo.persons is None
-            else {persons.subject_id_for(pid) for pid in convo.persons}
+            else {
+                # The file predicate answers on the CHECKED person's
+                # canonical id against the AUTHORED list — a retired-only
+                # entry therefore denies the survivor, never grants it.
+                pid for pid in people
+                if policy.is_allowed(
+                    platform=convo.platform,
+                    conversation_id=sorted(convo.ids)[0],
+                    person_id=pid,
+                )
+            }
         )
         for person_id in admitted:
             for cid in convo.ids:
@@ -249,6 +267,8 @@ def _prepare(identity_path: Path, policy_path: Path) -> _Prepared | Outcome:
     return _Prepared(
         import_id=_import_id(identity_sha, policy_sha),
         snapshot=snapshot,
+        persons=persons,
+        policy=policy,
         people=people,
         accounts=accounts,
         aliases=aliases,
@@ -504,22 +524,31 @@ class FileAdmission:
             return denied("foreign-target-state")
         return None
 
+    def _authority_allowed(
+        self, prepared: _Prepared
+    ) -> dict[Scope, set[ScopedRelation]]:
+        """This import's own authority rows per scope: members + containment."""
+        wanted: dict[Scope, set[ScopedRelation]] = {}
+        for person_id, scope in prepared.memberships:
+            wanted.setdefault(scope, set()).add(ScopedRelation("member", person_id))
+        for child, parent in prepared.containment:
+            wanted.setdefault(child, set()).add(
+                ScopedRelation(CONTAINMENT_RELATIONS[child.kind], parent))
+            wanted.setdefault(parent, set())
+        for scope in prepared.room_scopes:
+            wanted.setdefault(scope, set())
+        return wanted
+
     async def _authority_residual(
         self, prepared: _Prepared, *, fresh: bool
     ) -> Outcome | None:
-        """Fresh claims need empty scopes; resume allows only this import's member rows."""
-        wanted: dict[Scope, set[str]] = {}
-        for person_id, scope in prepared.memberships:
-            wanted.setdefault(scope, set()).add(person_id)
-        scopes = set(prepared.room_scopes)
-        for child, parent in prepared.containment:
-            scopes |= {child, parent}
-        for scope in sorted(scopes, key=_scope_key):
-            rows = await self.backend.relations_on(scope=scope)
+        """Fresh claims need empty scopes; resume allows only this import's own rows."""
+        wanted = self._authority_allowed(prepared)
+        for scope in sorted(wanted, key=_scope_key):
+            rows = await self.backend.scope_relations_on(scope=scope)
             if isinstance(rows, CheckResult):
                 return unavailable(rows.detail)
-            allowed = {("member", pid) for pid in wanted.get(scope, ())}
-            if (fresh and rows) or not set(rows) <= allowed:
+            if (fresh and rows) or not set(rows) <= wanted[scope]:
                 return denied("foreign-authority-state")
         return None
 
@@ -688,24 +717,45 @@ class FileAdmission:
             for former in prepared.aliases[person_id]:
                 if await self.bindings.canonical_person(former) != person_id:
                     return unavailable("read-back-mismatch")
-        wanted: dict[Scope, set[str]] = {}
-        for person_id, scope in prepared.memberships:
-            wanted.setdefault(scope, set()).add(person_id)
-        for scope in prepared.room_scopes:
-            rows = await self.backend.relations_on(scope=scope)
+        wanted = self._authority_allowed(prepared)
+        for scope in sorted(wanted, key=_scope_key):
+            rows = await self.backend.scope_relations_on(scope=scope)
             if isinstance(rows, CheckResult):
                 return unavailable(rows.detail)
-            if set(rows) != {("member", pid) for pid in wanted.get(scope, ())}:
+            if set(rows) != wanted[scope]:
                 return unavailable("read-back-mismatch")
-        for person_id in sorted(prepared.people):
-            for scope in prepared.room_scopes:
-                expected = (person_id, scope) in prepared.memberships
+        # The verdict matrix must equal the FILE predicate — canonicalize the
+        # checked id (retired ids fold through the binding alias map), then
+        # `is_allowed` on the authored list. Anything else is self-agreement.
+        checked = set(prepared.people)
+        for formers in prepared.aliases.values():
+            checked.update(formers)
+        unknown = f"{prepared.import_id}:unknown"
+        while unknown in checked:
+            unknown += ":unknown"
+        checked.add(unknown)
+        for checked_id in sorted(checked):
+            person_id = prepared.persons.subject_id_for(checked_id)
+            for scope in sorted(wanted, key=_scope_key):
+                room = prepared.room_scopes.get(scope)
+                expected = room is not None and prepared.policy.is_allowed(
+                    platform=room[0], conversation_id=room[1], person_id=person_id)
                 for permit in ("speak", "view"):
                     verdict = await self.backend.check(
                         scope=scope, person_id=person_id, permit=permit)
                     if verdict.verdict is Verdict.UNAVAILABLE:
                         return unavailable(verdict.detail)
                     if (verdict.verdict is Verdict.ALLOWED) != expected:
+                        return unavailable("read-back-mismatch")
+            for scope in sorted(wanted, key=_scope_key):
+                for permit in MANAGEMENT_PERMITS:
+                    verdict = await self.backend.check(
+                        scope=scope, person_id=person_id, permit=permit)
+                    if verdict.verdict is Verdict.UNAVAILABLE:
+                        return unavailable(verdict.detail)
+                    if verdict.verdict is Verdict.ALLOWED:
+                        # File mode delegates no management — a grant here is
+                        # authority the source never authorized.
                         return unavailable("read-back-mismatch")
         return complete()
 

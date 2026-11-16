@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from nora.domain.managed import (
     CONTAINMENT_RELATIONS,
+    KETO_NAMESPACES,
     STRUCTURAL_RELATIONS,
     CheckResult,
     ManagedError,
@@ -19,7 +20,7 @@ from nora.domain.managed import (
     check_unavailable,
     keto_namespace,
 )
-from nora.domain.managed_ports import AuthorityBackend
+from nora.domain.managed_ports import AuthorityBackend, ScopedRelation
 from nora.domain.management import (
     ACCESS_PERMITS,
     MANAGEMENT_PERMITS,
@@ -122,8 +123,34 @@ class KetoAuthorityBackend(AuthorityBackend):
             if r.subject_id is not None
         )
 
+    async def scope_relations_on(
+        self, *, scope: Scope
+    ) -> CheckResult | frozenset[ScopedRelation]:
+        rows = await self._client.tuples_on(
+            namespace=keto_namespace(scope.kind), object_id=scope.id
+        )
+        if isinstance(rows, CheckResult):
+            return check_unavailable(rows.detail)
+        out: set[ScopedRelation] = set()
+        for row in rows:
+            if row.subject_id is not None:
+                out.add(ScopedRelation(row.relation, row.subject_id))
+                continue
+            if row.subject_set is None:
+                return check_unavailable("subject-less tuple")
+            kind = _SCOPE_KIND.get(row.subject_set[0])
+            if kind is None:
+                return check_unavailable(
+                    f"unsupported subject-set namespace:{row.subject_set[0]}"
+                )
+            out.add(ScopedRelation(row.relation, Scope(kind, row.subject_set[1])))
+        return frozenset(out)
+
     async def aclose(self) -> None:
         """The client shares the caller's session — nothing to close."""
+
+
+_SCOPE_KIND = {namespace: kind for kind, namespace in KETO_NAMESPACES.items()}
 
 
 _PARENT_KIND = {

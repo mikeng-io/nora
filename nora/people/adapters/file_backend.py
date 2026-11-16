@@ -44,6 +44,7 @@ from nora.domain.managed_ports import (
     AuthorityBackend,
     BindingStore,
     LinkRequestStore,
+    ScopedRelation,
     TopologySource,
 )
 from nora.domain.management import LinkSide, Operation, Scope, ScopeKind
@@ -337,6 +338,12 @@ class FileAuthorityBackend(AuthorityBackend):
         self, *, scope: Scope
     ) -> CheckResult | frozenset[tuple[str, str]]:
         # No relation store: the honest read-back is the empty set.
+        return frozenset()
+
+    async def scope_relations_on(
+        self, *, scope: Scope
+    ) -> CheckResult | frozenset[ScopedRelation]:
+        # The file keeps no subject-set state either — still the empty set.
         return frozenset()
 
     async def aclose(self) -> None:
