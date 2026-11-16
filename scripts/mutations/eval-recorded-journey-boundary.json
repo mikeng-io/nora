@@ -1,0 +1,42 @@
+[
+  {
+    "name": "refuse model dispatch bindings on an external recording",
+    "file": "nora/subject/journey_world.py",
+    "old": "        if external is not None and any(\n                binding == \"llm.base_url\" or binding.startswith(\"providers.\")\n                for binding in external.bindings):",
+    "new": "        if False and any(\n                binding == \"llm.base_url\" or binding.startswith(\"providers.\")\n                for binding in external.bindings):",
+    "target": "tests/integration/subject/test_journey_recorded_boundary.py::test_a_recording_cannot_claim_the_model_boundary",
+    "comment": "Without the refusal, a recording can serve llm.base_url or a provider endpoint and stand in for the finite world or the declared gateway."
+  },
+  {
+    "name": "claim the action seam ahead of the recording catch-all",
+    "file": "nora/subject/recorded_services.py",
+    "old": "            if before is not None:\n                before(name, app)",
+    "new": "            if False:\n                before(name, app)",
+    "target": "tests/integration/subject/test_journey_recorded_boundary.py::test_a_recorded_action_receipt_cannot_stand_in_for_execution",
+    "comment": "Without the hook, the recorded POST /v1/actions row answers instead of the real DurableActionService."
+  },
+  {
+    "name": "keep the action seam when the recording binds no signal reads",
+    "file": "nora/subject/journey_world.py",
+    "old": "            if signal is None:",
+    "new": "            if False:",
+    "target": "tests/integration/subject/test_journey_recorded_boundary.py::test_a_missing_response_fails_closed_never_a_generated_fill",
+    "comment": "Without the writes-only app the signal binding is unowned: no recorded read, no generated fill."
+  },
+  {
+    "name": "check the recording's consumption after the environment",
+    "file": "nora/subject/journey_world.py",
+    "old": "            if playback is not None:\n                environment.check()\n                playback.check()",
+    "new": "            if playback is not None:\n                environment.check()",
+    "target": "tests/integration/subject/test_journey_recorded_boundary.py::test_each_open_gets_independent_consumption_state",
+    "comment": "Without playback.check, an unconsumed declared response closes silently."
+  },
+  {
+    "name": "carry the declared external recording into the journey plan",
+    "file": "evals/services.py",
+    "old": "    if external is not None:",
+    "new": "    if False:",
+    "target": "tests/unit/test_eval_service_manifest.py::test_a_journey_world_plan_carries_its_declared_external_recording",
+    "comment": "Without the parse, the manifest's recording never reaches JourneyServices."
+  }
+]

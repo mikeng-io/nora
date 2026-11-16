@@ -90,6 +90,35 @@ def test_a_journey_world_plan_binds_its_declared_model_gateway(tmp_path):
     assert plan.model_gateway.models == frozenset({"nora", "alpha", "beta"})
 
 
+def test_a_journey_world_plan_carries_its_declared_external_recording(tmp_path):
+    """`external` is the plan's embedded version-1 recording, carried into
+    the `JourneyServices` the live-clock drive opens."""
+    recording = {"version": 1,
+                 "bindings": {"honcho.base_url": "memory",
+                              "platforms.signal.base_url": "bridge"},
+                 "services": {
+                     "memory": [{"method": "GET",
+                                 "path": "/v3/workspaces/w/peers/p/card",
+                                 "response": {"status": 200,
+                                              "json": {"peer_card": []}}}],
+                     "bridge": [{"method": "GET", "path": "/v1/self",
+                                 "response": {"status": 200,
+                                              "json": {"primary": "+8521"}}}]}}
+    data = {"version": 1, "corpora": {"autonomous_journey": {"the_outing": {
+        "kind": "journey_world",
+        "policy": "[rooms]\nallow = []",
+        "judges": ["alpha", "beta"],
+        "external": recording}}}}
+    path = tmp_path / "services.json"
+    path.write_text(json.dumps(data))
+    plan = load_services(path).corpora["autonomous_journey"]["the_outing"]
+    from nora.subject.recorded_services import RecordedServices
+
+    assert isinstance(plan.external, RecordedServices)
+    assert plan.external.bindings == {"honcho.base_url": "memory",
+                                    "platforms.signal.base_url": "bridge"}
+
+
 def test_an_explicit_recorded_kind_stays_the_positional_recording(tmp_path):
     recording = {"kind": "recorded", "version": 1,
                  "bindings": {"llm.base_url": "model"}, "services": {"model": []}}
@@ -133,6 +162,18 @@ def test_an_explicit_recorded_kind_stays_the_positional_recording(tmp_path):
     {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
      "model_gateway": {"upstream": "ftp://127.0.0.1:9/v1",
                       "models": ["nora", "a", "b"]}},                  # not http(s)
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "external": "not-a-recording"},                                   # not an object
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "external": {"version": 2, "bindings": {"honcho.base_url": "m"},
+                  "services": {"m": []}}},                             # not version 1
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "external": {"version": 1, "bindings": {"llm.base_url": "model"},
+                  "services": {"model": []}}},                         # recorded model dispatch
+    {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+     "external": {"version": 1,
+                  "bindings": {"providers.judge.base_url": "model"},
+                  "services": {"model": []}}},                         # recorded provider dispatch
     "not a plan at all",
 ])
 def test_malformed_and_unknown_service_plans_are_refused(tmp_path, plan):
