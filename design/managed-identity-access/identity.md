@@ -95,7 +95,12 @@ Each fix resolves its provider-qualified account against current managed ownersh
 lifecycle and publication holds under the mutation boundary. A provider observation
 never registers an identity or grants access; unknown accounts remain uncollected.
 Current roster observations expire and disappear on source failure or restart;
-historical fix rows cannot restore them.
+historical fix rows cannot restore them. The collector exposes these observations
+through an authenticated service-private read, without provider credentials or
+coordinates. Nora resolves current bindings and room-scoped names at the consumer;
+a failed source supplies no file fallback. Location reads revalidate their
+selected audience before releasing a result, including after dependent reads.
+Identity eligibility and scoped names belong to one coherent read.
 Nora configuration owns room metadata, destinations and topology rather than
 encoding all configuration as permission relationships.
 

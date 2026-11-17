@@ -35,10 +35,10 @@ from nora.infra.sql import create_sql_engine, run_migrations
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.obs.metrics import Metrics
+from nora.people import ManagedPresenceAccounts
 from nora.persons import Persons, PersonsError, load_persons
 from nora.policy import load_policy
 from nora.presence.collector import CircleSpec, PresenceCollector
-from nora.presence.managed_accounts import ManagedPresenceAccounts
 
 log = logging.getLogger("nora.presence.composition")
 

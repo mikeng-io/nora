@@ -451,6 +451,7 @@ async def managed_identity(
         services = _people_wire.managed_services(
             managed=cfg.identity.managed, session=session,
             policy=policy, engine=engine, credentials=cfg.credentials,
+            circle_observations=_circle_observations(cfg),
             freshness=ObservationFreshness(
                 max_age_ms=int(
                     cfg.identity.onboarding.interval_seconds * 1000)),
@@ -478,3 +479,14 @@ async def managed_identity(
             "run half-wired"
         )
     return ManagedIdentityWiring(services=services, session=session)
+
+
+def _circle_observations(cfg: Any) -> Any:
+    from nora.infra.presence_circles import HttpCircleObservations
+
+    if not cfg.presence.enabled or not cfg.presence.refresh_url:
+        return None
+    return HttpCircleObservations(base_url=cfg.presence.refresh_url,
+        key=cfg.credentials.get(cfg.presence.directory_key_env, ""),
+        circles=cfg.presence.managed_circle_ids,
+        ttl_ms=int(max(cfg.presence.cadence_seconds, cfg.presence.cadence_still_seconds) * 2000))

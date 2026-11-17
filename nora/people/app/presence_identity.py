@@ -5,14 +5,24 @@ from contextlib import asynccontextmanager
 
 from nora.domain.managed import PersonLifecycle, Verdict
 from nora.domain.managed_ports import BindingStore, IdentityRegistry
+from nora.domain.presence_circles import (
+    CircleObservation,
+    CircleObservations,
+    CircleUnavailableError,
+)
+from nora.persons import Life360Membership
 
 
 class ManagedPresenceAccounts:
     """Resolve provider member IDs without registration, grants or file fallback."""
 
-    def __init__(self, bindings: BindingStore, registry: IdentityRegistry) -> None:
+    def __init__(
+        self, bindings: BindingStore, registry: IdentityRegistry,
+        observations: CircleObservations | None = None,
+    ) -> None:
         self._bindings = bindings
         self._registry = registry
+        self._observations = observations
 
     async def _owner(self, member_id: str) -> str | None:
         account = await self._bindings.account_for("life360", "member_id", member_id)
@@ -48,3 +58,26 @@ class ManagedPresenceAccounts:
                         target = (circle_id, member_id)
                         break
             yield target
+
+    async def _memberships(
+        self, observations: tuple[CircleObservation, ...],
+    ) -> tuple[Life360Membership, ...]:
+        rows = []
+        for circle in observations:
+            for member in circle.member_ids:
+                person = await self._owner(member)
+                if person is not None:
+                    rows.append(Life360Membership(person, member, circle.circle_id))
+        return tuple(rows)
+
+    @asynccontextmanager
+    async def reading(self) -> AsyncIterator[tuple[Life360Membership, ...]]:
+        if self._observations is None:
+            raise CircleUnavailableError("current provider circle source is unavailable")
+        observations = await self._observations.read()
+        async with self._bindings.mutation():
+            yield await self._memberships(observations)
+
+    async def current_memberships(self) -> tuple[Life360Membership, ...]:
+        async with self.reading() as rows:
+            return rows

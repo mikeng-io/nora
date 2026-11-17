@@ -8,6 +8,7 @@ from nora.app.composition_readers import reverse_geocoder
 from nora.domain.live import LiveSequence
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.presence import PresenceStore
+from nora.location.adapters.selected_presence import SelectedPresenceStore
 from nora.location.adapters.tools import build as _build
 
 """Compose this area's tool adapters from shared dependencies."""
@@ -127,8 +128,11 @@ def presence(cfg, engine, metrics, persons, access=None) -> PresenceWiring:
         else LiveSequence(lambda: circles_from_persons(persons))
     )
     if cfg.presence.enabled:
-        presence_store = PresenceStore(
-            engine,
+        store_type = (SelectedPresenceStore
+                      if access is not None and not access.is_file_backend else PresenceStore)
+        selected = {"access": access} if store_type is SelectedPresenceStore else {}
+        presence_store = store_type(
+            engine, **selected,
             retention_days=cfg.presence.retention_days,
             metrics=metrics,
         )
@@ -150,6 +154,8 @@ def refresh(cfg, presence_store) -> RefreshWiring:
 
         refresher = HttpLocationRefresher(
             base_url=cfg.presence.refresh_url,
+            key=(cfg.credentials.get(cfg.presence.directory_key_env, "")
+                 if cfg.identity.backend == "managed" else ""),
             # A margin over the collector's poll deadline, not a guarantee: the collector's TOTAL
             # time is request_location + read_circle (each up to the Life360 client's own timeout) +
             # the poll, so a slow network can still exceed this and Nora cuts it off. Harmless —…

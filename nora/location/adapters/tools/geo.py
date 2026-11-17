@@ -5,11 +5,11 @@ from types import SimpleNamespace
 
 from nora.agent.security import _names_a_person, scan_identifiers
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
-from nora.agent.toolkit.results import _record
 from nora.agent.whereis import (
     DisclosureGuard,
 )
 from nora.location.adapters.tools.shared import _WEATHER_OFF, _weather_result
+from nora.location.app.circles import record_result as _record
 
 log = logging.getLogger("nora.tools")
 

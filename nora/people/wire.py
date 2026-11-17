@@ -20,6 +20,7 @@ from nora.agent.lineage import LineagePolicy
 from nora.agent.whereis import circles_from_persons
 from nora.domain.live import LiveMapping, LiveSequence
 from nora.domain.ports import SteamPresenceProvider
+from nora.domain.presence_circles import CircleObservations
 from nora.people.adapters.tools import build as _build
 
 """Compose this area's tool adapters from shared dependencies."""
@@ -205,6 +206,7 @@ def managed_services(
     *, managed: ManagedOryConfig, session: ClientSession, policy: Policy,
     engine: AsyncEngine, credentials: Mapping[str, str],
     freshness: ObservationFreshness | None = None,
+    circle_observations: CircleObservations | None = None,
 ) -> ManagedServices:
     """The `managed` backend's services: PostgreSQL bindings, the Keto
     authority engine, Kratos identity records — topology still read from the
@@ -250,7 +252,7 @@ def managed_services(
         topology=FileTopologySource(policy),
         registry=KratosIdentityRegistry(kratos_client),
         links=SqlLinkRequests(engine=engine),
-        freshness=freshness,
+        freshness=freshness, circle_observations=circle_observations,
     )
 
 

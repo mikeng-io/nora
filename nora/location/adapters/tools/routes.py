@@ -8,11 +8,12 @@ from typing import Any, Literal
 from nora.agent.security import _names_a_person, scan_identifiers
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
 from nora.agent.security import screen_and_resolve_place as _screen_and_resolve_place
-from nora.agent.toolkit.results import _record
 from nora.agent.whereis import (
     resolvable_places,
 )
 from nora.location.adapters.tools.shared import _MAPS_TRAVELMODE, _PLACE_INFO_UNAVAILABLE
+from nora.location.app.circles import reader_for
+from nora.location.app.circles import record_result as _record
 
 log = logging.getLogger("nora.tools")
 
@@ -294,7 +295,6 @@ def _make_saved_places(deps):
     content_checks = deps.content_checks
     location_trusted = deps.location_trusted
     metrics = deps.metrics
-    presence_circles = deps.presence_circles
     presence_source = deps.presence_source
     room = deps.room
 
@@ -308,7 +308,8 @@ def _make_saved_places(deps):
 
         Returns `status`: ok or unavailable, with a `note` on how to report it.
         """
-        if presence_source is None or not presence_circles:
+        circles = await reader_for(deps).read()
+        if presence_source is None or not circles:
             _record(metrics, "saved_places", "unavailable")
             return {
                 "status": "unavailable",
@@ -317,7 +318,7 @@ def _make_saved_places(deps):
             }
         places = await resolvable_places(
             room=room,
-            circles=presence_circles,
+            circles=circles,
             presence=presence_source,
             location_trusted=location_trusted,
             content_checks=content_checks,

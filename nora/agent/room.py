@@ -212,6 +212,10 @@ class Room:
         return self._platform
 
     @property
+    def room_scope(self) -> Scope:
+        return Scope(ScopeKind.ROOM, room_scope_id(self._platform, self._conversation_id))
+
+    @property
     def access(self) -> Any:
         """The selected identity reader, absent only for explicitly unwired rooms."""
         return self._access

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hmac
 import logging
 import sys
 import time
@@ -38,7 +39,7 @@ __all__ = ["build_parser", "main"]
 def _metrics_app(
     metrics: Metrics, collector: Any = None, refresh_timeout_seconds: float = 8.0,
     identity_file: str | None = None, started_at: float | None = None,
-    identity_status: Any = None,
+    identity_status: Any = None, directory_key: str | None = None,
 ) -> web.Application:
     """A minimal /metrics + /health app for the collector process — it has no
     adapter or record store to report on, only its own metrics registry (which
@@ -88,7 +89,27 @@ def _metrics_app(
             body["config"] = config_state
         return web.json_response(body, status=200 if body["status"] == "ok" else 503)
 
+    def authorized(request: web.Request) -> bool:
+        return bool(directory_key) and hmac.compare_digest(
+            request.headers.get("Authorization", "").encode(),
+            ("Bearer " + (directory_key or "")).encode())
+
+    async def memberships(request: web.Request) -> web.Response:
+        if not directory_key or collector is None or not collector.managed:
+            return web.json_response({"status": "unavailable"}, status=503)
+        if not authorized(request):
+            return web.json_response({"status": "denied"}, status=403)
+        try:
+            from dataclasses import asdict
+
+            return web.json_response({"circles": [asdict(row)
+                for row in collector.observations(now_ms=int(time.time() * 1000))]})
+        except Exception:  # noqa: BLE001 — failed inventory carries no provider identifiers
+            return web.json_response({"status": "unavailable"}, status=503)
+
     async def refresh(request: web.Request) -> web.Response:
+        if collector is not None and collector.managed and not authorized(request):
+            return web.json_response({"status": "denied"}, status=403)
         person_id = request.query.get("person_id", "")
         if collector is None:
             return web.json_response({"status": "unavailable"}, status=503)
@@ -108,6 +129,7 @@ def _metrics_app(
     app.router.add_get("/metrics", metrics_endpoint)
     app.router.add_get("/health", health)
     app.router.add_post("/refresh", refresh)
+    app.router.add_get("/memberships", memberships)
     # Application-HTTP coverage (ADR 0034); /health + /metrics polls excluded.
     try:
         from nora.obs.tracing import instrument_aiohttp_app
@@ -134,6 +156,7 @@ async def _run(config_path: Path) -> None:
                 cfg.credentials.get(cfg.presence.username_env, ""),
                 cfg.credentials.get(cfg.presence.password_env, ""),
                 cfg.credentials.get(cfg.presence.auth_token_env, ""),
+                cfg.credentials.get(cfg.presence.directory_key_env, ""),
                 cfg.credentials.get(cfg.presence.geocode_api_key_env, ""),
                 # The HK-gov token rides the query string (the leakiest position),
                 # so the scrub safety net must cover it too.
@@ -184,6 +207,7 @@ async def _run(config_path: Path) -> None:
                 deps.metrics, deps.collector, cfg.presence.refresh_timeout_seconds,
                 identity_file=str(cfg.identity_file) if cfg.identity.backend == "file" else None,
                 started_at=time.time(),
+                directory_key=cfg.credentials.get(cfg.presence.directory_key_env) or None,
                 identity_status=deps.identity_reload.status if deps.identity_reload else None,
             ),
             deps.metrics_port,

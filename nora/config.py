@@ -1069,8 +1069,8 @@ class PresenceConfig(BaseModel):
     hkgov_lang_zh: str = "zh"
     hkgov_lang_en: str = "en"
 
-    # Managed collection selection; ownership remains in verified account bindings.
     managed_circle_ids: tuple[str, ...] = ()
+    directory_key_env: str = "NORA_PRESENCE_DIRECTORY_KEY"
 
     @field_validator("managed_circle_ids")
     @classmethod

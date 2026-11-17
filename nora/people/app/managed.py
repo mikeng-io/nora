@@ -63,6 +63,7 @@ from nora.domain.management import (
     Operation,
     Unlink,
 )
+from nora.domain.presence_circles import CircleObservations
 from nora.people.app.link_publication import LinkPublicationService
 from nora.people.app.managed_authority import AuthorityService
 from nora.people.app.managed_ops import (
@@ -82,6 +83,7 @@ from nora.people.app.managed_profile import (
     ProfileService,
     ScopedProfileService,
 )
+from nora.people.app.presence_identity import ManagedPresenceAccounts
 
 log = logging.getLogger("nora.people.managed")
 
@@ -101,6 +103,7 @@ class ManagedServices:
         freshness: ObservationFreshness | None = None,
         *,
         access: IdentityAccess | None = None,
+        circle_observations: CircleObservations | None = None,
     ) -> None:
         self.bindings = bindings
         self.backend = backend
@@ -119,7 +122,8 @@ class ManagedServices:
         # Consumer reads use these same authorities; managed reads never fall back to files.
         self.access = access or IdentityAccess(
             bindings=bindings, authority=self.authority, topology=topology,
-            registry=registry,
+            registry=registry, presence_accounts=ManagedPresenceAccounts(
+                bindings, registry, circle_observations),
         )
 
     async def reconcile(self) -> tuple[OperationRecord, ...]:

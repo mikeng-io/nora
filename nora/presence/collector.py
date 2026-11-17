@@ -15,9 +15,10 @@ from typing import Any
 
 from nora.domain.ports import SourceHealthLog
 from nora.domain.presence import PresenceFix
+from nora.domain.presence_circles import CircleObservation, checked_observations
 from nora.infra.life360 import CircleRead, Life360Client, Member, ReadStatus
 from nora.infra.sql.presence import PresenceStore
-from nora.presence.managed_accounts import ManagedPresenceAccounts
+from nora.people import ManagedPresenceAccounts
 
 log = logging.getLogger("nora.presence.collector")
 
@@ -127,6 +128,17 @@ class PresenceCollector:
             return True
         fresh = self._fresh_members(now_ms)
         return bool(self._circles) and all(c.circle_id in fresh for c in self._circles)
+
+    @property
+    def managed(self) -> bool:
+        return self._managed_accounts is not None
+
+    def observations(self, *, now_ms: int) -> tuple[CircleObservation, ...]:
+        rows = tuple(CircleObservation(cid, observed, members)
+                     for cid, (observed, members) in self._observed_members.items())
+        return checked_observations(rows, expected=tuple(c.circle_id for c in self._circles),
+            now_ms=now_ms,
+            ttl_ms=int(max(self._cadence_seconds, self._cadence_still_seconds) * 2000))
 
     def circle_summary(self) -> list[dict[str, object]]:
         """File mapping counts or fresh provider observation counts; unknown stays unknown."""

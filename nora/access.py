@@ -163,6 +163,7 @@ class IdentityAccess:
         authority: AuthorityService | None = None,
         topology: TopologySource | None = None,
         registry: IdentityRegistry | None = None,
+        presence_accounts: Any = None,
         file_persons: Persons | None = None,
         file_policy: Policy | None = None,
     ) -> None:
@@ -177,6 +178,7 @@ class IdentityAccess:
         self._authority = cast(Any, authority)
         self._topology = cast(TopologySource, topology)
         self._registry = cast(IdentityRegistry, registry)
+        self._presence_accounts = presence_accounts
         self._persons = file_persons
         self._descriptive = file_persons if file_persons is not None else EmptyPersons()
         self._policy = file_policy
@@ -681,5 +683,37 @@ class IdentityAccess:
         )
 
     async def life360_memberships(self) -> tuple[Life360Membership, ...]:
-        """Every declared Life360 membership — no managed circle source yet."""
-        return self._persons.life360 if self._persons is not None else ()
+        """Current selected provider memberships; absence of a managed source is unavailable."""
+        if self._persons is not None:
+            return self._persons.life360
+        from nora.domain.presence_circles import CircleUnavailableError
+
+        if self._presence_accounts is None:
+            raise CircleUnavailableError("current provider circle source is unavailable")
+        return await self._presence_accounts.current_memberships()
+
+    async def life360_refs(
+        self, *, scope: Scope | None = None,
+    ) -> tuple[tuple[Life360Membership, PersonRef], ...]:
+        if self._persons is not None:
+            return await self._life360_refs(self._persons.life360, scope)
+        if self._presence_accounts is None:
+            from nora.domain.presence_circles import CircleUnavailableError
+
+            raise CircleUnavailableError("current provider circle source is unavailable")
+        async with self._presence_accounts.reading() as memberships:
+            return await self._life360_refs(memberships, scope)
+
+    async def _life360_refs(
+        self, memberships: tuple[Life360Membership, ...], scope: Scope | None,
+    ) -> tuple[tuple[Life360Membership, PersonRef], ...]:
+        from nora.domain.presence_circles import CircleUnavailableError
+
+        rows = []
+        for row in memberships:
+            person = await self.person(row.person_id)
+            ref = await self.person_ref(row.person_id, scope=scope)
+            if person is None or not person.display_name.strip() or ref is None:
+                raise CircleUnavailableError("current circle name is unavailable")
+            rows.append((row, ref))
+        return tuple(rows)
