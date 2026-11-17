@@ -83,6 +83,7 @@ GATEWAY = AuthenticationIssuer("generated-gateway", KEY, {
     "discord_oauth": "generated-discord-client",
     "telegram_oidc": "generated-telegram-client",
     "signal_code": "nora-otp",
+    "whatsapp_code": "nora-otp",
 })
 
 SERVICE_NUMBER = "+85290000099"
