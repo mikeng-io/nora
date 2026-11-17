@@ -25,8 +25,9 @@ This skill is the entry router; it does not repeat the other procedures.
    and the execution receipt before verify. On light: a brief in the PR body.
    On every route: a reviewed head before merge. When it is missing,
    halt and report what is missing. Never produce a missing gate output yourself.
-   Check: the next action's input artifact exists and was checked by someone
-   other than its producer.
+   Check: the input this route requires here exists. Where the route assigns a
+   checker before this point («Transitions»), someone other than its producer
+   checked it; light and direct work is first checked at verify.
 4. **Choose the next procedure.** Use the table below, and load that skill
    before acting. Skip steps that are already satisfied or that the route does
    not require; keep the applicable checks and holds.
