@@ -26,9 +26,9 @@ from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
     FakeIdentityRegistry,
     FakeTopologySource,
-    unavailable_outcome,
 )
 from nora.testing.managed_authority import FakeAuthorityBackend
+from nora.testing.managed_registry import unavailable_outcome
 
 WS_ID = "generated-ws"
 UNIT_ID = "generated-unit"

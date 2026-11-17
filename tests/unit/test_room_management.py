@@ -57,9 +57,9 @@ from nora.testing.managed import (
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
-    unavailable_outcome,
 )
 from nora.testing.managed_authority import FakeAuthorityBackend
+from nora.testing.managed_registry import unavailable_outcome
 
 WS_ID = "ws-main"
 UNIT_ID = "unit-a"
