@@ -135,8 +135,10 @@ identity with every retired identity an alias preserves: an opt-out recorded on
 either independently registered identity applies after linking, and a retired
 (inactive) identity's traits still answer without reactivation. An identity
 whose trait is absent or malformed is unavailable to the reader — never
-inferred enabled — and no path grants authority to clear another holder's
-preference.
+inferred enabled. Background evidence reads and input assembly consult this
+same preference, including retained batches and retired identities. A changed
+preference after evidence reads prevents that input from reaching a model.
+No path grants authority to clear another holder's preference.
 
 Identity `state` is `active` or `inactive`. The v26.2.0 specification text
 claims the value "has currently no effect", but the v26.2.0 source enforces it:

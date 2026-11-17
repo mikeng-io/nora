@@ -585,3 +585,62 @@ async def test_an_item_whose_tagged_place_changed_is_still_read_and_counted(soci
     adaptor = _session(store)
     assert await adaptor.evidence.count(key=KEY, after=0) == 2
     assert sorted(_cites(await _wake(adaptor))) == ["9301", "9302"]
+
+
+@pytest.mark.parametrize("kind", ["character", "profile"])
+async def test_selected_background_composition_enforces_managed_social_preference(
+    social, example_config, kind,
+):
+    from nora.app.composition_dream import _character_adaptors, _profile_person_adaptors
+    from nora.domain.profile_inputs import PersonSourceRevision
+    from tests.infra.test_profile_source_inputs import message
+    from tests.unit.test_managed_background_access import (
+        _background_identity_case,
+        _population_keys,
+        _population_rooms,
+    )
+
+    store, engine = social
+    case = await _background_identity_case()
+    person = case.people[0]
+    await _record(store, "generated-selected-social", person=person,
+                  caption="Generated SQL Social Token")
+    persons = case.access.persons_view()
+    character = _character_adaptors(
+        allowlist=_population_rooms(), cfg=example_config, content_checks=False,
+        engine=engine, metrics=Metrics(), note_store=None,
+        persons=persons, access=case.access)
+    adaptor = next(a for a in character.adaptors if a.name == "character-person")
+    if kind == "profile":
+        _, adaptors, *_ = _profile_person_adaptors(
+            allowlist=_population_rooms(), cfg=example_config, character=character,
+            clock=lambda: NOW, content_checks=False, engine=engine, media_join=None,
+            metrics=Metrics(), persons=persons, profile_collective_keys={},
+            profile_index=None, access=case.access)
+        adaptor = next(a for a in adaptors if a.name == "profile-person")
+    keys = await _population_keys(adaptor)
+    key = character_key("generated-unit", person)
+    assert key in keys
+    assert await adaptor.evidence.count(key=key, after=0) > 0
+    batch, _ = await adaptor.evidence.newest(key=key, after=0, limit=10)
+    assert any(isinstance(item, PersonSocialItem) or (
+        isinstance(item, PersonSourceRevision) and item.domain == "social") for item in batch)
+    case.registry.identities[person]["traits"]["social"] = False
+    count = await adaptor.evidence.count(key=key, after=0)
+    fresh, _ = await adaptor.evidence.newest(key=key, after=0, limit=10)
+    assert not any(isinstance(item, PersonSocialItem) or (
+        isinstance(item, PersonSourceRevision) and item.domain == "social") for item in fresh)
+    if kind == "character":
+        assert count == 0
+    else:
+        # The absent Rollup build remains explicitly unavailable, not silent absence.
+        assert count == 1
+        assert [(item.domain, item.state) for item in fresh] == [("rollup", "unavailable")]
+    await message(engine, person=person, room="g1", body="Generated SQL Message")
+    messages, _ = await adaptor.evidence.newest(key=key, after=0, limit=10)
+    text = await adaptor.inputs(key=key, batch=[*messages, *batch])
+    assert "Generated SQL Message" in text
+    assert "Generated SQL Social Token" not in text
+    case.registry.identities[person]["traits"]["social"] = True
+    allowed, _ = await adaptor.evidence.newest(key=key, after=0, limit=10)
+    assert "Generated SQL Social Token" in await adaptor.inputs(key=key, batch=allowed)

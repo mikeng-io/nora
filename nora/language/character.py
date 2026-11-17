@@ -1,52 +1,18 @@
-"""Character sessions for the entities that are not a room.
+"""Unit-scoped Character sessions for identities, units and Nora.
 
-**One Dreamer session per (unit, entity) key, woken by that entity's own
-evidence.** A room is `nora.language.culture.CultureAdaptor`. This module holds
-the others, each its own adaptor with its own key kind, evidence count, wake
-batch, objective and block rows, and all of them writing through the same
-verbs (`nora.language.character_session.EntitySessions`) into the same culture
-store and revision chain:
+Each canonical identity/unit key follows its own message and social evidence;
+a room's culture uses CultureAdaptor. Unit and Nora keys fold their own room
+cultures or response episodes. Every account retains Record-backed citations.
 
-- **a person** (C2b), key `character_key(unit, person_id)`: one account per
-  (unit, person listed in that unit's rooms). Its evidence is the person's
-  human messages across the unit's rooms since its watermark. It is handed its
-  previous account, those messages (newest `batch_limit`, each with its Record
-  id and room) and the current culture of each of the unit's rooms, read by
-  code from the store. Memory is a tool it MAY call (`ask_memory`,
-  `search_memory`), never a pre-fetch: the account must not depend on Honcho.
-  Its citations are the ids of the messages it was handed. Its evidence
-  also holds the person's social items not yet handed to a session
-  (design/cognition-loop/observation.md): only the polled ones count toward the wake,
-  and polled and back-filled alike are handed, the oldest recorded first,
-  at most `SOCIAL_ITEMS_MAX` a session, as `<social_items>`, each cited
-  `social:<network>:<item id>`.
-- **the unit** (C3a), key `unit_culture_key(unit)`: what the unit is across
-  its rooms. Its evidence is new revisions of its rooms' cultures. It is
-  handed its previous account and each room's current culture with the
-  Record ids that culture cites; it cites from those (a room's culture is
-  linked, never cited, DEC-249, so the chain still ends in the Record). It
-  holds no read tool. Rendered as `<unit_culture>` in the unit's rooms.
-- **Nora** (C3b), key `nora_character_key(unit)`: what she is like in this
-  unit, as its people have met her. Its evidence is Rollup `response`
-  episodes of the current build that are not `open` or `unknown`: each of her
-  sends paired with the replies that quoted it, its reaction and edit counts
-  and its outcome. It cites episodes people responded to (`response:<id>`,
-  outcome `responded` or `silent`) or the replies, and the verb enforces the ECHO
-  RULE: a revision resting only on her own sends is
-  refused. Descriptive only, no read tool; rendered as `<self>`.
+Identity inputs use the selected unit's names and current social preference.
+Social items describe their author alone; captions/readings redact unowned
+handles and screen identifiers before rendering. The account owns no presence
+verb: its unit rooms can have different location policies. Unit scope, not a
+model-side filter, is the read boundary.
 
-**Code at the edges, an agent loop in the middle**: code counts the
-evidence, wakes the key, hands over the previous account and what is new, and
-validates every write; the model decides what to look up and what the account
-now says.
-
-**Lineage, chosen and stated.** An account is prose with no sections (DEC-184),
-so it has no section to drop. `[lineage]` is off and marked do-not-enable
-(AGENTS.md «A boundary is drawn by scope»): the unit is the read boundary, and
-a person's account renders only in that unit's rooms that list them. What would
-have put presence into it is left out instead: a person session holds no
-presence verb (`where_been`, `online_now`), because its account renders in
-rooms whose `location` flags differ, and R-31 is never simplified away.
+Each adaptor owns its evidence, keys, budget and objective. The Dreamer runs the
+same session lifecycle and writes through the account's typed verbs and revision
+chain. Media alone is not identity or ownership evidence.
 """
 
 from __future__ import annotations
@@ -55,9 +21,9 @@ import logging
 import re
 import unicodedata
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from nora.domain.blocks import (
     BlockKey,
@@ -86,8 +52,12 @@ from nora.domain.models import PersonRef
 from nora.domain.ports import Proposal
 from nora.domain.prompt import age, escape, stamp
 from nora.domain.social_stream import PersonSocialItem, RecordedCounts, to_us
+from nora.language.background_identity import BackgroundIdentity
 from nora.language.character_session import AccountNotRecordableError, EntitySessions
 from nora.obs.metrics import Metrics
+
+if TYPE_CHECKING:
+    from nora.access import IdentityAccess
 
 log = logging.getLogger(__name__)
 
@@ -134,9 +104,8 @@ CHARACTER_PERSON_TOOLS: frozenset[str] = frozenset({
     "memory_search",
 })
 
-#: `inputs` holds two sites (the previous account; the rooms' cultures, one
-#: gather) and `commit` two (a `head` and an `append`).
-PERSON_STORE_CALLS_PER_TICK = 4
+#: Four account read/write sites plus three selected-identity operations.
+PERSON_STORE_CALLS_PER_TICK = 7
 
 #: What each session carries, in the order the model reads it.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
@@ -289,6 +258,7 @@ class PersonEvidence:
     def __init__(
         self, *, store: _PersonMessages, keys: Mapping[str, PersonKey],
         social: _PersonSocial | None = None,
+        access: IdentityAccess | None = None,
         former_ids: Callable[[str], Sequence[str]] = lambda _person: (),
     ) -> None:
         """`former_ids` is `Persons.former_ids_for`: an item recorded under a
@@ -296,6 +266,7 @@ class PersonEvidence:
         self._store = store
         self._keys = keys
         self._social = social
+        self._access = access
         self._former_ids = former_ids
         self._reads: dict[str, _Read] = {}
         # ponytail: in memory, so a restart forgets one abandonment and a
@@ -338,7 +309,8 @@ class PersonEvidence:
         n = await self._store.person_count(rooms=rooms, person_id=person_id, after=floor)
         if n == 0 and head > floor:
             self._clear[key] = (min(after, floor), head)
-        if self._social is None:
+        if self._social is None or (self._access is not None and
+                await self._access.social_off(person_id)):
             return n
         cursor, read_at = await self._store.social_cursor(
             adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
@@ -363,7 +335,8 @@ class PersonEvidence:
         messages, cursor = await self._store.person_since(
             rooms=rooms, person_id=person_id, after=after, limit=limit,
         )
-        if self._social is None:
+        if self._social is None or (self._access is not None and
+                await self._access.social_off(person_id)):
             return messages, cursor
         start, _read_at = await self._store.social_cursor(
             adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
@@ -714,16 +687,19 @@ class CharacterPersonAdaptor(EntitySessions):
         self, *, culture: _CultureStore, evidence: PersonEvidence,
         keys: Mapping[str, PersonKey], screen: Callable[[str], str | None],
         render_chars: int, metrics: Metrics | None = None,
+        identity: BackgroundIdentity | None = None,
         clock: Callable[[], datetime] | None = None,
         handle_owners: Callable[[str], frozenset[str]] = lambda _handle: frozenset(),
     ) -> None:
         """`screen` checks egress; `render_chars` bounds each medium's reading.
         `handle_owners` maps Instagram usernames to their owners; by default
         nobody owns a handle, so captions redact them all."""
+        self._identity = identity
         self._culture = culture
         #: Read by the dream loop, never awaited here.
         self.evidence = evidence
         self._keys = keys
+        self._live_keys = keys if isinstance(keys, AsyncLiveMapping) else None
         self._screen = screen
         self._render_chars = render_chars
         self._handle_owners = handle_owners
@@ -732,8 +708,8 @@ class CharacterPersonAdaptor(EntitySessions):
         self._sessions_init()
 
     def keys(self) -> Sequence[str] | Awaitable[Sequence[str]]:
-        if isinstance(self._keys, AsyncLiveMapping):
-            return self._keys.refresh()
+        if self._live_keys is not None:
+            return self._live_keys.refresh()
         return tuple(sorted(self._keys.keys()))
 
     def tool_room(self, key: str) -> str | None:
@@ -750,9 +726,13 @@ class CharacterPersonAdaptor(EntitySessions):
         its citation). `""` with neither: the runtime then does not call a
         model."""
         pk = self._keys.get(key)
+        if pk is None:
+            return ""
+        if self._identity is not None:
+            batch = await self._identity.social_batch(pk.person.person_id, batch)
         messages = [m for m in batch if isinstance(m, RoomMessage)]
         social = [m for m in batch if isinstance(m, PersonSocialItem)]
-        if pk is None or not (messages or social):
+        if not (messages or social):
             return ""
         now = self._clock()
         labels = {r.key: r.label for r in pk.rooms}
@@ -771,6 +751,13 @@ class CharacterPersonAdaptor(EntitySessions):
         self.evidence.handed(key, [r.item for r in shown])
         if not (messages or shown):
             return ""
+        previous = await self._culture.head(key=key)
+        heads = [await self._culture.head(key=r.key) for r in pk.rooms]
+        if self._identity is not None:
+            current, _ = await self._identity.names(unit=pk.unit, subject=person, people=())
+            if current is not None:
+                pk = replace(pk, person=current)
+            await self._identity.require_social(person, social)
         self._begin(
             key, citable=Citable(
                 messages=frozenset(m.row.id for m in messages),
@@ -778,8 +765,6 @@ class CharacterPersonAdaptor(EntitySessions):
             ),
             entities={pk.person.name: None}, batch_start=self.evidence.held(key),
         )
-        previous = await self._culture.head(key=key)
-        heads = [await self._culture.head(key=r.key) for r in pk.rooms]
         parts: list[ContextBlock | None] = [
             ContextBlock(
                 name="about_person", **_at("about_person"),
