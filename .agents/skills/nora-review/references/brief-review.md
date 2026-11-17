@@ -6,9 +6,12 @@ Two review jobs that fall to the reviewer chosen by rule, beside code review
 
 ## Brief review (propose → plan)
 
-**Input:** the brief, its attached plan, the source issue or request, and the
-design it cites. Without the plan, a standard- or full-route brief is returned
-unreviewed.
+**Input:** the brief, its attached plan, the author's source census, the
+source issue or request, and the design it cites, all readable at named
+revisions (`nora-dispatch/references/brief.md` «Before review»). Without the
+plan or the census, a standard- or full-route brief is returned unreviewed. An
+input that cannot be opened is also returned, as a packet gap, not reviewed
+around.
 
 Check, and cite file:line or the source for each finding:
 
@@ -23,7 +26,8 @@ Check, and cite file:line or the source for each finding:
    stated, and none exceeds what Mike has granted.
 5. **Route.** The route matches the triggers in `nora-work/references/lifecycle.md`.
 
-**Return:** for each item, APPROVE or BLOCKER with a one-line reason. A round
+**Return:** for each item, APPROVE or BLOCKER with a one-line reason. Label a
+BLOCKER that the author's pre-flight should have caught as `pre-flight miss`. A round
 with no BLOCKER ends brief review; Mike then approves the Done-when list.
 
 ## Marking items (verify)

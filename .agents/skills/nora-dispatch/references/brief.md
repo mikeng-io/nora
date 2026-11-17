@@ -26,7 +26,9 @@ Every item passes all of these:
 2. **Named evidence.** It names the check that decides it: a test by name and
    the CI job that runs it, a read-back, or a file:line. Where the needed test
    does not exist yet, writing it is part of the item, and the item is unmet
-   until the test passes.
+   until the test passes. Name the cheapest check that decides the item: a
+   docs or skills change is decided by its diff and a focused check, never by
+   a full-suite run.
 3. **A threshold for any measurement.** A count, latency or cost carries its
    limit. Where no objective is agreed, the limit is a provisional regression
    budget, labelled as such.
@@ -39,6 +41,26 @@ Every item passes all of these:
 6. **Small.** At most 6 items, in one area. More routes to a split.
 
 Progress, gaps and partial verdicts go in Current state, never in Done when.
+
+## Before review: the author's pre-flight
+
+Review confirms a brief; it does not discover what the brief should say. The
+author does that discovery first, so that the first review round normally finds
+no BLOCKER.
+
+1. **Census the sources.** List every requirement in the source request, the
+   issue, the design it cites and Mike's rulings, each with its location. Map
+   each one to a Done-when item or to a named exclusion in Boundaries. A
+   requirement mapped to neither is a gap to fix now.
+2. **Run the reviewer's checklist yourself.** Apply the finite checklist above,
+   and `nora-review/references/brief-review.md` checks 1–5, to every item, and
+   fix what fails. For each named test, confirm that it exists at the revision.
+3. **Send a readable packet.** The reviewer gets the brief, the plan, the
+   census and every source as files or URLs it can open, each at a named
+   revision. A link behind a login it cannot pass is not an input.
+
+A first-round BLOCKER that this pre-flight would have caught is the author's
+miss. Its fix carries a lesson line (`nora-land/reference.md` «Resolve»).
 
 ## Approval and lock
 
