@@ -266,6 +266,23 @@ specified. Cancelled or superseded work closes as not planned with its reason;
 partial work references its parent without closing it. Linear's configured
 workflow names are read back rather than assumed to match these labels.
 
+Artifact lifecycle — one owner and one end event each; retirement is
+mechanical, never a judgement of what looks safe:
+
+| artifact | created when | ends when | ended by |
+|---|---|---|---|
+| Linear issue | an outcome is agreed | whole outcome evidenced | its owner |
+| integration branch | parent outcome starts | PR to master merges | GitHub auto-delete |
+| handoff branch | a builder starts | its PR into the integration branch merges | GitHub auto-delete |
+| worktree | a thread or builder starts | branch merged or deleted | orchestrator, via `make gc` |
+| review checkout | a review starts | its result is read | orchestrator, via `make gc` |
+| evidence | a check runs | never | PR comment or CI artifact, never `/tmp` |
+
+- The orchestrator owns cleanup and runs `make gc APPLY=1` at intake and after
+  merge; reviews use a detached checkout and never push a branch.
+- Builder briefs never tell the builder to preserve branches or worktrees;
+  repairs and proofs for an outcome reuse its existing handoff branch.
+
 ## Interchange shape
 
 The optional `.agents/orchestration.schema.json` interchange describes policy,

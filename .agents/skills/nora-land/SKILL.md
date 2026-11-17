@@ -199,6 +199,6 @@ make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must 
 Fix a process failure found on the way in its owning skill or root document now
 (`ORCHESTRATION.md` «The lifecycle»). Reconcile the Linear work brief with met/unmet/unavailable evidence and remaining scope. Link the PR/result; close only a fully satisfied outcome. GitHub defect reports keep their separate resolution.
 Report completed/unmet obligations; keep required read-back and stop at the agreed boundary.
-The next change starts in a new worktree; cleanup: `docs/maintainers/conventions.md`. Deploying: nora-deploy.
+The next change starts in a new worktree; run `make gc APPLY=1` and read back its totals. Deploying: nora-deploy.
 
 Tool-specific workarounds and Claude commit footers: `nora-land/reference.md`.
