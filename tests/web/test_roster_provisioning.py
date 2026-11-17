@@ -68,6 +68,8 @@ async def test_one_roster_registers_over_a_hundred_people_without_duplicate_on_r
     assert all(m.sources == {'sync:["generated-bridge","generated-guild"]'} for m in memberships)
     assert not (await services.authority.check(scope=ROOM, person_id=memberships[0].person_id,
                                              permit="view")).allowed
+    room_facts = await services.backend.relations_on(scope=ROOM)
+    unit_facts = await services.backend.relations_on(scope=UNIT)
     assert (await client.post(PATH, json=roster(), headers=AUTH)).status == 200
     # The retry returns the EXISTING registrations — same people, identities
     # and members, not merely the same count.
@@ -81,6 +83,10 @@ async def test_one_roster_registers_over_a_hundred_people_without_duplicate_on_r
     assert set(services.bindings.people) == people
     assert len(services.registry.identities) == 150
     assert len(await services.bindings.members_of(UNIT)) == 150
+    assert await services.backend.relations_on(scope=ROOM) == room_facts
+    assert await services.backend.relations_on(scope=UNIT) == unit_facts
+    assert not (await services.authority.check(scope=ROOM, person_id=memberships[0].person_id,
+                                             permit="view")).allowed
     assert (await client.post(PATH, json=roster(members=[]), headers=AUTH)).status == 403
 
 
