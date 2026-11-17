@@ -249,7 +249,7 @@ sa.Table(
     ),
     sa.CheckConstraint(
         "state = 'tombstoned' OR holds_while_form <> 'untyped' "
-        "OR drop_when_form = 'deadline'",
+        "OR (drop_when_form IS NOT NULL AND drop_when_form = 'deadline')",
         name="ck_intention_untyped_drop",
     ),
     sa.CheckConstraint(
@@ -328,7 +328,33 @@ def upgrade() -> None:
         )
 
 
+def _graph_data_held(bind: sa.Connection) -> list[str]:
+    """New-graph tables or history a downgrade would drop or mislabel."""
+    # An 'entity' row_history row can only be new-graph: the upgrade relabelled
+    # every legacy row to legacy_*, so the name now collides with the new table.
+    held = [
+        name
+        for name in ("registry", "entity", "claim", "intention", "edge")
+        if bind.execute(
+            sa.select(sa.literal(1)).select_from(sa.table(name)).limit(1)
+        ).first()
+    ]
+    if bind.execute(sa.text(
+        "SELECT 1 FROM row_history WHERE table_name IN "
+        "('registry', 'entity', 'claim', 'intention', 'edge') LIMIT 1"
+    )).first():
+        held.append("row_history")
+    return held
+
+
 def downgrade() -> None:
+    held = _graph_data_held(op.get_bind())
+    if held:
+        raise RuntimeError(
+            "0155 downgrade refuses: the Cognitive Graph still holds data in "
+            f"{', '.join(held)} — dropping the tables would lose it and the "
+            "restored legacy name would collide with new-graph history"
+        )
     METADATA.drop_all(op.get_bind())
     for name in _LEGACY:
         op.execute(f'ALTER TABLE "legacy_{name}" RENAME TO "{name}"')

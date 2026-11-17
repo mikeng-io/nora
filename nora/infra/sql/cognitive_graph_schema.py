@@ -234,7 +234,7 @@ INTENTION = sa.Table(
     ),
     sa.CheckConstraint(
         "state = 'tombstoned' OR holds_while_form <> 'untyped' "
-        "OR drop_when_form = 'deadline'",
+        "OR (drop_when_form IS NOT NULL AND drop_when_form = 'deadline')",
         name="ck_intention_untyped_drop",
     ),
     sa.CheckConstraint(

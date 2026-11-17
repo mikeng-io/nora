@@ -864,7 +864,7 @@ CONSTRAINT ck_intention_reasoning CHECK (((reasoning IS NULL) OR (reasoning = AN
 CONSTRAINT ck_intention_state CHECK ((state = ANY (ARRAY['open'::text, 'ended'::text, 'superseded'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_intention_trigger CHECK (((state = 'tombstoned'::text) OR ((delivery_mode = 'choose_moment'::text) = (trigger IS NOT NULL)))),
 CONSTRAINT ck_intention_untyped_deadline CHECK (((state = 'tombstoned'::text) OR (done_when_form <> 'untyped'::text) OR (deadline IS NOT NULL))),
-CONSTRAINT ck_intention_untyped_drop CHECK (((state = 'tombstoned'::text) OR (holds_while_form <> 'untyped'::text) OR (drop_when_form = 'deadline'::text)))
+CONSTRAINT ck_intention_untyped_drop CHECK (((state = 'tombstoned'::text) OR (holds_while_form <> 'untyped'::text) OR ((drop_when_form IS NOT NULL) AND (drop_when_form = 'deadline'::text))))
 CONSTRAINT ck_lesson_has_a_unit CHECK ((length(btrim(unit)) > 0))
 CONSTRAINT ck_lesson_revision_body_ceiling CHECK ((length(body) <= 2000)),
 CONSTRAINT ck_lesson_revision_cites_something CHECK ((cardinality(citations) >= 1)),

@@ -31,6 +31,16 @@ _CONTENT: dict[sa.Table, tuple[str, ...]] = {
     EDGE: (),
 }
 
+#: The state a revision stamps on its base. An entity's lifecycle has no
+#: superseded state (graph.md «Five kinds»), so `replaces` alone records
+#: that the base was replaced.
+_SUCCESSOR: dict[sa.Table, str | None] = {
+    ENTITY: None,
+    CLAIM: "superseded",
+    INTENTION: "superseded",
+    EDGE: "superseded",
+}
+
 
 class SqlCognitiveGraph:
     """Writes only; the reads a subject makes are their own stores."""
@@ -48,9 +58,9 @@ class SqlCognitiveGraph:
 
     async def revise(self, table: sa.Table, row: Mapping[str, Any]) -> None:
         """A revision: the new row's `replaces` names its base, and the base
-        is marked superseded, in one transaction. The `replaces` unique
-        constraint is the stale-base refusal: a base that already has a
-        successor cannot take a second child."""
+        takes its kind's successor state, in one transaction. The `replaces`
+        unique constraint is the stale-base refusal: a base that already has
+        a successor cannot take a second child."""
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(REGISTRY).values(
                 id=row["id"], kind=row["kind"], unit=row["unit"],
@@ -66,11 +76,16 @@ class SqlCognitiveGraph:
                 if name == f"uq_{table.name}_replaces":
                     raise StaleBaseError(str(row["replaces"])) from exc
                 raise
-            await conn.execute(
-                sa.update(table)
-                .where(table.c.id == row["replaces"], table.c.unit == row["unit"])
-                .values(state="superseded")
-            )
+            successor = _SUCCESSOR[table]
+            if successor is not None:
+                await conn.execute(
+                    sa.update(table)
+                    .where(
+                        table.c.id == row["replaces"],
+                        table.c.unit == row["unit"],
+                    )
+                    .values(state=successor)
+                )
 
     async def tombstone(
         self, table: sa.Table, *, row_id: str, unit: str, content_hash: str,

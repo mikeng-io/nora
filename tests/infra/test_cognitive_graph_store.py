@@ -6,6 +6,7 @@ half-row (phase 1, item 6)."""
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 
 import pytest
@@ -16,6 +17,7 @@ from nora.infra.sql.cognitive_graph_schema import (
     CLAIM,
     EDGE,
     ENTITY,
+    INTENTION,
     REGISTRY,
 )
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
@@ -35,6 +37,12 @@ def _row(kind: str, **over: object) -> dict:
         base.update(
             basis="inferred", reasoning="deduced", confidence="high",
             state="live", part="fact", content={"text": "generated"},
+        )
+    elif kind == "intention":
+        base.update(
+            basis="committed", state="open", owner="nora", owed_to="person:m",
+            form="achieve", done_when_form="act_event",
+            done_when={"act": "a"}, delivery_mode="when_it_comes_up",
         )
     else:
         base.update(
@@ -92,6 +100,48 @@ async def test_revise_against_a_stale_base_is_refused(store) -> None:
             sa.select(sa.func.count()).select_from(REGISTRY)
             .where(REGISTRY.c.id == "c-2")
         )).scalar_one() == 0
+
+
+@pytest.mark.parametrize("kind,table", [
+    ("entity", ENTITY), ("claim", CLAIM), ("intention", INTENTION),
+])
+async def test_revise_writes_each_kinds_successor_state(store, kind, table) -> None:
+    """Every kind revises: an entity's base keeps its lifecycle (it has no
+    superseded state); a claim's or intention's base is superseded."""
+    graph, engine = store
+    await graph.create(table, _row(kind, id="b-0"))
+    await graph.revise(table, _row(kind, id="b-1", replaces="b-0"))
+    with pytest.raises(StaleBaseError):
+        await graph.revise(table, _row(kind, id="b-2", replaces="b-0"))
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(table).order_by(table.c.id)
+        )).mappings().all()
+    assert [r["id"] for r in rows] == ["b-0", "b-1"]
+    assert rows[1]["replaces"] == "b-0"
+    expected = "admitted" if kind == "entity" else "superseded"
+    assert rows[0]["state"] == expected
+
+
+async def test_two_revisions_against_one_base_admit_exactly_one(store) -> None:
+    graph, engine = store
+    await graph.create(CLAIM, _row("claim", id="c-0"))
+    results = await asyncio.gather(
+        graph.revise(CLAIM, _row("claim", id="c-1", replaces="c-0")),
+        graph.revise(CLAIM, _row("claim", id="c-2", replaces="c-0")),
+        return_exceptions=True,
+    )
+    refusals = [r for r in results if isinstance(r, StaleBaseError)]
+    assert len(refusals) == 1
+    async with engine.connect() as conn:
+        ids = (await conn.execute(
+            sa.select(CLAIM.c.id).order_by(CLAIM.c.id)
+        )).scalars().all()
+        registry = (await conn.execute(
+            sa.select(sa.func.count()).select_from(REGISTRY)
+        )).scalar_one()
+    assert len(ids) == 2 and "c-0" in ids
+    assert registry == 2
 
 
 async def test_tombstone_clears_the_row_and_its_registry_row(store) -> None:
