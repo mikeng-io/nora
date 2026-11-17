@@ -320,3 +320,26 @@ def test_generated_bindings_cannot_claim_models_unknown_services_or_recordings(b
     with pytest.raises(ValueError, match="generated bindings"):
         JourneyServices(policy=default_policy(("signal", "g1")),
                         external=recording, generated_bindings=bindings)
+
+
+async def test_recorded_discovery_resolves_its_owned_token_endpoint(example_config):
+    recording = RecordedServices({
+        "version": 1,
+        "bindings": {"image_gen.xai.issuer_url": "issuer", "llm.base_url": "issuer"},
+        "services": {"issuer": [
+            {"method": "GET", "path": "/.well-known/openid-configuration",
+             "response": {"status": 200,
+                          "json": {"token_endpoint": "${service_origin}/oauth2/token"}}},
+            {"method": "POST", "path": "/oauth2/token",
+             "response": {"status": 200, "json": {"access_token": "generated-access"}}},
+        ]},
+    })
+    async with recording.open("sqlite://") as env:
+        cfg = env.bind_config(example_config)
+        async with aiohttp.ClientSession() as client:
+            async with client.get(cfg.image_gen.xai.issuer_url +
+                                  "/.well-known/openid-configuration") as response:
+                endpoint = (await response.json())["token_endpoint"]
+            assert endpoint == env.urls["image_gen.xai.issuer_url"] + "/oauth2/token"
+            async with client.post(endpoint) as response:
+                assert (await response.json())["access_token"] == "generated-access"  # noqa: S105

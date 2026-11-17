@@ -118,6 +118,7 @@ def test_image_oauth_issuers_and_state_reach_both_kept_lanes(
     lanes = {lane.lane: lane for lane, _ in wiring.oauth_keepalive._lanes}
     assert lanes["xai"]._discovery_url() == (
         "http://xai.generated.invalid/.well-known/openid-configuration")
-    assert lanes["openai_codex"]._token_url == "http://codex.generated.invalid/oauth/token"
+    assert lanes["openai_codex"]._token_url == (
+        "http://codex.generated.invalid/oauth/token")  # noqa: S105
     assert lanes["xai"]._state_file == Path(state / "xai-oauth.json")
     assert lanes["openai_codex"]._state_file == Path(state / "openai-codex-oauth.json")

@@ -104,6 +104,16 @@ async def test_cold_composition_preserves_features_and_closes_owned_resources(
                        base64.b64encode(bytes(range(32))).decode())
     received, payloads = [], []
     apps = boundary_apps(cfg, received, payloads)
+    playback = None
+    if manifest := os.environ.get("NORA_COMPOSITION_SERVICES"):
+        from evals.services import load_services
+
+        plan = load_services(Path(manifest)).corpora["autonomous_journey"][
+            "generated-later-recall-restraint-v1"]
+        playback = plan.external.playback()
+        recorded = playback.applications()
+        for binding, service in playback.bindings.items():
+            apps.setdefault(binding, recorded[service])
     clients = []
     original_client = boto3.client
 
@@ -126,6 +136,8 @@ async def test_cold_composition_preserves_features_and_closes_owned_resources(
         async with IsolatedServices(
             database_url=clean_pg_url, applications=apps, redis=True,
         ) as env:
+            if playback is not None:
+                playback.bind(env)
             urls, redis_process = set(env.urls.values()), env._process
             subject = await obtain(replace(spec, environment=env))
             deps = subject.deps
@@ -149,6 +161,16 @@ async def test_cold_composition_preserves_features_and_closes_owned_resources(
                 SegmentRegistry(pending_dir=subject.cfg.store.data_dir / "state" / "computer")
             assert isinstance(deps.blobs, RustfsBlobStore)
             assert deps.assembler and deps.dreamer_runtime and deps.background._tasks
+            if playback is not None and deps.oauth_keepalive is not None:
+                for lane, _ in deps.oauth_keepalive._lanes:
+                    result = await lane.refresh(unless_refreshed_since=0.0)
+                    assert not isinstance(result, str), result
+                    filename = f"{lane.lane.replace('_', '-')}-oauth.json"
+                    state = Path(subject.cfg.image_gen.state_dir) / filename
+                    assert state.is_relative_to(spec.workdir)
+                    assert json.loads(state.read_text())["refresh_token"].startswith("generated-")
+                assert set(deps.oauth_keepalive.lanes) == {"xai", "openai_codex"}
+
             assert {f"{name}:/v1/self" for name in deps.registry.adapters} <= set(received)
             assert "rustfs:head_bucket" in received
             assert "MODEL_DISPATCH" not in received

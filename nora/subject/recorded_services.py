@@ -182,7 +182,10 @@ class Playback:
                     return stream
                 if "json" in response:
                     result = web.Response(
-                        body=json.dumps(response["json"]).encode(),
+                        # Discovery responses can refer to this playback's owned listener.
+                        body=json.dumps(response["json"]).replace(
+                            "${service_origin}", str(request.url.origin())
+                        ).encode(),
                         status=response["status"], headers=headers,
                     )
                     result.headers.setdefault("Content-Type", "application/json")
