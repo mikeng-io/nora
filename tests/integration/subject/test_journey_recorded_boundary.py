@@ -246,3 +246,77 @@ def test_a_recording_cannot_claim_the_model_boundary():
                                       "services": {"model": []}})
         with pytest.raises(ValueError, match="model dispatch"):
             JourneyServices(policy="[rooms]\nallow = []", external=recording)
+
+
+async def test_explicit_generated_bindings_survive_additional_recorded_services(
+    clean_pg_url, evaluation_config, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    manifest = {
+        "version": 1,
+        "corpora": {
+            "autonomous_journey": {
+                "outing": {
+                    "kind": "journey_world",
+                    "policy": default_policy(("signal", "g1")),
+                    "judges": ["alpha", "beta"],
+                    "generated_bindings": ["honcho.base_url", "platforms.signal.base_url"],
+                    "external": {
+                        "version": 1,
+                        "bindings": {"platforms.discord.base_url": "discord"},
+                        "services": {
+                            "discord": [
+                                {
+                                    "method": "GET",
+                                    "path": "/v1/self",
+                                    "response": {
+                                        "status": 200,
+                                        "json": {"primary": "generated-discord", "aliases": []},
+                                    },
+                                }
+                            ]
+                        },
+                    },
+                }
+            }
+        },
+    }
+    path = tmp_path / "services.json"
+    path.write_text(json.dumps(manifest))
+    plan = load_services(path).corpora["autonomous_journey"]["outing"]
+    with pytest.raises(EvidenceError, match="external_response_not_recorded"):
+        async with plan.open(clean_pg_url) as env:
+            assert "honcho.base_url" in env.urls
+            async with aiohttp.ClientSession() as client:
+                async with client.post(
+                    env.urls["honcho.base_url"] + "/v3/workspaces",
+                    json={"id": "generated-workspace"},
+                ) as response:
+                    assert (await response.json())["id"] == "generated-workspace"
+                async with client.get(
+                    env.urls["platforms.signal.base_url"] + "/v1/self"
+                ) as response:
+                    assert (await response.json())["primary"] == "generated-self"
+                async with client.get(
+                    env.urls["platforms.discord.base_url"] + "/v1/self"
+                ) as response:
+                    assert (await response.json())["primary"] == "generated-discord"
+                async with client.get(
+                    env.urls["platforms.discord.base_url"] + "/undeclared"
+                ) as response:
+                    assert response.status == 500
+            with pytest.raises(EvidenceError, match="external_response_not_recorded"):
+                env.check()
+
+
+@pytest.mark.parametrize("bindings", [
+    ("llm.base_url",), ("honcho.base_url", "honcho.base_url"),
+    ("platforms.discord.base_url",), ("platforms.signal.base_url",),
+])
+def test_generated_bindings_cannot_claim_models_unknown_services_or_recordings(bindings):
+    recording = RecordedServices({
+        "version": 1, "bindings": {"platforms.signal.base_url": "bridge"},
+        "services": {"bridge": []}})
+    with pytest.raises(ValueError, match="generated bindings"):
+        JourneyServices(policy=default_policy(("signal", "g1")),
+                        external=recording, generated_bindings=bindings)

@@ -15,7 +15,7 @@ from nora.subject.recorded_services import RecordedServices
 JOURNEY_KIND = "journey_world"
 _JOURNEY_KEYS = frozenset({
     "kind", "policy", "room", "identity", "overrides", "judges",
-    "model_gateway", "external",
+    "model_gateway", "external", "generated_bindings",
 })
 
 
@@ -86,6 +86,9 @@ def _journey_plan(name: str, entry: dict[str, Any]) -> Any:
     if not isinstance(overrides, dict):
         raise ValueError(
             f"journey service plan for {name!r} declares no overrides object")
+    generated = entry.get("generated_bindings", [])
+    if not isinstance(generated, list) or not all(isinstance(v, str) for v in generated):
+        raise ValueError(f"journey service plan for {name!r} has invalid generated bindings")
     external = entry.get("external")
     recorded = None
     if external is not None:
@@ -104,7 +107,8 @@ def _journey_plan(name: str, entry: dict[str, Any]) -> Any:
             policy=entry["policy"], room=(str(room[0]), str(room[1])),
             identity=identity, overrides=dict(overrides),
             judge_models=(judges[0], judges[1]),
-            model_gateway=_gateway(name, entry, judges), external=recorded)
+            model_gateway=_gateway(name, entry, judges), external=recorded,
+            generated_bindings=tuple(generated))
     except ValueError as exc:
         raise ValueError(
             f"journey service plan for {name!r}: {exc}") from None

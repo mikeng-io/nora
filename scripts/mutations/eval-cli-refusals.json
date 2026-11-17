@@ -12,5 +12,12 @@
     "old": "        if budget is None or getattr(transport, \"_budget\", None) is not budget:\n",
     "new": "        if False:\n",
     "target": "tests/integration/subject/test_journey_model_gateway.py::test_an_unbudgeted_dispatch_is_refused_before_the_upstream"
+  },
+  {
+    "name": "explicit generated services survive additional recordings",
+    "file": "nora/subject/journey_world.py",
+    "old": "            if \"honcho.base_url\" in self.generated_bindings:\n                apps[\"honcho.base_url\"] = memory_service(self.feeds)\n            if \"platforms.signal.base_url\" in self.generated_bindings:\n                apps[\"platforms.signal.base_url\"] = self._bridge_app()\n",
+    "new": "",
+    "target": "tests/integration/subject/test_journey_recorded_boundary.py::test_explicit_generated_bindings_survive_additional_recorded_services"
   }
 ]
