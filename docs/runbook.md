@@ -1314,14 +1314,16 @@ procedure, then obtain operator approval for the concrete source/configuration,
 backup set and scope of the switch. Do not substitute manual account reassignment
 or stale file fallback for the handoff.
 
-The coordinated backup above must also include the installed Kratos and Keto
-stores, their configuration/schema/OPL revision and the matching Nora PostgreSQL
-state. Stop all identity-management writers, including provisioning and roster
-reconciliation, while capturing that set. Keep account bindings, alias revisions,
-consent decisions, operation journals and authority holds together. Ory data is
-not included in Nora's PostgreSQL dump when deployed in another database or
-volume. Record each store's actual backup location privately and prove a restore
-on isolated storage before relying on it.
+The coordinated backup includes Nora PostgreSQL, installed Kratos/Keto stores,
+matching configuration/schema/OPL and pinned images. Stop identity writers,
+provisioning and reconciliation before capture; cleanly stop
+SQLite-backed Ory before copying its complete data directories. Bindings, aliases,
+consent, journals, revisions, restrictions and holds stay in one backup set.
+Separate Ory stores are not in Nora's PostgreSQL dump. Record locations privately;
+rehearse into a fresh database and new Ory volumes with the archived
+configuration and service ownership restored, keeping original stores intact.
+Verify canonical accounts, current sessions, scoped denial and retained holds
+before resuming writers; reconciliation must not clear another owner's hold.
 
 After the approved switch, verify the running backend and current private
 listener reachability in every reader. With approved accounts, exercise login

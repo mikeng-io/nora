@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import time
 import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,10 +77,11 @@ class _Ory:
     kratos_public: str
     keto_read: str
     keto_write: str
+    containers: tuple[str, str]
 
 
-@pytest.fixture
-def ory() -> Iterator[_Ory]:
+@contextmanager
+def ory_stack(snapshot: Path | None = None) -> Iterator[_Ory]:
     """Disposable pinned Ory containers on dynamic loopback ports — owned
     entirely by this journey and removed by name in teardown. The lifecycle
     mirrors deploy/ory/compose.yaml step for step: data volumes, owner fix,
@@ -87,7 +90,8 @@ def ory() -> Iterator[_Ory]:
     keto_vol, kratos_vol = f"{tag}-keto", f"{tag}-kratos"
     keto_name, kratos_name = f"{tag}-keto", f"{tag}-kratos"
     root = Path(__file__).resolve().parents[2]
-    keto_cfg, kratos_cfg = f"{root}/deploy/ory/keto", f"{root}/deploy/ory/kratos"
+    configuration = snapshot / "configuration" if snapshot is not None else root / "deploy/ory"
+    keto_cfg, kratos_cfg = str(configuration / "keto"), str(configuration / "kratos")
     for image in (KETO_IMAGE, KRATOS_IMAGE):
         _docker("image", "inspect", image)
     try:
@@ -98,18 +102,29 @@ def ory() -> Iterator[_Ory]:
                     "--entrypoint", "chown", "-v",
                     f"{vol}:/home/ory/data", image,
                     "ory:ory", "/home/ory/data")
-        _docker("run", "--pull=never", "--rm",
-                "-v", f"{keto_cfg}:/etc/keto:ro", "-v",
-                f"{keto_vol}:/home/ory/data",
-                "-e", "DSN=sqlite:///home/ory/data/keto.db?_fk=true",
-                "--entrypoint", "keto", KETO_IMAGE,
-                "migrate", "up", "-c", "/etc/keto/keto.dev.yaml", "--yes")
-        _docker("run", "--pull=never", "--rm",
-                "-v", f"{kratos_cfg}:/etc/kratos:ro", "-v",
-                f"{kratos_vol}:/home/ory/data",
-                "-e", "DSN=sqlite:///home/ory/data/kratos.db?_fk=true",
-                "--entrypoint", "kratos", KRATOS_IMAGE,
-                "migrate", "sql", "-e", "--yes")
+        if snapshot is not None:
+            for image, vol, name in ((KETO_IMAGE, keto_vol, "keto"),
+                                     (KRATOS_IMAGE, kratos_vol, "kratos")):
+                _docker("run", "--pull=never", "--rm", "--user", "0:0",
+                        "--entrypoint", "cp", "-v", f"{snapshot / name}:/backup:ro",
+                        "-v", f"{vol}:/home/ory/data", image,
+                        "-a", "/backup/.", "/home/ory/data/")
+                _docker("run", "--pull=never", "--rm", "--user", "0:0",
+                        "--entrypoint", "chown", "-v", f"{vol}:/home/ory/data", image,
+                        "-R", "ory:ory", "/home/ory/data")
+        else:
+            _docker("run", "--pull=never", "--rm",
+                    "-v", f"{keto_cfg}:/etc/keto:ro", "-v",
+                    f"{keto_vol}:/home/ory/data",
+                    "-e", "DSN=sqlite:///home/ory/data/keto.db?_fk=true",
+                    "--entrypoint", "keto", KETO_IMAGE,
+                    "migrate", "up", "-c", "/etc/keto/keto.dev.yaml", "--yes")
+            _docker("run", "--pull=never", "--rm",
+                    "-v", f"{kratos_cfg}:/etc/kratos:ro", "-v",
+                    f"{kratos_vol}:/home/ory/data",
+                    "-e", "DSN=sqlite:///home/ory/data/kratos.db?_fk=true",
+                    "--entrypoint", "kratos", KRATOS_IMAGE,
+                    "migrate", "sql", "-e", "--yes")
         _docker("run", "--pull=never", "-d", "--name", keto_name,
                 "-v", f"{keto_cfg}:/etc/keto:ro", "-v",
                 f"{keto_vol}:/home/ory/data",
@@ -144,6 +159,7 @@ def ory() -> Iterator[_Ory]:
             kratos_public=f"http://127.0.0.1:{kratos_public}",
             keto_read=f"http://127.0.0.1:{keto_read}",
             keto_write=f"http://127.0.0.1:{keto_write}",
+            containers=(keto_name, kratos_name),
         )
     finally:
         # Teardown removes exactly the resources this journey named — never a
@@ -160,6 +176,24 @@ def ory() -> Iterator[_Ory]:
         left = _docker("volume", "ls", "-q", "--filter", f"name={tag}-")
         assert not left.stdout.split(), (
             f"journey teardown left volumes behind: {left.stdout!r}")
+
+
+@pytest.fixture
+def ory() -> Iterator[_Ory]:
+    with ory_stack() as stack:
+        yield stack
+
+
+def snapshot_ory(stack: _Ory, directory: Path) -> None:
+    """Capture stopped SQLite stores; leave original services quiesced."""
+    _docker("stop", *stack.containers)
+    source = Path(__file__).resolve().parents[2] / "deploy/ory"
+    for name in ("keto", "kratos"):
+        shutil.copytree(source / name, directory / "configuration" / name)
+    for name, container in zip(("keto", "kratos"), stack.containers, strict=True):
+        target = directory / name
+        target.mkdir(mode=0o700, parents=True)
+        _docker("cp", f"{container}:/home/ory/data/.", str(target))
 
 
 @pytest.fixture
