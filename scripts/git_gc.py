@@ -6,7 +6,7 @@ registered worktree is judged `remove`, `keep: <reason>` or `unknown: <error>`.
 `unknown` means the check protecting that artifact could not run — never that
 nothing was found — and keeps the exit status nonzero.
 
-Freshness: `git fetch origin` and `git worktree list` run before refs are
+Freshness: `git fetch --prune origin` and `git worktree list` run before refs are
 enumerated; when the fetch fails, every verdict that depends on merge ancestry
 is `unknown`. A ref is `merged` only when its tip is an ancestor of
 `origin/master`, or its exact tip SHA is the head of a merged PR — GitHub keeps
@@ -359,11 +359,6 @@ def _log_removed(log_path: Path, item: Item) -> None:
         fh.write(f"{stamp} {item.kind} {item.name} {item.sha}{via}\n")
 
 
-def _remote_gone(repo: Path, short: str) -> bool:
-    out = _git(repo, "ls-remote", "--heads", "origin", short)
-    return out.returncode == 0 and not out.stdout.strip()
-
-
 def _remove_worktree(repo: Path, item: Item) -> subprocess.CompletedProcess[str] | str:
     """Re-check HEAD and cleanliness before removing; 'changed' on mismatch."""
     head = _git(repo, "-C", item.name, "rev-parse", "HEAD")
@@ -386,9 +381,9 @@ def _apply(repo: Path, items: list[Item], log_path: Path) -> int:
         if item.kind == "worktree":
             if item.reason == "registration is stale":
                 admin = _worktree_admin_dir(repo, Path(item.name))
-                if admin is None:
+                if admin is None or Path(item.name).exists():
                     failures += 1
-                    print(f"  error pruning {item.name}: admin dir not found",
+                    print(f"  error pruning {item.name}: admin dir not found or path is back",
                           file=sys.stderr)
                     continue
                 try:
@@ -414,8 +409,6 @@ def _apply(repo: Path, items: list[Item], log_path: Path) -> int:
             out = _git(repo, "push",
                        f"--force-with-lease=refs/heads/{short}:{item.sha}",
                        "origin", f":{short}")
-            if out.returncode != 0 and _remote_gone(repo, short):
-                out = subprocess.CompletedProcess(out.args, 0, "already absent", "")
         if out.returncode == 0:
             _log_removed(log_path, item)
             print(f"  removed {item.kind} {item.name} ({item.sha[:12]})")
@@ -444,7 +437,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     repo = Path(os.path.realpath(repo_out.stdout.strip()))
 
-    fetch_ok = _git(repo, "fetch", "origin").returncode == 0
+    fetch_ok = _git(repo, "fetch", "--prune", "origin").returncode == 0
     worktrees = _worktrees(repo)
     listing = _enumerate(repo)
     if worktrees is None or listing is None:

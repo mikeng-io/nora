@@ -437,3 +437,28 @@ def test_stale_registration_removed_but_keep_path_stays(repo: Repo) -> None:
     listed = repo.worktrees()
     assert str(gone.resolve()) not in listed
     assert str(keep.resolve()) in listed
+
+
+def test_failed_delete_of_an_absent_remote_branch_is_an_error(repo: Repo) -> None:
+    """A delete that fails stays a failure, even when the branch is already gone."""
+    sha = repo.head("master")
+    repo.git("config", "remote.origin.fetch",
+             "+refs/heads/master:refs/remotes/origin/master")
+    repo.git("update-ref", "refs/remotes/origin/ghost/remote", sha)
+    out = _gc(repo, "--apply")
+    assert out.returncode != 0
+    assert "error removing remote branch origin/ghost/remote" in out.stderr
+    log = repo.tmp / "state" / "nora" / "git-gc.log"
+    assert not log.exists() or "ghost/remote" not in log.read_text()
+
+
+def test_stale_registration_whose_path_returns_is_not_pruned(repo: Repo) -> None:
+    """The path came back after classification: its registration is kept."""
+    back = repo.tmp / "wt" / "back-reg"
+    repo.git("worktree", "add", "-q", str(back), "-b", "br/backreg", "master")
+    shutil.rmtree(back)
+    _pre_push_hook(repo, f"mkdir -p '{back.resolve()}'")
+    out = _gc(repo, "--apply")
+    assert out.returncode != 0
+    assert f"error pruning {back.resolve()}" in out.stderr
+    assert str(back.resolve()) in repo.worktrees()
