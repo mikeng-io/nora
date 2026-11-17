@@ -54,7 +54,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
@@ -79,6 +79,7 @@ from nora.domain.culture import (
     RoomMessage,
     social_citation,
 )
+from nora.domain.live import AsyncLiveMapping
 from nora.domain.media import media_detail, sanitize_description
 from nora.domain.memory_index import social_label
 from nora.domain.models import PersonRef
@@ -716,12 +717,9 @@ class CharacterPersonAdaptor(EntitySessions):
         clock: Callable[[], datetime] | None = None,
         handle_owners: Callable[[str], frozenset[str]] = lambda _handle: frozenset(),
     ) -> None:
-        """`screen` is `nora.agent.egress.scan_identifiers`, injected because
-        this layer may not import it; `render_chars` bounds each medium's
-        reading (`[media] comprehension_render_chars`); `handle_owners` says
-        whose Instagram username a handle is
-        (`Persons.instagram_username_owners`; by default nobody's, so every
-        handle in a caption is redacted)."""
+        """`screen` checks egress; `render_chars` bounds each medium's reading.
+        `handle_owners` maps Instagram usernames to their owners; by default
+        nobody owns a handle, so captions redact them all."""
         self._culture = culture
         #: Read by the dream loop, never awaited here.
         self.evidence = evidence
@@ -733,7 +731,9 @@ class CharacterPersonAdaptor(EntitySessions):
         self._clock = clock or (lambda: datetime.now().astimezone())
         self._sessions_init()
 
-    def keys(self) -> Sequence[str]:
+    def keys(self) -> Sequence[str] | Awaitable[Sequence[str]]:
+        if isinstance(self._keys, AsyncLiveMapping):
+            return self._keys.refresh()
         return tuple(sorted(self._keys.keys()))
 
     def tool_room(self, key: str) -> str | None:

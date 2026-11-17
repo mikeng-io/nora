@@ -30,12 +30,13 @@ from nora.app.composition_helpers import (
     _unified_profile_writers_retired,
     character_person_keys,
     character_unit_keys,
+    selected_character_person_keys,
 )
 from nora.app.composition_readers import scope_home_rooms
 from nora.app.raw_clients import _RelevanceGateModelClient
 from nora.app.startup import StartupError
 from nora.domain.culture import nora_character_key
-from nora.domain.live import LiveMapping
+from nora.domain.live import AsyncLiveMapping, LiveMapping
 from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.language import SqlLanguageStore
@@ -105,7 +106,9 @@ def _character_adaptors(
         allowlist=allowlist, cfg=cfg, engine=engine,
         metrics=metrics, note_store=note_store, persons=persons, access=access,
     )
-    person_keys = LiveMapping(lambda: character_person_keys(allowlist, persons))
+    person_keys = (AsyncLiveMapping(lambda: selected_character_person_keys(allowlist, access))
+        if access is not None and not access.is_file_backend
+        else LiveMapping(lambda: character_person_keys(allowlist, persons)))
     culture_store = SqlCultureStore(engine)
     p_sched, p_ad = _character_person_adaptor(
         cfg=cfg, content_checks=content_checks, culture_store=culture_store,

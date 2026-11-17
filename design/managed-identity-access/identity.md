@@ -77,9 +77,12 @@ private TOML files; file mode reports that management is operator-maintained.
 A deployment selects its identity/access backend explicitly. A fact has one
 authoritative writer: managed grants are not merged with file allowlists, and a
 failure of Ory does not fall back to a permissive or stale file policy. Read
-projections do not become independent writable authorities. Nora configuration
-continues to own room metadata, destinations and topology rather than encoding
-all configuration as permission relationships.
+projections do not become independent writable authorities. Background identity
+populations enumerate current selected room memberships under canonical identity
+and unit keys. Their names belong to that unit; a failed refresh invalidates the
+projection instead of reusing an earlier roster or a file-shaped fallback.
+Nora configuration owns room metadata, destinations and topology rather than
+encoding all configuration as permission relationships.
 
 ## Ory's responsibility
 

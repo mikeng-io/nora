@@ -64,6 +64,7 @@ from nora.domain.culture import (
     RoomMessage,
 )
 from nora.domain.errors import AccountNotRecordableError
+from nora.domain.live import AsyncLiveMapping
 from nora.domain.media import placeholders_in
 from nora.domain.media_join import MediaJoin, body_with_custody_slots, shas_in
 from nora.domain.ports import Proposal
@@ -670,13 +671,10 @@ class ProfilePersonAdaptor:
         handle_owners: Callable[[str], frozenset[str]] = lambda _handle: frozenset(),
         coordinate_screen: Callable[[str], bool] | None = None,
     ) -> None:
-        """`social` is the readable social store the session's items and their
-        counts come from (45 §4: the person account's alone); `screen` is
-        `nora.agent.egress.scan_identifiers`, injected because this layer may
-        not import it, and `render_chars` bounds each medium's reading
-        (`[media] comprehension_render_chars`). A session built with `social`
-        but no `screen` withholds every item's `shows` — fail-closed, as a
-        withheld reading in `character._shows`. `handle_owners` says whose
+        """`social` supplies readable items/counts; `screen` checks egress.
+        `render_chars` bounds each medium's reading
+        (`[media] comprehension_render_chars`). With social but no screen,
+        every item's shows is withheld. `handle_owners` says whose
         Instagram username a handle is (by default nobody's, so every handle
         in a caption is redacted)."""
         self._coordinate_screen = coordinate_screen
@@ -698,7 +696,9 @@ class ProfilePersonAdaptor:
         self._handle_owners = handle_owners
         self._runs: dict[str, _Run] = {}
 
-    def keys(self) -> Sequence[str]:
+    def keys(self) -> Sequence[str] | Awaitable[Sequence[str]]:
+        if isinstance(self._keys, AsyncLiveMapping):
+            return self._keys.refresh()
         return tuple(sorted(self._keys.keys()))
 
     def tool_room(self, key: str) -> str | None:

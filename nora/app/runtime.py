@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
@@ -1288,33 +1289,26 @@ async def dream_loop(
     # reached through `schedule_clock`.
     tasks: set[asyncio.Task[None]] = set()
 
-    def _keys_for(adaptor: DreamAdaptor) -> Sequence[str]:
-        """One population per `key_kind`, resolved by the loop.
-
-        An unknown kind returns nothing AND says so: silently ticking such an
-        adaptor over the scopes would be a guess about what its rows mean, and
-        silently skipping it would be the same subsystem-that-does-nothing
-        failure the runtime-less branch above logs.
-        """
+    async def _keys_for(adaptor: DreamAdaptor) -> Sequence[str]:
+        """Enumerate the selected population before scheduling its work."""
         if adaptor.key_kind == "scope":
             return scopes()
         if adaptor.key_kind == "unit":
             return units()
         if adaptor.key_kind == "entity":
-            # A Character entity: the adaptor knows its own keys, one per
-            # (unit, entity), from the policy.
-            entity_keys: Callable[[], Sequence[str]] | None = getattr(adaptor, "keys", None)
+            entity_keys: Callable[[], Sequence[str] | Awaitable[Sequence[str]]] | None = (
+                getattr(adaptor, "keys", None))
             if entity_keys is not None:
-                return entity_keys()
-        log.error(
-            "dream adaptor %s declares key_kind=%r, which this loop cannot "
-            "enumerate; it will not run", adaptor.name, adaptor.key_kind,
-        )
+                keys = entity_keys()
+                if inspect.isawaitable(keys):
+                    return await asyncio.wait_for(keys, max_unit_hold_seconds)
+                return keys
+        log.error("dream adaptor %s declares key_kind=%r, which this loop cannot enumerate; "
+                  "it will not run", adaptor.name, adaptor.key_kind)
         return ()
 
     def _count_failure(unit: str) -> None:
-        """One place both failure paths converge, so the exponential can never
-        be advanced by one and reset by the other."""
+        """Both failure paths advance the same backoff."""
         failures[unit] = failures.get(unit, 0) + 1
         last_failure_at[unit] = time.monotonic()
 
@@ -1480,7 +1474,13 @@ async def dream_loop(
             # any `tick_seconds` >= 1, and readable.
             pass_id = "dream.pass:" + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             for adaptor in adaptors:
-                for key in _keys_for(adaptor):
+                try:
+                    keys = await _keys_for(adaptor)
+                except Exception:
+                    log.exception("dream population unavailable for %s", adaptor.name)
+                    metrics.inc("nora_errors_total", stage="dream")
+                    continue
+                for key in keys:
                     # `unit`, not `key`: the lock, the failure count and the
                     # backoff are all per (adaptor, key).
                     unit = f"{adaptor.name}:{key}"

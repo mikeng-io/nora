@@ -15,6 +15,7 @@ from tests.unit.test_dreamer_runtime import _RecordingRegistry
 from tests.unit.test_scoped_engagement_names import (
     _M_PERSON,
     _M_ROOM,
+    _M_SIBLING,
     _M_UNIT,
     _managed,
     _managed_person,
@@ -131,3 +132,162 @@ async def test_culture_selected_file_backend_keeps_its_canonical_name(tmp_path, 
     body = await adaptor.inputs(key="g1", batch=batch)
     assert "Generated File Name" in body
     assert "Generated Spoofed Sender" not in body
+
+
+def _population_rooms():
+    return SimpleNamespace(rooms=lambda: (
+        SimpleNamespace(primary_id="g1", platform="signal", unit=_M_UNIT.id,
+                        label="Generated A", description=None, persons=frozenset()),
+        SimpleNamespace(primary_id="g2", platform="signal", unit=_M_UNIT.id,
+                        label="Generated B", description=None, persons=frozenset()),
+    ))
+
+
+async def test_character_and_profile_composition_enumerate_the_selected_managed_population(
+    example_config,
+):
+    from datetime import UTC, datetime
+
+    from nora.app.composition_dream import _character_adaptors, _profile_person_adaptors
+    from nora.domain.culture import character_key
+
+    bindings, access = _managed()
+    await _managed_person(bindings)
+    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_UNIT,
+        nickname="Generated Unit Person", operation_id="generated-unit-person-name")
+    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_ROOM,
+        nickname="Generated Room Only", operation_id="generated-room-person-name")
+    persons = access.persons_view()
+    assert not persons.by_person  # File-shaped absence must not empty the managed population.
+    character = _character_adaptors(
+        allowlist=_population_rooms(), cfg=example_config, content_checks=None,
+        engine=None, metrics=Metrics(), note_store=None, persons=persons, access=access)
+    person = next(a for a in character.adaptors if a.name == "character-person")
+    expected = character_key(_M_UNIT.id, _M_PERSON)
+    assert await person.keys() == (expected,)
+    pk = character.person_keys[expected]
+    assert (pk.person.person_id, pk.person.name, pk.home, pk.listed) == (
+        _M_PERSON, "Generated Unit Person", "g1", ("g1",))
+    assert tuple(r.key for r in pk.rooms) == ("g1", "g2")
+    _, adaptors, *_ = _profile_person_adaptors(
+        allowlist=_population_rooms(), cfg=example_config, character=character,
+        clock=lambda: datetime.now(UTC), content_checks=None, engine=None,
+        media_join=None, metrics=Metrics(), persons=persons,
+        profile_collective_keys={}, profile_index=None, access=access)
+    profile = next(a for a in adaptors if a.name == "profile-person")
+    assert await profile.keys() == (expected,)
+
+    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_UNIT,
+        nickname="Generated Renamed Unit Person", operation_id="generated-unit-person-rename")
+    assert await profile.keys() == (expected,)
+    assert character.person_keys[expected].person.name == "Generated Renamed Unit Person"
+    bindings.down = True
+    with pytest.raises(RuntimeError):
+        await person.keys()
+    with pytest.raises(RuntimeError, match="population is unavailable"):
+        character.person_keys[expected]
+    bindings.down = False
+    assert await profile.keys() == (expected,)
+
+
+async def test_selected_person_population_keeps_units_separate_and_observes_departure():
+    from nora.app.composition_helpers import selected_character_person_keys
+    from nora.domain.culture import character_key
+    from nora.domain.managed import room_scope_id
+    from nora.domain.management import Scope, ScopeKind
+
+    bindings, access = _managed()
+    await _managed_person(bindings)
+    other = Scope(ScopeKind.UNIT, "generated-other-unit")
+    other_room = Scope(ScopeKind.ROOM, room_scope_id("signal", "g3"))
+    from nora.people.app.managed import ManagedServices
+    from nora.testing.managed import (
+        FakeAuthorityBackend,
+        FakeIdentityRegistry,
+        FakeLinkRequests,
+        FakeTopologySource,
+    )
+
+    access = ManagedServices(bindings, FakeAuthorityBackend(), FakeTopologySource(
+        rooms={_M_ROOM.id: (_M_UNIT.id, False),
+               _M_SIBLING.id: (_M_UNIT.id, False), other_room.id: (other.id, False)},
+        units={_M_UNIT.id: "generated-workspace", other.id: "generated-workspace"},
+        workspaces={"generated-workspace"}), FakeIdentityRegistry(), FakeLinkRequests()).access
+    await bindings.set_membership(person_id=_M_PERSON, scope=other_room,
+        member=True, source="generated")
+    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_UNIT,
+        nickname="Generated Unit One", operation_id="generated-name-one")
+    await bindings.set_scoped_name(person_id=_M_PERSON, scope=other,
+        nickname="Generated Unit Two", operation_id="generated-name-two")
+    rooms = (*_population_rooms().rooms(), SimpleNamespace(
+        primary_id="g3", platform="signal", unit=other.id, label="Generated C"))
+    source = SimpleNamespace(rooms=lambda: rooms)
+    keys = await selected_character_person_keys(source, access)
+    first, second = character_key(_M_UNIT.id, _M_PERSON), character_key(other.id, _M_PERSON)
+    assert set(keys) == {first, second}
+    assert keys[first].person.name == "Generated Unit One"
+    assert keys[second].person.name == "Generated Unit Two"
+    assert tuple(r.key for r in keys[second].rooms) == ("g3",)
+    await bindings.set_membership(person_id=_M_PERSON, scope=_M_ROOM,
+        member=False, source="generated")
+    keys = await selected_character_person_keys(source, access)
+    assert set(keys) == {second}
+
+
+@pytest.mark.parametrize("outage_first", [False, True])
+async def test_dream_loop_awaits_the_selected_population_before_dispatch(outage_first):
+    import asyncio
+    from contextlib import suppress
+
+    from nora.agent.dreamer import AdaptorSchedule
+    from nora.app.composition_helpers import selected_character_person_keys
+    from nora.app.runtime import dream_loop
+    from nora.domain.culture import character_key
+    from nora.domain.live import AsyncLiveMapping
+    from tests.unit.test_runtime import (
+        _EntityAdaptor,
+        _Evidence,
+        _FakeRecord,
+        _KeyedLanguage,
+        _RecordingRunner,
+    )
+
+    bindings, access = _managed()
+    await _managed_person(bindings)
+    reads = 0
+
+    async def read_population():
+        nonlocal reads
+        reads += 1
+        if outage_first and reads == 1:
+            raise RuntimeError("generated population outage")
+        return await selected_character_person_keys(_population_rooms(), access)
+
+    population = AsyncLiveMapping(read_population)
+    dispatched = asyncio.Event()
+
+    class PopulationAdaptor(_EntityAdaptor):
+        def keys(self):
+            return population.refresh()
+
+    class RecordingRunner(_RecordingRunner):
+        async def run(self, **kwargs):
+            result = await super().run(**kwargs)
+            dispatched.set()
+            return result
+
+    runner = RecordingRunner()
+    task = asyncio.create_task(dream_loop(
+        _FakeRecord({}), _KeyedLanguage(age=1000), Metrics(), scopes=lambda: (),
+        tick_seconds=0.01, safety_lag=0, quiet_seconds=0,
+        max_age_seconds=1e9, batch_limit=1,
+        adaptors=[PopulationAdaptor("character-person", _Evidence([1]))], runtime=runner,
+        schedules={"character-person": AdaptorSchedule(
+                min_interval_seconds=0, batch_limit=1, wake_batch=1)}))
+    try:
+        await asyncio.wait_for(dispatched.wait(), timeout=3)
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+    assert runner.calls[0][:2] == ("character-person", character_key(_M_UNIT.id, _M_PERSON))

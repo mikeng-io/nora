@@ -1,6 +1,7 @@
 """Read-only projections of a live source, evaluated at use time."""
 
 from collections.abc import (
+    Awaitable,
     Callable,
     ItemsView,
     Iterable,
@@ -36,6 +37,26 @@ class LiveMapping(Mapping[K, V]):
 
     def values(self) -> ValuesView[V]:
         return self._read().values()
+
+
+class AsyncLiveMapping(LiveMapping[K, V]):
+    """An async projection refreshed before enumeration; failed reads invalidate it."""
+
+    def __init__(self, read: Callable[[], Awaitable[Mapping[K, V]]]) -> None:
+        self._load = read
+        self._current: Mapping[K, V] | None = None
+        super().__init__(self._snapshot)
+
+    def _snapshot(self) -> Mapping[K, V]:
+        if self._current is None:
+            raise RuntimeError("async population is unavailable")
+        return self._current
+
+    async def refresh(self) -> tuple[K, ...]:
+        self._current = None
+        current = await self._load()
+        self._current = dict(current)
+        return tuple(current)
 
 
 class LiveSequence(Sequence[T]):

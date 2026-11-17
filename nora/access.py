@@ -84,14 +84,8 @@ def _ref(person: ManagedPerson) -> PersonRef:
 class EmptyPersons:
     """The Persons-shaped descriptive surface managed mode answers empty.
 
-    Aliases, handle maps, Life360 membership, `honcho_peer_id` and the
-    `persons = [...]` room lists are file identity data the managed schema
-    does not carry. A sync consumer (the dream adaptors' name/former-id
-    callbacks, the character-key listings) cannot await the binding store,
-    so it gets this: every read absent, never a stale file answer. Person
-    enumeration being empty also means no person-scoped profile/memory
-    writes land under a managed deployment — under-reporting, never a
-    wrong owner.
+    File-only descriptive reads remain absent rather than falling back to files.
+    Managed background populations enumerate selected memberships asynchronously.
     """
 
     by_person: Mapping[str, PersonRef] = {}
