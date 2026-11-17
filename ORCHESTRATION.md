@@ -130,7 +130,7 @@ answers them.
 The last row is the only fixed minimum. Everywhere else, move a step up or down
 on judgement and say why in the PR's Gate section. A missed first fix, a scope
 surprise or an unplanned gate repair is evidence to raise review a step. The
-operator can require or waive any check or review.
+operator can require any check or review.
 
 Tiers (frontmatter) are inspection depth on the same agreed slice, never
 severity or authority to add requirements; every tier applies the five Cs.
@@ -163,13 +163,11 @@ needs checks on what the upstream change touches.
 - An invalid plan returns to scoping; a defect returns to bounded repair.
   Expanding scope needs an explicit amendment; a reviewer suggestion is not a
   requirement. Never soften an obligation to get a pass.
-- Close the slice when every obligation is evidenced and no BLOCKER remains,
-  then stop. Record limitations without claiming them delivered; update the
-  work item's remaining scope; close it only for its whole outcome. Reopen a
-  settled result only on new evidence or a changed requirement.
-- A worker's stop point is not the orchestrator's completion condition. After
-  intake, reconcile the whole outcome and continue authorized work; a new
-  operator-facing session inherits that responsibility and the existing holds.
+- Close the slice for its whole outcome once every obligation is evidenced
+  and no BLOCKER remains, updating remaining scope and recording limitations
+  without claiming them; reopen only on new evidence or a changed requirement.
+- A worker's stop point is not the orchestrator's completion: after intake,
+  reconcile the whole outcome; a new session inherits it and the holds.
 
 ## Choosing a worker
 
@@ -190,23 +188,22 @@ needs checks on what the upstream change touches.
 - Model exclusions: never MiniMax M3; M3.1-Flash only when the operator names it.
 
 **Reviewer independence.** A reviewer is a fresh session, neither the builder
-nor the brief-author, on a different model vendor from the builder. A different
-endpoint for the same vendor is not independence. An orchestrator that
-implements directly is the builder. If no independent reviewer is available,
-block or get the operator's waiver.
+nor the brief-author, whose vendor differs from every author's — an
+orchestrator that commits is one; a same-vendor endpoint is not independence.
+Default: GPT-6.1 Terra (Codex); an OpenAI author means Kimi K3.1 Pro
+(kimi-code/k3.1-pro). No qualifying reviewer available means Blocked, with why.
 
 **Execution briefs and handoffs** follow `nora-dispatch`. The worker owns its
-assigned slice; the orchestrator owns integration and final acceptance. Reviews
-run on the assigned base/head and do not spawn agents. Prepared worktrees keep
-their assigned base; do not create a second worktree or restart dependent work
-from master.
+slice; the orchestrator owns integration and acceptance. Reviews run on the
+assigned base/head and spawn no agents; a prepared worktree keeps its base —
+never a second worktree or a restart on master.
 
 ## Bounded independent review
 
 `REVIEW.md` owns review scope, finding quality and the return format;
 `nora-review` owns the steps. The orchestrator preserves all grounded findings
-in the review receipt, and groups at most six classes in the PR summary with
-a link to the rest. Non-blocking findings are useful input, not new scope.
+in the receipt; non-blocking findings go into one summary comment on the PR —
+at most six classes grouped, linked — and never open a round.
 
 | Verdict | Consequence |
 |---|---|
@@ -215,22 +212,23 @@ a link to the rest. Non-blocking findings are useful input, not new scope.
 | ISSUE: real but pre-existing outside agreed completion, or out of scope | Use the existing Linear work item or GitHub defect report; file only actionable work with no home (`nora-decision`); never blocks |
 | DROP: hypothetical, contrived, style or unrelated | One-line disposition |
 
-- Severity measures consequence; disposition determines action. Preserve the
-  source finding when triaging it. A low-severity observation cannot become a
-  blocker merely by recurring; a material failure needs its scenario and impact.
-- Verify each finding at the cited line with the right check; production fixes
-  follow `nora-prove-fix`. A clean review does not replace the gate or a
-  required live read-back.
-- With no BLOCKER or required evidence gap, end review. **At most two rounds**;
-  round two checks `git diff <reviewed-sha>..HEAD`, unresolved findings and
-  previously unavailable required evidence, even when the diff is empty. Waiting
-  for evidence is not a round; a requested re-check consumes the next round.
-  A BLOCKER or required evidence gap left after round two is addressed within scope
-  and measured, then the orchestrator rereads the spec and reports; only the
-  operator authorises a third round.
-- Record review tier and triage in the PR's Gate section. Keep the source
-  finding when adjudicating it; never silently downgrade a blocker. Waiving an
-  applicable requirement is the operator's decision.
+- Severity measures consequence; disposition determines action — preserve the
+  source finding when triaging. Recurrence alone cannot raise an observation
+  to a blocker; a material failure needs its scenario and impact.
+- Verify each finding at the cited line with the right check (`nora-prove-fix`
+  for production fixes); a clean review never replaces the gate or read-back.
+- A round with no BLOCKER ends review once required evidence is in; waiting
+  for evidence is not a round. A later round checks
+  `git diff <reviewed-sha>..HEAD`, unresolved findings and previously
+  unavailable required evidence, even when empty. Self-contained work
+  converges in at most two rounds; past three, the orchestrator rereads the
+  spec and asks the operator whether to redesign rather than run another.
+- A class is one remedy fixing all its instances: first report names the
+  structural remedy and every sibling instance in that round, then no new
+  input shapes. A repair-induced finding names its origin; same class unless
+  its remedy differs.
+- Record review tier and triage in the PR's Gate section; never silently
+  downgrade a blocker. Waiving a requirement is the operator's call.
 
 ## Artifact ownership
 
@@ -266,27 +264,29 @@ specified. Cancelled or superseded work closes as not planned with its reason;
 partial work references its parent without closing it. Linear's configured
 workflow names are read back rather than assumed to match these labels.
 
-Artifact lifecycle — one owner and one end event each; retirement is
-mechanical, never a judgement of what looks safe:
+Artifact lifecycle — one owner and one end event each; retirement is mechanical, not a judgement:
 
 | artifact | created when | ends when | ended by |
 |---|---|---|---|
 | Linear issue | an outcome is agreed | whole outcome evidenced | its owner |
 | integration branch | parent outcome starts | PR to master merges | GitHub auto-delete |
 | handoff branch | a builder starts | its PR merges into its base | GitHub auto-delete |
-| worktree | a thread or builder starts | branch merged or deleted | orchestrator, via `make gc` |
-| review checkout | a review starts | its result is read | orchestrator, via `make gc` |
+| worktree | the first write needs one | branch merged or deleted | orchestrator, via `make gc` |
+| review checkout | a read-only review needs one | its result is read | orchestrator, via settle and `make gc` |
 | evidence | a check runs | never | PR comment or CI artifact, never only `/tmp` |
 | working log | a check runs | its run ends | `/tmp` |
 
-- The orchestrator owns cleanup and runs `make gc APPLY=1` at intake and after
-  merge; reviews use a detached checkout and never push a branch.
-- A handoff PR's base is the integration branch, or for a related handoff the
-  previous handoff's branch; on merge GitHub deletes the head branch and
-  retargets the PRs stacked on it.
-- Builder briefs never tell the builder to preserve branches or worktrees;
-  repairs to an open handoff land on its branch, and a repair after merge is a
-  new handoff PR off the current base.
+- Every finished handoff or outcome gets one settle record from the
+  orchestrator — `make settle BRANCH=<b> OUTCOME=<o>`: `merged` (its PR
+  merged), `archived` (`archive/<branch>` tag at the tip pushed to origin;
+  dirty worktree state saved first) or `abandoned` (one-line reason; refused
+  with commits not in `origin/master`). Never deletes; logs to the gc log.
+- The orchestrator runs `make gc APPLY=1` at intake and after merge; reviews
+  use a detached checkout and never push a branch.
+- A handoff PR's base is the integration branch or the previous handoff's
+  branch; on merge GitHub deletes the head and retargets the PRs stacked on it.
+- Builder briefs never say to preserve branches or worktrees; repairs land on
+  the open handoff's branch, or a new handoff PR off the current base.
 
 ## Interchange shape
 

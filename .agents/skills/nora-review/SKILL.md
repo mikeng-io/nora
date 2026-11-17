@@ -7,7 +7,7 @@ description: Review an agreed Nora change, re-check a repair delta, or audit sco
 
 Read [REVIEW.md](../../../REVIEW.md) for the review contract and
 [ORCHESTRATION.md](../../../ORCHESTRATION.md#bounded-independent-review) for tier,
-independence, dispositions and round limits. This skill is the procedure.
+independence, dispositions and convergence. This skill is the procedure.
 
 1. **Identify the review.** Use REVIEW.md's brief: confirm the question, basis,
    surface, relevant lenses, evidence and exclusions. Read its source requirements;
@@ -37,10 +37,13 @@ independence, dispositions and round limits. This skill is the procedure.
      not unrelated style or a new architecture of the reviewer's own.
    Check: every required condition has met/unmet/unavailable evidence and limits;
    each defect has a grounded basis, reachable trigger and consequence. Inspect
-   relevant siblings before first reporting a class; label uncertain premises.
+   relevant siblings before first reporting a class; a reported class's remedy
+   is named once, and new input shapes of it are not new findings. Label
+   uncertain premises.
 4. **Return and stop.** Use REVIEW.md's coverage/findings/limits format. Complete
    the assigned coverage rather than stopping at the first finding. For a
    re-check, distinguish unresolved classes from genuinely new repair defects.
    Check: only supported blockers or required review-evidence gaps cause
-   REQUEST CHANGES; non-blocking harvest does not trigger another round.
+   REQUEST CHANGES; a round with none ends review, and non-blocking harvest
+   goes to the summary comment, never another round.
    Return to the orchestrator without repairing, filing tasks or closing work.

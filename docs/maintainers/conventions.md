@@ -245,6 +245,14 @@ when custody is via a merged PR, to
 `${XDG_STATE_HOME:-~/.local/state}/nora/git-gc.log` so it can be restored. The
 orchestrator runs it at intake and after merge ([ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership)).
 
+A finished artifact's outcome is recorded first: `make settle BRANCH=<b>
+OUTCOME=<o>` writes `merged`, `archived` or `abandoned` to the same log —
+`archived` pushes an annotated `archive/<branch>` tag at the tip after saving
+a dirty worktree's `git diff HEAD` and untracked files under
+`nora/archive/<branch>/` in the state dir, and `abandoned` needs a one-line
+reason and is refused when the branch has commits not in `origin/master`.
+Settle never deletes; `make gc` retires.
+
 Kept by rule: `master`, `deployments` and `dependabot/*`; the head of any open
 PR; branches checked out in a worktree; the primary checkout; locked
 worktrees; `--keep <path>`. Merged means an ancestor of `origin/master`, or
