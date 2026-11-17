@@ -125,3 +125,35 @@ async def test_export_refuses_when_kratos_cannot_answer(
         assert "unavailable" in out
     finally:
         await engine.dispose()
+
+
+async def test_export_refuses_an_extra_parent_returned_by_the_real_keto_adapter(
+    clean_pg_url, tmp_path, ory, sources, capsys,
+):
+    from aiohttp import ClientSession
+
+    from nora.infra.ory import KetoClient
+    from nora.people.adapters.keto_authority import KetoAuthorityBackend
+
+    identity, policy = sources
+    assert await admit_run(["apply", "--identity", str(identity), "--policy", str(policy),
+        "--database-url", clean_pg_url, "--kratos-admin-url", ory.kratos_admin,
+        "--keto-read-url", ory.keto_read, "--keto-write-url", ory.keto_write]) == COMPLETE
+    argv = ["--policy", str(policy), "--database-url", clean_pg_url,
+            "--kratos-admin-url", ory.kratos_admin, "--keto-read-url", ory.keto_read]
+    positive = tmp_path / "generated-positive"
+    assert await run(["export", *argv, "--output", str(positive)]) == COMPLETE
+    capsys.readouterr()
+    async with ClientSession() as session:
+        backend = KetoAuthorityBackend(KetoClient(session=session,
+            read_url=ory.keto_read, write_url=ory.keto_write))
+        result = await backend.publish_containment(
+            scope=Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a")),
+            parent=Scope(ScopeKind.UNIT, "generated-foreign-export-parent"))
+        assert result.status.value == "complete"
+    output = tmp_path / "generated-refused"
+    assert await run(["export", *argv, "--output", str(output)]) == 2
+    assert not output.exists()
+    printed = capsys.readouterr().out
+    assert "unfaithful:subject-set-relation" in printed
+    assert "generated-foreign-export-parent" not in printed and str(output) not in printed

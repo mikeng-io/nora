@@ -32,6 +32,7 @@ from types import MappingProxyType
 
 from nora.access import IdentityAccess
 from nora.domain.managed import (
+    CONTAINMENT_RELATIONS,
     CheckResult,
     Outcome,
     OutcomeStatus,
@@ -59,6 +60,7 @@ from nora.people.app.managed_export_prepare import (
     _inventory_refusals,
     _read_identities,
     _read_policy,
+    _scope_key,
     _source_unchanged,
     _topology_refusals,
 )
@@ -164,6 +166,32 @@ class ManagedExport:
                 report = ExportReport(outcome=unavailable("store-failure"))
             yield report
 
+    async def _relations(self) -> Outcome | tuple[
+        dict[Scope, frozenset[tuple[str, str]]],
+        list[ExportRefusal], list[tuple[str, str, str]],
+    ]:
+        """Inventory every subject shape, preserving only configured containment."""
+        people: dict[Scope, frozenset[tuple[str, str]]] = {}
+        refused: list[ExportRefusal] = []
+        containment: list[tuple[str, str, str]] = []
+        for scope in await self.topology.scopes():
+            rows = await self.backend.scope_relations_on(scope=scope)
+            if isinstance(rows, CheckResult):
+                return unavailable("authority-read")
+            parent = await self.topology.parent_of(scope)
+            people[scope] = frozenset((r.relation, r.subject) for r in rows
+                                      if isinstance(r.subject, str))
+            for row in rows:
+                if isinstance(row.subject, str):
+                    continue
+                if (row.relation != CONTAINMENT_RELATIONS.get(scope.kind)
+                        or row.subject != parent):
+                    refused.append(ExportRefusal("unfaithful:subject-set-relation",
+                        f"{_scope_key(scope)}:{row.relation}"))
+                else:
+                    containment.append((_scope_key(scope), row.relation, _scope_key(row.subject)))
+        return people, refused, containment
+
     async def _export(
         self, policy: Policy, source: str, policy_path: Path, *, publish: bool
     ) -> ExportReport:
@@ -177,14 +205,13 @@ class ManagedExport:
         traits, kratos_refusals = gathered
         refused += kratos_refusals
 
-        relations: dict[Scope, frozenset[tuple[str, str]]] = {}
-        for scope in await self.topology.scopes():
-            rows = await self.backend.relations_on(scope=scope)
-            if isinstance(rows, CheckResult):
-                return ExportReport(outcome=unavailable(rows.detail))
-            relations[scope] = rows
+        gathered_relations = await self._relations()
+        if isinstance(gathered_relations, Outcome):
+            return ExportReport(outcome=gathered_relations)
+        relations, typed_refusals, containment = gathered_relations
         rel_refusals, folded = _classify_relations(relations)
-        refused += rel_refusals
+        refused += typed_refusals + rel_refusals
+        folded = sorted([*folded, *containment])
 
         workspace_names = frozenset(policy.unit_workspaces().values()) | {"default"}
         (people, revoked_accounts, suspended_accounts, emit_refusals,

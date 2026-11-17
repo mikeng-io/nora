@@ -77,7 +77,9 @@ serialises on, so the bundle is one coherent cut — the command:
    then reads descriptive traits (`display_name`, `social`, labels) from
    that verified snapshot. An unreachable Kratos is `unavailable`, a
    missing/mismatched/stale record a refusal — never guessed;
-3. reads every relation tuple on each declared scope from Keto;
+3. reads every relation tuple on each declared scope from Keto, including
+   subject sets; only containment matching the configured parent is portable,
+   and other subject-set relations refuse;
 4. computes the verdict matrix — `access.check` for every room, every
    known person (live ids AND retired aliases, which fold identically)
    and a never-registered probe id, for all five permits — and derives

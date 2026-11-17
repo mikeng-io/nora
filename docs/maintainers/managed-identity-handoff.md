@@ -101,8 +101,8 @@ per person, all typed identifiers per account, account `label`s,
 `former_person_ids` aliases, descriptive names, and the per-person social
 opt-out (Kratos trait `social`). Descriptive metadata with no managed
 home — `aliases` names, Instagram/Life360 metadata, Honcho workspace
-bindings — remains in the journal's private source snapshot for a later export
-unit; it is never treated as ownership evidence.
+bindings — remains in the journal's private source snapshot for faithful export; it is
+never treated as ownership evidence.
 
 Published: the effective file `speak`/`view` grants as room `member`
 relations for explicit person lists, plus
