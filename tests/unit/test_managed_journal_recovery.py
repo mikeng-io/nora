@@ -21,7 +21,10 @@ from tests.unit.test_managed_registration import ACCT, ACCT_2, PERSON, _register
 
 @pytest.mark.parametrize("caller", ["registration", "human"])
 @pytest.mark.parametrize("partial", [False, True])
-async def test_exception_recovery_attributes_only_the_exact_recorded_effect(caller, partial):
+@pytest.mark.parametrize("recorded_outcome", [OutcomeStatus.COMPLETE, OutcomeStatus.DENIED])
+async def test_exception_recovery_attributes_only_the_exact_recorded_effect(
+    caller, partial, recorded_outcome,
+):
     class FailedGate(FakeBindingStore):
         gate_down = False
         journal_down = False
@@ -45,9 +48,9 @@ async def test_exception_recovery_attributes_only_the_exact_recorded_effect(call
     assert (await registration.apply(original)).status is OutcomeStatus.COMPLETE
     recorded = await store.operation(original.operation_id)
     assert recorded is not None
-    if partial:
-        store.operations[original.operation_id] = replace(
-            recorded, state=OperationJournalState.INCOMPLETE)
+    store.operations[original.operation_id] = replace(
+        recorded, outcome=recorded_outcome.value,
+        state=OperationJournalState.INCOMPLETE if partial else OperationJournalState.COMPLETE)
     human = HumanManagement(store, registry, registration, services.authority,
                             services.scoped_profile)
     authentication = RoomAuthentication(
@@ -63,7 +66,7 @@ async def test_exception_recovery_attributes_only_the_exact_recorded_effect(call
 
     store.gate_down = True
     exact = await invoke(original)
-    assert exact.status is (OutcomeStatus.INCOMPLETE if partial else OutcomeStatus.COMPLETE)
+    assert exact.status is (OutcomeStatus.INCOMPLETE if partial else recorded_outcome)
     for changed in (
         _register_op(original.operation_id, person_id="generated-other"),
         _register_op(original.operation_id, identifiers=frozenset({ACCT_2})),

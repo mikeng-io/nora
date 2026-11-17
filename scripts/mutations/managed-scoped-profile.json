@@ -107,22 +107,22 @@
   {
     "name": "a committed scoped name reports incomplete after a mismatching readback",
     "file": "nora/people/app/managed_profile.py",
-    "old": "        return await _fail(self._bindings, record, outcome)",
-    "new": "        await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,\n                      outcome.status.value, outcome.detail)\n        return outcome",
+    "old": "        return await _fail(self._bindings, record, outcome)\n\n    async def _step(",
+    "new": "        await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,\n                      outcome.status.value, outcome.detail)\n        return outcome\n\n    async def _step(",
     "target": "tests/unit/test_scoped_profile.py::test_a_committed_scoped_name_with_failed_readback_is_incomplete[mismatch]"
   },
   {
     "name": "authenticated HTTP preserves a committed scoped profile partial outcome",
     "file": "nora/people/app/managed_profile.py",
-    "old": "        return await _fail(self._bindings, record, outcome)",
-    "new": "        await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,\n                      outcome.status.value, outcome.detail)\n        return outcome",
+    "old": "        return await _fail(self._bindings, record, outcome)\n\n    async def _step(",
+    "new": "        await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,\n                      outcome.status.value, outcome.detail)\n        return outcome\n\n    async def _step(",
     "target": "tests/web/test_management_operator.py::test_scoped_profile_http_reports_a_committed_partial_change[mismatch]"
   },
   {
     "name": "a scoped readback exception consults the exact partial journal",
     "file": "nora/people/app/managed_profile.py",
-    "old": "            recorded = await _journal_after_failure(self._bindings, op)\n            return recorded if recorded is not None else unavailable(\"store-failure\")",
-    "new": "            return unavailable(\"store-failure\")",
+    "old": "            log.exception(\"scoped profile update failed\")\n            recorded = await _journal_after_failure(self._bindings, op)\n            return recorded if recorded is not None else unavailable(\"store-failure\")",
+    "new": "            log.exception(\"scoped profile update failed\")\n            return unavailable(\"store-failure\")",
     "target": "tests/unit/test_scoped_profile.py::test_a_committed_scoped_name_with_failed_readback_is_incomplete[exception]"
   }
 ]

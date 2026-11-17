@@ -25,7 +25,6 @@ from nora.domain.managed import (
     Outcome,
     OutcomeStatus,
     check_unavailable,
-    complete,
     denied,
     incomplete,
     unavailable,
@@ -231,7 +230,8 @@ async def _journal_after_failure(
     if record.kind != op.kind or record.snapshot != _op_snapshot(op):
         return denied("operation-conflict")
     if record.state is OperationJournalState.COMPLETE:
-        return complete(record.detail or "replayed")
+        return Outcome(OutcomeStatus(record.outcome or "complete"),
+                       record.detail or "replayed")
     if any(done == "done" for done in record.steps.values()):
         return incomplete("store-failure")
     return None

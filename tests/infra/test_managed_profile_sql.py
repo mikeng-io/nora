@@ -147,7 +147,7 @@ async def test_a_reconstructed_service_resumes_the_journaled_update(
             operation_id="generated-sql-op-2", display_name=NEW_NAME)
     finally:
         SqlBindingStore.set_display_name = original
-    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert outcome.status is OutcomeStatus.INCOMPLETE
     record = await store.operation("generated-sql-op-2")
     assert record is not None and record.steps["kratos"] == "done"
     assert registry.identities[PERSON]["traits"]["display_name"] == NEW_NAME

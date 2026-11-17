@@ -248,7 +248,8 @@ async def test_a_mid_operation_outage_journals_and_reconciles(surface):
     response = await client.post(
         PROFILE, data=body,
         headers=_session_headers(ACCT, PERSON, "generated-binding-a", body))
-    assert response.status == 503
+    assert response.status == 409
+    assert (await response.json())["status"] == "incomplete"
     record = await store.operation("generated-op-1")
     assert record is not None
     assert record.steps["kratos"] == "done"

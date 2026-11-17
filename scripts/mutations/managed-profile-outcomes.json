@@ -1,0 +1,23 @@
+[
+  {
+    "name": "a committed global projection with mismatching readback stays incomplete",
+    "file": "nora/people/app/managed_profile.py",
+    "old": "        return await _fail(self._bindings, record, outcome)\n\n    async def _project(",
+    "new": "        await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,\n                      outcome.status.value, outcome.detail)\n        return outcome\n\n    async def _project(",
+    "target": "tests/unit/test_managed_profile.py::test_a_committed_global_name_with_failed_readback_reports_incomplete"
+  },
+  {
+    "name": "a global profile exception retains partial effects through private HTTP",
+    "file": "nora/people/app/managed_profile.py",
+    "old": "            log.exception(\"profile update failed\")\n            recorded = await _journal_after_failure(self._bindings, op)\n            return recorded if recorded is not None else unavailable(\"store-failure\")",
+    "new": "            log.exception(\"profile update failed\")\n            return unavailable(\"store-failure\")",
+    "target": "tests/web/test_holder_profile.py::test_a_mid_operation_outage_journals_and_reconciles"
+  },
+  {
+    "name": "an exception retry preserves a recorded terminal refusal",
+    "file": "nora/people/app/managed_ops.py",
+    "old": "        return Outcome(OutcomeStatus(record.outcome or \"complete\"),\n                       record.detail or \"replayed\")",
+    "new": "        return Outcome(OutcomeStatus.COMPLETE, record.detail or \"replayed\")",
+    "target": "tests/unit/test_managed_journal_recovery.py::test_exception_recovery_attributes_only_the_exact_recorded_effect"
+  }
+]

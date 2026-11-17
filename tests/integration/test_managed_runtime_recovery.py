@@ -60,7 +60,7 @@ async def test_a_restarted_process_recovers_a_profile_without_roster_collections
         outcome = await services.profile.update_display_name(
             await _authentication(services.bindings, account=account),
             operation_id='generated-recover-name', display_name='Generated Recovery Name')
-        assert outcome.status in {OutcomeStatus.INCOMPLETE, OutcomeStatus.UNAVAILABLE}
+        assert outcome.status is OutcomeStatus.INCOMPLETE
         record = await services.bindings.operation('generated-recover-name')
         assert record.state is OperationJournalState.INCOMPLETE
         person = await services.bindings.person(binding.person_id)

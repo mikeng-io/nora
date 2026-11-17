@@ -6,7 +6,7 @@ The behaviours this service owns:
 - actor and target derive ONLY from the revalidated session binding — a
   forged or expired claim never reaches the operation;
 - the journaled order is kratos -> projection -> read-back: a partial
-  effect stays `unavailable`/`incomplete` and `reconcile` finishes the
+  effect stays `incomplete` and `reconcile` finishes the
   recorded steps, never a fresh effect;
 - a replayed step cannot overwrite a NEWER name — the journaled intent
   refuses (`denied`) rather than reverting someone else's update;
@@ -17,6 +17,7 @@ The behaviours this service owns:
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -386,7 +387,7 @@ async def test_a_projection_outage_reconciles_the_recorded_effect():
     authentication = await _authentication(store)
     outcome = await services.profile.update_display_name(
         authentication, operation_id="generated-op-1", display_name=NEW_NAME)
-    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert outcome.status is OutcomeStatus.INCOMPLETE
     # The upstream effect landed; the projection did not — the journal
     # records exactly that, never "nothing changed".
     assert registry.identities[PERSON]["traits"]["display_name"] == NEW_NAME
@@ -396,6 +397,36 @@ async def test_a_projection_outage_reconciles_the_recorded_effect():
     finished = await recovered.reconcile()
     assert [row.operation_id for row in finished] == ["generated-op-1"]
     assert (await store.person(PERSON)).display_name == NEW_NAME
+
+
+async def test_a_committed_global_name_with_failed_readback_reports_incomplete():
+    class ReadbackMismatch(FakeBindingStore):
+        mismatch = False
+
+        async def set_display_name(self, **kwargs):
+            result = await super().set_display_name(**kwargs)
+            self.mismatch = True
+            return result
+
+        async def person(self, person_id):
+            person = await super().person(person_id)
+            if self.mismatch and person_id == PERSON:
+                self.mismatch = False
+                return replace(person, display_name=OLDER_NAME)
+            return person
+
+    store, registry, services = _service(ReadbackMismatch())
+    await _enrolled(store, registry)
+    result = await services.profile.update_display_name(
+        await _authentication(store), operation_id="generated-readback-failure",
+        display_name=NEW_NAME)
+    assert result.status is OutcomeStatus.INCOMPLETE
+    assert registry.identities[PERSON]["traits"]["display_name"] == NEW_NAME
+    assert (await store.person(PERSON)).display_name == NEW_NAME
+    record = await store.operation("generated-readback-failure")
+    assert record.state is OperationJournalState.INCOMPLETE
+    assert record.steps["projection"] == "done" and record.steps["readback"] == "pending"
+    assert len(await services.reconcile()) == 1
 
 
 async def test_a_replayed_journal_never_overwrites_a_newer_name():
@@ -408,7 +439,7 @@ async def test_a_replayed_journal_never_overwrites_a_newer_name():
     authentication = await _authentication(store)
     outcome = await services.profile.update_display_name(
         authentication, operation_id="generated-op-1", display_name=NEW_NAME)
-    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    assert outcome.status is OutcomeStatus.INCOMPLETE
 
     newer = "Generated Even Newer Name"
     registry.identities[PERSON]["traits"]["display_name"] = newer

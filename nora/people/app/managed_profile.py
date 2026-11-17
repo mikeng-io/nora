@@ -166,7 +166,8 @@ class ProfileService:
             raise
         except Exception:
             log.exception("profile update failed")
-            return unavailable("store-failure")
+            recorded = await _journal_after_failure(self._bindings, op)
+            return recorded if recorded is not None else unavailable("store-failure")
 
     async def _apply(self, op: Operation) -> Outcome:
         if op.kind != _PROFILE_KIND or op.actor.kind is not ActorKind.HOLDER:
@@ -247,9 +248,7 @@ class ProfileService:
             await _finish(self._bindings, record, OperationJournalState.COMPLETE,
                           "denied", outcome.detail)
             return outcome
-        await _finish(self._bindings, record, OperationJournalState.INCOMPLETE,
-                      outcome.status.value, outcome.detail)
-        return outcome
+        return await _fail(self._bindings, record, outcome)
 
     async def _project(self, person_id: str, display_name: str) -> Outcome:
         """Write the projection only while Kratos still carries THIS op's name."""
