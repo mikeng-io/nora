@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI
 
+from nora.access import IdentityAccess
 from nora.agent.dreamer import (
     AdaptorSchedule,
     DreamerRuntime,
@@ -205,9 +206,8 @@ class Dependencies:
     audit: RecordStore
     memory: MemoryStore
     persons: Persons
+    access: IdentityAccess
     config_reload: ReloadFiles
-    # The selected backend's services (issue #528) — `file` reads the TOML
-    # pair and refuses managed mutators; `managed` is PG+Keto+Kratos, probed live.
     managed_services: Any
     managed_session: Any  # the managed backend's owned Ory session, closed at shutdown
     # The ONE media join, so `__main__` can hand the same
@@ -1332,7 +1332,7 @@ async def build_dependencies(
         config_reload=reload_files,
         audit=audit,
         memory=memory,
-        persons=persons_view,
+        persons=persons_view, access=access,
         managed_services=_stores_managed.services, managed_session=_stores_managed.session,
         metrics=metrics,
         media_join=media_join,

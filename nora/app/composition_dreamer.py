@@ -207,7 +207,7 @@ async def enabled(
             dream_schedules=dream_schedules,
             dreamer_instructions=dreamer_instructions, memory=memory,
             metrics=metrics, model_client_for=model_client_for,
-            persons=persons, proactive_homes=proactive_homes,
+            persons=persons, proactive_homes=proactive_homes, access=access,
             reasoning_strip_store=reasoning_strip_store, registry=registry,
             rosters=rosters, route_model=route_model, tier=tier,
             tool_registry=tool_registry,
@@ -317,7 +317,7 @@ def _dreamer_runtime(
     dream_adaptors: Any, dream_schedules: Any, dreamer_instructions: Any, memory: Any,
     metrics: Any, model_client_for: Any, persons: Any, proactive_homes: Any,
     reasoning_strip_store: Any, registry: Any, rosters: Any, route_model: Any,
-    tier: Any, tool_registry: Any,
+    tier: Any, tool_registry: Any, access: Any,
 ) -> DreamerRuntimeWiring:
     """The DreamerRuntime the loop hosts every adaptor on."""
     dream_model = route_model("dreamer", cfg.dreamer_model())
@@ -345,7 +345,7 @@ def _dreamer_runtime(
     dream_tools = _dream_tool_source(
         allowlist=allowlist, audit=audit, cfg=cfg, memory=memory,
         metrics=metrics, persons=persons, proactive_homes=proactive_homes,
-        registry=registry, rosters=rosters, tool_registry=tool_registry,
+        registry=registry, rosters=rosters, tool_registry=tool_registry, access=access,
     )
     dream_grants, dream_budgets, fallback = _dream_grants_and_budgets(cfg)
     dreamer_runtime = DreamerRuntime(

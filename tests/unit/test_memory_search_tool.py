@@ -6,6 +6,7 @@ inside index reads and graph traversal; every result carries its state and note.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -563,7 +564,11 @@ async def test_memory_search_is_unavailable_while_managed_authority_is_down():
     assert positive["status"] in {"ok", "partial"}
     # The room view is held for the turn; the membership read now fails.
     bindings.down = True
-    down = await _call(tools["memory_search"], query="football", person=_PERSON_A)
+    down, = await asyncio.gather(
+        _call(tools["memory_search"], query="football", person=_PERSON_A),
+        return_exceptions=True,
+    )
+    assert isinstance(down, dict), down
     assert down["status"] == "unavailable" and down["note"]
     bindings.down = False
     recovered = await _call(tools["memory_search"], query="football", person=_PERSON_A)

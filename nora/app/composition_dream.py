@@ -677,12 +677,12 @@ def _lessons_evidence(
 def _dream_tool_source(
     allowlist: Any, audit: Any, cfg: Any, memory: Any,
     metrics: Any, persons: Any, proactive_homes: Any, registry: Any,
-    rosters: Any, tool_registry: Any,
+    rosters: Any, tool_registry: Any, access: Any,
 ) -> Any:
     """The registry-backed tool source every Dreamer session speaks through."""
     return RegistryToolSource(
         registry=tool_registry,
-        store=audit,
+        store=audit, access=access,
         persons=persons,
         honcho=memory,
         metrics=metrics,

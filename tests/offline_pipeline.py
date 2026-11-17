@@ -47,7 +47,6 @@ from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import CompositePolicy, RelevanceGatePolicy, TriggerTextPolicy
 from nora.ingest.relevance_gate import RelevanceGate
 from nora.obs.metrics import Metrics
-from nora.persons import Persons
 from nora.policy import permissive_policy
 from nora.tag import Debounce
 
@@ -58,7 +57,7 @@ def build_offline_pipeline(
     adapter: Any,
     audit: RecordStore,
     memory: MemoryStore,
-    persons: Persons,
+    access: IdentityAccess,
     doctrine_store: DoctrineStore,
     runner: Any,
     metrics: Metrics | None = None,
@@ -83,34 +82,15 @@ def build_offline_pipeline(
     participation_opt_in: bool = False, participation_gate: RelevanceGate | None = None,
     extra_adapters: Mapping[str, Any] | None = None, room_commands: Any = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks, ParticipationTrigger | None]:
-    """Wire ingest+engagement+dispatcher from already-built collaborators.
+    """Wire both pipelines around the explicitly selected identity/access backend.
 
-    Mirrors `build_dependencies`'s own pipeline-wiring tail exactly (same stages, same
-    scalar fields read off `cfg`) but takes `adapter`/`memory`/`runner` as parameters
-    instead of constructing the real, networked ones — the split `build_dependencies`
-    doesn't need since production always wants the real collaborators. The same is true of
-    the assembler's own collaborators above: this module builds none of them (module
-    docstring), so a caller that wants `<notes>`/`<standing>` to render passes its own
-    `nora.testing` in-memory doubles.
-
-    `participation_runner` is the participation occasion's eval seam: when given, this
-    builds a REAL `FirePath` — same `deliver.build`, guards and accounting as production —
-    plus the quiescence `ParticipationTrigger`, and wires the trigger into the dispatcher,
-    so an eval drives the participation path exactly as deployed. The trigger is the
-    fourth return value (`None` when neither `participation` nor `participation_runner`
-    was given); the caller drives `close_due_windows` on it, with `participation_clock`
-    injecting the clock the settle/cooldown durations are measured against, and
-    `participation_gate` optionally putting a REAL `RelevanceGate` in front of it (see the
-    `gate=` comment at the trigger's construction).
-
-    `extra_adapters` serves rooms on other platforms, keyed by platform. A caller that
-    asserts nothing was sent into such a room needs one: with no adapter for its
-    platform, a send there raises instead of being recorded, and the assertion passes
-    vacuously.
+    Supplied collaborators own their stores and transports. Tag and fire
+    contexts share the same access object and background task owner.
     """
     if adapter.platform in (extra_adapters or {}):
         raise ValueError(f"extra_adapters may not replace the {adapter.platform!r} adapter")
     adapters = {adapter.platform: adapter, **(extra_adapters or {})}
+    persons = access.persons_view()
     metrics = metrics or Metrics()
     background = BackgroundTasks()
     debounce = Debounce(cfg.engagement.trigger.min_interval_seconds)
@@ -155,7 +135,7 @@ def build_offline_pipeline(
         if standing is not None or ledger is not None else None
     )
     assembler = build_assembler(
-        cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
+        cfg, audit=audit, memory=memory, persons=persons, access=access, metrics=metrics,
         policy=harness_policy,
         notes=notes,
         shared=shared,
@@ -209,7 +189,6 @@ def build_offline_pipeline(
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
         background.spawn(coro)
 
-    access = IdentityAccess.for_files(persons=persons, policy=permissive_policy())
     ingest = IngestPipeline(
         audit=audit, memory=memory, access=access,
         policy=policy, allowlist=permissive_policy(), metrics=metrics, spawn=_spawn,
@@ -285,7 +264,7 @@ def build_offline_pipeline(
         # instead of letting the eval prompt drift from production's.
         fire_path = FirePath(
             tag_trace_store=None,
-            persons=persons, records=audit, memory=memory,
+            persons=persons, access=access, records=audit, memory=memory,
             # The shared-state reader (design/notebook-memory-types/20-standing.md):
             # `None` in the harness, the assembler's reason above — which
             # also means an eval's proactive occasion never withholds on an

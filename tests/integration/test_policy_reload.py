@@ -46,7 +46,7 @@ async def admitted(deps, room_id):
         message=NormalizedMessage(
             "signal", room_id, "group", "+85212345678", "Miles", 1, "hi", {},
         ),
-        policy=deps.ingest._allowlist, persons=deps.persons, metrics=deps.metrics,
+        policy=deps.ingest._allowlist, access=deps.access, metrics=deps.metrics,
     )
 
 

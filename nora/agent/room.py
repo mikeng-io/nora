@@ -190,8 +190,7 @@ class Room:
         self._conversation_id = conversation_id
         self._roster_source = roster_source
         self._access = access
-        self._persons = (persons if persons is not None
-                         else access.persons_view())
+        self._persons = (access.persons_view() if access is not None else persons)
         self._tagger = tagger
         self._self_ids = frozenset(self_ids)
         self._tagger_card_injected = tagger_card_injected
@@ -214,15 +213,7 @@ class Room:
 
     @property
     def access(self) -> Any:
-        """The selected identity backend this room resolves accounts
-        through, or `None` where none was wired (the Dreamer and other
-        compositions that construct a `Room` without one keep their
-        file-`Persons` reads — callers must not substitute another
-        authority for an absent one).
-
-        Read-only on purpose: the backend is fixed for the life of the turn,
-        and this object is constructed fresh per turn.
-        """
+        """The selected identity reader, absent only for explicitly unwired rooms."""
         return self._access
 
     @property
@@ -294,7 +285,8 @@ class Room:
         elif self._access is not None:
             owners = await self._access.instagram_username_owners(bare)
         else:
-            owners = self._persons.instagram_username_owners(bare)
+            owners = (self._persons.instagram_username_owners(bare)
+                      if self._persons is not None else frozenset())
         found: dict[str, PersonRef] = {}
         for ref in (
             *view.find(name), *view.find(bare),
@@ -314,7 +306,10 @@ class Room:
         "I only know about you right now" and "you are the only one here" are
         different sentences.
         """
-        view = await self.members()
+        try:
+            view = await self.members()
+        except Exception:  # noqa: BLE001 - identity lookup failure withholds the scope
+            return RoomView(available=False)
         if view.available:
             return view
         if self._tagger is None:
@@ -343,10 +338,11 @@ class Room:
             return await self._access.resolve_ref(
                 self._platform, value,
                 scope=Scope(ScopeKind.ROOM, room_scope_id(self._platform, self._conversation_id)))
-        return self._persons.resolve(self._platform, value)
+        return (self._persons.resolve(self._platform, value)
+                if self._persons is not None else None)
 
     async def _resolve(self, roster: Roster) -> RoomView:
-        if not roster.available:
+        if not roster.available or (self._access is None and self._persons is None):
             return RoomView(available=False)
         people: dict[str, PersonRef] = {}
         unnamed = 0

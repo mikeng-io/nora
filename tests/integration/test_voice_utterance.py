@@ -200,7 +200,8 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
     background = BackgroundTasks()
     ingest = IngestPipeline(
         audit=store, memory=memory,
-        persons=load_persons(persons_path),
+        access=IdentityAccess.for_files(
+            load_persons(persons_path), load_policy(policy_path)),
         policy=TriggerTextPolicy(cfg.engagement.trigger.text),
         allowlist=load_policy(policy_path),
         metrics=Metrics(), spawn=background.spawn,
