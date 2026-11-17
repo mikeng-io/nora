@@ -23,6 +23,7 @@ by age, not by per-conversation depth.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 import sqlalchemy as sa
@@ -60,6 +61,18 @@ class PresenceStore:
         self._engine = engine
         self._retention_days = retention_days
         self._metrics = metrics
+
+    async def recorded_circles(self, person_ids: Sequence[str]) -> dict[str, tuple[str, ...]]:
+        """Observed Record circles, not current provider membership or collection authority."""
+        stmt = sa.select(PRESENCE_FIXES.c.person_id, PRESENCE_FIXES.c.circle_id).where(
+            PRESENCE_FIXES.c.person_id.in_(person_ids)).distinct().order_by(
+                PRESENCE_FIXES.c.person_id, PRESENCE_FIXES.c.circle_id)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        out: dict[str, list[str]] = {}
+        for person, circle in rows:
+            out.setdefault(person, []).append(circle)
+        return {person: tuple(circles) for person, circles in out.items()}
 
     async def record_fix(self, *, fix: PresenceFix) -> bool:
         """Insert `fix` iff its `ts` advances past the member's last stored `ts`.

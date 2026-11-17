@@ -32,3 +32,4 @@ from nora.people.app.room_invocation import (
     parse_room_command as parse_room_command,
 )
 from nora.people.app.roster_provisioning import RosterProvisioning as RosterProvisioning
+from nora.people.wire import managed_services as managed_services

@@ -6,12 +6,19 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from aiohttp import ClientSession
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
+    from nora.config_identity import ManagedOryConfig
+    from nora.domain.managed import ObservationFreshness
     from nora.domain.managed_ports import LinkChallengeDelivery
     from nora.people.app.holder_link import HolderLinkService
     from nora.people.app.managed import ManagedServices
+    from nora.policy import Policy
 
-from nora.app.assembler import lineage_policy
-from nora.domain.live import LiveMapping
+from nora.agent.lineage import LineagePolicy
+from nora.agent.whereis import circles_from_persons
+from nora.domain.live import LiveMapping, LiveSequence
 from nora.domain.ports import SteamPresenceProvider
 from nora.people.adapters.tools import build as _build
 
@@ -158,7 +165,9 @@ def lineage(allowlist, cfg, persons) -> LineageWiring:
     # LINEAGE: the ONE value that says who each room of the policy is, held by the fire path
     # below and by `record_query` through the registry. The tag path's assembler builds the
     # same value from the same three inputs (`build_assembler`).
-    lineage = lineage_policy(cfg, policy=allowlist, persons=persons)
+    lineage = LineagePolicy.from_policy(
+        allowlist, circles=LiveSequence(lambda: circles_from_persons(persons)),
+        mode=cfg.lineage.mode, content_checks=cfg.content_checks.enabled)
     return LineageWiring(lineage=lineage)
 
 
@@ -192,8 +201,11 @@ def file_services(persons, policy):
     )
 
 
-def managed_services(*, managed, session, policy, engine, credentials,
-                     freshness=None):
+def managed_services(
+    *, managed: ManagedOryConfig, session: ClientSession, policy: Policy,
+    engine: AsyncEngine, credentials: Mapping[str, str],
+    freshness: ObservationFreshness | None = None,
+) -> ManagedServices:
     """The `managed` backend's services: PostgreSQL bindings, the Keto
     authority engine, Kratos identity records — topology still read from the
     loaded `Policy`, because topology stays Nora configuration in every

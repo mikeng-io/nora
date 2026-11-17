@@ -87,6 +87,9 @@ Record ids, senders and mentions; stored provenance is not rewritten.
 Collective inputs use selected room membership and current social consent,
 including for retained batches. Names use the room's own scope for a room
 account and the trusted unit for a unit or Nora account.
+Historical analytics folds retained presence observations through the selected
+canonical family. A recorded circle describes those observations; it neither
+asserts current provider membership nor authorizes collecting from that circle.
 Nora configuration owns room metadata, destinations and topology rather than
 encoding all configuration as permission relationships.
 
