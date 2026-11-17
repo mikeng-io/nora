@@ -318,6 +318,7 @@ jobs:
           tests/contract/test_admission_probe_contract.py
           tests/infra/test_managed_admission_sql.py
           tests/integration/test_managed_admission_ory.py
+          tests/integration/test_managed_export_ory.py
           tests/integration/test_managed_identity_journey.py
           tests/integration/test_managed_identity_restore.py
           tests/integration/test_managed_runtime_recovery.py
@@ -341,6 +342,7 @@ jobs:
           tests/web/test_otp.py
           tests/web/test_management_api.py
           tests/unit/test_managed_authority.py
+          tests/unit/test_managed_identity_handoff.py
           tests/unit/test_managed_registration.py
           tests/unit/test_account_linking_state.py
           tests/unit/test_link_publication.py

@@ -45,6 +45,7 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
             "tests/contract/test_admission_probe_contract.py",
             "tests/infra/test_managed_admission_sql.py",
             "tests/integration/test_managed_admission_ory.py",
+            "tests/integration/test_managed_export_ory.py",
             "tests/integration/test_managed_identity_journey.py",
             "tests/integration/test_managed_identity_restore.py",
             "tests/integration/test_managed_runtime_recovery.py",

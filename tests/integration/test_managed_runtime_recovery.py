@@ -1,4 +1,5 @@
-"""Managed journal recovery through the actual process entry and owned SQL/Ory."""
+"""Managed journal recovery and backend-selection refusal through the actual
+process entry and owned SQL/Ory."""
 
 import asyncio
 import contextlib
@@ -8,20 +9,29 @@ import asyncpg
 import pytest
 import tomli_w
 
-from nora.__main__ import build_app
+from nora.__main__ import StartupError, build_app
 from nora.domain.identity import Identifier
-from nora.domain.managed import OperationJournalState, OutcomeStatus
+from nora.domain.managed import (
+    OperationJournalState,
+    OutcomeStatus,
+    PersonLifecycle,
+    room_scope_id,
+)
 from nora.domain.management import (
     AccountObservation,
     Actor,
     ActorKind,
     Operation,
+    Scope,
+    ScopeKind,
     Target,
     TargetKind,
 )
 from tests.integration.managed_ory import ory as ory
 from tests.test_main import env as env
 from tests.unit.test_managed_profile import _authentication
+
+_DEAD = "http://127.0.0.1:1"  # nothing answers — the Ory-down endpoint shape
 
 
 @pytest.mark.fresh_database
@@ -105,3 +115,79 @@ async def test_a_restarted_process_recovers_a_profile_without_roster_collections
             await run
         await app.shutdown()
         await connection.close()
+
+
+async def test_file_backend_starts_reloads_and_refuses_writes_with_ory_down(env):
+    """`backend = "file"` is complete without Ory: the App starts with the
+    managed listeners configured but dead, a managed write refuses
+    authoritatively (never dialed), and the file pair still hot-reloads
+    into live grant checks."""
+    values = tomllib.loads(env.read_text())
+    # Configured but unreachable managed listeners: file selection ignores them.
+    values["identity"] = {
+        "backend": "file",
+        "managed": {"kratos_admin_url": _DEAD, "keto_read_url": _DEAD,
+                    "keto_write_url": _DEAD},
+    }
+    values["dreamer"]["enabled"] = False
+    values.setdefault("cognition", {})["enabled"] = False
+    values.setdefault("participation", {})["enabled"] = False
+    env.write_text(tomli_w.dumps(values))
+    policy_path = env.parent / "policy.toml"
+    room = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-reload-room"))
+    app = await build_app(env)
+    try:
+        services = app.deps.managed_services
+        assert services.access.is_file_backend
+        # A managed mutator is authoritatively refused — no TOML rewrite, no Ory call.
+        refused = await services.bindings.set_lifecycle(
+            person_id="miles", lifecycle=PersonLifecycle.SUSPENDED)
+        assert refused.status is OutcomeStatus.DENIED
+        assert not (await services.access.check(
+            scope=room, person_id="miles", permit="view")).allowed
+        # A live reload admits the new room while the dead listeners stay dead.
+        policy_path.write_text(policy_path.read_text() + (
+            '[[conversations]]\nplatform = "signal"\n'
+            'id = "generated-reload-room"\nlabel = "Reloaded"\n'
+            'persons = ["miles"]\n'))
+        app.deps.config_reload.poll()
+        assert (await services.access.check(
+            scope=room, person_id="miles", permit="view")).allowed
+        assert not app.deps.config_reload.status()["policy"]["stale"]
+    finally:
+        await app.shutdown()
+
+
+async def test_managed_backend_refuses_to_start_when_kratos_cannot_answer(env):
+    """`backend = "managed"` with the Kratos listener down is refused at
+    selection — the permissive TOML pair is never served as grants: a
+    startup fallback would silently offer file authority as managed truth."""
+    values = tomllib.loads(env.read_text())
+    values["identity"] = {
+        "backend": "managed",
+        "managed": {"kratos_admin_url": _DEAD, "keto_read_url": _DEAD,
+                    "keto_write_url": _DEAD},
+    }
+    values["dreamer"]["enabled"] = False
+    values.setdefault("cognition", {})["enabled"] = False
+    values.setdefault("participation", {})["enabled"] = False
+    env.write_text(tomli_w.dumps(values))
+    with pytest.raises(StartupError, match="Kratos admin listener unreachable"):
+        await build_app(env)
+
+
+async def test_managed_backend_refuses_to_start_when_keto_cannot_answer(env, ory):
+    """Kratos answers but Keto is down: selection still refuses — the same
+    no-fallback rule on the authority half, against a REAL Kratos."""
+    values = tomllib.loads(env.read_text())
+    values["identity"] = {
+        "backend": "managed",
+        "managed": {"kratos_admin_url": ory.kratos_admin,
+                    "keto_read_url": _DEAD, "keto_write_url": _DEAD},
+    }
+    values["dreamer"]["enabled"] = False
+    values.setdefault("cognition", {})["enabled"] = False
+    values.setdefault("participation", {})["enabled"] = False
+    env.write_text(tomli_w.dumps(values))
+    with pytest.raises(StartupError, match="Keto read listener unreachable"):
+        await build_app(env)
