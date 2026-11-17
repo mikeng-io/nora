@@ -19,6 +19,7 @@ from strands.types.tools import AgentTool, ToolSpec, ToolUse
 from nora.agent.dream_screen import text_offence
 from nora.agent.egress import _canonical
 from nora.agent.fetch_watch import GraphFetched, _result_of
+from nora.domain.blocks import speaker_name
 from nora.domain.comprehend import EGRESS_REASONS
 from nora.domain.management import Scope
 from nora.domain.memory_graph import Source
@@ -86,8 +87,8 @@ class LookupState:
     def remember_rows(self, rows: Sequence[Any]) -> None:
         """Retain names actually handed to this session, including after a rename."""
         self.seen_names.update(
-            row.person_name or row.sender_name for row in rows
-            if row.person_id and not row.is_nora and (row.person_name or row.sender_name))
+            label for row in rows if row.person_id and not row.is_nora
+            if (label := speaker_name(row.person_name, row.sender_name, unknown="")))
         self.persons = tuple(set(self.persons) | {
             row.person_id for row in rows if row.person_id and not row.is_nora})
 

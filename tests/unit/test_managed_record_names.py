@@ -278,3 +278,23 @@ persons = ["p1"]
     assert calls == []
     assert (await call('Generated Unread Author news'))['status'] == 'ok'
     assert calls == ['Generated Unread Author news']
+
+
+@pytest.mark.parametrize(("person_name", "sender_name", "expected"), [
+    ("\u00a0", "Generated\nAccount", {"Generated Account"}),
+    (None, None, set()),
+    (" \n", "\t", set()),
+    ("unknown", None, {"unknown"}),
+    ("Generated Canonical", "Other Label", {"Generated Canonical"}),
+])
+def test_name_custody_uses_supplied_canonical_speaker_labels(person_name, sender_name, expected):
+    from types import SimpleNamespace
+
+    from nora.agent.comprehend_tools import LookupState
+    from nora.agent.fetch_watch import GraphFetched
+
+    state = LookupState(GraphFetched(), "generated-unit", 1, None, None, ())
+    state.remember_rows((SimpleNamespace(person_id="generated-source", is_nora=False,
+                                       person_name=person_name, sender_name=sender_name),))
+    assert state.seen_names == expected
+    assert state.persons == ("generated-source",)
