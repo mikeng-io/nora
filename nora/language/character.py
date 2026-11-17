@@ -315,11 +315,15 @@ class PersonEvidence:
         cursor, read_at = await self._store.social_cursor(
             adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
         polled = await self._social.polled_count(
-            persons=self._ids(person_id), after_us=max(cursor, read_at))
+            persons=await self._ids(person_id), after_us=max(cursor, read_at))
         return n + min(polled, SOCIAL_ITEMS_MAX)
 
-    def _ids(self, person_id: str) -> tuple[str, ...]:
-        """Every id their social items may be recorded under."""
+    async def _ids(self, person_id: str) -> tuple[str, ...]:
+        if self._access is not None:
+            ids = await self._access.identity_ids(person_id)
+            if ids is None:
+                raise RuntimeError("identity family is unavailable")
+            return ids
         return (person_id, *self._former_ids(person_id))
 
     async def newest(
@@ -344,7 +348,7 @@ class PersonEvidence:
         # not in this batch, so it counts toward the next wake.
         at = to_us(await self._social.now())
         items = await self._social.person_items(
-            persons=self._ids(person_id), limit=SOCIAL_ITEMS_MAX, after_us=start,
+            persons=await self._ids(person_id), limit=SOCIAL_ITEMS_MAX, after_us=start,
         )
         self._reads[key] = _Read(start=start, at=at, reach=start)
         return [*messages, *items], cursor

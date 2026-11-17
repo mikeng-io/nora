@@ -38,6 +38,7 @@ from nora.domain.managed import (
 from nora.domain.management import Scope
 from nora.infra.sql import managed_observations
 from nora.infra.sql import managed_scoped_names as scoped_names
+from nora.infra.sql.identity_views import stored_identity_family
 from nora.infra.sql.managed_publication import (
     consolidate_people,
     drop_membership_support,
@@ -180,19 +181,11 @@ class SqlBindingStore:
         async with self._engine.connect() as conn:
             return await self._canonical(conn, person_id)
 
+    async def identity_ids(self, person_id: str) -> tuple[str, ...] | None:
+        return await stored_identity_family(self._engine, person_id)
+
     async def former_persons(self, person_id: str) -> tuple[str, ...]:
-        async with self._engine.connect() as conn:
-            canonical = await self._canonical(conn, person_id)
-            if canonical is None:
-                return ()
-            rows = (
-                await conn.execute(
-                    sa.select(MANAGED_ALIAS.c.former_person_id).where(
-                        MANAGED_ALIAS.c.person_id == canonical
-                    )
-                )
-            ).fetchall()
-            return tuple(r.former_person_id for r in rows)
+        return (await self.identity_ids(person_id) or ())[1:]
 
     async def persons(self) -> tuple[ManagedPerson, ...]:
         async with self._engine.connect() as conn:

@@ -224,7 +224,8 @@ def _character_person_adaptor(
         CharacterPersonAdaptor(
             culture=culture_store,
             evidence=PersonEvidence(
-                store=SqlCharacterEvidence(engine),
+                store=SqlCharacterEvidence(engine,
+                    identity_ids=access.identity_ids if access is not None else None),
                 keys=person_keys,
                 # Evidence and input assembly both enforce current social consent.
                 social=(SqlSocialStreamStore(engine) if access is not None
@@ -378,7 +379,8 @@ def _profile_person_adaptors(
         screen=functools.partial(text_offence, content_checks=content_checks),
         index=profile_index,
     )
-    profile_reads = SqlCharacterEvidence(engine)
+    profile_reads = SqlCharacterEvidence(engine,
+        identity_ids=access.identity_ids if access is not None else None)
     # The person accounts' social input (45 §4): the readable
     # store's (opted-out, gone and hidden left out there), the
     # same store the social cursor and the counts come from.
@@ -413,7 +415,8 @@ def _profile_person_adaptors(
                 profile=profile_store,
                 keys=character.person_keys,
                 wake_batch=cfg.memory.profile.person.update_every_messages,
-                source_inputs=SqlProfileInputs(engine, social=person_social),
+                source_inputs=SqlProfileInputs(engine, social=person_social,
+                    identity_ids=access.identity_ids if access is not None else None),
                 source_timeout_seconds=cfg.standing.store_timeout_seconds,
                 social=person_social, access=access,
                 former_ids=access.former_ids_for if access is not None

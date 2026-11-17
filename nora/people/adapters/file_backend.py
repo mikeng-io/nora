@@ -99,6 +99,12 @@ class FileBindingStore(BindingStore):
     async def former_persons(self, person_id: str) -> tuple[str, ...]:
         return self._persons.former_ids_for(self._persons.subject_id_for(person_id))
 
+    async def identity_ids(self, person_id: str) -> tuple[str, ...] | None:
+        canonical = self._persons.subject_id_for(person_id)
+        if canonical not in self._persons.by_person:
+            return None
+        return (canonical, *sorted(self._persons.former_ids_for(canonical)))
+
     async def persons(self) -> tuple[ManagedPerson, ...]:
         return tuple(
             ManagedPerson(

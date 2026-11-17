@@ -88,6 +88,7 @@ class _Store(Protocol):
     async def revoke_binding(self, *, account: Identifier) -> Any: ...
     async def add_alias(self, *, former_id: str, person_id: str) -> Any: ...
     async def canonical_person(self, person_id: str) -> Any: ...
+    async def identity_ids(self, person_id: str) -> Any: ...
     async def correlate_kratos(self, **kw: Any) -> Any: ...
     async def record_operation(self, record: OperationRecord) -> Any: ...
     async def operation(self, operation_id: str) -> Any: ...
@@ -605,6 +606,7 @@ async def test_publication_holds_are_canonical_and_owned_by_each_operation(store
 async def test_consolidation_moves_accounts_merges_supports_and_aliases(store: _Store):
     survivor = "generated-survivor"
     former = "generated-former"
+    assert await store.identity_ids(survivor) is None
     await store.register(person=_person(survivor), account=_account(
         ACCOUNT_1, person_id=survivor), membership=None)
     await store.register(
@@ -617,6 +619,8 @@ async def test_consolidation_moves_accounts_merges_supports_and_aliases(store: _
     )
     await store.set_membership(
         person_id=former, scope=ROOM, member=True, source="sync")
+    assert await store.identity_ids(survivor) == (survivor,)
+    await store.add_alias(former_id="generated-earlier", person_id=former)
     survivor_revision = (await store.person(survivor)).revision
     moved_revision = (await store.record_for(account=ACCT_2)).revision
 
@@ -626,6 +630,9 @@ async def test_consolidation_moves_accounts_merges_supports_and_aliases(store: _
     # The retired id canonicalizes: person() resolves it to the survivor.
     assert (await store.person(former)).person_id == survivor
     assert await store.canonical_person(former) == survivor
+    family = (survivor, "generated-earlier", former)
+    for identity in family:
+        assert await store.identity_ids(identity) == family
     survivor_person = await store.person(survivor)
     assert survivor_person is not None
     assert survivor_person.revision > survivor_revision

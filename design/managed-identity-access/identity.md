@@ -81,6 +81,9 @@ projections do not become independent writable authorities. Background identity
 populations enumerate current selected room memberships under canonical identity
 and unit keys. Their names belong to that unit; a failed refresh invalidates the
 projection instead of reusing an earlier roster or a file-shaped fallback.
+Historical readers resolve canonical families from the selected authority,
+including after restart. They fold subject views while retaining original
+Record ids, senders and mentions; stored provenance is not rewritten.
 Nora configuration owns room metadata, destinations and topology rather than
 encoding all configuration as permission relationships.
 

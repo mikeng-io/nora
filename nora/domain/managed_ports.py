@@ -66,6 +66,10 @@ class PersonDirectory(Protocol):
         chain, or `None` when no such person exists."""
         ...
 
+    async def identity_ids(self, person_id: str) -> tuple[str, ...] | None:
+        """One snapshot: canonical id first, then sorted former ids; None when unknown."""
+        ...
+
     async def former_persons(self, person_id: str) -> tuple[str, ...]:
         """The reverse of `canonical_person`: every RETIRED id the alias
         chain folds into this person — the read a fold of historical

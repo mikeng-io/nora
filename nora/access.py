@@ -444,6 +444,15 @@ class IdentityAccess:
             return self._persons.former_ids_for(person_id)
         return self._alias_map.get(self._alias_canonical.get(person_id, person_id), ())
 
+    async def identity_ids(self, person_id: str) -> tuple[str, ...] | None:
+        """The selected canonical identity followed by its original ids; None means unknown."""
+        if self._persons is None:
+            return await self._bindings.identity_ids(person_id)
+        canonical = self._persons.subject_id_for(person_id)
+        if canonical not in self._persons.by_person:
+            return None
+        return (canonical, *sorted(self._persons.former_ids_for(canonical)))
+
     async def former_persons(self, person_id: str) -> tuple[str, ...]:
         """Every retired id folding into this person — the reverse read a
         fold of historical references (analytics, retained rows) needs."""

@@ -331,8 +331,7 @@ class ProfileEvidence:
         access: IdentityAccess | None = None,
         former_ids: Callable[[str], Sequence[str]] = lambda _person: (),
     ) -> None:
-        """`former_ids` is `Persons.former_ids_for`: an item recorded under a
-        person's retired id is theirs too."""
+        """Historical ids when no selected identity reader is supplied."""
         self._store = store
         self._profile = profile
         self._keys = keys
@@ -352,8 +351,12 @@ class ProfileEvidence:
         """The watermark the last `newest` for `key` started after."""
         return self._held.get(key)
 
-    def _ids(self, person_id: str) -> tuple[str, ...]:
-        """Every id their social items may be recorded under."""
+    async def _ids(self, person_id: str) -> tuple[str, ...]:
+        if self._access is not None:
+            ids = await self._access.identity_ids(person_id)
+            if ids is None:
+                raise RuntimeError("identity family is unavailable")
+            return ids
         return (person_id, *self._former_ids(person_id))
 
     async def _sources(
@@ -365,10 +368,11 @@ class ProfileEvidence:
         pk = self._keys[key]
         args: dict[str, Any] = {"key": key, "rooms": _listed(pk), "person": pk.person.person_id}
         out: list[PersonSourceRevision] = []
+        family = await self._ids(pk.person.person_id)
         readers: tuple[tuple[str, Callable[[], Awaitable[list[PersonSourceRevision]]]], ...] = (
             ("message", lambda: source.messages(
                 **args, limit=limit, after=after, discover=discover)),
-            ("social", lambda: source.social(key=key, persons=self._ids(pk.person.person_id),
+            ("social", lambda: source.social(key=key, persons=family,
                                              limit=SOCIAL_ITEMS_MAX)),
             ("register", lambda: source.register(**args, unit=pk.unit, limit=SOCIAL_ITEMS_MAX)),
             ("rollup", lambda: source.rollup(
@@ -381,8 +385,7 @@ class ProfileEvidence:
                     continue
                 out.extend(await asyncio.wait_for(read(), timeout=self._source_timeout))
             except Exception:
-                # A failed domain remains pending; other readable domains can
-                # still settle. No absence token is fabricated for this read.
+                # Failed domains remain pending, never fabricated as absence.
                 log.exception("profile source unavailable: %s", domain)
                 out.append(PersonSourceRevision(
                     domain=cast(Any, domain), source=f"{domain}:unavailable", revision="",
@@ -398,9 +401,7 @@ class ProfileEvidence:
             if await asyncio.wait_for(self._source_inputs.recovery_requested(key=key),
                                       timeout=self._source_timeout):
                 return self._wake_batch
-            # Read up to a whole batch: the wake rule is `new >= wake_batch`,
-            # so a probe of one could never reach it (the person woke only
-            # on the stale rule).
+            # Probe a whole batch so evidence can reach the wake threshold.
             n = len(await self._sources(key, self._wake_batch, max(after, boundary), discover=True))
             try:
                 recovery = await asyncio.wait_for(self._source_inputs.media_recovery(
@@ -431,7 +432,7 @@ class ProfileEvidence:
         cursor, read_at = await self._store.social_cursor(
             adaptor=PROFILE_PERSON_ADAPTOR_NAME, key=key)
         polled = await self._social.polled_count(
-            persons=self._ids(pk.person.person_id), after_us=max(cursor, read_at))
+            persons=await self._ids(pk.person.person_id), after_us=max(cursor, read_at))
         return n + min(polled, SOCIAL_ITEMS_MAX)
 
     async def newest(
@@ -505,7 +506,7 @@ class ProfileEvidence:
         # not in this batch, so it counts toward the next wake.
         at = to_us(await self._social.now())
         items = await self._social.person_items(
-            persons=self._ids(pk.person.person_id), limit=SOCIAL_ITEMS_MAX,
+            persons=await self._ids(pk.person.person_id), limit=SOCIAL_ITEMS_MAX,
             after_us=start,
         )
         self._reads[key] = _Read(start=start, at=at, reach=start)

@@ -341,16 +341,18 @@ async def _background_identity_case():
         await bindings.set_scoped_name(person_id=person,
             scope=other_unit if i == 2 else _M_UNIT,
             nickname=f"Generated Unit Name {i}", operation_id=f"generated-profile-name-{i}")
-    access = ManagedServices(bindings, FakeAuthorityBackend(), FakeTopologySource(
+    topology = FakeTopologySource(
         rooms={_M_ROOM.id: (_M_UNIT.id, False), _M_SIBLING.id: (_M_UNIT.id, False),
                other_room.id: (other_unit.id, False)},
         units={_M_UNIT.id: "generated-workspace", other_unit.id: "generated-workspace"},
-        workspaces={"generated-workspace"}), registry, FakeLinkRequests()).access
+        workspaces={"generated-workspace"})
+    access = ManagedServices(bindings, FakeAuthorityBackend(), topology,
+                             registry, FakeLinkRequests()).access
     rooms = (*_population_rooms().rooms(), SimpleNamespace(
         primary_id="g3", platform="signal", unit=other_unit.id, label="Generated Other"))
     keys = await selected_character_person_keys(SimpleNamespace(rooms=lambda: rooms), access)
     return SimpleNamespace(bindings=bindings, registry=registry, access=access,
-                           keys=keys, people=people)
+                           keys=keys, people=people, topology=topology)
 
 
 def _background_message(person, rid=1):

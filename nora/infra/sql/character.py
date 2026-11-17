@@ -40,6 +40,7 @@ from nora.domain.culture import EPISODE_EVIDENCE_OUTCOMES, Episode, RoomMessage
 from nora.domain.lessons import NAMES_HER
 from nora.domain.social_stream import from_us, to_us
 from nora.infra.sql.audit import transcript_row, transcript_select, turn_id_for_message
+from nora.infra.sql.identity_views import IdentityLookup, identity_family, project_messages
 from nora.infra.sql.mobility import current_build_id
 from nora.infra.sql.schema import (
     CONSOLIDATION_WATERMARK,
@@ -66,17 +67,18 @@ def _in_rooms(rooms: Sequence[tuple[str, str]]) -> Any:
 
 
 class SqlCharacterEvidence:
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, identity_ids: IdentityLookup | None = None) -> None:
         self._engine = engine
+        self._identity_ids = identity_ids
 
     # -- a person ------------------------------------------------------------
 
     def _person(
-        self, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+        self, rooms: Sequence[tuple[str, str]], ids: Sequence[str], after: int,
     ) -> list[Any]:
         return [
             _in_rooms(rooms),
-            MESSAGES.c.person_id == person_id,
+            MESSAGES.c.person_id.in_(ids),
             MESSAGES.c.is_nora == 0,
             MESSAGES.c.hidden_at.is_(None),
             MESSAGES.c.id > after,
@@ -94,10 +96,11 @@ class SqlCharacterEvidence:
         self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
     ) -> int:
         """How many messages `person_id` wrote in `rooms` after Record id
-        `after`. `messages.person_id` is the roster's canonical id, resolved
-        from the platform id at ingest (never a display name)."""
+        `after`. Selected identity families fold original ingest ids without
+        rewriting the Record or substituting display names."""
+        ids = await identity_family(person_id, self._identity_ids)
         stmt = sa.select(sa.func.count()).select_from(MESSAGES).where(
-            *self._person(rooms, person_id, after),
+            *self._person(rooms, ids, after),
         )
         async with self._engine.connect() as conn:
             return int((await conn.execute(stmt)).scalar_one())
@@ -115,7 +118,8 @@ class SqlCharacterEvidence:
         older part of a backlog past `limit` is consumed unread."""
         if limit <= 0:
             return [], after
-        where = self._person(rooms, person_id, after)
+        ids = await identity_family(person_id, self._identity_ids)
+        where = self._person(rooms, ids, after)
         stmt = (
             transcript_select().add_columns(MESSAGES.c.conversation_id)
             .where(*where).order_by(MESSAGES.c.id.desc()).limit(limit)
@@ -124,7 +128,7 @@ class SqlCharacterEvidence:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
             cursor = (await conn.execute(head)).scalar_one_or_none()
-        out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        out = project_messages(rows, ids)
         out.reverse()
         return out, int(cursor or after)
 
@@ -188,11 +192,13 @@ class SqlCharacterEvidence:
         cursor: int, through: int,
     ) -> tuple[int, int]:
         """Receipt counts from the same eligible own/mention union as pages."""
+        ids = await identity_family(person_id, self._identity_ids)
         eligible = sa.select(MESSAGES.c.id).where(
             _in_rooms(rooms), MESSAGES.c.is_nora == 0, MESSAGES.c.hidden_at.is_(None),
             MESSAGES.c.id <= through,
-            sa.or_(MESSAGES.c.person_id == person_id,
-                sa.cast(MESSAGES.c.mention_persons_json, pg.JSONB).contains([person_id])),
+            sa.or_(MESSAGES.c.person_id.in_(ids),
+                sa.or_(*(sa.cast(MESSAGES.c.mention_persons_json, pg.JSONB).contains([pid])
+                         for pid in ids))),
         ).subquery()
         async with self._engine.connect() as conn:
             row = (await conn.execute(sa.select(
@@ -215,6 +221,7 @@ class SqlCharacterEvidence:
         while graph projection is off. All eligibility/disclosure rules are
         identical for own messages and mentions.
         """
+        ids = await identity_family(person_id, self._identity_ids)
         stmt = (
             transcript_select()
             .add_columns(MESSAGES.c.conversation_id)
@@ -225,8 +232,9 @@ class SqlCharacterEvidence:
                 MESSAGES.c.id > after,
                 MESSAGES.c.id <= through,
                 sa.or_(
-                    MESSAGES.c.person_id == person_id,
-                    sa.cast(MESSAGES.c.mention_persons_json, pg.JSONB).contains([person_id]),
+                    MESSAGES.c.person_id.in_(ids),
+                    sa.or_(*(sa.cast(MESSAGES.c.mention_persons_json, pg.JSONB).contains([pid])
+                         for pid in ids)),
                 ),
             )
             .order_by(MESSAGES.c.id)
@@ -234,7 +242,7 @@ class SqlCharacterEvidence:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        return project_messages(rows, ids)
 
     # -- a room --------------------------------------------------------------
 
@@ -275,7 +283,7 @@ class SqlCharacterEvidence:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
             cursor = (await conn.execute(head)).scalar_one_or_none()
-        out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        out = project_messages(rows)
         out.reverse()
         return out, int(cursor or after)
 
@@ -284,15 +292,15 @@ class SqlCharacterEvidence:
     )
 
     def _mentions(
-        self, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+        self, rooms: Sequence[tuple[str, str]], ids: Sequence[str], after: int,
     ) -> list[Any]:
         return [
             _in_rooms(rooms),
             MEMORY_EDGE.c.src_kind == "message",
             MEMORY_EDGE.c.rel == "mentions",
             MEMORY_EDGE.c.dst_kind == "person",
-            MEMORY_EDGE.c.dst_id == person_id,
-            MESSAGES.c.person_id != person_id,
+            MEMORY_EDGE.c.dst_id.in_(ids),
+            MESSAGES.c.person_id.not_in(ids),
             MESSAGES.c.is_nora == 0,
             MESSAGES.c.hidden_at.is_(None),
             MESSAGES.c.id > after,
@@ -310,12 +318,13 @@ class SqlCharacterEvidence:
         shape as `person_since`)."""
         if limit <= 0:
             return [], after
-        where = self._mentions(rooms, person_id, after)
+        ids = await identity_family(person_id, self._identity_ids)
+        where = self._mentions(rooms, ids, after)
         stmt = (
             transcript_select().add_columns(MESSAGES.c.conversation_id)
             .join(MEMORY_EDGE,
                   MESSAGES.c.id == sa.cast(MEMORY_EDGE.c.src_id, sa.BigInteger))
-            .where(*where)
+            .where(*where).distinct()
             .order_by(MESSAGES.c.id.desc()).limit(limit)
         )
         head = (
@@ -325,7 +334,7 @@ class SqlCharacterEvidence:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
             cursor = (await conn.execute(head)).scalar_one_or_none()
-        out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        out = project_messages(rows, ids)
         out.reverse()
         return out, int(cursor or after)
 
@@ -352,7 +361,7 @@ class SqlCharacterEvidence:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        out = project_messages(rows)
         out.reverse()
         return out
 
@@ -366,7 +375,7 @@ class SqlCharacterEvidence:
                 .where(MESSAGES.c.id.in_(list(ids))).order_by(MESSAGES.c.id))
         async with self._engine.connect() as conn:
             found = (await conn.execute(stmt)).all()
-        return [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in found]
+        return project_messages(found)
 
     async def tie_totals(
         self, *, unit: str, person_id: str,
@@ -441,7 +450,7 @@ class SqlCharacterEvidence:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        out = project_messages(rows)
         out.reverse()
         return out
 

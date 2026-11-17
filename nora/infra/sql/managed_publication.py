@@ -279,6 +279,9 @@ async def consolidate_people(
     await conn.execute(sa.delete(MANAGED_SCOPED_NAME).where(
         MANAGED_SCOPED_NAME.c.person_id == former,
     ))
+    await conn.execute(sa.update(MANAGED_ALIAS).where(
+        MANAGED_ALIAS.c.person_id == former,
+    ).values(person_id=survivor))
     await conn.execute(sa.insert(MANAGED_ALIAS).values(
         former_person_id=former, person_id=survivor,
     ))

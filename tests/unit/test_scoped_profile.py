@@ -423,6 +423,8 @@ async def test_the_file_backend_refuses_the_write_and_reads_absent():
         operation_id="generated-op-1")
     assert outcome.status is OutcomeStatus.DENIED
     assert await store.scoped_name_for(person_id=PERSON, scope=ROOM) is None
+    assert await store.identity_ids(PERSON) == (PERSON,)
+    assert await store.identity_ids("generated-absent") is None
 
 
 async def test_the_direct_scoped_service_honors_a_pending_authority_revocation():

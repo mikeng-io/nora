@@ -1,7 +1,4 @@
-"""Managed-port fakes for the shared contracts in `tests/contract/`.
-
-Authority evaluation follows `deploy/ory/keto/namespaces.ts`.
-"""
+"""Managed-port contract fakes; authority follows deploy/ory/keto/namespaces.ts."""
 
 from __future__ import annotations
 
@@ -125,13 +122,15 @@ class FakeBindingStore(BindingStore):
         pid = self._canonical(person_id)
         return pid if pid in self.people else None
 
-    async def former_persons(self, person_id: str) -> tuple[str, ...]:
+    async def identity_ids(self, person_id: str) -> tuple[str, ...] | None:
         self._up()
         canonical = self._canonical(person_id)
-        return tuple(
-            former for former, survivor in self.aliases.items()
-            if survivor == canonical and canonical in self.people
-        )
+        if canonical not in self.people:
+            return None
+        return (canonical, *sorted(f for f, s in self.aliases.items() if s == canonical))
+
+    async def former_persons(self, person_id: str) -> tuple[str, ...]:
+        return (await self.identity_ids(person_id) or ())[1:]
 
     async def persons(self) -> tuple[ManagedPerson, ...]:
         self._up()
@@ -485,6 +484,7 @@ class FakeBindingStore(BindingStore):
             if pid == former:
                 self.scoped_names.setdefault((survivor, scope), row)
                 del self.scoped_names[(pid, scope)]
+        self.aliases.update({f: survivor for f, s in self.aliases.items() if s == former})
         self.aliases[former] = survivor
         self.identity_holds = {
             (survivor if p == former else p, op)
