@@ -412,9 +412,14 @@ def unit_self_profile_reader(
 
     async def read(unit: str) -> tuple[ProfileLine, ...]:
         boundary = lineage or LineagePolicy.from_policy(policy)
-        targets = tuple([await boundary.read_room(platform=c.platform, conversation_id=c.primary_id)
-                        for c in policy.rooms() if c.unit == unit and c.primary_id])
+        rooms = tuple(c for c in policy.rooms() if c.unit == unit and c.primary_id)
+        targets = tuple(boundary.render_room(platform=c.platform, conversation_id=c.primary_id)
+                        for c in rooms)
         lines = await profile.account_heads(key=nora_character_key(unit))
+        if any(line.exclude_persons or line.location for line in lines):
+            targets = tuple([await boundary.read_room(
+                platform=c.platform, conversation_id=c.primary_id,
+            ) for c in rooms])
         lines = tuple(line for line in lines if not line.exclude_persons or (
             targets and all(not excluded(line.exclude_persons, target) for target in targets)
         ))
