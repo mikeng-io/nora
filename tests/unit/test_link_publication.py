@@ -581,7 +581,7 @@ async def test_a_replayed_approval_or_proof_never_authorizes_a_commit():
     approval replayed under a second pending request is refused by the
     store, and commit revalidation still refuses the never-approved
     request — the legitimate approvals alongside stay valid."""
-    store, _backend, _topology, _registry, links, svc = await _linked_world()
+    _store, _backend, _topology, _registry, links, svc = await _linked_world()
     await _approved(svc, links)
     link = await _requested(
         svc, links, surviving_person=PERSON_B, request_id="replayed-target",
