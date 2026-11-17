@@ -110,8 +110,7 @@ def test_a_dirty_worktree_is_refused_and_left_untouched(repo: Repo) -> None:
     (wt / "tracked.txt").write_text("unstaged change\n")
     (wt / "untracked.txt").write_text("untracked\n")
 
-    out = _archive(repo, "chore/wip", "--reason", "done",
-                   "--worktree", str(wt))
+    out = _archive(repo, "chore/wip", "--reason", "done")
     assert out.returncode != 0
     assert "commit or discard" in out.stderr
     assert repo.git("rev-parse", "--verify", TAG).returncode != 0
@@ -121,7 +120,7 @@ def test_a_dirty_worktree_is_refused_and_left_untouched(repo: Repo) -> None:
     assert (wt / "untracked.txt").read_text() == "untracked\n"
 
 
-def test_a_dirty_checkout_is_refused_without_a_worktree_argument(repo: Repo) -> None:
+def test_the_worktree_holding_the_branch_is_found_and_checked(repo: Repo) -> None:
     """The worktree holding the branch is found and checked on its own."""
     wt = repo.tmp / "wt"
     repo.git("worktree", "add", "-q", str(wt), "chore/wip")
@@ -138,8 +137,7 @@ def test_a_failed_worktree_listing_aborts(repo: Repo) -> None:
     wt = repo.tmp / "wt"
     repo.git("worktree", "add", "-q", str(wt), "chore/wip")
     _git_shim(repo.tmp / "bin", "worktree list")
-    out = _archive(repo, "chore/wip", "--reason", "done",
-                   "--worktree", str(wt))
+    out = _archive(repo, "chore/wip", "--reason", "done")
     assert out.returncode != 0
     assert "worktree list" in out.stderr
     assert repo.git("rev-parse", "--verify", TAG).returncode != 0
@@ -150,8 +148,7 @@ def test_a_failed_status_check_aborts(repo: Repo) -> None:
     wt = repo.tmp / "wt"
     repo.git("worktree", "add", "-q", str(wt), "chore/wip")
     _git_shim(repo.tmp / "bin", "status --porcelain")
-    out = _archive(repo, "chore/wip", "--reason", "done",
-                   "--worktree", str(wt))
+    out = _archive(repo, "chore/wip", "--reason", "done")
     assert out.returncode != 0
     assert "status" in out.stderr
     assert repo.git("rev-parse", "--verify", TAG).returncode != 0

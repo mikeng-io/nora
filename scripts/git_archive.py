@@ -1,17 +1,16 @@
 """Archive a finished branch's committed tip into one pushed annotated tag.
 
-`make archive BRANCH=<b> REASON="..." [WORKTREE=<path>]` — the tag is the
+`make archive BRANCH=<b> REASON="..."` — the tag is the
 record. An annotated `archive/<branch>` tag carries the reason, branch,
 source tip and worktree path; it is pushed and verified against origin, and
 a re-run over the same tip is a no-op. Every step fails closed on any
 failed git call:
 
 - `git fetch --refmap= --prune origin +refs/heads/*:refs/remotes/origin/*`,
-  then the tip resolves as the WORKTREE's HEAD, else the local branch, else
-  `origin/<branch>`; `git worktree list` tells whether the branch is
-  checked out, and its failure aborts.
-- A worktree that holds the work — given with WORKTREE or found holding the
-  branch — must be clean (`status --porcelain --ignored=no`): uncommitted
+  then the tip resolves as the local branch, else `origin/<branch>`; the
+  worktree is never chosen by the caller, only found as the one holding the
+  branch (`git worktree list`, whose failure aborts).
+- The worktree holding the branch must be clean (`status --porcelain --ignored=no`): uncommitted
   work is refused with "commit or discard the work first". Ignored files go
   with the worktree when `make gc` retires it; they are build output by
   definition.
@@ -124,8 +123,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("branch", help="branch whose tip is archived")
     parser.add_argument("--reason", required=True,
                         help="one-line reason recorded in the tag")
-    parser.add_argument("--worktree", metavar="PATH",
-                        help="registered worktree whose HEAD is the tip")
     args = parser.parse_args(argv)
     reason = args.reason.strip()
     if not reason or "\n" in reason:
@@ -155,27 +152,16 @@ def main(argv: list[str] | None = None) -> int:
     if trees is None:
         return _fail("git worktree list failed")
 
-    wt: Path | None = None
     tip: str | None = None
-    if args.worktree is not None:
-        wt = Path(os.path.realpath(args.worktree))
-        if wt not in [path for path, _ in trees]:
-            return _fail(f"{wt} is not a registered worktree", 2)
-        out = _git(repo, "-C", str(wt), "rev-parse", "--verify", "HEAD^{commit}")
-        if out.returncode != 0:
-            return _fail(f"cannot resolve HEAD in {wt}")
-        tip = out.stdout.strip()
-    else:
-        for cand in (f"refs/heads/{args.branch}",
-                     f"refs/remotes/origin/{args.branch}"):
-            out = _git(repo, "rev-parse", "--verify", f"{cand}^{{commit}}")
-            if out.returncode == 0:
-                tip = out.stdout.strip()
-                break
-        if tip is None:
-            return _fail(f"no such branch: {args.branch}", 2)
-        wt = next((path for path, branch in trees
-                   if branch == args.branch), None)
+    for cand in (f"refs/heads/{args.branch}",
+                 f"refs/remotes/origin/{args.branch}"):
+        out = _git(repo, "rev-parse", "--verify", f"{cand}^{{commit}}")
+        if out.returncode == 0:
+            tip = out.stdout.strip()
+            break
+    if tip is None:
+        return _fail(f"no such branch: {args.branch}", 2)
+    wt = next((path for path, branch in trees if branch == args.branch), None)
 
     # The tag binds only what was committed; uncommitted work is refused,
     # and a failed status check aborts rather than reading as clean.

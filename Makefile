@@ -191,8 +191,8 @@ gc:
 # is refused. Merged work's record is its merged PR; `gc` retires worktree
 # and branch, counting the tag as custody.
 archive:
-	@test -n "$(BRANCH)" && test -n "$(REASON)" || { echo 'usage: make archive BRANCH=<b> REASON="..." [WORKTREE=<path>]'; exit 2; }
-	uv run python scripts/git_archive.py "$(BRANCH)" --reason "$(REASON)" $(if $(WORKTREE),--worktree "$(WORKTREE)")
+	@test -n "$(BRANCH)" && test -n "$(REASON)" || { echo 'usage: make archive BRANCH=<b> REASON="..."'; exit 2; }
+	uv run python scripts/git_archive.py "$(BRANCH)" --reason "$(REASON)"
 
 # --- merge-time checks (AGENTS.md "Never"; each of these has a dated incident
 # behind it, and until now each existed only as a command to retype by hand).
