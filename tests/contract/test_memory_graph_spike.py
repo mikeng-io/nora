@@ -16,7 +16,8 @@ async def test_question_sql_cannot_cross_unit(_graph_db):
     try:
         async with engine.begin() as conn:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
-            await conn.execute(sa.text("TRUNCATE relation_evidence, relation, entity CASCADE"))
+            await conn.execute(sa.text(
+                "TRUNCATE legacy_relation_evidence, legacy_relation, legacy_entity CASCADE"))
         await load(SqlMemoryGraph(engine), replace(REL, persons=("p1",)))
         question = {"unit": "u1", "persons": ["p1"], "seed": list(PERSON.key)}
         assert await sql_answer(engine, question) == ["event:e1", "person:p1"]
@@ -47,7 +48,8 @@ async def test_age_container_comparison_when_explicitly_available(_graph_db, tmp
     try:
         async with engine.begin() as conn:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
-            await conn.execute(sa.text("TRUNCATE relation_evidence, relation, entity CASCADE"))
+            await conn.execute(sa.text(
+                "TRUNCATE legacy_relation_evidence, legacy_relation, legacy_entity CASCADE"))
         await load(SqlMemoryGraph(engine))
 
         async def write_query(model, instruction, payload):

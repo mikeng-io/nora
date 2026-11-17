@@ -31,14 +31,14 @@ async def measure(url: str, args: argparse.Namespace) -> None:
                 await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
                 await conn.execute(
                     sa.text("""
-                    INSERT INTO entity(id,kind,unit,name)
+                    INSERT INTO legacy_entity(id,kind,unit,name)
                     SELECT n::text,'event','generated','Generated event '||n
                     FROM generate_series(1,10000) n
                 """)
                 )
                 await conn.execute(
                     sa.text("""
-                    INSERT INTO relation(id,src_kind,src_id,rel,dst_kind,dst_id,layer,
+                    INSERT INTO legacy_relation(id,src_kind,src_id,rel,dst_kind,dst_id,layer,
                                          asserted_at,written_by,unit,persons)
                     SELECT n||'-'||hop,'event',n::text,'same_as','event',
                            ((n+hop*hop)%10000+1)::text,'notebook',to_timestamp(1700000000),
@@ -57,7 +57,7 @@ async def measure(url: str, args: argparse.Namespace) -> None:
                 )
                 await conn.execute(
                     sa.text("""
-                    INSERT INTO relation_evidence(relation_id,source_kind,source_id,span,role)
+                    INSERT INTO legacy_relation_evidence(relation_id,source_kind,source_id,span,role)
                     SELECT n||'-'||hop,'message',((n+shift)%10000+1)::text,
                            'Generated evidence','supports'
                     FROM generate_series(1,10000) n CROSS JOIN generate_series(1,3) hop
@@ -65,9 +65,9 @@ async def measure(url: str, args: argparse.Namespace) -> None:
                 """)
                 )
                 await conn.execute(sa.text("ANALYZE memory_node"))
-                await conn.execute(sa.text("ANALYZE relation_evidence"))
-                await conn.execute(sa.text("ANALYZE entity"))
-                await conn.execute(sa.text("ANALYZE relation"))
+                await conn.execute(sa.text("ANALYZE legacy_relation_evidence"))
+                await conn.execute(sa.text("ANALYZE legacy_entity"))
+                await conn.execute(sa.text("ANALYZE legacy_relation"))
         rooms = {
             item.partition("=")[0]: frozenset(item.partition("=")[2].split(","))
             for item in args.room

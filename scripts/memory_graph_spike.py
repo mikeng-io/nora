@@ -377,10 +377,10 @@ async def age_comparison(
 ) -> dict[str, Any]:
     edges = await rows(
         engine,
-        "SELECT r.* FROM relation r WHERE status='current' "
-        "AND layer!='record' AND NOT EXISTS (SELECT 1 FROM entity e "
+        "SELECT r.* FROM legacy_relation r WHERE status='current' "
+        "AND layer!='record' AND NOT EXISTS (SELECT 1 FROM legacy_entity e "
         "WHERE e.kind=r.src_kind AND e.id=r.src_id AND e.unit<>r.unit) "
-        "AND NOT EXISTS (SELECT 1 FROM entity e WHERE e.kind=r.dst_kind "
+        "AND NOT EXISTS (SELECT 1 FROM legacy_entity e WHERE e.kind=r.dst_kind "
         "AND e.id=r.dst_id AND e.unit<>r.unit)",
     )
     questions = []

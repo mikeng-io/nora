@@ -5450,9 +5450,9 @@ LEDGER_COMMITMENT_REVISION = _ledger_table(
 )
 LEDGER_THREAD_REVISION = _ledger_table("standing_thread_revision", "thread", history=True)
 
-# Generic memory graph stores (design/unified-memory/graph.md). Vocabularies live in code.
-ENTITY = sa.Table(
-    "entity",
+# Legacy generic memory graph stores (design/unified-memory/graph.md), renamed legacy_* by 0155.
+LEGACY_ENTITY = sa.Table(
+    "legacy_entity",
     METADATA,
     sa.Column("id", sa.Text, primary_key=True),
     sa.Column("kind", sa.Text, nullable=False),
@@ -5465,14 +5465,14 @@ ENTITY = sa.Table(
     sa.Column(
         "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     ),
-    sa.Column("merged_into", sa.Text, sa.ForeignKey("entity.id")),
+    sa.Column("merged_into", sa.Text, sa.ForeignKey("legacy_entity.id")),
 )
 # pg_trgm is installed by 0026; array aliases need a separate search
 # representation for trigram indexing, deferred to the SQL candidate query.
-sa.Index("idx_entity_name_trgm", ENTITY.c.name,
+sa.Index("idx_entity_name_trgm", LEGACY_ENTITY.c.name,
          postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"})
-RELATION = sa.Table(
-    "relation",
+LEGACY_RELATION = sa.Table(
+    "legacy_relation",
     METADATA,
     sa.Column("id", sa.Text, primary_key=True),
     sa.Column("src_kind", sa.Text, nullable=False),
@@ -5486,7 +5486,7 @@ RELATION = sa.Table(
     sa.Column("asserted_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("status", sa.Text, nullable=False, server_default="current"),
     sa.Column("written_by", sa.Text, nullable=False),
-    sa.Column("superseded_by", sa.Text, sa.ForeignKey("relation.id")),
+    sa.Column("superseded_by", sa.Text, sa.ForeignKey("legacy_relation.id")),
     sa.Column("unit", sa.Text, nullable=False),
     sa.Column("persons", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
     sa.Column(
@@ -5499,24 +5499,24 @@ RELATION = sa.Table(
 )
 sa.Index(
     "idx_relation_src_walk",
-    RELATION.c.src_kind,
-    RELATION.c.src_id,
-    RELATION.c.rel,
+    LEGACY_RELATION.c.src_kind,
+    LEGACY_RELATION.c.src_id,
+    LEGACY_RELATION.c.rel,
     postgresql_include=["unit"],
 )
 sa.Index(
     "idx_relation_dst_walk",
-    RELATION.c.dst_kind,
-    RELATION.c.dst_id,
-    RELATION.c.rel,
+    LEGACY_RELATION.c.dst_kind,
+    LEGACY_RELATION.c.dst_id,
+    LEGACY_RELATION.c.rel,
     postgresql_include=["unit"],
 )
-RELATION_EVIDENCE = sa.Table(
-    "relation_evidence",
+LEGACY_RELATION_EVIDENCE = sa.Table(
+    "legacy_relation_evidence",
     METADATA,
     sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-    sa.Column("relation_id", sa.Text, sa.ForeignKey("relation.id")),
-    sa.Column("entity_id", sa.Text, sa.ForeignKey("entity.id")),
+    sa.Column("relation_id", sa.Text, sa.ForeignKey("legacy_relation.id")),
+    sa.Column("entity_id", sa.Text, sa.ForeignKey("legacy_entity.id")),
     sa.Column("attribute", sa.Text),
     sa.Column("source_kind", sa.Text, nullable=False),
     sa.Column("source_id", sa.Text, nullable=False),
@@ -5529,12 +5529,12 @@ RELATION_EVIDENCE = sa.Table(
     ),
     sa.CheckConstraint("role IN ('supports', 'contradicts')", name="relation_evidence_role_check"),
 )
-sa.Index("idx_relation_evidence_relation", RELATION_EVIDENCE.c.relation_id)
+sa.Index("idx_relation_evidence_relation", LEGACY_RELATION_EVIDENCE.c.relation_id)
 sa.Index(
-    "idx_relation_evidence_entity", RELATION_EVIDENCE.c.entity_id, RELATION_EVIDENCE.c.attribute
-)
-MEMORY_WORK_ITEM = sa.Table(
-    "memory_work_item",
+    "idx_relation_evidence_entity",
+    LEGACY_RELATION_EVIDENCE.c.entity_id, LEGACY_RELATION_EVIDENCE.c.attribute)
+LEGACY_MEMORY_WORK_ITEM = sa.Table(
+    "legacy_memory_work_item",
     METADATA,
     sa.Column("id", sa.Text, primary_key=True),
     sa.Column("source_kind", sa.Text, nullable=False),
@@ -5564,14 +5564,14 @@ MEMORY_WORK_ITEM = sa.Table(
 )
 sa.Index(
     "idx_memory_work_item_claim",
-    MEMORY_WORK_ITEM.c.historical,
-    MEMORY_WORK_ITEM.c.state,
-    MEMORY_WORK_ITEM.c.due_at,
-    MEMORY_WORK_ITEM.c.as_of,
+    LEGACY_MEMORY_WORK_ITEM.c.historical,
+    LEGACY_MEMORY_WORK_ITEM.c.state,
+    LEGACY_MEMORY_WORK_ITEM.c.due_at,
+    LEGACY_MEMORY_WORK_ITEM.c.as_of,
 )
 
-MEMORY_GRAPH_REFUSAL = sa.Table(
-    "graph_refusal", METADATA,
+LEGACY_MEMORY_GRAPH_REFUSAL = sa.Table(
+    "legacy_graph_refusal", METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
     sa.Column("kind", sa.Text, nullable=False),
     sa.Column("part_id", sa.Text, nullable=False),
@@ -5580,8 +5580,8 @@ MEMORY_GRAPH_REFUSAL = sa.Table(
               server_default=sa.func.now()),
 )
 
-MEMORY_GRAPH_ARRIVAL = sa.Table(
-    "graph_arrival", METADATA,
+LEGACY_MEMORY_GRAPH_ARRIVAL = sa.Table(
+    "legacy_graph_arrival", METADATA,
     sa.Column("unit", sa.Text, primary_key=True),
     sa.Column("message_id", sa.BigInteger, primary_key=True),
     sa.Column("revision", sa.Text, primary_key=True),
@@ -5590,9 +5590,9 @@ MEMORY_GRAPH_ARRIVAL = sa.Table(
               server_default=sa.func.now()),
     sa.Column("batched", sa.Boolean, nullable=False, server_default=sa.false()),
 )
-sa.Index("idx_graph_arrival_pending", MEMORY_GRAPH_ARRIVAL.c.unit,
-         MEMORY_GRAPH_ARRIVAL.c.room, MEMORY_GRAPH_ARRIVAL.c.queued_at,
-         postgresql_where=MEMORY_GRAPH_ARRIVAL.c.batched.is_(False))
+sa.Index("idx_graph_arrival_pending", LEGACY_MEMORY_GRAPH_ARRIVAL.c.unit,
+         LEGACY_MEMORY_GRAPH_ARRIVAL.c.room, LEGACY_MEMORY_GRAPH_ARRIVAL.c.queued_at,
+         postgresql_where=LEGACY_MEMORY_GRAPH_ARRIVAL.c.batched.is_(False))
 
 # Cognition step one Record pages and step two SHADOW would-writes.
 COMPREHEND_WEB_PAGE = sa.Table(

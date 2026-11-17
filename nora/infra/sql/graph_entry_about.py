@@ -47,10 +47,10 @@ from nora.infra.sql.graph_projection import (
 )
 from nora.infra.sql.memory_graph import relation_values
 from nora.infra.sql.schema import (
+    LEGACY_RELATION,
+    LEGACY_RELATION_EVIDENCE,
     MEMORY_EDGE,
     MEMORY_NODE,
-    RELATION,
-    RELATION_EVIDENCE,
 )
 
 _ENTRY_ABOUT = ("event", "character", "profile_line")
@@ -164,10 +164,10 @@ async def _about_relation(
     evidence = tuple(Evidence(key, relation_id=r.id) for key in sources)
     if validate_relation(r, evidence, sources) is not None:
         return None
-    stmt = insert(RELATION).values(**relation_values(r))
+    stmt = insert(LEGACY_RELATION).values(**relation_values(r))
     await conn.execute(
         stmt.on_conflict_do_update(
-            index_elements=[RELATION.c.id],
+            index_elements=[LEGACY_RELATION.c.id],
             set_={
                 "status": "current",
                 "persons": stmt.excluded.persons,
@@ -176,10 +176,10 @@ async def _about_relation(
         )
     )
     await conn.execute(
-        sa.delete(RELATION_EVIDENCE).where(RELATION_EVIDENCE.c.relation_id == r.id)
+        sa.delete(LEGACY_RELATION_EVIDENCE).where(LEGACY_RELATION_EVIDENCE.c.relation_id == r.id)
     )
     await conn.execute(
-        insert(RELATION_EVIDENCE).values([
+        insert(LEGACY_RELATION_EVIDENCE).values([
             {
                 "relation_id": r.id,
                 "source_kind": s.key[0],

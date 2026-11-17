@@ -64,12 +64,19 @@ CAPTURE_SETTING = "nora.row_history"
 #: trigger's arguments). Includes `sticker_index` (an in-place cache) and
 #: `message_edit` (deleted by cascade when a message is pruned).
 HISTORY_TABLES: dict[str, tuple[str, ...]] = {
-    "graph_arrival": ("unit", "message_id", "revision"),
-    # Graph truth and retained work participate in the existing as-of history.
-    "entity": ("id",),
-    "relation": ("id",),
-    "relation_evidence": ("id",),
-    "memory_work_item": ("id",),
+    "legacy_graph_arrival": ("unit", "message_id", "revision"),
+    # Legacy graph truth and retained work participate in the existing as-of
+    # history; 0155 renamed them legacy_* and created the Cognitive Graph's
+    # registry/entity/claim/intention/edge over the same identity history.
+    "legacy_entity": ("id",),
+    "legacy_relation": ("id",),
+    "legacy_relation_evidence": ("id",),
+    "legacy_memory_work_item": ("id",),
+    "registry": ("id", "unit"),
+    "entity": ("id", "unit"),
+    "claim": ("id", "unit"),
+    "intention": ("id", "unit"),
+    "edge": ("id", "unit"),
     "extraction": ("id",),
     "extraction_queue": ("id",),
     "extraction_claim": ("id",),
@@ -152,7 +159,7 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
 #: `tool_call_log.created_at` is `now()` at insert and is system time; the
 #: others gained `recorded_at` in `0068`.
 APPEND_ONLY: dict[str, str] = {
-    "graph_refusal": "created_at",
+    "legacy_graph_refusal": "created_at",
     "comprehend_web_page": "recorded_at",
     "comprehend_result": "recorded_at",
     "notebook_entry_revision": "recorded_at",

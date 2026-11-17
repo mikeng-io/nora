@@ -209,7 +209,7 @@ def test_frozen_sample_is_deterministic_private_and_immutable(tmp_path):
 
 async def test_questions_frozen_before_any_query_writer(monkeypatch, tmp_path):
     async def generated_rows(engine, sql, params=None):
-        if "FROM relation" in sql:
+        if "FROM legacy_relation" in sql:
             return [
                 {
                     "unit": "generated-unit",
