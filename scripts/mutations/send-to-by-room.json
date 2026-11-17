@@ -44,8 +44,8 @@
  {
   "name": "the asker must be allowed in the destination",
   "file": "nora/agent/relay.py",
-  "old": "if not self._policy.is_allowed(",
-  "new": "if False and not self._policy.is_allowed(",
+  "old": "        if verdict.allowed:\n            return None",
+  "new": "        if True:\n            return None",
   "target": "tests/test_relay.py::test_somebody_not_in_the_destination_cannot_speak_into_it"
  },
  {
