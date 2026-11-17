@@ -2,7 +2,7 @@
 
 One browser lifecycle over the disposable Ory + Postgres graph: generated
 accounts register through the real roster boundary; a real Chromium drives the
-deployed Next app's login UI (`next dev`, `NORA_IDENTITY_BACKEND=managed`,
+production Next app's login UI ( `NORA_IDENTITY_BACKEND=managed`,
 `NORA_API_BASE` on the same aiohttp boundary this module owns) through the
 genuine Auth.js credentials callback — `verifyManagedCode` /
 `captureManagedSession` against `/app/v1/otp/*` and
@@ -29,6 +29,7 @@ import signal
 import socket
 import subprocess
 import time
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -72,9 +73,7 @@ from tests.integration.test_managed_identity_journey import (
     CREDENTIAL,
     DOCUMENTS,
     GATEWAY,
-    OPERATIONS,
     OTP_TOKEN,
-    POLICY_TOML as _POLICY_BASE,
     ROOM_A,
     ROOM_B,
     ROOM_C,
@@ -85,6 +84,9 @@ from tests.integration.test_managed_identity_journey import (
     claims,
     ident_json,
     roster,
+)
+from tests.integration.test_managed_identity_journey import (
+    POLICY_TOML as _POLICY_BASE,
 )
 from tests.web.test_api import NO_SKILLS_DIR, _fake_events
 
@@ -116,7 +118,8 @@ AUTH_SECRET = "generated-authjs-session-secret-01234567"  # noqa: S105
 APP_DIR = Path(__file__).resolve().parents[2] / "app"
 DRIVER = APP_DIR / "e2e" / "managed-portal-driver.mjs"
 NEXT_BIN = APP_DIR / "node_modules" / "next" / "dist" / "bin" / "next"
-EVIDENCE = Path("/tmp/nora-managed-intake/nor6-portal-browser")  # noqa: S108 -- proof artifacts
+EVIDENCE = Path(os.environ.get(
+    "NORA_PORTAL_BROWSER_EVIDENCE", "/tmp/nora-managed-intake/nor6-portal-browser"))  # noqa: S108
 
 
 def _write_receipt(evidence: list[dict]) -> None:
@@ -200,10 +203,8 @@ class _Browser:
         return reply.get("result") or {}
 
     def close(self) -> None:
-        try:
+        with suppress(Exception):
             self._roundtrip({"id": 0, "cmd": "shutdown"})
-        except Exception:  # noqa: BLE001 -- teardown only
-            pass
         try:
             self._proc.wait(timeout=15)
         except subprocess.TimeoutExpired:
@@ -224,7 +225,7 @@ CODE_FORM = 'form:has(input[name="locale"])'
 async def _dump_browser_state(browser: _Browser, world: _PortalWorld,
                               name: str, base: str) -> None:
     """Preserve the exact browser + upstream state when a UI leg fails."""
-    EVIDENCE.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(EVIDENCE.mkdir, parents=True, exist_ok=True)
     (EVIDENCE / "traffic.txt").write_text("\n".join(world.traffic))
     (EVIDENCE / f"{name}-page.html").write_text(
         (await browser.cmd(cmd="html", name=name))["html"])
@@ -239,44 +240,16 @@ async def _dump_browser_state(browser: _Browser, world: _PortalWorld,
 
 
 async def _send_code(browser: _Browser, world: _PortalWorld, name: str,
-                     sent: list, *, identifier: str, region: str = "HK",
-                     platform: str = "signal") -> str:
-    """Dispatch the send step, preferring the real hydrated click; return the
-    code bound to the challenge the rendered form carries.
-
-    Next 16 production builds intermittently never commit a useActionState
-    transition (vercel/next.js#97990): the click is captured, the action never
-    runs or never settles, and the button sits pending forever. When the code
-    step fails to appear we re-post the same form natively — the browser's own
-    no-JS/MPA path through the identical server action — with every field
-    re-supplied, since a dispatched action resets the uncontrolled ones even
-    when its transition never commits. A swallowed click can still dispatch
-    late and issue a second challenge whose delivery must not poison this
-    pick, so the code is bound through the rendered challengeId, not "latest".
-    """
+                     sent: list, *, platform: str = "signal") -> str:
+    """Click the send button and read the challenge rendered by the UI."""
     await browser.cmd(cmd="click_role", name=name, role="button",
                       text="Send me a code")
     shown = await browser.cmd(cmd="wait_text", name=name,
-                              text="Nora just sent a six-digit code", timeout=25)
-    if shown["visible"]:
-        world.note("sign-in-dispatch", who=name, leg="send", how="click")
-    else:
-        try:
-            await browser.cmd(cmd="submit_form", name=name, selector=CODE_FORM,
-                              fields={"intent": "send",
-                                      "identifier": identifier,
-                                      "region": region,
-                                      "platform": platform})
-        except AssertionError:
-            pass  # the pending click finished meanwhile; the step check decides
-        shown = await browser.cmd(cmd="wait_text", name=name,
-                                  text="Nora just sent a six-digit code")
-        if shown["visible"]:
-            world.note("sign-in-dispatch", who=name, leg="send",
-                       how="native-submit")
-        if not shown["visible"]:
-            await _dump_browser_state(browser, world, name, "")
-        assert shown["visible"], "code step never rendered"
+                              text="Nora just sent a six-digit code", timeout_ms=25_000)
+    if not shown["visible"]:
+        await _dump_browser_state(browser, world, name, "")
+    assert shown["visible"], "code step never rendered after clicking Send"
+    world.note("sign-in-dispatch", who=name, leg="send", how="click")
     challenge = await browser.cmd(cmd="eval", name=name, expression=(
         "[...document.querySelectorAll('form input[type=hidden]')]"
         ".map(i => { try { return JSON.parse(i.value) } catch { return null } })"
@@ -298,68 +271,19 @@ async def _browser_session(browser: _Browser, name: str, base: str) -> dict:
         cmd="api", name=name, url=f"{base}/api/auth/session"))["body"]) or {}
 
 
-async def _land_or_session(browser: _Browser, world: _PortalWorld, name: str,
-                           base: str, seconds: int = 15) -> dict:
-    """Poll for the real session the action may still be minting; when it
-    exists, land the portal view through a true navigation — the same layout
-    and checkSession the redirect would have used."""
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        managed = ((await _browser_session(browser, name, base))
-                   .get("user") or {}).get("managedIdentity")
-        if managed:
-            world.note("sign-in-dispatch", who=name, leg="verify",
-                       how="session-then-goto")
-            await browser.cmd(cmd="goto", name=name, url=f"{base}/en/today")
-            return await browser.cmd(cmd="wait_url", name=name,
-                                     regex=r"/en/today$", timeout=15)
-        await asyncio.sleep(1)
-    return {"matched": False,
-            "url": (await browser.cmd(cmd="url", name=name))["url"]}
-
-
 async def _verify_code(browser: _Browser, world: _PortalWorld, name: str,
-                       base: str, code: str) -> None:
-    """Dispatch the verify step and land on /en/today, fallback contract.
-
-    Two distinct stalls exist upstream: the click's transition can dispatch
-    many seconds late or never (session absent — re-post natively), or the
-    POST completes but the client never applies the redirect (session real —
-    navigate for real)."""
+                       ) -> None:
+    """Click Sign in and require the app's own redirect to the portal."""
     await browser.cmd(cmd="click_role", name=name, role="button", text="Sign in")
     inside = await browser.cmd(cmd="wait_url", name=name, regex=r"/en/today$",
-                               timeout=30)
-    if inside["matched"]:
-        world.note("sign-in-dispatch", who=name, leg="verify", how="click")
-        return
-    # The stalled action can flush its response (and the Set-Cookie with it)
-    # far later than the server-side work finished; poll before re-posting.
-    inside = await _land_or_session(browser, world, name, base, seconds=45)
-    if inside["matched"]:
-        return
-    world.note("sign-in-dispatch", who=name, leg="verify", how="native-submit")
-    try:
-        await browser.cmd(cmd="submit_form", name=name, selector=CODE_FORM,
-                          fields={"intent": "verify", "code": code})
-    except AssertionError:
-        pass
-    inside = await browser.cmd(cmd="wait_url", name=name, regex=r"/en/today$",
-                               timeout=30)
-    if not inside["matched"]:
-        # The re-post's 401 render (code consumed) still proves the session;
-        # the session poll + real navigation is the landing check.
-        inside = await _land_or_session(browser, world, name, base)
+                               timeout_ms=30_000)
     assert inside["matched"], f"sign-in landed at {inside['url']}"
+    world.note("sign-in-dispatch", who=name, leg="verify", how="click")
 
 
 async def _start_portal(api_base: str, tmp_path: Path):
-    """A production build + `next start` of the real app, managed backend
-    pointed at this module's aiohttp boundary; the OTP token and assertion key
-    stay server-side env only. Dev servers are unusable for this proof: the
-    app's CSP (`script-src 'self' 'unsafe-inline'`) refuses the eval() React
-    dev requires, and the Turbopack dev worker additionally drops the internal
-    redirect fetch that follows a sign-in server action on this Node."""
-    EVIDENCE.mkdir(parents=True, exist_ok=True)
+    """Run the production app against this fixture's private HTTP boundary."""
+    await asyncio.to_thread(EVIDENCE.mkdir, parents=True, exist_ok=True)
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
     env = dict(os.environ)
@@ -392,7 +316,8 @@ async def _start_portal(api_base: str, tmp_path: Path):
     env["HOSTNAME"] = "127.0.0.1"
     log_path = EVIDENCE / "next-start.log"
     log = log_path.open("w")
-    proc = subprocess.Popen(  # noqa: S603 -- fixed local node argv
+    proc = await asyncio.to_thread(
+        subprocess.Popen,
         ["node", str(standalone / "server.js")],
         cwd=str(APP_DIR), env=env, stdout=log, stderr=subprocess.STDOUT,
         start_new_session=True)
@@ -501,8 +426,8 @@ async def portal_world(pg_module_url, ory, aiohttp_client, tmp_path):
                         and request.path == "/app/v1/otp/request"):
                     try:
                         request_platform = (await request.json()).get("platform")
-                    except Exception:
-                        pass
+                    except ValueError:
+                        request_platform = None
                 try:
                     response = await handler(request)
                 except Exception as error:
@@ -611,9 +536,8 @@ async def test_managed_portal_browser_lifecycle(portal_world, tmp_path):
                                   text="Sign in with Discord"))["visible"]
         await browser.cmd(cmd="fill", name="a", label="Your phone number",
                           value="90000101")
-        code = await _send_code(browser, world, "a", world.sig_adapter.sent,
-                                identifier="90000101")
-        target, text = world.sig_adapter.sent[-1]
+        code = await _send_code(browser, world, "a", world.sig_adapter.sent)
+        target, _text = world.sig_adapter.sent[-1]
         assert target.conversation_id == SIG_A.value
 
         # A wrong code refuses through the same genuine callback.
@@ -621,18 +545,7 @@ async def test_managed_portal_browser_lifecycle(portal_world, tmp_path):
         await browser.cmd(cmd="fill", name="a", label="The code", value=wrong)
         await browser.cmd(cmd="click_role", name="a", role="button", text="Sign in")
         refused = await browser.cmd(cmd="wait_text", name="a",
-                                    text="That code didn't work", timeout=25)
-        if not refused["visible"]:
-            world.note("sign-in-dispatch", who="a", leg="wrong-code",
-                       how="native-submit")
-            try:
-                await browser.cmd(cmd="submit_form", name="a",
-                                  selector=CODE_FORM,
-                                  fields={"intent": "verify", "code": wrong})
-            except AssertionError:
-                pass
-            refused = await browser.cmd(cmd="wait_text", name="a",
-                                        text="That code didn't work")
+                                    text="That code didn't work", timeout_ms=25_000)
         if not refused["visible"]:
             await _dump_browser_state(browser, world, "a", base)
         assert refused["visible"], "a wrong code was not refused"
@@ -641,11 +554,11 @@ async def test_managed_portal_browser_lifecycle(portal_world, tmp_path):
 
         await browser.cmd(cmd="fill", name="a", label="The code", value=code)
         try:
-            await _verify_code(browser, world, "a", base, code)
+            await _verify_code(browser, world, "a")
         except AssertionError:
             await _dump_browser_state(browser, world, "a", base)
             raise AssertionError(
-                f"sign-in did not reach /en/today (traffic in {EVIDENCE})")
+                f"sign-in did not reach /en/today (traffic in {EVIDENCE})") from None
 
         cookies = (await browser.cmd(cmd="cookies", name="a"))["cookies"]
         assert "authjs.session-token" in {c["name"] for c in cookies}
@@ -722,11 +635,11 @@ async def test_managed_portal_browser_lifecycle(portal_world, tmp_path):
         await browser.cmd(cmd="fill", name="b", label="Your phone number",
                           value="90000103")
         wa_code = await _send_code(browser, world, "b", world.wa_adapter.sent,
-                                   identifier="90000103", platform="whatsapp")
+                                   platform="whatsapp")
         wa_target, _ = world.wa_adapter.sent[-1]
         assert wa_target.conversation_id == "85290000103@s.whatsapp.net"
         await browser.cmd(cmd="fill", name="b", label="The code", value=wa_code)
-        await _verify_code(browser, world, "b", base, wa_code)
+        await _verify_code(browser, world, "b")
         wa_session = json.loads((await browser.cmd(
             cmd="api", name="b", url=f"{base}/api/auth/session"))["body"])
         wa_managed = wa_session["user"]["managedIdentity"]
