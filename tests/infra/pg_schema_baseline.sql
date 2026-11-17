@@ -1412,6 +1412,18 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extra
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.geocode_cache FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('lat_rounded', 'lng_rounded');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.graph_arrival FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('unit', 'message_id', 'revision');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.instagram_summons FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_account FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('account_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_alias FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('former_person_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_authority_block FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('person_id', 'scope_kind', 'scope_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_identifier FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('platform', 'kind', 'value');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_identity_hold FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('person_id', 'operation_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_link_request FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('request_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_membership FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('person_id', 'scope_kind', 'scope_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_membership_support FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('person_id', 'scope_kind', 'scope_id', 'source');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_observation FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('service', 'collection', 'scope_kind', 'scope_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_operation FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('operation_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_person FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('person_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.managed_scoped_name FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('person_id', 'scope_kind', 'scope_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.media_objects FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('sha256');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.memory_work_item FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.message_delete FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
@@ -1468,6 +1480,18 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction_qu
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.geocode_cache FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.graph_arrival FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.instagram_summons FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_account FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_alias FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_authority_block FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_identifier FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_identity_hold FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_link_request FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_membership FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_membership_support FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_observation FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_operation FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_person FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.managed_scoped_name FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.media_objects FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.memory_work_item FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.message_delete FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -2272,7 +2296,7 @@ event_id uuid NOT NULL,
 event_id uuid NOT NULL,
 event_id uuid,
 event_ref text NOT NULL
-evidence jsonb NOT NULL
+evidence jsonb NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 exchange_basis text[] DEFAULT '{}'::text[] NOT NULL,
@@ -2968,6 +2992,7 @@ recognition_score double precision DEFAULT 0 NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recorded_at bigint NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() CONSTRAINT signal_recorded_at_not_null NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
