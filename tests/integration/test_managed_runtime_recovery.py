@@ -4,6 +4,7 @@ process entry and owned SQL/Ory."""
 import asyncio
 import contextlib
 import tomllib
+import uuid
 
 import asyncpg
 import pytest
@@ -12,9 +13,13 @@ import tomli_w
 from nora.__main__ import StartupError, build_app
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
+    AccountState,
+    ManagedAccount,
+    ManagedPerson,
     OperationJournalState,
     OutcomeStatus,
     PersonLifecycle,
+    Verdict,
     room_scope_id,
 )
 from nora.domain.management import (
@@ -27,6 +32,7 @@ from nora.domain.management import (
     Target,
     TargetKind,
 )
+from tests.integration.managed_ory import _docker
 from tests.integration.managed_ory import ory as ory
 from tests.test_main import env as env
 from tests.unit.test_managed_profile import _authentication
@@ -191,3 +197,59 @@ async def test_managed_backend_refuses_to_start_when_keto_cannot_answer(env, ory
     env.write_text(tomli_w.dumps(values))
     with pytest.raises(StartupError, match="Keto read listener unreachable"):
         await build_app(env)
+
+
+async def test_a_running_managed_backend_answers_unavailable_when_ory_drops(
+    env, ory,
+):
+    """A live managed process loses its authority mid-flight: the composed
+    access facade answers `unavailable` — the permissive `persons = "*"`
+    TOML room is never consulted as a fallback."""
+    values = tomllib.loads(env.read_text())
+    values["identity"] = {
+        "backend": "managed",
+        "managed": {"kratos_admin_url": ory.kratos_admin,
+                    "keto_read_url": ory.keto_read,
+                    "keto_write_url": ory.keto_write},
+    }
+    values["dreamer"]["enabled"] = False
+    values.setdefault("cognition", {})["enabled"] = False
+    values.setdefault("participation", {})["enabled"] = False
+    env.write_text(tomli_w.dumps(values))
+    room = Scope(ScopeKind.ROOM, room_scope_id("signal", "Z3JvdXA="))
+    app = await build_app(env)
+    try:
+        services = app.deps.managed_services
+        seeded = await services.bindings.register(
+            person=ManagedPerson(
+                person_id="generated-miles",
+                lifecycle=PersonLifecycle.ACTIVE,
+                display_name="Generated Miles"),
+            account=ManagedAccount(
+                account_id=str(uuid.uuid5(
+                    uuid.NAMESPACE_DNS, "nora-generated-miles-signal")),
+                person_id="generated-miles",
+                platform="signal",
+                identifiers=frozenset(
+                    {Identifier("signal", "phone", "+852111")}),
+                state=AccountState.BOUND))
+        assert seeded.status is OutcomeStatus.COMPLETE
+        granted = await services.backend.put_relation(
+            scope=room, relation="member", person_id="generated-miles")
+        assert granted.status is OutcomeStatus.COMPLETE
+        assert (await services.access.check(
+            scope=room, person_id="generated-miles",
+            permit="view")).verdict is Verdict.ALLOWED
+        # The TOML room is `persons = "*"`: a file fallback would admit this
+        # stranger. The live managed authority denies — the verdicts above
+        # and below are the real engine's, never the file's.
+        assert (await services.access.check(
+            scope=room, person_id="generated-stranger",
+            permit="view")).verdict is Verdict.DENIED
+        # The real outage: stop Keto — the next check must not consult TOML.
+        _docker("stop", ory.containers[0])
+        assert (await services.access.check(
+            scope=room, person_id="generated-miles",
+            permit="view")).verdict is Verdict.UNAVAILABLE
+    finally:
+        await app.shutdown()
