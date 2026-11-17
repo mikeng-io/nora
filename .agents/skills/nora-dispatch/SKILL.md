@@ -19,6 +19,7 @@ only what the next actor needs; follow design and evidence links on demand.
 | Intent | the outcome and why |
 | Done when | observable completion conditions |
 | Boundaries | non-goals, holds and relevant design constraints |
+| References | necessary sources and evidence links |
 | Current state | where it stands now — replaced, never appended; links the PR |
 
 Keep one current brief in Linear, or in the PR for small direct work. Preserve

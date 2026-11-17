@@ -287,7 +287,7 @@ Retire only obsolete execution views after preserving owners, holds and evidence
 One issue is one bounded executable outcome, not a roadmap capability or copied
 GitHub report. Title the concrete result, not a phase or label. Its description
 is the short work brief from `nora-dispatch`:
-Intent, Done when, Boundaries, Current state. Keep current acceptance in that
+Intent, Done when, Boundaries, References, Current state. Keep current acceptance in that
 body. Current state is at most five lines, replaced rather than appended, and
 links the PR — no commit IDs, receipt paths or review ledgers. The builder's
 delegation prompt (skills to read, selectors, lease rules) belongs in the
