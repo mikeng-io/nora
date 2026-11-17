@@ -360,28 +360,19 @@ def test_merged_pr_list_failure_makes_nonancestors_unknown(repo: Repo) -> None:
 
 
 def test_stale_remote_ref_is_refused_by_the_lease(repo: Repo) -> None:
-    """Upstream advanced after our tracking ref: the lease refuses the delete."""
-    sha = repo.head("master")
+    """Upstream advances between classification and delete: the lease refuses."""
+    origin = (repo.tmp / "origin.git").resolve()
     repo.git("push", "-q", "origin", "master:refs/heads/victim/remote")
-    # A narrow fetch refspec leaves refs/remotes/origin/victim/remote stale.
-    repo.git("config", "remote.origin.fetch",
-             "+refs/heads/master:refs/remotes/origin/master")
-    repo.git("update-ref", "refs/remotes/origin/victim/remote", sha)
-    side = repo.tmp / "side"
-    subprocess.run(  # noqa: S603 - fixed argv, throwaway clone
-        ["git", "clone", "-q", str(repo.tmp / "origin.git"), str(side)], check=True)
-    s = Repo(side, repo.env)
-    s.git("config", "user.email", "gc@test.invalid")
-    s.git("config", "user.name", "gc test")
-    s.git("checkout", "-qb", "victim/remote", "origin/victim/remote")
-    s.git("commit", "-qm", "adv", "--allow-empty")
-    s.git("push", "-q", "origin", "victim/remote")
-    assert repo.head("origin/victim/remote") == sha  # tracking ref is stale
+    tree = repo.git("rev-parse", "master^{tree}").stdout.strip()
+    adv = repo.git("commit-tree", tree, "-p", "master", "-m", "adv").stdout.strip()
+    repo.git("push", "-q", "origin", f"{adv}:refs/heads/hold/adv")
+    # The script's own delete pushes fire this hook, after classification.
+    _pre_push_hook(repo, f"git --git-dir='{origin}' update-ref refs/heads/victim/remote {adv}")
     out = _gc(repo, "--apply")
     assert out.returncode != 0
     assert "error removing remote branch origin/victim/remote" in out.stderr
     assert repo.git("ls-remote", "origin",
-                    "refs/heads/victim/remote").stdout.strip()
+                    "refs/heads/victim/remote").stdout.split()[0] == adv
     log = (repo.tmp / "state" / "nora" / "git-gc.log").read_text()
     assert "victim/remote" not in log
 
@@ -440,16 +431,28 @@ def test_stale_registration_removed_but_keep_path_stays(repo: Repo) -> None:
 
 
 def test_failed_delete_of_an_absent_remote_branch_is_an_error(repo: Repo) -> None:
-    """A delete that fails stays a failure, even when the branch is already gone."""
-    sha = repo.head("master")
-    repo.git("config", "remote.origin.fetch",
-             "+refs/heads/master:refs/remotes/origin/master")
-    repo.git("update-ref", "refs/remotes/origin/ghost/remote", sha)
+    """Deleted upstream after classification: the failed delete stays a failure."""
+    origin = (repo.tmp / "origin.git").resolve()
+    repo.git("push", "-q", "origin", "master:refs/heads/ghost/remote")
+    _pre_push_hook(repo, f"git --git-dir='{origin}' update-ref -d refs/heads/ghost/remote")
     out = _gc(repo, "--apply")
     assert out.returncode != 0
     assert "error removing remote branch origin/ghost/remote" in out.stderr
     log = repo.tmp / "state" / "nora" / "git-gc.log"
     assert not log.exists() or "ghost/remote" not in log.read_text()
+
+
+def test_prune_never_touches_a_refspec_mapped_into_local_branches(repo: Repo) -> None:
+    """A configured refspec into refs/heads is not pruned, even in a dry run."""
+    repo.git("config", "--add", "remote.origin.fetch",
+             "+refs/heads/feature/*:refs/heads/feature/*")
+    repo.git("branch", "feature/unmerged", "master")
+    repo.git("checkout", "-q", "feature/unmerged")
+    repo.git("commit", "-qm", "local only", "--allow-empty")
+    repo.git("checkout", "-q", "master")
+    sha = repo.head("feature/unmerged")
+    out = _gc(repo)
+    assert repo.head("feature/unmerged") == sha, out.stderr
 
 
 def test_stale_registration_whose_path_returns_is_not_pruned(repo: Repo) -> None:

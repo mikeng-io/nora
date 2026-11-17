@@ -6,7 +6,8 @@ registered worktree is judged `remove`, `keep: <reason>` or `unknown: <error>`.
 `unknown` means the check protecting that artifact could not run — never that
 nothing was found — and keeps the exit status nonzero.
 
-Freshness: `git fetch --prune origin` and `git worktree list` run before refs are
+Freshness: `git fetch --prune origin +refs/heads/*:refs/remotes/origin/*`
+(prunes remote-tracking refs only) and `git worktree list` run before refs are
 enumerated; when the fetch fails, every verdict that depends on merge ancestry
 is `unknown`. A ref is `merged` only when its tip is an ancestor of
 `origin/master`, or its exact tip SHA is the head of a merged PR — GitHub keeps
@@ -437,7 +438,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     repo = Path(os.path.realpath(repo_out.stdout.strip()))
 
-    fetch_ok = _git(repo, "fetch", "--prune", "origin").returncode == 0
+    # An explicit refspec: --prune then touches only refs/remotes/origin/*, never a
+    # configured refspec that maps remote branches into refs/heads.
+    fetch_ok = _git(repo, "fetch", "--prune", "origin",
+                    "+refs/heads/*:refs/remotes/origin/*").returncode == 0
     worktrees = _worktrees(repo)
     listing = _enumerate(repo)
     if worktrees is None or listing is None:
