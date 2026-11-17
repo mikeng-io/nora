@@ -1,5 +1,19 @@
 # Changelog
 
+## [7.19.7](https://github.com/mikeng-io/nora/compare/v7.19.6...v7.19.7) (2026-11-17)
+
+
+### Features
+
+* **scripts:** record each finished artifact's outcome with a settle step ([e1cb686](https://github.com/mikeng-io/nora/commit/e1cb6866bcdb273f2d25a0c09f6096ef5f1ab263))
+
+
+### Bug Fixes
+
+* **scripts:** derive the archived worktree from the branch, never from the caller ([1ff14ec](https://github.com/mikeng-io/nora/commit/1ff14ecd58367a90f8c329628d5c8aa49154f357))
+* **scripts:** make archive a plain annotated tag; refuse dirty worktrees ([17b66d2](https://github.com/mikeng-io/nora/commit/17b66d2298ee172fcc61644b33240134c4f0ced8))
+* **scripts:** make the archive tag the settlement record ([38b9f52](https://github.com/mikeng-io/nora/commit/38b9f52966842e4c6855a9c1c61f6ba9bd5c1195))
+
 ## [7.19.6](https://github.com/mikeng-io/nora/compare/v7.19.5...v7.19.6) (2026-11-17)
 
 
