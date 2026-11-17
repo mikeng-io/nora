@@ -231,20 +231,29 @@ be taken, fix the reference, not the number.
 
 ## Cleanup
 
-Artifact retirement is mechanical, not a judgement: `make gc` classifies every
-remote branch, local branch and registered worktree as `remove`, `keep:
-<reason>` or `unknown: <error>` and exits nonzero while anything is unknown.
-`make gc APPLY=1` performs the removals (`git worktree remove`, `git branch
--D`, `git push origin --delete`) and appends each removed ref with its SHA to
+Artifact retirement is mechanical, not a judgement: `make gc` fetches origin
+and lists worktrees before classifying every remote branch, local branch and
+registered worktree as `remove`, `keep: <reason>` or `unknown: <error>`, and
+exits nonzero while anything is unknown or a removal fails. `make gc APPLY=1`
+performs the removals: remote branches by expected-SHA lease (`git push
+--force-with-lease=<ref>:<sha> origin :<ref>`), local branches by `git
+update-ref -d` against the classified SHA, worktrees by `git worktree remove`
+after re-checking HEAD and clean status, and stale worktree registrations by
+deleting only their own `worktrees/<id>` admin dir — never a global `git
+worktree prune`. Each removed ref is appended with its SHA, and the PR number
+when custody is via a merged PR, to
 `${XDG_STATE_HOME:-~/.local/state}/nora/git-gc.log` so it can be restored. The
 orchestrator runs it at intake and after merge ([ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership)).
 
 Kept by rule: `master`, `deployments` and `dependabot/*`; the head of any open
-PR; branches checked out in a worktree; the primary checkout; `--keep <path>`.
-Merged means an ancestor of `origin/master` or of an open integration-PR head.
-A worktree leaves only when clean, merged and untouched for 24 hours — a
-branch carrying uncommitted changes from minutes ago is somebody else's turn
-in progress, and the recency check keeps it that way.
+PR; branches checked out in a worktree; the primary checkout; locked
+worktrees; `--keep <path>`. Merged means an ancestor of `origin/master`, or
+the ref's tip is the head of a merged PR — a commit GitHub keeps under
+`refs/pull/N/head`; an open integration-PR head is not custody. A worktree
+leaves only when clean, merged and untouched for 24 hours — a branch carrying
+uncommitted changes from minutes ago is somebody else's turn in progress, and
+the recency check keeps it that way. A failed fetch, `gh` call, status check
+or merge-base check makes the affected verdicts `unknown`, never a removal.
 
 ## Local comments and configuration sources
 

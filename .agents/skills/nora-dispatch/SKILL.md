@@ -72,7 +72,9 @@ Every builder handoff of an integrated change is a PR whose base is the
 integration branch. Related handoffs stack, each based on the previous
 handoff's branch (nora-land/reference.md), so they progress in parallel
 without waiting for each other's merge; independent handoffs branch from the
-integration head. The receipt goes in the handoff PR as a comment.
+integration head. A handoff PR ends when it merges into its base; a repair
+after merge is a new handoff PR off the current base. The receipt goes in the
+handoff PR as a comment.
 Check: the execution has started on the intended input, with a finite boundary.
 
 ## 4. Reconcile and continue
