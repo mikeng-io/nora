@@ -28,7 +28,7 @@ from ..config import ConfigError
 from ..obs.health import config_staleness, serve
 from ..obs.logging import setup_logging
 from ..obs.metrics import Metrics
-from .composition import PresenceStartupError, build_collector
+from .composition import PresenceStartupError, open_collector
 
 log = logging.getLogger("nora.presence.__main__")
 
@@ -77,6 +77,8 @@ def _metrics_app(
         body: dict[str, object] = {"status": "ok"}
         if collector is not None:
             body["circles"] = collector.circle_summary()
+            if not collector.collection_ready(now_ms=int(time.time() * 1000)):
+                body["status"] = "unavailable"
         if identity_file is not None:
             config_state = config_staleness(
                 {"identity": identity_file}, started_at or 0.0
@@ -84,7 +86,7 @@ def _metrics_app(
             if identity_status is not None:
                 config_state["identity"].update(identity_status())
             body["config"] = config_state
-        return web.json_response(body)
+        return web.json_response(body, status=200 if body["status"] == "ok" else 503)
 
     async def refresh(request: web.Request) -> web.Response:
         person_id = request.query.get("person_id", "")
@@ -176,28 +178,28 @@ async def _run(config_path: Path) -> None:
             )
         except Exception:
             log.warning("tracing setup failed; continuing without tracing", exc_info=True)
-    deps = build_collector(cfg)
-    runner = await serve(
-        _metrics_app(
-            deps.metrics, deps.collector, cfg.presence.refresh_timeout_seconds,
-            identity_file=str(cfg.identity_file), started_at=time.time(),
-            identity_status=deps.identity_reload.status if deps.identity_reload else None,
-        ),
-        deps.metrics_port,
-    )
-    reload_task = asyncio.create_task(deps.identity_reload.run()) if deps.identity_reload else None
-    try:
-        if deps.collector is None:
-            log.info("presence disabled — nothing to collect; exiting")
-            return
-        await deps.collector.run()
-    finally:
-        if reload_task is not None:
-            reload_task.cancel()
-            await asyncio.gather(reload_task, return_exceptions=True)
-        await runner.cleanup()
-        if deps.store is not None:
-            await deps.store.aclose()
+    async with open_collector(cfg) as deps:
+        runner = await serve(
+            _metrics_app(
+                deps.metrics, deps.collector, cfg.presence.refresh_timeout_seconds,
+                identity_file=str(cfg.identity_file) if cfg.identity.backend == "file" else None,
+                started_at=time.time(),
+                identity_status=deps.identity_reload.status if deps.identity_reload else None,
+            ),
+            deps.metrics_port,
+        )
+        reload_task = (asyncio.create_task(deps.identity_reload.run())
+                       if deps.identity_reload else None)
+        try:
+            if deps.collector is None:
+                log.info("presence disabled — nothing to collect; exiting")
+                return
+            await deps.collector.run()
+        finally:
+            if reload_task is not None:
+                reload_task.cancel()
+                await asyncio.gather(reload_task, return_exceptions=True)
+            await runner.cleanup()
 
 
 def build_parser() -> argparse.ArgumentParser:

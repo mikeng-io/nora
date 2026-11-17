@@ -618,6 +618,8 @@ enabled = false
 reasoning_effort = "low"
 
 [presence]
+# Managed backend polls only these provider circles; bindings stay in managed identity.
+managed_circle_ids = []
 enabled = false
 client_credential_env = "LIFE360_CLIENT_CREDENTIAL"
 username_env = "LIFE360_USERNAME"

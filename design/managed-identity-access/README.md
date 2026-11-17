@@ -7,12 +7,6 @@ Ory and a private management API to register accounts, synchronise membership an
 administer scoped access. Managed identity is an alternative backend, not a
 replacement for the file backend.
 
-**Status:** building — the shared contracts and the file backend's exact-account
-view are shipped; managed runtime, linking and consumer integration are under
-construction.
-
-[Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Fmanaged-identity-access%2F%22)
-
 ## Parts
 
 - [Identity](identity.md) defines the canonical identity, platform-account bindings,

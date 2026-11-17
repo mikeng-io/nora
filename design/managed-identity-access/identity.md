@@ -90,6 +90,12 @@ account and the trusted unit for a unit or Nora account.
 Historical analytics folds retained presence observations through the selected
 canonical family. A recorded circle describes those observations; it neither
 asserts current provider membership nor authorizes collecting from that circle.
+Presence collection selects provider circles explicitly in deployment configuration.
+Each fix resolves its provider-qualified account against current managed ownership,
+lifecycle and publication holds under the mutation boundary. A provider observation
+never registers an identity or grants access; unknown accounts remain uncollected.
+Current roster observations expire and disappear on source failure or restart;
+historical fix rows cannot restore them.
 Nora configuration owns room metadata, destinations and topology rather than
 encoding all configuration as permission relationships.
 

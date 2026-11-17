@@ -547,9 +547,9 @@
   "file_lines": 1524,
   "functions": {
    "_dream_adaptor_once": 245,
-   "dream_loop": 359
+   "dream_loop": 358
   },
-  "internal_docstrings": 11
+  "internal_docstrings": 9
  },
  "nora/app/social_expiry.py": {
   "internal_docstrings": 1
@@ -596,8 +596,8 @@
   "internal_docstrings": 4
  },
  "nora/config.py": {
-  "comment_blocks": 109,
-  "file_lines": 4753,
+  "comment_blocks": 104,
+  "file_lines": 4702,
   "internal_docstrings": 23
  },
  "nora/doctrine/loader.py": {
@@ -1361,7 +1361,7 @@
   "comment_blocks": 1
  },
  "nora/infra/sql/profile_inputs.py": {
-  "comment_blocks": 2,
+  "comment_blocks": 1,
   "file_lines": 869,
   "functions": {
    "SqlProfileInputs.register": 122,
@@ -1545,9 +1545,9 @@
   "comment_blocks": 3
  },
  "nora/language/character.py": {
-  "comment_blocks": 7,
-  "file_lines": 1170,
-  "internal_docstrings": 8
+  "comment_blocks": 6,
+  "file_lines": 1160,
+  "internal_docstrings": 7
  },
  "nora/language/character_session.py": {
   "comment_blocks": 1,
@@ -1568,9 +1568,9 @@
   "comment_blocks": 1
  },
  "nora/language/culture.py": {
-  "comment_blocks": 21,
+  "comment_blocks": 19,
   "functions": {
-   "CultureAdaptor.inputs": 171
+   "CultureAdaptor.inputs": 162
   },
   "internal_docstrings": 3
  },
@@ -1595,7 +1595,7 @@
   "internal_docstrings": 2
  },
  "nora/language/profile.py": {
-  "comment_blocks": 2,
+  "comment_blocks": 1,
   "file_lines": 1295,
   "functions": {
    "ProfilePersonAdaptor.inputs": 394
@@ -1603,9 +1603,9 @@
   "internal_docstrings": 2
  },
  "nora/language/profile_collective.py": {
-  "comment_blocks": 4,
+  "comment_blocks": 3,
   "functions": {
-   "ProfileCollectiveAdaptor.inputs": 233
+   "ProfileCollectiveAdaptor.inputs": 230
   }
  },
  "nora/language/profile_render.py": {
@@ -1865,10 +1865,7 @@
  },
  "nora/presence/collector.py": {
   "comment_blocks": 9,
-  "internal_docstrings": 5
- },
- "nora/presence/composition.py": {
-  "internal_docstrings": 1
+  "internal_docstrings": 4
  },
  "nora/skills/loader.py": {
   "comment_blocks": 3
