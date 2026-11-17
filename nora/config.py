@@ -2830,6 +2830,7 @@ class XaiImageGenConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    issuer_url: str = "https://auth.x.ai"
     model: str = "grok-imagine-image"
     quality_model: str = "grok-imagine-image-quality"
     timeout_seconds: float = 90.0
@@ -2859,6 +2860,7 @@ class OpenAICodexImageGenConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    issuer_url: str = "https://auth.openai.com"
     model: str = Field(default="gpt-image-2.6-flare", min_length=1)
     responses_model: str = Field(default="gpt-5.5", min_length=1)
     standard_quality: _GptImageQuality = "medium"
@@ -2900,6 +2902,7 @@ class ImageGenConfig(BaseModel):
 
     enabled: bool = False
     provider: str = "xai"
+    state_dir: str = "/app/state"
     allow_reference_images: bool = False
 
     xai: XaiImageGenConfig = XaiImageGenConfig()
