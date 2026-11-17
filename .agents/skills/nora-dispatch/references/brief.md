@@ -14,8 +14,11 @@ change needs none. The lifecycle and its routes: `nora-work/references/lifecycle
 | References | the sources and evidence links a fresh agent needs |
 | Current state | where the work stands: at most five lines, replaced never appended, linking the PR; no commit IDs, receipt paths or review ledgers |
 
-The builder's delegation prompt (skills to read, selectors, lease rules)
-belongs in the delegation message, not the brief.
+The issue also carries its Linear fields: one **Type** label, one **Area** label
+(the code area the brief covers), a priority, and the project when it is part of
+a split outcome (`docs/maintainers/conventions.md` «Linear execution»). The
+builder's delegation prompt (skills to read, selectors, lease rules) belongs in
+the delegation message, not the brief.
 
 ## Finite Done-when checklist
 

@@ -21,7 +21,7 @@ direct and light work.
 | **light** | a bounded change with no full trigger | the brief in the PR body; the reviewer at verify reads it with the diff; Mike's merge approves |
 | **standard** | a change that needs dispatch or more than one unit | brief and plan, reviewed by rule before the first dispatch; Mike approves the Done-when list |
 | **full** | any full trigger | as standard, with the full review tier |
-| **split** | more than 6 Done-when items | a parent issue holding Intent and the child links; each child brief has at most 6 items and takes its own route |
+| **split** | more than 6 Done-when items | a Linear project holding the Intent, a milestone per phase, and one issue per child brief of at most 6 items, each taking its own route |
 | **clarify** | intent, authority or acceptance cannot be stated | stop and ask Mike |
 
 **Full triggers:** disclosure, security, auth or identity, a migration, locks

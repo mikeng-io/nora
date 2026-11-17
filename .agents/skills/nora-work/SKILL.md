@@ -10,7 +10,7 @@ Ownership and policy: [ORCHESTRATION.md](../../../ORCHESTRATION.md#the-lifecycle
 This skill is the entry router; it does not repeat the other procedures.
 
 1. **Recover the work.** Read the operator request, the current work brief, the
-   parent outcome, holds and the latest handoff. Follow only the references
+   project's Intent, holds and the latest handoff. Follow only the references
    needed to settle the current question. Check the checkout, head and actual
    artifacts before treating recorded progress as current.
    Check: state the intended outcome, what remains and the next action briefly.
