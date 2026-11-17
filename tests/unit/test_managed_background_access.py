@@ -143,6 +143,13 @@ def _population_rooms():
     ))
 
 
+async def _population_keys(adaptor):
+    import inspect
+
+    keys = adaptor.keys()
+    return await keys if inspect.isawaitable(keys) else keys
+
+
 async def test_character_and_profile_composition_enumerate_the_selected_managed_population(
     example_config,
 ):
@@ -164,7 +171,7 @@ async def test_character_and_profile_composition_enumerate_the_selected_managed_
         engine=None, metrics=Metrics(), note_store=None, persons=persons, access=access)
     person = next(a for a in character.adaptors if a.name == "character-person")
     expected = character_key(_M_UNIT.id, _M_PERSON)
-    assert await person.keys() == (expected,)
+    assert await _population_keys(person) == (expected,)
     pk = character.person_keys[expected]
     assert (pk.person.person_id, pk.person.name, pk.home, pk.listed) == (
         _M_PERSON, "Generated Unit Person", "g1", ("g1",))
@@ -175,19 +182,19 @@ async def test_character_and_profile_composition_enumerate_the_selected_managed_
         media_join=None, metrics=Metrics(), persons=persons,
         profile_collective_keys={}, profile_index=None, access=access)
     profile = next(a for a in adaptors if a.name == "profile-person")
-    assert await profile.keys() == (expected,)
+    assert await _population_keys(profile) == (expected,)
 
     await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_UNIT,
         nickname="Generated Renamed Unit Person", operation_id="generated-unit-person-rename")
-    assert await profile.keys() == (expected,)
+    assert await _population_keys(profile) == (expected,)
     assert character.person_keys[expected].person.name == "Generated Renamed Unit Person"
     bindings.down = True
     with pytest.raises(RuntimeError):
-        await person.keys()
+        await _population_keys(person)
     with pytest.raises(RuntimeError, match="population is unavailable"):
         character.person_keys[expected]
     bindings.down = False
-    assert await profile.keys() == (expected,)
+    assert await _population_keys(profile) == (expected,)
 
 
 async def test_selected_person_population_keeps_units_separate_and_observes_departure():
@@ -237,7 +244,6 @@ async def test_selected_person_population_keeps_units_separate_and_observes_depa
 @pytest.mark.parametrize("outage_first", [False, True])
 async def test_dream_loop_awaits_the_selected_population_before_dispatch(outage_first):
     import asyncio
-    from contextlib import suppress
 
     from nora.agent.dreamer import AdaptorSchedule
     from nora.app.composition_helpers import selected_character_person_keys
@@ -284,10 +290,12 @@ async def test_dream_loop_awaits_the_selected_population_before_dispatch(outage_
         adaptors=[PopulationAdaptor("character-person", _Evidence([1]))], runtime=runner,
         schedules={"character-person": AdaptorSchedule(
                 min_interval_seconds=0, batch_limit=1, wake_batch=1)}))
+    waiter = asyncio.create_task(dispatched.wait())
     try:
-        await asyncio.wait_for(dispatched.wait(), timeout=3)
+        await asyncio.wait({waiter, task}, timeout=3, return_when=asyncio.FIRST_COMPLETED)
+        assert dispatched.is_set(), "selected population was not dispatched"
     finally:
         task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        waiter.cancel()
+        await asyncio.gather(task, waiter, return_exceptions=True)
     assert runner.calls[0][:2] == ("character-person", character_key(_M_UNIT.id, _M_PERSON))
