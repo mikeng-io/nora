@@ -3,9 +3,10 @@
 A throwaway repository with a bare `origin` holds branches and worktrees in
 each archive class; the script runs as a subprocess (`make archive`'s
 invocation). `gh` is a stub for the `git_gc.py` custody checks, and a `git`
-shim that delegates to the real binary injects the one failure real git
-will not produce on demand — a failed `worktree list` — to prove the step
-fails closed. Every other guard is exercised with real repository state.
+shim that delegates to the real binary injects the failures real git will
+not produce on demand — a failed `worktree list` or `status` — to prove the
+steps fail closed. Every other guard is exercised with real repository
+state.
 """
 
 from __future__ import annotations
@@ -47,6 +48,10 @@ def _git_shim(bin_dir: Path, fail_on: str) -> None:
     shim.chmod(0o755)
 
 
+def _tag_message(repo: Repo, name: str) -> str:
+    return repo.git("tag", "-l", "--format=%(contents)", name).stdout
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Repo:
     env = {
@@ -81,62 +86,75 @@ def repo(tmp_path: Path) -> Repo:
     return r
 
 
-def test_a_dirty_worktree_is_snapshotted_and_restorable(repo: Repo) -> None:
-    """Binary and quote-named files survive the snapshot unchanged."""
-    wt = repo.tmp / "wt"
-    repo.git("worktree", "add", "-q", str(wt), "chore/wip")
-    tip = repo.head("chore/wip")
-    binary = bytes(range(256))
-    (wt / "bin.dat").write_bytes(binary)
-    quoted = 'a file "with quotes".txt'
-    (wt / quoted).write_text("unsaved\n")
-    (wt / "tracked.txt").write_text("touched\n")
-
-    out = _archive(repo, "chore/wip", "--reason", "superseded",
-                   "--worktree", str(wt))
-    assert out.returncode == 0, out.stderr
-    assert not wt.exists()  # removed only after the pushed tag verified
-    assert repo.git("cat-file", "-t", TAG).stdout.strip() == "tag"
-    commit = repo.git("rev-parse", f"{TAG}^{{commit}}").stdout.strip()
-    assert commit != tip
-    assert repo.git("rev-parse", f"{commit}^").stdout.strip() == tip
-    message = repo.git("tag", "-l", "--format=%(contents)",
-                       "archive/chore/wip").stdout
-    assert f"source-tip: {tip}" in message
-    assert f"worktree: {wt}" in message
-    assert "reason: superseded" in message
-    remote = repo.git("ls-remote", "origin", TAG).stdout
-    assert repo.git("rev-parse", TAG).stdout.strip() in remote
-
-    restore = repo.tmp / "restore"
-    assert repo.git("worktree", "add", "-q", str(restore),
-                    "archive/chore/wip").returncode == 0
-    assert (restore / "bin.dat").read_bytes() == binary
-    assert (restore / quoted).read_text() == "unsaved\n"
-    assert (restore / "tracked.txt").read_text() == "touched\n"
-
-
 def test_a_clean_branch_archives_at_its_tip(repo: Repo) -> None:
     tip = repo.head("chore/wip")
     out = _archive(repo, "chore/wip", "--reason", "done")
     assert out.returncode == 0, out.stderr
     assert repo.git("rev-parse", f"{TAG}^{{commit}}").stdout.strip() == tip
+    message = _tag_message(repo, "archive/chore/wip")
+    assert f"source-tip: {tip}" in message
+    assert "reason: done" in message
+    # the tag object on origin is the local one
+    remote = repo.git("ls-remote", "origin", TAG).stdout
+    assert repo.git("rev-parse", TAG).stdout.strip() in remote
     # archive never deletes the branch; gc owns retirement.
     assert "chore/wip" in repo.git("branch", "--list", "chore/wip").stdout
+
+
+def test_a_dirty_worktree_is_refused_and_left_untouched(repo: Repo) -> None:
+    """Staged, unstaged and untracked work is the owner's, never the tag's."""
+    wt = repo.tmp / "wt"
+    repo.git("worktree", "add", "-q", str(wt), "chore/wip")
+    (wt / "staged.txt").write_text("staged\n")
+    repo.git("-C", str(wt), "add", "staged.txt")
+    (wt / "tracked.txt").write_text("unstaged change\n")
+    (wt / "untracked.txt").write_text("untracked\n")
+
+    out = _archive(repo, "chore/wip", "--reason", "done",
+                   "--worktree", str(wt))
+    assert out.returncode != 0
+    assert "commit or discard" in out.stderr
+    assert repo.git("rev-parse", "--verify", TAG).returncode != 0
+    assert repo.git("ls-remote", "origin", TAG).stdout.strip() == ""
+    assert (wt / "staged.txt").read_text() == "staged\n"
+    assert (wt / "tracked.txt").read_text() == "unstaged change\n"
+    assert (wt / "untracked.txt").read_text() == "untracked\n"
+
+
+def test_a_dirty_checkout_is_refused_without_a_worktree_argument(repo: Repo) -> None:
+    """The worktree holding the branch is found and checked on its own."""
+    wt = repo.tmp / "wt"
+    repo.git("worktree", "add", "-q", str(wt), "chore/wip")
+    (wt / "scratch.txt").write_text("uncommitted\n")
+    out = _archive(repo, "chore/wip", "--reason", "done")
+    assert out.returncode != 0
+    assert "commit or discard" in out.stderr
+    assert repo.git("rev-parse", "--verify", TAG).returncode != 0
+    assert (wt / "scratch.txt").exists()
 
 
 def test_a_failed_worktree_listing_aborts(repo: Repo) -> None:
     """An unreadable worktree registry is an abort, never 'no worktree'."""
     wt = repo.tmp / "wt"
     repo.git("worktree", "add", "-q", str(wt), "chore/wip")
-    (wt / "scratch.txt").write_text("unsaved\n")
     _git_shim(repo.tmp / "bin", "worktree list")
     out = _archive(repo, "chore/wip", "--reason", "done",
                    "--worktree", str(wt))
     assert out.returncode != 0
     assert "worktree list" in out.stderr
     assert repo.git("rev-parse", "--verify", TAG).returncode != 0
-    assert (wt / "scratch.txt").exists()
+
+
+def test_a_failed_status_check_aborts(repo: Repo) -> None:
+    """A status check that cannot answer is not read as clean."""
+    wt = repo.tmp / "wt"
+    repo.git("worktree", "add", "-q", str(wt), "chore/wip")
+    _git_shim(repo.tmp / "bin", "status --porcelain")
+    out = _archive(repo, "chore/wip", "--reason", "done",
+                   "--worktree", str(wt))
+    assert out.returncode != 0
+    assert "status" in out.stderr
+    assert repo.git("rev-parse", "--verify", TAG).returncode != 0
 
 
 def test_the_tip_is_resolved_after_the_fetch(repo: Repo) -> None:
@@ -176,6 +194,19 @@ def test_a_rerun_is_a_noop(repo: Repo) -> None:
     assert repo.git("rev-parse", TAG).stdout.strip() == tag_sha
 
 
+def test_a_retry_after_a_failed_push_succeeds_unchanged(repo: Repo) -> None:
+    _pre_push_hook(repo, "exit 1")
+    first = _archive(repo, "chore/wip", "--reason", "done")
+    assert first.returncode != 0
+    tag_sha = repo.git("rev-parse", TAG).stdout.strip()
+    _pre_push_hook(repo, "exit 0")
+    second = _archive(repo, "chore/wip", "--reason", "done")
+    assert second.returncode == 0, second.stderr
+    assert "already archived" in second.stdout
+    assert repo.git("rev-parse", TAG).stdout.strip() == tag_sha
+    assert tag_sha in repo.git("ls-remote", "origin", TAG).stdout
+
+
 def test_a_conflicting_tag_is_refused(repo: Repo) -> None:
     """An annotated tag on another commit is a different record."""
     repo.git("tag", "-a", "-m", "other record", "archive/chore/wip", "master")
@@ -183,6 +214,34 @@ def test_a_conflicting_tag_is_refused(repo: Repo) -> None:
     assert out.returncode != 0
     assert "already points at" in out.stderr
     assert repo.git("ls-remote", "origin", TAG).stdout.strip() == ""
+
+
+def test_a_reused_branch_name_at_a_new_tip_is_refused(repo: Repo) -> None:
+    """The old tag's record stays bound to the tip it was made for."""
+    first = _archive(repo, "chore/wip", "--reason", "done")
+    assert first.returncode == 0, first.stderr
+    old_tip = repo.head("chore/wip")
+    repo.git("checkout", "-q", "chore/wip")
+    repo.git("commit", "-qm", "new work", "--allow-empty")
+    repo.git("checkout", "-q", "master")
+    assert repo.head("chore/wip") != old_tip
+    out = _archive(repo, "chore/wip", "--reason", "again")
+    assert out.returncode != 0
+    assert "already points at" in out.stderr
+    assert repo.git("rev-parse", f"{TAG}^{{commit}}").stdout.strip() == old_tip
+
+
+def test_a_tag_recording_a_different_source_tip_is_refused(repo: Repo) -> None:
+    """The source-tip field must equal the tag's own target."""
+    tip = repo.head("chore/wip")
+    master = repo.head("master")
+    repo.git("tag", "-a", "-m",
+             f"archive: chore/wip\n\nbranch: chore/wip\nsource-tip: {master}\n"
+             f"worktree: -\nreason: forged",
+             "archive/chore/wip", tip)
+    out = _archive(repo, "chore/wip", "--reason", "done")
+    assert out.returncode != 0
+    assert "different source tip" in out.stderr
 
 
 def test_a_lightweight_tag_is_refused(repo: Repo) -> None:
@@ -194,33 +253,8 @@ def test_a_lightweight_tag_is_refused(repo: Repo) -> None:
     assert repo.git("cat-file", "-t", TAG).stdout.strip() == "commit"
 
 
-def test_a_rejected_push_leaves_the_worktree_in_place(repo: Repo) -> None:
-    """The remote holding the tag name at another object is a mismatch."""
-    repo.git("tag", "-a", "-m", "foreign", "archive/chore/wip", "master")
-    repo.git("push", "-q", "origin", TAG)
-    repo.git("tag", "-d", "archive/chore/wip")
-    wt = repo.tmp / "wt"
-    repo.git("worktree", "add", "-q", str(wt), "chore/wip")
-    (wt / "scratch.txt").write_text("unsaved\n")
-    out = _archive(repo, "chore/wip", "--reason", "done",
-                   "--worktree", str(wt))
-    assert out.returncode != 0
-    assert wt.exists() and (wt / "scratch.txt").exists()
-
-
-def test_a_failed_push_leaves_the_worktree_in_place(repo: Repo) -> None:
-    _pre_push_hook(repo, "exit 1")
-    wt = repo.tmp / "wt"
-    repo.git("worktree", "add", "-q", str(wt), "chore/wip")
-    (wt / "scratch.txt").write_text("unsaved\n")
-    out = _archive(repo, "chore/wip", "--reason", "done",
-                   "--worktree", str(wt))
-    assert out.returncode != 0
-    assert wt.exists() and (wt / "scratch.txt").exists()
-
-
 def test_gc_removes_a_branch_whose_tip_the_archive_records(repo: Repo) -> None:
-    """Custody by record: the tag's source-tip equals the branch's tip."""
+    """Custody by record: annotated, pushed, target and source-tip on the tip."""
     assert _archive(repo, "chore/wip", "--reason", "done").returncode == 0
     out = _gc(repo, "--apply")
     assert out.returncode == 0, out.stderr
@@ -237,6 +271,36 @@ def test_gc_keeps_a_branch_whose_tip_moved_since_the_archive(repo: Repo) -> None
     repo.git("checkout", "-q", "chore/wip")
     repo.git("commit", "-qm", "more", "--allow-empty")
     repo.git("checkout", "-q", "master")
+    out = _gc(repo, "--apply")
+    assert out.returncode == 0, out.stderr
+    line = _line(out, "local branch", "chore/wip")
+    assert line.startswith("keep") and "unmerged" in line
+    assert "chore/wip" in repo.git("branch", "--list", "chore/wip").stdout
+
+
+def test_gc_grants_no_custody_for_a_local_only_tag(repo: Repo) -> None:
+    """A tag never pushed to origin proves nothing durable."""
+    tip = repo.head("chore/wip")
+    repo.git("tag", "-a", "-m",
+             f"archive: chore/wip\n\nbranch: chore/wip\nsource-tip: {tip}\n"
+             f"worktree: -\nreason: local only",
+             "archive/chore/wip", tip)
+    out = _gc(repo, "--apply")
+    assert out.returncode == 0, out.stderr
+    line = _line(out, "local branch", "chore/wip")
+    assert line.startswith("keep") and "unmerged" in line
+    assert "chore/wip" in repo.git("branch", "--list", "chore/wip").stdout
+
+
+def test_gc_grants_no_custody_when_source_tip_differs_from_target(repo: Repo) -> None:
+    """A pushed tag whose record does not match its target grants nothing."""
+    tip = repo.head("chore/wip")
+    master = repo.head("master")
+    repo.git("tag", "-a", "-m",
+             f"archive: chore/wip\n\nbranch: chore/wip\nsource-tip: {master}\n"
+             f"worktree: -\nreason: mismatched",
+             "archive/chore/wip", tip)
+    repo.git("push", "-q", "origin", TAG)
     out = _gc(repo, "--apply")
     assert out.returncode == 0, out.stderr
     line = _line(out, "local branch", "chore/wip")

@@ -75,8 +75,8 @@ named checks and the shared stop conditions. Respect dependent bases; do not sil
 restart a repair on master. Read back the actual provider/model/options and
 checkout. The worker does the assigned work without launching other workers.
 Worktrees are created at the first write, never because a session or a review
-started; a read-only review uses a detached checkout, and archive or `make gc`
-retires it.
+started; a read-only review uses a detached checkout, and `make gc` retires
+it.
 
 Every builder handoff of an integrated change is a PR whose base is the
 integration branch. Related handoffs stack, each based on the previous

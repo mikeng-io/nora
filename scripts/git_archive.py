@@ -1,30 +1,29 @@
-"""Archive a finished branch's work into one pushed annotated tag.
+"""Archive a finished branch's committed tip into one pushed annotated tag.
 
 `make archive BRANCH=<b> REASON="..." [WORKTREE=<path>]` — the tag is the
 record. An annotated `archive/<branch>` tag carries the reason, branch,
-source tip and worktree path; it is pushed and verified against origin
-before a given worktree is removed, and a re-run over the same commit is a
-no-op. Every step fails closed on any failed git call:
+source tip and worktree path; it is pushed and verified against origin, and
+a re-run over the same tip is a no-op. Every step fails closed on any
+failed git call:
 
 - `git fetch --refmap= --prune origin +refs/heads/*:refs/remotes/origin/*`,
   then the tip resolves as the WORKTREE's HEAD, else the local branch, else
-  `origin/<branch>`. A passed WORKTREE must be a registered worktree — a
-  failed `git worktree list` aborts like any other call.
-- A dirty worktree is snapshotted without touching it or its index:
-  `read-tree HEAD`, `add -A`, `write-tree`, `commit-tree -p <tip>` under a
-  temporary GIT_INDEX_FILE — binary- and filename-safe, no patch or
-  tarball. The archived commit is the snapshot, otherwise the tip.
-- The annotated `archive/<branch>` tag on that commit holds the record. An
-  existing annotated tag on the same commit is a no-op; another target or a
-  lightweight tag is refused — exactly-once by construction.
+  `origin/<branch>`; `git worktree list` tells whether the branch is
+  checked out, and its failure aborts.
+- A worktree that holds the work — given with WORKTREE or found holding the
+  branch — must be clean (`status --porcelain --ignored=no`): uncommitted
+  work is refused with "commit or discard the work first". Ignored files go
+  with the worktree when `make gc` retires it; they are build output by
+  definition.
+- An existing `archive/<branch>` is a no-op only when it is annotated, on
+  the current tip, and records that tip as its source-tip — the tag's
+  target IS the source tip; only committed state is archived. Another target,
+  a lightweight tag or a mismatched source-tip is refused.
 - `git push` the tag, then `git ls-remote` must echo the local tag object.
-- Only then `git worktree remove --force` a passed WORKTREE — the one place
-  a dirty worktree is removed, behind a verified durable copy.
 
 Merged work's record is its merged PR, and work with no unique commits is
-already an ancestor of master, so neither is tagged; `make gc` retires both
-and counts `archive/<branch>` as custody when its recorded source tip is
-the branch's tip.
+already an ancestor of master, so neither is tagged; `make gc` retires
+both and counts `archive/<branch>` as custody.
 """
 
 from __future__ import annotations
@@ -33,33 +32,18 @@ import argparse
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 GIT_TIMEOUT = 120
 FETCH_ARGS = ("fetch", "--refmap=", "--prune", "origin",
               "+refs/heads/*:refs/remotes/origin/*")
 
-# Fixed identity and date make the snapshot commit a pure function of the
-# worktree's state, so a retried snapshot lands on the same SHA and the
-# idempotent path sees the same commit.
-_SNAPSHOT_ENV = {
-    "GIT_AUTHOR_NAME": "nora archive",
-    "GIT_AUTHOR_EMAIL": "archive@nora.invalid",
-    "GIT_AUTHOR_DATE": "@0 +0000",
-    "GIT_COMMITTER_NAME": "nora archive",
-    "GIT_COMMITTER_EMAIL": "archive@nora.invalid",
-    "GIT_COMMITTER_DATE": "@0 +0000",
-}
 
-
-def _git(repo: Path, *args: str, env: dict[str, str] | None = None,
-         ) -> subprocess.CompletedProcess[str]:
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(  # noqa: S603 - fixed git argv, repo-local
             ["git", *args],  # noqa: S607
             cwd=repo,
-            env=None if env is None else {**os.environ, **env},
             capture_output=True,
             text=True,
             timeout=GIT_TIMEOUT,
@@ -97,30 +81,24 @@ def _tag_fields(repo: Path, ref: str) -> dict[str, str]:
     return fields
 
 
-def _registered_worktrees(repo: Path) -> list[Path] | None:
-    """Real paths of registered worktrees; None when the listing failed."""
+def _worktrees(repo: Path) -> list[tuple[Path, str | None]] | None:
+    """(path, checked-out branch) for each registered worktree; None on failure."""
     out = _git(repo, "worktree", "list", "--porcelain")
     if out.returncode != 0:
         return None
-    return [Path(os.path.realpath(line.removeprefix("worktree ")))
-            for line in out.stdout.splitlines()
-            if line.startswith("worktree ")]
-
-
-def _snapshot(repo: Path, wt: Path, tip: str) -> tuple[str, str]:
-    """(commit, error): the worktree's full state committed on top of tip."""
-    with tempfile.TemporaryDirectory(prefix="nora-archive-") as tmp:
-        env = {"GIT_INDEX_FILE": str(Path(tmp) / "index"), **_SNAPSHOT_ENV}
-        for step in (("read-tree", "HEAD"), ("add", "-A"), ("write-tree",)):
-            out = _git(repo, "-C", str(wt), *step, env=env)
-            if out.returncode != 0:
-                return "", f"git {step[0]} failed ({out.stderr.strip()})"
-        tree = out.stdout.strip()
-    out = _git(repo, "-C", str(wt), "commit-tree", tree,
-               "-p", tip, "-m", "archive snapshot")
-    if out.returncode != 0:
-        return "", f"git commit-tree failed ({out.stderr.strip()})"
-    return out.stdout.strip(), ""
+    trees: list[tuple[Path, str | None]] = []
+    path: Path | None = None
+    for line in [*out.stdout.splitlines(), ""]:
+        if line.startswith("worktree "):
+            path = Path(os.path.realpath(line.removeprefix("worktree ")))
+        elif line.startswith("branch refs/heads/") and path is not None:
+            trees.append((path, line.removeprefix("branch refs/heads/")))
+            path = None
+        elif not line:
+            if path is not None:
+                trees.append((path, None))
+            path = None
+    return trees
 
 
 def _push_and_verify(repo: Path, tag: str, ref: str) -> int:
@@ -143,11 +121,11 @@ def _push_and_verify(repo: Path, tag: str, ref: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("branch", help="branch whose work is archived")
+    parser.add_argument("branch", help="branch whose tip is archived")
     parser.add_argument("--reason", required=True,
                         help="one-line reason recorded in the tag")
     parser.add_argument("--worktree", metavar="PATH",
-                        help="registered worktree to snapshot and remove")
+                        help="registered worktree whose HEAD is the tip")
     args = parser.parse_args(argv)
     reason = args.reason.strip()
     if not reason or "\n" in reason:
@@ -173,21 +151,15 @@ def main(argv: list[str] | None = None) -> int:
     prior = _tag_commit(repo, ref) if kind else None
     fields = _tag_fields(repo, ref) if kind == "tag" else {}
 
+    trees = _worktrees(repo)
+    if trees is None:
+        return _fail("git worktree list failed")
+
     wt: Path | None = None
     tip: str | None = None
     if args.worktree is not None:
         wt = Path(os.path.realpath(args.worktree))
-        registered = _registered_worktrees(repo)
-        if registered is None:
-            return _fail("git worktree list failed")
-        if wt not in registered:
-            # An earlier run may already have archived and removed it.
-            if (not wt.exists() and prior is not None
-                    and fields.get("worktree") == str(wt)):
-                rc = _push_and_verify(repo, tag, ref)
-                if rc == 0:
-                    print(f"already archived {args.branch} ({tag})")
-                return rc
+        if wt not in [path for path, _ in trees]:
             return _fail(f"{wt} is not a registered worktree", 2)
         out = _git(repo, "-C", str(wt), "rev-parse", "--verify", "HEAD^{commit}")
         if out.returncode != 0:
@@ -202,39 +174,39 @@ def main(argv: list[str] | None = None) -> int:
                 break
         if tip is None:
             return _fail(f"no such branch: {args.branch}", 2)
+        wt = next((path for path, branch in trees
+                   if branch == args.branch), None)
 
-    archived = tip
+    # The tag binds only what was committed; uncommitted work is refused,
+    # and a failed status check aborts rather than reading as clean.
     if wt is not None:
-        status = _git(repo, "-C", str(wt), "status", "--porcelain")
+        status = _git(repo, "-C", str(wt),
+                      "status", "--porcelain", "--ignored=no")
         if status.returncode != 0:
             return _fail(f"git status failed ({status.stderr.strip()})")
         if status.stdout.strip():
-            archived, error = _snapshot(repo, wt, tip)
-            if error:
-                return _fail(f"snapshot failed: {error}")
+            return _fail(f"{wt} has uncommitted work: "
+                         "commit or discard the work first")
 
     if kind == "":
         message = (f"archive: {args.branch}\n\nbranch: {args.branch}\n"
                    f"source-tip: {tip}\n"
                    f"worktree: {wt if wt is not None else '-'}\n"
                    f"reason: {reason}")
-        out = _git(repo, "tag", "-a", "-m", message, tag, archived)
+        out = _git(repo, "tag", "-a", "-m", message, tag, tip)
         if out.returncode != 0:
             return _fail(f"git tag failed ({out.stderr.strip()})")
-    elif prior != archived:
+    elif prior != tip:
         return _fail(f"{tag} already points at {(prior or 'unreadable')[:12]}")
+    elif fields.get("source-tip") != tip:
+        return _fail(f"{tag} records a different source tip")
 
     rc = _push_and_verify(repo, tag, ref)
     if rc:
         return rc
 
-    if wt is not None:
-        out = _git(repo, "worktree", "remove", "--force", str(wt))
-        if out.returncode != 0:
-            return _fail(f"git worktree remove failed ({out.stderr.strip()})")
-
     verb = "archived" if kind == "" else "already archived"
-    print(f"{verb} {args.branch} at {archived[:12]} ({tag})")
+    print(f"{verb} {args.branch} at {tip[:12]} ({tag})")
     return 0
 
 

@@ -186,10 +186,10 @@ gc:
 	uv run python scripts/git_gc.py $(if $(APPLY),--apply)
 
 # Archive a finished artifact that did not merge (ORCHESTRATION.md «Artifact
-# lifecycle»): an annotated archive/<branch> tag records the reason, source
-# tip and worktree, pushed and verified before a given dirty worktree is
-# removed. Merged work's record is its merged PR; branch deletion stays with
-# `gc`, which counts the tag as custody.
+# lifecycle»): an annotated archive/<branch> tag on the committed tip records
+# the reason, source tip and worktree, pushed and verified; a dirty worktree
+# is refused. Merged work's record is its merged PR; `gc` retires worktree
+# and branch, counting the tag as custody.
 archive:
 	@test -n "$(BRANCH)" && test -n "$(REASON)" || { echo 'usage: make archive BRANCH=<b> REASON="..." [WORKTREE=<path>]'; exit 2; }
 	uv run python scripts/git_archive.py "$(BRANCH)" --reason "$(REASON)" $(if $(WORKTREE),--worktree "$(WORKTREE)")

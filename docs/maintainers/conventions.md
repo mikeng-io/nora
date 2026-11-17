@@ -246,18 +246,19 @@ can be restored. The orchestrator runs it at intake and after merge
 ([ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership)).
 
 Work that does not merge is archived first: `make archive BRANCH=<b>
-REASON="..." [WORKTREE=<path>]` pushes an annotated `archive/<branch>` tag —
-the durable record holding the reason, source tip and worktree path. A dirty
-worktree's full state is committed into the tag first, and the worktree is
-removed only after the pushed tag verifies on origin. Merged work's record
-is its merged PR.
+REASON="..."` pushes an annotated `archive/<branch>` tag on the committed
+tip — the durable record holding the reason and source tip, verified on
+origin. A dirty worktree is refused; its owner commits or discards the work
+first, and `gc` retires the clean worktree. Ignored files go with it — they
+are build output by definition. Merged work's record is its merged PR.
 
 Kept by rule: `master`, `deployments` and `dependabot/*`; the head of any open
 PR; branches checked out in a worktree; the primary checkout; locked
 worktrees; `--keep <path>`. Merged means an ancestor of `origin/master`,
 the ref's tip is the head of a merged PR — a commit GitHub keeps under
-`refs/pull/N/head` — or an annotated `archive/<branch>` tag records that tip
-as its source; an open integration-PR head is not custody. A worktree
+`refs/pull/N/head` — or an annotated `archive/<branch>` tag verified on
+origin records that tip as its source and target; an open integration-PR
+head is not custody. A worktree
 leaves only when clean, merged and untouched for 24 hours — a branch carrying
 uncommitted changes from minutes ago is somebody else's turn in progress, and
 the recency check keeps it that way. A failed fetch, `gh` call, status check

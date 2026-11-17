@@ -13,9 +13,10 @@ is `unknown`. A ref is `merged` only when its tip is an ancestor of
 `origin/master`, or its exact tip SHA is the head of a merged PR — GitHub keeps
 `refs/pull/N/head`, so that commit stays retrievable and the PR number goes to
 the removal log. A branch also counts as merged when an annotated
-`archive/<branch>` tag's recorded source tip is the branch's tip — `make
-archive` already pushed that tag, so the work is durable — and the tag name
-goes to the removal log as `archive=<tag>`. The open-PR list comes from `gh pr list`; when gh cannot
+`archive/<branch>` tag exists on origin as the same object, and its target
+commit and recorded source tip both equal the branch's tip — the tag is the
+durable copy — and the tag name goes to the removal log as `archive=<tag>`.
+The open-PR list comes from `gh pr list`; when gh cannot
 answer, branch verdicts are `unknown` (open-PR-head protection cannot be
 verified) and nothing remote or local is removed.
 
@@ -196,19 +197,35 @@ def _is_ancestor(repo: Path, commit: str, base: str) -> bool | None:
 
 
 def _archive_tip(repo: Path, branch: str) -> str | None:
-    """The source tip an annotated archive/<branch> tag records, else None.
+    """The tip an archive tag proves custody of, else None.
 
-    The tag message, not the name, is the proof: a lightweight tag, a
-    malformed message or a missing source-tip field grants no custody.
+    Custody needs all of: an annotated local tag, the same tag object on
+    origin (`make archive` pushed and verified it), and a recorded
+    source-tip equal to the tag's target commit — the caller then checks it
+    against the branch's tip. A failed read, a lightweight or unpushed tag
+    and a mismatched record all grant nothing.
     """
-    out = _git(repo, "for-each-ref", "--format=%(objecttype)%09%(contents)",
-               f"refs/tags/archive/{branch}")
-    if out.returncode != 0 or not out.stdout.startswith("tag\t"):
+    ref = f"refs/tags/archive/{branch}"
+    kind = _git(repo, "cat-file", "-t", ref)
+    if kind.returncode != 0 or kind.stdout.strip() != "tag":
+        return None
+    local = _git(repo, "rev-parse", "--verify", ref)
+    target = _git(repo, "rev-parse", "--verify", f"{ref}^{{commit}}")
+    remote = _git(repo, "ls-remote", "origin", ref)
+    if (local.returncode != 0 or target.returncode != 0
+            or remote.returncode != 0):
+        return None
+    remote_obj = next(
+        (line.partition("\t")[0] for line in remote.stdout.splitlines()
+         if line.partition("\t")[2] == ref), None)
+    if remote_obj != local.stdout.strip():
+        return None
+    out = _git(repo, "for-each-ref", "--format=%(contents)", ref)
+    if out.returncode != 0:
         return None
     for line in out.stdout.splitlines():
         key, sep, value = line.partition(":")
-        if sep and key == "source-tip" and re.fullmatch(r"[0-9a-f]{40}",
-                                                        value.strip()):
+        if sep and key == "source-tip" and value.strip() == target.stdout.strip():
             return value.strip()
     return None
 

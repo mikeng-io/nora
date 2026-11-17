@@ -277,10 +277,10 @@ Artifact lifecycle — one owner and one end event each; retirement is mechanica
 | working log | a check runs | its run ends | `/tmp` |
 
 - An outcome that does not merge is archived once by the orchestrator —
-  `make archive BRANCH=<b> REASON="..." [WORKTREE=<path>]`: an annotated
-  `archive/<branch>` tag records the reason, source tip and worktree,
-  verified on origin before a dirty worktree is removed. Merged work's
-  record is its merged PR; `gc` counts the tag as custody.
+  `make archive BRANCH=<b> REASON="..."`: an annotated `archive/<branch>`
+  tag on the committed tip records the reason and source tip, verified on
+  origin. Dirty work is committed first by its owner; `gc` retires the
+  worktree and counts the tag as custody.
 - The orchestrator runs `make gc APPLY=1` at intake and after merge; reviews
   use a detached checkout and never push a branch.
 - A handoff PR's base is the integration branch or the previous handoff's
