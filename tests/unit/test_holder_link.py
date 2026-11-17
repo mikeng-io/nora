@@ -298,6 +298,28 @@ async def test_a_wrong_nonce_or_forwarded_challenge_is_refused_without_side_effe
     assert not (await w.links.get(view.request_id)).approved
 
 
+async def test_a_forwarded_proof_never_survives_commit_revalidation():
+    """One genuine approval plus a forwarded challenge: the composed commit
+    still refuses the half-approved request — no second consent, no
+    publication."""
+    w = _world()
+    await _person(w.store, w.registry, PERSON_A, ACCT_I)
+    await _person(w.store, w.registry, PERSON_B, ACCT_R)
+    view = await _requested(w.holder)
+    nonce = await w.links.challenge(view.request_id, side=LinkSide.INITIATING)
+    approved = await _approve_discord(w.holder, view.request_id, nonce)
+    assert approved.outcome.status is OutcomeStatus.COMPLETE
+
+    forwarded = await _signal_decide(w.holder, view.request_id, view.nonce)
+    assert forwarded.status is OutcomeStatus.DENIED
+    outcome = await w.services.publication.commit(
+        view.request_id, now=NOW + timedelta(seconds=20))
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "awaiting-approvals"
+    assert (await w.store.record_for(account=ACCT_R)).person_id == PERSON_B
+    assert not w.store.aliases
+
+
 async def test_refusal_and_cancellation_leave_the_accounts_unlinked():
     clock, now = _clock_holder()
     w = _world(clock=now)
@@ -311,6 +333,11 @@ async def test_refusal_and_cancellation_leave_the_accounts_unlinked():
     assert answer.status is OutcomeStatus.COMPLETE
     assert (await w.links.get(refused.request_id)).state.value == "refused"
     assert (await w.store.record_for(account=ACCT_R)).person_id == PERSON_B
+    refused_commit = await w.services.publication.commit(
+        refused.request_id, now=NOW + timedelta(seconds=20))
+    assert refused_commit.status is OutcomeStatus.DENIED
+    assert refused_commit.detail == "request-refused"
+    assert (await w.store.record_for(account=ACCT_R)).person_id == PERSON_B
 
     clock[0] = NOW
     cancelled = await _requested(w.holder, request_id="cancelled-request")
@@ -321,6 +348,10 @@ async def test_refusal_and_cancellation_leave_the_accounts_unlinked():
         action="cancel", nonce=nonce)
     assert result.outcome.status is OutcomeStatus.COMPLETE
     assert (await w.links.get(cancelled.request_id)).state.value == "cancelled"
+    cancelled_commit = await w.services.publication.commit(
+        cancelled.request_id, now=NOW + timedelta(seconds=20))
+    assert cancelled_commit.status is OutcomeStatus.DENIED
+    assert cancelled_commit.detail == "request-cancelled"
 
 
 async def test_expiry_denies_late_decisions_and_publishes_nothing():
@@ -335,6 +366,9 @@ async def test_expiry_denies_late_decisions_and_publishes_nothing():
     late = await _approve_discord(
         w.holder, view.request_id, nonce, authenticated_at=NOW + timedelta(minutes=5))
     assert late.outcome.status is OutcomeStatus.DENIED
+    assert (await w.store.record_for(account=ACCT_R)).person_id == PERSON_B
+    late_commit = await w.services.publication.commit(view.request_id, now=clock[0])
+    assert late_commit.status is OutcomeStatus.DENIED
     assert (await w.store.record_for(account=ACCT_R)).person_id == PERSON_B
 
 

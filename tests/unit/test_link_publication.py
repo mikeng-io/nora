@@ -336,7 +336,8 @@ async def test_member_supports_merge_and_a_later_roster_departure_keeps_grant():
 
 
 async def test_unlink_is_holder_exact_and_drops_derived_sessions():
-    store, _backend, _topology, registry, links, svc = await _linked_world()
+    store, backend, _topology, registry, links, svc = await _linked_world()
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=PERSON_B)
     await _approved(svc, links)
     outcome = await svc.commit("synthetic-request", now=NOW + timedelta(seconds=3))
     assert outcome.status is OutcomeStatus.COMPLETE
@@ -376,6 +377,11 @@ async def test_unlink_is_holder_exact_and_drops_derived_sessions():
     assert await store.record_for(account=ACCT_I) is not None  # other account kept
     assert PERSON_A not in registry.sessions
     assert (await store.person(PERSON_A)) is not None  # history and person stay
+    # The canonical alias remains, and the consolidated grant stays the
+    # survivor's: unlink restores no pre-link permission snapshot.
+    assert await store.canonical_person(PERSON_B) == PERSON_A
+    rows = await backend.relations_on(scope=ROOM)
+    assert ("grant_view", PERSON_A) in rows and ("grant_view", PERSON_B) not in rows
 
 
 async def test_concurrent_commits_on_one_request_publish_once():
@@ -388,6 +394,10 @@ async def test_concurrent_commits_on_one_request_publish_once():
     assert all(o.status is OutcomeStatus.COMPLETE for o in outcomes)
     assert await store.canonical_person(PERSON_B) == PERSON_A
     assert len(store.people) == 1
+    # A replayed commit answers the recorded outcome — nothing publishes twice.
+    again = await svc.commit("synthetic-request", now=NOW + timedelta(seconds=3))
+    assert again.status is OutcomeStatus.COMPLETE
+    assert len(store.people) == 1 and len(store.aliases) == 1
 
 
 async def test_commit_of_an_unapproved_request_never_uses_live_state_to_skip_approval():
@@ -443,6 +453,26 @@ async def test_interruption_after_holds_before_transition_remains_recoverable(re
     assert (await links.get("synthetic-request")).state is LinkState.COMMITTED
     assert not await store.identity_held(PERSON_A)
     assert not await store.identity_held(PERSON_B)
+
+
+async def test_a_retried_commit_whose_recorded_effect_changed_is_refused():
+    """A crash left a journaled publish; the retry recomputes the loser's
+    fact set and finds it changed — the journaled effect refuses the new
+    plan rather than silently publishing a different consolidation."""
+    store, backend, topology, registry, links, svc = await _linked_world()
+    now = datetime.now(UTC)
+    await _approved(svc, links, now=now - timedelta(seconds=3))
+    interrupted = LinkPublicationService(store, backend, topology, registry,
+                                          _CrashBeforeTransition(links))
+    result = await interrupted.commit("synthetic-request", now=now)
+    assert result.status is OutcomeStatus.UNAVAILABLE
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=PERSON_B)
+    outcome = await svc.commit("synthetic-request", now=now)
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "effect-conflict"
+    assert await store.canonical_person(PERSON_B) == PERSON_B
+    rows = await backend.relations_on(scope=ROOM)
+    assert ("grant_view", PERSON_B) in rows and ("grant_view", PERSON_A) not in rows
 
 
 async def test_missing_retiring_kratos_identity_never_counts_as_confirmed_revocation():
