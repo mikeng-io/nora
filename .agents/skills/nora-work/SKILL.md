@@ -17,11 +17,13 @@ This skill is the entry router; it does not repeat the other procedures.
 2. **Triage to a route.** Apply the route table and full triggers in
    `references/lifecycle.md`, and record exactly one route: in the brief, or in
    the PR body for direct and light work. `clarify` stops and asks Mike.
-   Check: the route is the highest one any trigger requires.
+   Check: the route is the highest one any trigger requires; the first
+   independent reviewer confirms it, and you never confirm your own route.
 3. **Check the gate before acting.** Find the transition the next action
    crosses. Confirm that the previous gate's output, as the route requires it,
-   exists: an approved brief and plan before a dispatch on standard or full, a
-   receipt before verify, a reviewed head before merge. When it is missing,
+   exists. On standard and full: the approved brief and plan before a dispatch,
+   and the execution receipt before verify. On light: a brief in the PR body.
+   On every route: a reviewed head before merge. When it is missing,
    halt and report what is missing. Never produce a missing gate output yourself.
    Check: the next action's input artifact exists and was checked by someone
    other than its producer.

@@ -17,10 +17,12 @@ instead of steps 2–3; item marking, severity and follow-through are there too.
    approved amendments before reading prior findings; retain this basis on
    re-checks and name the selected subset. State any inferred scope.
    Check: the requested result is understandable without deriving intent from
-   the candidate. On the standard and full routes, an approved brief exists,
-   and a candidate arrives with its execution receipt; a missing one is returned
-   unreviewed. On the light route, the PR body carries a brief. Missing material
-   requirements return to scoping.
+   the candidate. On the standard and full routes, the brief and plan carry
+   the operator's recorded approval and the candidate arrives with its execution
+   receipt; a missing one is returned unreviewed. On the light route, the PR body
+   carries a brief. On every route, confirm the recorded route against the
+   triggers in `nora-work/references/lifecycle.md`; a lower route is a finding.
+   Missing material requirements return to scoping.
 2. **Inspect the candidate.** Verify checkout/head/status; read
    `git diff <base>...<head>`. A repair re-check uses
    `git diff <previously-reviewed-head>..<head>` plus unresolved findings and
