@@ -126,8 +126,8 @@ a graph entity or inferred same-as claim never establishes account ownership.
 An intention names its **owner** (Nora, or the person whose request she holds)
 and who it is **owed to**, and has one of two **forms**:
 
-- **achieve** — closes when its **done-when** condition is met by a recorded
-  item;
+- **achieve** — closes when its **done-when** condition is met by the recorded
+  witness its form requires (the conditions table below);
 - **maintain** — holds while its **holds-while** condition stays true, is
   reviewed at its **review time**, and advances through child achieve
   intentions that serve it.
@@ -159,14 +159,22 @@ its review records unknown. It has no verdict of its own: its track record is
 its children's verdicts.
 
 **Conditions** are one of a closed set of forms, each evaluated by code to
-true, false or unknown:
+true, false or unknown. The form decides the witness and who writes the ending:
 
-| form | holds when | its witness, written as closed-by |
-|---|---|---|
-| **event match** | an item of a given kind, from or about given entities, is recorded | that item |
-| **predicate** | an aggregate or current head meets a test, such as a poll having a winner | the aggregate revision that meets it |
-| **deadline** | a time has passed | none: verify records the clock instant with the outcome |
-| **source health** | the sources the condition depends on were healthy; without it, absence is unknown, never false | the health items over the interval |
+| what it waits for | form | closing witness | written by |
+|---|---|---|---|
+| Nora's own work done | event match on her act | the act's outcome item reporting done | observe's compute |
+| a person's response, such as accepting a suggestion | event match on their item | the person's explicit item: the acceptance, the pick, the confirmation | observe's compute |
+| a state reached | predicate over an aggregate or current head, such as a poll having a winner | the aggregate revision that meets it | observe's compute |
+| time passing | deadline | the clock instant, with the health of the sources it depended on | study's verify; no closed-by edge |
+| nothing code can evaluate | untyped | none | study's verify, at its deadline |
+
+**A deadline never achieves.** Time passing is not the promised thing done: a
+deadline may be a drop-when or the end of an intention's window, never its
+done-when. When a **drop-when** deadline passes, the intention is dropped. When
+the **window** of a typed achieve intention ends with neither its done-when nor
+its drop-when met, it is leaked — or unknown, if a source it depended on was
+unhealthy. Untyped and maintain intentions keep their own endings below.
 
 A condition in none of these forms is **untyped** and cannot close
 mechanically. An untyped achieve intention must carry a deadline; when it

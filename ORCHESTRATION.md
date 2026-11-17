@@ -69,20 +69,43 @@ delegate, reconcile evidence, triage, land and report.
 
 ## The lifecycle
 
-Stages apply as a change needs them; a small one passes several in one sitting.
+The operator-facing orchestrator owns the whole outcome across workers and
+sessions. `nora-work` is the entry router; it loads the procedure for the next
+action. This is a soft lifecycle: responsibilities, not mandatory documents or
+phase gates. Combine or skip inapplicable/already-satisfied steps; honor explicit
+operator exceptions and existing required checks/holds. Note material omissions
+briefly in the work/PR, not in a stage ledger.
 
-| stage | answers | owner | produces | exits when |
-|---|---|---|---|---|
-| **intake** | is this architecture or code, and where does it belong? | `nora-design` §1; `nora-decision` for issues | an issue, or a direct brief recorded in the PR | outcome, scope and non-goals are pinned to a revision |
-| **design** (architecture changes only) | what is the system? | `nora-design` | a bundle edit, before or with the code | the bundle change is reviewed per its tier |
-| **decide** | does this need a ruling on record? | `nora-decision` | a DEC row or ADR | numbered at merge |
-| **dispatch** | how is it cut, briefed and assigned? | `nora-dispatch` | units, briefs, acceptance in the issue or the PR-recorded brief | every acceptance statement is covered by a unit |
-| **build** | — | the builder, with `nora-land`, `nora-structure`, `nora-test`, `nora-tool`, `nora-runtime-skill` | commits on a branch | the brief's named checks ran once |
-| **verify** | does it do what it claims? | `nora-prove-fix`, `nora-eval`, the gate in `nora-land` | evidence | each obligation is met, unmet or unavailable, with evidence |
-| **review** | does it hold up to someone else? | `nora-review`, `REVIEW.md` | findings and a verdict | no BLOCKER, within two rounds |
-| **land** | — | `nora-land` | a merge commit | on master and read back |
-| **release and deploy** | — | `nora-release`, `nora-deploy`, `nora-readback` | a release; the live service | released; live state read back when acceptance requires it |
-| **close and learn** | is the outcome delivered, and did the process itself fail anywhere? | the orchestrator | the issue updated; the owning skill or root document edited | obligations reconciled; a process failure (an unreadable brief, a skipped rehearsal, a rule nobody loaded) fixed in its owner in the same arc |
+An implementation request continues from design through execution, verification
+and agreed delivery; finishing a bundle is not completion. A design-only request
+stops at its agreed design result. Design agreement within an implementation task
+allows the authorized next work; it does not grant new spending or deployment.
+
+| stage | responsibility | procedure | sufficient result |
+|---|---|---|---|
+| **triage** | understand the request and current position | `nora-work` | outcome, authority and missing context understood |
+| **shape** | define intent, completion and boundaries | `nora-dispatch`; `nora-design` for architecture; `nora-decision` for records | one current work brief, with design links as needed |
+| **execute** | do or delegate the next bounded work | `nora-dispatch`, `nora-land`; specialist skills as needed | inspectable work and remaining obligations |
+| **verify** | compare the result with the brief | `nora-test`, `nora-prove-fix`, `nora-eval`, `nora-review`, `nora-readback` as applicable | each required result met, unmet or unavailable with evidence |
+| **deliver** | land and deliver to the agreed boundary | `nora-land`, `nora-release`, `nora-deploy` as applicable | merge/publication/live evidence only where required |
+| **resolve or resume** | close the outcome or preserve its continuation | `nora-dispatch` | evidenced completion, or a short handoff with remaining work |
+
+This is skill-guided reinforcement. Existing tools perform the operations;
+there is no lifecycle engine, phase lock or automatic session wakeup. Scripts
+are for useful repeated reads/writes, not for deciding scope or completion.
+
+## Coordination and decisions
+
+The operator owns intended outcomes, scope amendments and explicit exceptions.
+The outcome orchestrator chooses units, workers, review lenses/tier and next
+steps within that authority, and reconciles evidence before closing work.
+Builders implement their assigned slice; reviewers judge it without adding
+requirements or authorizing repairs. Required hosted checks remain applicable.
+
+For shared designs, interfaces or migrations, read related active work and T3
+threads before assigning writes; `nora-dispatch` owns that coordination procedure.
+A thread link is context access, not shared memory or automatic synchronization.
+One outcome owner integrates; one writer owns a shared seam at a time.
 
 ## Execution tier
 
@@ -123,10 +146,14 @@ needs checks on what the upstream change touches.
 
 ## Intent, evidence and completion
 
-- Pin the outcome, scope, non-goals and acceptance to the issue or the
-  operator's brief, recorded in the PR for direct work, before editing; the
-  design holds the invariants they link to. Never
-  create an issue or contract file only to repeat it.
+- GitHub Project owns roadmap; Linear owns execution. A **work brief** in its issue description
+  combines intent, observable completion conditions and boundaries, with design
+  links as needed. The model chooses implementation details; no separate plan,
+  spec or PRD is required. Small direct work may use the PR-recorded brief.
+- Read the current brief, parent intent and actual blockers before launch,
+  intake and handoff; record the work link and the source revision or update time read.
+  Keep the description concise and current. Comments hold discussion and
+  precise evidence, not the only current acceptance or another live queue.
 - Agreement to a concrete proposed fix means implement it. File only work
   explicitly deferred from this slice, after checking for an existing home.
 - Judge each obligation met, unmet or unavailable against the real source or
@@ -138,8 +165,11 @@ needs checks on what the upstream change touches.
   requirement. Never soften an obligation to get a pass.
 - Close the slice when every obligation is evidenced and no BLOCKER remains,
   then stop. Record limitations without claiming them delivered; update the
-  issue's remaining scope; close an issue only for its whole outcome. Reopen a
+  work item's remaining scope; close it only for its whole outcome. Reopen a
   settled result only on new evidence or a changed requirement.
+- A worker's stop point is not the orchestrator's completion condition. After
+  intake, reconcile the whole outcome and continue authorized work; a new
+  operator-facing session inherits that responsibility and the existing holds.
 
 ## Choosing a worker
 
@@ -165,44 +195,38 @@ endpoint for the same vendor is not independence. An orchestrator that
 implements directly is the builder. If no independent reviewer is available,
 block or get the operator's waiver.
 
-**A brief** follows `nora-dispatch`: one bounded outcome a reviewer can read in
-one sitting, in complete sentences a fresh agent can follow, linking what the
-repo holds instead of pasting or abbreviating it. It names acceptance (in the
-issue or the PR-recorded brief, never only a temporary file), input revisions, allowed
-paths, non-goals, worktree/base/branch, skills, named checks and the stop
-point. Builders run the named checks once and stop at the handoff; the
-orchestrator owns acceptance. No extra handling, tests, reviewers or scope:
-report an adjacent concern instead.
-Review briefs include the claims, the diff command and **do not spawn
-sub-agents; do the work yourself**. In a T3 delegated worktree start with
-`git fetch origin && git switch -c <type>/<slug> origin/master`; never create a
-second worktree. Reviews check out the exact review head.
+**Execution briefs and handoffs** follow `nora-dispatch`. The worker owns its
+assigned slice; the orchestrator owns integration and final acceptance. Reviews
+run on the assigned base/head and do not spawn agents. Prepared worktrees keep
+their assigned base; do not create a second worktree or restart dependent work
+from master.
 
 ## Bounded independent review
 
-Reviewers report every finding they can ground; NONE is valid. Each names a
-reachable path, the harm, the failed C and whether this diff caused it, and
-pre-existing findings are marked. The orchestrator triages them and carries at
-most six into the PR, most severe first.
+`REVIEW.md` owns review scope, finding quality and the return format;
+`nora-review` owns the steps. The orchestrator preserves all grounded findings
+in the review receipt, and groups at most six classes in the PR summary with
+a link to the rest. Non-blocking findings are useful input, not new scope.
 
 | Verdict | Consequence |
 |---|---|
-| BLOCKER: this diff causes reachable wrong output, data loss, disclosure, crash or a weakened gate | Fix and verify; only this verdict buys another round |
+| BLOCKER: the candidate materially fails agreed completion, or introduces reachable data loss, disclosure, crash or a weakened required gate | Fix and verify; non-blocking findings do not buy another round |
 | FIX-IF-CHEAP: a real in-diff defect with bounded harm | Fix if it takes minutes within the slice; otherwise record a limitation; no new round |
-| ISSUE: real but pre-existing or out of scope | Use the existing issue; file only actionable work with no home (`nora-decision`); never blocks |
+| ISSUE: real but pre-existing outside agreed completion, or out of scope | Use the existing Linear work item or GitHub defect report; file only actionable work with no home (`nora-decision`); never blocks |
 | DROP: hypothetical, contrived, style or unrelated | One-line disposition |
 
-- Severity follows reachable consequence, not recurrence, confidence or repair
-  effort. One remedy for several instances is one defect class: group siblings
-  on the first report, and do not buy rounds by finding new inputs for a known
-  class. A repair-induced finding names its predecessor and its distinct
-  failure.
+- Severity measures consequence; disposition determines action. Preserve the
+  source finding when triaging it. A low-severity observation cannot become a
+  blocker merely by recurring; a material failure needs its scenario and impact.
 - Verify each finding at the cited line with the right check; production fixes
   follow `nora-prove-fix`. A clean review does not replace the gate or a
   required live read-back.
-- A round with no BLOCKER ends review. **At most two rounds**; round two checks
-  only `git diff <reviewed-sha>..HEAD`. A BLOCKER left after round two is fixed
-  and proved, then the orchestrator rereads the spec and reports; only the
+- With no BLOCKER or required evidence gap, end review. **At most two rounds**;
+  round two checks `git diff <reviewed-sha>..HEAD`, unresolved findings and
+  previously unavailable required evidence, even when the diff is empty. Waiting
+  for evidence is not a round; a requested re-check consumes the next round.
+  A BLOCKER or required evidence gap left after round two is addressed within scope
+  and measured, then the orchestrator rereads the spec and reports; only the
   operator authorises a third round.
 - Record review tier and triage in the PR's Gate section. Keep the source
   finding when adjudicating it; never silently downgrade a blocker. Waiving an
@@ -215,33 +239,42 @@ most six into the PR, most severe first.
 | This policy | Assignment, capability, review and ownership rules |
 | Design bundle | The high-level architecture and its rationale (`nora-design`); never a plan or a status report |
 | ADR | One decision, its alternatives and what it cost |
-| Issue | One bounded outcome: scope, non-goals, acceptance, dependencies |
-| Roadmap card | A capability outcome and its horizon; never an execution queue |
+| Linear issue | One work brief: intent, completion conditions and boundaries; native ownership/dependencies |
+| Linear project | Optional bounded delivery grouping; not a second roadmap |
+| GitHub Project roadmap item | Capability outcome, horizon and outcome-level progress; links Linear execution |
+| GitHub issue | Defect/problem or community request reports and their disposition; not execution tasks |
 | Run / review receipt | Actual provider, model, toolset, options, fit reason, run reference, input revision and evidence |
 
-- An issue links the design it builds and owns its scope and acceptance, never
-  a copy of the design; a Project card is a view of its issue. Assignees,
-  milestones, relationships and Development links stay native in GitHub; tiers
-  live with the issue's readiness and run brief; receipts live in the run
-  system, never as committed run files or a task database.
+- Use native ownership/dependencies and link evidence; do not copy plans,
+  receipts or tracker state into parallel files. Preserve existing work IDs,
+  owners and holds until verified successors are linked during migration.
+- Roadmap outcomes, report disposition and execution status are separate. Link
+  them; do not mirror their descriptions or statuses. Roadmap changes follow
+  [roadmap conventions](docs/maintainers/conventions.md#roadmap).
+- AgentSession completion, PR merge and child closure are not whole-outcome
+  acceptance. A skill or MCP connection does not install unattended execution
+  or grant spending authority.
 
-Task states describe issue and run readiness, not Project fields:
+Task states describe work and run readiness, not agent session states:
 **Inbox** may be incomplete (blank tiers mean unclassified); **Ready** has a
 bounded outcome, resolvable acceptance, available dependencies and
 permissions, a priority and tiers; **Running** links a real launched run;
-**Review** links the run and inspectable evidence; **Blocked** links its issue
+**Review** links the run and inspectable evidence; **Blocked** links its work item
 and the reason and unblock step, never fabricated Ready metadata; **Done** has
 acceptance evidence for the whole slice, including merge or live read-back when
 specified. Cancelled or superseded work closes as not planned with its reason;
-partial work references its parent issue without closing it.
+partial work references its parent without closing it. Linear's configured
+workflow names are read back rather than assumed to match these labels.
 
 ## Interchange shape
 
-`.agents/orchestration.schema.json` (JSON Schema 2020-12) owns the status,
-priority and tier vocabularies and validates policy, task and run shapes; the
-`kind` field selects which. It checks shape only, not link resolution, worker
+The optional `.agents/orchestration.schema.json` interchange describes policy,
+task and run records for consumers that use it; it does not govern live Linear
+states or require agents to produce a record at each stage. The `kind` field
+selects the shape. It checks shape only, not link resolution, worker
 competence, independence or acceptance: read those back. Task metadata is a small
-projection, not the GitHub API payload. Unknown properties are rejected except in
+projection, not a tracker API payload. `issue_ref` accepts the owning Linear
+work URL; the schema does not install a tracker integration. Unknown properties are rejected except in
 run `options`. References are absolute URIs; use immutable revisions where content
 can change. `tests/architecture/test_orchestration_contract.py` validates this
 policy and the synthetic examples below, which resolve to no real evidence.
@@ -252,7 +285,7 @@ inbox:
   status: Inbox
 ready: &ready
   kind: task
-  issue_ref: https://github.com/example/nora-synthetic/issues/1
+  issue_ref: https://linear.app/example/issue/SYN-1
   status: Ready
   priority: P2
   execution_tier: scoped
@@ -272,12 +305,12 @@ done:
   evidence_refs: [https://example.invalid/acceptance/accepted-head]
 blocked:
   kind: task
-  issue_ref: https://github.com/example/nora-synthetic/issues/1
+  issue_ref: https://linear.app/example/issue/SYN-1
   status: Blocked
   blocked_ref: https://example.invalid/tasks/1#reason-and-unblock
 resolved_run:
   kind: run
-  issue_ref: https://github.com/example/nora-synthetic/issues/1
+  issue_ref: https://linear.app/example/issue/SYN-1
   run_ref: https://example.invalid/runs/build
   input_revision: synthetic-commit-a
   selection:

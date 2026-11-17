@@ -1,5 +1,5 @@
 name: Maintainers — Gap (design-anchored — a design document already specified this)
-description: "Maintainers only: The bundle and section exist; this issue tracks building to that spec."
+description: "Maintainers only: The bundle and section exist; report a concrete discrepancy against that design; Linear owns execution."
 title: "Area: "
 labels: ["design-anchored"]
 body:
@@ -41,7 +41,7 @@ body:
     id: design
     attributes:
       label: Design anchor
-      description: "`design/<bundle>/<subject>.md` «<heading>» — the section this issue builds."
+      description: "`design/<bundle>/<subject>.md` «<heading>» — the section establishing the expected behavior."
       placeholder: design/self-growth/character.md
     validations:
       required: true
@@ -82,6 +82,6 @@ body:
     id: depends
     attributes:
       label: Depends on / feeds
-      description: Cross-issue dependencies; "#TBD" until the other issue exists.
+      description: Related reports or admitted Linear work, if any; do not create placeholder issues.
     validations:
       required: true

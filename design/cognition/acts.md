@@ -23,12 +23,28 @@ recorded, and able to close an intention the same way.
 - An uncertain outcome — the call timed out after it may have taken effect — is
   never replayed blindly. It is read back by its identity first; until then it
   is unknown.
-- Every act carries a stable identity checked before it is performed, so the
-  same act is never performed twice. Deliveries also pass the delivery
-  arbitration; effects and delegations pass their area's admission.
-- An act closes an intention only through an outcome item that reports done,
-  matched by observe's compute. A failed outcome closes nothing: it is a
+- Deliveries also pass the delivery arbitration; effects and delegations pass
+  their area's admission.
+- An act's outcome closes only an intention whose condition is that act being
+  done; an intention waiting on a person or a state closes on that witness
+  instead ([graph](graph.md)). A failed outcome closes nothing: it is a
   stimulus, and decide retries or drops the intention, citing the failure.
+- Public publication on a surface without a unit records its outcome in its
+  own ledger, not as a graph item.
+
+**What identity guarantees.** Every act carries a stable identity, checked
+before it is invoked, so Nora never *invokes* the same act twice. Whether the
+outside effect happens once depends on the destination, and each executor
+declares which guarantee it provides:
+
+| guarantee | means | requires |
+|---|---|---|
+| **at-most-once invocation** | Nora never starts the same act twice | always |
+| **idempotent effect** | repeating the call adds no second effect | the destination accepts an idempotency key |
+| **read-back reconciliation** | an uncertain outcome is settled by reading the destination | the destination can be read back by identity |
+| **unknown** | neither: an uncertain outcome stays unknown and is never retried | — |
+
+No executor claims an exactly-once effect its destination cannot provide.
 
 **Who delivers**
 
