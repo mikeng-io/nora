@@ -417,10 +417,8 @@ async def portal_world(pg_module_url, ory, aiohttp_client, tmp_path):
 
             @web.middleware
             async def record(request, handler):
-                # A challenge binds to its adapter delivery by request order
-                # per platform; the code the page expects is found through the
-                # rendered challengeId. Reading the body is safe: aiohttp
-                # caches it for the handler.
+                # Delivery order and rendered challengeId bind the page's code.
+                # aiohttp caches the body for the handler.
                 request_platform = None
                 if (request.method == "POST"
                         and request.path == "/app/v1/otp/request"):
@@ -477,6 +475,213 @@ def _code(sent: list) -> str:
     return re.search(r"\b(\d{6})\b", sent[-1][1]).group(1)
 
 
+async def _signal_portal(browser, world, base, person_a, person_b):
+    services = world.services
+    # ---- anonymous access refuses, over page and API ----
+    await browser.cmd(cmd="new", name="anon")
+    await browser.cmd(cmd="goto", name="anon", url=f"{base}/en/documents")
+    landed = await browser.cmd(cmd="wait_url", name="anon", regex=r"/en/login")
+    assert landed["matched"], f"anonymous stayed at {landed['url']}"
+    anon_api = await browser.cmd(cmd="api", name="anon",
+                                 url=f"{base}/api/v1/documents")
+    assert anon_api["status"] == 401
+
+    # ---- Signal code sign-in: UI -> Auth.js credentials -> real backend ----
+    await browser.cmd(cmd="new", name="a",
+                      headers={"x-forwarded-for": "198.51.100.11"})
+    first = await browser.cmd(cmd="goto", name="a", url=f"{base}/en/login")
+    assert first["status"] == 200
+    # Managed backend: no development picker even under `next dev`.
+    assert not (await browser.cmd(cmd="visible", name="a",
+                                  text="Development sign-in"))["visible"]
+    assert (await browser.cmd(cmd="visible", name="a",
+                              text="Sign in with Discord"))["visible"]
+    await browser.cmd(cmd="fill", name="a", label="Your phone number",
+                      value="90000101")
+    code = await _send_code(browser, world, "a", world.sig_adapter.sent)
+    target, _text = world.sig_adapter.sent[-1]
+    assert target.conversation_id == SIG_A.value
+
+    # A wrong code refuses through the same genuine callback.
+    wrong = "000000" if code != "000000" else "111111"
+    await browser.cmd(cmd="fill", name="a", label="The code", value=wrong)
+    await browser.cmd(cmd="click_role", name="a", role="button", text="Sign in")
+    refused = await browser.cmd(cmd="wait_text", name="a",
+                                text="That code didn't work", timeout_ms=25_000)
+    if not refused["visible"]:
+        await _dump_browser_state(browser, world, "a", base)
+    assert refused["visible"], "a wrong code was not refused"
+    assert (await browser.cmd(cmd="api", name="a",
+                              url=f"{base}/api/v1/documents"))["status"] == 401
+
+    await browser.cmd(cmd="fill", name="a", label="The code", value=code)
+    try:
+        await _verify_code(browser, world, "a")
+    except AssertionError:
+        await _dump_browser_state(browser, world, "a", base)
+        raise AssertionError(
+            f"sign-in did not reach /en/today (traffic in {EVIDENCE})") from None
+
+    cookies = (await browser.cmd(cmd="cookies", name="a"))["cookies"]
+    assert "authjs.session-token" in {c["name"] for c in cookies}
+    session = json.loads((await browser.cmd(
+        cmd="api", name="a", url=f"{base}/api/auth/session"))["body"])
+    managed = session["user"]["managedIdentity"]
+    assert managed["authentication"]["method"] == "signal_code"
+    assert managed["authentication"]["proofIssuer"] == "nora-otp"
+    assert managed["authentication"]["account"] == ident_json(SIG_A)
+    assert managed["authentication"]["sessionId"] == session["user"]["sessionId"]
+
+    # Retained binding and canonical identity agree with SQL/Kratos/Keto.
+    binding = await world.binding(SIG_A)
+    assert managed["binding"] == binding
+    assert await services.bindings.canonical_person(person_a) == person_a
+    relations = await services.backend.scope_relations_on(scope=ROOM_A)
+    assert person_a in {r.subject for r in relations if r.relation == "member"}
+    operation_id = "authentication:" + hashlib.sha256(json.dumps(
+        ["portal", managed["authentication"]["sessionId"]]).encode()).hexdigest()
+    recorded = await services.bindings.operation(operation_id)
+    assert recorded is not None and recorded.state is OperationJournalState.COMPLETE
+    assert recorded.snapshot["authentication"]["account"] == ident_json(SIG_A)
+    assert recorded.snapshot["binding"] == binding
+
+    # ---- the scoped portal view, through the browser ----
+    await browser.cmd(cmd="goto", name="a", url=f"{base}/en/documents")
+    listed = await browser.cmd(cmd="wait_text", name="a", text="A note")
+    if not listed["visible"]:
+        (EVIDENCE / "a-documents.html").write_text(
+            (await browser.cmd(cmd="html", name="a"))["html"])
+        (EVIDENCE / "a-pageerrors.txt").write_text(
+            "\n".join((await browser.cmd(cmd="pageerrors", name="a"))["errors"]))
+    assert listed["visible"], f"documents page missing 'A note' (html/pageerrors in {EVIDENCE})"
+    assert not (await browser.cmd(cmd="visible", name="a", text="B note"))["visible"]
+    await browser.cmd(cmd="screenshot", name="a",
+                      path=str(EVIDENCE / "signal-documents.png"))
+
+    # A browser-supplied personId is dropped: only the session's own scope returns.
+    cross = await browser.cmd(cmd="api", name="a",
+                              url=f"{base}/api/v1/documents?personId={person_b}")
+    assert cross["status"] == 200
+    assert {d["title"] for d in json.loads(cross["body"])["documents"]} == {"A note"}
+    # Body and route bypass attempts refuse at the same boundary.
+    assert (await browser.cmd(cmd="api", name="a", method="POST",
+                              url=f"{base}/api/v1/documents",
+                              body="{}"))["status"] == 405
+    membership = json.dumps({
+        "operation_id": f"op-{uuid4()}", "kind": "set_membership",
+        "target": {"kind": "membership", "person_id": person_b,
+                   "scope": {"kind": "room", "id": ROOM_W.id}},
+        "payload": {"member": True},
+        "observed_revisions": {"authority": "observed"}})
+    denied_op = await browser.cmd(cmd="api", name="a", method="POST",
+        url=f"{base}/api/v1/management/operations", body=membership,
+        headers={"Origin": base, "Content-Type": "application/json"})
+    assert denied_op["status"] == 403, denied_op["body"]
+    assert (await browser.cmd(cmd="api", name="a",
+                              url=f"{base}/api/v1/not-a-route"))["status"] == 404
+    world.note("signal-portal", session="managedIdentity+binding verified",
+               scoped_view="A note only", cross_viewer="param dropped, POST 403/405")
+
+    return binding
+
+
+async def _whatsapp_portal(browser, world, base):
+    # ---- WhatsApp code sign-in through the same UI ----
+    await browser.cmd(cmd="new", name="b",
+                      headers={"x-forwarded-for": "198.51.100.12"})
+    await browser.cmd(cmd="goto", name="b", url=f"{base}/en/login")
+    await browser.cmd(cmd="click_text", name="b", text="WhatsApp")
+    # A dead island leaves React's onChange unfired but the label click
+    # still toggles the DOM radio — and DOM state is what the form posts.
+    picked = await browser.cmd(cmd="eval", name="b", expression=(
+        "document.querySelector('input[name=platform][value=whatsapp]').checked"))
+    if not picked["value"]:
+        await browser.cmd(cmd="eval", name="b", expression=(
+            "document.querySelector('input[name=platform][value=whatsapp]').click()"))
+    await browser.cmd(cmd="fill", name="b", label="Your phone number",
+                      value="90000103")
+    wa_code = await _send_code(browser, world, "b", world.wa_adapter.sent,
+                               platform="whatsapp")
+    wa_target, _ = world.wa_adapter.sent[-1]
+    assert wa_target.conversation_id == "85290000103@s.whatsapp.net"
+    await browser.cmd(cmd="fill", name="b", label="The code", value=wa_code)
+    await _verify_code(browser, world, "b")
+    wa_session = json.loads((await browser.cmd(
+        cmd="api", name="b", url=f"{base}/api/auth/session"))["body"])
+    wa_managed = wa_session["user"]["managedIdentity"]
+    assert wa_managed["authentication"]["method"] == "whatsapp_code"
+    assert wa_managed["authentication"]["account"] == ident_json(WA_B)
+    assert wa_managed["binding"] == await world.binding(WA_B)
+    await browser.cmd(cmd="goto", name="b", url=f"{base}/en/documents")
+    assert (await browser.cmd(cmd="wait_text", name="b", text="B note"))["visible"]
+    assert not (await browser.cmd(cmd="visible", name="b", text="A note"))["visible"]
+    await browser.cmd(cmd="screenshot", name="b",
+                      path=str(EVIDENCE / "whatsapp-documents.png"))
+    world.note("whatsapp-portal", scoped_view="B note only")
+
+
+
+async def _server_portal_boundaries(browser, world, base, person_a, person_b, binding):
+    client = world.client
+    # ---- server-side negative reads over the same boundary ----
+    assert (await client.get(f"{DOCUMENTS}?personId={person_a}")).status == 401
+    assert (await client.get(
+        f"{DOCUMENTS}?personId={person_a}", headers=BEARER)).status == 401
+    path = f"{DOCUMENTS}?personId={person_b}"
+    assert (await client.get(path, headers=world.session_headers(
+        SIG_A, binding=binding, path=path, http="GET"))).status == 403
+    own = await client.get(f"{DOCUMENTS}?personId={person_a}",
+        headers=world.session_headers(SIG_A, binding=binding,
+            path=f"{DOCUMENTS}?personId={person_a}", http="GET"))
+    assert own.status == 200
+    assert {d["title"] for d in (await own.json())["documents"]} == {"A note"}
+
+    # ---- no private key or admin credential reaches a browser surface ----
+    html = (await browser.cmd(cmd="html", name="a"))["html"]
+    seen = (await browser.cmd(cmd="responses", name="a"))["responses"] + \
+        (await browser.cmd(cmd="responses", name="b"))["responses"]
+    blob = html + json.dumps(seen)
+    for secret in (OTP_TOKEN, WA_TOKEN, "generated-bridge-token", PORTAL_SECRET,
+                   AUTH_SECRET, "Nora-Authentication ", "nora-mit-",
+                   world.ory.kratos_admin, world.ory.keto_write):
+        assert secret not in blob, f"private material surfaced: {secret[:16]}"
+
+
+
+async def _unlink_browser(browser, world, base, person_a, person_b, binding):
+    client, services = world.client, world.services
+    # ---- exact unlink kills the same browser session; B is unaffected ----
+    other = json.dumps({"operation_id": f"op-{uuid4()}",
+                        "expected_person": person_b}).encode()
+    assert (await client.post(UNLINK, data=other, headers=world.session_headers(
+        SIG_A, binding=binding, path=UNLINK, body=other))).status == 403
+    exact = json.dumps({"operation_id": f"op-{uuid4()}",
+                        "expected_person": person_a}).encode()
+    assert (await client.post(UNLINK, data=exact, headers=world.session_headers(
+        SIG_A, binding=binding, path=UNLINK, body=exact))).status == 200
+    assert await services.bindings.record_for(account=SIG_A) is None
+
+    await browser.cmd(cmd="goto", name="a", url=f"{base}/en/documents")
+    dead = await browser.cmd(cmd="wait_url", name="a", regex=r"/en/login\?denied=1")
+    assert dead["matched"], f"revoked session landed at {dead['url']}"
+    assert (await browser.cmd(cmd="wait_text", name="a",
+                              text="not on the list"))["visible"]
+    assert (await browser.cmd(cmd="api", name="a",
+                              url=f"{base}/api/v1/documents"))["status"] == 401
+    await browser.cmd(cmd="screenshot", name="a",
+                      path=str(EVIDENCE / "after-unlink.png"))
+
+    await browser.cmd(cmd="goto", name="b", url=f"{base}/en/documents")
+    assert (await browser.cmd(cmd="wait_text", name="b", text="B note"))["visible"]
+    alive = json.loads((await browser.cmd(
+        cmd="api", name="b", url=f"{base}/api/auth/session"))["body"])
+    assert alive["user"]["managedIdentity"]["binding"] == await world.binding(WA_B)
+    assert (await client.post(CHECK, data=b"", headers=world.session_headers(
+        WA_B, binding=await world.binding(WA_B), path=CHECK))).status == 200
+    world.note("revocation", unlinked=SIG_A.value, browser_denied=True,
+               unaffected=WA_B.value)
+
+
 async def test_managed_portal_browser_lifecycle(portal_world, tmp_path):
     world = portal_world
     client, services = world.client, world.services
@@ -515,197 +720,10 @@ async def test_managed_portal_browser_lifecycle(portal_world, tmp_path):
     proc, base, next_log = await _start_portal(api_base, tmp_path)
     browser = _Browser()
     try:
-        # ---- anonymous access refuses, over page and API ----
-        await browser.cmd(cmd="new", name="anon")
-        await browser.cmd(cmd="goto", name="anon", url=f"{base}/en/documents")
-        landed = await browser.cmd(cmd="wait_url", name="anon", regex=r"/en/login")
-        assert landed["matched"], f"anonymous stayed at {landed['url']}"
-        anon_api = await browser.cmd(cmd="api", name="anon",
-                                     url=f"{base}/api/v1/documents")
-        assert anon_api["status"] == 401
-
-        # ---- Signal code sign-in: UI -> Auth.js credentials -> real backend ----
-        await browser.cmd(cmd="new", name="a",
-                          headers={"x-forwarded-for": "198.51.100.11"})
-        first = await browser.cmd(cmd="goto", name="a", url=f"{base}/en/login")
-        assert first["status"] == 200
-        # Managed backend: no development picker even under `next dev`.
-        assert not (await browser.cmd(cmd="visible", name="a",
-                                      text="Development sign-in"))["visible"]
-        assert (await browser.cmd(cmd="visible", name="a",
-                                  text="Sign in with Discord"))["visible"]
-        await browser.cmd(cmd="fill", name="a", label="Your phone number",
-                          value="90000101")
-        code = await _send_code(browser, world, "a", world.sig_adapter.sent)
-        target, _text = world.sig_adapter.sent[-1]
-        assert target.conversation_id == SIG_A.value
-
-        # A wrong code refuses through the same genuine callback.
-        wrong = "000000" if code != "000000" else "111111"
-        await browser.cmd(cmd="fill", name="a", label="The code", value=wrong)
-        await browser.cmd(cmd="click_role", name="a", role="button", text="Sign in")
-        refused = await browser.cmd(cmd="wait_text", name="a",
-                                    text="That code didn't work", timeout_ms=25_000)
-        if not refused["visible"]:
-            await _dump_browser_state(browser, world, "a", base)
-        assert refused["visible"], "a wrong code was not refused"
-        assert (await browser.cmd(cmd="api", name="a",
-                                  url=f"{base}/api/v1/documents"))["status"] == 401
-
-        await browser.cmd(cmd="fill", name="a", label="The code", value=code)
-        try:
-            await _verify_code(browser, world, "a")
-        except AssertionError:
-            await _dump_browser_state(browser, world, "a", base)
-            raise AssertionError(
-                f"sign-in did not reach /en/today (traffic in {EVIDENCE})") from None
-
-        cookies = (await browser.cmd(cmd="cookies", name="a"))["cookies"]
-        assert "authjs.session-token" in {c["name"] for c in cookies}
-        session = json.loads((await browser.cmd(
-            cmd="api", name="a", url=f"{base}/api/auth/session"))["body"])
-        managed = session["user"]["managedIdentity"]
-        assert managed["authentication"]["method"] == "signal_code"
-        assert managed["authentication"]["proofIssuer"] == "nora-otp"
-        assert managed["authentication"]["account"] == ident_json(SIG_A)
-        assert managed["authentication"]["sessionId"] == session["user"]["sessionId"]
-
-        # Retained binding and canonical identity agree with SQL/Kratos/Keto.
-        binding = await world.binding(SIG_A)
-        assert managed["binding"] == binding
-        assert await services.bindings.canonical_person(person_a) == person_a
-        relations = await services.backend.scope_relations_on(scope=ROOM_A)
-        assert person_a in {r.subject for r in relations if r.relation == "member"}
-        operation_id = "authentication:" + hashlib.sha256(json.dumps(
-            ["portal", managed["authentication"]["sessionId"]]).encode()).hexdigest()
-        recorded = await services.bindings.operation(operation_id)
-        assert recorded is not None and recorded.state is OperationJournalState.COMPLETE
-        assert recorded.snapshot["authentication"]["account"] == ident_json(SIG_A)
-        assert recorded.snapshot["binding"] == binding
-
-        # ---- the scoped portal view, through the browser ----
-        await browser.cmd(cmd="goto", name="a", url=f"{base}/en/documents")
-        listed = await browser.cmd(cmd="wait_text", name="a", text="A note")
-        if not listed["visible"]:
-            (EVIDENCE / "a-documents.html").write_text(
-                (await browser.cmd(cmd="html", name="a"))["html"])
-            (EVIDENCE / "a-pageerrors.txt").write_text(
-                "\n".join((await browser.cmd(cmd="pageerrors", name="a"))["errors"]))
-        assert listed["visible"], f"documents page missing 'A note' (html/pageerrors in {EVIDENCE})"
-        assert not (await browser.cmd(cmd="visible", name="a", text="B note"))["visible"]
-        await browser.cmd(cmd="screenshot", name="a",
-                          path=str(EVIDENCE / "signal-documents.png"))
-
-        # A browser-supplied personId is dropped: only the session's own scope returns.
-        cross = await browser.cmd(cmd="api", name="a",
-                                  url=f"{base}/api/v1/documents?personId={person_b}")
-        assert cross["status"] == 200
-        assert {d["title"] for d in json.loads(cross["body"])["documents"]} == {"A note"}
-        # Body and route bypass attempts refuse at the same boundary.
-        assert (await browser.cmd(cmd="api", name="a", method="POST",
-                                  url=f"{base}/api/v1/documents",
-                                  body="{}"))["status"] == 405
-        membership = json.dumps({
-            "operation_id": f"op-{uuid4()}", "kind": "set_membership",
-            "target": {"kind": "membership", "person_id": person_b,
-                       "scope": {"kind": "room", "id": ROOM_W.id}},
-            "payload": {"member": True},
-            "observed_revisions": {"authority": "observed"}})
-        denied_op = await browser.cmd(cmd="api", name="a", method="POST",
-            url=f"{base}/api/v1/management/operations", body=membership,
-            headers={"Origin": base, "Content-Type": "application/json"})
-        assert denied_op["status"] == 403, denied_op["body"]
-        assert (await browser.cmd(cmd="api", name="a",
-                                  url=f"{base}/api/v1/not-a-route"))["status"] == 404
-        world.note("signal-portal", session="managedIdentity+binding verified",
-                   scoped_view="A note only", cross_viewer="param dropped, POST 403/405")
-
-        # ---- WhatsApp code sign-in through the same UI ----
-        await browser.cmd(cmd="new", name="b",
-                          headers={"x-forwarded-for": "198.51.100.12"})
-        await browser.cmd(cmd="goto", name="b", url=f"{base}/en/login")
-        await browser.cmd(cmd="click_text", name="b", text="WhatsApp")
-        # A dead island leaves React's onChange unfired but the label click
-        # still toggles the DOM radio — and DOM state is what the form posts.
-        picked = await browser.cmd(cmd="eval", name="b", expression=(
-            "document.querySelector('input[name=platform][value=whatsapp]').checked"))
-        if not picked["value"]:
-            await browser.cmd(cmd="eval", name="b", expression=(
-                "document.querySelector('input[name=platform][value=whatsapp]').click()"))
-        await browser.cmd(cmd="fill", name="b", label="Your phone number",
-                          value="90000103")
-        wa_code = await _send_code(browser, world, "b", world.wa_adapter.sent,
-                                   platform="whatsapp")
-        wa_target, _ = world.wa_adapter.sent[-1]
-        assert wa_target.conversation_id == "85290000103@s.whatsapp.net"
-        await browser.cmd(cmd="fill", name="b", label="The code", value=wa_code)
-        await _verify_code(browser, world, "b")
-        wa_session = json.loads((await browser.cmd(
-            cmd="api", name="b", url=f"{base}/api/auth/session"))["body"])
-        wa_managed = wa_session["user"]["managedIdentity"]
-        assert wa_managed["authentication"]["method"] == "whatsapp_code"
-        assert wa_managed["authentication"]["account"] == ident_json(WA_B)
-        assert wa_managed["binding"] == await world.binding(WA_B)
-        await browser.cmd(cmd="goto", name="b", url=f"{base}/en/documents")
-        assert (await browser.cmd(cmd="wait_text", name="b", text="B note"))["visible"]
-        assert not (await browser.cmd(cmd="visible", name="b", text="A note"))["visible"]
-        await browser.cmd(cmd="screenshot", name="b",
-                          path=str(EVIDENCE / "whatsapp-documents.png"))
-        world.note("whatsapp-portal", scoped_view="B note only")
-
-        # ---- server-side negative reads over the same boundary ----
-        assert (await client.get(f"{DOCUMENTS}?personId={person_a}")).status == 401
-        assert (await client.get(
-            f"{DOCUMENTS}?personId={person_a}", headers=BEARER)).status == 401
-        path = f"{DOCUMENTS}?personId={person_b}"
-        assert (await client.get(path, headers=world.session_headers(
-            SIG_A, binding=binding, path=path, http="GET"))).status == 403
-        own = await client.get(f"{DOCUMENTS}?personId={person_a}",
-            headers=world.session_headers(SIG_A, binding=binding,
-                path=f"{DOCUMENTS}?personId={person_a}", http="GET"))
-        assert own.status == 200
-        assert {d["title"] for d in (await own.json())["documents"]} == {"A note"}
-
-        # ---- no private key or admin credential reaches a browser surface ----
-        html = (await browser.cmd(cmd="html", name="a"))["html"]
-        seen = (await browser.cmd(cmd="responses", name="a"))["responses"] + \
-            (await browser.cmd(cmd="responses", name="b"))["responses"]
-        blob = html + json.dumps(seen)
-        for secret in (OTP_TOKEN, WA_TOKEN, "generated-bridge-token", PORTAL_SECRET,
-                       AUTH_SECRET, "Nora-Authentication ", "nora-mit-",
-                       world.ory.kratos_admin, world.ory.keto_write):
-            assert secret not in blob, f"private material surfaced: {secret[:16]}"
-
-        # ---- exact unlink kills the same browser session; B is unaffected ----
-        other = json.dumps({"operation_id": f"op-{uuid4()}",
-                            "expected_person": person_b}).encode()
-        assert (await client.post(UNLINK, data=other, headers=world.session_headers(
-            SIG_A, binding=binding, path=UNLINK, body=other))).status == 403
-        exact = json.dumps({"operation_id": f"op-{uuid4()}",
-                            "expected_person": person_a}).encode()
-        assert (await client.post(UNLINK, data=exact, headers=world.session_headers(
-            SIG_A, binding=binding, path=UNLINK, body=exact))).status == 200
-        assert await services.bindings.record_for(account=SIG_A) is None
-
-        await browser.cmd(cmd="goto", name="a", url=f"{base}/en/documents")
-        dead = await browser.cmd(cmd="wait_url", name="a", regex=r"/en/login\?denied=1")
-        assert dead["matched"], f"revoked session landed at {dead['url']}"
-        assert (await browser.cmd(cmd="wait_text", name="a",
-                                  text="not on the list"))["visible"]
-        assert (await browser.cmd(cmd="api", name="a",
-                                  url=f"{base}/api/v1/documents"))["status"] == 401
-        await browser.cmd(cmd="screenshot", name="a",
-                          path=str(EVIDENCE / "after-unlink.png"))
-
-        await browser.cmd(cmd="goto", name="b", url=f"{base}/en/documents")
-        assert (await browser.cmd(cmd="wait_text", name="b", text="B note"))["visible"]
-        alive = json.loads((await browser.cmd(
-            cmd="api", name="b", url=f"{base}/api/auth/session"))["body"])
-        assert alive["user"]["managedIdentity"]["binding"] == await world.binding(WA_B)
-        assert (await client.post(CHECK, data=b"", headers=world.session_headers(
-            WA_B, binding=await world.binding(WA_B), path=CHECK))).status == 200
-        world.note("revocation", unlinked=SIG_A.value, browser_denied=True,
-                   unaffected=WA_B.value)
+        binding = await _signal_portal(browser, world, base, person_a, person_b)
+        await _whatsapp_portal(browser, world, base)
+        await _server_portal_boundaries(browser, world, base, person_a, person_b, binding)
+        await _unlink_browser(browser, world, base, person_a, person_b, binding)
     finally:
         browser.close()
         _stop_process(proc)
