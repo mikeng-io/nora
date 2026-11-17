@@ -37,8 +37,8 @@
   {
     "name": "composition forwards the Markdown name to the live registry",
     "file": "nora/app/composition_agent.py",
-    "old": "    return ToolRegistry(\n        display_name=cfg.doctrine.display_name,",
-    "new": "    return ToolRegistry(",
+    "old": "        display_name=cfg.doctrine.display_name,\n",
+    "new": "",
     "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
   },
   {

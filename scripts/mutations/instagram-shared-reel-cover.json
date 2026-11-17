@@ -65,9 +65,9 @@
  {
   "name": "the stored-reading path does not pass the cover flag",
   "file": "nora/media/adapters/tools/fetch.py",
-  "old": "_stored_reading(c.stored),\n                    cached=True,\n                    code=c.serve_code,\n                    cover=c.is_cover,",
-  "new": "                    _stored_reading(c.stored),\n                    cached=True, code=c.serve_code,",
-  "target": "tests/test_media_fetch.py -k stored_reading_says_so"
+  "old": "_stored_reading(c.stored),\n                    cached=True,\n                    code=c.answer_code,\n                    cover=c.is_cover,\n                    kept=c.kept_note,",
+  "new": "_stored_reading(c.stored),\n                    cached=True,\n                    code=c.answer_code,\n                    kept=c.kept_note,",
+  "target": "tests/test_media_fetch.py::test_a_cover_served_from_the_stored_reading_says_so_too"
  },
  {
   "name": "a newer cover sighting does not take back the earlier photo's: the handle is a cover only if EVERY sighting was",
@@ -114,15 +114,15 @@
  {
   "name": "the vision-cache hit does not pass the cover flag",
   "file": "nora/media/adapters/tools/fetch.py",
-  "old": "c.sha256,\n                c.cached_description,\n                cached=True,\n                code=c.serve_code,\n                kept=c.kept_image,\n                cover=c.is_cover,",
-  "new": "                c.sha256, c.cached_description, cached=True, code=c.serve_code, kept=c.kept_image,",
+  "old": "c.sha256,\n                c.cached_description,\n                cached=True,\n                code=c.answer_code,\n                kept=c.kept_note,\n                cover=c.is_cover,",
+  "new": "c.sha256,\n                c.cached_description,\n                cached=True,\n                code=c.answer_code,\n                kept=c.kept_note,\n",
   "target": "tests/test_media_fetch.py::test_a_cover_served_from_a_vision_cache_hit_says_so_too"
  },
  {
   "name": "the question path does not pass the cover flag",
   "file": "nora/media/adapters/tools/fetch.py",
-  "old": "return (\n            True,\n            None,\n            c._serve_media(\n                c.sha256,\n                c.description,\n                cached=False,\n                code=c.serve_code,\n                kept=c.kept_image,\n                cover=c.is_cover,\n            )",
-  "new": "            return c._serve_media(\n                c.sha256, c.description, cached=False, code=c.serve_code, kept=c.kept_image,\n            )\n        # A STORY frame read by",
+  "old": "async def _media_fetch__answer(c):\n    if c.question:\n        return (\n            True,\n            None,\n            c._serve_media(\n                c.sha256,\n                c.description,\n                cached=False,\n                code=c.answer_code,\n                kept=c.kept_note,\n                cover=c.is_cover,\n            ),\n        )\n",
+  "new": "async def _media_fetch__answer(c):\n    if c.question:\n        return (\n            True,\n            None,\n            c._serve_media(\n                c.sha256,\n                c.description,\n                cached=False,\n                code=c.answer_code,\n                kept=c.kept_note,\n            ),\n        )\n",
   "target": "tests/test_media_fetch.py::test_a_cover_asked_a_question_says_so_too"
  },
  {

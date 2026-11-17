@@ -16,9 +16,9 @@
   {
     "name": "the read spends only the look's own allowance",
     "file": "nora/infra/vision/comprehend.py",
-    "old": "    look_left = look_seconds_left()\n    if look_left is not None:\n        budget_seconds = min(budget_seconds, look_left)\n",
+    "old": "    look_left = look_seconds_left()\n    if look_left is not None:\n        # Leave the enclosing look time to serialize partial coverage and custody.\n        budget_seconds = min(budget_seconds, look_left * 0.9)\n",
     "new": "",
-    "target": "tests/unit/test_media_comprehender.py -k look_envelope_spends_only"
+    "target": "tests/unit/test_media_comprehender.py::test_a_read_under_a_look_envelope_spends_only_its_allowance"
   },
   {
     "name": "the look's deadline is handed down to the read",
