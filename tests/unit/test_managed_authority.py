@@ -49,12 +49,13 @@ from nora.domain.management import (
     Target,
     TargetKind,
 )
-from nora.people.app.managed import AuthorityService
+from nora.people.app.managed import AuthorityService, ManagedServices
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
     FakeTopologySource,
 )
+from nora.testing.managed_registry import FakeIdentityRegistry, FakeLinkRequests
 
 WS = Scope(ScopeKind.WORKSPACE, "ws-main")
 UNIT = Scope(ScopeKind.UNIT, "unit-a")
@@ -631,3 +632,57 @@ async def test_delegation_is_a_real_operation_not_a_side_effect():
     )
     assert outcome.status is OutcomeStatus.DENIED
     assert outcome.detail == "target-person-inactive"
+
+
+async def test_a_delegation_carries_exactly_its_named_permits():
+    """`manage_members` delegated is `manage_members` alone: the delegatee's
+    `grant_access` still refuses `actor-lacks-manage_grants` at commitment —
+    exactly the delegated authority, never the adjacent permits."""
+    store, backend, svc = _service()
+    await _grant_operator(store, backend, "delegate")
+    await _person(store, PERSON)
+    assert (await svc.apply(
+        _op("op-1", "delegate",
+            target=Target(kind=TargetKind.SCOPE, scope=ROOM),
+            payload=Delegation(delegatee=PERSON,
+                               permits=frozenset({"manage_members"}))))
+    ).status is OutcomeStatus.COMPLETE
+    outcome = await svc.apply(
+        _op("op-2", "grant_access", actor_person=PERSON,
+            target=Target(kind=TargetKind.SCOPE, scope=ROOM),
+            payload=AccessChange(direction=AccessDirection.GRANT,
+                                 grantee=PERSON, permits=frozenset({"speak"}))))
+    assert outcome.status is OutcomeStatus.DENIED
+    assert "manage_grants" in outcome.detail
+
+
+async def test_an_open_room_admits_an_unmapped_sender_without_widening():
+    """The approved open-admission rule: `permitted` answers `allowed` for
+    an unmapped sender only where the topology marks the room open — a
+    closed room denies, an undeclared room is `unknown`, and the admission
+    writes no membership the sender could widen into."""
+    store = FakeBindingStore()
+    backend = FakeAuthorityBackend()
+    topology = FakeTopologySource(
+        rooms={
+            "signal/conv-open": (UNIT.id, True),
+            ROOM.id: (UNIT.id, False),
+        },
+        units={UNIT.id: WS.id},
+        workspaces={WS.id},
+    )
+    access = ManagedServices(
+        store, backend, topology, FakeIdentityRegistry(), FakeLinkRequests()
+    ).access
+    admitted = await access.permitted(
+        platform="signal", conversation_id="conv-open", person_id=None)
+    assert admitted.verdict is Verdict.ALLOWED
+    closed = await access.permitted(
+        platform="signal", conversation_id="conv-1", person_id=None)
+    assert closed.verdict is Verdict.DENIED
+    assert closed.detail == "unmapped-sender"
+    unknown = await access.permitted(
+        platform="signal", conversation_id="nowhere", person_id=None)
+    assert unknown.verdict is Verdict.UNKNOWN_SCOPE
+    assert await store.members_of(
+        Scope(ScopeKind.ROOM, "signal/conv-open")) == ()
