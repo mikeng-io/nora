@@ -104,6 +104,8 @@ from nora.domain.gatherings import (
     field_mode,
 )
 from nora.domain.lessons import LessonEvidenceView
+from nora.domain.managed import room_scope_id
+from nora.domain.management import Scope, ScopeKind
 from nora.domain.memory_graph import ENTITY_KINDS, ENTRY, Source
 from nora.domain.note_body import (
     Shown,
@@ -1621,7 +1623,14 @@ class CognitionSessionRunner:
                 persons=tuple({p for v in state.memory_items.values()
                                for source in v.sources for p in source.persons}),
                 shown_keys=state.shown_keys,
-                shown_relations=state.shown_relations)
+                shown_relations=state.shown_relations,
+                # The agenda's rooms are the scoped contexts this session's
+                # reads resolve through — the egress screen covers the names
+                # they supply, and only those.
+                scopes=tuple(
+                    Scope(ScopeKind.ROOM,
+                          room_scope_id(r.platform, r.conversation_id))
+                    for r in rooms))
 
             def on_rows(rows: Sequence[Any]) -> None:
                 """A transcript read's handed-out rows, kept as the citable

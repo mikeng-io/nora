@@ -61,6 +61,8 @@ from nora.domain.lineage import (
     WORKING_SET,
     RenderRoom,
 )
+from nora.domain.managed import room_scope_id
+from nora.domain.management import Scope, ScopeKind
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
 from nora.domain.memory_graph import Subgraph, WorkItem
@@ -316,10 +318,20 @@ class TranscriptInjection:
         # `nora_errors_total` (R-27), never a quiet fall back to the old block.
         self._profile_reader = profile
 
+    @staticmethod
+    def _room_scope(msg: NormalizedMessage) -> Scope:
+        """The room the message arrived in, as the trusted read scope every
+        name this context renders resolves through (`authorization.md`
+        «Scoped authority»): room → unit → workspace → global, never a
+        sibling's."""
+        return Scope(
+            ScopeKind.ROOM, room_scope_id(msg.platform, msg.conversation_id))
+
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
         # Resolved BEFORE the gather because reads in it are keyed on it.
-        ref = await self._access.resolve_ref(msg.platform, msg.sender_id)
+        ref = await self._access.resolve_ref(
+            msg.platform, msg.sender_id, scope=self._room_scope(msg))
 
         # CONCURRENT: the reads are independent, so gathering hides each behind
         # the slowest instead of stacking their round trips (transcript, Honcho)
@@ -380,7 +392,8 @@ class TranscriptInjection:
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
-        transcript = await self._access.name_transcript(transcript, platform=msg.platform)
+        transcript = await self._access.name_transcript(
+            transcript, platform=msg.platform, scope=self._room_scope(msg))
         # THEN the media join, after the transcript read and before the context
         # is frozen. It is a second round trip, so it is NOT in the gather above:
         # it needs the rows the gather returns. ONE bounded query per
@@ -462,7 +475,8 @@ class TranscriptInjection:
         listed = target.room.persons
         mentioned = [
             r.person_id for v in sorted(msg.mentions)
-            if (r := await self._access.resolve_ref(msg.platform, v)) is not None
+            if (r := await self._access.resolve_ref(
+                    msg.platform, v, scope=self._room_scope(msg))) is not None
         ]
         about = list(dict.fromkeys(
             ([ref.person_id] if ref is not None else []) + mentioned,
@@ -1368,7 +1382,8 @@ class TranscriptInjection:
                     platform=msg.platform, conversation_id=msg.conversation_id,
                     ids=tuple(sorted(wanted))[:_OBSERVATION_TARGET_MAX]))
             named = await self._access.name_transcript(
-                list(found.values()), platform=msg.platform)
+                list(found.values()), platform=msg.platform,
+                scope=self._room_scope(msg))
             targets = {
                 mid: target_context(
                     row, deleted=mid in gone,
