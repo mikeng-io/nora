@@ -301,7 +301,7 @@ async def test_managed_source_names_are_screened_live_before_external_reads(
 
 
 async def _screened_lookup(example_config, access, *, provider="web_search",
-                           persons=(PERSON,)):
+                           persons=(PERSON,), scopes=()):
     """A `ComprehendRead` over `provider` as the managed session wires it."""
     from nora.access import EMPTY_PERSONS
     from nora.agent.comprehend_tools import ComprehendRead, LookupState
@@ -317,7 +317,7 @@ async def _screened_lookup(example_config, access, *, provider="web_search",
     memory = _graph_composition(EMPTY_PERSONS, access, example_config).cognition_memory
     state = LookupState(
         GraphFetched(), HERE.unit, 1, ManagedRecords(memory.records.access),
-        Metrics(), memory.private_names, persons=persons,
+        Metrics(), memory.private_names, persons=persons, scopes=scopes,
     )
     calls: list[str] = []
 
@@ -611,3 +611,125 @@ async def test_memory_walk_checks_managed_opt_out_after_replacing_stale_file_ros
     assert result.status in {"ok", "partial"}
     assert {hit.node.key for hit in result.hits} == {
         ("social", "generated-enabled"), ("message", "generated-opt-out-chat")}
+
+
+# -- scoped private names in the egress screen ------------------------------
+#
+# A session's read scopes are the room contexts its transcript/graph reads
+# resolve names through (`LookupState.scopes`). A source person's nickname
+# in one of those scopes is private exactly as their global name is: it must
+# refuse before the provider runs, and a scope the session never reads is
+# never enumerated for names.
+
+UNIT = Scope(ScopeKind.UNIT, "generated-unit-a")
+SIBLING_ROOM = Scope(ScopeKind.ROOM, "signal/generated-room-b")
+
+
+async def test_a_room_scoped_nickname_of_a_source_person_refuses_before_the_provider(
+    example_config,
+):
+    bindings, access, _ = await _world()
+    assert (await bindings.set_scoped_name(
+        person_id=PERSON, scope=ROOM, nickname="Generated Room Nick",
+        operation_id="generated-op-1")).status is OutcomeStatus.COMPLETE
+    call, calls, state = await _screened_lookup(
+        example_config, access, scopes=(ROOM,))
+
+    result = await call("Generated Room Nick news")
+    assert result["status"] == "refused"
+    assert result["reason"] == "private_person"
+    assert calls == []
+    assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news"]
+
+    # A live rename screens the CURRENT name, not a stale one.
+    assert (await bindings.set_scoped_name(
+        person_id=PERSON, scope=ROOM, nickname="Generated Renamed Nick",
+        operation_id="generated-op-2")).status is OutcomeStatus.COMPLETE
+    renamed = await call("Generated Renamed Nick news")
+    assert renamed["status"] == "refused"
+    assert renamed["reason"] == "private_person"
+    assert calls == ["volleyball news"]
+
+    # A source fetched LATER joins the same coverage: its room nickname in
+    # the session's scope refuses before the provider runs.
+    from nora.domain.memory_graph import Source
+
+    assert (await bindings.set_scoped_name(
+        person_id=FOREIGN, scope=ROOM, nickname="Generated Later Nick",
+        operation_id="generated-op-3")).status is OutcomeStatus.COMPLETE
+    state.fetched.show(Source(
+        ("message", "generated-later-row"), "record", HERE.unit, (FOREIGN,),
+        "A generated later transcript read.",
+    ))
+    later = await call("Generated Later Nick news")
+    assert later["status"] == "refused"
+    assert later["reason"] == "private_person"
+    assert calls == ["volleyball news"]
+
+
+async def test_a_unit_nickname_screens_through_the_sessions_room_scope(
+    example_config,
+):
+    """The screen asks `person_ref` for each read scope's resolved name, so
+    a nickname on the room's UNIT ancestry is covered without the session
+    carrying the unit scope itself."""
+    bindings, access, _ = await _world()
+    assert (await bindings.set_scoped_name(
+        person_id=PERSON, scope=UNIT, nickname="Generated Unit Nick",
+        operation_id="generated-op-1")).status is OutcomeStatus.COMPLETE
+    call, calls, _ = await _screened_lookup(
+        example_config, access, scopes=(ROOM,))
+
+    result = await call("Generated Unit Nick news")
+    assert result["status"] == "refused"
+    assert result["reason"] == "private_person"
+    assert calls == []
+    assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news"]
+
+
+async def test_a_sibling_scope_nickname_is_not_enumerated_for_the_screen(
+    example_config,
+):
+    """The screen covers the scopes the session's contexts actually resolve
+    through — a sibling room's nickname is outside this session's
+    disclosure boundary, so its read is never made and cannot leak the
+    name. When that scope IS in the agenda, the same name refuses."""
+    bindings, access, _ = await _world()
+    assert (await bindings.set_scoped_name(
+        person_id=PERSON, scope=SIBLING_ROOM, nickname="Generated Sibling Nick",
+        operation_id="generated-op-1")).status is OutcomeStatus.COMPLETE
+    call, calls, state = await _screened_lookup(
+        example_config, access, scopes=(ROOM,))
+
+    # No catalogue of unrelated scopes: the sibling's name is outside the
+    # boundary this session discloses, so the provider still answers.
+    assert (await call("Generated Sibling Nick news"))["status"] == "ok"
+    assert calls == ["Generated Sibling Nick news"]
+
+    state.scopes = (ROOM, SIBLING_ROOM)
+    refused = await call("Generated Sibling Nick news")
+    assert refused["status"] == "refused"
+    assert refused["reason"] == "private_person"
+    assert calls == ["Generated Sibling Nick news"]
+
+
+async def test_an_unreadable_scoped_name_read_is_unavailable_before_the_provider(
+    example_config,
+):
+    bindings, access, _ = await _world()
+    assert (await bindings.set_scoped_name(
+        person_id=PERSON, scope=ROOM, nickname="Generated Room Nick",
+        operation_id="generated-op-1")).status is OutcomeStatus.COMPLETE
+    call, calls, _ = await _screened_lookup(
+        example_config, access, scopes=(ROOM,))
+
+    bindings.down = True
+    try:
+        assert (await call("volleyball news"))["status"] == "unavailable"
+        assert calls == []
+    finally:
+        bindings.down = False
+    assert (await call("volleyball news"))["status"] == "ok"
+    assert calls == ["volleyball news"]

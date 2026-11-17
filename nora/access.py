@@ -364,15 +364,19 @@ class IdentityAccess:
         return None
 
     async def resolve_ref(
-        self, platform: str, sender_id: str
+        self, platform: str, sender_id: str, *, scope: Scope | None = None
     ) -> PersonRef | None:
-        """The sender's person view — `None` for an unmapped account."""
+        """The sender's person view — `None` for an unmapped account.
+
+        `scope` is the caller's trusted read scope, forwarded to
+        `person_ref`: a name rendered for a room's context resolves through
+        that room's ancestry; an unset scope keeps the global view."""
         if self._persons is not None:
             return self._persons.resolve(platform, sender_id)
         account = await self._bindings.resolve(platform, sender_id)
         if account is None:
             return None
-        return await self.person_ref(account.person_id)
+        return await self.person_ref(account.person_id, scope=scope)
 
     async def person_refs(self) -> tuple[PersonRef, ...]:
         """The ACTIVE-person roster — managed mode's `by_person.values()`."""
@@ -392,7 +396,9 @@ class IdentityAccess:
         """The room's roster by name. File mode reads the room's declared
         `persons` list; managed mode reads recorded membership on the room
         scope — an open room (`persons = "*"`) lists nobody in file mode
-        because no live roster exists there."""
+        because no live roster exists there. Each member's name is that
+        room's scoped view (`person_ref`), never the global or a sibling
+        room's name."""
         if self._persons is not None:
             if self._policy is None:
                 raise RuntimeError("file room authority is unavailable")
@@ -404,7 +410,7 @@ class IdentityAccess:
             ref
             for m in await self._bindings.members_of(scope)
             if m.state is MembershipState.MEMBER
-            if (ref := await self.person_ref(m.person_id)) is not None
+            if (ref := await self.person_ref(m.person_id, scope=scope)) is not None
         ]
         return tuple(sorted(out, key=lambda r: (r.name.casefold(), r.person_id)))
 
@@ -477,16 +483,26 @@ class IdentityAccess:
     # names on transcripts
     # ------------------------------------------------------------------
 
-    async def display_name(self, msg: NormalizedMessage) -> str:
-        ref = await self.resolve_ref(msg.platform, msg.sender_id)
+    async def display_name(
+        self, msg: NormalizedMessage, *, scope: Scope | None = None
+    ) -> str:
+        ref = await self.resolve_ref(
+            msg.platform, msg.sender_id, scope=scope)
         return ref.name if ref else (msg.sender_name or sanitize_unmapped(msg.sender_id))
 
     async def name_transcript(
-        self, transcript: Sequence[TranscriptRow], *, platform: str
+        self, transcript: Sequence[TranscriptRow], *, platform: str,
+        scope: Scope | None = None,
     ) -> tuple[TranscriptRow, ...]:
         """Fill each row's `person_name`/`person_id` from the selected
         backend — `Persons.name_transcript`'s semantics over whichever
-        directory answers (`DEC-80`)."""
+        directory answers (`DEC-80`).
+
+        `scope` is the trusted read scope the transcript renders for —
+        `person_ref`'s contract: the nearest nickname on its
+        room→unit→workspace ancestry, then the global name; an unset scope
+        keeps the global view, and an unreadable scoped store raises rather
+        than answering a stale substitute."""
         if self._persons is not None:
             return self._persons.name_transcript(transcript, platform=platform)
         out: list[TranscriptRow] = []
@@ -494,7 +510,7 @@ class IdentityAccess:
             if row.is_nora:
                 out.append(row)
                 continue
-            ref = await self.resolve_ref(platform, row.sender_id)
+            ref = await self.resolve_ref(platform, row.sender_id, scope=scope)
             out.append(
                 row if ref is None
                 else replace(row, person_name=ref.name, person_id=ref.person_id)

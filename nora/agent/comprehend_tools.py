@@ -20,6 +20,7 @@ from nora.agent.dream_screen import text_offence
 from nora.agent.egress import _canonical
 from nora.agent.fetch_watch import GraphFetched, _result_of
 from nora.domain.comprehend import EGRESS_REASONS
+from nora.domain.management import Scope
 from nora.domain.memory_graph import Source
 
 log = logging.getLogger(__name__)
@@ -73,6 +74,12 @@ class LookupState:
     metrics: Any
     private_names: tuple[str, ...]
     persons: tuple[str, ...] = ()
+    #: The trusted read scopes this session's room contexts resolve names
+    #: through — a source person's scoped nickname in one of these rooms is
+    #: private exactly as their global name is. Scopes outside the agenda are
+    #: never read: the screen covers what this session could supply, not a
+    #: catalogue of every scope's names.
+    scopes: tuple[Scope, ...] = ()
     shown_keys: set = field(default_factory=set)
     shown_relations: set = field(default_factory=set)
     limits: dict[str, int] = field(default_factory=lambda: {"web_search": 3, "web_fetch": 3})
@@ -146,6 +153,11 @@ class ComprehendRead(AgentTool):
                 person_id, person.person_id, person.display_name,
                 *await access.former_persons(person.person_id),
             ) if name)
+            for scope in state.scopes:
+                ref = await access.person_ref(person_id, scope=scope)
+                if ref is None or not ref.name.strip():
+                    raise LookupError("scoped source person name unavailable")
+                names.add(ref.name)
         if self._source_people() - person_ids:
             raise LookupError("source people changed during identity reads")
         return tuple(names)

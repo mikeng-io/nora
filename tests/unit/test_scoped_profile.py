@@ -516,3 +516,64 @@ async def test_a_committed_scoped_name_with_failed_readback_is_incomplete(mode):
     assert [record.operation_id for record in finished] == ["generated-op-1"]
     assert store.name_writes == 1
     assert (await store.operation("generated-op-1")).state is OperationJournalState.COMPLETE
+
+
+async def test_the_room_facing_name_reads_forward_the_callers_scope():
+    """`resolve_ref`, `display_name` and `name_transcript` take the caller's
+    trusted read scope — the same `person_ref` contract — so the consumers
+    that render a room never need a second, global-only path."""
+    from nora.domain.models import (
+        DeliveryStatus,
+        NormalizedMessage,
+        TranscriptRow,
+    )
+
+    store = FakeBindingStore()
+    services = _services(store)
+    await _person(services)
+    for scope, nickname in (
+            (SIBLING, "Generated Sibling Nickname"), (ROOM, NICK)):
+        outcome = await store.set_scoped_name(
+            person_id=PERSON, scope=scope, nickname=nickname,
+            operation_id=f"generated-op-{scope.id}")
+        assert outcome.status is OutcomeStatus.COMPLETE
+
+    access = services.access
+    ref = await access.resolve_ref(
+        "discord", "generated-generated-member-account", scope=ROOM)
+    assert ref is not None and ref.name == NICK
+    msg = NormalizedMessage(
+        platform="discord", conversation_id="generated-room",
+        conversation_type="group",
+        sender_id="generated-generated-member-account",
+        sender_name="Generated Platform Name", timestamp=1,
+        body="generated body", raw={})
+    assert await access.display_name(msg, scope=ROOM) == NICK
+    row = TranscriptRow(
+        id=1, sender_id="generated-generated-member-account",
+        sender_name="Generated Platform Name", ts=1, body="generated body",
+        is_nora=False, delivery_status=DeliveryStatus.SENT,
+        raw_json=None)
+    (named,) = await access.name_transcript(
+        (row,), platform="discord", scope=ROOM)
+    assert named.person_name == NICK and named.person_id == PERSON
+
+    # The sibling scope's own view and the unscoped global view resolve
+    # through the same seam — the scope decides, not the caller.
+    ref = await access.resolve_ref(
+        "discord", "generated-generated-member-account", scope=SIBLING)
+    assert ref is not None and ref.name == "Generated Sibling Nickname"
+    ref = await access.resolve_ref(
+        "discord", "generated-generated-member-account")
+    assert ref is not None and ref.name == GLOBAL
+
+    store.down = True
+    try:
+        with pytest.raises(RuntimeError):
+            await access.resolve_ref(
+                "discord", "generated-generated-member-account", scope=ROOM)
+    finally:
+        store.down = False
+    ref = await access.resolve_ref(
+        "discord", "generated-generated-member-account", scope=ROOM)
+    assert ref is not None and ref.name == NICK

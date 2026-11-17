@@ -129,6 +129,8 @@ from nora.domain.lineage import (
     WORKING_SET,
     room_key,
 )
+from nora.domain.managed import room_scope_id
+from nora.domain.management import Scope, ScopeKind
 from nora.domain.media import MediaBlob
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
@@ -869,7 +871,13 @@ class FirePath:
         # KeyError here would surface as `failed_error` with a traceback; `speak`
         # refuses it as `failed_policy` with a sentence instead. `None` for an
         # occasion held on nobody's behalf, which is not an error at all.
-        ref = (await self._access.person_ref(occasion.person_id)
+        # The occasion's own room is the trusted read scope every name this
+        # turn renders resolves through — tagger, transcript, window speakers
+        # and roster alike.
+        scope = Scope(
+            ScopeKind.ROOM,
+            room_scope_id(occasion.platform, occasion.conversation_id))
+        ref = (await self._access.person_ref(occasion.person_id, scope=scope)
                if occasion.person_id is not None else None)
 
         transcript: tuple[TranscriptRow, ...] = ()
@@ -908,7 +916,7 @@ class FirePath:
         # leaving it out here would reintroduce the two-name-space bug on exactly
         # the path nobody is watching when it fires.
         transcript = await self._access.name_transcript(
-            transcript, platform=occasion.platform)
+            transcript, platform=occasion.platform, scope=scope)
         if self._media_join is not None:
             transcript = await self._media_join.enrich(transcript, path="fire")
 
@@ -1154,12 +1162,15 @@ class FirePath:
         """
         if self._people_in_window_speakers <= 0:
             return ()
+        scope = Scope(
+            ScopeKind.ROOM,
+            room_scope_id(occasion.platform, occasion.conversation_id))
         found: dict[str, PersonRef] = {}
         for row in reversed(tuple(transcript)):
             if row.is_nora:
                 continue
             ref = await self._access.resolve_ref(
-                occasion.platform, row.sender_id)
+                occasion.platform, row.sender_id, scope=scope)
             if ref is None or ref.person_id in found:
                 continue
             found[ref.person_id] = ref
@@ -2831,7 +2842,10 @@ class FirePath:
         except Exception:
             log.exception("relevance gate shadow transcript read failed")
         else:
-            named = await self._access.name_transcript(tuple(raw), platform=platform)
+            named = await self._access.name_transcript(
+                tuple(raw), platform=platform,
+                scope=Scope(
+                    ScopeKind.ROOM, room_scope_id(platform, conversation_id)))
             for row in reversed(named):
                 # The newest row that actually SAID something — an attachment
                 # or a reaction has no words for a reviewer to read.
