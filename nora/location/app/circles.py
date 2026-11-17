@@ -50,7 +50,7 @@ class ScopedCircles:
         return tuple(Circle(cid, frozenset(people), tuple(people[pid] for pid in sorted(people)))
                      for cid, people in sorted(groups.items()))
 
-    async def read(self) -> tuple[Circle, ...]:
+    async def read(self, *, track: bool = True) -> tuple[Circle, ...]:
         reads = self._reads.get()
         if reads:
             return reads[0]
@@ -58,10 +58,14 @@ class ScopedCircles:
             rows = await self._load()
         except Exception:  # noqa: BLE001 — no identifiers or transport details in tool errors
             raise CircleUnavailableError("current circle source is unavailable") from None
+        if track:
+            self.retain(rows)
+        return rows
+
+    def retain(self, rows: tuple[Circle, ...]) -> None:
         reads = self._reads.get()
         if reads is not None:
             reads.append(rows)
-        return rows
 
     def metrics(self, metrics: Any) -> Any:
         return _ResultMetrics(self, metrics) if self.managed else metrics
