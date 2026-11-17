@@ -43,9 +43,8 @@ review_tiers:
 # Engineering orchestration
 
 How the agents that build Nora (not Nora's runtime) split, do and check work.
-The frontmatter defines the execution and review tiers; each tier adds to the
-ones before it. Tiers describe the work and its checking, never a provider,
-model, effort label or toolset.
+The frontmatter defines the execution and review tiers, each adding to the ones
+before it; a tier describes the work and its checking, never a model or toolset.
 
 ## The orchestrator
 
@@ -55,11 +54,9 @@ delegate, reconcile evidence, triage, land and report.
 
 - **Do small changes yourself**: documentation, agent-skill wording, comments,
   one- or two-line fixes and bounded edits across a few files.
-- **Delegate only for a reason**: a worker's capacity or capability outweighs
-  the briefing cost and lost context, or the operator asks. File count alone is
-  not a reason. Delegate through the session's own mechanism (a native
-  subagent, `delegate_task` or the host's equivalent); the brief and read-back
-  rules are the same.
+- **Delegate only for a reason**: a worker's capability outweighs the briefing
+  cost and lost context, or the operator asks; file count alone is not one. Any
+  delegation mechanism follows the same brief and read-back rules.
 - **Claude models are never a delegated builder or an independent reviewer.**
   A Claude orchestrator makes small changes directly and hands substantial
   implementation to a non-Claude builder.
@@ -69,43 +66,30 @@ delegate, reconcile evidence, triage, land and report.
 
 ## The lifecycle
 
-The operator-facing orchestrator owns the whole outcome across workers and
-sessions. `nora-work` is the entry router; it loads the procedure for the next
-action. This is a soft lifecycle: responsibilities, not mandatory documents or
-phase gates. Combine or skip inapplicable/already-satisfied steps; honor explicit
-operator exceptions and existing required checks/holds. Note material omissions
-briefly in the work/PR, not in a stage ledger.
+Engineering follows UACP's phases in order: **triage → propose → plan →
+execute → verify → resolve**. `nora-work` routes it; its
+[lifecycle reference](.agents/skills/nora-work/references/lifecycle.md) owns
+the routes, the transition table and the re-triage triggers.
 
-An implementation request continues from design through execution, verification
-and agreed delivery; finishing a bundle is not completion. A design-only request
-stops at its agreed design result. Design agreement within an implementation task
-allows the authorized next work; it does not grant new spending or deployment.
-
-| stage | responsibility | procedure | sufficient result |
-|---|---|---|---|
-| **triage** | understand the request and current position | `nora-work` | outcome, authority and missing context understood |
-| **shape** | define intent, completion and boundaries | `nora-dispatch`; `nora-design` for architecture; `nora-decision` for records | one current work brief, with design links as needed |
-| **execute** | do or delegate the next bounded work | `nora-dispatch`, `nora-land`; specialist skills as needed | inspectable work and remaining obligations |
-| **verify** | compare the result with the brief | `nora-test`, `nora-prove-fix`, `nora-eval`, `nora-review`, `nora-readback` as applicable | each required result met, unmet or unavailable with evidence |
-| **deliver** | land and deliver to the agreed boundary | `nora-land`, `nora-release`, `nora-deploy` as applicable | merge/publication/live evidence only where required |
-| **resolve or resume** | close the outcome or preserve its continuation | `nora-dispatch` | evidenced completion, or a short handoff with remaining work |
-
-This is skill-guided reinforcement. Existing tools perform the operations;
-there is no lifecycle engine, phase lock or automatic session wakeup. Scripts
-are for useful repeated reads/writes, not for deciding scope or completion.
+- **No self-attestation.** At each transition its route requires, a checker
+  other than the doer (the operator, the reviewer by rule, CI or the next
+  agent) records pass or block. A skill halts when that output is missing.
+- **Ask only for intent, authority or redesign.** The agent obtains reviewer and
+  CI checks itself; only an operator-held gate waits, never a "continue".
+- **Ceiling.** The gates are policy-level stops held by skills, not an
+  unskippable control; the reviewer and the operator's merge refuse when the
+  route's required artifact is missing.
+- An implementation request continues through delivery; a design-only request
+  stops at its design. Agreement grants no new spending or deployment.
 
 ## Coordination and decisions
 
-The operator owns intended outcomes, scope amendments and explicit exceptions.
-The outcome orchestrator chooses units, workers, review lenses/tier and next
-steps within that authority, and reconciles evidence before closing work.
-Builders implement their assigned slice; reviewers judge it without adding
-requirements or authorizing repairs. Required hosted checks remain applicable.
-
-For shared designs, interfaces or migrations, read related active work and T3
-threads before assigning writes; `nora-dispatch` owns that coordination procedure.
-A thread link is context access, not shared memory or automatic synchronization.
-One outcome owner integrates; one writer owns a shared seam at a time.
+The operator owns outcomes, scope amendments and exceptions. The orchestrator
+chooses units, workers, review tier and next steps within that authority;
+builders implement their slice; reviewers judge it without adding requirements.
+For a shared design, interface or migration, read the related active work and
+T3 threads before assigning writes (`nora-dispatch`); one writer owns a shared
+seam at a time, and one outcome owner integrates.
 
 ## Execution tier
 
@@ -115,10 +99,9 @@ critical capability even in a small diff.
 
 ## Review and validation are adaptive
 
-The orchestrator chooses review depth and checks from what the change can
-break, not from its type or size alone. Answer three questions: what changed,
-what could break, and what evidence shows it did not. Then spend the least that
-answers them.
+Review depth and checks follow what the change can break, not its type or size:
+what changed, what could break, and what evidence shows it did not; spend the
+least that answers them.
 
 | Change | Usual review |
 |---|---|
@@ -127,47 +110,34 @@ answers them.
 | Live behaviour on merge: defaults, prompts, doctrine, tool text, routing, model settings | full |
 | Disclosure, security, locks/concurrency, hot-table migrations, new model spending | full, with critical execution capability |
 
-The last row is the only fixed minimum. Everywhere else, move a step up or down
-on judgement and say why in the PR's Gate section. A missed first fix, a scope
-surprise or an unplanned gate repair is evidence to raise review a step. The
-operator can require any check or review.
+The last row is the only fixed minimum; elsewhere move a step on judgement and
+say why in the PR's Gate section. A missed first fix, a scope surprise or an
+unplanned gate repair raises review a step. The operator can require any check.
 
-Tiers (frontmatter) are inspection depth on the same agreed slice, never
-severity or authority to add requirements; every tier applies the five Cs.
-Procedure: `.agents/skills/nora-review/SKILL.md`. A report shows acceptance
-coverage and unverified limits as well as findings; a tier name or APPROVE
-alone is not a report.
-
+Review tiers set inspection depth on the same agreed slice, never severity or
+new requirements; routes (`nora-work`) set which gates apply. A report shows
+acceptance coverage and limits as well as findings; APPROVE alone is not one.
 Validation follows the same judgement: run the focused checks that prove what
-changed; docs-only changes need a diff read and a check of the changed property,
-not a local gate. Required hosted checks and branch rules always apply. Never
-relabel an old exact-tree receipt as a run on a new tree; a moving master only
-needs checks on what the upstream change touches.
+changed. Required hosted checks always apply, and an old exact-tree receipt is
+never relabelled as a run on a new tree.
 
 ## Intent, evidence and completion
 
-- GitHub Project owns roadmap; Linear owns execution. A **work brief** in its issue description
-  combines intent, observable completion conditions and boundaries, with design
-  links as needed. The model chooses implementation details; no separate plan,
-  spec or PRD is required. Small direct work may use the PR-recorded brief.
+- GitHub Project owns roadmap; Linear owns execution. The **work brief**
+  (`nora-dispatch/references/brief.md`) is the issue description, or the PR
+  body on the light route. No separate plan, spec or PRD file is required.
 - Read the current brief, parent intent and actual blockers before launch,
-  intake and handoff; record the work link and the source revision or update time read.
-  Keep the description concise and current. Comments hold discussion and
-  precise evidence, not the only current acceptance or another live queue.
-- Agreement to a concrete proposed fix means implement it. File only work
-  explicitly deferred from this slice, after checking for an existing home.
-- Judge each obligation met, unmet or unavailable against the real source or
-  runtime; missing evidence is unavailable, not missing implementation. Tests,
-  review, merge and deployment prove different things: require what acceptance
-  specifies.
-- An invalid plan returns to scoping; a defect returns to bounded repair.
-  Expanding scope needs an explicit amendment; a reviewer suggestion is not a
-  requirement. Never soften an obligation to get a pass.
-- Close the slice for its whole outcome once every obligation is evidenced
-  and no BLOCKER remains, updating remaining scope and recording limitations
-  without claiming them; reopen only on new evidence or a changed requirement.
-- A worker's stop point is not the orchestrator's completion: after intake,
-  reconcile the whole outcome; a new session inherits it and the holds.
+  intake and handoff, and record the revision read. Comments hold discussion
+  and precise evidence, never the only current acceptance.
+- After the operator approves a brief, its Done-when list is locked; expanding or
+  softening it needs his amendment, and a reviewer suggestion is not a
+  requirement. An invalid plan returns to propose; a defect returns to repair.
+- Each item is met, unmet or unavailable against the real source or runtime,
+  marked by the reviewer; missing evidence is unavailable, not missing
+  implementation. Tests, review, merge and deployment prove different things.
+- Close the outcome once every item is evidenced and no BLOCKER remains. A
+  worker's stop point is not completion; a new session inherits the outcome
+  and its holds.
 
 ## Choosing a worker
 
@@ -175,16 +145,12 @@ needs checks on what the upstream change touches.
   credential availability (never the values), permissions, quota and operator
   constraints. Choose the least-cost worker that meets the capability and
   evidence the task needs.
-- Catalogue presence proves neither competence nor authorisation; rely on prior
-  evidence or a bounded authorised probe. If either is missing, report Blocked
-  with the reason and the unblock step. Never guess.
-- Pass the advertised provider, model and options explicitly, including effort,
-  and read back what launched. Do not silently lower effort, translate
-  unsupported options or weaken requirements because of quota. A fallback meets
-  the same capability, evidence and independence bar. Changing model or options
-  is a new launch, linked to the previous report.
-- Escalate on observed failure or unresolved ambiguity; reread the input and
-  spec before spending another run.
+- Catalogue presence proves neither competence nor authorisation; without
+  prior evidence or an authorised probe, report Blocked with the unblock step.
+- Pass provider, model and options explicitly, including effort, and read back
+  what launched. Never silently lower effort or weaken requirements for quota;
+  a fallback meets the same bar, and a changed model is a new, linked launch.
+- On observed failure or ambiguity, reread the input and spec before another run.
 - Model exclusions: never MiniMax M3; M3.1-Flash only when the operator names it.
 
 **Reviewer independence.** A reviewer is a fresh session, neither the builder
@@ -193,17 +159,15 @@ orchestrator that commits is one; a same-vendor endpoint is not independence.
 Default: GPT-6.1 Terra (Codex); an OpenAI author means Kimi K3.1 Pro
 (kimi-code/k3.1-pro). No qualifying reviewer available means Blocked, with why.
 
-**Execution briefs and handoffs** follow `nora-dispatch`. The worker owns its
-slice; the orchestrator owns integration and acceptance. Reviews run on the
-assigned base/head and spawn no agents; a prepared worktree keeps its base —
-never a second worktree or a restart on master.
+**Execution briefs and handoffs** follow `nora-dispatch`: the worker owns its
+slice, the orchestrator integration and acceptance. Reviews spawn no agents; a
+prepared worktree keeps its base, never a second worktree or a restart on master.
 
 ## Bounded independent review
 
 `REVIEW.md` owns review scope, finding quality and the return format;
-`nora-review` owns the steps. The orchestrator preserves all grounded findings
-in the receipt; non-blocking findings go into one summary comment on the PR —
-at most six classes grouped, linked — and never open a round.
+`nora-review` the steps. All grounded findings stay in the receipt; non-blocking
+ones go into one PR summary comment, at most six classes, and open no round.
 
 | Verdict | Consequence |
 |---|---|
@@ -212,17 +176,16 @@ at most six classes grouped, linked — and never open a round.
 | ISSUE: real but pre-existing outside agreed completion, or out of scope | Use the existing Linear work item or GitHub defect report; file only actionable work with no home (`nora-decision`); never blocks |
 | DROP: hypothetical, contrived, style or unrelated | One-line disposition |
 
-- Severity measures consequence; disposition determines action — preserve the
-  source finding when triaging. Recurrence alone cannot raise an observation
-  to a blocker; a material failure needs its scenario and impact.
+- Severity measures consequence and is the reviewer's; the orchestrator
+  chooses the disposition and never re-grades it. Recurrence alone never makes
+  a blocker; a material failure needs its scenario and impact.
 - Verify each finding at the cited line with the right check (`nora-prove-fix`
   for production fixes); a clean review never replaces the gate or read-back.
 - A round with no BLOCKER ends review once required evidence is in; waiting
-  for evidence is not a round. A later round checks
+  for evidence is not a round. One re-check covers
   `git diff <reviewed-sha>..HEAD`, unresolved findings and previously
-  unavailable required evidence, even when empty. Self-contained work
-  converges in at most two rounds; past three, the orchestrator rereads the
-  spec and asks the operator whether to redesign rather than run another.
+  unavailable required evidence. Rounds continue while each closes a blocker
+  class; one that closes none, or a repair-made class, goes to the operator.
 - A class is one remedy fixing all its instances: first report names the
   structural remedy and every sibling instance in that round, then no new
   input shapes. A repair-induced finding names its origin; same class unless
@@ -243,26 +206,15 @@ at most six classes grouped, linked — and never open a round.
 | GitHub issue | Defect/problem or community request reports and their disposition; not execution tasks |
 | Run / review receipt | Actual provider, model, toolset, options, fit reason, run reference, input revision and evidence |
 
-- Use native ownership/dependencies and link evidence; do not copy plans,
-  receipts or tracker state into parallel files. Preserve existing work IDs,
-  owners and holds until verified successors are linked during migration.
-- Roadmap outcomes, report disposition and execution status are separate. Link
-  them; do not mirror their descriptions or statuses. Roadmap changes follow
-  [roadmap conventions](docs/maintainers/conventions.md#roadmap).
-- AgentSession completion, PR merge and child closure are not whole-outcome
-  acceptance. A skill or MCP connection does not install unattended execution
-  or grant spending authority.
+- Use native ownership and dependencies and link evidence; never copy plans,
+  receipts or tracker state into parallel files. Roadmap outcomes, report
+  disposition and execution status are linked, never mirrored
+  ([roadmap conventions](docs/maintainers/conventions.md#roadmap)).
+- Session completion, PR merge and child closure are not whole-outcome
+  acceptance; a skill or MCP connection grants no unattended spending authority.
 
-Task states describe work and run readiness, not agent session states:
-**Inbox** may be incomplete (blank tiers mean unclassified); **Ready** has a
-bounded outcome, resolvable acceptance, available dependencies and
-permissions, a priority and tiers; **Running** links a real launched run;
-**Review** links the run and inspectable evidence; **Blocked** links its work item
-and the reason and unblock step, never fabricated Ready metadata; **Done** has
-acceptance evidence for the whole slice, including merge or live read-back when
-specified. Cancelled or superseded work closes as not planned with its reason;
-partial work references its parent without closing it. Linear's configured
-workflow names are read back rather than assumed to match these labels.
+Task states follow the Linear convention (`docs/maintainers/conventions.md`
+«Linear execution»); read the configured workflow names back rather than assuming them.
 
 Artifact lifecycle — one owner and one end event each; retirement is mechanical, not a judgement:
 
@@ -276,30 +228,23 @@ Artifact lifecycle — one owner and one end event each; retirement is mechanica
 | evidence | a check runs | never | PR comment or CI artifact, never only `/tmp` |
 | working log | a check runs | its run ends | `/tmp` |
 
-- An outcome that does not merge is archived once by the orchestrator —
-  `make archive BRANCH=<b> REASON="..."`: an annotated `archive/<branch>`
-  tag on the committed tip records the reason and source tip, verified on
-  origin. Dirty work is committed first by its owner; `gc` retires the
-  worktree and counts the tag as custody.
-- The orchestrator runs `make gc APPLY=1` at intake and after merge; reviews
-  use a detached checkout and never push a branch.
+- Resolve settles each artifact (`nora-land/reference.md` «Resolve»): work
+  that will not merge is archived once with `make archive`, an annotated
+  `archive/<branch>` tag verified on origin, and `make gc APPLY=1` runs at
+  intake and after merge. Reviews use a detached checkout and never push.
 - A handoff PR's base is the integration branch or the previous handoff's
   branch; on merge GitHub deletes the head and retargets the PRs stacked on it.
-- Builder briefs never say to preserve branches or worktrees; repairs land on
-  the open handoff's branch, or a new handoff PR off the current base.
+  Repairs land on the open handoff's branch, or a new handoff off the current base.
 
 ## Interchange shape
 
 The optional `.agents/orchestration.schema.json` interchange describes policy,
-task and run records for consumers that use it; it does not govern live Linear
-states or require agents to produce a record at each stage. The `kind` field
-selects the shape. It checks shape only, not link resolution, worker
-competence, independence or acceptance: read those back. Task metadata is a small
-projection, not a tracker API payload. `issue_ref` accepts the owning Linear
-work URL; the schema does not install a tracker integration. Unknown properties are rejected except in
-run `options`. References are absolute URIs; use immutable revisions where content
-can change. `tests/architecture/test_orchestration_contract.py` validates this
-policy and the synthetic examples below, which resolve to no real evidence.
+task and run records for the consumers that use it; it governs no live Linear
+state and requires no record per stage. `kind` selects the shape, and it checks
+shape only: links, competence, independence and acceptance are read back.
+References are absolute URIs, with immutable revisions where content can change.
+`tests/architecture/test_orchestration_contract.py` validates this policy and
+the synthetic examples below, which resolve to no real evidence.
 
 ```yaml
 inbox:
