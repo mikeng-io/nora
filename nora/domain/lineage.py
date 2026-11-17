@@ -44,7 +44,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from nora.domain.rollup import room_key
@@ -332,10 +332,16 @@ class RenderRoom:
     live: LiveRoom | None = None
     mode: LineageMode = "off"
     content_checks: bool = True
+    aliases: Mapping[str, str] = field(default_factory=dict, repr=False)
+
+    def canonical(self, person_id: str) -> str:
+        return self.aliases.get(person_id, person_id)
 
     def with_live(self, live: LiveRoom | None) -> RenderRoom:
         return RenderRoom(
-            room=self.room, rooms=self.rooms, circles=self.circles, live=live,
+            room=self.room, rooms=self.rooms, circles=self.circles,
+            live=replace(live, person_ids=frozenset(self.canonical(p) for p in live.person_ids))
+            if live is not None else None, aliases=self.aliases,
             mode=self.mode, content_checks=self.content_checks,
         )
 
@@ -425,3 +431,10 @@ def own_room_lineage(room: str, sections: Iterable[str], *, keyed: bool = True) 
     `message` entry must name a room key."""
     entries = (message(room), unresolved(room)) if keyed else (unresolved(room),)
     return Lineage.of(dict.fromkeys(sections, entries))
+
+
+@dataclass(frozen=True)
+class LineageSnapshot:
+    members: Mapping[str, frozenset[str] | None]
+    circles: tuple[frozenset[str], ...]
+    aliases: Mapping[str, str]

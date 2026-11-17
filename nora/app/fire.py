@@ -1014,7 +1014,7 @@ class FirePath:
             documents=documents,
             room_members=await self._room_members(occasion),
             lineage_room=(
-                self._lineage.render_room(
+                await self._lineage.read_room(
                     platform=occasion.platform,
                     conversation_id=occasion.conversation_id,
                 )
@@ -1030,14 +1030,14 @@ class FirePath:
         return await self._access.room_refs(
             occasion.platform, occasion.conversation_id)
 
-    def _render_room(self, occasion: Event) -> Any:
+    async def _render_room(self, occasion: Event) -> Any:
         """The lineage policy's room view — configured lineage or policy-derived."""
         lineage = self._lineage
         if lineage is None:
             if self._policy is None:
                 raise ValueError("a room view requires lineage or policy")
-            lineage = LineagePolicy.from_policy(self._policy)
-        return lineage.render_room(
+            lineage = LineagePolicy.from_policy(self._policy, access=self._access)
+        return await lineage.read_room(
             platform=occasion.platform, conversation_id=occasion.conversation_id)
 
     async def _read_computer(self, occasion: Event) -> ComputerView | None:
@@ -1521,7 +1521,7 @@ class FirePath:
             return ()
         reader = self._profile_reader
         members = await self._room_members(occasion)
-        target = self._render_room(occasion)
+        target = await self._render_room(occasion)
         room = Room(
             platform=occasion.platform, conversation_id=occasion.conversation_id,
             roster_source=self._rosters.get(occasion.platform), access=self._access,
@@ -1614,7 +1614,7 @@ class FirePath:
                 roster_source=self._rosters.get(occasion.platform), access=self._access,
                 tagger=ref, self_ids=self._profile_self_ids,
             )
-            target = self._render_room(occasion)
+            target = await self._render_room(occasion)
             try:
                 narrowed = await ledger_target(target, room)
             except Exception:

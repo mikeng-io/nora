@@ -241,7 +241,7 @@ async def enabled(
                 standing_store=standing_store,
                 stimulus_store=stimulus_store,
                 tag_trace_store=tag_trace_store, tier=tier,
-                tool_registry=tool_registry, unit_rooms=unit_rooms,
+                tool_registry=tool_registry, unit_rooms=unit_rooms, access=access,
                 unit_scopes=unit_scopes,
             )
             cognition_runner = cog.cognition_runner

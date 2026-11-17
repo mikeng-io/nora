@@ -880,7 +880,7 @@ async def build_dependencies(
     discord_presence = _voice_platforms.discord_presence
     music_bridge = _voice_platforms.music_bridge
     voice_presence = _voice_platforms.voice_presence
-    _people_lineage = _people_wire.lineage(allowlist=allowlist, cfg=cfg, persons=persons_view)
+    _people_lineage = _people_wire.lineage(allowlist, cfg, persons_view, access=access)
     lineage = _people_lineage.lineage
     _agent_desk = desk(
         cfg=cfg, clock=clock, compute_jobs=compute_jobs, document_service=document_service

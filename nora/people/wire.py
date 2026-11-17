@@ -162,13 +162,13 @@ class LineageWiring:
     lineage: Any
 
 
-def lineage(allowlist, cfg, persons) -> LineageWiring:
+def lineage(allowlist, cfg, persons, access=None) -> LineageWiring:
     # LINEAGE: the ONE value that says who each room of the policy is, held by the fire path
     # below and by `record_query` through the registry. The tag path's assembler builds the
     # same value from the same three inputs (`build_assembler`).
     lineage = LineagePolicy.from_policy(
         allowlist, circles=LiveSequence(lambda: circles_from_persons(persons)),
-        mode=cfg.lineage.mode, content_checks=cfg.content_checks.enabled)
+        mode=cfg.lineage.mode, content_checks=cfg.content_checks.enabled, access=access)
     return LineageWiring(lineage=lineage)
 
 

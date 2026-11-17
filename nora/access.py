@@ -31,6 +31,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
 from nora.domain.identity import BoundAccount, Identifier
+from nora.domain.lineage import LineageSnapshot
 from nora.domain.managed import (
     CheckResult,
     ManagedMembership,
@@ -717,3 +718,39 @@ class IdentityAccess:
                 raise CircleUnavailableError("current circle name is unavailable")
             rows.append((row, ref))
         return tuple(rows)
+
+    async def lineage_snapshot(self, scopes: tuple[Scope, ...]) -> LineageSnapshot:
+        from contextlib import AsyncExitStack
+
+        from nora.domain.managed import Verdict
+
+        async with AsyncExitStack() as stack:
+            try:
+                circle_rows = await stack.enter_async_context(self._presence_accounts.reading())
+            except Exception:  # noqa: BLE001 — unavailable circles do not authorize presence
+                circle_rows = ()
+                await stack.enter_async_context(self._bindings.mutation())
+            members: dict[str, frozenset[str] | None] = {}
+            for scope in scopes:
+                eligible = set()
+                members[scope.id] = None
+                for row in await self._bindings.members_of(scope):
+                    person = await self._bindings.canonical_person(row.person_id)
+                    if person is None:
+                        continue
+                    verdict = await self.check(scope=scope, person_id=person, permit="view")
+                    if verdict.verdict is Verdict.UNAVAILABLE:
+                        break
+                    if verdict.allowed:
+                        eligible.add(person)
+                else:
+                    members[scope.id] = frozenset(eligible)
+            aliases = {}
+            for identity in await self._bindings.persons():
+                for former in await self._bindings.former_persons(identity.person_id):
+                    aliases[former] = identity.person_id
+            circles: dict[str, set[str]] = {}
+            for row in circle_rows:
+                if row.circle_id is not None:
+                    circles.setdefault(row.circle_id, set()).add(row.person_id)
+            return LineageSnapshot(members, tuple(frozenset(p) for p in circles.values()), aliases)

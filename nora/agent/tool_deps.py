@@ -450,7 +450,7 @@ class ToolDeps:
         if self.lineage is None:
             _record(self.metrics, tool, "unavailable", reason="unwired")
             return None
-        target = self.lineage.render_room(
+        target = await self.lineage.read_room(
             platform=self.room.platform, conversation_id=self.bound_conversation_id
         )
         if target.room is None:

@@ -253,22 +253,31 @@ def stay_context_reader(
 def place_release(
     *, rooms_of: Callable[[str], Collection[tuple[str, str, bool]]],
     room_view: Callable[[str, str], Awaitable[RoomView]], circles: Sequence[Circle],
-    content_checks: bool = True,
+    content_checks: bool = True, access: Any = None,
 ) -> Callable[[str, str], Awaitable[bool]]:
-    """`(unit, person_id) -> may a place of theirs be named here`: True only
-    when EVERY room of the unit passes `presence_audience`, the decision
-    `where_been` takes before it names a place (R-35, DEC-279), for a circle
-    the person is in. `rooms_of(unit)` is each room's `(platform,
-    conversation_id, location_trusted)`. A Cognition session reads across its
-    unit and may write into any of its rooms, so one room that may not hear
-    it withholds it from all. FAIL-CLOSED: no room, no circle holding the
-    person, a room that cannot be read, or any error is False."""
+    """Release a place only when every unit room passes its current circle audience.
+
+    Missing rooms, unreadable rosters or a changed managed snapshot withhold it.
+    """
 
     async def may(unit: str, person_id: str) -> bool:
         try:
             rooms = list(rooms_of(unit))
-            mine = [c for c in circles if person_id in c.person_ids]
-            if not rooms or not mine:
+            selected = access is not None and not access.is_file_backend
+            if not rooms:
+                return False
+            if selected:
+                from nora.domain.managed import room_scope_id
+                from nora.domain.management import Scope, ScopeKind
+
+                scopes = tuple(Scope(ScopeKind.ROOM, room_scope_id(p, c)) for p, c, _ in rooms)
+                snapshot = await access.lineage_snapshot(scopes)
+                canonical = snapshot.aliases.get(person_id, person_id)
+                mine = [Circle(str(i), group, ()) for i, group in enumerate(snapshot.circles)
+                        if canonical in group]
+            else:
+                mine = [c for c in circles if person_id in c.person_ids]
+            if not mine:
                 return False
             for platform, conversation_id, trusted in rooms:
                 view = await room_view(platform, conversation_id)
@@ -280,7 +289,7 @@ def place_release(
                     for c in mine
                 ):
                     return False
-            return True
+            return not selected or snapshot == await access.lineage_snapshot(scopes)
         except Exception:
             log.exception("cognition grounding: could not check who may hear a place")
             return False
@@ -397,23 +406,14 @@ def unit_self_profile_reader(
     lineage: LineagePolicy | None = None,
     room_for: Callable[[str, str], AgentRoom] | None = None,
 ) -> Callable[[str], Awaitable[tuple[ProfileLine, ...]] | None] | None:
-    """`build_grounder`'s `self_profile`: her Profile account of the unit, or
-    none — `unit_self_reader`'s gate (R-31: the session can reach any room of
-    the unit) on the switch's account (45 §5). `None` while `[memory.profile] read`
-    is off.
-
-    The session can reach every room of the unit but has no live roster to
-    clear an exclusion. The shared exclusion predicate therefore withholds
-    excluded lines, as the grounder's other lineage reads do. Location lines
-    additionally pass the turn path's presence permission in every target room.
-    """
+    """Her unit Profile account, with exclusions and location checked in every room."""
     if profile is None:
         return None
 
     async def read(unit: str) -> tuple[ProfileLine, ...]:
         boundary = lineage or LineagePolicy.from_policy(policy)
-        targets = tuple(boundary.render_room(platform=c.platform, conversation_id=c.primary_id)
-                        for c in policy.rooms() if c.unit == unit and c.primary_id)
+        targets = tuple([await boundary.read_room(platform=c.platform, conversation_id=c.primary_id)
+                        for c in policy.rooms() if c.unit == unit and c.primary_id])
         lines = await profile.account_heads(key=nora_character_key(unit))
         lines = tuple(line for line in lines if not line.exclude_persons or (
             targets and all(not excluded(line.exclude_persons, target) for target in targets)
@@ -736,7 +736,7 @@ def build_grounder(
             records_out[item.ref] = item
 
         agenda_rooms = list(dict.fromkeys(i.room for i in items))
-        targets = [lineage.render_room(platform=r.platform,
+        targets = [await lineage.read_room(platform=r.platform,
                                        conversation_id=r.conversation_id)
                    for r in agenda_rooms]
         # `on` removes, `shadow` only REPORTS what it would have removed (a log
@@ -810,7 +810,7 @@ def build_grounder(
         for room in agenda_rooms:
             if (room.platform, room.conversation_id) not in allowed:
                 continue
-            target = lineage.render_room(
+            target = await lineage.read_room(
                 platform=room.platform, conversation_id=room.conversation_id,
             )
             for e in await events_in(unit, room.platform, room.conversation_id):

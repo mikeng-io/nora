@@ -433,7 +433,7 @@ class TranscriptInjection:
             # listed persons and their aliases for `<room_members>`.
             room_members=await self._room_members(msg),
             lineage_room=(
-                self._lineage.render_room(
+                await self._lineage.read_room(
                     platform=msg.platform, conversation_id=msg.conversation_id,
                 )
                 if self._lineage is not None else None
@@ -447,7 +447,7 @@ class TranscriptInjection:
         """Read the tools' scoped graph from structural anchors and index hits."""
         if self._memory_search is None or self._lineage is None:
             return None
-        target = self._render_room(msg)
+        target = await self._render_room(msg)
         if target.room is None:
             return None
         listed = target.room.persons
@@ -626,14 +626,14 @@ class TranscriptInjection:
         return getattr(
             self._access.persons_view().resolve(platform, actor), "name", None)
 
-    def _render_room(self, msg: NormalizedMessage) -> Any:
+    async def _render_room(self, msg: NormalizedMessage) -> Any:
         """The lineage policy's room view — configured lineage or policy-derived."""
         lineage = self._lineage
         if lineage is None:
             if self._policy is None:
                 raise ValueError("a room view requires lineage or policy")
-            lineage = LineagePolicy.from_policy(self._policy)
-        return lineage.render_room(
+            lineage = LineagePolicy.from_policy(self._policy, access=self._access)
+        return await lineage.read_room(
             platform=msg.platform, conversation_id=msg.conversation_id)
 
     async def _profiles(
@@ -659,7 +659,7 @@ class TranscriptInjection:
         if convo is None or not convo.unit:
             return ()
         members = await self._room_members(msg)
-        target = self._render_room(msg)
+        target = await self._render_room(msg)
         room = Room(
             platform=msg.platform, conversation_id=msg.conversation_id,
             roster_source=self._rosters.get(msg.platform), access=self._access,
@@ -1043,7 +1043,7 @@ class TranscriptInjection:
                 roster_source=self._rosters.get(msg.platform),
                 tagger=ref, self_ids=self._self_ids, access=self._access,
             )
-            target = self._render_room(msg)
+            target = await self._render_room(msg)
             try:
                 narrowed = await ledger_target(target, room)
             except Exception:
@@ -1276,7 +1276,7 @@ class TranscriptInjection:
         if self._lineage is not None and self._lineage.mode == "on":
             notes = derived_view(
                 notes=notes, standing=None, culture=None,
-                target=self._render_room(msg)).notes
+                target=await self._render_room(msg)).notes
         out: list[RetainedSource] = []
         more = 0
         seen: set[str] = set(shown_handles)
