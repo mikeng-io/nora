@@ -113,7 +113,9 @@ pass's input**; everything after the input is the same run.
 - A proactive pass digests its intention: is it still wanted, what does the
   room look like now, and what should be done — deliver, act elsewhere, move
   its trigger with evidence, or stay silent.
-- Only the tag pipeline and the fire path can deliver.
+- Only the engagement loop composes deliveries, through the tag pipeline or the
+  fire path. Deterministic notifications and public publication have their own
+  admitted routes ([acts](acts.md)); every delivery passes the common guards.
 - The engagement loop never writes understanding; the reflection loop writes it
   from the engagement loop's recorded passes.
 - The reflection loop reaches a room only by committing an intention whose
@@ -141,7 +143,7 @@ before the room's slot is released.
   closing evidence its condition's form requires ([graph](graph.md)); admission
   routes it through observe's compute, the one writer of closed-by, which
   accepts it only if the witness meets the condition. Study's verify writes
-  the verdict. Attempted is never closed.
+  the verdict, and alone writes a deadline ending. Attempted is never closed.
 - **Carries findings as findings.** A result the pass found but did not give —
   the third restaurant a search returned — becomes a child intention, "offer it
   when it comes up", citing its result item and serving the decision it bears
