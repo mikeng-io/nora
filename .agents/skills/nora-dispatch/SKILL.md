@@ -11,7 +11,7 @@ resume from current evidence rather than restarting the whole procedure.
 ## 1. Read or refine the work
 
 For new Linear work, use the [execution convention](../../../docs/maintainers/conventions.md#linear-execution).
-Read the current description, parent outcome and unresolved blockers. Capture
+Read the current description, its project's Intent and unresolved blockers. Capture
 only what the next actor needs; follow design and evidence links on demand.
 
 Write or revise the brief to [references/brief.md](references/brief.md): its
@@ -48,11 +48,11 @@ issues of one Linear project; each child has its own brief and states its delta.
 Use native ownership and blocking relations instead of a copied task table.
 Sequence shared write ownership. For an integrated change, units are review
 slices on its integration branch, not separate master releases. Use
-`nora-land`'s stacked-delivery path when dependent PR layers are useful; a child
-work item, PR layer and T3 worker need not have one-to-one identities. A child
-issue exists only for an outcome with its own owner and acceptance: a proof,
-measurement or review of the parent's acceptance is a check on a PR, never a
-Linear child issue.
+`nora-land`'s stacked-delivery path when dependent PR layers are useful; an
+issue, PR layer and T3 worker need not have one-to-one identities. An issue in a
+project exists only for an outcome with its own owner and acceptance: a proof,
+measurement or review of the project's acceptance is a check on a PR, never an
+issue of its own.
 Check: every Done-when item maps to a unit with a write set, and units whose
 write sets overlap are sequenced (`references/plan.md`).
 
@@ -97,7 +97,7 @@ Check: the execution has started on the intended input, with a finite boundary.
 Read the actual diff, the execution receipt and the named checks with exit
 codes. The reviewer marks each item met, unmet or unavailable; the orchestrator
 reconciles those marks and never marks its own or its builder's work. Before the
-next dispatch, reconcile each result against the original parent outcome in the
+next dispatch, reconcile each result against the original whole outcome in the
 current brief: what is now evidenced at the integrated/candidate head, what
 remains, and which condition the next action advances. Repair findings and review
 rounds never replace that outcome. Carry forward still-valid evidence; do not
@@ -132,8 +132,8 @@ Close only when the agreed results, including delivery where required, have
 actual evidence and the artifact's outcome is settled — merged or archived.
 Update the
 owning Linear item: current status, outcome/evidence,
-remaining work and next owner/action if any; read back the write. Update parent
-acceptance separately. Report the result, material limits and next action to the
+remaining work and next owner/action if any; read back the write. Update the
+project's acceptance separately. Report the result, material limits and next action to the
 operator. Link receipts instead of copying logs into Linear.
 
 At pause, blocker or session replacement, update a short current handoff:

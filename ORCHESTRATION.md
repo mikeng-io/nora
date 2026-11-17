@@ -126,7 +126,7 @@ never relabelled as a run on a new tree.
 - GitHub Project owns roadmap; Linear owns execution. The **work brief**
   (`nora-dispatch/references/brief.md`) is the issue description, or the PR
   body on the light route. No separate plan, spec or PRD file is required.
-- Read the current brief, parent intent and actual blockers before launch,
+- Read the current brief, project Intent and actual blockers before launch,
   intake and handoff, and record the revision read. Comments hold discussion
   and precise evidence, never the only current acceptance.
 - After the operator approves a brief, its Done-when list is locked; expanding or
@@ -221,7 +221,7 @@ Artifact lifecycle — one owner and one end event each; retirement is mechanica
 | artifact | created when | ends when | ended by |
 |---|---|---|---|
 | Linear issue | an outcome is agreed | whole outcome evidenced | its owner |
-| integration branch | parent outcome starts | PR to master merges | GitHub auto-delete |
+| integration branch | the whole outcome starts | PR to master merges | GitHub auto-delete |
 | handoff branch | a builder starts | its PR merges into its base | GitHub auto-delete |
 | worktree | the first write needs one | branch merged or deleted | orchestrator, via `make gc` |
 | review checkout | a read-only review needs one | its result is read | orchestrator, via `make gc` |

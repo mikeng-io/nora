@@ -332,8 +332,8 @@ reviewers get the brief as a packet (`nora-dispatch/references/brief.md`).
 | team | use the owning domain; Nora execution uses the existing `nora` / `NOR` team |
 | owner | one accountable assignee; a delegate or T3 thread is the executor |
 | status | Backlog: deferred; Todo: bounded/ready; In Progress: executing, reviewing or blocked with cause; Done: evidenced completion; Canceled/Duplicate: reason/canonical link |
-| priority | set on every open issue (Urgent, High, Medium, Low), distinct from roadmap horizon; No priority only while undecided |
-| type | one label from the **Type** group: Bug, Feature or Improvement; an investigation may have none |
+| priority | set on every open issue (Urgent, High, Medium or Low), distinct from roadmap horizon |
+| type | one label from the **Type** group on every issue: Bug, Feature or Improvement |
 | area | one label from the **Area** group, one per code area in `ARCHITECTURE.md` «Code map» (`cognition` covers `design/cognition/` and its loops); a new Area label only with a new code area |
 | relations | a project, with a milestone per phase, for a split outcome; blocks for dependencies |
 | references | roadmap item and GitHub report when applicable; repository/base, T3 thread, PR and evidence as execution produces them |
