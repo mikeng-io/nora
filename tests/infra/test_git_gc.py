@@ -465,3 +465,19 @@ def test_stale_registration_whose_path_returns_is_not_pruned(repo: Repo) -> None
     assert out.returncode != 0
     assert f"error pruning {back.resolve()}" in out.stderr
     assert str(back.resolve()) in repo.worktrees()
+
+
+def test_fetch_never_updates_a_local_branch_through_a_configured_mapping(
+    repo: Repo,
+) -> None:
+    """A mapped local branch ahead of its remote keeps its own tip, even dry."""
+    repo.git("push", "-q", "origin", "master:refs/heads/feature/mapped")
+    repo.git("config", "--add", "remote.origin.fetch",
+             "+refs/heads/feature/*:refs/heads/feature/*")
+    repo.git("branch", "feature/mapped", "master")
+    repo.git("checkout", "-q", "feature/mapped")
+    repo.git("commit", "-qm", "local only", "--allow-empty")
+    repo.git("checkout", "-q", "master")
+    sha = repo.head("feature/mapped")
+    _gc(repo)
+    assert repo.head("feature/mapped") == sha
