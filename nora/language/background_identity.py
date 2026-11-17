@@ -26,7 +26,7 @@ class BackgroundIdentity:
 
     async def names(
         self, *,
-        unit: str, subject: str, people: Sequence[str | None],
+        unit: str, subject: str | None, people: Sequence[str | None], scope: Scope | None = None,
     ) -> tuple[PersonRef | None, Callable[[str | None], str]]:
         """Name referenced identities in this unit, without borrowing sibling metadata."""
         access = self._access
@@ -34,24 +34,73 @@ class BackgroundIdentity:
             return None, lambda _person: "someone"
         refs: dict[str, PersonRef] = {}
         current: dict[str, PersonRef | None] = {}
-        for person in sorted({subject, *(p for p in people if p is not None)}):
+        for person in sorted({p for p in (subject, *people) if p is not None}):
             canonical = await access.canonical_person(person)
             if canonical is None:
                 continue
             if canonical not in current:
                 current[canonical] = await access.person_ref(
-                    canonical, scope=Scope(ScopeKind.UNIT, unit))
+                    canonical, scope=scope or Scope(ScopeKind.UNIT, unit))
             ref = current[canonical]
             if ref is not None and ref.person_id == canonical:
                 refs[person] = refs[canonical] = ref
-        ref = refs.get(subject)
-        if ref is None or ref.person_id != subject:
+        ref = refs.get(subject) if subject is not None else None
+        if subject is not None and (ref is None or ref.person_id != subject):
             raise RuntimeError("profile subject changed or is unavailable")
         def name_of(person: str | None) -> str:
             found = refs.get(person) if person is not None else None
             return found.name if found is not None else "someone"
 
         return ref, name_of
+
+    async def members(self, rooms: Sequence[tuple[str, str]]) -> tuple[str, ...] | None:
+        """Current selected room members; None delegates file mode to its existing mapping."""
+        if not self.managed:
+            return None
+        if self._access is None:
+            raise RuntimeError("selected identity is unavailable")
+        people: set[str] = set()
+        for platform, room in sorted(set(rooms)):
+            people.update(p.person_id for p in await self._access.room_refs(platform, room))
+        return tuple(sorted(people))
+
+    async def social_ids(self, person: str) -> tuple[str, ...]:
+        if self._access is None:
+            return (person,)
+        ids = await self._access.identity_ids(person)
+        if ids is None:
+            raise RuntimeError("identity family is unavailable")
+        return () if await self._access.social_off(person) else ids
+
+    async def collective_batch(
+        self, rooms: Sequence[tuple[str, str]], batch: Sequence[Any],
+    ) -> Sequence[Any]:
+        """Held social evidence obeys current membership and consent before rendering."""
+        if self._access is None:
+            return batch
+        members = await self.members(rooms)
+        allowed: dict[str, bool] = {}
+        out = []
+        for item in batch:
+            if isinstance(item, PersonSourceRevision) and item.domain == "social":
+                person = item.subject
+                if person is None:
+                    continue
+                if person not in allowed:
+                    canonical = await self._access.canonical_person(person)
+                    allowed[person] = (canonical is not None and
+                        (members is None or canonical in members) and
+                        not await self._access.social_off(person))
+                if not allowed[person]:
+                    continue
+            out.append(item)
+        return out
+
+    async def require_collective_social(
+        self, rooms: Sequence[tuple[str, str]], items: Sequence[Any],
+    ) -> None:
+        if items and len(await self.collective_batch(rooms, items)) != len(items):
+            raise RuntimeError("social eligibility changed during collective input")
 
     async def social_batch(
         self, person: str, batch: Sequence[Any],

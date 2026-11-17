@@ -979,7 +979,7 @@ class CharacterUnitAdaptor(EntitySessions):
 CHARACTER_NORA_ADAPTOR_NAME = "character-nora"
 
 #: `inputs` holds one site (the previous account) and `commit` two.
-NORA_STORE_CALLS_PER_TICK = 3
+NORA_STORE_CALLS_PER_TICK = 4
 
 
 @dataclass(frozen=True)
@@ -1041,14 +1041,15 @@ class CharacterNoraAdaptor(EntitySessions):
         keys: Mapping[str, NoraKey], name_of: Callable[[str | None], str],
         metrics: Metrics | None = None,
         clock: Callable[[], datetime] | None = None,
+        identity: BackgroundIdentity | None = None,
     ) -> None:
         self._culture = culture
         #: Read by the dream loop, never awaited here.
         self.evidence = evidence
         self._keys = keys
-        #: A reply's author by `person_id` (the roster's name, never a
-        #: platform id or a self-set profile name).
+        #: Canonical identity names, never platform-supplied sender labels.
         self._name_of = name_of
+        self._identity = identity or BackgroundIdentity(None)
         self._metrics = metrics
         self._clock = clock or (lambda: datetime.now().astimezone())
         self._sessions_init()
@@ -1059,13 +1060,13 @@ class CharacterNoraAdaptor(EntitySessions):
     def _count(self, outcome: str) -> None:
         _inc_session(self._metrics, "nora", outcome)
 
-    def _episode(self, e: Episode, labels: Mapping[str, str]) -> str:
-        """One `<episode>`: her send and what quoted it, each an `m` with its
-        Record id, inside one element carrying the episode's handle, room,
-        outcome and counts."""
+    def _episode(self, e: Episode, labels: Mapping[str, str],
+                 name_of: Callable[[str | None], str] | None = None) -> str:
+        """Her send and its replies, with original Record and episode handles."""
+        name_of = name_of or self._name_of
         rows = render_row_window(
             [(e.send_id, "you", e.text), *(
-                (r.id, self._name_of(r.person_id), r.body or "") for r in e.replies
+                (r.id, name_of(r.person_id), r.body or "") for r in e.replies
             )],
             row_id=lambda m: m[0],
             turn=lambda m: e.turn_handle if m[0] == e.send_id else None,
@@ -1084,34 +1085,33 @@ class CharacterNoraAdaptor(EntitySessions):
         """Her previous account here and the settled episodes since. `""`
         with none: no model call."""
         nk = self._keys.get(key)
-        # `open` is not yet an outcome and `unknown` is an outage, not
-        # silence (R-27): neither is shown, so neither can be cited. The SQL
-        # read already leaves them out; this is the boundary that holds
-        # whatever a store hands over.
+        # Open/unknown episodes are not evidence; retained batches obey this unit's rooms.
+        allowed = {r.key for r in nk.rooms} if nk is not None else set()
         episodes = [e for e in batch if isinstance(e, Episode)
-                    and e.outcome not in ("open", "unknown")]
+                    and e.outcome not in ("open", "unknown") and e.room in allowed]
         if nk is None or not episodes:
             return ""
         now = self._clock()
         labels = {r.key: r.label for r in nk.rooms}
         sends = frozenset(e.send_id for e in episodes)
         evidence = frozenset(e.send_id for e in episodes if e.is_evidence)
+        previous = await self._culture.head(key=key)
+        name_of = self._name_of
+        if self._identity.managed:
+            _, name_of = await self._identity.names(unit=nk.unit, subject=None,
+                people=[r.person_id for e in episodes for r in e.replies])
         self._begin(
             key, citable=Citable(
                 messages=sends | frozenset(r.id for e in episodes for r in e.replies),
                 nora=sends,
-                # Only an episode people DID something in may be cited: her own
-                # send, relabelled as an episode, would otherwise meet the echo
-                # rule with nothing anyone said.
+                # Her send alone cannot satisfy the echo rule.
                 episodes=evidence,
                 echo_rule=True,
-                # A floor, never above what this session was shown: a stale
-                # wake on one episode could not meet a bar of three.
+                # The evidence floor never exceeds the shown batch.
                 min_episodes=min(NORA_MIN_EVIDENCE_EPISODES, len(evidence)),
             ),
             entities={"nora": None}, batch_start=self.evidence.held(key),
         )
-        previous = await self._culture.head(key=key)
         parts: list[ContextBlock | None] = [
             None if previous is None else ContextBlock(
                 name="previous_character", **_at("previous_character"),
@@ -1120,7 +1120,8 @@ class CharacterNoraAdaptor(EntitySessions):
             ),
             ContextBlock(
                 name="episodes", **_at("episodes"),
-                body=legacy_composed("\n".join(self._episode(e, labels) for e in episodes)),
+                body=legacy_composed("\n".join(
+                    self._episode(e, labels, name_of) for e in episodes)),
             ),
         ]
         return assemble([p for p in parts if p is not None], sep="\n\n")

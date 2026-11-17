@@ -55,6 +55,7 @@ COMPOSERS = frozenset(
         "nora.language.note_render:today_block",
         "nora.language.presence_render:render_presence",
         "nora.language.profile_collective:ProfileCollectiveAdaptor.inputs.message_block",
+        "nora.language.profile_collective:_source_block",
         "nora.language.profile_render:render_profile",
         "nora.language.profile_render:render_profile_people",
         "nora.language.shared_render:render_shared_state",
@@ -85,7 +86,6 @@ LEGACY_COMPOSERS = frozenset(
         "nora.language.culture:CultureAdaptor.inputs",
         "nora.language.profile:ProfilePersonAdaptor.inputs",
         "nora.language.profile_collective:ProfileCollectiveAdaptor.inputs",
-        "nora.language.profile_collective:ProfileCollectiveAdaptor.inputs.source_block",
         "nora.language.profile_verdict:ProfileVerdictAdaptor.inputs",
         "nora.subject.context_selector_render:selector_prompt",
     }

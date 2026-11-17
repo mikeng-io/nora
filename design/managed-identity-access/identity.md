@@ -84,6 +84,9 @@ projection instead of reusing an earlier roster or a file-shaped fallback.
 Historical readers resolve canonical families from the selected authority,
 including after restart. They fold subject views while retaining original
 Record ids, senders and mentions; stored provenance is not rewritten.
+Collective inputs use selected room membership and current social consent,
+including for retained batches. Names use the room's own scope for a room
+account and the trusted unit for a unit or Nora account.
 Nora configuration owns room metadata, destinations and topology rather than
 encoding all configuration as permission relationships.
 

@@ -118,7 +118,7 @@ def _character_adaptors(
     )
     c_sched, c_ad, unit_keys, nora_keys = _character_collective_adaptors(
         allowlist=allowlist, cfg=cfg, culture_store=culture_store, engine=engine,
-        metrics=metrics, persons=persons,
+        metrics=metrics, persons=persons, access=access,
     )
     return CharacterAdaptorWiring(
         adaptors=(*adaptors, *p_ad, *c_ad),
@@ -247,7 +247,7 @@ def _character_person_adaptor(
 
 def _character_collective_adaptors(
     allowlist: Any, cfg: Any, culture_store: Any, engine: Any,
-    metrics: Any, persons: Any,
+    metrics: Any, persons: Any, access: Any = None,
 ) -> Any:
 
 
@@ -279,7 +279,7 @@ def _character_collective_adaptors(
     }
     adaptors: tuple[Any, ...] = (
         CharacterNoraAdaptor(
-            culture=culture_store,
+            culture=culture_store, identity=BackgroundIdentity(access),
             evidence=NoraEvidence(
                 store=SqlCharacterEvidence(engine),
                 keys=nora_keys,
@@ -360,7 +360,7 @@ def _profile_adaptors(
             profile_room_keys=profile_room_keys,
             profile_social=profile_social, profile_store=profile_store,
             profile_unit_keys=profile_unit_keys,
-            profile_nora_keys=profile_nora_keys,
+            profile_nora_keys=profile_nora_keys, access=access,
         )
         schedules = {**p_sched, **c_sched}
         adaptors = (*p_ad, *c_ad)
@@ -486,7 +486,7 @@ def _profile_collective_adaptors(
     allowlist: Any, cfg: Any, character: Any, content_checks: Any,
     engine: Any, media_join: Any, metrics: Any, persons: Any,
     profile_index: Any, profile_reads: Any, profile_room_keys: Any, profile_social: Any,
-    profile_store: Any, profile_unit_keys: Any, profile_nora_keys: Any,
+    profile_store: Any, profile_unit_keys: Any, profile_nora_keys: Any, access: Any = None,
 ) -> Any:
     """The room, unit and Nora collective accounts."""
     schedules = {
@@ -517,7 +517,7 @@ def _profile_collective_adaptors(
     adaptors = (
         *(
             ProfileCollectiveAdaptor(
-                kind=kind,
+                kind=kind, identity=BackgroundIdentity(access),
                 profile=profile_store,
                 culture=character.culture_store,
                 render=profile_index,
@@ -529,7 +529,9 @@ def _profile_collective_adaptors(
                     keys=keys,
                     kind=kind,
                     render=profile_index,
-                    source_inputs=SqlProfileInputs(engine, social=profile_social),
+                    identity=BackgroundIdentity(access),
+                    source_inputs=SqlProfileInputs(engine, social=(SqlSocialStreamStore(engine)
+                        if access is not None and not access.is_file_backend else profile_social)),
                     members=LiveMapping(
                         functools.partial(
                             _collective_members,
