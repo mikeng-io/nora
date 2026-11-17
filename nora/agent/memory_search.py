@@ -787,8 +787,7 @@ class MemorySearch:
         people: Sequence[PersonRef] = (),
         social_off: Collection[str],
         media: Sequence[str] = (), about: Sequence[str] = (),
-        person_id: str | None = None,
-        kinds: Sequence[str] = (),
+        person_id: str | None = None, kinds: Sequence[str] = (),
         since_ms: int | None = None,
         until_ms: int | None = None,
         own_room: bool = False, cache: dict[str, Any] | None = None,
@@ -800,8 +799,8 @@ class MemorySearch:
         if self._graph is None or not 0 <= depth <= 4:
             return {"status": "unavailable", "note": "The graph could not be read."}
         try:
-            scope = await scope_for_async(
-                target, own_room=own_room, social_off=social_off, access=self._access)
+            scope = await scope_for_async(target, own_room=own_room,
+                social_off=social_off, access=self._access)
             if scope is None or target.room is None or not target.room.unit:
                 return {"status": "unavailable", "note": "The read scope is unavailable."}
             scope = replace(
