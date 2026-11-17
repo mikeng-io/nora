@@ -36,6 +36,29 @@ class EvidenceError(RuntimeError):
     """A measurement whose evidence could not be kept must not pass."""
 
 
+class _DeferredExport(SpanProcessor):
+    """Retain spans until the isolated subject's network guard has closed."""
+
+    def __init__(self, delegate: Any) -> None:
+        self.delegate = delegate
+        self.span_exporter = delegate.span_exporter
+        self.pending = InMemorySpanExporter()
+
+    def on_end(self, span: ReadableSpan) -> None:
+        self.pending.export((span,))
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        spans = self.pending.get_finished_spans()
+        self.pending.clear()
+        for span in spans:
+            self.delegate.on_end(span)
+        return self.delegate.force_flush(timeout_millis)
+
+    def shutdown(self) -> None:
+        self.force_flush()
+        self.delegate.shutdown()
+
+
 def evaluation_export_for(config: Path) -> Any:
     """Resolve the eval-facing export policy before opening private evidence."""
     from nora.agent.telemetry import evaluation_export
@@ -230,6 +253,7 @@ class RunEvidence(SpanProcessor, logging.Handler):
 
     @contextlib.contextmanager
     def capture(self, provider: Any, *, export: Any = None) -> Iterator[RunEvidence]:
+        export = _DeferredExport(export) if export is not None else None
         self._export = export
         token = _CURRENT.set(self)
         capture_token = context.attach(context.set_value(
@@ -286,6 +310,7 @@ class RunEvidence(SpanProcessor, logging.Handler):
                         with trace.get_tracer(__name__).start_as_current_span(
                                 "eval.export.preflight"):
                             pass
+                        export.force_flush()
                         export.span_exporter.check()
                         self.record("run_metadata", metadata=self.metadata)
                     self.record("visibility", status="exporting" if export else "private_only")

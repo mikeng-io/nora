@@ -343,3 +343,67 @@ async def test_recorded_discovery_resolves_its_owned_token_endpoint(example_conf
             assert endpoint == env.urls["image_gen.xai.issuer_url"] + "/oauth2/token"
             async with client.post(endpoint) as response:
                 assert (await response.json())["access_token"] == "generated-access"  # noqa: S105
+
+
+@pytest.mark.parametrize("sink_fails", [False, True])
+async def test_journey_spans_export_after_isolation_without_opening_the_sink(
+    tmp_path, sink_fails,
+):
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from tempfile import TemporaryFile
+
+    from opentelemetry import trace
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+
+    from evals.backbone import _prefill_capture
+    from nora.agent.telemetry import evaluation_export
+    from nora.subject.environment import IsolatedServices
+    from nora.subject.eval_evidence import RunEvidence
+
+    payloads = []
+
+    class Collector(BaseHTTPRequestHandler):
+        def do_POST(self):
+            assert self.path == "/v1/traces"
+            payloads.append(ExportTraceServiceRequest.FromString(
+                self.rfile.read(int(self.headers["Content-Length"]))))
+            self.send_response(400 if sink_fails and len(payloads) > 1 else 200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 14318), Collector)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    _prefill_capture()
+    provider = trace.get_tracer_provider()
+    export = evaluation_export({"enabled": True, "exporter": "otlp_http",
+                                "endpoint": "http://127.0.0.1:14318/v1/traces"})
+    try:
+        with TemporaryFile() as lock:
+            evidence = RunEvidence(run_id="generated-isolated-export", metadata={},
+                                   lock_fd=lock.fileno(), private_root=tmp_path)
+            from contextlib import nullcontext
+
+            with (pytest.raises(EvidenceError, match="export unavailable")
+                  if sink_fails else nullcontext(), evidence.capture(provider, export=export)):
+                assert len(payloads) == 1, "the preflight must reach the real sink"
+                async with IsolatedServices(database_url="sqlite://", applications={}) as env:
+                    with provider.get_tracer(__name__).start_as_current_span("journey.stage"):
+                        pass
+                    assert not env.denied, "export attempted egress during isolated execution"
+                    assert len(payloads) == 1, "stage export must wait for guard teardown"
+                    assert not env.owns("http://127.0.0.1:14318/v1/traces")
+                    env.check()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    spans = [s for p in payloads for r in p.resource_spans
+             for scope in r.scope_spans for s in scope.spans]
+    root, = [s for s in spans if s.name == "eval.run"]
+    stage, = [s for s in spans if s.name == "journey.stage"]
+    assert stage.parent_span_id == root.span_id
+    assert stage.trace_id == root.trace_id
