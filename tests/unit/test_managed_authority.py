@@ -634,6 +634,163 @@ async def test_delegation_is_a_real_operation_not_a_side_effect():
     assert outcome.detail == "target-person-inactive"
 
 
+async def test_an_operator_cannot_delegate_to_their_own_identity():
+    """Self-promotion refused at commitment: a `delegate`-holding operator
+    whose delegatee is their own identity — directly or through a retired
+    alias — is `denied` and no grant tuple lands, while the same operation
+    still completes for any other person."""
+    store, backend, svc = _service()
+    await _grant_operator(store, backend, "delegate")
+    await _person(store, PERSON)
+    outcome = await svc.apply(
+        _op("op-1", "delegate",
+            target=Target(kind=TargetKind.SCOPE, scope=ROOM),
+            payload=Delegation(delegatee=OPERATOR,
+                               permits=frozenset({"manage_grants"}))))
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "operator-self-promotion"
+    assert (await svc.check(scope=ROOM, person_id=OPERATOR,
+                            permit="manage_grants")).verdict is Verdict.DENIED
+    assert (await store.add_alias(former_id="person_op_former",
+                                  person_id=OPERATOR)
+            ).status is OutcomeStatus.COMPLETE
+    outcome = await svc.apply(
+        _op("op-2", "delegate",
+            target=Target(kind=TargetKind.SCOPE, scope=ROOM),
+            payload=Delegation(delegatee="person_op_former",
+                               permits=frozenset({"manage_grants"}))))
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "operator-self-promotion"
+    assert (await svc.check(scope=ROOM, person_id=OPERATOR,
+                            permit="manage_grants")).verdict is Verdict.DENIED
+    outcome = await svc.apply(
+        _op("op-3", "delegate",
+            target=Target(kind=TargetKind.SCOPE, scope=ROOM),
+            payload=Delegation(delegatee=PERSON,
+                               permits=frozenset({"manage_members"}))))
+    assert outcome.status is OutcomeStatus.COMPLETE
+
+
+async def test_installation_bootstrap_authority_needs_no_in_band_standing():
+    """Initial authority arrives out of band: an INSTALLATION actor applies
+    a delegation with no prior tuples and no delegated standing — the
+    boundary already proved it. In-band actors cannot construct this kind
+    (`test_suspend_identity_is_installation_only_and_reasoned`,
+    `test_empty_or_non_service_credential_is_refused`,
+    `test_service_token_never_becomes_operator_or_holder_authority`)."""
+    store, _backend, svc = _service()
+    await _person(store, PERSON)
+    outcome = await svc.apply(
+        _op("op-1", "delegate", actor_kind=ActorKind.INSTALLATION,
+            actor_person="person_installer",
+            target=Target(kind=TargetKind.SCOPE, scope=ROOM),
+            payload=Delegation(delegatee=PERSON,
+                               permits=frozenset({"manage_grants"}))))
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert (await svc.check(scope=ROOM, person_id=PERSON,
+                            permit="manage_grants")).verdict is Verdict.ALLOWED
+
+
+async def test_a_delegation_in_another_unit_cannot_reach_this_room():
+    """Forged containment refused by the real tree: `Scope.encloses` is
+    kind-level, so the operation constructs — but the operator's
+    `manage_members` grant lives in unit-b, and a room the topology places
+    under unit-a never admits their write."""
+    other_unit = Scope(ScopeKind.UNIT, "unit-b")
+    other_room = Scope(ScopeKind.ROOM, "signal/conv-other")
+    store = FakeBindingStore()
+    backend = FakeAuthorityBackend()
+    topology = FakeTopologySource(
+        rooms={ROOM.id: (UNIT.id, False),
+               other_room.id: (other_unit.id, False)},
+        units={UNIT.id: WS.id, other_unit.id: WS.id},
+        workspaces={WS.id},
+    )
+    svc = AuthorityService(store, backend, topology)
+    await _person(store, OPERATOR)
+    await _person(store, PERSON)
+    # The only containment the backend ever holds is topology-derived —
+    # what `_publish_containment` writes on a real apply.
+    for cursor, parent in ((UNIT, WS), (ROOM, UNIT),
+                           (other_unit, WS), (other_room, other_unit)):
+        await backend.publish_containment(scope=cursor, parent=parent)
+    await backend.put_relation(
+        scope=other_unit, relation="grant_manage_members",
+        person_id=OPERATOR)
+    outcome = await svc.apply(Operation(
+        operation_id="op-1", kind="set_membership",
+        actor=Actor(kind=ActorKind.OPERATOR, person_id=OPERATOR,
+                    scope=other_unit),
+        target=Target(kind=TargetKind.MEMBERSHIP, person_id=PERSON,
+                      scope=ROOM),
+        payload=MembershipStanding(member=True),
+        observed_revisions={"authority": "0"}))
+    assert outcome.status is OutcomeStatus.DENIED
+    assert "manage_members" in outcome.detail
+    assert (await svc.check(scope=other_room, person_id=OPERATOR,
+                            permit="manage_members")).verdict is Verdict.ALLOWED
+    assert (await svc.check(scope=ROOM, person_id=OPERATOR,
+                            permit="manage_members")).verdict is Verdict.DENIED
+
+
+async def test_an_observed_member_without_delegation_holds_no_management():
+    """A platform observation — a synced roster member, the shape a guild
+    owner or admin observation arrives as — is `member`, never authority:
+    speak/view pass while every management verb denies, until an explicit
+    `delegate` grants exactly the named permits, and `revoke_delegation`
+    removes that derived authority again."""
+    store, backend, svc = _service()
+    await _person(store, PERSON, MEMBER_ID)
+    await _grant_operator(store, backend, "delegate")
+    synced = await svc.apply(
+        _op("op-sync", "sync_membership", actor_kind=ActorKind.SERVICE,
+            target=Target(kind=TargetKind.SCOPE, scope=ROOM),
+            payload=RosterSync(members=frozenset({MEMBER_ID}),
+                               complete=False,
+                               observed_ms=int(time.time() * 1000))))
+    assert synced.status is OutcomeStatus.COMPLETE
+    for permit in ("speak", "view"):
+        assert (await svc.check(scope=ROOM, person_id=PERSON,
+                                permit=permit)).verdict is Verdict.ALLOWED
+    assert (await svc.check(scope=ROOM, person_id=PERSON,
+                            permit="manage_members")).verdict is Verdict.DENIED
+    for kind, target, payload in (
+        ("set_membership",
+         Target(kind=TargetKind.MEMBERSHIP, person_id=OPERATOR, scope=ROOM),
+         MembershipStanding(member=True)),
+        ("grant_access",
+         Target(kind=TargetKind.SCOPE, scope=ROOM),
+         AccessChange(direction=AccessDirection.GRANT, grantee=OPERATOR,
+                      permits=frozenset({"speak"}))),
+        ("delegate",
+         Target(kind=TargetKind.SCOPE, scope=ROOM),
+         Delegation(delegatee=OPERATOR, permits=frozenset({"delegate"}))),
+    ):
+        outcome = await svc.apply(
+            _op(f"op-{kind}", kind, actor_person=PERSON,
+                target=target, payload=payload))
+        assert outcome.status is OutcomeStatus.DENIED
+        assert "lacks" in outcome.detail
+    delegated = await svc.apply(
+        _op("op-delegate", "delegate",
+            target=Target(kind=TargetKind.SCOPE, scope=ROOM),
+            payload=Delegation(delegatee=PERSON,
+                               permits=frozenset({"manage_members"}))))
+    assert delegated.status is OutcomeStatus.COMPLETE
+    assert (await svc.check(scope=ROOM, person_id=PERSON,
+                            permit="manage_members")).verdict is Verdict.ALLOWED
+    assert (await svc.check(scope=ROOM, person_id=PERSON,
+                            permit="manage_grants")).verdict is Verdict.DENIED
+    revoked = await svc.apply(
+        _op("op-revoke", "revoke_delegation",
+            target=Target(kind=TargetKind.SCOPE, scope=ROOM),
+            payload=Delegation(delegatee=PERSON,
+                               permits=frozenset({"manage_members"}))))
+    assert revoked.status is OutcomeStatus.COMPLETE
+    assert (await svc.check(scope=ROOM, person_id=PERSON,
+                            permit="manage_members")).verdict is Verdict.DENIED
+
+
 async def test_a_delegation_carries_exactly_its_named_permits():
     """`manage_members` delegated is `manage_members` alone: the delegatee's
     `grant_access` still refuses `actor-lacks-manage_grants` at commitment —
@@ -684,5 +841,12 @@ async def test_an_open_room_admits_an_unmapped_sender_without_widening():
     unknown = await access.permitted(
         platform="signal", conversation_id="nowhere", person_id=None)
     assert unknown.verdict is Verdict.UNKNOWN_SCOPE
+    # The read boundary holds beside the admission: `view` on the closed
+    # sibling room still refuses, and the open admission wrote no
+    # membership the sender could widen into.
+    read = await access.permitted(
+        platform="signal", conversation_id="conv-1",
+        person_id=None, permit="view")
+    assert read.verdict is Verdict.DENIED
     assert await store.members_of(
         Scope(ScopeKind.ROOM, "signal/conv-open")) == ()

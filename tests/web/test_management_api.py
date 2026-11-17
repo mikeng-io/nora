@@ -239,6 +239,25 @@ async def test_service_token_never_becomes_operator_or_holder_authority(surface)
     assert not services.registration.calls and not services.authority.calls
 
 
+async def test_the_provisioning_credential_never_reaches_a_response_body(surface):
+    """The bearer token authenticates but is never echoed: success, refusal,
+    outage, malformed and resolve replies carry no credential."""
+    client, services = surface
+    query = await seed_identity(services)
+    responses = [
+        await client.post(PATH, headers=AUTH, json=registration()),
+        await client.post(PATH, json=registration()),
+        await client.post(PATH, headers=AUTH, data=b"not-json"),
+        await client.post(PATH.replace("operations", "accounts/resolve"),
+                          headers=AUTH, json=query),
+    ]
+    services.registration.status = _Status.UNAVAILABLE
+    responses.append(
+        await client.post(PATH, headers=AUTH, json=registration()))
+    for response in responses:
+        assert TOKEN not in await response.text()
+
+
 @pytest.mark.parametrize("status,http", [
     (_Status.DENIED, 403), (_Status.UNAVAILABLE, 503), (_Status.INCOMPLETE, 409),
 ])
