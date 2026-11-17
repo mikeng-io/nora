@@ -21,16 +21,14 @@ tables are truncated between tests, per the contract-suite house rule.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager
 from dataclasses import replace
 from types import MappingProxyType
 from typing import Any, Protocol
 from uuid import uuid4
 
-import psycopg
 import pytest
-import sqlalchemy as sa
 
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
@@ -52,7 +50,6 @@ from nora.domain.managed import (
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
-from nora.infra.sql.migrations_runner import run_migrations
 from nora.testing.managed import FakeBindingStore
 
 ACCOUNT_1 = str(uuid4())
@@ -62,12 +59,6 @@ PERSON = "person_alice"
 ACCT = Identifier(platform="signal", kind="uuid", value="85290000101")
 ACCT_2 = Identifier(platform="signal", kind="uuid", value="85290000102")
 PHONE = Identifier(platform="signal", kind="phone", value="85290000101")
-
-_MANAGED_TABLES = (
-    "managed_alias, managed_membership, managed_membership_support,"
-    " managed_identifier, managed_account, managed_person, managed_operation,"
-    " managed_authority_block, managed_observation"
-)
 
 
 class _Store(Protocol):
@@ -113,44 +104,15 @@ class _Store(Protocol):
     async def aclose(self) -> None: ...
 
 
-@pytest.fixture(scope="module")
-def _managed_db(pg_admin: Any) -> Iterator[str]:
-    """ONE database and ONE migration run for this whole file (see module docstring)."""
-    dbname = "t_managed_" + uuid4().hex
-    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
-        conn.execute(f'CREATE DATABASE "{dbname}"')
-    url = (
-        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
-        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
-    )
-    run_migrations(url)
-    try:
-        yield url
-    finally:
-        with psycopg.connect(
-            pg_admin.dsn(pg_admin.maintenance_db), autocommit=True
-        ) as conn:
-            conn.execute(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = %s AND pid <> pg_backend_pid()",
-                (dbname,),
-            )
-            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
-
-
 @pytest.fixture(params=["memory", "sql"])
-async def store(request: Any) -> AsyncIterator[_Store]:
+async def store(request: Any, clean_pg_url: str) -> AsyncIterator[_Store]:
     if request.param == "memory":
         yield FakeBindingStore()
         return
-    engine = create_sql_engine(request.getfixturevalue("_managed_db"))
+    engine = create_sql_engine(clean_pg_url)
     try:
         yield SqlBindingStore(engine)
     finally:
-        async with engine.begin() as conn:
-            await conn.execute(
-                sa.text(f"truncate {_MANAGED_TABLES} cascade")
-            )
         await engine.dispose()
 
 

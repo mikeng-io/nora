@@ -211,6 +211,8 @@ MANAGED_LINK_DECISION = sa.Table(
               nullable=False),
     sa.Column("effect_id", sa.Text, nullable=False),
     sa.Column("evidence", pg.JSONB, nullable=False),
+    sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.text("clock_timestamp()")),
 )
 
 IDX_MANAGED_LINK_DECISION_REQUEST = sa.Index(

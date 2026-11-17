@@ -5,7 +5,6 @@ and rebuilt services finishes the recorded effect and nothing else."""
 from uuid import uuid4
 
 import pytest
-import sqlalchemy as sa
 
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
@@ -42,20 +41,14 @@ TARGET_ID = "85290000102"
 OPERATION_ID = f"room:signal:{CONV}:generated-m-1"
 
 
-@pytest.fixture(scope="module")
-def database(pg_module_url):
-    return pg_module_url
+@pytest.fixture
+def database(clean_pg_url):
+    return clean_pg_url
 
 
 @pytest.fixture
 async def engine(database):
     engine = create_sql_engine(database)
-    async with engine.begin() as connection:
-        await connection.execute(sa.text(
-            "TRUNCATE managed_membership_support, managed_membership, managed_alias,"
-            " managed_identifier, managed_account, managed_identity_hold,"
-            " managed_authority_block, managed_operation, managed_person,"
-            " managed_link_decision, managed_link_request CASCADE"))
     yield engine
     await engine.dispose()
 

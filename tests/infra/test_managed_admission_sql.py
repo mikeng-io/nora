@@ -82,21 +82,14 @@ workspace = "home"
 """
 
 
-@pytest.fixture(scope="module")
-def database(pg_module_url):
-    return pg_module_url
+@pytest.fixture
+def database(clean_pg_url):
+    return clean_pg_url
 
 
 @pytest.fixture
 async def engine(database):
     engine = create_sql_engine(database)
-    async with engine.begin() as connection:
-        await connection.execute(sa.text(
-            "TRUNCATE managed_membership_support, managed_membership, managed_alias,"
-            " managed_identifier, managed_account, managed_identity_hold,"
-            " managed_authority_block, managed_operation, managed_person,"
-            " managed_link_decision, managed_link_request, managed_link_delivery"
-            " CASCADE"))
     yield engine
     await engine.dispose()
 
@@ -524,30 +517,21 @@ class _SwapJournal(SqlAdmissionProbe):
         return await super().complete_import(record, person_ids=person_ids)
 
 
-async def test_a_journal_rebound_under_completion_never_completes(engine, sources):
-    """Positive control first: an undisturbed apply completes and releases.
-    With the durable journal then swapped underneath the completion commit,
-    the conditional update refuses `effect-conflict`, keeps every hold and
-    stamps nothing — the row is never another effect's completion."""
+@pytest.mark.parametrize("changed", [False, True])
+async def test_a_journal_rebound_under_completion_never_completes(engine, sources, changed):
     identity_path, policy_path = sources
     import_id = plan(identity_path, policy_path).import_id
     store = SqlBindingStore(engine)
-    outcome = await admission(engine).apply(identity_path, policy_path)
-    assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
-    journal = await store.operation(import_id)
-    assert journal is not None and journal.state is OperationJournalState.COMPLETE
-    assert not await store.identity_held("miles")
-    async with engine.begin() as connection:
-        await connection.execute(sa.text(
-            "TRUNCATE managed_membership_support, managed_membership, managed_alias,"
-            " managed_identifier, managed_account, managed_identity_hold,"
-            " managed_authority_block, managed_operation, managed_person,"
-            " managed_link_decision, managed_link_request, managed_link_delivery"
-            " CASCADE"))
     swapped = FileAdmission(
         bindings=SqlBindingStore(engine), backend=FakeAuthorityBackend(),
-        kratos=FakeAdmissionKratos(), probe=_SwapJournal(engine))
+        kratos=FakeAdmissionKratos(), probe=_SwapJournal(engine)) if changed else admission(engine)
     outcome = await swapped.apply(identity_path, policy_path)
+    if not changed:
+        assert outcome.status is OutcomeStatus.COMPLETE, outcome.detail
+        journal = await store.operation(import_id)
+        assert journal is not None and journal.state is OperationJournalState.COMPLETE
+        assert not await store.identity_held("miles")
+        return
     assert outcome.status is OutcomeStatus.DENIED
     assert outcome.detail == "effect-conflict"
     journal = await store.operation(import_id)

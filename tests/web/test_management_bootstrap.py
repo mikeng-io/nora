@@ -1,7 +1,6 @@
 """The actual startup helper mounts a scoped private API in managed mode only."""
 
 import pytest
-import sqlalchemy as sa
 from aiohttp import web
 
 from nora.app.composition_stores import managed_identity
@@ -67,12 +66,8 @@ def services(*, known=True, bindings=None):
 
 
 @pytest.fixture
-async def sql_services(pg_module_url):
-    engine = create_sql_engine(pg_module_url)
-    async with engine.begin() as connection:
-        await connection.execute(sa.text(
-            "TRUNCATE managed_person, managed_operation, managed_authority_block CASCADE"
-        ))
+async def sql_services(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     managed = services(bindings=SqlBindingStore(engine=engine))
     try:
         yield managed

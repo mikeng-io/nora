@@ -28,17 +28,14 @@ from tests.unit.test_account_linking_state import (
 )
 
 
-@pytest.fixture(scope="module")
-def database(pg_module_url):
-    return pg_module_url
+@pytest.fixture
+def database(clean_pg_url):
+    return clean_pg_url
 
 
 @pytest.fixture
 async def store(database):
     engine = create_sql_engine(database)
-    async with engine.begin() as connection:
-        await connection.execute(sa.text(
-            "TRUNCATE managed_link_delivery, managed_link_decision, managed_link_request"))
     try:
         yield SqlLinkRequests(engine)
     finally:

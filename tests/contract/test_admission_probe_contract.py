@@ -10,7 +10,6 @@ used by the unit suite is only honest if it cannot differ from Postgres.
 from types import MappingProxyType
 
 import pytest
-import sqlalchemy as sa
 
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
@@ -35,9 +34,9 @@ from tests.fakes import FakeAdmissionProbe
 OPERATION = "generated-import"
 
 
-@pytest.fixture(scope="module")
-def database(pg_module_url):
-    return pg_module_url
+@pytest.fixture
+def database(clean_pg_url):
+    return clean_pg_url
 
 
 @pytest.fixture(params=["fake", "sql"])
@@ -47,10 +46,6 @@ async def seam(request, database):
         yield store, FakeAdmissionProbe(store)
         return
     engine = create_sql_engine(database)
-    async with engine.begin() as connection:
-        await connection.execute(sa.text(
-            "TRUNCATE managed_identifier, managed_account, managed_identity_hold,"
-            " managed_operation, managed_person CASCADE"))
     try:
         store = SqlBindingStore(engine)
         yield store, SqlAdmissionProbe(engine)
