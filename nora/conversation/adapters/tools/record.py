@@ -7,7 +7,7 @@ from nora.agent.catalog.groups import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_M
 from nora.agent.standing_ledger import ledger_permits, ledger_target
 from nora.agent.toolkit.clock import _HKT
 from nora.agent.toolkit.results import _memory_result, _record
-from nora.agent.toolkit.rooms import _asked_about, _said, _speaker
+from nora.agent.toolkit.rooms import _asked_about, _name_rows, _said, _speaker
 from nora.agent.toolkit.transcript import (
     _BEFORE_UNREADABLE,
     _REACTIONS_NOTE,
@@ -264,6 +264,8 @@ async def _load_transcript__window(c):
                 before_ts=c.before_ts,
                 as_of_ms=c.as_of_ms,
             )
+        c.rows = await _name_rows(c.persons, c.room, c.rows, platform=c.room.platform,
+                                  conversation_id=c.bound_conversation_id)
     except Exception:
         log.exception("load_transcript failed")
         _record(c.metrics, "load_transcript", "unavailable")
@@ -292,7 +294,6 @@ async def _load_transcript__window(c):
                 }
             ),
         )
-    c.rows = c.persons.name_transcript(c.rows, platform=c.room.platform)
     c.origin = room_key(c.room.platform, c.bound_conversation_id)
     record_requirement(DisclosureRequirement(c.origin, (message_lineage(c.origin),)))
     if c.media_join is not None:

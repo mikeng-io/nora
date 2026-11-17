@@ -79,7 +79,7 @@
  {
   "name": "source growth during identity reads refuses external execution",
   "file": "nora/agent/comprehend_tools.py",
-  "old": "        if self._source_people() - person_ids:\n            raise LookupError(\"source people changed during identity reads\")",
+  "old": "        if self._source_people() - person_ids or state.seen_names - names:\n            raise LookupError(\"source people or names changed during identity reads\")",
   "new": "        if False:\n            raise LookupError(\"source people changed during identity reads\")",
   "target": "tests/unit/test_managed_memory_scope.py::test_a_source_person_exposed_mid_lookup_is_screened_before_the_provider_runs"
  }

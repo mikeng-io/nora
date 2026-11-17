@@ -41,6 +41,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from ..domain.managed import room_scope_id
+from ..domain.management import Scope, ScopeKind
 from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import Roster, RosterSource
 from ..persons import Persons
@@ -166,9 +168,8 @@ class Room:
 
     Holds the roster read for the length of the tag: `group_members` followed
     by two `lookup_person` calls is three tool calls and must stay ONE daemon
-    round trip. The cache is per-instance and the instance dies with the tag,
-    so it can neither go stale within a turn nor survive into the next one —
-    the same "fresh per tag, no bookkeeping" construction `ReplyGuard` uses.
+    round trip. The observation dies with the tag; managed bindings and names
+    are resolved again on each read rather than cached with the roster.
     """
 
     def __init__(
@@ -195,6 +196,7 @@ class Room:
         self._self_ids = frozenset(self_ids)
         self._tagger_card_injected = tagger_card_injected
         self._view: RoomView | None = None
+        self._roster = Roster(available=False)
 
     @property
     def platform(self) -> str:
@@ -270,7 +272,10 @@ class Room:
     async def members(self) -> RoomView:
         """The room as the platform reports it. `available=False` if it could not be read."""
         if self._view is None:
-            self._view = await self._resolve(await self._read())
+            self._roster = await self._read()
+            self._view = await self._resolve(self._roster)
+        elif self._access is not None and not self._access.is_file_backend:
+            self._view = await self._resolve(self._roster)
         return self._view
 
     async def find(self, view: RoomView, name: str) -> tuple[PersonRef, ...]:
@@ -335,7 +340,9 @@ class Room:
 
     async def _resolve_account(self, value: str) -> PersonRef | None:
         if self._access is not None:
-            return await self._access.resolve_ref(self._platform, value)
+            return await self._access.resolve_ref(
+                self._platform, value,
+                scope=Scope(ScopeKind.ROOM, room_scope_id(self._platform, self._conversation_id)))
         return self._persons.resolve(self._platform, value)
 
     async def _resolve(self, roster: Roster) -> RoomView:

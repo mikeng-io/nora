@@ -1618,12 +1618,8 @@ class CognitionSessionRunner:
                              for r in rooms))
 
             def on_rows(rows: Sequence[Any]) -> None:
-                """A transcript read's handed-out rows, kept as the citable
-                `("message", id)` evidence `memory_propose` admits on: what
-                the tool showed is the bounded, as-of-projected row — a row
-                the session was never shown cannot become evidence, and a
-                row whose body the read withheld (deleted, redacted) carries
-                no text to cite, so it registers nothing either."""
+                """Retain shown names; only handed-out body text becomes citable source."""
+                lookups.remember_rows(rows)
                 for r in rows:
                     if r.body is None:
                         continue

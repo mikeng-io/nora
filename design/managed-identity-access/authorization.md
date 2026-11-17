@@ -99,6 +99,9 @@ A scoped name view uses the nearest nickname on its room-to-workspace ancestry,
 then the global name. Unscoped views use the global name; siblings never borrow
 each other's local names, and an unreadable scoped source stays unavailable.
 Local names follow the same disclosure boundary as the context that uses them.
+Transcript tools resolve names through each read's actual room. External-read
+screening retains names already shown to the session across later renames;
+a deleted message's visible author label does not make its body citable.
 Authority handoff includes this state or refuses an unrepresentable transfer.
 
 Initial installation authority is established out of band, never by the first

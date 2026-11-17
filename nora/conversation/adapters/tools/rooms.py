@@ -19,6 +19,7 @@ from nora.agent.toolkit.rooms import (
     _busiest_sentence,
     _by_activity,
     _find_room,
+    _name_rows,
     _room_name,
 )
 from nora.agent.toolkit.transcript import (
@@ -135,6 +136,7 @@ def _make_room_read(deps):
 
         c = SimpleNamespace(
             room=room,
+            identity_room=deps.room,
             limit=limit,
             before=before,
             thread=thread,
@@ -589,6 +591,8 @@ async def _room_read__unit(c):
                 before_ts=c.before_ts,
                 as_of_ms=c.as_of_ms,
             )
+        c.rows = await _name_rows(c.persons, c.identity_room, c.rows, platform=c.target.platform,
+                                  conversation_id=c.target.conversation_id)
     except Exception:
         log.exception("room_read failed")
         _record(c.metrics, "room_read", "unavailable")
@@ -626,7 +630,6 @@ async def _room_read__build_transcript(c):
                 else "Nothing said in that room is on record.",
             },
         )
-    c.rows = c.persons.name_transcript(c.rows, platform=c.target.platform)
     c.origin = room_key(c.target.platform, c.target.conversation_id)
     record_requirement(DisclosureRequirement(c.origin, (message_lineage(c.origin),)))
     if c.media_join is not None:

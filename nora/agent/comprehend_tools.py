@@ -81,6 +81,15 @@ class LookupState:
     shown_relations: set = field(default_factory=set)
     limits: dict[str, int] = field(default_factory=lambda: {"web_search": 3, "web_fetch": 3})
     used: dict[str, int] = field(default_factory=dict)
+    seen_names: set[str] = field(default_factory=set)
+
+    def remember_rows(self, rows: Sequence[Any]) -> None:
+        """Retain names actually handed to this session, including after a rename."""
+        self.seen_names.update(
+            row.person_name or row.sender_name for row in rows
+            if row.person_id and not row.is_nora and (row.person_name or row.sender_name))
+        self.persons = tuple(set(self.persons) | {
+            row.person_id for row in rows if row.person_id and not row.is_nora})
 
 
 #: The outbound arguments `egress_reason` screens before a provider is called,
@@ -139,8 +148,8 @@ class ComprehendRead(AgentTool):
         state = self._state
         access = getattr(state.records, "access", None)
         if access is None or access.is_file_backend:
-            return state.private_names
-        names = set(state.private_names)
+            return tuple(set(state.private_names) | state.seen_names)
+        names = set(state.private_names) | state.seen_names
         person_ids = self._source_people()
         for person_id in sorted(person_ids):
             person = await access.person(person_id)
@@ -155,8 +164,8 @@ class ComprehendRead(AgentTool):
                 if ref is None or not ref.name.strip():
                     raise LookupError("scoped source person name unavailable")
                 names.add(ref.name)
-        if self._source_people() - person_ids:
-            raise LookupError("source people changed during identity reads")
+        if self._source_people() - person_ids or state.seen_names - names:
+            raise LookupError("source people or names changed during identity reads")
         return tuple(names)
 
     async def stream(
