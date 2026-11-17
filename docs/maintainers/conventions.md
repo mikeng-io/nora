@@ -240,16 +240,25 @@ performs the removals: remote branches by expected-SHA lease (`git push
 update-ref -d` against the classified SHA, worktrees by `git worktree remove`
 after re-checking HEAD and clean status, and stale worktree registrations by
 deleting only their own `worktrees/<id>` admin dir — never a global `git
-worktree prune`. Each removed ref is appended with its SHA, and the PR number
-when custody is via a merged PR, to
-`${XDG_STATE_HOME:-~/.local/state}/nora/git-gc.log` so it can be restored. The
-orchestrator runs it at intake and after merge ([ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership)).
+worktree prune`. Each removed ref is appended with its SHA and custody (`pr=#N` or
+`archive=<tag>`) to `${XDG_STATE_HOME:-~/.local/state}/nora/git-gc.log` so it
+can be restored. The orchestrator runs it at intake and after merge
+([ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership)).
+
+Work that does not merge is archived first: `make archive BRANCH=<b>
+REASON="..."` pushes an annotated `archive/<branch>` tag on the committed
+tip — the durable record holding the reason and source tip, verified on
+origin. A dirty worktree is refused; its owner commits or discards the work
+first, and `gc` retires the clean worktree. Ignored files go with it — they
+are build output by definition. Merged work's record is its merged PR.
 
 Kept by rule: `master`, `deployments` and `dependabot/*`; the head of any open
 PR; branches checked out in a worktree; the primary checkout; locked
-worktrees; `--keep <path>`. Merged means an ancestor of `origin/master`, or
+worktrees; `--keep <path>`. Merged means an ancestor of `origin/master`,
 the ref's tip is the head of a merged PR — a commit GitHub keeps under
-`refs/pull/N/head`; an open integration-PR head is not custody. A worktree
+`refs/pull/N/head` — or an annotated `archive/<branch>` tag verified on
+origin records that tip as its source and target; an open integration-PR
+head is not custody. A worktree
 leaves only when clean, merged and untouched for 24 hours — a branch carrying
 uncommitted changes from minutes ago is somebody else's turn in progress, and
 the recency check keeps it that way. A failed fetch, `gh` call, status check

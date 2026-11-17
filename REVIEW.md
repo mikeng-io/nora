@@ -4,7 +4,7 @@ Review answers: **does this candidate satisfy the agreed change, and what real
 regression could it introduce?** It produces a scoped judgment and evidence,
 not another design, implementation task list or permission to merge.
 
-[ORCHESTRATION.md](ORCHESTRATION.md) owns tiers, independence and round limits.
+[ORCHESTRATION.md](ORCHESTRATION.md) owns tiers, independence and convergence.
 [AGENTS.md](AGENTS.md) owns engineering constraints.
 [nora-review](.agents/skills/nora-review/SKILL.md) is the operating procedure.
 Automatic and interactive reviewers use this same contract; these instructions
@@ -72,11 +72,10 @@ unless separately assigned.
   bounded impact. Use BLOCKER / FIX-IF-CHEAP / ISSUE / DROP per the policy.
   Recurrence, confidence or repair effort does not raise severity. Preserve an
   external finding's original rating when triaging; P2 harvest buys no new round.
-- One remedy means one defect class. On its first report, inspect siblings in
-  the affected flow and group the instances. Keep an unresolved class open;
-  do not emit new findings for new inputs with the same remedy. Distinct fixes
-  remain separate. Repair-induced defects name the earlier finding and why
-  their class differs.
+- One remedy means one defect class: first report names the structural remedy
+  and every sibling instance in that round, then no new input shapes. Keep an
+  unresolved class open; distinct fixes stay separate. A repair-induced
+  finding names its origin; same class unless its remedy differs.
 - For a behavioral claim, check observable behavior. A regex over source,
   AST check or green test count is not proof the real path works. Report a
   false-PASS proxy at the boundary it weakens; do not spend rounds enumerating
@@ -104,9 +103,9 @@ Return only:
 REQUEST CHANGES means a supported blocker or a required review-evidence gap;
 identify which. APPROVE is not task completion, green CI, merge or deployment.
 Finish the assigned coverage even after finding a defect; do not manufacture
-findings to fill the report. With no BLOCKER, summarize non-blocking harvest
-once and stop; required evidence gaps remain unresolved under the policy.
-The orchestrator owns triage and any next round.
+findings. A round with no BLOCKER ends review once required evidence is in:
+non-blocking harvest goes into one summary comment on the PR and never opens
+a round; required gaps stay unresolved. The orchestrator owns triage.
 Devin Review is supplemental; Fusion's internal review alone is not independent
 review. Pure non-runtime docs and ordinary MCP client config need no automatic
 code review; explicit review requests and mixed/runtime changes follow the tier.

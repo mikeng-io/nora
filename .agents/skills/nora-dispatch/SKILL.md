@@ -17,10 +17,17 @@ only what the next actor needs; follow design and evidence links on demand.
 | work brief | contains |
 |---|---|
 | Intent | the outcome and why |
-| Done when | observable completion conditions |
+| Done when | observable completion conditions and the shared stop conditions |
 | Boundaries | non-goals, holds and relevant design constraints |
 | References | necessary sources and evidence links |
 | Current state | where it stands now — replaced, never appended; links the PR |
+
+Every Goal and every brief derived from it carries the same stop conditions:
+the agent stops and hands back when every Done-when item is marked met, unmet
+or unavailable with evidence; when the review has converged; when a required
+input or prior artifact is missing — it halts and reports, never producing
+that artifact itself; or when the next step needs an authority it does not
+hold.
 
 Keep one current brief in Linear, or in the PR for small direct work. Preserve
 existing work authority until its successor and owner are verified and linked.
@@ -64,9 +71,12 @@ before dependent writes. Unavailable coordination blocks that seam, not all work
 For direct work, load `nora-land` and the relevant specialist procedure.
 For delegation, follow the policy's worker selection. Link the work brief and
 add only execution context: base/head, prepared checkout, allowed area, skills,
-named checks and worker stop point. Respect dependent bases; do not silently
+named checks and the shared stop conditions. Respect dependent bases; do not silently
 restart a repair on master. Read back the actual provider/model/options and
 checkout. The worker does the assigned work without launching other workers.
+Worktrees are created at the first write, never because a session or a review
+started; a read-only review uses a detached checkout, and `make gc` retires
+it.
 
 Every builder handoff of an integrated change is a PR whose base is the
 integration branch. Related handoffs stack, each based on the previous
@@ -107,12 +117,15 @@ applicable tier. Integrate and measure where required, then use `nora-land`. Bef
 ready, use its authorized zero-cost rehearsal of the actual path, not a proxy.
 Check: after each worker result, the parent resumes the whole outcome and selects
 its next action; a green test or merged child alone is not completion.
-Intake ends with `make gc APPLY=1`.
+Intake ends with `make archive` for a handoff that did not merge — merged
+work's record is its merged PR — then `make gc APPLY=1`.
 
 ## 5. Close or hand over
 
 Close only when the agreed results, including delivery where required, have
-actual evidence. Update the owning Linear item: current status, outcome/evidence,
+actual evidence and the artifact's outcome is settled — merged or archived.
+Update the
+owning Linear item: current status, outcome/evidence,
 remaining work and next owner/action if any; read back the write. Update parent
 acceptance separately. Report the result, material limits and next action to the
 operator. Link receipts instead of copying logs into Linear.

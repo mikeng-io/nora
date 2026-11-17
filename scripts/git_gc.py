@@ -12,7 +12,11 @@ enumerated; when the fetch fails, every verdict that depends on merge ancestry
 is `unknown`. A ref is `merged` only when its tip is an ancestor of
 `origin/master`, or its exact tip SHA is the head of a merged PR — GitHub keeps
 `refs/pull/N/head`, so that commit stays retrievable and the PR number goes to
-the removal log. The open-PR list comes from `gh pr list`; when gh cannot
+the removal log. A branch also counts as merged when an annotated
+`archive/<branch>` tag exists on origin as the same object, and its target
+commit and recorded source tip both equal the branch's tip — the tag is the
+durable copy — and the tag name goes to the removal log as `archive=<tag>`.
+The open-PR list comes from `gh pr list`; when gh cannot
 answer, branch verdicts are `unknown` (open-PR-head protection cannot be
 verified) and nothing remote or local is removed.
 
@@ -76,6 +80,7 @@ class Item:
     verdict: str = "unknown"
     reason: str = "not classified"
     pr: int | None = None  # merged-PR number when custody is via refs/pull/N/head
+    archive: str | None = None  # archive tag name when custody is via its record
 
 
 @dataclass
@@ -191,18 +196,57 @@ def _is_ancestor(repo: Path, commit: str, base: str) -> bool | None:
     return None
 
 
-def _merged(ctx: Context, sha: str) -> tuple[bool | None, int | None]:
-    """(merged, PR number): None when a check protecting the ref could not run."""
+def _archive_tip(repo: Path, branch: str) -> str | None:
+    """The tip an archive tag proves custody of, else None.
+
+    Custody needs all of: an annotated local tag, the same tag object on
+    origin (`make archive` pushed and verified it), and a recorded
+    source-tip equal to the tag's target commit — the caller then checks it
+    against the branch's tip. A failed read, a lightweight or unpushed tag
+    and a mismatched record all grant nothing.
+    """
+    ref = f"refs/tags/archive/{branch}"
+    kind = _git(repo, "cat-file", "-t", ref)
+    if kind.returncode != 0 or kind.stdout.strip() != "tag":
+        return None
+    local = _git(repo, "rev-parse", "--verify", ref)
+    target = _git(repo, "rev-parse", "--verify", f"{ref}^{{commit}}")
+    remote = _git(repo, "ls-remote", "origin", ref)
+    if (local.returncode != 0 or target.returncode != 0
+            or remote.returncode != 0):
+        return None
+    remote_obj = next(
+        (line.partition("\t")[0] for line in remote.stdout.splitlines()
+         if line.partition("\t")[2] == ref), None)
+    if remote_obj != local.stdout.strip():
+        return None
+    out = _git(repo, "for-each-ref", "--format=%(contents)", ref)
+    if out.returncode != 0:
+        return None
+    for line in out.stdout.splitlines():
+        key, sep, value = line.partition(":")
+        if sep and key == "source-tip" and value.strip() == target.stdout.strip():
+            return value.strip()
+    return None
+
+
+def _merged(ctx: Context, branch: str | None, sha: str
+            ) -> tuple[bool | None, int | None, str | None]:
+    """(merged, PR number, archive tag): Nones when a check could not run."""
     if not ctx.fetch_ok:
-        return None, None  # no merge proof is accepted from a failed refresh
+        return None, None, None  # no merge proof is accepted from a failed refresh
     if ctx.merged_prs is not None and sha in ctx.merged_prs:
-        return True, ctx.merged_prs[sha]
+        return True, ctx.merged_prs[sha], None
     verdict = _is_ancestor(ctx.repo, sha, MERGE_BASE)
     if verdict is True:
-        return True, None
-    if verdict is None or ctx.merged_prs is None:
-        return None, None
-    return False, None
+        return True, None, None
+    if verdict is None:
+        return None, None, None
+    if branch is not None and _archive_tip(ctx.repo, branch) == sha:
+        return True, None, f"archive/{branch}"
+    if ctx.merged_prs is None:
+        return None, None, None
+    return False, None, None
 
 
 def _merge_unknown_reason(ctx: Context) -> str:
@@ -230,10 +274,10 @@ def _classify_local_branch(ctx: Context, name: str, sha: str) -> Item:
     elif _is_pr_head(ctx, name, sha):
         item.verdict, item.reason = "keep", "head of an open PR"
     else:
-        merged, pr = _merged(ctx, sha)
+        merged, pr, archive = _merged(ctx, name, sha)
         if merged:
             item.verdict, item.reason = "remove", "merged"
-            item.pr = pr
+            item.pr, item.archive = pr, archive
         elif merged is None:
             item.reason = _merge_unknown_reason(ctx)
         else:
@@ -255,10 +299,10 @@ def _classify_remote_branch(ctx: Context, name: str, sha: str) -> Item:
     elif short in ctx.checked_out:
         item.verdict, item.reason = "keep", "checked out in a worktree"
     else:
-        merged, pr = _merged(ctx, sha)
+        merged, pr, archive = _merged(ctx, short, sha)
         if merged:
             item.verdict, item.reason = "remove", "merged"
-            item.pr = pr
+            item.pr, item.archive = pr, archive
         elif merged is None:
             item.reason = _merge_unknown_reason(ctx)
         else:
@@ -300,7 +344,7 @@ def _classify_worktree(ctx: Context, wt: Worktree, current: Path) -> Item:
         if status.stdout.strip():
             item.verdict, item.reason = "keep", "dirty"
             return item
-        merged, pr = _merged(ctx, wt.head)
+        merged, pr, archive = _merged(ctx, wt.branch, wt.head)
         if merged is None:
             item.reason = _merge_unknown_reason(ctx)
         elif not merged:
@@ -313,7 +357,7 @@ def _classify_worktree(ctx: Context, wt: Worktree, current: Path) -> Item:
                 item.verdict, item.reason = "keep", "active within the last 24h"
             else:
                 item.verdict, item.reason = "remove", "clean, merged and inactive"
-                item.pr = pr
+                item.pr, item.archive = pr, archive
     return item
 
 
@@ -356,6 +400,7 @@ def _log_removed(log_path: Path, item: Item) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(tz=UTC).isoformat(timespec="seconds")
     via = f" pr=#{item.pr}" if item.pr is not None else ""
+    via += f" archive={item.archive}" if item.archive is not None else ""
     with log_path.open("a", encoding="utf-8") as fh:
         fh.write(f"{stamp} {item.kind} {item.name} {item.sha}{via}\n")
 
