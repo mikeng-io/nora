@@ -42,16 +42,13 @@ review_tiers:
 
 # Engineering orchestration
 
-How the agents that build Nora (not Nora's runtime) split, do and check work.
-The frontmatter defines the execution and review tiers; each tier adds to the
-ones before it. Tiers describe the work and its checking, never a provider,
-model, effort label or toolset.
+Policy for agents building Nora, not her runtime. Frontmatter tiers are cumulative
+work/checking depth, never providers, models, effort or toolsets.
 
 ## The orchestrator
 
-The orchestrator is whichever agent holds the operator-facing session: Claude
-Code, Codex, Devin or any other coding agent. It owns the outcome: scope, do or
-delegate, reconcile evidence, triage, land and report.
+The operator-facing agent owns the outcome: scope, do or delegate, evidence,
+triage, delivery and reporting, regardless of its provider.
 
 - **Do small changes yourself**: documentation, agent-skill wording, comments,
   one- or two-line fixes and bounded edits across a few files.
@@ -69,12 +66,11 @@ delegate, reconcile evidence, triage, land and report.
 
 ## The lifecycle
 
-The operator-facing orchestrator owns the whole outcome across workers and
-sessions. `nora-work` is the entry router; it loads the procedure for the next
-action. This is a soft lifecycle: responsibilities, not mandatory documents or
-phase gates. Combine or skip inapplicable/already-satisfied steps; honor explicit
-operator exceptions and existing required checks/holds. Note material omissions
-briefly in the work/PR, not in a stage ledger.
+The orchestrator owns the whole outcome across workers/sessions. `nora-work`
+routes the next procedure. This soft lifecycle defines responsibilities, not
+mandatory documents or phase gates. Combine or skip satisfied/inapplicable steps,
+retain operator exceptions and required checks/holds, and note material omissions
+in the work/PR rather than a stage ledger.
 
 An implementation request continues from design through execution, verification
 and agreed delivery; finishing a bundle is not completion. A design-only request
@@ -90,9 +86,8 @@ allows the authorized next work; it does not grant new spending or deployment.
 | **deliver** | land and deliver to the agreed boundary | `nora-land`, `nora-release`, `nora-deploy` as applicable | merge/publication/live evidence only where required |
 | **resolve or resume** | close the outcome or preserve its continuation | `nora-dispatch` | evidenced completion, or a short handoff with remaining work |
 
-This is skill-guided reinforcement. Existing tools perform the operations;
-there is no lifecycle engine, phase lock or automatic session wakeup. Scripts
-are for useful repeated reads/writes, not for deciding scope or completion.
+Skills guide existing tools, not a lifecycle engine, phase lock or automatic
+wakeup. Scripts repeat useful operations; they do not decide scope/completion.
 
 ## Coordination and decisions
 
@@ -102,23 +97,16 @@ steps within that authority, and reconciles evidence before closing work.
 Builders implement their assigned slice; reviewers judge it without adding
 requirements or authorizing repairs. Required hosted checks remain applicable.
 
-For shared designs, interfaces or migrations, read related active work and T3
-threads before assigning writes; `nora-dispatch` owns that coordination procedure.
-A thread link is context access, not shared memory or automatic synchronization.
-One outcome owner integrates; one writer owns a shared seam at a time.
-
+Before assigning shared design/interface/migration writes, read related active
+work/threads and coordinate through `nora-dispatch`. Links are context access,
+not synchronization: one outcome owner integrates; one writer owns each seam.
 ## Execution tier
-
 Pick the lowest tier that covers the ambiguity and the cost of a miss; disclosure,
 security, data loss, concurrency, hot-table migrations and model spending need
 critical capability even in a small diff.
-
 ## Review and validation are adaptive
-
-The orchestrator chooses review depth and checks from what the change can
-break, not from its type or size alone. Answer three questions: what changed,
-what could break, and what evidence shows it did not. Then spend the least that
-answers them.
+Choose review/check depth by what changed, what could break and what evidence
+answers it, not type or size alone; spend only what resolves those questions.
 
 | Change | Usual review |
 |---|---|
@@ -127,22 +115,17 @@ answers them.
 | Live behaviour on merge: defaults, prompts, doctrine, tool text, routing, model settings | full |
 | Disclosure, security, locks/concurrency, hot-table migrations, new model spending | full, with critical execution capability |
 
-The last row is the only fixed minimum. Everywhere else, move a step up or down
-on judgement and say why in the PR's Gate section. A missed first fix, a scope
-surprise or an unplanned gate repair is evidence to raise review a step. The
-operator can require or waive any check or review.
+Only the last row fixes a minimum; otherwise adjust by judgement, explaining
+why in the PR Gate. Missed fixes, scope surprises or unplanned gate repairs
+warrant raising review. The operator may require or waive checks/reviews.
 
-Tiers (frontmatter) are inspection depth on the same agreed slice, never
-severity or authority to add requirements; every tier applies the five Cs.
-Procedure: `.agents/skills/nora-review/SKILL.md`. A report shows acceptance
-coverage and unverified limits as well as findings; a tier name or APPROVE
-alone is not a report.
+Every tier applies the five Cs at its inspection depth, without changing scope
+or severity. `nora-review` owns the procedure; reports include acceptance
+coverage, findings and unverified limits, never just a tier name or APPROVE.
 
-Validation follows the same judgement: run the focused checks that prove what
-changed; docs-only changes need a diff read and a check of the changed property,
-not a local gate. Required hosted checks and branch rules always apply. Never
-relabel an old exact-tree receipt as a run on a new tree; a moving master only
-needs checks on what the upstream change touches.
+Validate the changed property with focused checks; docs-only work needs a diff
+read/property check, not a local gate. Keep hosted/branch requirements. An old
+exact-tree receipt is not a new run; check only affected upstream changes.
 
 ## Intent, evidence and completion
 
@@ -156,35 +139,29 @@ needs checks on what the upstream change touches.
   precise evidence, not the only current acceptance or another live queue.
 - Agreement to a concrete proposed fix means implement it. File only work
   explicitly deferred from this slice, after checking for an existing home.
-- Judge each obligation met, unmet or unavailable against the real source or
-  runtime; missing evidence is unavailable, not missing implementation. Tests,
-  review, merge and deployment prove different things: require what acceptance
-  specifies.
+- Judge obligations met/unmet/unavailable against actual source/runtime.
+  Missing evidence is unavailable, not missing code. Tests, review, merge and
+  deployment prove different things; require the specified acceptance.
 - An invalid plan returns to scoping; a defect returns to bounded repair.
   Expanding scope needs an explicit amendment; a reviewer suggestion is not a
   requirement. Never soften an obligation to get a pass.
-- Close the slice when every obligation is evidenced and no BLOCKER remains,
-  then stop. Record limitations without claiming them delivered; update the
-  work item's remaining scope; close it only for its whole outcome. Reopen a
-  settled result only on new evidence or a changed requirement.
+- Close a slice only with every obligation evidenced and no BLOCKER. Record
+  limitations and remaining scope without claiming delivery; close work only
+  for its whole outcome. Reopen settled results only on new evidence/requirements.
 - A worker's stop point is not the orchestrator's completion condition. After
   intake, reconcile the whole outcome and continue authorized work; a new
   operator-facing session inherits that responsibility and the existing holds.
-
 ## Choosing a worker
-
-- Before each launch, read the current model catalogue, advertised options,
-  credential availability (never the values), permissions, quota and operator
-  constraints. Choose the least-cost worker that meets the capability and
-  evidence the task needs.
+- Before launch, read current catalogue/options, credential availability (not
+  values), permissions, quota and operator limits. Choose the least-cost worker
+  meeting the required capability/evidence.
 - Catalogue presence proves neither competence nor authorisation; rely on prior
   evidence or a bounded authorised probe. If either is missing, report Blocked
   with the reason and the unblock step. Never guess.
-- Pass the advertised provider, model and options explicitly, including effort,
-  and read back what launched. Do not silently lower effort, translate
-  unsupported options or weaken requirements because of quota. A fallback meets
-  the same capability, evidence and independence bar. Changing model or options
-  is a new launch, linked to the previous report.
+- Pass advertised provider/model/options, including effort; read back the launch.
+  Never silently lower effort, translate unsupported options or weaken quota-bound
+  requirements. Fallbacks meet the same capability/evidence/independence bar.
+  Model/option changes are new launches linked to the preceding report.
 - Escalate on observed failure or unresolved ambiguity; reread the input and
   spec before spending another run.
 - Model exclusions: never MiniMax M3; M3.1-Flash only when the operator names it.
@@ -195,14 +172,11 @@ endpoint for the same vendor is not independence. An orchestrator that
 implements directly is the builder. If no independent reviewer is available,
 block or get the operator's waiver.
 
-**Execution briefs and handoffs** follow `nora-dispatch`. The worker owns its
-assigned slice; the orchestrator owns integration and final acceptance. Reviews
-run on the assigned base/head and do not spawn agents. Prepared worktrees keep
-their assigned base; do not create a second worktree or restart dependent work
-from master.
-
+**Execution briefs/handoffs** follow `nora-dispatch`. Workers own their slice;
+the orchestrator owns integration/final acceptance. Reviews keep assigned
+base/head and spawn no agents. Prepared worktrees retain their base: no second
+checkout or dependent restart from master.
 ## Bounded independent review
-
 `REVIEW.md` owns review scope, finding quality and the return format;
 `nora-review` owns the steps. The orchestrator preserves all grounded findings
 in the review receipt, and groups at most six classes in the PR summary with
@@ -231,9 +205,7 @@ a link to the rest. Non-blocking findings are useful input, not new scope.
 - Record review tier and triage in the PR's Gate section. Keep the source
   finding when adjudicating it; never silently downgrade a blocker. Waiving an
   applicable requirement is the operator's decision.
-
 ## Artifact ownership
-
 | Artifact | Owns |
 |---|---|
 | This policy | Assignment, capability, review and ownership rules |
@@ -265,19 +237,13 @@ acceptance evidence for the whole slice, including merge or live read-back when
 specified. Cancelled or superseded work closes as not planned with its reason;
 partial work references its parent without closing it. Linear's configured
 workflow names are read back rather than assumed to match these labels.
-
 ## Interchange shape
-
-The optional `.agents/orchestration.schema.json` interchange describes policy,
-task and run records for consumers that use it; it does not govern live Linear
-states or require agents to produce a record at each stage. The `kind` field
-selects the shape. It checks shape only, not link resolution, worker
-competence, independence or acceptance: read those back. Task metadata is a small
-projection, not a tracker API payload. `issue_ref` accepts the owning Linear
-work URL; the schema does not install a tracker integration. Unknown properties are rejected except in
-run `options`. References are absolute URIs; use immutable revisions where content
-can change. `tests/architecture/test_orchestration_contract.py` validates this
-policy and the synthetic examples below, which resolve to no real evidence.
+Optional `.agents/orchestration.schema.json` checks `kind`-selected policy/task/run
+shapes, not live states, links, capability, independence or acceptance. It requires
+no stage records or tracker integration. Task metadata is a projection, not an API
+payload; `issue_ref` accepts Linear URLs. Unknown properties except run `options`
+are rejected. Use absolute URIs and immutable revisions for changing content.
+The architecture contract checks this policy and synthetic, non-evidentiary examples.
 
 ```yaml
 inbox:
