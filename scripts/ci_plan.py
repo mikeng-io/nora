@@ -45,6 +45,12 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
             "tests/contract/test_admission_probe_contract.py",
             "tests/infra/test_managed_admission_sql.py",
             "tests/integration/test_managed_admission_ory.py",
+            "tests/integration/test_managed_identity_journey.py",
+            "tests/integration/test_managed_identity_restore.py",
+            "tests/integration/test_managed_runtime_recovery.py",
+            "tests/integration/test_managed_community_cost.py",
+            "tests/integration/managed_ory.py",
+            "tests/contract/test_binding_store_scoped_contract.py",
         }:
             plan["ory"] = True
         # These component contracts read shared generated schemas/fixtures.
@@ -373,7 +379,7 @@ def _node_path(classname: str) -> str:
 def _junit_failures(directory: Path) -> list[str]:
     failed = []
     for report in sorted(directory.glob("*.xml")):
-        for case in ET.parse(report).iter("testcase"):
+        for case in ET.parse(report).iter("testcase"):  # noqa: S314 -- owned pytest JUnit reports
             if any(child.tag in ("failure", "error") for child in case):
                 file = case.get("file") or _node_path(case.get("classname", ""))
                 failed.append(f"{file}::{case.get('name', '')}")

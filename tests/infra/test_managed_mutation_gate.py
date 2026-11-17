@@ -12,10 +12,8 @@ from nora.infra.sql.managed_identity import MANAGED_MUTATION_LOCK, SqlBindingSto
 
 
 @pytest.fixture
-async def database(pg_module_url):
-    engine = create_async_engine(pg_module_url, pool_size=2, max_overflow=0, pool_timeout=1)
-    async with engine.begin() as connection:
-        await connection.execute(sa.text("TRUNCATE managed_operation"))
+async def database(clean_pg_url):
+    engine = create_async_engine(clean_pg_url, pool_size=2, max_overflow=0, pool_timeout=1)
     try:
         yield engine
     finally:

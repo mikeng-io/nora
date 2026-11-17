@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 from pathlib import Path
 
@@ -85,17 +84,18 @@ async def _durable_rows(engine):
         return result
 
 
-def _pg_tool(command, url, archive):
+def _pg_tool(command, url, archive, postgres):
     parsed = make_url(str(url))
-    env = {**os.environ, "PGHOST": parsed.host, "PGPORT": str(parsed.port),
-           "PGUSER": parsed.username, "PGPASSWORD": parsed.password,
-           "PGDATABASE": parsed.database}
-    args = (["pg_dump", "--format=custom", "--no-owner", "--file", str(archive)]
-            if command == "dump" else
-            ["pg_restore", "--dbname", parsed.database, "--no-owner", "--no-acl",
-             "--exit-on-error", str(archive)])
-    return subprocess.run(  # noqa: S603 -- owned generated database
-        args, env=env, capture_output=True, text=True, check=True, timeout=60)
+    container = postgres.get_wrapped_container().id
+    args = ["docker", "exec", "--interactive", "--env", f"PGPASSWORD={parsed.password}",
+            container, "pg_dump" if command == "dump" else "pg_restore",
+            "--username", parsed.username, "--dbname", parsed.database, "--no-owner"]
+    args += (["--format=custom"] if command == "dump" else ["--no-acl", "--exit-on-error"])
+    with archive.open("wb" if command == "dump" else "rb") as stream:
+        return subprocess.run(  # noqa: S603 -- exact owned container and generated database
+            args, stdin=subprocess.DEVNULL if command == "dump" else stream,
+            stdout=stream if command == "dump" else subprocess.PIPE,
+            stderr=subprocess.PIPE, check=True, timeout=60)
 
 
 def _manifest(directory):
@@ -153,7 +153,7 @@ async def _restored_readback(world, engine, services, ids, client):
 
 
 async def test_coordinated_backup_restores_linked_identity_and_revocation(
-        world, ory, pg_admin, aiohttp_client, tmp_path):
+        world, ory, pg_admin, _pg_container, aiohttp_client, tmp_path):
     ids = await _seed_completed_journey(world)
     held = await world.services.bindings.hold_identity(
         person_id=ids[-1], operation_id="generated-restore-foreign-hold")
@@ -169,7 +169,7 @@ async def test_coordinated_backup_restores_linked_identity_and_revocation(
     snapshot_ory(ory, archive)
     dump = archive / "nora.dump"
     dump.touch(mode=0o600)
-    _pg_tool("dump", source_url, dump)
+    _pg_tool("dump", source_url, dump, _pg_container)
     manifest = _manifest(archive)
     assert manifest["files"]["nora.dump"]
     policy_path = tmp_path / "restored-policy.toml"
@@ -178,7 +178,7 @@ async def test_coordinated_backup_restores_linked_identity_and_revocation(
         assert target_url != source_url
         assert restored.containers != ory.containers
         assert restored.kratos_admin != ory.kratos_admin
-        _pg_tool("restore", target_url, dump)
+        _pg_tool("restore", target_url, dump, _pg_container)
         engine = create_sql_engine(target_url)
         try:
             assert await _durable_rows(engine) == expected

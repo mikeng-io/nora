@@ -14,6 +14,12 @@ from scripts import ci_plan
     "tests/contract/test_admission_probe_contract.py",
     "tests/infra/test_managed_admission_sql.py",
     "tests/integration/test_managed_admission_ory.py",
+    "tests/integration/test_managed_identity_journey.py",
+    "tests/integration/test_managed_identity_restore.py",
+    "tests/integration/test_managed_runtime_recovery.py",
+    "tests/integration/test_managed_community_cost.py",
+    "tests/integration/managed_ory.py",
+    "tests/contract/test_binding_store_scoped_contract.py",
 ])
 def test_managed_identity_changes_require_the_real_ory_job(path):
     plan = ci_plan.classify([path])
