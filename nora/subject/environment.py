@@ -167,7 +167,10 @@ class IsolatedServices:
         cfg = _with(cfg, "store.database_url_env", variable)
         cfg._credentials = {**cfg.credentials, variable: self.database_url}
         if self.redis_url:
-            cfg._credentials = {**cfg.credentials, cfg.bridges.redis_url_env: self.redis_url}
+            self._patches.enter_context(patch.dict(os.environ, {
+                cfg.bridges.redis_url_env: self.redis_url,
+                cfg.computer.scoped.redis_url_env: self.redis_url,
+            }))
         return cfg
 
     def _declared_endpoint(self, url: str) -> bool:

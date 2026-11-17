@@ -126,11 +126,10 @@ async def test_cold_composition_preserves_features_and_closes_owned_resources(
         async with IsolatedServices(
             database_url=clean_pg_url, applications=apps, redis=True,
         ) as env:
-            monkeypatch.setenv(cfg.computer.scoped.redis_url_env, env.redis_url)
-            monkeypatch.setenv(cfg.bridges.redis_url_env, env.redis_url)
             urls, redis_process = set(env.urls.values()), env._process
             subject = await obtain(replace(spec, environment=env))
             deps = subject.deps
+            assert subject.cfg.credentials[cfg.computer.scoped.redis_url_env] == env.redis_url
             expected_config = cfg.model_dump()
             actual_config = subject.cfg.model_dump()
             for path in (*apps, "store.database_url_env"):
@@ -182,6 +181,8 @@ async def test_cold_composition_preserves_features_and_closes_owned_resources(
     if exit_mode in {"success", "case_error"}:
         assert_closed(subject, deps, sessions)
     assert not env.active and not env._subjects
+    assert os.environ[cfg.computer.scoped.redis_url_env] == "generated-preflight-credential"
+    assert os.environ[cfg.bridges.redis_url_env] == "generated-preflight-credential"
     assert redis_process.returncode is not None
     assert not (asyncio.all_tasks() - before - {asyncio.current_task()})
     for url in urls:
