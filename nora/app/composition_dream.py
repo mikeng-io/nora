@@ -103,7 +103,7 @@ def _character_adaptors(
     """Culture's room fold and the Character sessions (person, unit, Nora)."""
     schedules, adaptors = _culture_adaptor(
         allowlist=allowlist, cfg=cfg, engine=engine,
-        metrics=metrics, note_store=note_store, persons=persons,
+        metrics=metrics, note_store=note_store, persons=persons, access=access,
     )
     person_keys = LiveMapping(lambda: character_person_keys(allowlist, persons))
     culture_store = SqlCultureStore(engine)
@@ -128,7 +128,7 @@ def _character_adaptors(
 
 def _culture_adaptor(
     allowlist: Any, cfg: Any, engine: Any, metrics: Any,
-    note_store: Any, persons: Any,
+    note_store: Any, persons: Any, access: Any = None,
 ) -> Any:
 
     # THE CULTURE TIER (DEC-182..185) is the first schedule registered.
@@ -151,7 +151,7 @@ def _culture_adaptor(
     }
     adaptors = (
         CultureAdaptor(
-            culture=SqlCultureStore(engine),
+            access=access, culture=SqlCultureStore(engine),
             # THE NOTE INDEX: an account of how a room works that cannot see what the roo…
             # is inferring a thing the note index already states. `None` for the tier bei…
             # real configuration and renders no block, not an empty one. NOT `standing`:…

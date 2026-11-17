@@ -62,7 +62,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 from collections.abc import Callable, Sequence
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from nora.domain.blocks import (
     BlockKey,
@@ -79,6 +79,8 @@ from nora.domain.culture import (
     CultureProposal,
     CultureRevision,
 )
+from nora.domain.managed import room_scope_id
+from nora.domain.management import Scope, ScopeKind
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note
 from nora.domain.ports import Proposal
@@ -86,6 +88,9 @@ from nora.domain.prompt import escape
 from nora.language.character_session import AccountNotRecordableError, EntitySessions
 from nora.language.note_render import render_notes
 from nora.obs.metrics import Metrics
+
+if TYPE_CHECKING:
+    from nora.access import IdentityAccess
 
 log = logging.getLogger(__name__)
 
@@ -104,12 +109,9 @@ __all__ = [
 #: spelled in four places is a name that drifts in three.
 CULTURE_ADAPTOR_NAME = "culture"
 
-#: `DreamAdaptor.store_calls_per_tick`. `inputs` holds two — the previous
-#: account and the note index — and `commit` two, a `head` and an `append`.
-#: `tests/architecture/test_dream_store_calls_are_declared.py` counts them off
-#: this module's AST and reddens when a call is added without this number
-#: moving.
-STORE_CALLS_PER_TICK = 4
+#: Awaited collaborators: selected names, previous account and notes on input;
+#: current head and append on commit. The AST gate checks this bound.
+STORE_CALLS_PER_TICK = 5
 
 #: Every value `nora_culture_fold_total{outcome}` may carry, DERIVED rather than
 #: hand-copied into the metric's help text, and enforced at RUNTIME because
@@ -346,6 +348,7 @@ class CultureAdaptor(EntitySessions):
         # a raw id either way, so an unwired composition only loses the
         # canonical name, never gains a leak.
         platform_for: Callable[[str], str | None] | None = None,
+        access: IdentityAccess | None = None,
         resolve_names: (
             Callable[[Sequence[TranscriptRow], str], Sequence[TranscriptRow]] | None
         ) = None,
@@ -359,6 +362,7 @@ class CultureAdaptor(EntitySessions):
         self._tz = timezone
         self._platform_for = platform_for
         self._resolve_names = resolve_names
+        self._access = access
         # The verbs' per-run state (`EntitySessions`): what the run in flight
         # may cite, what it staged, and the bounded run of unsettled sessions.
         self._sessions_init()
@@ -428,25 +432,16 @@ class CultureAdaptor(EntitySessions):
             key, citable=Citable(messages=frozenset(row.id for row in batch)),
             entities={ROOM_ENTITY: None}, batch_start=batch[0].id,
         )
-        # RESOLVE NAMES. Every row this fold gets from `record.since` carries
-        # `person_name=None` — nothing on this path ever called
-        # `Persons.name_transcript` — so without this a mapped sender's line in
-        # `<room_messages>` would be attributed to their self-set, spoofable
-        # `sender_name` instead of the operator's name for them.
-        # `_render_batch`'s `speaker_name` never renders a raw id either way;
-        # this is what makes the MAPPED case correct rather than merely
-        # non-leaking.
-        # A RAISING RESOLVER DEGRADES, IT NEVER SKIPS THE FOLD.
-        # `resolve_names` is `Persons.name_transcript`, dict lookups only, so
-        # this should never fire — but this adaptor's own fail-closed rule is
-        # for a STORE this pass depends on (`inputs`'s own docstring); a name a
-        # batch line is merely attributed BY is not one, and treating a resolver
-        # fault as unavailable would hold the watermark and re-read the same
-        # batch forever over a failure the fold does not need to answer. Caught
-        # here, at the one call site, rather than inside `_render_batch`, which
-        # has no logger or metrics collaborator.
-        if self._resolve_names is not None:
-            platform = self._platform_for(key) if self._platform_for is not None else None
+        # Managed name reads are authoritative I/O, not optional file decoration.
+        # Refuse the pass on an outage; never render platform names as a substitute.
+        platform = self._platform_for(key) if self._platform_for is not None else None
+        if self._access is not None:
+            if platform is None:
+                raise RuntimeError("culture room platform is unavailable")
+            batch = await self._access.name_transcript(
+                batch, platform=platform,
+                scope=Scope(ScopeKind.ROOM, room_scope_id(platform, key)))
+        elif self._resolve_names is not None:
             if platform is not None:
                 try:
                     batch = tuple(self._resolve_names(batch, platform))
