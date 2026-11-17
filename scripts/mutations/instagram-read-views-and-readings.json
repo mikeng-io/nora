@@ -360,14 +360,14 @@
     "name": "the model's own media_fetch of a story frame is persisted",
     "file": "nora/media/adapters/tools/fetch.py",
     "old": "c.persist = c.persist and (not (c.url and c.url in c._instagram_story_urls))\n    ",
-    "new": "        c.persist = c.persist",
+    "new": "c.persist = c.persist\n    ",
     "target": "tests/unit/test_instagram_look_recovery.py -k opens_itself"
   },
   {
     "name": "the turn forgets its story frame links",
     "file": "nora/social/adapters/tools/instagram.py",
     "old": "if c.read == \"story\" and c.out.get(\"status\") == \"ok\":\n        c._instagram_story_urls.update(",
-    "new": "        if False:\n            c._instagram_story_urls.update(",
+    "new": "if False:\n        c._instagram_story_urls.update(",
     "target": "tests/unit/test_instagram_look_recovery.py -k opens_itself"
   },
   {
