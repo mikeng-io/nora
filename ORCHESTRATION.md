@@ -272,15 +272,15 @@ Artifact lifecycle — one owner and one end event each; retirement is mechanica
 | integration branch | parent outcome starts | PR to master merges | GitHub auto-delete |
 | handoff branch | a builder starts | its PR merges into its base | GitHub auto-delete |
 | worktree | the first write needs one | branch merged or deleted | orchestrator, via `make gc` |
-| review checkout | a read-only review needs one | its result is read | orchestrator, via settle and `make gc` |
+| review checkout | a read-only review needs one | its result is read | orchestrator, via `make gc` |
 | evidence | a check runs | never | PR comment or CI artifact, never only `/tmp` |
 | working log | a check runs | its run ends | `/tmp` |
 
-- Every finished handoff or outcome gets one settle record from the
-  orchestrator — `make settle BRANCH=<b> OUTCOME=<o>`: `merged` (its PR
-  merged), `archived` (`archive/<branch>` tag at the tip pushed to origin;
-  dirty worktree state saved first) or `abandoned` (one-line reason; refused
-  with commits not in `origin/master`). Never deletes; logs to the gc log.
+- An outcome that does not merge is archived once by the orchestrator —
+  `make archive BRANCH=<b> REASON="..." [WORKTREE=<path>]`: an annotated
+  `archive/<branch>` tag records the reason, source tip and worktree,
+  verified on origin before a dirty worktree is removed. Merged work's
+  record is its merged PR; `gc` counts the tag as custody.
 - The orchestrator runs `make gc APPLY=1` at intake and after merge; reviews
   use a detached checkout and never push a branch.
 - A handoff PR's base is the integration branch or the previous handoff's

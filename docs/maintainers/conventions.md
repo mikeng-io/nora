@@ -240,24 +240,24 @@ performs the removals: remote branches by expected-SHA lease (`git push
 update-ref -d` against the classified SHA, worktrees by `git worktree remove`
 after re-checking HEAD and clean status, and stale worktree registrations by
 deleting only their own `worktrees/<id>` admin dir — never a global `git
-worktree prune`. Each removed ref is appended with its SHA, and the PR number
-when custody is via a merged PR, to
-`${XDG_STATE_HOME:-~/.local/state}/nora/git-gc.log` so it can be restored. The
-orchestrator runs it at intake and after merge ([ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership)).
+worktree prune`. Each removed ref is appended with its SHA and custody (`pr=#N` or
+`archive=<tag>`) to `${XDG_STATE_HOME:-~/.local/state}/nora/git-gc.log` so it
+can be restored. The orchestrator runs it at intake and after merge
+([ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership)).
 
-A finished artifact's outcome is recorded first: `make settle BRANCH=<b>
-OUTCOME=<o>` writes `merged`, `archived` or `abandoned` to the same log —
-`archived` pushes an annotated `archive/<branch>` tag at the tip after saving
-a dirty worktree's `git diff HEAD` and untracked files under
-`nora/archive/<branch>/` in the state dir, and `abandoned` needs a one-line
-reason and is refused when the branch has commits not in `origin/master`.
-Settle never deletes; `make gc` retires.
+Work that does not merge is archived first: `make archive BRANCH=<b>
+REASON="..." [WORKTREE=<path>]` pushes an annotated `archive/<branch>` tag —
+the durable record holding the reason, source tip and worktree path. A dirty
+worktree's full state is committed into the tag first, and the worktree is
+removed only after the pushed tag verifies on origin. Merged work's record
+is its merged PR.
 
 Kept by rule: `master`, `deployments` and `dependabot/*`; the head of any open
 PR; branches checked out in a worktree; the primary checkout; locked
-worktrees; `--keep <path>`. Merged means an ancestor of `origin/master`, or
+worktrees; `--keep <path>`. Merged means an ancestor of `origin/master`,
 the ref's tip is the head of a merged PR — a commit GitHub keeps under
-`refs/pull/N/head`; an open integration-PR head is not custody. A worktree
+`refs/pull/N/head` — or an annotated `archive/<branch>` tag records that tip
+as its source; an open integration-PR head is not custody. A worktree
 leaves only when clean, merged and untouched for 24 hours — a branch carrying
 uncommitted changes from minutes ago is somebody else's turn in progress, and
 the recency check keeps it that way. A failed fetch, `gh` call, status check

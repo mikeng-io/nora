@@ -10,7 +10,7 @@
         setup hooks schema-parity heads decision-numbers \
         eval-participation eval-adversarial-corpora eval-gate \
         build \
-        branches gc settle
+        branches gc archive
 
 # --- setup (AGENTS.md: a fresh worktree needs this once, or pytest dies at
 # COLLECTION on the eval modules — `strands-agents-evals` is an optional extra
@@ -185,12 +185,14 @@ branches:
 gc:
 	uv run python scripts/git_gc.py $(if $(APPLY),--apply)
 
-# Outcome recording for a finished artifact (ORCHESTRATION.md «Artifact
-# lifecycle»): exactly one of merged/archived/abandoned per branch, verified
-# before it is logged. Deleting stays with `gc`.
-settle:
-	@test -n "$(BRANCH)" && test -n "$(OUTCOME)" || { echo 'usage: make settle BRANCH=<b> OUTCOME=merged|archived|abandoned [REASON=...]'; exit 2; }
-	uv run python scripts/git_settle.py "$(BRANCH)" "$(OUTCOME)" $(if $(REASON),--reason "$(REASON)")
+# Archive a finished artifact that did not merge (ORCHESTRATION.md «Artifact
+# lifecycle»): an annotated archive/<branch> tag records the reason, source
+# tip and worktree, pushed and verified before a given dirty worktree is
+# removed. Merged work's record is its merged PR; branch deletion stays with
+# `gc`, which counts the tag as custody.
+archive:
+	@test -n "$(BRANCH)" && test -n "$(REASON)" || { echo 'usage: make archive BRANCH=<b> REASON="..." [WORKTREE=<path>]'; exit 2; }
+	uv run python scripts/git_archive.py "$(BRANCH)" --reason "$(REASON)" $(if $(WORKTREE),--worktree "$(WORKTREE)")
 
 # --- merge-time checks (AGENTS.md "Never"; each of these has a dated incident
 # behind it, and until now each existed only as a command to retype by hand).
