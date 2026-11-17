@@ -1,6 +1,9 @@
 """The selected Ory job cannot disappear behind a successful aggregate."""
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from scripts import ci_plan
 
@@ -31,3 +34,23 @@ def test_managed_identity_changes_require_the_real_ory_job(path):
     needs["ory"]["result"] = "skipped"
     assert not ci_plan.verify(plan, needs)
 
+
+
+def test_manual_full_backend_runs_with_its_pinned_ory_dependencies():
+    jobs = yaml.safe_load((Path(__file__).resolve().parents[2]
+                          / ".github/workflows/ci.yml").read_text())["jobs"]
+    job = jobs["ory"]
+    assert "github.event_name == 'workflow_dispatch'" in job["if"]
+    steps = job["steps"]
+    names = [s.get("name") for s in steps]
+    full = next(s for s in steps if s.get("name") == "Selected backend acceptance")
+    startup = next(s for s in steps if s.get("name") == "Start disposable pinned Ory services")
+    assert "docker compose -p nora-ory-contract -f deploy/ory/compose.yaml up" in startup["run"]
+    assert names.index(startup["name"]) < names.index(full["name"])
+    assert names.index(full["name"]) < names.index("Remove disposable services and data")
+    assert full["if"] == "github.event_name == 'workflow_dispatch'"
+    assert "if targets == 'ALL'" in full["run"]
+    assert "--ignore" not in full["run"] and "continue-on-error" not in full
+    assert "&& 90 || 4" in job["timeout-minutes"]
+    assert job["env"]["NORA_TEST_MAX_WORKERS"] == "4"
+    assert not any(s.get("name") == full["name"] for s in jobs["contracts"]["steps"])

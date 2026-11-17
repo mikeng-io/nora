@@ -245,7 +245,7 @@ def test_shared_document_reader_keeps_full_suite_fallback(tmp_path, monkeypatch)
 def _acceptance_source() -> tuple[str, dict]:
     root = Path(__file__).resolve().parents[2]
     workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
-    step = next(s for s in workflow["jobs"]["contracts"]["steps"]
+    step = next(s for s in workflow["jobs"]["ory"]["steps"]
                 if s.get("name") == "Selected backend acceptance")
     source = step["run"].split("<<'PYTEST'\n", 1)[1].rsplit("PYTEST", 1)[0]
     return source, step
@@ -769,10 +769,10 @@ def test_full_backend_replaces_the_nonblocking_measurement():
     assert "suite-timing" not in jobs
     assert "contracts" in jobs["checks"]["needs"]
     assert jobs["contracts"]["env"]["NORA_TEST_MAX_WORKERS"] == "4"
-    steps = jobs["contracts"]["steps"]
-    fixed = next(step for step in steps
+    fixed = next(step for step in jobs["contracts"]["steps"]
                  if step.get("name") == "Architecture and documentation contracts")
     assert "needs.classify.outputs.readers != '\"ALL\"'" in fixed["if"]
+    steps = jobs["ory"]["steps"]
     upload = next(
         step for step in steps
         if step.get("uses", "").startswith("actions/upload-artifact@")
@@ -857,13 +857,13 @@ def test_automatic_backend_is_bounded_and_full_acceptance_is_manual():
     workflow = yaml.safe_load((root / '.github/workflows/ci.yml').read_text())
     assert 'schedule' not in workflow[True]
     steps = workflow['jobs']['contracts']['steps']
-    full = next(s for s in steps if s.get('name') == 'Selected backend acceptance')
+    _, full = _acceptance_source()
     fast = next(s for s in steps if s.get('name') == 'Fast backend baseline')
     assert full['if'] == "github.event_name == 'workflow_dispatch'"
     assert fast['if'] == "github.event_name != 'workflow_dispatch'"
     assert fast['run'] == 'uv run python -m scripts.ci_fast_tests'
     assert not any(s.get('run') == 'uv run python -m scripts.ci_plan release' for s in steps)
-    assert workflow['jobs']['contracts']['timeout-minutes'].endswith('|| 4 }}')
+    assert workflow['jobs']['contracts']['timeout-minutes'] == 4
     assert not any(s.get('continue-on-error', False) for s in steps)
 
 
