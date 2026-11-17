@@ -17,8 +17,8 @@ only what the next actor needs; follow design and evidence links on demand.
 Write or revise the brief to [references/brief.md](references/brief.md): its
 template, the finite Done-when checklist, approval and the lock. On the standard
 and full routes, attach the plan ([references/plan.md](references/plan.md))
-and send both to brief review (`nora-review`) before asking Mike to approve.
-An approved Done-when list is locked: only Mike changes it.
+and send both to brief review (`nora-review`); then Mike approves the Done-when
+list. An approved Done-when list is locked: only Mike changes it.
 
 Every Goal and every brief derived from it carries the same stop conditions:
 the agent stops and hands back when every Done-when item is marked met, unmet
@@ -69,7 +69,7 @@ before dependent writes. Unavailable coordination blocks that seam, not all work
 ## 3. Execute or delegate
 
 **Gate:** on the standard and full routes, launch nothing without a link to
-Mike's recorded approval of the brief and plan. When it is missing, halt and
+a brief review with no BLOCKER and Mike's recorded approval of Done-when. When either is missing, halt and
 report; do not approve or narrow the brief yourself.
 
 For direct work, load `nora-land` and the relevant specialist procedure.

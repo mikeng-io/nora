@@ -44,7 +44,8 @@ Progress, gaps and partial verdicts go in Current state, never in Done when.
 
 On the standard and full routes, the plan (`plan.md`) is attached to the brief.
 The reviewer by rule then checks both together (`nora-review/references/brief-review.md`).
-After a round with no BLOCKER, Mike approves, and the approval is recorded in
-Boundaries. From then on the Done-when list is locked: only Mike changes it.
+After a round with no BLOCKER, Mike approves the Done-when list, and the
+approval is recorded in Boundaries. The plan needs no approval of his: brief
+review validates it, and a later plan change within the locked items needs none. From then on the Done-when list is locked: only Mike changes it.
 An author never revises its own brief past review; a disputed item goes to
 Mike.

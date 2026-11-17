@@ -17,8 +17,8 @@ instead of steps 2–3; item marking, severity and follow-through are there too.
    approved amendments before reading prior findings; retain this basis on
    re-checks and name the selected subset. State any inferred scope.
    Check: the requested result is understandable without deriving intent from
-   the candidate. On the standard and full routes, the brief and plan carry
-   the operator's recorded approval and the candidate arrives with its execution
+   the candidate. On the standard and full routes, the brief and plan passed
+   brief review, Done-when carries the operator's approval, and the candidate arrives with its execution
    receipt; a missing one is returned unreviewed. On the light route, the PR body
    carries a brief. On every route, confirm the recorded route against the
    triggers in `nora-work/references/lifecycle.md`; a lower route is a finding.

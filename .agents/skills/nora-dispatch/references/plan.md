@@ -1,7 +1,7 @@
 # The plan and the execution receipt
 
 The plan is the plan phase's output on the standard and full routes. It is
-attached to the brief before brief review, and Mike's approval covers both.
+attached to the brief and validated in brief review; Mike approves only the Done-when list.
 
 ## Units
 

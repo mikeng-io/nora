@@ -21,7 +21,7 @@ This skill is the entry router; it does not repeat the other procedures.
    independent reviewer confirms it, and you never confirm your own route.
 3. **Check the gate before acting.** Find the transition the next action
    crosses. Confirm that the previous gate's output, as the route requires it,
-   exists. On standard and full: the approved brief and plan before a dispatch,
+   exists. On standard and full: the reviewed brief and plan, with Done-when approved, before a dispatch,
    and the execution receipt before verify. On light: a brief in the PR body.
    On every route: a reviewed head before merge. When it is missing,
    halt and report what is missing. Never produce a missing gate output yourself.
@@ -34,7 +34,8 @@ This skill is the entry router; it does not repeat the other procedures.
    Check: the next action advances an existing Done-when item.
 5. **Return to the outcome.** After a result, compare it with the brief. When a
    re-triage trigger appears (`references/lifecycle.md`), return to propose and
-   ask Mike. Otherwise continue the remaining authorized work, or hand over or
+   ask Mike. Otherwise continue to the next item without asking («When Mike is
+   asked»): report it, do not wait. Continue the remaining authorized work, or hand over or
    close through `nora-dispatch`. A worker's stop point does not end the
    parent's assignment.
    Check: completion is evidenced, or the remaining work and next action, or

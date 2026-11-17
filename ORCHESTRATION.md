@@ -74,8 +74,8 @@ the routes, the transition table and the re-triage triggers.
 - **No self-attestation.** At each transition its route requires, a checker
   other than the doer (the operator, the reviewer by rule, CI or the next
   agent) records pass or block. A skill halts when that output is missing.
-- **Proceeding stops at gates.** "Proceed unless blocked" holds between gates;
-  a required gate is a stop until its checker passes it.
+- **Ask only for intent, authority or redesign.** The agent obtains reviewer and
+  CI checks itself; only an operator-held gate waits, never a "continue".
 - **Ceiling.** The gates are policy-level stops held by skills, not an
   unskippable control; the reviewer and the operator's merge refuse when the
   route's required artifact is missing.
@@ -184,8 +184,8 @@ ones go into one PR summary comment, at most six classes, and open no round.
 - A round with no BLOCKER ends review once required evidence is in; waiting
   for evidence is not a round. One re-check covers
   `git diff <reviewed-sha>..HEAD`, unresolved findings and previously
-  unavailable required evidence. A repair that yields a new BLOCKER, or a
-  third round, goes to the operator, who decides whether to redesign.
+  unavailable required evidence. Rounds continue while each closes a blocker
+  class; one that closes none, or a repair-made class, goes to the operator.
 - A class is one remedy fixing all its instances: first report names the
   structural remedy and every sibling instance in that round, then no new
   input shapes. A repair-induced finding names its origin; same class unless

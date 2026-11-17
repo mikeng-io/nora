@@ -24,7 +24,7 @@ Check, and cite file:line or the source for each finding:
 5. **Route.** The route matches the triggers in `nora-work/references/lifecycle.md`.
 
 **Return:** for each item, APPROVE or BLOCKER with a one-line reason. A round
-with no BLOCKER ends brief review; Mike then approves or not.
+with no BLOCKER ends brief review; Mike then approves the Done-when list.
 
 ## Marking items (verify)
 
@@ -39,9 +39,10 @@ A finding's severity is the reviewer's. The orchestrator chooses the
 disposition (`ORCHESTRATION.md` «Bounded independent review») but never
 lowers or raises the severity.
 
-After a repair, one re-check covers the repair delta, the open findings and
-any evidence that was unavailable. Mike decides how to proceed when a repair
-produces a new BLOCKER, or when a third round would be needed.
+After a repair, a re-check covers the repair delta, the open findings and
+any evidence that was unavailable. Rounds continue without asking while each
+one closes blocker classes. Mike decides how to proceed when a round closes no
+class, or a repair introduces a new one.
 
 When fixing a reported defect class, the author searches for every sibling
 instance, as the reviewer does when reporting one. A re-check that finds an
