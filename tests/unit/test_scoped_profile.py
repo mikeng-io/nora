@@ -285,7 +285,7 @@ async def test_reconcile_finishes_exactly_the_journaled_scoped_effect():
     assert record is not None
     assert record.state is not OperationJournalState.COMPLETE
 
-    finished = await services.scoped_profile.reconcile()
+    finished = await services.reconcile()
     assert [r.operation_id for r in finished] == ["generated-op-1"]
     assert (await store.scoped_name_for(person_id=PERSON, scope=ROOM)) == NICK
 

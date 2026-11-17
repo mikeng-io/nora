@@ -314,12 +314,66 @@ async def test_a_kratos_outage_leaves_an_incomplete_journal_reconcile_finishes()
     assert record.steps["kratos"] == "pending"
     assert (await store.person(PERSON)).display_name == OLDER_NAME
 
-    finished = await services.profile.reconcile()
+    finished = await services.reconcile()
     assert [row.operation_id for row in finished] == ["generated-op-1"]
     assert (await store.person(PERSON)).display_name == NEW_NAME
     record = await store.operation("generated-op-1")
     assert record is not None
     assert record.state is OperationJournalState.COMPLETE
+
+
+async def test_the_runtime_loop_recovers_a_profile_without_a_collection():
+    class NotifyingRegistry(_FailOnceRegistry):
+        def __init__(self):
+            super().__init__()
+            self.recovered = asyncio.Event()
+
+        async def set_display_name(self, **kwargs):
+            result = await super().set_display_name(**kwargs)
+            if result.status is OutcomeStatus.COMPLETE:
+                self.recovered.set()
+            return result
+
+    registry = NotifyingRegistry()
+    store, _, services = _service(registry=registry)
+    await _enrolled(store, registry)
+    outcome = await services.profile.update_display_name(
+        await _authentication(store), operation_id="generated-runtime-recovery",
+        display_name=NEW_NAME)
+    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    task = asyncio.create_task(services.run_reconciliation(interval_seconds=3600))
+    try:
+        await asyncio.wait_for(registry.recovered.wait(), timeout=2)
+        assert (await store.person(PERSON)).display_name == NEW_NAME
+        record = await store.operation("generated-runtime-recovery")
+        assert record.state is OperationJournalState.COMPLETE
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+async def test_an_unreadable_recovery_owner_does_not_starve_the_other_owners():
+    class JournalOutage(FakeBindingStore):
+        fail_read = False
+
+        async def incomplete_operations(self):
+            if self.fail_read:
+                self.fail_read = False
+                raise RuntimeError("generated journal read outage")
+            return await super().incomplete_operations()
+
+    store = JournalOutage()
+    store, registry, services = _service(store, _FailOnceRegistry())
+    await _enrolled(store, registry)
+    outcome = await services.profile.update_display_name(
+        await _authentication(store), operation_id="generated-owner-outage",
+        display_name=NEW_NAME)
+    assert outcome.status is OutcomeStatus.UNAVAILABLE
+    store.fail_read = True
+    finished = await services.reconcile()
+    assert [row.operation_id for row in finished] == ["generated-owner-outage"]
+    assert (await store.person(PERSON)).display_name == NEW_NAME
 
 
 async def test_a_projection_outage_reconciles_the_recorded_effect():

@@ -44,6 +44,7 @@ from nora.domain.management import (
     Unlink,
 )
 from nora.people.app.link_publication import LinkPublicationService, _journal_id
+from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
@@ -293,7 +294,8 @@ async def test_kratos_outage_mid_commit_stays_incomplete_held_and_resumable():
     assert (await links.get("synthetic-request")).state is LinkState.COMMITTING
     # And the survivor's checks fail closed while the holds stand.
     svc._registry = registry
-    finished = await svc.reconcile()
+    recovered = ManagedServices(store, _backend, _topology, registry, links)
+    finished = await recovered.reconcile()
     assert [r.operation_id for r in finished] == [_journal_id("synthetic-request")]
     assert not await store.identity_held(PERSON_A)
     assert (await links.get("synthetic-request")).state is LinkState.COMMITTED

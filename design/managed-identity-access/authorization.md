@@ -145,6 +145,9 @@ permission tuple proves.
 Kratos, Nora's binding store and Keto do not share an application transaction.
 Nora's management service owns completion and reconciliation: it records enough
 operation identity and intended effect to retry an incomplete change safely.
+The managed runtime resumes the owning journals at startup and periodically,
+independently of platform discovery configuration. Each owner retains its
+revalidation and publication holds until recovery confirms the recorded effect.
 Access that depends on an uncompleted identity/grant change remains blocked until
 the required stores agree. A failed revocation blocks the affected authority
 locally while permission reconciliation completes. Reporting success requires a

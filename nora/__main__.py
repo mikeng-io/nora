@@ -397,12 +397,12 @@ class App:
         # (inbound is the reader's), so there is no dual listener.
         if deps.bridge_runtime is not None:
             deps.background.spawn(deps.bridge_runtime.run())
-            # The periodic inspection loop is a second task, not an extra
-            # awaited coroutine inside run(): `run()` owns reader+runner
-            # lifetime; this ticks beside it and stops on the same _stop.
+            # Inspection ticks beside the reader and stops on the same _stop.
             deps.background.spawn(deps.bridge_runtime.inspect_forever())
 
-        # `deps.onboarding` is None in the default deployment — nothing spawned.
+        if self.cfg.identity.backend == "managed":
+            deps.background.spawn(deps.managed_services.run_reconciliation(
+                interval_seconds=self.cfg.identity.onboarding.retry_seconds))
         if deps.onboarding is not None:
             deps.background.spawn(deps.onboarding.run())
 

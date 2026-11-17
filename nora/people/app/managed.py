@@ -24,6 +24,7 @@ registration here, authority in `managed_authority`, journal plumbing in
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import cast
 from uuid import uuid4
@@ -120,6 +121,24 @@ class ManagedServices:
             bindings=bindings, authority=self.authority, topology=topology,
             registry=registry,
         )
+
+    async def reconcile(self) -> tuple[OperationRecord, ...]:
+        """Resume each journal owner independently; an outage leaves its holds intact."""
+        finished: list[OperationRecord] = []
+        for service in (self.publication, self.authority, self.profile, self.scoped_profile):
+            try:
+                finished.extend(await service.reconcile())
+            except ManagedError:
+                raise
+            except Exception as error:  # noqa: BLE001 — other journal owners still recover
+                log.error("managed recovery unavailable (%s)", type(error).__name__)
+        return tuple(finished)
+
+    async def run_reconciliation(self, *, interval_seconds: float) -> None:
+        """Recover immediately at startup and retry while the runtime owns the task."""
+        while True:
+            await self.reconcile()
+            await asyncio.sleep(interval_seconds)
 
     async def aclose(self) -> None:
         await self.bindings.aclose()
