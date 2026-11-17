@@ -1,4 +1,4 @@
-"""The bridge reports classification and collection completeness explicitly."""
+"""The bridge reports account identifiers and collection completeness."""
 
 from typing import Literal
 
@@ -12,7 +12,7 @@ class ObservedAccount(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     account: Identifier
-    classification: Literal["person", "bot", "unknown"]
+    classification: Literal["person", "bot", "unknown"] = "unknown"
 
 
 class RosterRequest(BaseModel):

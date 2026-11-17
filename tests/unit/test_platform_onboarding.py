@@ -4,8 +4,8 @@ fakes, plus the real Discord/Signal discovery normalizers (`identity.md`
 «Platform discovery and membership», issue #528 Task 8):
 
 - an initial complete roster bulk-registers independent people under the
-  rule's service identity — bots/system rows excluded, an `unknown` row
-  refuses a complete roster rather than fabricating membership;
+  rule's service identity — all valid identifiers included regardless of account labels; a row
+  without identifiers refuses rather than fabricating membership;
 - a Signal member's number+uuid pair binds ONE person, never two, and a
   sender typed through the same pair is one observation;
 - joins arrive through the membership-observation dirty lane and through
@@ -279,7 +279,7 @@ class TestOnboarding:
         await onboarding._drain()
         assert len(services.bindings.people) == 120
 
-    async def test_bots_are_excluded_and_unknown_refuses_a_complete_roster(self):
+    async def test_missing_identifiers_refuse_without_excluding_valid_bot_accounts(self):
         services, provisioning = _graph()
         discovery, _ = _discord(
             [guild_member(1), guild_member(2, bot=True), {"user": {}}])
@@ -293,9 +293,9 @@ class TestOnboarding:
             [guild_member(1), guild_member(2, bot=True)])
         onboarding = _onboarding(services, provisioning, _rule(discovery))
         await onboarding._drain()
-        assert len(services.bindings.people) == 1
+        assert len(services.bindings.people) == 2
         assert (await services.bindings.account_for(
-            "discord", "user_id", "10002")) is None
+            "discord", "user_id", "10002")) is not None
 
     async def test_partial_or_unavailable_read_never_departs(self):
         services, provisioning = _graph()

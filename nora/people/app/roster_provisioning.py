@@ -53,17 +53,15 @@ class RosterProvisioning:
                     collection: str, members: Iterable[ObservedMember],
                     complete_roster: bool, observed_ms: int) -> Outcome:
         roster = tuple(members)
-        groups = tuple(frozenset(member.identifiers) for member in roster
-                       if member.classification == "person")
+        groups = tuple(frozenset(member.identifiers) for member in roster)
         if (actor.kind is not ActorKind.SERVICE or not operation_id.strip()
                 or not collection.strip()
-                or any(len({i.platform for i in group}) != 1
+                or any(len({i.platform for i in group}) > 1
                        or any(i.platform not in actor.sources for i in group)
                        for group in groups)):
             return denied("invalid-roster-source")
-        if complete_roster and any(
-                member.classification == "unknown" for member in roster):
-            return unavailable("unclassified-member")
+        if any(not group for group in groups):
+            return unavailable("unproven-account")
         try:
             async with self.bindings.mutation():
                 if not await self.topology.scope_exists(scope):

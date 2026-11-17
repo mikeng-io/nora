@@ -1,22 +1,22 @@
 [
   {
-    "name": "unclassified members refuse a complete roster",
+    "name": "missing identifiers remain an explicit unavailable observation",
     "file": "nora/people/app/roster_provisioning.py",
-    "old": "        if complete_roster and any(\n                member.classification == \"unknown\" for member in roster):\n            return unavailable(\"unclassified-member\")",
-    "new": "        if False:\n            return unavailable(\"unclassified-member\")",
-    "target": "tests/unit/test_platform_onboarding.py::TestOnboarding::test_bots_are_excluded_and_unknown_refuses_a_complete_roster"
+    "old": "        if any(not group for group in groups):\n            return unavailable(\"unproven-account\")",
+    "new": "        if False:\n            return unavailable(\"unproven-account\")",
+    "target": "tests/unit/test_onboarding_sender_enrichment.py::test_an_unproven_account_is_unavailable_before_any_write"
   },
   {
-    "name": "bots never register as people",
+    "name": "bot labels do not exclude valid observed identities",
     "file": "nora/people/app/roster_provisioning.py",
-    "old": "        groups = tuple(frozenset(member.identifiers) for member in roster\n                       if member.classification == \"person\")",
-    "new": "        groups = tuple(frozenset(member.identifiers) for member in roster)",
-    "target": "tests/unit/test_platform_onboarding.py::TestOnboarding::test_bots_are_excluded_and_unknown_refuses_a_complete_roster"
+    "old": "        groups = tuple(frozenset(member.identifiers) for member in roster)",
+    "new": "        groups = tuple(frozenset(member.identifiers) for member in roster\n                       if member.classification == \"person\")",
+    "target": "tests/web/test_roster_provisioning.py::test_private_roster_registers_without_requiring_account_nature[bot]"
   },
   {
     "name": "an empty guild read is unavailable, never a mass departure",
     "file": "nora/platform/discord/discovery.py",
-    "old": "        if not result.rows:\n            # A guild can never enumerate to zero members — the application\n            # itself is one. An empty answer is a broken read, not proof\n            # everyone left, so it cannot stand in as a complete roster.\n            return CollectionSnapshot(\n                available=False, detail=\"empty-roster\")",
+    "old": "        if not result.rows:\n            # A guild can never enumerate to zero members \u2014 the application\n            # itself is one. An empty answer is a broken read, not proof\n            # everyone left, so it cannot stand in as a complete roster.\n            return CollectionSnapshot(\n                available=False, detail=\"empty-roster\")",
     "new": "        if False:\n            return CollectionSnapshot(\n                available=False, detail=\"empty-roster\")",
     "target": "tests/unit/test_platform_onboarding.py::TestDiscoveryAdapters::test_discord_unavailable_and_empty_never_read_as_empty_roster"
   },

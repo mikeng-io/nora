@@ -376,15 +376,10 @@ MemberClassification = Literal["person", "bot", "unknown"]
 
 @dataclass(frozen=True)
 class ObservedMember:
-    """One observed platform account inside a collection roster.
+    """One account's typed identifiers in a collection roster.
 
-    `identifiers` carries EVERY matchable identifier that ONE account
-    presented — a Signal member's `number`+`uuid` pair is one member, never
-    two — and all of one platform. A member the source cannot type down to
-    a matchable identifier is `unknown`: representable so a complete roster
-    can refuse rather than pretend it knows everyone, and never syncable
-    as a person (a classification the source did not make is never "person"
-    — that is how a bot can never ride in as a human).
+    `classification` retains legacy provider metadata, not an admission or
+    permission rule. Missing identifiers remain unproven regardless of label.
     """
 
     identifiers: frozenset[Identifier]

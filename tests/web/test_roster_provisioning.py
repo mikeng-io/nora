@@ -5,6 +5,7 @@ import time
 import pytest
 from aiohttp import web
 
+from nora.domain.identity import Identifier
 from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
@@ -69,27 +70,48 @@ async def test_one_roster_registers_over_a_hundred_people_without_duplicate_on_r
     assert (await client.post(PATH, json=roster(members=[]), headers=AUTH)).status == 403
 
 
-async def test_partial_roster_bots_unknowns_and_complete_departure_are_distinct(surface):
+async def test_partial_roster_labels_and_complete_departure_are_distinct(surface):
     client, services = surface
     assert (await client.post(PATH, json=roster(members=[account(1), account(2, "bot")]),
                               headers=AUTH)).status == 200
-    assert len(services.bindings.people) == 1
-    # Each DISTINCT observation carries its own later producer instant —
-    # the same instant with different content is a conflict, not a sync.
+    assert len(services.bindings.people) == 2
     partial = roster("generated-partial", [account(3, "unknown")], complete=False,
                      observed_ms=NOW_MS + 1_000)
     assert (await client.post(PATH, json=partial, headers=AUTH)).status == 200
-    member = (await services.bindings.members_of(UNIT))[0]
-    assert member.state.value == "member"
-    unknown = roster("generated-unknown", [account(4, "unknown")],
+    assert len(await services.bindings.members_of(UNIT)) == 3
+    complete = roster("generated-complete", [account(4, "unknown")],
                      observed_ms=NOW_MS + 2_000)
-    assert (await client.post(PATH, json=unknown, headers=AUTH)).status == 503
-    assert (await services.bindings.members_of(UNIT))[0].state.value == "member"
+    assert (await client.post(PATH, json=complete, headers=AUTH)).status == 200
+    member = await services.bindings.account_for("discord", "user_id", "generated-4")
+    assert [m.person_id for m in await services.bindings.members_of(UNIT)] == [member.person_id]
     departed = await client.post(PATH, json=roster(
         "generated-departure", [], observed_ms=NOW_MS + 3_000), headers=AUTH)
     assert departed.status == 200
     assert await services.bindings.members_of(UNIT) == ()
     assert (await services.bindings.memberships_for(member.person_id))[0].state.value == "left"
+
+
+@pytest.mark.parametrize("classification", ["person", "bot", "unknown", None])
+async def test_private_roster_registers_without_requiring_account_nature(surface, classification):
+    client, services = surface
+    row = account(1, classification)
+    if classification is None:
+        row.pop("classification")
+    request = roster(members=[row])
+    response = await client.post(PATH, json=request, headers=AUTH)
+    assert response.status == 200, await response.text()
+    original = await services.bindings.record_for(
+        account=Identifier("discord", "user_id", "generated-1"))
+    assert original is not None
+    assert (await client.post(PATH, json=request, headers=AUTH)).status == 200
+    current = await services.bindings.record_for(
+        account=Identifier("discord", "user_id", "generated-1"))
+    assert current.account_id == original.account_id and current.person_id == original.person_id
+    assert len(services.bindings.people) == len(services.registry.identities) == 1
+    assert not (await services.authority.check(scope=ROOM,
+        person_id=original.person_id, permit="view")).allowed
+    assert not (await services.authority.check(scope=UNIT,
+        person_id=original.person_id, permit="manage_members")).allowed
 
 
 async def test_an_undated_or_stale_complete_roster_preserves_membership(surface):

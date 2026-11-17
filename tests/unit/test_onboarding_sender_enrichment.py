@@ -20,6 +20,7 @@ person, many accounts», issue #528 queue5):
 
 from __future__ import annotations
 
+import time
 from uuid import uuid4
 
 import pytest
@@ -30,6 +31,7 @@ from nora.domain.managed import (
     CollectionSnapshot,
     ManagedAccount,
     ManagedPerson,
+    ObservedMember,
     OperationJournalState,
     OutcomeStatus,
     PersonLifecycle,
@@ -41,11 +43,14 @@ from nora.testing.managed import FakeBindingStore
 from tests.unit.test_platform_onboarding import (
     GROUP,
     GUILD,
+    SERVICE,
     UNIT,
+    _discord,
     _graph,
     _onboarding,
     _rows,
     _rule,
+    guild_member,
     signal_member,
 )
 
@@ -386,4 +391,47 @@ async def test_unprovable_or_out_of_source_sender_evidence_registers_nothing():
         platform="discord", conversation_id=f"{GUILD}/room",
         sender_id="10001")
     await foreign._drain()
+    assert len(services.bindings.people) == 1
+
+
+@pytest.mark.parametrize("classification", ["person", "bot", "unknown"])
+async def test_roster_and_sender_preserve_one_account_without_a_nature_gate(
+    classification,
+):
+    services, provisioning = _graph()
+    account = Identifier("discord", "user_id", "10002")
+    discovery = ScriptedDiscovery(CollectionSnapshot(
+        available=True, complete=True, observed_ms=int(time.time() * 1000),
+        members=(ObservedMember(frozenset({account}), classification),)),
+        collection=GUILD)
+    onboarding = _onboarding(services, provisioning, _rule(discovery))
+    onboarding.notify_sender(platform="discord",
+        conversation_id=f"{GUILD}/generated-room", sender_id=account.value)
+    await onboarding._drain()
+    original = await services.bindings.record_for(account=account)
+    assert original is not None
+    members = await services.bindings.members_of(UNIT)
+    assert [m.person_id for m in members] == [original.person_id]
+    assert members[0].sources == {f'sync:["generated-bridge","{GUILD}"]'}
+    onboarding.notify_sender(platform="discord",
+        conversation_id=f"{GUILD}/generated-room", sender_id=account.value)
+    await onboarding._drain()
+    current = await services.bindings.record_for(account=account)
+    assert current.account_id == original.account_id
+    assert current.person_id == original.person_id
+    assert len(services.bindings.people) == len(services.registry.identities) == 1
+    assert not (await services.authority.check(scope=UNIT,
+        person_id=original.person_id, permit="manage_members")).allowed
+
+async def test_an_unproven_account_is_unavailable_before_any_write():
+    services, provisioning = _graph()
+    result = await provisioning.apply(operation_id="generated-unproven",
+        actor=SERVICE, scope=UNIT, collection=GUILD,
+        members=(ObservedMember(frozenset(), "unknown"),),
+        complete_roster=True, observed_ms=int(time.time() * 1000))
+    assert result.status.value == "unavailable"
+    assert result.detail == "unproven-account"
+    assert not services.bindings.people and not services.bindings.operations
+    discovery, _ = _discord([guild_member(1)])
+    await _onboarding(services, provisioning, _rule(discovery))._drain()
     assert len(services.bindings.people) == 1

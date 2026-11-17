@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from dataclasses import replace
 from uuid import uuid4
 
 import pytest
@@ -17,6 +18,7 @@ from nora.domain.managed import (
     PersonLifecycle,
 )
 from nora.domain.management import (
+    AccountObservation,
     Actor,
     ActorKind,
     Operation,
@@ -67,15 +69,16 @@ def services(engine, registry, backend):
                                      graph.registration, graph.authority)
 
 
+@pytest.mark.parametrize("classification", ["person", "bot", "unknown"])
 async def test_fresh_engine_resumes_bulk_registration_without_duplicate_or_registration_grants(
-    engine, database,
+    engine, database, classification,
 ):
     registry, backend = FakeIdentityRegistry(), FakeAuthorityBackend()
     graph, application = services(engine, registry, backend)
     account = Identifier("discord", "user_id", "generated-account")
     request = {"operation_id": "generated-snapshot", "actor": ACTOR, "scope": UNIT,
                "collection": "generated-guild",
-               "members": (ObservedMember(frozenset({account})),),
+               "members": (ObservedMember(frozenset({account}), classification),),
                "complete_roster": True,
                "observed_ms": int(time.time() * 1000)}
     registry.down = True
@@ -226,4 +229,45 @@ async def test_independent_stores_arbitrate_observations_with_the_postgres_lock(
         await asyncio.gather(new_task, *([old_task] if old_task is not None else []),
                              return_exceptions=True)
         sa.event.remove(other_engine.sync_engine, "before_cursor_execute", before_execute)
+        await other_engine.dispose()
+
+
+async def test_concurrent_roster_and_sender_observations_keep_one_sql_binding(engine, database):
+    registry, backend = FakeIdentityRegistry(), FakeAuthorityBackend()
+    graph, provisioning = services(engine, registry, backend)
+    other_engine = create_sql_engine(database)
+    try:
+        other, _ = services(other_engine, registry, backend)
+        sender = Operation("generated-concurrent-sender", "observe_account", ACTOR,
+            Target(TargetKind.ACCOUNT, account=MEMBER),
+            AccountObservation(frozenset({MEMBER})), {"ownership": "0"})
+        roster_result, sender_result = await asyncio.gather(
+            provisioning.apply(operation_id="generated-concurrent-roster",
+                actor=ACTOR, scope=UNIT, collection="generated-guild",
+                members=(ObservedMember(frozenset({MEMBER}), "unknown"),),
+                complete_roster=True, observed_ms=int(time.time() * 1000)),
+            other.registration.apply(sender))
+        assert roster_result.status is OutcomeStatus.COMPLETE
+        bound = await graph.bindings.record_for(account=MEMBER)
+        assert bound is not None
+        if sender_result.status is OutcomeStatus.DENIED:
+            assert sender_result.detail == "stale-ownership-revision"
+        else:
+            assert sender_result.status is OutcomeStatus.COMPLETE
+        refreshed = replace(sender, observed_revisions={"ownership": str(bound.revision)})
+        assert (await other.registration.apply(refreshed)).status is OutcomeStatus.COMPLETE
+        reread = await other.bindings.record_for(account=MEMBER)
+        assert reread.account_id == bound.account_id and reread.person_id == bound.person_id
+        async with other_engine.connect() as conn:
+            counts = (await conn.execute(sa.text(
+                "SELECT (SELECT count(*) FROM managed_person), "
+                "(SELECT count(*) FROM managed_account)"))).one()
+        assert tuple(counts) == (1, 1)
+        assert len(registry.identities) == 1
+        members = await graph.bindings.members_of(UNIT)
+        assert [m.person_id for m in members] == [bound.person_id]
+        assert members[0].sources == {'sync:["generated-bridge","generated-guild"]'}
+        assert not (await graph.authority.check(scope=UNIT,
+            person_id=bound.person_id, permit="manage_members")).allowed
+    finally:
         await other_engine.dispose()
