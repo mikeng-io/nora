@@ -41,8 +41,10 @@ from nora.domain.management import (
     AccountRegistration,
     Delegation,
     MembershipStanding,
+    ObservedRole,
     Operation,
     ProfileEdit,
+    RoleDelegation,
     RosterSync,
     Scope,
     ScopeKind,
@@ -76,6 +78,7 @@ async def _publication_refusal(
         accounts.update(payload.identifiers)
     elif isinstance(payload, RosterSync):
         accounts.update(payload.members)
+        accounts.update(o.member for o in payload.roles)
         if payload.complete and scope is not None:
             subjects.update(member.person_id for member in await store.members_of(scope))
     for identifier in accounts:
@@ -120,6 +123,12 @@ def _op_snapshot(op: Operation) -> MappingProxyType[str, Any]:
     elif isinstance(payload, RosterSync):
         snap["members"] = [_ident_snapshot(i) for i in sorted(
             payload.members, key=lambda i: (i.platform, i.kind, i.value))]
+        snap["roles"] = [
+            {"member": _ident_snapshot(o.member), "role": o.role}
+            for o in sorted(
+                payload.roles, key=lambda o: (o.role, o.member.platform,
+                                              o.member.kind, o.member.value))
+        ]
         snap["complete"] = payload.complete
         snap["collection"] = payload.collection
         snap["observed_ms"] = payload.observed_ms
@@ -131,6 +140,9 @@ def _op_snapshot(op: Operation) -> MappingProxyType[str, Any]:
     elif isinstance(payload, AccessChange):
         snap["direction"] = payload.direction.value
         snap["grantee"] = payload.grantee
+        snap["permits"] = sorted(payload.permits)
+    elif isinstance(payload, RoleDelegation):
+        snap["role"] = payload.role
         snap["permits"] = sorted(payload.permits)
     elif isinstance(payload, Delegation):
         snap["delegatee"] = payload.delegatee
@@ -369,14 +381,26 @@ def _rebuild(record: OperationRecord) -> _ReplayOp | None:
                 permits=frozenset(snap["permits"]),
             )
         elif kind in ("delegate", "revoke_delegation"):
-            payload = Delegation(
-                delegatee=snap["delegatee"],
-                permits=frozenset(snap["permits"]),
-            )
+            if "role" in snap:
+                payload = RoleDelegation(
+                    role=snap["role"],
+                    permits=frozenset(snap["permits"]),
+                )
+            else:
+                payload = Delegation(
+                    delegatee=snap["delegatee"],
+                    permits=frozenset(snap["permits"]),
+                )
         elif kind == "sync_membership":
             payload = RosterSync(
                 members=frozenset(
                     _ident_from(i) for i in snap.get("members", [])
+                ),
+                roles=frozenset(
+                    ObservedRole(
+                        member=_ident_from(r["member"]), role=r["role"]
+                    )
+                    for r in snap.get("roles", [])
                 ),
                 complete=bool(snap["complete"]),
                 collection=snap.get("collection", ""),

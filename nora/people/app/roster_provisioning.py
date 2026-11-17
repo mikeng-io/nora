@@ -28,6 +28,7 @@ from nora.domain.management import (
     AccountObservation,
     Actor,
     ActorKind,
+    ObservedRole,
     Operation,
     RosterSync,
     Scope,
@@ -53,21 +54,21 @@ class RosterProvisioning:
                     collection: str, members: Iterable[ObservedMember],
                     complete_roster: bool, observed_ms: int) -> Outcome:
         roster = tuple(members)
-        groups = tuple(frozenset(member.identifiers) for member in roster)
         if (actor.kind is not ActorKind.SERVICE or not operation_id.strip()
                 or not collection.strip()
-                or any(len({i.platform for i in group}) > 1
-                       or any(i.platform not in actor.sources for i in group)
-                       for group in groups)):
+                or any(len({i.platform for i in member.identifiers}) > 1
+                       or any(i.platform not in actor.sources
+                              for i in member.identifiers)
+                       for member in roster)):
             return denied("invalid-roster-source")
-        if any(not group for group in groups):
+        if any(not member.identifiers for member in roster):
             return unavailable("unproven-account")
         try:
             async with self.bindings.mutation():
                 if not await self.topology.scope_exists(scope):
                     return denied("unknown-scope")
                 return await self._apply(operation_id, actor, scope, collection,
-                                         groups, complete_roster, observed_ms)
+                                         roster, complete_roster, observed_ms)
         except OperationConflictError:
             return denied("operation-conflict")
         except Exception:
@@ -75,17 +76,22 @@ class RosterProvisioning:
             return unavailable("store-failure")
 
     async def _apply(self, key: str, actor: Actor, scope: Scope, collection: str,
-                     groups: tuple[frozenset[Identifier], ...],
+                     roster: tuple[ObservedMember, ...],
                      complete_roster: bool, observed_ms: int) -> Outcome:
-        ordered = sorted(groups, key=lambda group: min(
-            (i.platform, i.kind, i.value) for i in group))
+        def order(member: ObservedMember) -> tuple[str, str, str]:
+            return min((i.platform, i.kind, i.value)
+                       for i in member.identifiers)
+
+        ordered_members = sorted(roster, key=order)
+        ordered = tuple(frozenset(m.identifiers) for m in ordered_members)
         snapshot = {"service": actor.service_id, "collection": collection,
             "scope": {"kind": scope.kind.value, "id": scope.id},
             "complete": complete_roster, "observed_ms": observed_ms,
             "members": [[
                 [i.platform, i.kind, i.value]
                 for i in sorted(group, key=lambda i: (i.platform, i.kind, i.value))
-            ] for group in ordered]}
+            ] for group in ordered],
+            "roles": [sorted(m.roles) for m in ordered_members]}
         record = await self.bindings.operation(key)
         if record is not None:
             if record.kind != "provision_roster" or record.snapshot != snapshot:
@@ -107,9 +113,15 @@ class RosterProvisioning:
                 return incomplete("account-registration-unconfirmed")
         await _step_done(self.bindings, record, "accounts")
         members = frozenset().union(*ordered) if ordered else frozenset()
+        roles = frozenset(
+            ObservedRole(member=min(group, key=lambda i: (i.platform, i.kind, i.value)),
+                         role=role)
+            for member, group in zip(ordered_members, ordered, strict=True)
+            for role in member.roles
+        )
         sync = Operation(key + ":membership", "sync_membership", actor,
             Target(TargetKind.SCOPE, scope=scope),
-            RosterSync(members, complete_roster, collection, observed_ms),
+            RosterSync(members, complete_roster, collection, observed_ms, roles),
             {"authority": "current"})
         outcome = await self.authority._apply(sync)
         if outcome.status is OutcomeStatus.INCOMPLETE:

@@ -10,12 +10,12 @@ from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
 from nora.people.app.managed import ManagedServices, RegistrationService
 from nora.people.app.management_invocation import HumanManagement
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.unit.test_managed_registration import ACCT, ACCT_2, PERSON, _register_op
 
 

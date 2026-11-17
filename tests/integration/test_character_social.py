@@ -694,7 +694,8 @@ async def test_selected_background_reads_retired_sources_after_a_fresh_engine(
     from nora.infra.sql.schema import MESSAGES
     from nora.language.profile import Mention
     from nora.people.app.managed import ManagedServices
-    from nora.testing.managed import FakeAuthorityBackend, FakeLinkRequests
+    from nora.testing.managed import FakeLinkRequests
+    from nora.testing.managed_authority import FakeAuthorityBackend
     from tests.infra.test_profile_source_inputs import message
     from tests.unit.test_managed_background_access import (
         _background_identity_case,

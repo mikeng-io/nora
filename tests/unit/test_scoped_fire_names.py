@@ -24,12 +24,12 @@ from nora.people.app.managed import ManagedServices
 from nora.persons import Persons
 from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.unit.test_fire_path import T0, _reminder
 
 _M_FIRE_ROOM = Scope(ScopeKind.ROOM, room_scope_id("signal", "conv-1"))

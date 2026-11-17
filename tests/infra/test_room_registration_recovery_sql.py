@@ -24,11 +24,11 @@ from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people import RoomManagement, RoomRequest
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeIdentityRegistry,
     FakeTopologySource,
     unavailable_outcome,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 WS_ID = "generated-ws"
 UNIT_ID = "generated-unit"

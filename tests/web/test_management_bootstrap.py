@@ -14,12 +14,12 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 ROOM = Scope(ScopeKind.ROOM, "discord/generated-guild/generated-channel")
 TOKEN = "generated-private-provisioning-token"  # noqa: S105

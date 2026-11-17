@@ -42,10 +42,10 @@ from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people import AccountSessions
 from nora.people.app.link_publication import LinkPublicationService, _journal_id
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeIdentityRegistry,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 PERSON_A = "synthetic-person-a"

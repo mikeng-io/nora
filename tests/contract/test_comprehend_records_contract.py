@@ -374,11 +374,12 @@ async def _managed_records(engine, *, social, members, unit=_MUNIT, room=_MROOM)
     from nora.domain.management import Scope, ScopeKind
     from nora.people.app.managed_authority import AuthorityService
     from nora.testing.managed import (
-        FakeAuthorityBackend,
         FakeBindingStore,
         FakeIdentityRegistry,
         FakeTopologySource,
     )
+    from nora.testing.managed_authority import FakeAuthorityBackend
+
 
     async def enrich(rows, **kw):
         return tuple(rows)

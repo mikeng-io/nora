@@ -42,12 +42,12 @@ from nora.people.app.link_publication import LinkPublicationService
 from nora.people.app.managed import ManagedServices
 from nora.people.app.managed_profile import ProfileService
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 PERSON = "generated-person-a"
 OTHER = "generated-person-b"

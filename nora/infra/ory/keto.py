@@ -39,15 +39,16 @@ from nora.infra.ory.http import HttpResult, HttpStatus, request
 class RelationTuple:
     """One asserted Keto relationship — `(relation, subject)` on an object.
 
-    `subject_set` carries containment links (`Unit.workspace`,
-    `Room.unit`): the relation is empty and the subject names another
-    namespace's object whole."""
+    `subject_set` names another namespace's object — `(namespace, object)`
+    for the object whole (containment links, `role_observed` index rows) or
+    `(namespace, object, relation)` for a userset (`Role:<obj>#member`, the
+    delegated role's holders)."""
 
     namespace: str
     object: str
     relation: str
     subject_id: str | None = None
-    subject_set: tuple[str, str] | None = None  # (namespace, object)
+    subject_set: tuple[str, ...] | None = None  # (ns, object[, relation])
 
     def write_body(self) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -59,7 +60,7 @@ class RelationTuple:
             body["subject_set"] = {
                 "namespace": self.subject_set[0],
                 "object": self.subject_set[1],
-                "relation": "",
+                "relation": self.subject_set[2] if len(self.subject_set) > 2 else "",
             }
         else:
             body["subject_id"] = self.subject_id
@@ -74,6 +75,9 @@ class RelationTuple:
         if self.subject_set is not None:
             params["subject_set.namespace"] = self.subject_set[0]
             params["subject_set.object"] = self.subject_set[1]
+            params["subject_set.relation"] = (
+                self.subject_set[2] if len(self.subject_set) > 2 else ""
+            )
         else:
             params["subject_id"] = self.subject_id or ""
         return params
@@ -183,21 +187,24 @@ class KetoClient:
             return None
         subject_set = row.get("subject_set")
         if subject_set is not None:
+            relation = subject_set.get("relation") or ""
             if (
                 not isinstance(subject_set, dict)
                 or not isinstance(subject_set.get("namespace"), str)
                 or not subject_set["namespace"]
                 or not isinstance(subject_set.get("object"), str)
                 or not subject_set["object"]
-                or subject_set.get("relation") not in (None, "")
+                or not isinstance(relation, str)
             ):
-                # A userset `subject_set` is a shape `RelationTuple` cannot
-                # represent — dropping it reads foreign authority as own.
                 return None
             return RelationTuple(
                 namespace=namespace, object=object_id,
                 relation=row["relation"],
-                subject_set=(subject_set["namespace"], subject_set["object"]),
+                subject_set=(
+                    (subject_set["namespace"], subject_set["object"], relation)
+                    if relation else
+                    (subject_set["namespace"], subject_set["object"])
+                ),
             )
         subject_id = row.get("subject_id")
         if not isinstance(subject_id, str) or not subject_id:

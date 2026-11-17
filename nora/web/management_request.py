@@ -7,6 +7,8 @@ the intended operation. Domain constructors own effect and scope invariants.
 from __future__ import annotations
 
 import json
+from functools import reduce
+from operator import or_
 
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
@@ -55,7 +57,10 @@ def decode_management_request(
         target = TypeAdapter(Target).validate_json(
             json.dumps(request.target), strict=True, extra="forbid",
         )
-        payload: object = TypeAdapter(spec.payload).validate_json(
+        payload: object = TypeAdapter(
+            spec.payload if isinstance(spec.payload, type)
+            else reduce(or_, spec.payload)
+        ).validate_json(
             json.dumps(request.payload), strict=True, extra="forbid",
         )
         if actor is None:

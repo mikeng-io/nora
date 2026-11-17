@@ -36,11 +36,11 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 PERSON = "generated-person-sql"
 ACCT = Identifier("discord", "user_id", "generated-account-sql")

@@ -28,7 +28,11 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people.adapters.managed_handoff import SqlAdmissionProbe
 from nora.people.app.managed_authority import AuthorityService
-from nora.testing.managed import FakeAuthorityBackend, FakeBindingStore, FakeTopologySource
+from nora.testing.managed import (
+    FakeBindingStore,
+    FakeTopologySource,
+)
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.fakes import FakeAdmissionProbe
 
 OPERATION = "generated-import"

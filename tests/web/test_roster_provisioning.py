@@ -10,12 +10,12 @@ from nora.domain.managed import ObservationFreshness
 from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from nora.web.management_api import ProvisioningCredential, register_management_routes
 
 PATH = "/app/v1/management/rosters"

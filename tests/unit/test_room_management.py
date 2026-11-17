@@ -53,13 +53,13 @@ from nora.people.wire import file_services
 from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
     unavailable_outcome,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 WS_ID = "ws-main"
 UNIT_ID = "unit-a"

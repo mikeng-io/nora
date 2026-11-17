@@ -128,23 +128,32 @@ def _permits_of(name: str) -> set[str]:
 
 
 def test_opl_imports_the_official_type_library():
-    assert 'import { Namespace, Context } from "@ory/keto-namespace-types"' in OPL
+    assert (
+        'import { Namespace, Context, SubjectSet } '
+        'from "@ory/keto-namespace-types"'
+    ) in OPL
 
 
-def test_opl_declares_the_four_namespaces():
-    for name in ("Person", "Workspace", "Unit", "Room"):
+def test_opl_declares_the_five_namespaces():
+    for name in ("Person", "Role", "Workspace", "Unit", "Room"):
         _opl_class_body(name)
 
 
 def test_opl_scope_relations_are_declared_on_every_scope():
     for scope in ("Workspace", "Unit", "Room"):
         body = _opl_class_body(scope)
+        assert "role_observed: Role[]" in body, f"{scope}.role_observed"
         for rel in ("member", "admin", "restricted",
                     "grant_speak", "deny_speak", "grant_view", "deny_view",
-                    "grant_manage_members", "deny_manage_members",
-                    "grant_manage_grants", "deny_manage_grants",
-                    "grant_delegate", "deny_delegate"):
+                    "deny_manage_members",
+                    "deny_manage_grants",
+                    "deny_delegate"):
             assert re.search(rf"{rel}: Person\[\]", body), f"{scope}.{rel}"
+        for rel in ("grant_manage_members", "grant_manage_grants",
+                    "grant_delegate"):
+            assert (
+                f'{rel}: (Person | SubjectSet<Role, "member">)[]' in body
+            ), f"{scope}.{rel}"
 
 
 def test_opl_containment_edges_are_the_topology_direction():

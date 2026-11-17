@@ -48,12 +48,12 @@ from nora.domain.management import (
 from nora.people.app.link_publication import LinkPublicationService
 from nora.people.app.managed import RegistrationService
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 ROOM = Scope(ScopeKind.ROOM, "signal/conv-1")
 PERSON = "person_alice"

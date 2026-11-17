@@ -50,9 +50,10 @@ def check_policy(read_url: str, write_url: str) -> int:
             raise AssertionError((row, status, body))
         tuples.append(row)
 
-    def expect(namespace: str, obj: str, permit: str, allowed: bool):
+    def expect(namespace: str, obj: str, permit: str, allowed: bool, who: str = ""):
         nonlocal checks
-        query = {"namespace": namespace, "object": obj, "relation": permit, "subject_id": person}
+        query = {"namespace": namespace, "object": obj, "relation": permit,
+                 "subject_id": who or person}
         status, body = call(read_url, "/relation-tuples/check?" + urlencode(query))
         if (status, body.get("allowed")) != (200 if allowed else 403, allowed):
             raise AssertionError((namespace, permit, allowed, status, body))
@@ -91,6 +92,29 @@ def check_policy(read_url: str, write_url: str) -> int:
         put("Workspace", workspace, "deny_speak", subject_id=person)
         expect("Room", room, "speak", False)
         expect("Room", room, "view", True)
+        # A delegated platform role grants its observed holders exactly the
+        # named permits at the scope — holders only, grants only, deny wins,
+        # and a parent-scoped role grant still traverses the containment.
+        role = f"{room}/stewards"
+        holder = f"{prefix}-holder"
+        put("Role", role, "member", subject_id=holder)
+        put("Room", room, "role_observed",
+            subject_set={"namespace": "Role", "object": role, "relation": ""})
+        put("Room", room, "grant_manage_members",
+            subject_set={"namespace": "Role", "object": role, "relation": "member"})
+        expect("Room", room, "manage_members", True, who=holder)
+        expect("Room", room, "manage_grants", False, who=holder)
+        expect("Room", room, "view", False, who=holder)
+        expect("Room", room, "manage_members", False)
+        put("Room", room, "deny_manage_members", subject_id=holder)
+        expect("Room", room, "manage_members", False, who=holder)
+        parent_role = f"{workspace}/moderators"
+        put("Role", parent_role, "member", subject_id=holder)
+        put("Workspace", workspace, "role_observed",
+            subject_set={"namespace": "Role", "object": parent_role, "relation": ""})
+        put("Workspace", workspace, "grant_delegate",
+            subject_set={"namespace": "Role", "object": parent_role, "relation": "member"})
+        expect("Room", room, "delegate", True, who=holder)
         return checks
     finally:
         for row in reversed(tuples):

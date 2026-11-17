@@ -10,16 +10,25 @@ from pathlib import Path
 
 import pytest
 
-from nora.domain.managed import OperationJournalState, Outcome, unavailable
+from nora.domain.managed import (
+    OperationJournalState,
+    Outcome,
+    Verdict,
+    room_scope_id,
+    unavailable,
+)
+from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people.adapters.keto_authority import KetoAuthorityBackend
 from nora.people.adapters.managed_handoff import KratosAdmission, SqlAdmissionProbe
 from nora.people.app.managed_admission import FileAdmission, prepare
+from nora.people.app.managed_authority import AuthorityService
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
+    FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from scripts.managed_identity_handoff import (
     COMPLETE,
     REFUSED,
@@ -105,6 +114,44 @@ async def test_apply_reports_complete_and_imports(sources):
     ], services=factory)
     assert rc == COMPLETE
     assert "miles" in store.people
+
+
+async def test_imported_file_authority_lands_as_scoped_access(sources):
+    """The out-of-band bootstrap's own proof: `apply` through the real CLI
+    entry wrote the containment chain and the `member` tuples, so the
+    authoritative `check` afterwards answers the imported person's `view`
+    on their room — and nothing beyond it: no management permit, no
+    upward unit read, nothing for a person the file never named."""
+    factory, store, backend = _services()
+    identity_path, policy_path = sources
+    rc = await run([
+        "apply", "--identity", str(identity_path), "--policy", str(policy_path),
+        "--database-url", "generated", "--kratos-admin-url", "generated",
+        "--keto-read-url", "generated", "--keto-write-url", "generated",
+    ], services=factory)
+    assert rc == COMPLETE
+    room = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-room-a"))
+    unit = Scope(ScopeKind.UNIT, "family")
+    authority = AuthorityService(
+        store, backend,
+        FakeTopologySource(
+            rooms={room.id: (unit.id, False)},
+            units={unit.id: "home"},
+            workspaces={"home"},
+        ),
+    )
+    assert (await authority.check(
+        scope=room, person_id="miles", permit="view")
+    ).verdict is Verdict.ALLOWED
+    assert (await authority.check(
+        scope=room, person_id="miles", permit="manage_members")
+    ).verdict is Verdict.DENIED
+    assert (await authority.check(
+        scope=unit, person_id="miles", permit="view")
+    ).verdict is Verdict.DENIED
+    assert (await authority.check(
+        scope=room, person_id="person_never", permit="view")
+    ).verdict is Verdict.DENIED
 
 
 async def test_apply_refuses_missing_target_flags(sources):

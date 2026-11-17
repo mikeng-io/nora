@@ -36,7 +36,8 @@ from nora.people.adapters.managed_handoff import SqlAdmissionProbe
 from nora.people.app.managed_admission import FileAdmission, plan
 from nora.people.app.managed_authority import AuthorityService
 from nora.policy import load_policy
-from nora.testing.managed import FakeAuthorityBackend, FakeIdentityRegistry
+from nora.testing.managed import FakeIdentityRegistry
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.fakes import FakeAdmissionKratos
 
 IDENTITY = """\

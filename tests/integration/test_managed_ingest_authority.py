@@ -26,10 +26,10 @@ from nora.people.app.managed_authority import AuthorityService
 from nora.policy import Conversation, Policy
 from nora.testing import FakeMemoryStore
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeIdentityRegistry,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 PERSON = "generated-person"
 ACCOUNT = Identifier("signal", "uuid", "generated-account")

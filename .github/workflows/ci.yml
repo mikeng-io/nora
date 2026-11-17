@@ -343,7 +343,9 @@ jobs:
           tests/infra/test_otp.py
           tests/web/test_otp.py
           tests/web/test_management_api.py
+          tests/web/test_managed_ory_credentials.py
           tests/unit/test_managed_authority.py
+          tests/unit/test_managed_delegation.py
           tests/unit/test_managed_identity_handoff.py
           tests/unit/test_managed_registration.py
           tests/unit/test_account_linking_state.py

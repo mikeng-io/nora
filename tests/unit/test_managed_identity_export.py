@@ -28,11 +28,11 @@ from nora.people.app.managed_export import ManagedExport
 from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from scripts.managed_identity_export import COMPLETE, REFUSED, RETRYABLE, run
 from tests.unit.test_managed_export import _Probe
 

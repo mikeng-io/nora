@@ -22,12 +22,12 @@ from nora.people.app.managed import ManagedServices
 from nora.persons import Persons
 from nora.testing import FakeRecordStore
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.unit.test_engagement_context import FakeMemory, _request
 
 _M_ROOM = Scope(ScopeKind.ROOM, room_scope_id("signal", "g1"))

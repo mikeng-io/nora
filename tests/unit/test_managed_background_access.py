@@ -209,11 +209,12 @@ async def test_selected_person_population_keeps_units_separate_and_observes_depa
     other_room = Scope(ScopeKind.ROOM, room_scope_id("signal", "g3"))
     from nora.people.app.managed import ManagedServices
     from nora.testing.managed import (
-        FakeAuthorityBackend,
         FakeIdentityRegistry,
         FakeLinkRequests,
         FakeTopologySource,
     )
+    from nora.testing.managed_authority import FakeAuthorityBackend
+
 
     access = ManagedServices(bindings, FakeAuthorityBackend(), FakeTopologySource(
         rooms={_M_ROOM.id: (_M_UNIT.id, False),
@@ -316,12 +317,13 @@ async def _background_identity_case():
     from nora.domain.management import Scope, ScopeKind
     from nora.people.app.managed import ManagedServices
     from nora.testing.managed import (
-        FakeAuthorityBackend,
         FakeBindingStore,
         FakeIdentityRegistry,
         FakeLinkRequests,
         FakeTopologySource,
     )
+    from nora.testing.managed_authority import FakeAuthorityBackend
+
 
     bindings, registry = FakeBindingStore(), FakeIdentityRegistry()
     other_unit = Scope(ScopeKind.UNIT, "generated-profile-other")

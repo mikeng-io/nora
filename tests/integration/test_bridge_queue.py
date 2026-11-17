@@ -41,12 +41,12 @@ from nora.platform.bridge.queue import CONSUMER_GROUP, StreamProducer, ensure_gr
 from nora.platform.bridge.rehydrate import message_to_dict
 from nora.testing import ScriptedTurn
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 pytestmark = pytest.mark.integration
 

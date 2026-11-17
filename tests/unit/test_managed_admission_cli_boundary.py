@@ -27,10 +27,10 @@ from nora.infra.ory import KratosClient
 from nora.people.adapters.managed_handoff import KratosAdmission
 from nora.people.app.managed_admission import FileAdmission, plan
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from scripts.managed_identity_handoff import (
     COMPLETE,
     REFUSED,

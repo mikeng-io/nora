@@ -47,11 +47,11 @@ from nora.people.app.managed_export_prepare import (
 from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 SIGNAL_UUID = str(uuid.uuid5(uuid.NAMESPACE_DNS, "nora-export-test"))
 

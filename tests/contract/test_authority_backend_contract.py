@@ -3,14 +3,20 @@
 import aiohttp
 import pytest
 
-from nora.domain.managed import CheckResult, OutcomeStatus, Verdict
-from nora.domain.managed_ports import ScopedRelation
+from nora.domain.managed import (
+    ROLE_OBSERVED_RELATION,
+    CheckResult,
+    OutcomeStatus,
+    Verdict,
+    role_object_id,
+)
+from nora.domain.managed_ports import RoleRef, ScopedRelation
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.ory.keto import KetoClient
 from nora.people.adapters.file_backend import FileAuthorityBackend
 from nora.people.adapters.keto_authority import KetoAuthorityBackend
 from nora.policy import load_policy
-from nora.testing.managed import FakeAuthorityBackend
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.integration.managed_ory import keto as keto
 from tests.unit.test_managed_admission import POLICY
 
@@ -84,6 +90,37 @@ async def test_unrepresentable_subjects_make_the_whole_read_unavailable(kind, re
             result = await backend.scope_relations_on(scope=ROOM)
     assert isinstance(result, CheckResult)
     assert result.verdict is Verdict.UNAVAILABLE
+
+
+async def test_role_holders_grants_and_retraction_hold_across_backends(backend):
+    """A delegated platform role: holders, the userset grant, retraction."""
+    obj = role_object_id(ROOM, "stewards")
+    assert await backend.role_members(scope=ROOM, role="stewards") == frozenset()
+    member = await backend.put_role_member(
+        scope=ROOM, role="stewards", person_id="generated-person")
+    grant = await backend.put_role_grant(
+        scope=ROOM, relation="grant_manage_members", role="stewards")
+    if isinstance(backend, FileAuthorityBackend):
+        assert member.status is grant.status is OutcomeStatus.DENIED
+        assert await backend.role_members(scope=ROOM, role="stewards") == frozenset()
+        return
+    assert member.status is grant.status is OutcomeStatus.COMPLETE
+    assert await backend.role_members(scope=ROOM, role="stewards") == frozenset(
+        {"generated-person"})
+    assert await backend.scope_relations_on(scope=ROOM) == frozenset({
+        ScopedRelation(ROLE_OBSERVED_RELATION, RoleRef(obj)),
+        ScopedRelation("grant_manage_members", RoleRef(obj, members=True)),
+    })
+    assert (await backend.drop_role_member(
+        scope=ROOM, role="stewards", person_id="generated-person")
+    ).status is OutcomeStatus.COMPLETE
+    assert await backend.role_members(scope=ROOM, role="stewards") == frozenset()
+    assert (await backend.drop_role_grant(
+        scope=ROOM, relation="grant_manage_members", role="stewards")
+    ).status is OutcomeStatus.COMPLETE
+    assert (await backend.drop_role_observation(scope=ROOM, role="stewards")
+    ).status is OutcomeStatus.COMPLETE
+    assert await backend.scope_relations_on(scope=ROOM) == frozenset()
 
 
 @pytest.mark.parametrize("kind", ["fake", "keto"])

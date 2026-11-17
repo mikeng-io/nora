@@ -23,7 +23,8 @@ from nora.people.app.managed_admission_identity import (
     admission_marker,
     ensure_owned,
 )
-from nora.testing.managed import FakeAuthorityBackend, FakeBindingStore
+from nora.testing.managed import FakeBindingStore
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.fakes import FakeAdmissionKratos, FakeAdmissionProbe
 from tests.unit.test_managed_admission import _sources
 

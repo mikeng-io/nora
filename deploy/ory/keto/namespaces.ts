@@ -1,20 +1,30 @@
 // Managed identity policy for Keto v26.2.0. Computed permits are authoritative
 // in strict mode; writers use grant_<permit> and deny_<permit> relations.
 // Nora validates the single parent and resource containment before writing.
-import { Namespace, Context } from "@ory/keto-namespace-types"
+import { Namespace, Context, SubjectSet } from "@ory/keto-namespace-types"
 
 class Person implements Namespace {}
 
+// A platform role as observed inside one scope: its `member` relation holds
+// the persons the scope's rosters reported holding it, and scope grants may
+// name `Role#member` so a delegated role confers exactly its permits.
+class Role implements Namespace {
+  related: {
+    member: Person[]
+  }
+}
+
 class Workspace implements Namespace {
   related: {
+    role_observed: Role[]
     member: Person[]
     admin: Person[]
     restricted: Person[]
     grant_speak: Person[]
     grant_view: Person[]
-    grant_manage_members: Person[]
-    grant_manage_grants: Person[]
-    grant_delegate: Person[]
+    grant_manage_members: (Person | SubjectSet<Role, "member">)[]
+    grant_manage_grants: (Person | SubjectSet<Role, "member">)[]
+    grant_delegate: (Person | SubjectSet<Role, "member">)[]
     deny_speak: Person[]
     deny_view: Person[]
     deny_manage_members: Person[]
@@ -71,15 +81,16 @@ class Workspace implements Namespace {
 
 class Unit implements Namespace {
   related: {
+    role_observed: Role[]
     workspace: Workspace[]
     member: Person[]
     admin: Person[]
     restricted: Person[]
     grant_speak: Person[]
     grant_view: Person[]
-    grant_manage_members: Person[]
-    grant_manage_grants: Person[]
-    grant_delegate: Person[]
+    grant_manage_members: (Person | SubjectSet<Role, "member">)[]
+    grant_manage_grants: (Person | SubjectSet<Role, "member">)[]
+    grant_delegate: (Person | SubjectSet<Role, "member">)[]
     deny_speak: Person[]
     deny_view: Person[]
     deny_manage_members: Person[]
@@ -146,15 +157,16 @@ class Unit implements Namespace {
 
 class Room implements Namespace {
   related: {
+    role_observed: Role[]
     unit: Unit[]
     member: Person[]
     admin: Person[]
     restricted: Person[]
     grant_speak: Person[]
     grant_view: Person[]
-    grant_manage_members: Person[]
-    grant_manage_grants: Person[]
-    grant_delegate: Person[]
+    grant_manage_members: (Person | SubjectSet<Role, "member">)[]
+    grant_manage_grants: (Person | SubjectSet<Role, "member">)[]
+    grant_delegate: (Person | SubjectSet<Role, "member">)[]
     deny_speak: Person[]
     deny_view: Person[]
     deny_manage_members: Person[]

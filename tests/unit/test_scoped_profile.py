@@ -48,12 +48,12 @@ from nora.domain.management import (
 from nora.people import HumanManagement
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 PERSON = "generated-member"
 OPERATOR = "generated-operator"

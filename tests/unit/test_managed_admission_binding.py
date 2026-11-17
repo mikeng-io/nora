@@ -22,10 +22,10 @@ from nora.people.app.managed_admission import (
     prepare,
 )
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.fakes import FakeAdmissionKratos, FakeAdmissionProbe
 from tests.unit.test_managed_admission import _sources
 

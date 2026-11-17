@@ -23,11 +23,11 @@ from nora.domain.memory_index import IndexedNode
 from nora.obs.metrics import Metrics
 from nora.people.app.managed_authority import AuthorityService
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from nora.testing.memory_index import FakeMemoryIndex
 
 PERSON = "generated-person-a"

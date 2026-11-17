@@ -33,12 +33,12 @@ from nora.domain.tag_trace import TagTrace
 from nora.people import RoomManagement
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.unit.test_engagement_pipeline import (
     G1,
     ScriptedRunner,

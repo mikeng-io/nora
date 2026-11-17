@@ -13,6 +13,8 @@ class ObservedAccount(BaseModel):
 
     account: Identifier
     classification: Literal["person", "bot", "unknown"] = "unknown"
+    #: The platform-role labels this account holds in the roster's scope.
+    roles: tuple[str, ...] = Field(default=())
 
 
 class RosterRequest(BaseModel):
@@ -36,4 +38,7 @@ class RosterRequest(BaseModel):
             raise ValueError("a roster names one platform collection")
         if len({member.account for member in self.members}) != len(self.members):
             raise ValueError("a roster cannot classify one account twice")
+        if any(not role.strip() or "/" in role
+               for member in self.members for role in member.roles):
+            raise ValueError("a platform role names one label, not a path")
         return self

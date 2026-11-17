@@ -18,11 +18,11 @@ from nora.people.app.managed_authority import AuthorityService
 from nora.persons import Persons
 from nora.testing import FakeMemoryStore, FakeRecordStore
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from nora.web.managed_viewer import register_managed_viewer

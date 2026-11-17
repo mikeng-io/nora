@@ -50,12 +50,12 @@ from nora.domain.management import (
 from nora.people.app.link_publication import LinkPublicationService, _journal_id
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 PERSON_A = "synthetic-person-a"
@@ -171,8 +171,7 @@ async def _approved(svc, links, *, request_id="synthetic-request", now=NOW):
 
 
 async def _approved_competing(svc, links, *, request_id="competing-request", now=NOW):
-    """A second fully-approved request whose receiving account is the SAME
-    bound account the first request names — valid while it was approved."""
+    """Second approved request naming the same bound receiving account."""
     link = await _requested(
         svc, links, initiating=ACCT_C, receiving=ACCT_R,
         initiating_person=PERSON_C, surviving_person=PERSON_C,

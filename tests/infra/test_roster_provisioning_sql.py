@@ -34,7 +34,11 @@ from nora.infra.sql.managed_identity import SqlBindingStore
 from nora.people import RosterProvisioning
 from nora.people.app.managed import ManagedServices
 from nora.people.app.managed_authority import AuthorityService
-from nora.testing.managed import FakeAuthorityBackend, FakeIdentityRegistry, FakeTopologySource
+from nora.testing.managed import (
+    FakeIdentityRegistry,
+    FakeTopologySource,
+)
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 UNIT = Scope(ScopeKind.UNIT, "generated-unit")
 ACTOR = Actor(ActorKind.SERVICE, service_id="generated-bridge", sources={"discord"})

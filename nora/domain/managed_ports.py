@@ -366,13 +366,24 @@ class TopologySource(Protocol):
 
 
 @dataclass(frozen=True)
+class RoleRef:
+    """The `Role` object a scoped relation's subject-set names —
+    `members` distinguishes the `Role#member` userset a role grant writes
+    from the object whole a `role_observed` index row names."""
+
+    role: str
+    members: bool = False
+
+
+@dataclass(frozen=True)
 class ScopedRelation:
     """One asserted relation on a scope with its TYPED subject — a
-    `person_id` string, or the parent `Scope` a containment subject-set
-    names. The complete shape `scope_relations_on` returns."""
+    `person_id` string, the parent `Scope` a containment subject-set
+    names, or the `RoleRef` a role relation names. The complete shape
+    `scope_relations_on` returns."""
 
     relation: str
-    subject: str | Scope
+    subject: str | Scope | RoleRef
 
 
 @runtime_checkable
@@ -426,11 +437,54 @@ class AuthorityBackend(Protocol):
         self, *, scope: Scope
     ) -> CheckResult | frozenset[ScopedRelation]:
         """EVERY asserted relation on the scope with its typed subject —
-        person rows AND subject-set (containment) rows. `relations_on`'s
+        person rows AND subject-set (containment, role) rows. `relations_on`'s
         person-only view cannot see a foreign parent; this is the complete
         read an empty-or-owned target proof needs. A row the supported
         scope vocabulary cannot represent is `unavailable`, never silently
         dropped."""
+        ...
+
+    async def put_role_member(
+        self, *, scope: Scope, role: str, person_id: str
+    ) -> Outcome:
+        """Observe `person_id` holding `role` inside `scope` — the
+        `Role:<scope>/<role>` member tuple plus the scope's `role_observed`
+        index row, so a complete roster can retract the observation."""
+        ...
+
+    async def drop_role_member(
+        self, *, scope: Scope, role: str, person_id: str
+    ) -> Outcome:
+        """Retract one holder of `role` inside `scope` — the member tuple
+        only; the index row stands while any observation may remain."""
+        ...
+
+    async def drop_role_observation(
+        self, *, scope: Scope, role: str
+    ) -> Outcome:
+        """Retract the scope's `role_observed` index row for `role` — the
+        role is gone, not merely holder-less."""
+        ...
+
+    async def role_members(
+        self, *, scope: Scope, role: str
+    ) -> CheckResult | frozenset[str]:
+        """The persons currently observed holding `role` inside `scope` —
+        the member tuples on its `Role` object. `unavailable` when the read
+        cannot answer."""
+        ...
+
+    async def put_role_grant(
+        self, *, scope: Scope, relation: str, role: str
+    ) -> Outcome:
+        """`grant_<management permit>` whose subject is the userset
+        `Role:<scope>/<role>#member` — the delegated role's holders."""
+        ...
+
+    async def drop_role_grant(
+        self, *, scope: Scope, relation: str, role: str
+    ) -> Outcome:
+        """Remove a `put_role_grant` tuple."""
         ...
 
     async def aclose(self) -> None:

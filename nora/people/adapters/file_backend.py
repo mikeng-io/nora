@@ -355,6 +355,36 @@ class FileAuthorityBackend(AuthorityBackend):
     async def publish_containment(self, *, scope: Scope, parent: Scope) -> Outcome:
         return denied(_OPERATOR_MAINTAINED)
 
+    async def put_role_member(
+        self, *, scope: Scope, role: str, person_id: str
+    ) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
+    async def drop_role_member(
+        self, *, scope: Scope, role: str, person_id: str
+    ) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
+    async def drop_role_observation(
+        self, *, scope: Scope, role: str
+    ) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
+    async def role_members(
+        self, *, scope: Scope, role: str
+    ) -> CheckResult | frozenset[str]:
+        return frozenset()
+
+    async def put_role_grant(
+        self, *, scope: Scope, relation: str, role: str
+    ) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
+    async def drop_role_grant(
+        self, *, scope: Scope, relation: str, role: str
+    ) -> Outcome:
+        return denied(_OPERATOR_MAINTAINED)
+
     async def relations_on(
         self, *, scope: Scope
     ) -> CheckResult | frozenset[tuple[str, str]]:

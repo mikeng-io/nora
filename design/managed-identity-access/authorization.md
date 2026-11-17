@@ -112,6 +112,15 @@ delegate bounded authority to a platform role; no such delegation is inferred
 from being a guild owner or platform administrator. A delegated role's removal
 removes the authority derived from it.
 
+A platform role is named inside the scope where it was delegated: the same
+roster that reports members reports which of them hold which role there, and
+the authority engine resolves a role grant through the scope's observed
+holders at check time. Delegation to a role is the installation's alone — an
+operator delegates persons, so the `delegate` permit can never enlarge its
+holder through a role the holder belongs to. A complete roster that stops
+naming a holder removes the derived authority; so does revoking the
+delegation.
+
 ## Admission and disclosure
 
 Both room admission and sender permission remain necessary. An explicitly open

@@ -183,6 +183,26 @@ CONTAINMENT_RELATIONS: MappingProxyType[ScopeKind, str] = MappingProxyType(
 #: `admin` the full delegated operator, `restricted` the blanket denial).
 STRUCTURAL_RELATIONS: frozenset[str] = frozenset({"member", "admin", "restricted"})
 
+#: The `Role` namespace's OPL class — a scope's observed platform roles
+#: (`authorization.md`); objects are named `<scope id>/<role label>`.
+ROLE_NAMESPACE = "Role"
+
+#: The scope-side index of observed roles — complete rosters enumerate it to
+#: retract holders a role no longer names.
+ROLE_OBSERVED_RELATION = "role_observed"
+
+
+def role_object_id(scope: Scope, role: str) -> str:
+    """A scope's `Role` object id: the scope id joined with the atom label."""
+    return f"{scope.id}/{role}"
+
+
+def role_label(scope: Scope, role_object: str) -> str | None:
+    """The label a `Role` object names in `scope` — `None` when it is not
+    this scope's object (a foreign role index fails closed on the read)."""
+    prefix = f"{scope.id}/"
+    return role_object[len(prefix):] if role_object.startswith(prefix) else None
+
 
 def keto_namespace(kind: ScopeKind) -> str:
     return KETO_NAMESPACES[kind]
@@ -384,6 +404,9 @@ class ObservedMember:
 
     identifiers: frozenset[Identifier]
     classification: MemberClassification = "person"
+    #: The platform-role labels the collection observed this account
+    #: holding in the roster's scope — atoms, never paths.
+    roles: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         typed = frozenset(self.identifiers)
@@ -397,7 +420,11 @@ class ObservedMember:
             raise ManagedError(
                 f"a roster member cannot mix platforms {sorted(platforms)}"
             )
+        roles = frozenset(self.roles)
+        if any(not role.strip() or "/" in role for role in roles):
+            raise ManagedError("a platform role names one label, not a path")
         object.__setattr__(self, "identifiers", typed)
+        object.__setattr__(self, "roles", roles)
 
 
 @dataclass(frozen=True)

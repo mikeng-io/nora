@@ -20,12 +20,12 @@ from nora.domain.management import Scope, ScopeKind
 from nora.people import AccountSessions
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from nora.web.management_api import register_management_routes
 from nora.web.management_auth import AuthenticationVerifier
 from nora.web.management_sessions import register_session_routes

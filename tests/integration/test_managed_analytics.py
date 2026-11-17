@@ -19,7 +19,8 @@ from nora.infra.sql.rollups import RecordMark
 from nora.infra.sql.schema import PRESENCE_FIXES
 from nora.people.app.managed import ManagedServices
 from nora.policy import load_policy
-from nora.testing.managed import FakeAuthorityBackend, FakeLinkRequests
+from nora.testing.managed import FakeLinkRequests
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.integration.managed_ory import ory as _ory
 from tests.integration.test_character_social import T0 as SOCIAL_T0
 from tests.integration.test_character_social import _record

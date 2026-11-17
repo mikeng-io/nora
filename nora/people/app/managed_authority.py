@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from types import MappingProxyType
+from typing import Any
 
 from nora.domain.managed import (
     AuthorityBlock,
@@ -38,7 +39,11 @@ from nora.domain.managed import (
     unavailable,
     unknown_scope,
 )
-from nora.domain.managed_ports import AuthorityBackend, BindingStore, TopologySource
+from nora.domain.managed_ports import (
+    AuthorityBackend,
+    BindingStore,
+    TopologySource,
+)
 from nora.domain.management import (
     AccessChange,
     AccessDirection,
@@ -46,6 +51,7 @@ from nora.domain.management import (
     Delegation,
     MembershipStanding,
     Operation,
+    RoleDelegation,
     RosterSync,
     Scope,
 )
@@ -63,6 +69,11 @@ from nora.people.app.managed_ops import (
     _ReplayOp,
     _revisions_fresh,
     _step_done,
+)
+from nora.people.app.managed_roles import (
+    role_grant_calls,
+    role_grant_terms,
+    role_retractions,
 )
 
 log = logging.getLogger("nora.people.managed")
@@ -173,6 +184,11 @@ class AuthorityService:
         promotion = await self._self_promotion(op)
         if promotion is not None:
             return promotion
+        if (isinstance(op.payload, RoleDelegation)
+                and op.actor.kind is not ActorKind.INSTALLATION):
+            # Bounded role authority is the installation's alone — an
+            # operator delegating to a role they hold is self-promotion.
+            return denied("role-delegation-installation-only")
         if op.kind == "set_membership":
             lifecycle = await self._bindings.person_lifecycle(
                 op.target.person_id or ""
@@ -349,8 +365,7 @@ class AuthorityService:
         return None
 
     async def _self_promotion(self, op: Operation) -> Outcome | None:
-        """`None`, or the refusal of a `delegate` that would enlarge the
-        acting operator's own identity — aliases fold to the same person."""
+        """Refuse a `delegate` enlarging the operator's own identity."""
         if (op.kind != "delegate"
                 or op.actor.kind is not ActorKind.OPERATOR
                 or op.actor.person_id is None
@@ -376,12 +391,13 @@ class AuthorityService:
             cursor = parent
 
     async def _readback(
-        self, scope: Scope, want: set[tuple[str, str]], unwant: set[tuple[str, str]]
+        self, scope: Scope, want: set[tuple[str, Any]],
+        unwant: set[tuple[str, Any]],
     ) -> Outcome:
-        rows = await self._backend.relations_on(scope=scope)
+        rows = await self._backend.scope_relations_on(scope=scope)
         if isinstance(rows, CheckResult):
             return unavailable(rows.detail)
-        have = set(rows)
+        have = {(row.relation, row.subject) for row in rows}
         if not want <= have or unwant & have:
             return unavailable("read-back-mismatch")
         return complete()
@@ -583,6 +599,13 @@ class AuthorityService:
         """delegate/revoke_delegation: one relation call per permit."""
         payload = effect.payload
         kind = effect.kind
+        if isinstance(payload, RoleDelegation):
+            return await self._run_batch(
+                record, "authority",
+                lambda: role_grant_calls(
+                    self._backend, scope=scope, kind=kind, payload=payload,
+                ),
+            )
         if not isinstance(payload, Delegation):
             raise ManagedError(f"{kind} payload is {type(payload).__name__}")
         return await self._run_batch(
@@ -634,6 +657,15 @@ class AuthorityService:
                     retracted.add(m.person_id)
                     if m.sources <= {effect.sync_source}:
                         departed.add(m.person_id)
+        # Observed role holders resolve through the same bound accounts as
+        # members; a complete roster retracts holders it no longer names and
+        # drops the index of a role it no longer reports at all.
+        role_sync = await role_retractions(
+            self._backend, self._bindings, scope=scope, payload=payload,
+        )
+        if isinstance(role_sync, Outcome):
+            return role_sync
+        role_joined, role_dropped, roles_gone = role_sync
         outcome = await self._run_batch(
             record, "authority",
             lambda: [
@@ -644,10 +676,27 @@ class AuthorityService:
                     for p in sorted(departed)
                 ),
                 *(
+                    self._backend.drop_role_member(
+                        scope=scope, role=role, person_id=p
+                    )
+                    for role, p in role_dropped
+                ),
+                *(
+                    self._backend.drop_role_observation(scope=scope, role=role)
+                    for role in sorted(roles_gone)
+                ),
+                *(
                     self._backend.put_relation(
                         scope=scope, relation="member", person_id=p
                     )
                     for p in sorted(joined)
+                ),
+                *(
+                    self._backend.put_role_member(
+                        scope=scope, role=role, person_id=p
+                    )
+                    for role, persons in sorted(role_joined.items())
+                    for p in sorted(persons)
                 ),
             ],
         )
@@ -655,10 +704,9 @@ class AuthorityService:
             outcome = await self._readback(scope, {("member", p) for p in joined},
                                            {("member", p) for p in departed})
         if outcome.status is not OutcomeStatus.COMPLETE:
-            # Revocation-first here too: a departed member whose drop could
-            # not confirm is blocked until reconciliation clears it — a
-            # stale `member` still grants real speak+view.
-            for blocked in sorted(departed):
+            # Revocation-first: an unconfirmed drop blocks the person —
+            # stale member/role rows still grant real authority meanwhile.
+            for blocked in sorted(departed) + sorted({p for _, p in role_dropped}):
                 await self._bindings.block_authority(
                     AuthorityBlock(
                         person_id=blocked, scope=scope,
@@ -687,7 +735,7 @@ class AuthorityService:
 
     async def _readback_terms(
         self, effect: _ReplayOp
-    ) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
+    ) -> tuple[set[tuple[str, Any]], set[tuple[str, Any]]]:
         """The (relation, person) pairs that must be present and absent after the effect."""
         payload = effect.payload
         kind = effect.kind
@@ -708,6 +756,8 @@ class AuthorityService:
             return (pairs if kind == "grant_access" else set(),
                     set() if kind == "grant_access" else pairs)
         if kind in ("delegate", "revoke_delegation"):
+            if isinstance(payload, RoleDelegation):
+                return role_grant_terms(effect.scope, kind, payload)
             if not isinstance(payload, Delegation):
                 raise ManagedError(f"{kind} payload is {type(payload).__name__}")
             pairs = {(relation_for("grant", p), payload.delegatee)

@@ -11,7 +11,11 @@ from nora.domain.managed import (
 )
 from nora.domain.management import MembershipStanding, Target, TargetKind
 from nora.people.app.managed_authority import AuthorityService
-from nora.testing.managed import FakeAuthorityBackend, FakeBindingStore, FakeTopologySource
+from nora.testing.managed import (
+    FakeBindingStore,
+    FakeTopologySource,
+)
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.unit.test_managed_authority import (
     PERSON,
     ROOM,

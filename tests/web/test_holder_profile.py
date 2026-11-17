@@ -23,12 +23,12 @@ from nora.domain.managed import (
 )
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from nora.web.holder_profile import register_profile_routes
 from nora.web.management_auth import AuthenticationVerifier
 from tests.unit.test_management_authentication import ISSUER, claims, signed

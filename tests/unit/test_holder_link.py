@@ -29,12 +29,12 @@ from nora.people.app.holder_link import HolderLinkService, HolderLinkView
 from nora.people.app.managed import ManagedServices
 from nora.testing.link_delivery import FakeLinkChallengeDelivery as FakeDelivery
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 PERSON_A = "synthetic-person-a"

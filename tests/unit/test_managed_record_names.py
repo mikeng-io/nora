@@ -27,12 +27,12 @@ from nora.obs.metrics import Metrics
 from nora.people.app.managed import ManagedServices
 from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.fakes import SinkSender
 from tests.unit.test_cognition_record_query_ids import NOW, ROOM, _Record, _stream
 from tests.unit.test_cognition_record_query_ids import policy as policy

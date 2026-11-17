@@ -44,10 +44,10 @@ from nora.domain.management import (
 )
 from nora.people.app.managed import AuthorityService
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 WS = Scope(ScopeKind.WORKSPACE, "generated-ws")
 UNIT = Scope(ScopeKind.UNIT, "generated-unit")

@@ -42,12 +42,12 @@ from nora.domain.management import (
 from nora.people.app.managed import ManagedServices, RegistrationService
 from nora.people.app.roster_provisioning import RosterProvisioning
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 UNIT = Scope(ScopeKind.UNIT, "generated-unit")
 PERSON = "person_alice"

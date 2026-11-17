@@ -376,7 +376,11 @@ async def location(case):
     from nora.people.app.managed import ManagedServices
     from nora.presence.__main__ import _metrics_app
     from nora.testing import FakeRosterSource
-    from nora.testing.managed import FakeAuthorityBackend, FakeLinkRequests, FakeTopologySource
+    from nora.testing.managed import (
+        FakeLinkRequests,
+        FakeTopologySource,
+    )
+    from nora.testing.managed_authority import FakeAuthorityBackend
 
     room_scope = Scope(ScopeKind.ROOM, "signal/generated-location-room")
     phone = "+85290000140"

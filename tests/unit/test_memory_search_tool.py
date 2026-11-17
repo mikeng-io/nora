@@ -459,11 +459,12 @@ async def _managed_access(members: tuple[str, ...] = (_PERSON_A,)):
     from nora.domain.management import Scope, ScopeKind
     from nora.people.app.managed_authority import AuthorityService
     from nora.testing.managed import (
-        FakeAuthorityBackend,
         FakeBindingStore,
         FakeIdentityRegistry,
         FakeTopologySource,
     )
+    from nora.testing.managed_authority import FakeAuthorityBackend
+
 
     bindings = FakeBindingStore()
     backend = FakeAuthorityBackend()

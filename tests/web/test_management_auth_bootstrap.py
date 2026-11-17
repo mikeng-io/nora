@@ -8,12 +8,12 @@ from nora.app.startup import StartupError
 from nora.config import load
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 KEY = "generated-private-authentication-key-for-local-contracts"
 SETTINGS = '''

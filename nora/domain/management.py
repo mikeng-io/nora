@@ -112,6 +112,24 @@ def _nonblank(name: str, value: str | None) -> str:
     return value
 
 
+def _role_label(value: str) -> str:
+    if "/" in _nonblank("role", value):
+        raise OperationError("a platform role names one label, not a path")
+    return value
+
+
+def _management_permit_set(permits: frozenset[str]) -> frozenset[str]:
+    typed = frozenset(permits)
+    if not typed:
+        raise OperationError("a delegation names at least one permit")
+    if unknown := typed - MANAGEMENT_PERMITS:
+        raise OperationError(
+            f"{sorted(unknown)} are not management permits — access "
+            "permits move through grant_access, not delegation"
+        )
+    return typed
+
+
 @dataclass(frozen=True)
 class Scope:
     """A workspace, unit or room — typed so "the unit it runs in" cannot be
@@ -280,6 +298,17 @@ class AccountRegistration:
 
 
 @dataclass(frozen=True)
+class ObservedRole:
+    """A member's observed platform-role label — an atom, never a path."""
+
+    member: Identifier
+    role: str
+
+    def __post_init__(self) -> None:
+        _role_label(self.role)
+
+
+@dataclass(frozen=True)
 class RosterSync:
     """`sync_membership`: the observed member accounts of the target scope.
     `complete` is the roster's own completeness claim — only a complete,
@@ -293,12 +322,18 @@ class RosterSync:
     complete: bool
     collection: str = ""
     observed_ms: int = 0
+    roles: frozenset[ObservedRole] = frozenset()
 
     def __post_init__(self) -> None:
         if (not isinstance(self.collection, str)
                 or (self.collection and not self.collection.strip())):
             raise OperationError("a roster collection must be named when supplied")
-        object.__setattr__(self, "members", frozenset(self.members))
+        members = frozenset(self.members)
+        roles = frozenset(self.roles)
+        if {r.member for r in roles} - members:
+            raise OperationError("a roster reports roles only on its own members")
+        object.__setattr__(self, "members", members)
+        object.__setattr__(self, "roles", roles)
 
 
 @dataclass(frozen=True)
@@ -344,16 +379,20 @@ class Delegation:
 
     def __post_init__(self) -> None:
         _nonblank("delegatee", self.delegatee)
-        typed = frozenset(self.permits)
-        if not typed:
-            raise OperationError("a delegation names at least one permit")
-        unknown = typed - MANAGEMENT_PERMITS
-        if unknown:
-            raise OperationError(
-                f"{sorted(unknown)} are not management permits — access "
-                "permits move through grant_access, not delegation"
-            )
-        object.__setattr__(self, "permits", typed)
+        object.__setattr__(self, "permits", _management_permit_set(self.permits))
+
+
+@dataclass(frozen=True)
+class RoleDelegation:
+    """`delegate`/`revoke_delegation` to an observed platform role —
+    installation-only (`authorization.md`); `role` is an atom."""
+
+    role: str
+    permits: frozenset[str]
+
+    def __post_init__(self) -> None:
+        _role_label(self.role)
+        object.__setattr__(self, "permits", _management_permit_set(self.permits))
 
 
 @dataclass(frozen=True)
@@ -474,7 +513,7 @@ class OperationSpec:
     actors: frozenset[ActorKind]
     target: TargetKind
     revisions: frozenset[str]
-    payload: type
+    payload: type | tuple[type, ...]
     bilateral: bool = False
 
 
@@ -530,13 +569,13 @@ OPERATIONS: MappingProxyType[str, OperationSpec] = MappingProxyType(
             actors=frozenset({ActorKind.OPERATOR, ActorKind.INSTALLATION}),
             target=TargetKind.SCOPE,
             revisions=frozenset({"authority"}),
-            payload=Delegation,
+            payload=(Delegation, RoleDelegation),
         ),
         "revoke_delegation": OperationSpec(
             actors=frozenset({ActorKind.OPERATOR, ActorKind.INSTALLATION}),
             target=TargetKind.SCOPE,
             revisions=frozenset({"authority"}),
-            payload=Delegation,
+            payload=(Delegation, RoleDelegation),
         ),
         # The bilateral link lifecycle. Only holders approve/refuse; only the
         # initiating holder cancels their own request.
@@ -738,8 +777,10 @@ class Operation:
                 f"not {self.target.kind.value}"
             )
         if not isinstance(self.payload, spec.payload):
+            names = spec.payload if isinstance(spec.payload, tuple) else (spec.payload,)
             raise OperationError(
-                f"{self.kind!r} carries a {spec.payload.__name__} payload, "
+                f"{self.kind!r} carries "
+                f"{'/'.join(t.__name__ for t in names)} payloads, "
                 f"not {type(self.payload).__name__}"
             )
         object.__setattr__(

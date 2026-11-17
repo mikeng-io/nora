@@ -33,10 +33,10 @@ from nora.people.app.managed_export import ManagedExport
 from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeIdentityRegistry,
     FakeLinkRequests,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 from tests.fakes import FakeAdmissionKratos
 
 IDENTITY = f"""\

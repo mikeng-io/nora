@@ -180,7 +180,8 @@ class _ManagementHTTP:
                 operation_id=roster.operation_id, actor=credential.actor, scope=roster.scope,
                 collection=roster.collection, complete_roster=roster.complete,
                 observed_ms=roster.observed_ms,
-                members=(ObservedMember(frozenset({m.account}), m.classification)
+                members=(ObservedMember(frozenset({m.account}), m.classification,
+                                        frozenset(m.roles))
                          for m in roster.members))
         return _reply(outcome.status.value, {"complete": 200, "denied": 403,
             "unavailable": 503, "incomplete": 409}[outcome.status.value], detail=outcome.detail)

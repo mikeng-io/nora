@@ -60,12 +60,12 @@ from nora.platform.discord.discovery import DiscordDiscovery
 from nora.platform.signal.discovery import SignalDiscovery
 from nora.testing.discovery import ScriptedDiscovery
 from nora.testing.managed import (
-    FakeAuthorityBackend,
     FakeBindingStore,
     FakeIdentityRegistry,
     FakeLinkRequests,
     FakeTopologySource,
 )
+from nora.testing.managed_authority import FakeAuthorityBackend
 
 UNIT = Scope(ScopeKind.UNIT, "generated-unit")
 UNIT_TWO = Scope(ScopeKind.UNIT, "generated-unit-two")
