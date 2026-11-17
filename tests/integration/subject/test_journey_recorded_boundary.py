@@ -237,6 +237,43 @@ async def test_each_open_gets_independent_consumption_state(
                     assert r.status == 200
 
 
+async def test_repeatable_reads_leave_ordered_writes_single_use():
+    health = {"method": "GET", "path": "/health", "repeatable": True,
+              "response": {"status": 200, "json": {"ok": True}}}
+    write = {"method": "POST", "path": "/update", "request_json": {"value": 7},
+             "response": {"status": 201}}
+    snapshot = RecordedServices({
+        "version": 1, "bindings": {"honcho.base_url": "recorded"},
+        "services": {"recorded": [health, write]},
+    })
+    with pytest.raises(EvidenceError, match="external_response_not_recorded"):
+        async with snapshot.open("sqlite://") as env, aiohttp.ClientSession() as client:
+            base = env.urls["honcho.base_url"]
+            for _ in range(2):
+                async with client.get(base + "/health") as response:
+                    assert response.status == 200
+                    assert await response.json() == {"ok": True}
+            async with client.post(base + "/update", json={"value": 7}) as response:
+                assert response.status == 201
+            async with client.get(base + "/health") as response:
+                assert response.status == 200
+                assert await response.json() == {"ok": True}
+            env.check()
+            async with client.post(base + "/update", json={"value": 7}) as response:
+                assert response.status == 500
+
+
+def test_a_write_cannot_be_declared_repeatable():
+    with pytest.raises(ValueError, match="bodyless GET"):
+        RecordedServices({
+            "version": 1, "bindings": {"honcho.base_url": "recorded"},
+            "services": {"recorded": [
+                {"method": "POST", "path": "/update", "repeatable": True,
+                 "response": {"status": 201}},
+            ]},
+        })
+
+
 def test_a_recording_cannot_claim_the_model_boundary():
     """Constructed directly or via the manifest, model dispatch bindings are
     refused: subject and judge aliases never become recorded playback."""

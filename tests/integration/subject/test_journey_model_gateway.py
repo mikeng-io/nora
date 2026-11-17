@@ -8,18 +8,266 @@ installed `RunBudget`. An undeclared model, an unbudgeted client or an
 endpoint outside the declared boundary refuses rather than rewriting.
 """
 
+import ast
 import json
 from typing import Any
 
 import httpx
 import pytest
 from aiohttp import web
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from evals.services import load_services
 from nora.agent import factory
+from nora.agent.speech_format import render_input
 from nora.subject.eval_evidence import EvidenceError
 from nora.subject.obtain import SubjectSpec, build_config
+from nora.testing.causal_protocol import CausalProtocol
+from tests.architecture.test_every_model_call_is_a_declared_occasion import (
+    _modules,
+    declares_blocks,
+)
 from tests.integration.subject.test_model_gateway import _body, _budget, _completion
+from tests.unit.test_causal_protocol import _call, _content, _drive, _req
+
+
+def test_generated_subject_answers_every_production_declaration(tmp_path, evaluation_config):
+    cfg = build_config(
+        SubjectSpec(
+            database_url="sqlite://",
+            workdir=tmp_path,
+            config=evaluation_config,
+            overrides={"dreamer.model": "generated-dreamer"},
+        )
+    )
+    protocol = CausalProtocol(cfg)
+
+    def request(purpose, fallback, user, *, system="Generated instruction", tools=(), raw=False):
+        model = cfg.endpoint(purpose, fallback)[2]
+        body = _req(
+            model,
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            tools=tools,
+            stream=not raw,
+        )
+        if raw:
+            body["response_format"] = {"type": "json_object"}
+        return body
+
+    def background(name, user="", *, tools=()):
+        return request(
+            "dreamer",
+            cfg.dreamer_model(),
+            user,
+            tools=tools,
+            system=f'<dreamer_objective name="{name}">Generated</dreamer_objective>',
+        )
+
+    def tool_spec(name, arg, arg_type):
+        return name, {"type": "object", "required": [arg], "properties": {arg: {"type": arg_type}}}
+
+    profiles = tool_spec("profile_no_change", "why", "string")
+    cases = {
+        "nora/agent/reaction.py": [
+            (
+                request(
+                    "reaction",
+                    cfg.reaction.model,
+                    '<recent_chat scope="room"/><nora_reply key="turn">Generated</nora_reply>',
+                ),
+                "reaction",
+                {"mode": "none", "query": ""},
+            ),
+            (
+                request(
+                    "reaction",
+                    cfg.reaction.model,
+                    '<recent_chat scope="room"/><nora_reply key="turn"/>'
+                    '<gif_candidates query="generated"/>',
+                ),
+                "reaction",
+                {"id": ""},
+            ),
+        ],
+        "nora/agent/speech_format.py": [
+            (
+                request(
+                    "speech_format",
+                    cfg.speech.tts.format.model,
+                    render_input("Generated & spoken."),
+                ),
+                "speech_format",
+                "Generated & spoken.",
+            ),
+        ],
+        "nora/domain/summons.py": [
+            (
+                request(
+                    "summons",
+                    cfg.llm.model,
+                    '<social_post source="the instagram post">Generated</social_post>',
+                ),
+                "summons",
+                "",
+            ),
+        ],
+        "nora/engagement/debrief_render.py": [
+            (
+                request("standing", cfg.standing.model, "<standing_prior/>"),
+                "fold_room",
+                {"standing": "Generated protocol acknowledgement.", "working_set": []},
+            ),
+            (
+                request(
+                    "standing",
+                    cfg.standing.model,
+                    "<standing_prior/>",
+                    system="Scope of this call: UNIT",
+                ),
+                "fold_unit",
+                {"items": []},
+            ),
+        ],
+        "nora/ingest/relevance_gate.py": [
+            (
+                request(
+                    "relevance_gate",
+                    cfg.relevance_gate.model,
+                    '<transcript window="1"/>\n{"verdict": "go" | "no_go", "relevance_score": 0.0}',
+                    raw=True,
+                ),
+                "relevance_gate",
+                {"verdict": "no_go", "relevance_score": 0},
+            ),
+        ],
+        "nora/language/browse_render.py": [
+            (
+                request(
+                    "browse",
+                    cfg.computer.browse.model,
+                    '<browse_task scope="turn"/>',
+                    tools=(tool_spec("browse_done", "answer", "string"),),
+                ),
+                "browse",
+                ("browse_done", {"answer": "No result in the generated browser.", "found": False}),
+            ),
+        ],
+        "nora/language/character.py": [
+            (background(name), name, "Generated protocol retains the previous account.")
+            for name in ("character-nora", "character-person", "character-unit")
+        ],
+        "nora/language/culture.py": [
+            (
+                background(
+                    "culture", tools=(tool_spec("character_no_change", "entity", "string"),)
+                ),
+                "culture",
+                (
+                    "character_no_change",
+                    {
+                        "entity": "room",
+                        "why": "Generated protocol retains the previous account.",
+                    },
+                ),
+            ),
+        ],
+        "nora/language/doctrine_check.py": [
+            (
+                request(
+                    "lesson_check",
+                    cfg.lessons.check_model,
+                    '<law_rules key="turn"/><lesson_to_check key="turn"/>',
+                    raw=True,
+                ),
+                "doctrine_check",
+                {"verdict": "consistent"},
+            ),
+        ],
+        "nora/language/profile.py": [
+            (
+                background("profile-person", tools=(profiles,)),
+                "profile-person",
+                ("profile_no_change", {"why": "Generated protocol retains the previous account."}),
+            ),
+        ],
+        "nora/language/profile_collective.py": [
+            (
+                background(name, tools=(profiles,)),
+                name,
+                ("profile_no_change", {"why": "Generated protocol retains the previous account."}),
+            )
+            for name in ("profile-nora", "profile-room", "profile-unit")
+        ],
+        "nora/language/profile_verdict.py": [
+            (
+                background(
+                    "profile-verdict",
+                    '<profile_verdict_docket><guess id="H1"/></profile_verdict_docket>',
+                    tools=(tool_spec("profile_verdict", "verdicts", "array"),),
+                ),
+                "profile-verdict",
+                ("profile_verdict", {"verdicts": [{"line": "H1", "verdict": "unknown"}]}),
+            ),
+        ],
+        "nora/language/subagent_render.py": [
+            (
+                request("subagent", cfg.llm.model, '<subagent_brief key="turn"/>'),
+                "subagent",
+                "Generated task completed.",
+            ),
+        ],
+    }
+    # These three builders share the scripted turn, cognition and fold journey.
+    scripted = {
+        "nora/agent/prefill.py",
+        "nora/language/cognition_render.py",
+        "nora/language/comprehend_render.py",
+    }
+    # These declarations are reached by an offline diagnostic or an eval arm.
+    offline = {
+        "nora/app/profile_spike.py",
+        "nora/language/confirmation_render.py",
+        "nora/subject/context_selector_render.py",
+        "scripts/memory_graph_spike.py",
+    }
+    modules = _modules()
+    declared = {path for path, tree in modules.items() if declares_blocks(tree)}
+    assert set(cases) | scripted | offline == declared
+    for path in cases:
+        objectives = {
+            node.value.value for node in modules[path].body
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+            and any(isinstance(target, ast.Name) and target.id.endswith("_ADAPTOR_NAME")
+                    for target in node.targets)
+        }
+        if objectives:
+            assert objectives == {occasion for _, occasion, _ in cases[path]}
+    for path, requests in cases.items():
+        for body, occasion, expected in requests:
+            status, response = protocol.dispatch(body)
+            assert status == 200, (path, occasion, response)
+            assert protocol.occasions[occasion] >= 1 and protocol.phase == 0
+            if body["stream"]:
+                chunks = [ChatCompletionChunk.model_validate(chunk) for chunk in response["chunks"]]
+                usage = chunks[-1].usage
+                found = _call(response) if isinstance(expected, tuple) else _content(response)
+            else:
+                reply = ChatCompletion.model_validate(response["json"])
+                usage, found = reply.usage, reply.choices[0].message.content
+            assert usage and usage.total_tokens == usage.prompt_tokens + usage.completion_tokens > 0
+            assert (json.loads(found) if isinstance(expected, dict) else found) == expected
+            if isinstance(expected, tuple) and occasion in {
+                "profile-person", "profile-room", "profile-unit", "profile-nora", "profile-verdict",
+            }:
+                continuation = dict(body, messages=[
+                    *body["messages"], {"role": "tool", "content": '{"status":"ok"}'},
+                ])
+                status, answer = protocol.dispatch(continuation)
+                assert status == 200 and _content(answer) == "Generated pass settled."
+    _drive(protocol)
+    status, response = protocol.dispatch(background("generated-unregistered"))
+    assert status == 422 and "unsupported_objective" in response["error"]
+    assert "generated-unregistered" not in protocol.occasions
 
 
 @pytest.fixture

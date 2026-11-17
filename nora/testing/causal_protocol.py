@@ -16,6 +16,17 @@ from datetime import UTC, datetime, timedelta
 from aiohttp import web
 from jsonschema import ValidationError, validate
 
+from nora.instructions.dreamer import OBJECTIVE_TAG
+from nora.language.character import (
+    CHARACTER_NORA_ADAPTOR_NAME,
+    CHARACTER_PERSON_ADAPTOR_NAME,
+    CHARACTER_UNIT_ADAPTOR_NAME,
+)
+from nora.language.culture import CULTURE_ADAPTOR_NAME
+from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
+from nora.language.profile_collective import PROFILE_COLLECTIVE_ADAPTOR_NAMES
+from nora.language.profile_verdict import PROFILE_VERDICT_ADAPTOR_NAME
+
 INITIAL = "記低：the generated venue and time remain undecided."
 CORRECTION = "記低：the generated venue is Cedar Hall; the generated time remains undecided."
 TITLE = "Generated venue and time"
@@ -29,16 +40,23 @@ ANSWER = "The selected generated venue is Cedar Hall."
 _UNIT_SCOPE_MARKER = "Scope of this call: UNIT"
 
 #: Tagged objectives identify adaptor work; untagged cognition owns scenario progress.
-_OBJECTIVE_TAG = re.compile(r'<dreamer_objective name="([^"]+)"')
+_OBJECTIVE_TAG = re.compile(rf'<{OBJECTIVE_TAG} name="([^"]+)"')
 
 #: These EntitySessions objectives close without inventing an entity name.
 #: Their unsettled watermark remains pending.
-_SESSION_CLOSE_OBJECTIVES = frozenset({"character-person", "character-unit", "character-nora"})
+_SESSION_CLOSE_OBJECTIVES = frozenset(
+    {
+        CHARACTER_PERSON_ADAPTOR_NAME,
+        CHARACTER_UNIT_ADAPTOR_NAME,
+        CHARACTER_NORA_ADAPTOR_NAME,
+    }
+)
+_PROFILE_OBJECTIVES = frozenset({PROFILE_PERSON_ADAPTOR_NAME, *PROFILE_COLLECTIVE_ADAPTOR_NAMES})
 
 #: Total background calls the finite world answers. A workload bound, not a
 #: threshold production raised: past it the request is a named `exhausted`
 #: error like every other unsupported occasion.
-_BACKGROUND_LIMIT = 10
+_BACKGROUND_LIMIT = 60
 
 
 class UnmatchedError(Exception):
@@ -116,6 +134,15 @@ def texts(value):
             yield from texts(child)
 
 
+def _user_text(request):
+    return "\n".join(
+        text
+        for message in request["messages"]
+        if message.get("role") == "user"
+        for text in texts(message.get("content"))
+    )
+
+
 class CausalProtocol:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -124,6 +151,13 @@ class CausalProtocol:
         self.note_id = None
         self.first_id = None
         self.background = 0
+        self.dream_model = cfg.endpoint("dreamer", cfg.dreamer_model())[2]
+        self.standing_model = cfg.endpoint("standing", cfg.standing.model)[2]
+        self.subagent_model = cfg.endpoint("subagent", cfg.llm.model)[2]
+        self.turn_models = {
+            cfg.endpoint(purpose, cfg.llm.model)[2]
+            for purpose in ("tag", "participation", "proactive")
+        }
         #: The served-request census by occasion: `scenario`, `fold_unit`,
         #: `fold_room`, `culture`, `character-*`. Served, not inferred —
         #: unmatched requests are in `errors`, never here.
@@ -183,7 +217,7 @@ class CausalProtocol:
         tools = {t["function"]["name"] for t in request.get("tools", [])}
         assert request.get("stream") is True
         if self.phase == 0:
-            assert request["model"] == self.cfg.dreamer.model and "remind" in tools
+            assert request["model"] == self.dream_model and "remind" in tools
             self.first_id = self.source(text, INITIAL)
             return "cognition", self.tool(
                 request,
@@ -227,7 +261,7 @@ class CausalProtocol:
                 request["model"], "Generated question is retained.", stream=True
             )["response"]
         if self.phase in {3, 8, 10}:
-            assert not tools and request["model"] == self.cfg.llm.model
+            assert not tools and request["model"] == self.standing_model
             return self._fold(request, text)
         if self.phase == 4:
             assert QUESTION in text and "send_reply" in tools
@@ -275,24 +309,108 @@ class CausalProtocol:
 
     def _background(self, request, objective):
         """Answer the declared adaptor objective; an unsettled close holds its watermark."""
-        if self.background >= _BACKGROUND_LIMIT:
-            raise UnmatchedError("exhausted", f"background passes past {_BACKGROUND_LIMIT}")
-        if objective == "culture":
-            if any(row.get("role") == "tool" for row in request["messages"]):
-                assert any(row.get("status") == "ok" for row in objects(request["messages"]))
-                return completion(
-                    request["model"], "Generated culture pass is settled.", stream=True
-                )["response"]
-            return self.tool(
-                request,
-                "character_no_change",
-                {"entity": "room", "why": "Generated protocol retains the previous account."},
-            )
+        why = "Generated protocol retains the previous account."
+        if objective in _PROFILE_OBJECTIVES | {CULTURE_ADAPTOR_NAME, PROFILE_VERDICT_ADAPTOR_NAME}:
+            messages = request["messages"]
+            tool_results = [row.get("content") for row in messages if row.get("role") == "tool"]
+            if tool_results:
+                assert any(row.get("status") == "ok" for row in objects(tool_results[-1]))
+                return completion(request["model"], "Generated pass settled.", stream=True)[
+                    "response"
+                ]
+            if objective == CULTURE_ADAPTOR_NAME:
+                return self.tool(request, "character_no_change", {"entity": "room", "why": why})
+            if objective == PROFILE_VERDICT_ADAPTOR_NAME:
+                docket = _user_text(request)
+                handles = re.findall(r'<guess id="(H\d+)"', docket)
+                assert handles
+                return self.tool(
+                    request,
+                    "profile_verdict",
+                    {
+                        "verdicts": [{"line": handle, "verdict": "unknown"} for handle in handles],
+                    },
+                )
+            if request.get("tools"):
+                return self.tool(request, "profile_no_change", {"why": why})
         if objective in _SESSION_CLOSE_OBJECTIVES:
-            return completion(
-                request["model"], "Generated protocol retains the previous account.", stream=True
-            )["response"]
+            return completion(request["model"], why, stream=True)["response"]
         raise UnmatchedError("unsupported_objective", objective)
+
+    def _other_occasion(self, body):
+        model = body.get("model")
+        user = _user_text(body)
+        stream = body.get("stream") is True
+        tools = {tool["function"]["name"] for tool in body.get("tools", [])}
+        endpoint = self.cfg.endpoint
+        if stream:
+            if (
+                model == self.standing_model
+                and not tools
+                and re.search(r"<standing_prior(?:\s|/?>)", user)
+            ):
+                return self._fold(body, "\n".join(texts(body["messages"])))
+            if (
+                model == endpoint("speech_format", self.cfg.speech.tts.format.model)[2]
+                and not tools
+                and (
+                    spoken := re.search(
+                        r"<spoken_reply\b[^>]*>(.*?)</spoken_reply>", user, re.DOTALL
+                    )
+                )
+            ):
+                return "speech_format", completion(
+                    model, html.unescape(spoken.group(1)).strip(), stream=True
+                )["response"]
+            if (
+                model == endpoint("reaction", self.cfg.reaction.model)[2]
+                and not tools
+                and "<nora_reply " in user
+                and "<recent_chat " in user
+            ):
+                content = (
+                    '{"id":""}' if "<gif_candidates " in user else '{"mode":"none","query":""}'
+                )
+                return "reaction", completion(model, content, stream=True)["response"]
+            if (
+                model == endpoint("browse", self.cfg.computer.browse.model)[2]
+                and "<browse_task " in user
+                and "browse_done" in tools
+            ):
+                if body["messages"][-1].get("role") == "tool":
+                    return "browse", completion(model, "Generated browse complete.", stream=True)[
+                        "response"
+                    ]
+                return "browse", self.tool(
+                    body,
+                    "browse_done",
+                    {
+                        "answer": "No result in the generated browser.",
+                        "found": False,
+                    },
+                )
+            if model == endpoint("summons", self.cfg.llm.model)[2] and "<social_post " in user:
+                return "summons", completion(model, "", stream=True)["response"]
+            if "<subagent_brief " in user and model == self.subagent_model:
+                return "subagent", completion(model, "Generated task completed.", stream=True)[
+                    "response"
+                ]
+        elif not tools and body.get("response_format") == {"type": "json_object"}:
+            if (
+                model == endpoint("lesson_check", self.cfg.lessons.check_model)[2]
+                and "<lesson_to_check " in user
+                and "<law_rules " in user
+            ):
+                return "doctrine_check", completion(model, '{"verdict":"consistent"}')["response"]
+            if (
+                model == endpoint("relevance_gate", self.cfg.relevance_gate.model)[2]
+                and "<transcript " in user
+                and '"relevance_score":' in user
+            ):
+                return "relevance_gate", completion(
+                    model, '{"verdict":"no_go","relevance_score":0}'
+                )["response"]
+        return None
 
     def answer(self, body):
         """Dispatch one captured request body -> `(scenario, occasion, response)`.
@@ -307,17 +425,17 @@ class CausalProtocol:
         checks, so the caller records the failure rather than hiding it
         behind a canned answer."""
         model = body.get("model")
-        if model == self.cfg.dreamer.model:
-            if body.get("stream") is not True:
-                raise UnmatchedError("mismatched_shape", f"{model} request is not streamed")
+        if model == self.dream_model and body.get("stream") is True:
             tagged = _OBJECTIVE_TAG.search(
                 html.unescape("\n".join(texts(body.get("messages", []))))
             )
             if tagged is not None:
                 return False, tagged.group(1), self._background(body, tagged.group(1))
-            occasion, response = self.result(body)
-            return True, occasion, response
-        if model == self.cfg.llm.model:
+        if other := self._other_occasion(body):
+            occasion, response = other
+            scenario = occasion in {"fold_unit", "fold_room"} and self.phase in {3, 8, 10}
+            return scenario, occasion, response
+        if model in self.turn_models | {self.dream_model, self.standing_model}:
             if body.get("stream") is not True:
                 raise UnmatchedError("mismatched_shape", f"{model} request is not streamed")
             occasion, response = self.result(body)
@@ -338,6 +456,8 @@ class CausalProtocol:
         self.requests.append(body)
         try:
             scenario, occasion, response = self.answer(body)
+            if not scenario and self.background >= _BACKGROUND_LIMIT:
+                raise UnmatchedError("exhausted", f"background passes past {_BACKGROUND_LIMIT}")
         except UnmatchedError as exc:
             self.errors.append((exc.kind, exc.detail))
             return 422, {"error": str(exc)}
@@ -360,6 +480,8 @@ class CausalProtocol:
         status, response = self.dispatch(body)
         if status != 200:
             return web.json_response(response, status=status)
+        if "json" in response:
+            return web.json_response(response["json"], headers=response["headers"])
         stream = web.StreamResponse(headers=response["headers"])
         await stream.prepare(request)
         for chunk in response["chunks"]:

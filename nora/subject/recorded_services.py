@@ -40,7 +40,8 @@ def _validate(data: Any) -> None:
             raise ValueError("invalid recorded service")
         for item in sequence:
             row = _object(
-                item, {"method", "path", "response"}, {"method", "path", "request_json", "response"}
+                item, {"method", "path", "response"},
+                {"method", "path", "request_json", "response", "repeatable"},
             )
             method, path = row["method"], row["path"]
             if not isinstance(method, str) or not re.fullmatch(r"[A-Z]+", method):
@@ -50,6 +51,11 @@ def _validate(data: Any) -> None:
             parts = urlsplit(path)
             if parts.scheme or parts.netloc or parts.fragment or any(c.isspace() for c in path):
                 raise ValueError("invalid recorded path")
+            if "repeatable" in row and (
+                type(row["repeatable"]) is not bool
+                or (row["repeatable"] and (method != "GET" or "request_json" in row))
+            ):
+                raise ValueError("repeatable recordings require a bodyless GET")
             response = _object(row["response"], {"status"}, {"status", "headers", "json", "chunks"})
             status = response["status"]
             if type(status) is not int or not 200 <= status <= 599:
@@ -109,6 +115,7 @@ class Playback:
         self.bindings: dict[str, str] = dict(data["bindings"])
         self._services = data["services"]
         self._positions = dict.fromkeys(self._services, 0)
+        self._reads: dict[str, dict[str, Any]] = {name: {} for name in self._services}
         self._locks = {name: asyncio.Lock() for name in self._services}
         self.environment: IsolatedServices | None = None
 
@@ -137,7 +144,7 @@ class Playback:
         return apps
 
     def check(self) -> None:
-        """Every declared response consumed exactly once, in order."""
+        """Every declared response reached in order, with repeatable reads seen at least once."""
         if any(self._positions[name] != len(rows)
                for name, rows in self._services.items()):
             raise EvidenceError("external_response_not_consumed")
@@ -151,13 +158,22 @@ class Playback:
                     row is not None
                     and request.method == row["method"]
                     and request.raw_path == row["path"]
+                    and (not row.get("repeatable") or not request.can_read_body)
                 )
                 if row is not None and matches and "request_json" in row:
                     try:
                         matches = _same(await request.json(), row["request_json"])
                     except (ValueError, UnicodeDecodeError):
                         matches = False
-                if row is None or not matches:
+                if row is not None and matches:
+                    self._positions[name] += 1
+                    if row["method"] == "GET" and row.get("repeatable"):
+                        self._reads[name][row["path"]] = row
+                elif request.method == "GET" and not request.can_read_body and (
+                    replay := self._reads[name].get(request.raw_path)
+                ) is not None:
+                    row = replay
+                else:
                     environment = self.environment
                     if environment is None:
                         raise RuntimeError("recorded playback unbound")
@@ -167,7 +183,6 @@ class Playback:
                         expected_method=row["method"] if row else "exhausted",
                         expected_path=row["path"] if row else "exhausted")
                     return web.Response(status=500, text="external response not recorded")
-                self._positions[name] += 1
                 response = row["response"]
                 headers = response.get("headers", {})
                 if "chunks" in response:

@@ -213,7 +213,7 @@ def test_full_corpus_and_long_sdk_stream_export_without_drops(
                             evaluators=[backbone.AbsenceGrader()])
     monkeypatch.setattr(cli, "experiment_for", lambda *a, **k: (
         experiment, backbone.nora_task(backbone.Spec(source_url="", entry="tag"))))
-    monkeypatch.setattr(cli, "census", lambda _: "generated census")
+    monkeypatch.setattr(cli, "census", lambda _, *, cohort=None: "generated census")
     backbone._prefill_capture()
     provider = trace.get_tracer_provider()
     limits = provider._span_limits
