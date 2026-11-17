@@ -221,10 +221,9 @@ def _graph_composition(persons, access, cfg):
 
 
 async def test_graph_composition_wires_and_starts_under_the_managed_backend(example_config):
-    from nora.access import EMPTY_PERSONS
 
     _, access, _ = await _world()
-    wired = _graph_composition(EMPTY_PERSONS, access, example_config)
+    wired = _graph_composition(access.persons_view(), access, example_config)
     assert wired.cognition_memory is not None
 
 
@@ -234,7 +233,6 @@ async def test_managed_source_names_are_screened_live_before_external_reads(
 ):
     from dataclasses import replace
 
-    from nora.access import EMPTY_PERSONS
     from nora.agent.comprehend_tools import ComprehendRead, LookupState
     from nora.agent.fetch_watch import GraphFetched, _result_of
     from nora.agent.ports import ToolSpec, adapt
@@ -248,7 +246,7 @@ async def test_managed_source_names_are_screened_live_before_external_reads(
 
     bindings, access, _ = await _world()
     bindings.people[PERSON] = replace(bindings.people[PERSON], display_name="Generated Person")
-    memory = _graph_composition(EMPTY_PERSONS, access, example_config).cognition_memory
+    memory = _graph_composition(access.persons_view(), access, example_config).cognition_memory
     records = ManagedRecords(memory.records.access)
     state = LookupState(
         GraphFetched(), HERE.unit, 1, records, Metrics(), memory.private_names,
@@ -303,7 +301,6 @@ async def test_managed_source_names_are_screened_live_before_external_reads(
 async def _screened_lookup(example_config, access, *, provider="web_search",
                            persons=(PERSON,), scopes=()):
     """A `ComprehendRead` over `provider` as the managed session wires it."""
-    from nora.access import EMPTY_PERSONS
     from nora.agent.comprehend_tools import ComprehendRead, LookupState
     from nora.agent.fetch_watch import GraphFetched, _result_of
     from nora.agent.ports import ToolSpec, adapt
@@ -314,7 +311,7 @@ async def _screened_lookup(example_config, access, *, provider="web_search",
             super().__init__()
             self.access = access
 
-    memory = _graph_composition(EMPTY_PERSONS, access, example_config).cognition_memory
+    memory = _graph_composition(access.persons_view(), access, example_config).cognition_memory
     state = LookupState(
         GraphFetched(), HERE.unit, 1, ManagedRecords(memory.records.access),
         Metrics(), memory.private_names, persons=persons, scopes=scopes,

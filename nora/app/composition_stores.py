@@ -403,21 +403,15 @@ class IdentityBackendWiring:
 async def identity_backend(
     allowlist: Any, cfg: Any, metrics: Any, persons: Any,
 ) -> IdentityBackendWiring:
-    """The boot-time identity/access backend selection (issue #528), in
-    dependency order: `database` first (an engine must exist before managed
-    bindings can be probed), then `managed_identity`, then the `access`
-    surface every consumer asks for who a sender is and what they may do.
+    """Select one authority, building its database before identity services.
 
-    Under `managed` the database wiring sees `EMPTY_PERSONS`: file people
-    are never the managed fallback, so the sync `persons_view` shape comes
-    from the same backend selection `managed_identity` makes. The alias
-    snapshot the sync `former_ids`/`subject_id_for` consumers read is warmed
-    here; afterwards every `permitted`/`person_refs` refreshes it on a TTL —
-    a managed outage fails startup, never a stale grant."""
-    from nora.access import EMPTY_PERSONS
+    Managed database wiring gets an empty descriptive view. Identity reads use
+    the selected services; alias warming refuses startup if authority is unavailable.
+    """
+    from nora.access import EmptyPersons
     stores_database = database(
         allowlist=allowlist, cfg=cfg, metrics=metrics,
-        persons=persons if cfg.identity.backend == "file" else EMPTY_PERSONS,
+        persons=persons if cfg.identity.backend == "file" else EmptyPersons(),
     )
     managed = await managed_identity(cfg, persons, allowlist, stores_database.engine)
     access = managed.services.access

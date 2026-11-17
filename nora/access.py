@@ -81,7 +81,7 @@ def _ref(person: ManagedPerson) -> PersonRef:
     )
 
 
-class _EmptyPersons:
+class EmptyPersons:
     """The Persons-shaped descriptive surface managed mode answers empty.
 
     Aliases, handle maps, Life360 membership, `honcho_peer_id` and the
@@ -142,9 +142,6 @@ class _EmptyPersons:
         return frozenset()
 
 
-EMPTY_PERSONS = _EmptyPersons()
-
-
 class SocialPreferenceUnavailableError(RuntimeError):
     """A managed social-preference read that cannot answer: the person is
     unknown, a `social` trait is missing or malformed, or the registry or
@@ -187,6 +184,7 @@ class IdentityAccess:
         self._topology = cast(TopologySource, topology)
         self._registry = cast(IdentityRegistry, registry)
         self._persons = file_persons
+        self._descriptive = file_persons if file_persons is not None else EmptyPersons()
         self._policy = file_policy
         # Alias snapshot for the SYNC consumers (`former_ids_for`,
         # `subject_id_for`); `refresh_aliases` reloads on a TTL — file mode
@@ -197,9 +195,9 @@ class IdentityAccess:
 
     def persons_view(self) -> Any:
         """The descriptive `Persons`-shaped read for sync consumers —
-        the loaded file index under the file backend, `EMPTY_PERSONS`
+        the loaded file index under the file backend, an empty view
         under managed (file data is never the managed fallback)."""
-        return self._persons if self._persons is not None else EMPTY_PERSONS
+        return self._descriptive
 
     @property
     def is_file_backend(self) -> bool:

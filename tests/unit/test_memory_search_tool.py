@@ -496,18 +496,17 @@ async def _managed_access(members: tuple[str, ...] = (_PERSON_A,)):
 
 
 def _managed_tools(access, search, members):
-    """Tag-path tools under managed: `EMPTY_PERSONS` plus the room's `access`."""
-    from nora.access import EMPTY_PERSONS
+    """Tag-path tools use the selected managed view and authority."""
 
     room = Room(
         platform="signal", conversation_id=GROUP,
         roster_source=FakeRosterSource(groups={GROUP: members}),
-        persons=EMPTY_PERSONS, access=access, tagger=None,
+        persons=access.persons_view(), access=access, tagger=None,
         self_ids=frozenset(),
     )
     built = build_tools(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=EMPTY_PERSONS, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=access.persons_view(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
         question="generated question", context_window=40,
         lineage=_MANAGED_LINEAGE, memory_retrieval=search,
