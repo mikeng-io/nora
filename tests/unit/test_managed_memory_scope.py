@@ -613,13 +613,8 @@ async def test_memory_walk_checks_managed_opt_out_after_replacing_stale_file_ros
         ("social", "generated-enabled"), ("message", "generated-opt-out-chat")}
 
 
-# -- scoped private names in the egress screen ------------------------------
-#
-# A session's read scopes are the room contexts its transcript/graph reads
-# resolve names through (`LookupState.scopes`). A source person's nickname
-# in one of those scopes is private exactly as their global name is: it must
-# refuse before the provider runs, and a scope the session never reads is
-# never enumerated for names.
+# Source-person nicknames are private in the session's read scopes.
+# Unrelated scopes must not be enumerated.
 
 UNIT = Scope(ScopeKind.UNIT, "generated-unit-a")
 SIBLING_ROOM = Scope(ScopeKind.ROOM, "signal/generated-room-b")

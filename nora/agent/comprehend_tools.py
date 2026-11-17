@@ -74,11 +74,8 @@ class LookupState:
     metrics: Any
     private_names: tuple[str, ...]
     persons: tuple[str, ...] = ()
-    #: The trusted read scopes this session's room contexts resolve names
-    #: through — a source person's scoped nickname in one of these rooms is
-    #: private exactly as their global name is. Scopes outside the agenda are
-    #: never read: the screen covers what this session could supply, not a
-    #: catalogue of every scope's names.
+    #: Agenda room scopes whose source-person nicknames the session can disclose;
+    #: unrelated scopes are not a private-name catalogue.
     scopes: tuple[Scope, ...] = ()
     shown_keys: set = field(default_factory=set)
     shown_relations: set = field(default_factory=set)

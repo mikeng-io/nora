@@ -1588,19 +1588,9 @@ class CognitionSessionRunner:
             state.unit_rooms = {
                 record_room_key(p, c): (p, c) for p, c in self._rooms_of_unit(unit)
             }
-        # EACH ITEM'S READS RESOLVE THROUGH ITS OWN ROOM (DEC-231, R-21). One
-        # room on the agenda: that room's tools. Several: `read_tools_for`
-        # returns ONE tool per name (a tool name is one tool: Strands keeps the
-        # LAST of two silently, which read one
-        # room's Record through another room's binding without a word), and
-        # each takes an `agenda_room` argument routing the read through that
-        # room's own build; an `agenda_room` value not on the agenda is refused.
-        # The unit is the
-        # boundary the session may read across (DEC-231: `record_query
-        # scope="all_rooms"` and `search_memory_workspace` read the unit's other
-        # rooms), the `agenda_room` argument picks the binding (roster, lineage)
-        # a read resolves through. The agenda's rooms are never replaced by
-        # the unit's home room.
+        # Agenda selection binds each tool to its room; an unlisted room is refused.
+        # One tool per name prevents Strands silently retaining only the last binding.
+        # Unit-wide reads retain that boundary; no home-room substitution is valid.
         rooms = list(dict.fromkeys(item.room for item in state.items_by_index.values()))
         keys = [_room_key(r) for r in rooms]
         # The prompt calls a room by its LABEL; the id is what a tool's
@@ -1624,13 +1614,8 @@ class CognitionSessionRunner:
                                for source in v.sources for p in source.persons}),
                 shown_keys=state.shown_keys,
                 shown_relations=state.shown_relations,
-                # The agenda's rooms are the scoped contexts this session's
-                # reads resolve through — the egress screen covers the names
-                # they supply, and only those.
-                scopes=tuple(
-                    Scope(ScopeKind.ROOM,
-                          room_scope_id(r.platform, r.conversation_id))
-                    for r in rooms))
+                scopes=tuple(Scope(ScopeKind.ROOM, room_scope_id(r.platform, r.conversation_id))
+                             for r in rooms))
 
             def on_rows(rows: Sequence[Any]) -> None:
                 """A transcript read's handed-out rows, kept as the citable

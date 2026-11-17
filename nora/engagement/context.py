@@ -320,12 +320,8 @@ class TranscriptInjection:
 
     @staticmethod
     def _room_scope(msg: NormalizedMessage) -> Scope:
-        """The room the message arrived in, as the trusted read scope every
-        name this context renders resolves through (`authorization.md`
-        «Scoped authority»): room → unit → workspace → global, never a
-        sibling's."""
-        return Scope(
-            ScopeKind.ROOM, room_scope_id(msg.platform, msg.conversation_id))
+        """The message's trusted room scope."""
+        return Scope(ScopeKind.ROOM, room_scope_id(msg.platform, msg.conversation_id))
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -333,27 +329,9 @@ class TranscriptInjection:
         ref = await self._access.resolve_ref(
             msg.platform, msg.sender_id, scope=self._room_scope(msg))
 
-        # CONCURRENT: the reads are independent, so gathering hides each behind
-        # the slowest instead of stacking their round trips (transcript, Honcho)
-        # end to end at the FRONT of every tag, before the first model call.
-        #
-        # Every helper is written not to raise, which is what makes `gather` safe
-        # here: one exception would otherwise cancel its siblings and take the
-        # turn down with it. That is the same property `MemoryStore`'s "never
-        # load-bearing" rule claims; this does not rely on the adapter to
-        # honour it.
-        #
-        # The gather is nested because `asyncio.gather`'s stub types only six
-        # positional awaitables distinctly; a seventh falls through to the
-        # homogeneous overload where mypy joins every return type down to
-        # `object`. Each inner gather stays within the typed overloads.
-        #
-        # `_notes` is the one read scoped by UNIT rather than by room, and it is
-        # gathered beside the rest anyway — where a read is scheduled says
-        # nothing about what it is keyed on.
-        #
-        # `<presence>` is on the front of the turn like the rest because adapter
-        # health must be read now, not remembered.
+        # Helpers contain their failures; independent reads overlap. Nested gathers
+        # preserve distinct result types within asyncio's six-awaitable overload.
+        # Scheduling unit-keyed notes beside room reads does not widen their scope.
         async def transcript_and_prefetch() -> Any:
             transcript, character, profiles = await self._recent_with_character(msg, ref)
             prefetch = await self._prefetch(msg, ref, transcript)

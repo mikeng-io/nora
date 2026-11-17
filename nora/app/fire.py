@@ -866,17 +866,8 @@ class FirePath:
         implementer toward an empty transcript and an empty card — a fire turn
         with no context at all, and nothing anywhere saying so.
         """
-        # `.get`, not `[...]`: identity.toml loads once at startup and a row may
-        # be thirty days old, so the person it names may have left the file. A
-        # KeyError here would surface as `failed_error` with a traceback; `speak`
-        # refuses it as `failed_policy` with a sentence instead. `None` for an
-        # occasion held on nobody's behalf, which is not an error at all.
-        # The occasion's own room is the trusted read scope every name this
-        # turn renders resolves through — tagger, transcript, window speakers
-        # and roster alike.
-        scope = Scope(
-            ScopeKind.ROOM,
-            room_scope_id(occasion.platform, occasion.conversation_id))
+        # Resolve the occasion's room view; an absent requester remains None.
+        scope = Scope(ScopeKind.ROOM, room_scope_id(occasion.platform, occasion.conversation_id))
         ref = (await self._access.person_ref(occasion.person_id, scope=scope)
                if occasion.person_id is not None else None)
 
@@ -1145,26 +1136,10 @@ class FirePath:
     async def _window_speakers(
         self, occasion: Event, transcript: Sequence[TranscriptRow],
     ) -> tuple[PersonRef, ...]:
-        """The distinct people who SPOKE in this window, most recent first,
-        bounded by `[honcho] people_in_window_speakers`.
-
-        **Most recent first, and the bound is what makes the order matter.** A
-        window of twelve rows can hold more speakers than the bound admits, and
-        the ones worth a read are the ones still talking — a person who spoke
-        once at the top of the window and left is exactly who the turn is not
-        deciding about.
-
-        Resolved through `Persons`, so an unmapped sender contributes NOTHING
-        rather than a row keyed on a raw platform id: `honcho_peer_id` is the
-        roster's canonical id and there is no memory to read under a phone
-        number. Nora's own rows are skipped: her own account is `<self>`, read
-        separately from the culture store.
-        """
+        """Bounded canonical speakers, most recent first; skip self and unmapped senders."""
         if self._people_in_window_speakers <= 0:
             return ()
-        scope = Scope(
-            ScopeKind.ROOM,
-            room_scope_id(occasion.platform, occasion.conversation_id))
+        scope = Scope(ScopeKind.ROOM, room_scope_id(occasion.platform, occasion.conversation_id))
         found: dict[str, PersonRef] = {}
         for row in reversed(tuple(transcript)):
             if row.is_nora:
