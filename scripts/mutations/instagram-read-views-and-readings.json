@@ -339,7 +339,7 @@
     "name": "the tool incorrectly uses window geometry as automatic admission",
     "file": "nora/social/adapters/tools/instagram.py",
     "old": "            slots=_instagram_slots,",
-    "new": "            max_video_seconds=float(video_chunk_seconds), slots=_instagram_slots,",
+    "new": "            max_video_seconds=float(deps.video_chunk_seconds), slots=_instagram_slots,",
     "target": "tests/unit/test_instagram_look_recovery.py::test_shorter_windows_do_not_shrink_the_automatic_read_limit"
   },
   {
