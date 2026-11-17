@@ -1,0 +1,16 @@
+[
+  {
+    "name": "private challenge nonce authenticates the exact receiving holder",
+    "file": "nora/domain/account_linking.py",
+    "old": "or not hmac.compare_digest(_digest(proof.nonce), self.nonce_hashes[payload.side])):",
+    "new": "or False):",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "SQL consolidation actually moves account ownership",
+    "file": "nora/infra/sql/managed_publication.py",
+    "old": "person_id=survivor,\n        revision=MANAGED_ACCOUNT.c.revision + 1,",
+    "new": "person_id=former,\n        revision=MANAGED_ACCOUNT.c.revision + 1,",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  }
+]

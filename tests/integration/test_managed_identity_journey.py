@@ -5,7 +5,7 @@ function-scoped, so the whole journey runs in a single test: generated
 platform accounts register once through the real roster boundary over
 `SqlBindingStore` + the Ory graph the `managed_services` factory selects;
 bilateral consent over the real holder routes and the real Signal transport
-parser/consent seam collapses exactly one pair; session exchange/check, scoped
+parser/consent seam binds four distinct accounts; session exchange/check, scoped
 management and the registered portal data routes hold for the right viewers;
 revocation and holder-exact unlink refuse afterwards.
 
@@ -17,6 +17,7 @@ backend or registry is substituted.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -77,9 +78,7 @@ OTP_REQUEST = "/app/v1/otp/request"
 OTP_VERIFY = "/app/v1/otp/verify"
 
 KEY = b"generated-journey-gateway-key-with-32bytes"
-#: The generated local gateway's method -> proof-issuer contract, mirroring a
-#: deployment's configured issuers. `signal_code` binds to the OTP receipt's
-#: own issuer; no method maps to a consent surface it does not own.
+# The generated gateway keeps proof issuers bound to their authentication method.
 GATEWAY = AuthenticationIssuer("generated-gateway", KEY, {
     "discord_oauth": "generated-discord-client",
     "telegram_oidc": "generated-telegram-client",
@@ -385,7 +384,7 @@ async def world(pg_module_url, ory, aiohttp_client, tmp_path):
         await engine.dispose()
 
 
-async def test_managed_identity_journey(world):
+async def _register_accounts(world):
     client, services = world.client, world.services
 
     # --- leg 1: generated accounts register once, gain no implicit power ---
@@ -408,7 +407,6 @@ async def test_managed_identity_journey(world):
     disc = await world.person_id(DISC)
     tg = await world.person_id(TG)
     op = await world.person_id(OP)
-    survivor, loser = a1, disc
     assert len({a1, a2, disc, tg, op}) == 5 and a1 != a2
 
     # Exact retry replays the journaled outcome; a fresh operation over the
@@ -416,6 +414,9 @@ async def test_managed_identity_journey(world):
     assert (await client.post(ROSTERS, headers=BEARER, json=first)).status == 200
     assert (await client.post(ROSTERS, headers=BEARER, json=roster(
         "op-ra-sig-b", ROOM_A, members_a, platform="signal"))).status == 200
+    duplicates = await asyncio.gather(*(client.post(
+        ROSTERS, headers=BEARER, json=first) for _ in range(2)))
+    assert [r.status for r in duplicates] == [200, 200]
     assert len(await services.bindings.persons()) == 5
 
     # What the credential does not admit refuses: no bearer, a collection
@@ -445,7 +446,25 @@ async def test_managed_identity_journey(world):
     world.note("registration", persons=5, retry="replayed",
                implicit_admin="none")
 
-    # --- leg 2: private bilateral consent collapses only the named pair ---
+    return a1, a2, disc, tg, op
+
+
+async def _refuse_changed_request(world, request_id, survivor):
+    client = world.client
+    changed = json.dumps({"request_id": request_id, "receiving": ident_json(TG),
+                          "surviving_person": survivor}).encode()
+    refused = await client.post(
+        REQUESTS, data=changed,
+        headers=world.session_headers(SIG_A1, path=REQUESTS, body=changed))
+    assert refused.status == 403, await refused.text()
+
+
+
+async def _link_first_pair(world, a1, a2, disc, tg, op):
+    client, services = world.client, world.services
+    survivor, loser = a1, disc
+
+    # Private bilateral consent collapses only the named pair.
     # Out-of-band installation bootstrap: the operator's unit delegation and
     # the loser's restriction on ROOM_C — fixture setup, not admission power.
     await services.backend.put_relation(
@@ -469,6 +488,7 @@ async def test_managed_identity_journey(world):
         headers=world.session_headers(SIG_A1, path=REQUESTS, body=body))
     assert created.status == 200, await created.text()
     initiating_nonce = (await created.json())["request"]["challenge"]["nonce"]
+    await _refuse_changed_request(world, request_id, survivor)
 
     view_path = f"{REQUESTS}/{request_id}"
     received = await client.get(
@@ -491,9 +511,8 @@ async def test_managed_identity_journey(world):
         return await client.post(decisions, data=decision, headers=headers)
 
     # A retained session is never consent; a code sign-in is authentication
-    # only — signal has no HTTP consent surface at all. The service clock is
-    # moved past the request's creation the way a real sign-in's own instant
-    # would sit — the injected seam, never a sleep.
+    # only. Per-request clock captures place actual gateway/transport proof
+    # instants inside the request window without sleeping or changing guards.
     world.now[0] = datetime.now(UTC) + timedelta(seconds=5)
     assert (await decide(SIG_A1, nonce=initiating_nonce, method="signal_code",
                          purpose="session")).status == 401
@@ -520,9 +539,7 @@ async def test_managed_identity_journey(world):
                        nonce=receiving_nonce)
     assert await world.consent.dispatch(foreign) is True
 
-    # The initiating side consents over the real private transport seam:
-    # parser, service-account match, sender binding resolution, then the same
-    # HolderLinkService decision path.
+    # Signal consents through the private parser and exact sender binding.
     assert await world.consent.dispatch(
         envelope(sender_number=SIG_A1.value, request_id=request_id,
                  nonce=initiating_nonce)) is True
@@ -535,8 +552,7 @@ async def test_managed_identity_journey(world):
     assert response.status == 200, await response.text()
     assert (await response.json())["state"] == "committed"
 
-    # Read-back, not receipt: bindings, the canonical alias, live Keto
-    # relations and the retired identity all agree — and nothing else moved.
+    # Bindings, canonical redirect, live Keto and retired Kratos agree.
     assert (await services.bindings.record_for(account=DISC)).person_id == survivor
     assert await services.bindings.canonical_person(loser) == survivor
     retired = await services.registry.identity_state(external_id=loser)
@@ -550,9 +566,7 @@ async def test_managed_identity_journey(world):
     assert all(r.subject != loser for r in relations)
     assert not (await services.authority.check(
         scope=ROOM_C, person_id=survivor, permit="view")).allowed
-    # Both sides' retained sessions captured pre-commit revisions: the
-    # loser's dies with its retired identity, the survivor's went stale when
-    # the commit bumped its own binding revision — it re-authenticates.
+    # Both retained sessions become stale after the ownership commit.
     assert await world.check(DISC) == 403
     assert await world.check(SIG_A1) == 403
     await world.otp_sign_in(SIG_A1)
@@ -566,7 +580,13 @@ async def test_managed_identity_journey(world):
     world.note("link", request_id=request_id, survivor=survivor,
                loser=loser, readback="bindings+keto+kratos agree")
 
-    # --- leg 3: scoped reads, scoped management, revocation, unlink ---
+
+
+async def _manage_portal(world, a1, a2, disc, tg, op):
+    client, services = world.client, world.services
+    survivor = a1
+
+    # Scoped reads, scoped management and current revocation.
     sha = "d" * 64
 
     def revision(title):
@@ -608,10 +628,8 @@ async def test_managed_identity_journey(world):
             "payload": {"member": member},
             "observed_revisions": {"authority": "observed"}}).encode()
 
-    # The delegated operator grants TG standing in ROOM_A over its retained
-    # session, then revokes it — the roster-synced members are untouched by a
-    # delegation change, and the sibling-unit target and a service bearer
-    # both refuse.
+    # Delegated membership changes preserve roster support; sibling scope
+    # and service-bearer operator requests refuse.
     body = membership_op(tg, ROOM_A, True)
     assert (await client.post(
         OPERATIONS, data=body,
@@ -645,22 +663,121 @@ async def test_managed_identity_journey(world):
         headers=world.session_headers(OP, path=OPERATIONS, body=body))).status == 403
     assert await world.check(OP) == 200
 
-    # Holder-exact unlink: a wrong expectation refuses first; the exact
-    # holder's unlink then revokes the binding — and the retained session.
-    body = json.dumps({"operation_id": f"op-{uuid4()}",
-                       "expected_person": survivor}).encode()
-    assert (await client.post(
-        UNLINK, data=body,
-        headers=world.session_headers(SIG_A2, path=UNLINK, body=body))).status == 403
-    body = json.dumps({"operation_id": f"op-{uuid4()}",
-                       "expected_person": a2}).encode()
-    assert (await client.post(
-        UNLINK, data=body,
-        headers=world.session_headers(SIG_A2, path=UNLINK, body=body))).status == 200
-    assert await services.bindings.record_for(account=SIG_A2) is None
-    assert await world.check(SIG_A2) == 403
-    assert (await documents(SIG_A2, a2)).status == 403
-
     world.note("management-portal", operator_scope=UNIT_A,
                revocation="delegation-drop+unlink", unlink="session-dead")
+
+
+
+async def _link_additional_account(world, account, former, survivor):
+    client, services = world.client, world.services
+    world.now[0] = datetime.now(UTC).replace(microsecond=0)
+    await world.otp_sign_in(SIG_A1)
+    if account.platform == "signal":
+        await world.otp_sign_in(account)
+    else:
+        await world.exchange(account, method=METHOD[account.platform])
+    request_id = f"generated-link-{uuid4().hex[:8]}"
+    body = json.dumps({"request_id": request_id, "receiving": ident_json(account),
+                       "surviving_person": survivor}).encode()
+    response = await client.post(
+        REQUESTS, data=body,
+        headers=world.session_headers(SIG_A1, path=REQUESTS, body=body))
+    assert response.status == 200, await response.text()
+    initiating_nonce = (await response.json())["request"]["challenge"]["nonce"]
+    path = f"{REQUESTS}/{request_id}"
+    response = await client.get(
+        path, headers=world.session_headers(account, path=path, http="GET"))
+    assert response.status == 200, await response.text()
+    receiving_nonce = (await response.json())["request"]["challenge"]["nonce"]
+    assert receiving_nonce != initiating_nonce
+    world.now[0] = datetime.now(UTC) + timedelta(seconds=5)
+    assert await world.consent.dispatch(envelope(
+        sender_number=SIG_A1.value, request_id=request_id,
+        nonce=initiating_nonce)) is True
+    assert await world.person_id(account) == former
+    if account.platform == "signal":
+        assert await world.consent.dispatch(envelope(
+            sender_number=account.value, request_id=request_id,
+            nonce=receiving_nonce)) is True
+    else:
+        decisions = f"{path}/decisions"
+        body = json.dumps({"operation_id": f"op-{uuid4()}",
+                           "action": "approve", "nonce": receiving_nonce}).encode()
+        response = await client.post(decisions, data=body, headers=world.sign_in_headers(
+            account, method=METHOD[account.platform], path=decisions, body=body))
+        assert response.status == 200, await response.text()
+        assert (await response.json())["state"] == "committed"
+    assert await world.person_id(account) == survivor
+    assert await services.bindings.canonical_person(former) == survivor
+    assert (await services.registry.identity_state(external_id=former)).verdict is Verdict.DENIED
+    assert await world.check(account) == 403
+    assert await world.check(SIG_A1) == 403
+
+
+async def _four_account_readback(world, survivor, former_ids):
+    services = world.services
+    accounts = [await services.bindings.record_for(account=a)
+                for a in (SIG_A1, SIG_A2, DISC, TG)]
+    assert {a.person_id for a in accounts} == {survivor}
+    assert len({a.account_id for a in accounts}) == 4
+    for old in former_ids:
+        assert await services.bindings.canonical_person(old) == survivor
+    assert await world.person_id(OP) != survivor
+    for account in (SIG_A1, SIG_A2):
+        assert (await world.otp_sign_in(account))["person_id"] == survivor
+    for account in (DISC, TG):
+        binding = await world.exchange(account, method=METHOD[account.platform])
+        assert binding["person_id"] == survivor
+    for account in (SIG_A1, SIG_A2, DISC, TG):
+        assert await world.check(account) == 200
+        path = f"{DOCUMENTS}?personId={survivor}"
+        response = await world.client.get(
+            path, headers=world.session_headers(account, path=path, http="GET"))
+        assert response.status == 200, await response.text()
+        assert {d["title"] for d in (await response.json())["documents"]} == {"A note", "B note"}
+    assert not (await services.authority.check(
+        scope=ROOM_C, person_id=survivor, permit="view")).allowed
+    assert not (await services.authority.check(
+        scope=ROOM_A, person_id=survivor, permit="manage_members")).allowed
+    world.note("canonical-accounts", accounts=4, platforms=3,
+               distinct_accounts=True, independent_bilateral_links=3)
+
+
+async def _unlink_one_account(world, survivor):
+    client, services = world.client, world.services
+    body = json.dumps({"operation_id": f"op-{uuid4()}",
+                       "expected_person": await world.person_id(OP)}).encode()
+    response = await client.post(
+        UNLINK, data=body,
+        headers=world.session_headers(SIG_A2, path=UNLINK, body=body))
+    assert response.status == 403
+    body = json.dumps({"operation_id": f"op-{uuid4()}",
+                       "expected_person": survivor}).encode()
+    response = await client.post(
+        UNLINK, data=body,
+        headers=world.session_headers(SIG_A2, path=UNLINK, body=body))
+    assert response.status == 200, await response.text()
+    assert await services.bindings.record_for(account=SIG_A2) is None
+    assert await world.check(SIG_A2) == 403
+    path = f"{DOCUMENTS}?personId={survivor}"
+    assert (await client.get(path, headers=world.session_headers(
+        SIG_A2, path=path, http="GET"))).status == 403
+    for account in (SIG_A1, DISC, TG):
+        assert await world.person_id(account) == survivor
+    await world.otp_sign_in(SIG_A1)
+    assert await world.check(SIG_A1) == 200
+    assert (await client.get(path, headers=world.session_headers(
+        SIG_A1, path=path, http="GET"))).status == 200
+    world.note("unlink", removed_accounts=1, surviving_accounts=3)
+
+
+async def test_managed_identity_journey(world):
+    ids = await _register_accounts(world)
+    await _link_first_pair(world, *ids)
+    await _manage_portal(world, *ids)
+    a1, a2, disc, tg, _ = ids
+    await _link_additional_account(world, TG, tg, a1)
+    await _link_additional_account(world, SIG_A2, a2, a1)
+    await _four_account_readback(world, a1, (a2, disc, tg))
+    await _unlink_one_account(world, a1)
     _write_receipt(world.evidence)
