@@ -1,6 +1,6 @@
 """`PlatformOnboarding` — the scheduled consumer that turns typed
 collection discovery into management operations (`identity.md` «Platform
-discovery and membership»; issue #528 Task 8).
+discovery and membership»).
 
 SHAPE. Each `OnboardingRule` is one operator-approved row — a platform's
 collection, the scope its member set feeds, and the provisioning service

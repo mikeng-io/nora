@@ -1,7 +1,7 @@
 """`PlatformOnboarding` end to end through the real managed services —
 discovery → `RosterProvisioning` → bindings/authority over the in-memory
 fakes, plus the real Discord/Signal discovery normalizers (`identity.md`
-«Platform discovery and membership», issue #528 Task 8):
+«Platform discovery and membership»):
 
 - an initial complete roster bulk-registers independent people under the
   rule's service identity — all valid identifiers included regardless of account labels; a row

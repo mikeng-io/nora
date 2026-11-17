@@ -30,7 +30,7 @@ def scope_for(
     `own_room` narrows it to the reading room alone: no other room of the
     unit and no unit-placed node (a note, memo or event of the unit may come
     from any of its rooms), so nothing said elsewhere is read. The culture
-    adaptor's (DEC-316): a room's culture is written from that room's own
+    adaptor's boundary: a room's culture is written from that room's own
     speech. The listed-room and presence rules still apply; a stay or trip, which
     belongs to a person and to no room, is still read where its person
     passes presence here.

@@ -145,7 +145,7 @@ class Clarify:
     `status` is the tool result's axis: `ambiguous` when resolution could
     not pick one target (several candidates, or none named yet),
     `nothing_found` when the named target is genuinely absent — the two
-    are never interchangeable, same as R-27's reads.
+    are never interchangeable, as with every three-state read.
     """
 
     question: str

@@ -80,6 +80,7 @@ jobs:
           tests/architecture/test_release_config_matches_the_repo.py
           tests/architecture/test_release_plan.py
           tests/architecture/test_ci_plan.py
+          tests/architecture/test_ci_backend_acceptance.py
           tests/architecture/test_ci_runs_the_plumbing_guards.py
           tests/architecture/test_pr_triage.py
           tests/architecture/test_commit_body_rule.py

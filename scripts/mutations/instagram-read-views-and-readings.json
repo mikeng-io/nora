@@ -74,7 +74,7 @@
     "file": "nora/infra/social/router.py",
     "old": "        reads_media = look is not None and (platform, what) in READS_WITH_READINGS",
     "new": "        reads_media = look is not None",
-    "target": "tests/unit/test_instagram_read_readings.py -k never_for_a_search"
+    "target": "tests/unit/test_instagram_look_recovery.py -k never_for_a_search"
   },
   {
     "name": "the tool stops handing media_fetch to a post or story read",
@@ -151,7 +151,7 @@
     "file": "nora/infra/social/readings.py",
     "old": "        for task in tasks.values():\n            task.cancel()\n        await asyncio.gather(*tasks.values(), return_exceptions=True)",
     "new": "        pass",
-    "target": "tests/unit/test_instagram_read_readings.py -k cancelling_the_read"
+    "target": "tests/unit/test_instagram_read_readings.py tests/unit/test_instagram_look_recovery.py -k cancelling_the_read"
   },
   {
     "name": "a cancelled video run leaves ffmpeg running and the scratch file on disk",
@@ -228,7 +228,7 @@
     "file": "nora/social/adapters/tools/instagram.py",
     "old": "            slots=_instagram_slots,",
     "new": "",
-    "target": "tests/unit/test_instagram_read_readings.py -k batched_calls_share"
+    "target": "tests/unit/test_instagram_look_recovery.py -k batched_calls_share"
   },
   {
     "name": "the post caption loses its first claim and is squeezed like a reading",
@@ -340,7 +340,7 @@
     "file": "nora/social/adapters/tools/instagram.py",
     "old": "            slots=_instagram_slots,",
     "new": "            max_video_seconds=float(video_chunk_seconds), slots=_instagram_slots,",
-    "target": "tests/unit/test_instagram_read_readings.py::test_shorter_windows_do_not_shrink_the_automatic_read_limit"
+    "target": "tests/unit/test_instagram_look_recovery.py::test_shorter_windows_do_not_shrink_the_automatic_read_limit"
   },
   {
     "name": "a post video of unknown length is read anyway",
@@ -361,14 +361,14 @@
     "file": "nora/media/adapters/tools/fetch.py",
     "old": "c.persist = c.persist and (not (c.url and c.url in c._instagram_story_urls))\n    ",
     "new": "        c.persist = c.persist",
-    "target": "tests/unit/test_instagram_read_readings.py -k opens_itself"
+    "target": "tests/unit/test_instagram_look_recovery.py -k opens_itself"
   },
   {
     "name": "the turn forgets its story frame links",
     "file": "nora/social/adapters/tools/instagram.py",
     "old": "if c.read == \"story\" and c.out.get(\"status\") == \"ok\":\n        c._instagram_story_urls.update(",
     "new": "        if False:\n            c._instagram_story_urls.update(",
-    "target": "tests/unit/test_instagram_read_readings.py -k opens_itself"
+    "target": "tests/unit/test_instagram_look_recovery.py -k opens_itself"
   },
   {
     "name": "every failed look beside a capped item is sent to media_fetch (no mixed outcome)",

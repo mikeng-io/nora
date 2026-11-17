@@ -494,7 +494,7 @@ class IdentityAccess:
     ) -> tuple[TranscriptRow, ...]:
         """Fill each row's `person_name`/`person_id` from the selected
         backend — `Persons.name_transcript`'s semantics over whichever
-        directory answers (`DEC-80`).
+        directory answers.
 
         `scope` is the trusted read scope the transcript renders for —
         `person_ref`'s contract: the nearest nickname on its

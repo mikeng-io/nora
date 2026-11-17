@@ -258,10 +258,8 @@ async def _media_fetch__scan_url(c):
         and c.persist_look
         and (c.url not in c._instagram_story_urls)
     ):
-        # Every persisted look holds the item's bytes, so the `code` the
-        # answer carries resolves later WITHOUT the signed url — the read a
-        # social reader already paid for never has to be re-downloaded or its
-        # url re-typed by the model.
+        # Persisted looks keep verified custody, so follow-up uses a code rather than
+        # re-downloading or re-typing the expiring source URL.
         c.serve_code = await c._keep_fetched_media(c.url, c.data, c.media_type)
     c.is_cover = False
     return (False, None, None)
@@ -446,10 +444,8 @@ async def _media_fetch__shared_bytes(c):
         c.sha256 = hashlib.sha256(c.data).hexdigest()
         c.serve_code = c.shared.handle
         c.is_cover = False
-    # The kept-note and the code the answer may carry come from the SAME
-    # place — custody that was VERIFIED (`serve_code`): a kept row's key, a
-    # sighted row's hash prefix, or a shared ref's handle. Never a hash of
-    # bytes that were only here transiently.
+    # Code and kept-note both derive from verified stored, sighted or shared custody;
+    # bytes held only transiently provide neither.
     c.kept_note = (
         _KEPT_CLIP_NOTE if _modality_of(c.media_type) == "video" else _KEPT_NOTE
     ) if c.url and c.serve_code else None
@@ -652,11 +648,8 @@ async def _media_fetch__cut_video(c):
             )
             c.result = c.one
         else:
-            # The read bounds itself: `budget_seconds` defaults to
-            # VIDEO_READ_SECONDS and shrinks to the enclosing deadlines it
-            # CAN see — the turn's, and this look's own when a social read
-            # handed one down — so a timed-out window's recovery pass is
-            # spent from the same allowance the look dies at.
+            # Turn and look deadlines shorten the whole-read budget.
+            # Recovery spends that same budget rather than another per-call allowance.
             c.segments, c.read_windows = await read_video_windows(
                 cut=c.cut, media_type=c.media_type, ask=c._ask,
             )

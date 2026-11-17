@@ -1,7 +1,7 @@
 """`PlatformOnboarding` first-encounter sender notes → grouped account
 enrichment, driven through the runtime route (`notify_sender` → `_drain`
 → real `SignalDiscovery` → `RegistrationService`; `identity.md` «One
-person, many accounts», issue #528 queue5):
+person, many accounts»):
 
 - a sender whose presented value already resolves is still observed as
   the whole provider-proven group — a pre-existing phone-only account

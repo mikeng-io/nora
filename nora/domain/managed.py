@@ -7,7 +7,7 @@ Standard library only — same rule as the rest of `nora/domain`
 import-linter's "domain is framework-free" contract.
 
 What lives here is the SHAPE of results every managed component speaks in —
-the R-27 three-state applied to identity and authority — plus the Keto
+the three-state result model applied to identity and authority — plus the Keto
 encoding of scopes, relations and subjects the committed OPL model
 (`deploy/ory/keto/namespaces.ts`) declares. How results are produced (SQL,
 HTTP, TOML) belongs to the adapters.

@@ -37,7 +37,7 @@
   {
     "name": "shown source names remain private after rename",
     "file": "nora/agent/comprehend_tools.py",
-    "old": "        self.seen_names.update(\n            row.person_name or row.sender_name for row in rows\n            if row.person_id and not row.is_nora and (row.person_name or row.sender_name))",
+    "old": "        self.seen_names.update(\n            label for row in rows if row.person_id and not row.is_nora\n            if (label := speaker_name(row.person_name, row.sender_name, unknown=\"\")))",
     "new": "        self.seen_names.update(())",
     "target": "tests/unit/test_managed_record_names.py::test_a_name_actually_handed_out_remains_private_after_rename"
   },

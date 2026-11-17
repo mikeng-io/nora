@@ -1,5 +1,4 @@
-"""Roster-observation freshness — onboarding round-one BLOCKER 1 (issue #528
-Task 8; `identity.md` «Platform discovery and membership»):
+"""Roster-observation freshness (`identity.md` «Platform discovery and membership»):
 
 - A complete roster carries departure evidence only while its own
   upstream-observation stamp is fresh: a stale, undated, malformed or
