@@ -17,7 +17,8 @@ only what the next actor needs; follow design and evidence links on demand.
 Write or revise the brief to [references/brief.md](references/brief.md): its
 template, the finite Done-when checklist, approval and the lock. On the standard
 and full routes, attach the plan ([references/plan.md](references/plan.md))
-and send both to brief review (`nora-review`); then Mike approves the Done-when
+run the author's pre-flight («Before review»), and send both to brief review
+(`nora-review`); then Mike approves the Done-when
 list. An approved Done-when list is locked: only Mike changes it.
 
 Every Goal and every brief derived from it carries the same stop conditions:
