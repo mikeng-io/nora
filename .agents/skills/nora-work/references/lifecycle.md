@@ -43,16 +43,17 @@ triggers give is a finding against the work, not a judgement call.
 
 The orchestrator records the route; it never confirms its own route.
 
-## Re-triage and the human triggers
+## Re-triage
 
-At every transition the checker sends the work back to propose, and asks
-Mike, when any of these appears:
+At every transition, the checker sends the work back to triage when a new area
+appears. The agent records the new route and continues, and the next brief
+review confirms it.
 
-- a new Done-when item;
-- a new area;
-- a new side effect;
-- a missing authority;
-- a review round that closes no blocker class, or a repair that introduces a new class.
+Mike is asked only when one of these appears («When Mike is asked»):
+
+- **Intent:** a Done-when item that the locked list does not contain.
+- **Authority:** a missing authority, or a side effect beyond what the brief grants.
+- **Redesign:** a review round that closes no blocker class, or a repair that introduces a new class.
 
 After Mike approves it, a brief's Done-when list is locked: only Mike changes
 it. A finding outside the locked items is a follow-up, never a blocker.

@@ -33,8 +33,8 @@ This skill is the entry router; it does not repeat the other procedures.
    not require; keep the applicable checks and holds.
    Check: the next action advances an existing Done-when item.
 5. **Return to the outcome.** After a result, compare it with the brief. When a
-   re-triage trigger appears (`references/lifecycle.md`), return to propose and
-   ask Mike. Otherwise continue to the next item without asking («When Mike is
+   re-triage trigger appears (`references/lifecycle.md` «Re-triage»), re-route;
+   ask Mike only for its intent, authority or redesign cases. Otherwise continue to the next item without asking («When Mike is
    asked»): report it, do not wait. Continue the remaining authorized work, or hand over or
    close through `nora-dispatch`. A worker's stop point does not end the
    parent's assignment.
