@@ -79,7 +79,7 @@ stack extension, configure checks or prove repository readiness.
 1. **Choose delivery.** For one integrated feature, use its integration branch
    as trunk, layer branches chained above it, and a final integration → master
    PR. Independently releasable layers may use master as trunk. Record the trunk,
-   PR order and parent work link in the existing PR/brief. Verify actual trunk
+   PR order and project link in the existing PR/brief. Verify actual trunk
    protections/checks first; master-only workflows may not run on integration.
 2. **Prepare and link.** Each worker keeps its assigned T3 worktree/base. Build
    the next layer from the required lower head without waiting for its merge;
@@ -95,8 +95,8 @@ stack extension, configure checks or prove repository readiness.
 4. **Link work and evidence.** Relate each PR to its actual Linear work; use
    `Related to NOR-123` until status rules are verified. Link all contributing
    issues on the final master PR too; do not assume nested PR links propagate.
-   Linear can display a stack but does not create or restack it. Parent/child
-   completion remains an evidence decision, not a PR-count automation.
+   Linear can display a stack but does not create or restack it. Issue and
+   project completion remain an evidence decision, not a PR-count automation.
 5. **Merge the authorized group.** Compare every included layer's current
    base/head with its reviewed candidate; read checks, findings and independence
    evidence. Native merge of a selected layer includes
@@ -107,7 +107,7 @@ stack extension, configure checks or prove repository readiness.
 6. **Complete integration.** After landing on the integration trunk, verify the
    whole candidate on the required path; open the final master PR and follow
    nora-land's standalone steps. Keep layer Done, source landed, released and
-   runtime accepted distinct. Close the parent only at its agreed boundary.
+   runtime accepted distinct. Close the project only at its agreed boundary.
 
 If stack tooling, trunk checks or write coordination are unavailable, report the
 specific gap and continue independent work. Do not claim stack support or remove
