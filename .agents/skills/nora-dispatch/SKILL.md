@@ -44,7 +44,7 @@ Check: a fresh agent can state the outcome, completion conditions and known gap.
 
 Do small work directly. Split only independently assignable/verifiable outcomes,
 real dependencies, or an outcome over 6 Done-when items (the split route) into
-sub-issues; each child has its own brief, states its delta and links its parent.
+issues of one Linear project; each child has its own brief and states its delta.
 Use native ownership and blocking relations instead of a copied task table.
 Sequence shared write ownership. For an integrated change, units are review
 slices on its integration branch, not separate master releases. Use
