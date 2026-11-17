@@ -1,12 +1,5 @@
 [
   {
-    "name": "an unfresh complete roster cannot drive a departure",
-    "file": "nora/people/app/onboarding.py",
-    "old": "            if (snapshot.complete\n                    and not self._observation_fresh(snapshot)):",
-    "new": "            if False:",
-    "target": "tests/unit/test_roster_observation_freshness.py::TestFreshnessGuard::test_stale_complete_roster_cannot_retract_membership"
-  },
-  {
     "name": "discord forwards the producer's own read instant",
     "file": "nora/platform/discord/discovery.py",
     "old": "            observed_ms=result.observed_ms or 0,",

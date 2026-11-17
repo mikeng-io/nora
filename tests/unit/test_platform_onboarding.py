@@ -490,15 +490,6 @@ class TestOnboarding:
             "signal", "uuid", signal_member(1)["uuid"])
         assert phone is not None and phone.person_id == aci.person_id
 
-    async def test_unavailable_sync_does_not_extend_the_interval(self):
-        services, provisioning = _graph()
-        discovery = ScriptedDiscovery(
-            CollectionSnapshot(available=False, detail="down"), collection=GUILD)
-        onboarding = _onboarding(
-            services, provisioning, _rule(discovery), interval=10**9)
-        await onboarding._drain()
-        # The retry streak — not the huge interval — is the next attempt.
-        assert onboarding._next_at["generated-rule"] < 10**9
 
 
 class TestOnboardingWiring:

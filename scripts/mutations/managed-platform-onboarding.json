@@ -25,6 +25,6 @@
     "file": "nora/people/app/onboarding.py",
     "old": "            if not snapshot.available:\n                log.info(\n                    \"onboarding %s: roster unavailable (%s)\",\n                    rule.name, snapshot.detail or \"read failed\")\n                return None",
     "new": "            if False:\n                return None",
-    "target": "tests/unit/test_platform_onboarding.py::TestOnboarding::test_unavailable_sync_does_not_extend_the_interval"
+    "target": "tests/unit/test_unavailable_onboarding.py::test_an_unavailable_roster_cannot_publish_even_with_fresh_partial_data"
   }
 ]
