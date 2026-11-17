@@ -155,7 +155,7 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 
 ## 8. Merge: a real merge commit, authored message
 
-Before merge/auto-merge, read checks and all PR findings on the latest head;
+Before merge/auto-merge, confirm the route's required artifacts (`nora-work/references/lifecycle.md` «Ceiling and backstop»), then read checks and all PR findings on the latest head;
 follow [scanner triage](reference.md#pre-merge-scanner-findings). Green CI alone is insufficient.
 
 ```bash
@@ -196,9 +196,7 @@ make heads > "$LOG/heads.txt" 2>&1; grep -c '(head)' "$LOG/heads.txt"    # must 
 make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must print 0
 ```
 
-Fix a process failure found on the way in its owning skill or root document now
-(`ORCHESTRATION.md` «The lifecycle»). Reconcile the Linear work brief with met/unmet/unavailable evidence and remaining scope. Link the PR/result; close only a fully satisfied outcome. GitHub defect reports keep their separate resolution.
-Report completed/unmet obligations; keep required read-back and stop at the agreed boundary.
-The next change starts in a new worktree; archive what did not merge — `make archive BRANCH=<b> REASON="..."` — then run `make gc APPLY=1` and read back its totals. Deploying: nora-deploy.
+Then resolve ([reference.md](reference.md#resolve)): settle the artifact (merged, or `make archive BRANCH=<b> REASON="..."`), run `make gc APPLY=1` and read back its totals, update the Linear brief with the reviewer's met/unmet/unavailable marks, and record a lesson line when the process, not the code, failed.
+Close only a fully satisfied outcome; GitHub defect reports keep their separate resolution. Report completed/unmet obligations and stop at the agreed boundary. Deploying: nora-deploy.
 
 Tool-specific workarounds and Claude commit footers: `nora-land/reference.md`.

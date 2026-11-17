@@ -105,7 +105,7 @@ identify which. APPROVE is not task completion, green CI, merge or deployment.
 Finish the assigned coverage even after finding a defect; do not manufacture
 findings. A round with no BLOCKER ends review once required evidence is in:
 non-blocking harvest goes into one summary comment on the PR and never opens
-a round; required gaps stay unresolved. The orchestrator owns triage.
+a round; required gaps stay unresolved. The reviewer owns severity, the orchestrator disposition.
 Devin Review is supplemental; Fusion's internal review alone is not independent
 review. Pure non-runtime docs and ordinary MCP client config need no automatic
 code review; explicit review requests and mixed/runtime changes follow the tier.

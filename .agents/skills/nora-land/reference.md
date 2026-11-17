@@ -51,6 +51,25 @@ findings reported only in comments or check annotations.
   enable auto-merge while actionable findings remain, or bypass required checks.
 
 
+## Resolve
+
+Resolve closes the lifecycle (`nora-work/references/lifecycle.md`). The
+orchestrator does it after merge, or when an outcome will not merge:
+
+1. **Settle the artifact.** Merged work's record is its merged PR. Work that
+   will not merge is archived once: `make archive BRANCH=<b> REASON="..."`.
+   The work's owner commits any dirty work first.
+2. **Retire the checkouts.** Run `make gc APPLY=1` from a detached checkout of
+   `origin/master`. Its totals go in the PR or the handoff, and an `unknown`
+   entry is resolved, never left.
+3. **Update the work.** The Linear item records the outcome and evidence, and
+   moves to Done or Canceled with its reason.
+4. **Record a lesson, when the process failed.** When the failure came from the
+   process (a brief, a route, a gate, a skill) rather than the code, the PR
+   records one lesson line. That line names the skill edit that fixes the
+   process, made in the same PR or filed as a follow-up. A failure in the code
+   gets no lesson line.
+
 ## Stacked delivery
 
 Use this path for dependent PR layers. GitHub and the session host manage

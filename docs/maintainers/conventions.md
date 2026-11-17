@@ -311,12 +311,13 @@ links the PR — no commit IDs, receipt paths or review ledgers. The builder's
 delegation prompt (skills to read, selectors, lease rules) belongs in the
 delegation message, not the issue.
 
-Done when describes observable outcomes under relevant inputs/preconditions,
-including must-not-happen boundaries where material, and the evidence that can
-establish them. "Add a function" or "tests green" alone is not acceptance. For
-example: "an authorized caller can complete X; a caller outside the unit cannot
-read it", with the relevant journey/check. The orchestrator derives checks from
-the agreed outcome; a reviewer cannot silently expand it.
+Done when is a finite checklist (`.agents/skills/nora-dispatch/references/brief.md`):
+at most 6 yes/no items, each naming the check that decides it, with a threshold
+for any measurement and must-not-happen boundaries where material. "Add a
+function" or "tests green" alone is not acceptance. For example: "an authorized
+caller can complete X; a caller outside the unit cannot read it", with the named
+test. On the standard and full routes the operator approves it before dispatch,
+and after that only the operator changes it.
 
 Create a parent only for work needing several separately owned/verifiable units;
 otherwise use one issue. Children state their own delta and link parent intent.

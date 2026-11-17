@@ -113,8 +113,8 @@ NEEDS YOU   only what requires the operator, with the real trade-off
 
 Lead with the conclusion; headers are subjects, not verdicts; no internal
 identifiers in prose; errors get one clause; reasoning goes in the artifact,
-not the message. **Proceed unless blocked**: stop only for a blocker or a fact
-only the operator holds. Merges deploy through the release pipeline; deploy by
+not the message. **Proceed unless blocked**: stop for a blocker, a fact only
+the operator holds, or a gate the route requires (`nora-work`). Merges deploy through the release pipeline; deploy by
 hand only on request, for host config, or to recover.
 
 **Decisions change on evidence, not argument**: a measurement, read-back or probe
