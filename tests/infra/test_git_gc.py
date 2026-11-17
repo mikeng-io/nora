@@ -481,3 +481,11 @@ def test_fetch_never_updates_a_local_branch_through_a_configured_mapping(
     sha = repo.head("feature/mapped")
     _gc(repo)
     assert repo.head("feature/mapped") == sha
+
+
+def test_fetch_failure_rejects_merged_pr_custody_too(repo: Repo) -> None:
+    """A failed refresh makes even an exact merged-PR tip unknown."""
+    repo.git("remote", "set-url", "origin", str(repo.tmp / "missing.git"))
+    out = _gc(repo)
+    assert out.returncode != 0
+    assert "git fetch origin failed" in _line(out, "local branch", "feat/squashed")

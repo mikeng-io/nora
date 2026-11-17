@@ -193,10 +193,10 @@ def _is_ancestor(repo: Path, commit: str, base: str) -> bool | None:
 
 def _merged(ctx: Context, sha: str) -> tuple[bool | None, int | None]:
     """(merged, PR number): None when a check protecting the ref could not run."""
+    if not ctx.fetch_ok:
+        return None, None  # no merge proof is accepted from a failed refresh
     if ctx.merged_prs is not None and sha in ctx.merged_prs:
         return True, ctx.merged_prs[sha]
-    if not ctx.fetch_ok:
-        return None, None  # ancestry verdicts need fresh refs
     verdict = _is_ancestor(ctx.repo, sha, MERGE_BASE)
     if verdict is True:
         return True, None
