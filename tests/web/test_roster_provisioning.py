@@ -1,11 +1,10 @@
 """Bulk onboarding through real HTTP and managed services, with generated accounts."""
 
-import time
-
 import pytest
 from aiohttp import web
 
 from nora.domain.identity import Identifier
+from nora.domain.managed import ObservationFreshness
 from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
@@ -30,7 +29,7 @@ def account(number, classification="person"):
 
 #: One producer instant for every default roster — a retry must carry the
 #: SAME stamp, not a fresh receipt time, or it stops being a retry.
-NOW_MS = int(time.time() * 1000)
+NOW_MS = 1_700_000_000_000
 
 
 def roster(key="generated-snapshot", members=None, **kwargs):
@@ -45,7 +44,8 @@ async def surface(aiohttp_client):
     services = ManagedServices(FakeBindingStore(), FakeAuthorityBackend(),
         FakeTopologySource(rooms={ROOM.id: (UNIT.id, False)},
             units={UNIT.id: "generated-workspace"}, workspaces={"generated-workspace"}),
-        FakeIdentityRegistry(), FakeLinkRequests())
+        FakeIdentityRegistry(), FakeLinkRequests(),
+        freshness=ObservationFreshness(wall_clock=lambda: NOW_MS / 1000))
     app = web.Application()
     register_management_routes(app, services=services, credentials=(ProvisioningCredential(
         Actor(ActorKind.SERVICE, service_id="generated-bridge", sources={"discord"}),
@@ -125,8 +125,8 @@ async def test_an_undated_or_stale_complete_roster_preserves_membership(surface)
     undated = roster("generated-undated", [])
     del undated["observed_ms"]
     for key, bad in (("generated-undated", None),
-                     ("generated-stale", int(time.time() * 1000) - 600_000),
-                     ("generated-future", int(time.time() * 1000) + 600_000)):
+                     ("generated-stale", NOW_MS - 600_000),
+                     ("generated-future", NOW_MS + 600_000)):
         body = roster(key, [])
         if bad is None:
             del body["observed_ms"]
@@ -143,7 +143,7 @@ async def test_an_older_snapshot_never_supersedes_a_newer_one(surface):
     """A complete roster older than the accepted mark is refused — and a
     newer PARTIAL observation advances the mark that refuses it."""
     client, services = surface
-    now = int(time.time() * 1000)
+    now = NOW_MS
     assert (await client.post(PATH, json=roster(
         "generated-newer", [account(1), account(2)],
         observed_ms=now), headers=AUTH)).status == 200
