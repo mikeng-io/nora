@@ -120,4 +120,11 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   done
 done <<< "$push_lines"
 echo "pre-push: checked $checked commit subject(s)"
+
+# LFS objects travel outside git's payload; `git lfs pre-push` uploads them for
+# the refs this hook received on stdin. Skipped when git-lfs is not installed —
+# media pushes then stay an explicit `git lfs push`, as .githooks/README.md says.
+if [ "$failed" -eq 0 ] && command -v git-lfs >/dev/null 2>&1; then
+  printf '%s\n' "$push_lines" | git lfs pre-push "$@"
+fi
 exit "$failed"

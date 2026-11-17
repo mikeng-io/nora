@@ -231,21 +231,29 @@ be taken, fix the reference, not the number.
 
 ## Cleanup
 
-A branch whose PR merged and whose worktree is gone is dead weight; the history
-is in `master`'s merge commits. GitHub automatically deletes merged head branches;
-local branches and worktrees still need manual cleanup:
+Artifact retirement is mechanical, not a judgement: `make gc` fetches origin
+and lists worktrees before classifying every remote branch, local branch and
+registered worktree as `remove`, `keep: <reason>` or `unknown: <error>`, and
+exits nonzero while anything is unknown or a removal fails. `make gc APPLY=1`
+performs the removals: remote branches by expected-SHA lease (`git push
+--force-with-lease=<ref>:<sha> origin :<ref>`), local branches by `git
+update-ref -d` against the classified SHA, worktrees by `git worktree remove`
+after re-checking HEAD and clean status, and stale worktree registrations by
+deleting only their own `worktrees/<id>` admin dir — never a global `git
+worktree prune`. Each removed ref is appended with its SHA, and the PR number
+when custody is via a merged PR, to
+`${XDG_STATE_HOME:-~/.local/state}/nora/git-gc.log` so it can be restored. The
+orchestrator runs it at intake and after merge ([ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership)).
 
-```bash
-git worktree list                       # what is checked out where — never delete a branch with a live worktree
-git branch --merged master              # local candidates
-git branch -r --merged origin/master    # remote candidates
-git branch -d <branch>                  # refuses if unmerged, which is the point
-git push origin --delete <branch>
-```
-
-Before deleting, check for a live session on that branch as well as a worktree.
-A branch carrying uncommitted changes from minutes ago is not dead work — it is
-somebody else's turn in progress.
+Kept by rule: `master`, `deployments` and `dependabot/*`; the head of any open
+PR; branches checked out in a worktree; the primary checkout; locked
+worktrees; `--keep <path>`. Merged means an ancestor of `origin/master`, or
+the ref's tip is the head of a merged PR — a commit GitHub keeps under
+`refs/pull/N/head`; an open integration-PR head is not custody. A worktree
+leaves only when clean, merged and untouched for 24 hours — a branch carrying
+uncommitted changes from minutes ago is somebody else's turn in progress, and
+the recency check keeps it that way. A failed fetch, `gh` call, status check
+or merge-base check makes the affected verdicts `unknown`, never a removal.
 
 ## Local comments and configuration sources
 
@@ -288,8 +296,11 @@ Retire only obsolete execution views after preserving owners, holds and evidence
 One issue is one bounded executable outcome, not a roadmap capability or copied
 GitHub report. Title the concrete result, not a phase or label. Its description
 is the short work brief from `nora-dispatch`:
-Intent, Done when, Boundaries, References. Keep current acceptance in that body;
-put progress/evidence links in a short handoff rather than a comment log.
+Intent, Done when, Boundaries, References, Current state. Keep current acceptance in that
+body. Current state is at most five lines, replaced rather than appended, and
+links the PR — no commit IDs, receipt paths or review ledgers. The builder's
+delegation prompt (skills to read, selectors, lease rules) belongs in the
+delegation message, not the issue.
 
 Done when describes observable outcomes under relevant inputs/preconditions,
 including must-not-happen boundaries where material, and the evidence that can
