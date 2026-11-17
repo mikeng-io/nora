@@ -314,3 +314,115 @@ def test_malformed_source_scope_or_secret_reference_is_not_a_valid_configuration
 ):
     with pytest.raises(ConfigError):
         configuration(SETTINGS.replace(old, new))
+
+
+@pytest.mark.parametrize("failed_service", ["kratos", "keto"])
+@pytest.mark.parametrize("status", [401, 503])
+async def test_selected_backend_refuses_unavailable_ory_instead_of_borrowing_file_authority(
+    configuration, aiohttp_server, pg_module_url, failed_service, status,
+):
+    failed = False
+    calls = []
+
+    async def kratos(_request):
+        calls.append("kratos")
+        return web.json_response({"error": "absent"},
+            status=status if failed and failed_service == "kratos" else 404)
+
+    async def keto(_request):
+        calls.append("keto")
+        if failed and failed_service == "keto":
+            return web.json_response({"error": "unavailable"}, status=status)
+        return web.json_response({"relation_tuples": [], "next_page_token": ""})
+
+    app = web.Application()
+    app.router.add_get("/admin/identities/by/external/boot-probe", kratos)
+    app.router.add_get("/relation-tuples", keto)
+    server = await aiohttp_server(app)
+    url = str(server.make_url("")).rstrip("/")
+    settings = SETTINGS.replace("http://127.0.0.1:4434", url).replace(
+        "http://127.0.0.1:4466", url).replace("http://127.0.0.1:4467", url)
+    cfg = configuration(settings)
+    engine = create_sql_engine(pg_module_url)
+    wiring = None
+    try:
+        wiring = await managed_identity(cfg, None, None, engine)
+        assert not wiring.services.access.is_file_backend
+        assert calls == ["kratos", "keto"]
+        await wiring.services.aclose()
+        await wiring.session.close()
+        wiring = None
+        failed = True
+        calls.clear()
+        with pytest.raises(StartupError, match=failed_service.title()):
+            wiring = await managed_identity(cfg, None, None, engine)
+        assert failed_service in calls
+    finally:
+        if wiring is not None:
+            await wiring.services.aclose()
+            await wiring.session.close()
+        await engine.dispose()
+
+
+async def test_file_selection_reads_and_refuses_mutation_without_ory_or_a_database(
+    configuration, aiohttp_server,
+):
+    from nora.persons import load_persons
+    from nora.policy import load_policy
+
+    calls = []
+
+    async def unavailable(request):
+        calls.append(request.path)
+        return web.json_response({"error": "unavailable"}, status=503)
+
+    app = web.Application()
+    app.router.add_route("*", "/{tail:.*}", unavailable)
+    server = await aiohttp_server(app)
+    url = str(server.make_url("")).rstrip("/")
+    settings = SETTINGS.replace('backend = "managed"', 'backend = "file"').replace(
+        "http://127.0.0.1:4434", url).replace("http://127.0.0.1:4466", url).replace(
+        "http://127.0.0.1:4467", url)
+    cfg = configuration(settings, secret=None)
+    cfg.identity_file.write_text('[persons.generated_file_identity]\nname="Generated File Name"\n'
+        '[[persons.generated_file_identity.discord]]\nuser_id="generated-file-account"\n')
+    cfg.policy_file.write_text('[[conversations]]\nplatform="discord"\n'
+        'id="generated-guild/generated-channel"\nlabel="Generated File Room"\n'
+        'persons=["generated_file_identity"]\n')
+    before = cfg.identity_file.read_bytes(), cfg.policy_file.read_bytes()
+    wiring, startup_error = None, None
+    try:
+        try:
+            wiring = await managed_identity(cfg, load_persons(cfg.identity_file),
+                load_policy(cfg.policy_file), None)
+        except StartupError as error:
+            startup_error = type(error).__name__
+        assert startup_error is None, "file selection must not require managed services"
+        assert wiring is not None and wiring.session is None
+        access = wiring.services.access
+        assert access.is_file_backend
+        ref = await access.resolve_ref("discord", "generated-file-account")
+        assert ref is not None and ref.person_id == "generated_file_identity"
+        assert (await access.check(scope=ROOM, person_id=ref.person_id, permit="view")).allowed
+        refused = await wiring.services.bindings.set_lifecycle(
+            person_id=ref.person_id, lifecycle=PersonLifecycle.SUSPENDED)
+        assert refused.status is OutcomeStatus.DENIED
+        assert before == (cfg.identity_file.read_bytes(), cfg.policy_file.read_bytes())
+        assert (await access.check(scope=ROOM, person_id=ref.person_id, permit="view")).allowed
+        assert not calls
+    finally:
+        if wiring is not None:
+            await wiring.services.aclose()
+            if wiring.session is not None:
+                await wiring.session.close()
+
+
+@pytest.mark.parametrize("name,url", [
+    ("kratos_admin_url", "http://127.0.0.1:4434"),
+    ("keto_read_url", "http://127.0.0.1:4466"),
+    ("keto_write_url", "http://127.0.0.1:4467"),
+])
+def test_managed_selection_requires_every_configured_listener(configuration, name, url):
+    assert configuration().identity.backend == "managed"
+    with pytest.raises(ConfigError, match="must name the private Ory"):
+        configuration(SETTINGS.replace(f'{name} = "{url}"', f'{name} = ""'))
