@@ -87,6 +87,12 @@ policy.toml
 .claude/worktrees/
 .worktrees/
 
+# git-lfs writes these into .githooks/ because core.hooksPath is set; they only
+# support LFS file locking, which this repo does not use.
+/.githooks/post-checkout
+/.githooks/post-commit
+/.githooks/post-merge
+
 .eval-cache/
 
 # The build-time version stamp (DEC-79). GENERATED, never committed: it is

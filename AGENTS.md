@@ -1,13 +1,12 @@
 # AGENTS.md
-
 The entry point for any agent working in this repo. `CLAUDE.md` points here so
-there is one copy. **Read [ORCHESTRATION.md](ORCHESTRATION.md) before assigning
-work**: it owns worker selection, review tiers and artifact boundaries. When a
-task matches a skill in [Skills](#skills-the-procedures), load it before the first edit.
+there is one copy. Start or resume engineering work with `nora-work`: it routes
+the current outcome through the lifecycle in [ORCHESTRATION.md](ORCHESTRATION.md).
+That policy owns responsibilities and boundaries; skills own procedures. Load
+only the skill and references needed for the next action, before that action.
 
-This file states what holds now. It is revised in place, never appended to: a
-new rule rewrites the section that owns its subject, and a rule that no longer
-holds is deleted. Git is the history.
+State current instructions once; revise their owner in place. Delete obsolete
+rules. Git is the history.
 
 ## The spine: comprehend → measure → serialize
 
@@ -79,7 +78,7 @@ refactor, threshold, prompt or doctrine wording, eval case) goes straight to
 code. `nora-design` owns the procedure.
 
 **Git and GitHub are the log.** Commits and PRs record what changed and why;
-plans, roadmaps and open items are GitHub issues and the project. The ADRs are
+GitHub Project owns roadmap; Linear owns execution; GitHub Issues hold reports. The ADRs are
 the one decision record kept as history; `design/09-decision-index.md` lists
 the decisions that hold now, each with its test or `NOT ENFORCED` (`nora-decision`).
 
@@ -114,8 +113,8 @@ NEEDS YOU   only what requires the operator, with the real trade-off
 
 Lead with the conclusion; headers are subjects, not verdicts; no internal
 identifiers in prose; errors get one clause; reasoning goes in the artifact,
-not the message. **Proceed unless blocked**: stop only for a blocker or a fact
-only the operator holds. Merges deploy through the release pipeline; deploy by
+not the message. **Proceed unless blocked**: stop only for a blocker or what the
+operator alone holds: intent, authority or a redesign (`nora-work`). Merges deploy through the release pipeline; deploy by
 hand only on request, for host config, or to recover.
 
 **Decisions change on evidence, not argument**: a measurement, read-back or probe
@@ -205,6 +204,7 @@ order of the commands and the check after each; a new skill adds both at once.
 
 | when the task is | load |
 |---|---|
+| starting or resuming engineering work, choosing the next stage, or handing over | `nora-work` |
 | starting a change, running the gate, committing, opening or merging a PR | `nora-land` |
 | turning a design or issue into briefs, delegating a build, or reading a builder's result back | `nora-dispatch` |
 | reviewing a change against its original scope and acceptance | `nora-review` |
