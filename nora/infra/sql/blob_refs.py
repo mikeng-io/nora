@@ -82,6 +82,17 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("comprehend_result", "payload"): _TRACE,
     ("comprehend_web_page", "tool_call"): "web_fetch URL arguments and call id; no blob custody",
     ("legacy_entity", "attributes"): "semantic attributes; evidence source stores own blob custody",
+    ("claim", "content"): (
+        "claim slots and citation refs; evidence source rows own blob custody"
+    ),
+    ("claim", "lineage"): _LINEAGE,
+    ("edge", "lineage"): _LINEAGE,
+    ("entity", "lineage"): _LINEAGE,
+    ("intention", "done_when"): "condition form and operands, never blob custody",
+    ("intention", "drop_when"): "condition form and operands, never blob custody",
+    ("intention", "holds_while"): "condition form and operands, never blob custody",
+    ("intention", "lineage"): _LINEAGE,
+    ("intention", "trigger"): "one delivery condition form, never blob custody",
     ("extraction", "snapshot"): "frozen source text; message rows own blob custody",
     ("extraction_claim", "content"): "statement slots and source ids, never blob custody",
     ("extraction_attempt", "dropped_claims"): "reason/count JSON only, never claim text",
