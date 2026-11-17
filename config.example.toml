@@ -746,7 +746,7 @@ headers_env = ""                      # env var NAME holding auth headers; reuse
 # sources = ["discord"]
 # scopes = [{ kind = "room", id = "discord/guild/channel" }]  # exact policy room
 # [identity.onboarding] — automatic collection discovery for managed mode
-# (issue #528 Task 8): each [[identity.onboarding.collections]] rule feeds
+# Each [[identity.onboarding.collections]] rule feeds
 # ONE platform collection's member set into ONE scope, under a provisioning
 # service's own identity — its `service`/`platform`/`scope` must already be
 # admitted by [identity.provisioning.<service>] above. Nothing onboards

@@ -107,8 +107,9 @@ The shared runtime: `platform/`, `ingest/`, `engagement/`,
 `agent/` (Strands, tool registry, context assembly), `app/` (dispatch,
 lifecycle, composition root), `language/`, `doctrine/`, `instructions/`,
 `skills/`, `dreamer/`, `subagent/`, `web/` (portal API), `obs/`, `infra/`,
-`presence/`, `analytics/`, `subject/`, `testing/`, `config.py`, `secret.py`,
-`config_reload.py`, `memory_routing.py`, `tag.py`, and `domain/`, the shared
+`presence/`, `analytics/`, `subject/`, `testing/`, `config.py`, `config_identity.py`,
+`secret.py`, `config_reload.py`, `access.py` (selected identity/access facade),
+`memory_routing.py`, `tag.py`, and `domain/`, the shared
 kernel. `documents/` and `persons.py`, `persons_file.py`, `policy.py` (`people`)
 are area code still to move.
 
