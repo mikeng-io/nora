@@ -1,5 +1,21 @@
 # Changelog
 
+## [7.19.6](https://github.com/mikeng-io/nora/compare/v7.19.5...v7.19.6) (2026-11-17)
+
+
+### Features
+
+* **scripts:** retire merged branches and stale worktrees by rule ([b07b55d](https://github.com/mikeng-io/nora/commit/b07b55d9b804a2877ee6b8a7102521382f51a1a4))
+
+
+### Bug Fixes
+
+* **scripts:** accept no merge proof after a failed refresh ([44c03e4](https://github.com/mikeng-io/nora/commit/44c03e415edd6b9416de303095ed0f67d7aa2ec1))
+* **scripts:** ignore configured fetch mappings when refreshing before classification ([80b7381](https://github.com/mikeng-io/nora/commit/80b7381f354e4c671e83f1e8bae632d106c5422c))
+* **scripts:** keep a failed remote delete a failure and recheck stale registrations ([e9a8765](https://github.com/mikeng-io/nora/commit/e9a876529fd48623b0ac3e1250facf362705b262))
+* **scripts:** make gc fresh, leased and scoped to classified removals ([3dbe6ab](https://github.com/mikeng-io/nora/commit/3dbe6ab22f0f0d0d4c855fedd21a3e61e775df70))
+* **scripts:** prune only remote-tracking refs before classifying ([f38ec85](https://github.com/mikeng-io/nora/commit/f38ec8540c8028bf6cf572c2306566eecdd53fe4))
+
 ## [7.19.5](https://github.com/mikeng-io/nora/compare/v7.19.4...v7.19.5) (2026-11-15)
 
 
