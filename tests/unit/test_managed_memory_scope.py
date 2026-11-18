@@ -137,6 +137,44 @@ async def test_memory_search_reads_its_unit_and_refuses_matching_sibling_unit_co
         hit.node.origin_room == "signal:generated-room-a" for hit in result.hits)
 
 
+async def test_memory_search_refuses_content_bound_to_a_sibling_unit_member():
+    """A member only of the sibling unit's room is real to the platform
+    but never listed in this room: a node carrying that identity cannot
+    place inside this reader's scope (`persons <= listed_here`), while
+    the in-unit member's node still returns."""
+    bindings, access, _ = await _world()
+    sibling = "generated-sibling-member"
+    await bindings.register(
+        person=ManagedPerson(person_id=sibling, display_name=sibling,
+                             lifecycle=PersonLifecycle.ACTIVE),
+        account=ManagedAccount(
+            account_id=str(uuid4()), person_id=sibling, platform="signal",
+            identifiers=frozenset(
+                {Identifier("signal", "uuid", "generated-account-sibling")}),
+            state=AccountState.BOUND),
+        membership=None,
+    )
+    # The membership is real — in the sibling unit's room only.
+    assert (await bindings.set_membership(
+        person_id=sibling,
+        scope=Scope(ScopeKind.ROOM, "signal/generated-room-b"),
+        member=True, source="generated-source"
+    )).status is OutcomeStatus.COMPLETE
+    index = FakeMemoryIndex([
+        IndexedNode("message", "generated-in-unit", "generated apples", NOW,
+                    persons=(PERSON,), origin_room="signal:generated-room-a"),
+        IndexedNode("message", "generated-sibling-bound", "generated apples",
+                    NOW, persons=(sibling,),
+                    origin_room="signal:generated-room-a"),
+    ])
+    search = MemorySearch(index, Metrics(), access=access)
+    result = await search.search(query="apples", person_id=None, target=TARGET,
+                                 now_ms=NOW, social_off=())
+    assert result.status in {"ok", "partial"}
+    assert {hit.node.key for hit in result.hits} == {
+        ("message", "generated-in-unit")}
+
+
 async def test_memory_store_outage_is_unavailable_and_recovery_restores_the_positive_read():
     bindings, access, _ = await _world()
     index = FakeMemoryIndex([

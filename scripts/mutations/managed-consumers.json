@@ -166,5 +166,47 @@
   "old": "                        MANAGED_MEMBERSHIP.c.scope_kind == scope.kind.value,\n                        MANAGED_MEMBERSHIP.c.scope_id == scope.id,\n                        MANAGED_MEMBERSHIP.c.state == MembershipState.MEMBER.value,",
   "new": "                        MANAGED_MEMBERSHIP.c.state == MembershipState.MEMBER.value,",
   "target": "tests/integration/test_managed_analytics.py::test_selected_analytics_folds_recorded_circles_without_file_authority"
+ },
+ {
+  "name": "collective social evidence follows this unit's room membership",
+  "file": "nora/language/background_identity.py",
+  "old": "(members is None or canonical in members)",
+  "new": "(members is None or True)",
+  "target": "tests/unit/test_managed_background_access.py::test_collective_batch_refuses_held_social_for_a_sibling_unit_member"
+ },
+ {
+  "name": "memory hits carry only persons the reading room lists",
+  "file": "nora/domain/memory_index.py",
+  "old": "    if not set(node.persons) <= scope.listed_here:",
+  "new": "    if False and not set(node.persons) <= scope.listed_here:",
+  "target": "tests/unit/test_managed_memory_scope.py::test_memory_search_refuses_content_bound_to_a_sibling_unit_member"
+ },
+ {
+  "name": "the operator gate checks standing on the op's scope",
+  "file": "nora/people/app/management_invocation.py",
+  "old": "                if not permission.allowed:",
+  "new": "                if False:",
+  "target": "tests/unit/test_scoped_profile.py::test_a_sibling_only_member_is_denied_the_local_scope_profile_edit"
+ },
+ {
+  "name": "the fire-time (room, person) re-check gates reminder delivery",
+  "file": "nora/app/heartbeat.py",
+  "old": "            if verdict.allowed:",
+  "new": "            if True:",
+  "target": "tests/unit/test_managed_reminders.py::test_a_sibling_only_requesters_due_reminder_fails_the_fire_time_recheck"
+ },
+ {
+  "name": "a complete roster is what authorizes departure",
+  "file": "nora/people/app/managed_authority.py",
+  "old": "        if payload.complete:",
+  "new": "        if payload.complete and False:",
+  "target": "tests/unit/test_roster_observation.py::test_a_complete_retraction_leaves_restrictions_and_other_support_in_place"
+ },
+ {
+  "name": "an unconfirmed departure blocks the member's authority answer",
+  "file": "nora/people/app/managed_authority.py",
+  "old": "            if block.person_id in {person_id, canonical} and block.scope == scope:",
+  "new": "            if False:",
+  "target": "tests/unit/test_roster_observation.py::test_an_incomplete_roster_source_invalidates_the_member_answer_not_the_member"
  }
 ]

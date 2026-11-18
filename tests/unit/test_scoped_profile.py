@@ -579,3 +579,41 @@ async def test_the_room_facing_name_reads_forward_the_callers_scope():
     ref = await access.resolve_ref(
         "discord", "generated-generated-member-account", scope=ROOM)
     assert ref is not None and ref.name == NICK
+
+
+async def test_a_sibling_only_member_is_denied_the_local_scope_profile_edit():
+    """Membership in the sibling unit is real — and confers nothing on
+    this room's chain: the same operator gate that admits the in-unit
+    holder refuses the sibling-only member's edit before any effect."""
+    services = _services()
+    store = services.bindings
+    await _person(services)
+    sibling = "generated-sibling-member"
+    await _person(services, sibling)
+    await store.set_membership(person_id=sibling, scope=SIBLING,
+                               member=True, source="generated")
+    await services.backend.put_relation(
+        scope=SIBLING, relation="member", person_id=sibling)
+    for child, parent in (
+            (ROOM, UNIT), (SIBLING, SIBLING_UNIT),
+            (UNIT, WORKSPACE), (SIBLING_UNIT, WORKSPACE)):
+        await services.backend.publish_containment(scope=child, parent=parent)
+    # The member standing is real — in the sibling unit, where it grants.
+    assert (await services.backend.check(
+        scope=SIBLING, person_id=sibling, permit="view")).allowed
+    op = Operation(
+        operation_id="generated-op-sibling", kind="update_profile",
+        actor=Actor(ActorKind.OPERATOR, person_id=sibling, scope=ROOM),
+        target=Target(TargetKind.PERSON, person_id=PERSON),
+        payload=ProfileEdit(nickname=NICK, scope=ROOM),
+        observed_revisions={"identity": "0", "authority": "a-1"})
+    outcome = await _apply(services, store, op, person_id=sibling)
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "operator-not-authorized"
+    assert store.scoped_names == {}
+
+    # The in-unit positive control: the same edit from an operator whose
+    # standing is on this room's chain completes.
+    await _operator(services, services.backend)
+    positive = await _apply(services, store, _operation(op_id="generated-op-local"))
+    assert positive.status is OutcomeStatus.COMPLETE

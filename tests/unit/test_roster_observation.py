@@ -339,6 +339,75 @@ async def test_an_interrupted_roster_replays_as_superseded_after_a_newer_one():
     )).verdict is Verdict.ALLOWED
 
 
+async def test_a_complete_retraction_leaves_restrictions_and_other_support_in_place():
+    """The roster owns only its `member` tuples and sync support: the
+    member's independent grant and the restriction against them survive
+    their departure — and the restriction still answers for them after."""
+    store, backend, svc = _service()
+    await _member(store, backend)
+    await backend.put_relation(
+        scope=ROOM, relation="grant_view", person_id="person_member")
+    await backend.put_relation(
+        scope=ROOM, relation="deny_view", person_id="person_member")
+    # The restriction answers even while the member holds the room.
+    assert (await svc.check(
+        scope=ROOM, person_id="person_member", permit="view"
+    )).verdict is Verdict.DENIED
+    outcome = await svc.apply(_roster("op-retract", NOW - 10_000, members=()))
+    assert outcome.status is OutcomeStatus.COMPLETE
+    # The retracted membership is gone — sync's own rows only.
+    assert not await store.members_of(ROOM)
+    relations = await backend.relations_on(scope=ROOM)
+    assert ("member", "person_member") not in relations
+    # Other support and the restriction survive the retraction, and the
+    # restriction is still what answers: the surviving grant alone would
+    # allow `view`.
+    assert ("grant_view", "person_member") in relations
+    assert ("deny_view", "person_member") in relations
+    assert (await svc.check(
+        scope=ROOM, person_id="person_member", permit="view"
+    )).verdict is Verdict.DENIED
+
+
+async def test_an_incomplete_roster_source_invalidates_the_member_answer_not_the_member():
+    """A roster that cannot finish its own departure retracts nothing —
+    and the authority answer for the member it half-withdrew is
+    invalidated (`authority-blocked`), never served as still-true, until
+    reconciliation settles the journaled intent."""
+    store, backend, svc = _service(backend=_DropsFail())
+    await _member(store, backend)
+    assert isinstance(backend, _DropsFail)
+    backend.fail_drops = True
+    interrupted = await svc.apply(_roster("op-incomplete", NOW - 20_000))
+    assert interrupted.status is OutcomeStatus.UNAVAILABLE
+    record = await store.operation("op-incomplete")
+    assert record is not None
+    assert record.state is OperationJournalState.INCOMPLETE
+    # Nothing was retracted — the membership row stands untouched.
+    members = await store.members_of(ROOM)
+    assert [m.person_id for m in members] == ["person_member"]
+    assert members[0].state is MembershipState.MEMBER
+    # But the member's projection no longer answers: the local block the
+    # interrupted source raised makes `check` unavailable, not allowed.
+    [block] = await store.authority_blocks()
+    assert (block.person_id, block.scope, block.reason) == (
+        "person_member", ROOM, "sync-departure-unconfirmed")
+    verdict = await svc.check(
+        scope=ROOM, person_id="person_member", permit="speak")
+    assert verdict.verdict is Verdict.UNAVAILABLE
+    assert verdict.detail == "authority-blocked"
+    # Reconciliation finishes the journaled intent; the block clears and
+    # the answer returns — now truthfully memberless.
+    backend.fail_drops = False
+    finished = await svc.reconcile()
+    assert [r.operation_id for r in finished] == ["op-incomplete"]
+    assert await store.authority_blocks() == ()
+    assert not await store.members_of(ROOM)
+    assert (await svc.check(
+        scope=ROOM, person_id="person_member", permit="speak"
+    )).verdict is Verdict.DENIED
+
+
 @pytest.mark.parametrize("elapsed_ms", [0, 120_000])
 async def test_reconstructed_roster_rechecks_freshness_before_departure(elapsed_ms):
     store, backend, initial = _service(backend=_DropsFail())
