@@ -157,6 +157,7 @@ class PresenceStore:
                 PRESENCE_FIXES.c.ts >= since_ts,
                 PRESENCE_FIXES.c.ts <= until_ts,
             )
+            .ext(distinct_on(PRESENCE_FIXES.c.ts))
             .order_by(PRESENCE_FIXES.c.ts.asc(), PRESENCE_FIXES.c.id.asc())
         )
         async with self._engine.connect() as conn:

@@ -152,8 +152,7 @@ class SqlMobilityStore(MobilityWrites):
         self._engine = engine
         self._metrics = metrics
         self._build_id = build_id
-        reg = registration or engine.get_execution_options().get("item_registration")
-        self._aggregates = AggregateWrites(SqlCognitiveGraph(engine), reg)
+        self._aggregates = AggregateWrites(SqlCognitiveGraph(engine), registration)
 
     def scoped(self, build_id: int) -> SqlMobilityStore:
         """Bind a writer to one build."""
@@ -278,13 +277,13 @@ class SqlMobilityStore(MobilityWrites):
             out.append(
                 {
                     "id": place.id,
-                    "kind": place.kind,
+                    "kind": place.source_kind,
                     "label": place.label,
                     "saved": place.saved_place_id is not None,
                     "lat": place.lat,
                     "lng": place.lng,
                     "radius_m": place.radius_m,
-                    "confidence": place.confidence,
+                    "confidence": place.place_confidence,
                     "first_seen_ts": place.first_seen_ts,
                     "last_seen_ts": (agg.last_seen_ts if agg is not None and until_ms is not None
                                      else place.last_seen_ts),
@@ -625,7 +624,13 @@ class SqlMobilityStore(MobilityWrites):
         order and cut at `limit`, then the two are merged and cut again, so
         the result is exactly the first `limit` events of the merged
         stream."""
-        fix_recorded = PRESENCE_FIXES.c.recorded_at
+        fix = PRESENCE_FIXES.c
+        fix_recorded = fix.recorded_at
+        first_fix = PRESENCE_FIXES.alias("original_fix").c
+        copied_fix = sa.exists().where(
+            first_fix.circle_id == fix.circle_id, first_fix.person_id == fix.person_id,
+            first_fix.ts == fix.ts, first_fix.id < fix.id,
+        )
         fixes_stmt = (
             sa.select(
                 PRESENCE_FIXES.c.id, PRESENCE_FIXES.c.ts,
@@ -637,13 +642,21 @@ class SqlMobilityStore(MobilityWrites):
                 PRESENCE_FIXES.c.person_id.in_(list(person_ids)),
                 PRESENCE_FIXES.c.accuracy_m <= 100.0,
                 PRESENCE_FIXES.c.wire_state == "live",
-                fix_recorded <= through_ms,
+                fix_recorded <= through_ms, ~copied_fix,
                 _after(fix_recorded, FIX_RANK, PRESENCE_FIXES.c.id, after),
             )
             .order_by(fix_recorded.asc(), PRESENCE_FIXES.c.id.asc())
             .limit(limit)
         )
-        poll_recorded = _ms(SOURCE_HEALTH.c.recorded_at)
+        poll = SOURCE_HEALTH.c
+        poll_recorded = _ms(poll.recorded_at)
+        first_poll = SOURCE_HEALTH.alias("original_poll").c
+        copied_poll = sa.exists().where(
+            first_poll.source == poll.source, first_poll.scope == poll.scope,
+            first_poll.at_ms == poll.at_ms, first_poll.recorded_at == poll.recorded_at,
+            first_poll.event == poll.event, first_poll.outcome == poll.outcome,
+            first_poll.unit < poll.unit,
+        )
         polls_stmt = (
             sa.select(
                 SOURCE_HEALTH.c.id, SOURCE_HEALTH.c.at_ms,
@@ -655,7 +668,7 @@ class SqlMobilityStore(MobilityWrites):
                 SOURCE_HEALTH.c.outcome == "ok",
                 SOURCE_HEALTH.c.scope.in_(list(circle_ids)),
                 SOURCE_HEALTH.c.at_ms >= after.recorded_ms - _POLL_WRITE_LAG_BOUND_MS,
-                poll_recorded <= through_ms,
+                poll_recorded <= through_ms, ~copied_poll,
                 _after(poll_recorded, POLL_RANK, SOURCE_HEALTH.c.id, after),
             )
             .order_by(poll_recorded.asc(), SOURCE_HEALTH.c.id.asc())

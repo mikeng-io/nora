@@ -244,14 +244,16 @@ class SqlSocialStreamStore(SocialItemWrites):
     """The stream's six tables, as twenty-nine verbs."""
 
     def _readable(self) -> list[Any]:
-        """An item a reader may see: its person has not opted out, and it has
-        no `gone` or `hidden` state row."""
+        """One readable copy of each logical item, respecting opt-outs and hiding."""
         i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE
         stated = sa.exists().where(
             s.c.network == i.c.network, s.c.item_id == i.c.item_id,
             s.c.source_state.in_(HIDING_STATES),
         )
-        where: list[Any] = [~stated]
+        first = i.alias("original_item")
+        copied = sa.exists().where(first.c.network == i.c.network, first.c.item_id == i.c.item_id,
+            sa.tuple_(first.c.recorded_at, first.c.id) < sa.tuple_(i.c.recorded_at, i.c.id))
+        where: list[Any] = [~stated, ~copied]
         if self._opted_out:
             where.append(i.c.person.not_in(sorted(self._opted_out)))
         return where
@@ -327,10 +329,7 @@ class SqlSocialStreamStore(SocialItemWrites):
     async def posted(
         self, *, persons: Collection[str], through_ms: int, network: str | None = None,
     ) -> SocialInput:
-        """What the Rollup's daybook counts for `persons`: each readable item
-        recorded at or before `through_ms`, whenever it was taken (a back-filled
-        item lands in its own day), and per person the first answered poll
-        recorded by then. A person who has opted out has neither."""
+        """The daybook's readable items and first answered polls as of the watermark."""
         at = datetime.fromtimestamp(through_ms / 1000, tz=UTC)
         i, p = SOCIAL_ITEM, SOCIAL_POLL
         who = sorted(set(persons) - self._opted_out)
@@ -450,16 +449,17 @@ class SqlSocialStreamStore(SocialItemWrites):
     async def calls_since(
         self, *, network: str, since: datetime,
     ) -> list[tuple[datetime, PollStage]]:
-        """Every probe and read recorded on `network` after `since`, oldest
-        first, as `(recorded_at, stage)`: the calls a poller that has just
-        started counts against its hourly budget. An `abandoned` row marks a
-        back-fill's end beside its call's own row and is not a call."""
+        """One entry per probe or read for the poller's hourly budget."""
         p = SOCIAL_POLL
+        first = p.alias("original_poll")
+        copied = sa.exists().where(first.c.unit < p.c.unit, *(
+            first.c[c] == p.c[c] for c in ("network", "person", "recorded_at", "stage")
+        ))
         stmt = (
             sa.select(p.c.recorded_at, p.c.stage)
             .where(
                 p.c.network == network, p.c.recorded_at > since,
-                p.c.outcome != "abandoned",
+                p.c.outcome != "abandoned", ~copied,
             )
             .order_by(p.c.recorded_at, p.c.id)
         )

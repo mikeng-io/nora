@@ -85,7 +85,7 @@ def _item(item_id: str, caption: str, read_id: str) -> dict:
         "item_id": item_id,
         "person": PERSON,
         "account": "generated-account",
-        "kind": "post",
+        "source_kind": "post",
         "taken_at": datetime(2026, 10, 29, 12, 0, tzinfo=UTC),
         "caption": caption,
         "seen_at": datetime(2026, 10, 29, 12, 5, tzinfo=UTC),

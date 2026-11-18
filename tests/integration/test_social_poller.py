@@ -70,6 +70,7 @@ from nora.testing import (
     FakeSocialSubjectIndex,
 )
 from nora.testing.stimuli import InMemorySourceHealthLog
+from tests.infra.rollup_fixtures import insert_rollup_row
 
 ADA, BEA = "10000001", "10000002"
 _CDN = "https://scontent.cdninstagram.com/v/t51"
@@ -1700,11 +1701,10 @@ async def test_activity_boost_reads_only_the_persons_current_unit_activity(world
             ).returning(ROLLUP_BUILD.c.id))).scalar_one()
             table = ROLLUP_OUTING if kind == "outing" else ROLLUP_COLOCATION
             extra = {} if kind == "outing" else {"radius_m": 50.0, "stay_count": 2}
-            await conn.execute(sa.insert(table).values(
-                build_id=build, unit="friends", lineage={}, valid_from_ms=ms-1000,
-                valid_to_ms=ms, as_of_ms=ms, persons=["ada"], lat=0.0, lng=0.0,
-                open=1, **extra,
-            ))
+            await insert_rollup_row(conn, table, build_id=build, unit="friends", build_lineage=[],
+                valid_from_ms=ms-1000, valid_to_ms=ms, as_of_ms=ms,
+                persons=["ada"], lat=0.0, lng=0.0, open=1, **extra,
+            )
     args = {"person": "ada", "units": ("friends",), "rooms": (("signal", "g1"),),
             "now": now, "timezone": "Asia/Hong_Kong"}
     assert await world.store.social_activity(**args)

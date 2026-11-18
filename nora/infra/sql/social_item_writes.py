@@ -100,6 +100,8 @@ class SocialItemWrites:
             values["id"] = id
         async with self._engine.begin() as conn:
             units = self._registration.scope.person_units(person) if self._registration else ()
+            if self._registration is not None:
+                values["recorded_at"] = await conn.scalar(sa.select(sa.func.clock_timestamp()))
             for index, unit in enumerate(units or (None,)):
                 copy = dict(values)
                 if id is not None and index:
@@ -111,7 +113,9 @@ class SocialItemWrites:
         unit: str | None, person: str | None,
     ) -> None:
         if (reg := self._registration) is not None:
-            now = (await conn.execute(sa.select(sa.func.clock_timestamp()))).scalar_one()
+            now = values.get("recorded_at")
+            if now is None:
+                now = (await conn.execute(sa.select(sa.func.clock_timestamp()))).scalar_one()
             values = {
                 **values, "recorded_at": now,
                 **await reg.planes(

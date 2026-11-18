@@ -294,3 +294,17 @@ async def test_one_item_per_observing_unit(engine: AsyncEngine, name: str) -> No
     assert {row.unit for row in rows} == {_UNIT, _SECOND}
     assert all(row in registry_rows and row.graph_id for row in rows)
     assert len({row.graph_id for row in rows}) == 2
+    if name == "presence_fixes":
+        fixes = await PresenceStore(engine).window(
+            circle_id=_CIRCLE, person_id=_PERSON, since_ts=_MS, until_ts=_MS,
+        )
+        assert len(fixes) == 1
+    if name == "social_item":
+        through = int(datetime.now(UTC).timestamp() * 1000) + 1000
+        posted = await SqlSocialStreamStore(engine).posted(persons=[_PERSON], through_ms=through)
+        assert len(posted.items) == 1
+    if name == "social_poll":
+        calls = await SqlSocialStreamStore(engine).calls_since(
+            network="instagram", since=datetime(1970, 1, 1, tzinfo=UTC),
+        )
+        assert len(calls) == 1
