@@ -22,7 +22,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from openai import AsyncOpenAI
 
@@ -93,6 +93,7 @@ from nora.app.composition_stores import (
 from nora.app.computer_sweeper import ComputerSessionSweeper
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.graph_batches import GraphBatchProducer
+from nora.app.lifecycle import StartupOwner
 from nora.app.memory_routing import (
     profile_scopes_of_person,
     workspaces_of_person,
@@ -147,6 +148,7 @@ from nora.persons import Persons
 from nora.platform.bridge.client import (
     BridgeAdapter,
 )
+from nora.platform.discord.bridge_control import BridgeControlClient
 from nora.platform.registry import AdapterRegistry
 from nora.platform.signal.adapter import SignalAdapter
 from nora.policy import Policy
@@ -161,18 +163,7 @@ from .participation import ParticipationTrigger
 from .proactive_screen import ProactiveScreen
 from .runtime import BackgroundTasks, ComputerLifecycle
 
-if TYPE_CHECKING:
-    pass
-
 log = logging.getLogger("nora.app.composition")
-
-
-# Provider name (`DescriberConfig.provider`) → its direct lane. `"omniroute"`
-# is NOT here: it is the process-wide gateway client, built once above for
-# every model call, not a describer lane.
-
-
-#: Every Character adaptor that is not the room fold, by name (budgets, grants).
 
 
 @dataclass(frozen=True)
@@ -461,11 +452,10 @@ class Dependencies:
     # Its perception pass: `None` whenever the poller is. `nora/__main__.py`
     # starts it beside the poller.
     social_perception: SocialPerception | None = None
-    # A story frame's bytes deleted at their bound: `None` unless `[social]
-    # story_expiry_enabled` and media custody is on; built whether or not the
-    # poller runs, so bytes it kept still go once it is switched off.
-    # `nora/__main__.py` starts it.
+    # None unless story expiry and media custody are enabled. App.run
+    # starts expiry even with the poller disabled.
     story_expiry: StoryMediaExpiry | None = None
+    discord_control: BridgeControlClient | None = None
 
 
 def wall_clock() -> datetime:
@@ -481,11 +471,42 @@ async def build_dependencies(
 ) -> Dependencies:
     """Build the process graph from cfg and return its runtime Dependencies.
 
-    Share clock (wall_clock by default) so replay can set a fixed semantic instant.
-    Queue deadlines, leases, computer idle expiry and outbox timestamps instead use
-    operational_clock, which defaults to clock. Replay supplies wall time there so
-    maintenance keeps progressing while the turn observes its fixed instant.
+    This function is the only place in the codebase allowed to know `Config`'s
+    shape (besides `nora.__main__` itself, which only ever passes `cfg`
+    straight through here). Everything downstream takes a `Dependencies`.
+
+    **`clock` names a dependency the graph shares** — `FirePath`,
+    `HeartbeatLoop`, `ComputePoller` and the rest each take one for the
+    reason `FirePath`'s own docstring gives; stating it once here is what
+    lets a harness say WHAT TIME IT IS — the proactive adaptor's whole
+    judgement (is this note due, has this position gone stale, is now the
+    moment) answers at a fixed instant. The default is `wall_clock`.
+
+    **`operational_clock` is the maintenance clock.** A frozen `clock` is a
+    semantic statement («the turn sees this instant»); it must not freeze
+    the queue's deadline, lease and idle arithmetic — under a frozen
+    snapshot the scoped computer's tasks would never time out and its tabs
+    never idle. The scoped-computer machinery (`ComputerAdmission`,
+    `ComputerQueueRunner`, `ScopeBrowserManager`, the deferred outbox's
+    stamp) reads `operational_clock`, which defaults to `clock`; the eval
+    subject passes the wall clock so maintenance keeps moving while the
+    block's time stands still.
+
+    **Startup failure closes what it built.** Each acquisition registers
+    with the `StartupOwner` before the next `await`; a raise or a cancel
+    unwinds it in shutdown order and the ORIGINAL error propagates. A
+    returned `Dependencies` transfers ownership to `close_dependencies`.
     """
+    return await StartupOwner.run(
+        _compose_dependencies, cfg,
+        clock=clock, operational_clock=operational_clock)
+
+
+async def _compose_dependencies(
+    cfg: Config, *, clock: Callable[[], datetime],
+    operational_clock: Callable[[], datetime] | None,
+    owner: StartupOwner,
+) -> Dependencies:
     op_clock = operational_clock or clock
     content_checks = cfg.content_checks.enabled
     metrics = Metrics()
@@ -505,12 +526,14 @@ async def build_dependencies(
     channel_directory = _platforms_channels.channel_directory
     discord_box = _platforms_channels.discord_box
     discord_control = _platforms_channels.discord_control
+    owner.own_discord_control(discord_control)
     _stores_identity = identity(cfg=cfg, channel_directory=channel_directory, metrics=metrics)
     allowlist = _stores_identity.allowlist
     persons = _stores_identity.persons
     reload_files: ReloadFiles = _stores_identity.reload_files
     _stores_backend = await identity_backend(
-        allowlist=allowlist, cfg=cfg, metrics=metrics, persons=persons)
+        allowlist=allowlist, cfg=cfg, metrics=metrics, persons=persons,
+        owner=owner)
     _stores_database = _stores_backend.database
     engine = _stores_database.engine
     _stores_managed = _stores_backend.managed
@@ -518,6 +541,7 @@ async def build_dependencies(
     persons_view = _stores_backend.persons_view
     _stores_audit = build_audit(cfg=cfg, engine=engine, metrics=metrics)
     audit = _stores_audit.audit
+    owner.own_audit(audit)
     _location_stores = _location_wire.stores(engine=engine)
     mobility = _location_stores.mobility
     _agenda_reminders = _agenda_wire.reminders(engine=engine)
@@ -533,7 +557,7 @@ async def build_dependencies(
         allowlist=allowlist, background=lambda: background, cfg=cfg,
         clock=clock, compute_jobs=compute_jobs,
         computer_context=lambda: computer_context, engine=engine,
-        metrics=metrics, op_clock=op_clock,
+        metrics=metrics, op_clock=op_clock, owner=owner,
     )
     browser_manager = _computer.browser_manager
     computer = _computer.computer
@@ -636,6 +660,7 @@ async def build_dependencies(
         summons_inbox=summons_inbox,
         voice_guild_ids=voice_guild_ids,
         voice_hub=voice_hub,
+        owner=owner,
         signal_consent=signal_link_consent(cfg, _stores_managed.services),
         access=access,
     )
@@ -644,10 +669,12 @@ async def build_dependencies(
     registry = _platforms_adapters.registry
     _stores_instructions = instructions(cfg=cfg, metrics=metrics)
     dreamer_instructions = _stores_instructions.dreamer_instructions
-    _memory_honcho = await _memory_wire.honcho(allowlist=allowlist, cfg=cfg, persons=persons)
+    _memory_honcho = await _memory_wire.honcho(
+        allowlist=allowlist, cfg=cfg, persons=persons, owner=owner)
     memory = _memory_honcho.memory
     _runtime_tasks = await tasks(
-        cfg=cfg, channel_directory=channel_directory, engine=engine, reload_files=reload_files
+        cfg=cfg, channel_directory=channel_directory, engine=engine,
+        reload_files=reload_files, owner=owner,
     )
     background = _runtime_tasks.background
     debounce = _runtime_tasks.debounce
@@ -721,10 +748,13 @@ async def build_dependencies(
     shared = _pipelines_shared.shared
     _media_sources = await _media_wire.sources(cfg=cfg)
     blobs = _media_sources.blobs
+    owner.own_blobs(blobs)
     media_sources = _media_sources.media_sources
     _models_lane = lane(cfg=cfg)
     client = _models_lane.client
     extra_model_clients = _models_lane.extra_model_clients
+    owner.own_client(client)
+    owner.own_model_clients(extra_model_clients)
     model_client_for = _models_lane.model_client_for
     route_model = _models_lane.route_model
     tier = _models_lane.tier
@@ -780,6 +810,7 @@ async def build_dependencies(
         cfg=cfg,
         content_checks=content_checks,
         engine=engine,
+        extra_model_clients=extra_model_clients,
         media_objects=media_objects,
         memory=memory,
         metrics=metrics,
@@ -973,6 +1004,7 @@ async def build_dependencies(
         tool_registry=tool_registry,
     )
     subagent_backend = _agent_subagent_backend.subagent_backend
+    owner.own_subagent(subagent_backend)
     _computer_dispatch = _computer_wire.dispatch(
         access=access,
         allowlist=allowlist,
@@ -1201,7 +1233,9 @@ async def build_dependencies(
         policy=policy,
         registry=registry,
         slots=slots,
-        stimulus_wiring=stimulus_wiring, room_command=room_commands.is_command,
+        stimulus_wiring=stimulus_wiring,
+        owner=owner,
+        room_command=room_commands.is_command,
     )
     bridge_runtime = _bridge_runtime.bridge_runtime
     _dreamer_preamble = preamble(engine=engine)
@@ -1306,6 +1340,7 @@ async def build_dependencies(
         stimulus_store=stimulus_store,
     )
     cognition_shutdown = _dreamer_wake.cognition_shutdown
+    owner.own_cognition(cognition_shutdown)
     wake_evaluator = _dreamer_wake.wake_evaluator
     _stores_otp = build_otp(
         audit=audit,
@@ -1327,9 +1362,8 @@ async def build_dependencies(
         metrics=metrics,
     )
     computer_sweeper = _computer_sweeper.computer_sweeper
-
     return Dependencies(
-        config_reload=reload_files,
+        config_reload=reload_files, discord_control=discord_control,
         audit=audit,
         memory=memory,
         persons=persons_view, access=access,

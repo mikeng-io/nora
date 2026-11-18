@@ -28,6 +28,7 @@ holds in line.
 from __future__ import annotations
 
 from .dreaming import Pass, adaptor_names, dream
+from .journey_state import SNAPSHOT_KEYS, JourneyState, journey_initial_state
 from .knowledge import (
     AccountSeed,
     Knowledge,
@@ -52,11 +53,14 @@ from .memory_workspace import (
     new_run_id,
     sweep_stale_draw_workspaces,
 )
+from .model_gateway import ModelGateway
 from .obtain import (
     DEFAULT_ROOM,
+    UNRESOLVED,
     Subject,
     SubjectSpec,
     config_default,
+    config_member_of_runtime_map,
     obtain,
 )
 from .proactive import ActPass, act, owe
@@ -94,14 +98,18 @@ __all__ = [
     "COVERAGE_FLOOR",
     "DEFAULT_ROOM",
     "EMBEDDER_FROM_HOST",
+    "SNAPSHOT_KEYS",
+    "UNRESOLVED",
     "AccountSeed",
     "ActPass",
     "Coverage",
     "DrawWorkspace",
     "GraphIndexRefusedError",
     "IndexCache",
+    "JourneyState",
     "Knowledge",
     "Message",
+    "ModelGateway",
     "NoteSeed",
     "Pass",
     "ReminderSeed",
@@ -123,11 +131,13 @@ __all__ = [
     "check_served_model",
     "close_private_blank_templates",
     "config_default",
+    "config_member_of_runtime_map",
     "deliver",
     "draw_workspace",
     "dream",
     "heard",
     "index_sandbox",
+    "journey_initial_state",
     "know",
     "last_row_id",
     "new_run_id",

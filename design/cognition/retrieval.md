@@ -37,7 +37,7 @@ model-chosen anchors. Both return the same shape.
 - A claim is returned with any items about the same subject recorded after it
   was asserted, so a fresh direct statement beats stale understanding before
   reflection has revised it.
-- Raw presence fixes are never indexed; only computed episodes such as stays
+- Raw location fixes are never indexed; only computed episodes such as stays
   and trips are a read surface.
 - Structural edges support evidence lookup; a person is never a fan-out to
   everything they wrote.

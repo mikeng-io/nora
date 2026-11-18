@@ -1,0 +1,16 @@
+[
+  {
+    "name": "request counts include actual subject and both judge aliases",
+    "file": "nora/subject/request_evidence.py",
+    "old": "        models[model] += 1",
+    "new": "        models[model] += 0",
+    "target": "tests/unit/test_eval_report_accounting.py::test_request_counts_come_from_canonical_requests_including_both_judges"
+  },
+  {
+    "name": "malformed request evidence cannot become an observed zero",
+    "file": "nora/subject/request_evidence.py",
+    "old": "            return {\"status\": \"unavailable\", \"cause\": \"model_request_census_invalid\",\n                    \"model_requests\": None, \"judge_requests\": None}",
+    "new": "            continue",
+    "target": "tests/unit/test_eval_report_accounting.py::test_invalid_request_evidence_is_unavailable_never_zero"
+  }
+]

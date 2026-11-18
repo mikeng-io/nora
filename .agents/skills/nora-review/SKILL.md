@@ -1,6 +1,6 @@
 ---
 name: nora-review
-description: Review an agreed Nora change, re-check a repair delta, or audit scope/acceptance at the assigned tier. Return coverage, grounded findings and limits under REVIEW.md; no implementation or unrequested repository audit.
+description: Review a Nora work brief and plan before dispatch, review an agreed change and mark its Done-when items, re-check a repair delta, or audit scope at the assigned tier. Return coverage, grounded findings and limits; no implementation or unrequested repository audit.
 ---
 
 # Nora review
@@ -8,6 +8,8 @@ description: Review an agreed Nora change, re-check a repair delta, or audit sco
 Read [REVIEW.md](../../../REVIEW.md) for the review contract and
 [ORCHESTRATION.md](../../../ORCHESTRATION.md#bounded-independent-review) for tier,
 independence, dispositions and convergence. This skill is the procedure.
+A brief review follows [references/brief-review.md](references/brief-review.md)
+instead of steps 2–3; item marking, severity and follow-through are there too.
 
 1. **Identify the review.** Use REVIEW.md's brief: confirm the question, basis,
    surface, relevant lenses, evidence and exclusions. Read its source requirements;
@@ -15,7 +17,12 @@ independence, dispositions and convergence. This skill is the procedure.
    approved amendments before reading prior findings; retain this basis on
    re-checks and name the selected subset. State any inferred scope.
    Check: the requested result is understandable without deriving intent from
-   the candidate. Missing material requirements return to scoping.
+   the candidate. On the standard and full routes, the brief and plan passed
+   brief review with no BLOCKER and the candidate arrives with its execution
+   receipt. Return a candidate with missing gate evidence unreviewed. On light,
+   the PR body carries a brief. On every route, confirm the recorded route against the
+   triggers in `nora-work/references/lifecycle.md`; a lower route is a finding.
+   Missing material requirements return to scoping.
 2. **Inspect the candidate.** Verify checkout/head/status; read
    `git diff <base>...<head>`. A repair re-check uses
    `git diff <previously-reviewed-head>..<head>` plus unresolved findings and
@@ -43,6 +50,7 @@ independence, dispositions and convergence. This skill is the procedure.
 4. **Return and stop.** Use REVIEW.md's coverage/findings/limits format. Complete
    the assigned coverage rather than stopping at the first finding. For a
    re-check, distinguish unresolved classes from genuinely new repair defects.
+   Mark each Done-when item the candidate addresses as met, unmet or unavailable.
    Check: only supported blockers or required review-evidence gaps cause
    REQUEST CHANGES; a round with none ends review, and non-blocking harvest
    goes to the summary comment, never another round.

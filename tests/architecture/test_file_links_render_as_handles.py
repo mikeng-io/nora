@@ -150,6 +150,23 @@ def _affected_target() -> str:
     return repr(target_context(_row(), deleted=False, author="A"))
 
 
+def _judge_lifecycle() -> str:
+    """The canonical effects the judge model sees, via `Judge.bind_evidence`."""
+    from evals.rebuilt.grading import Judge
+
+    judge = Judge("https://unbound.invalid/v1", model="generated-judge")
+    bound = judge.bind_evidence({
+        "status": "observed",
+        "tools": [],
+        "items": [{"ref": "record:messages:{\"id\":7}", "kind": "record",
+                   "source": "messages", "key": {"id": 7}, "at": "2026-10-10T00:00:00+00:00",
+                   "operation": "append",
+                   "row": {"id": 7, "body": f"budget {URL} pls", "was": f"old {WAS_URL}"}}],
+    })
+    assert bound.lifecycle is not None
+    return bound.lifecycle
+
+
 RENDERERS = {
     "blocks.render_elements": _render_elements,
     "blocks.render_messages": _render_messages,
@@ -163,6 +180,7 @@ RENDERERS = {
     "cognition_render._message_row": _cognition_message,
     "cognition_render._own_row": _cognition_own,
     "observations.target_context": _affected_target,
+    "grading.bind_evidence": _judge_lifecycle,
 }
 
 
@@ -249,6 +267,8 @@ HAND_BUILT = {
     ("nora/domain/blocks.py", "render_elements"): "every element renderer",
     ("nora/domain/blocks.py", "render_bullets"): "every Honcho conclusion and card",
     ("evals/rebuilt/fold_evidence.py", "render_evidence"): "the fold judge's evidence",
+    ("evals/rebuilt/grading.py", "bind_evidence"):
+        "the drive judge's bound lifecycle effects (subject_effects rows)",
 }
 _RENDER_CALLS = {"render_file_links", "_file_handles"}
 

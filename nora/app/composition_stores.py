@@ -401,7 +401,7 @@ class IdentityBackendWiring:
 
 
 async def identity_backend(
-    allowlist: Any, cfg: Any, metrics: Any, persons: Any,
+    allowlist: Any, cfg: Any, metrics: Any, persons: Any, owner: Any = None,
 ) -> IdentityBackendWiring:
     """Select one authority, building its database before identity services.
 
@@ -413,7 +413,8 @@ async def identity_backend(
         allowlist=allowlist, cfg=cfg, metrics=metrics,
         persons=persons if cfg.identity.backend == "file" else EmptyPersons(),
     )
-    managed = await managed_identity(cfg, persons, allowlist, stores_database.engine)
+    managed = await managed_identity(
+        cfg, persons, allowlist, stores_database.engine, owner=owner)
     access = managed.services.access
     await access.refresh_aliases(ttl_seconds=0)
     return IdentityBackendWiring(
@@ -425,7 +426,7 @@ async def identity_backend(
 
 
 async def managed_identity(
-    cfg: Any, persons: Any, policy: Any, engine: Any,
+    cfg: Any, persons: Any, policy: Any, engine: Any, owner: Any = None,
 ) -> ManagedIdentityWiring:
     """Backend selection is BOOT-TIME: `config.toml` is never reloaded, so a
     backend change is a restart, and the two graphs cannot mix.
@@ -447,6 +448,8 @@ async def managed_identity(
     from nora.domain.management import Scope, ScopeKind
 
     session = aiohttp.ClientSession()
+    if owner is not None:
+        owner.own_managed(session)
     try:
         services = _people_wire.managed_services(
             managed=cfg.identity.managed, session=session,

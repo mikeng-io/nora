@@ -26,13 +26,11 @@ from evals.rebuilt.domain import Outcome
 from evals.rebuilt.entry import ENTRY_POINTS, EntryPoint
 from evals.recall import CRITERION, evidence_problems, render
 from evals.subject_config import (
-    ALLOWED_TO_DIFFER,
     FULL_RESTORE_OVERRIDES,
     NO_GEOCODER_ENV,
-    SKIP_PREFIX,
     adopted,
 )
-from nora.subject import DrawWorkspace, Sandboxed, SubjectSpec
+from nora.subject import Sandboxed, SubjectSpec
 from nora.subject.evidence import (
     Evidence,
     HeldEvent,
@@ -42,6 +40,8 @@ from nora.subject.evidence import (
     HeldOuting,
     HeldRevision,
 )
+from tests.unit.eval_dispatch_capture import JudgeBindings
+from tests.unit.eval_dispatch_capture import unit_dispatch_capture as unit_dispatch_capture
 
 _SHOT = {"platform": "signal", "conversation_id": "the-real-group", "before_ms": 1_752_000_000_000}
 _NOW = datetime.fromtimestamp(_SHOT["before_ms"] / 1000, tz=UTC)
@@ -62,16 +62,27 @@ class _Subject:
     room = ("signal", "the-real-group")
     cfg = SimpleNamespace(engagement=SimpleNamespace(trigger=SimpleNamespace(text="nora")))
 
-
-@contextlib.asynccontextmanager
-async def _no_honcho_workspace(case: str, *, run_id: str):
-    """The draw's Honcho workspace with no Honcho, as `test_eval_backbone.py` has it."""
-    yield DrawWorkspace(id=f"nora-eval-{run_id}-{case.replace('#', '-')}-fake", create_ms=0.0)
+    async def aclose(self):
+        pass
 
 
 @pytest.fixture
-def seams(monkeypatch: Any) -> dict[str, list[Any]]:
+def seams(monkeypatch: Any, unit_dispatch_capture) -> dict[str, list[Any]]:
     """Every seam either mode can reach, recording what reached it."""
+    monkeypatch.setattr(_Subject, "cfg", unit_dispatch_capture.config)
+    original = backbone._drive_uncaptured
+
+    @contextlib.asynccontextmanager
+    async def environment(*args, **kwargs):
+        yield SimpleNamespace(check=lambda: None)
+
+    async def recorded(case, spec):
+        import dataclasses
+
+        return await original(case, dataclasses.replace(spec, services={
+            case.name: SimpleNamespace(open=environment)}))
+
+    monkeypatch.setattr(backbone, "_drive_uncaptured", recorded)
     calls: dict[str, list[Any]] = {
         "sandbox_database": [], "sandbox_as_of": [], "sandbox_from_snapshot": [],
         "restored_room": [], "obtain": [],
@@ -102,7 +113,6 @@ def seams(monkeypatch: Any) -> dict[str, list[Any]]:
     async def drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
         return Outcome(admitted=None)
 
-    monkeypatch.setattr(backbone, "draw_workspace", _no_honcho_workspace)
     for name, fake in (
         ("sandbox_database", sandbox_database), ("sandbox_as_of", sandbox_as_of),
         ("sandbox_from_snapshot", sandbox_from_snapshot), ("restored_room", restored_room),
@@ -142,7 +152,7 @@ async def test_every_other_corpus_keeps_the_snapshot_path_unchanged(seams) -> No
     }
     [spec] = seams["obtain"]
     assert spec.database_url == f"{_SOURCE}_sb"
-    assert list(spec.overrides) == ["port.key", "spec.key", "honcho.workspace_id"]
+    assert spec.overrides == {"spec.key": 2}
     assert not set(spec.overrides) & set(FULL_RESTORE_OVERRIDES)
 
 
@@ -158,8 +168,7 @@ async def test_a_full_restore_corpus_seeds_every_store_as_of_the_instant(seams) 
     [spec] = seams["obtain"]
     assert spec.database_url == f"{_SOURCE}_asof"
     assert spec.now == _NOW
-    assert spec.overrides["presence.enabled"] is True
-    assert spec.overrides["honcho.workspace_id"].startswith(f"nora-eval-{backbone.RUN_ID}-restore-")
+    assert spec.overrides is None
 
 
 async def test_a_spec_override_still_wins_over_the_restore_override(seams) -> None:
@@ -170,13 +179,9 @@ async def test_a_spec_override_still_wins_over_the_restore_override(seams) -> No
     assert spec.overrides["presence.enabled"] is False
 
 
-def test_the_restore_override_is_declared_and_the_generated_config_keeps_it_off() -> None:
-    """The reader is turned on per subject, never in the generated config: the
-    file every corpus composes from still forces presence off."""
-    assert FULL_RESTORE_OVERRIDES["presence.enabled"] is True
-    assert "presence.enabled" in ALLOWED_TO_DIFFER
-    assert all(k.startswith(SKIP_PREFIX) or k in ALLOWED_TO_DIFFER for k in FULL_RESTORE_OVERRIDES)
-    assert adopted("[presence]\nenabled = true\n")["presence.enabled"] is False
+def test_restore_mode_keeps_the_deployments_functional_settings() -> None:
+    assert FULL_RESTORE_OVERRIDES == {}
+    assert adopted("[presence]\nenabled = true\n")["presence.enabled"] is True
 
 
 def _built(tmp_path: Any, overrides: dict[str, object] | None) -> Any:
@@ -191,27 +196,16 @@ def _built(tmp_path: Any, overrides: dict[str, object] | None) -> Any:
 _KEYED = {"GOOGLE_MAPS_API_KEY": "a-real-looking-key", "HKGOV_MAPS_TOKEN": "a-token"}
 
 
-def test_a_full_restore_subject_builds_no_geocoder_even_with_the_keys_set(
-    tmp_path, monkeypatch,
-) -> None:
-    """The reader hands `reverse_geocode` coordinates, and the geocoder is built
-    from the environment whatever the flag says, so the full-restore subject
-    points both credentials at a name nothing sets. The control: the same
-    environment composes a billed client for a snapshot subject, so the test
-    can see one."""
+def test_a_full_restore_preserves_the_configured_geocoder(tmp_path, monkeypatch) -> None:
     from nora.app.composition_readers import reverse_geocoder
 
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-key")
     default = _built(tmp_path / "default", None)
-    assert reverse_geocoder(default, _KEYED, cache_store=None) is not None
     restored = _built(tmp_path / "restore", dict(FULL_RESTORE_OVERRIDES))
-    assert restored.presence.enabled is True
-    assert reverse_geocoder(restored, _KEYED, cache_store=None) is None
-    hkgov = _built(tmp_path / "hkgov", {
-        **FULL_RESTORE_OVERRIDES, "presence.geocode_provider": "hkgov",
-        "presence.hkgov_geocode_url": "https://example.invalid/reverseGeocode",
-    })
-    assert reverse_geocoder(hkgov, _KEYED, cache_store=None) is None
+    assert restored.presence == default.presence
+    control = reverse_geocoder(default, _KEYED, cache_store=None)
+    measured = reverse_geocoder(restored, _KEYED, cache_store=None)
+    assert control is not None and type(measured) is type(control)
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -248,11 +242,11 @@ def test_both_composed_geocoders_screen_the_areas_they_keep(tmp_path, monkeypatc
         assert screen(PlaceArea(district="sk-" + "synthetic" * 4)) is None
 
 
-async def test_a_full_restore_refuses_while_the_no_geocoder_name_is_set(seams, monkeypatch) -> None:
-    monkeypatch.setenv(NO_GEOCODER_ENV, "someone-set-it")
-    with pytest.raises(ValueError, match=NO_GEOCODER_ENV):
-        await backbone._drive_draw(_case("set"), _spec(full_restore=True), memory_workspace="w")
-    assert seams["obtain"] == []
+async def test_unrelated_environment_does_not_disable_full_restore_capabilities(seams, monkeypatch):
+    monkeypatch.setenv(NO_GEOCODER_ENV, "generated-unrelated-value")
+    await backbone._drive(_case("set"), _spec(full_restore=True))
+    assert len(seams["obtain"]) == 1
+    assert seams["obtain"][0].overrides is None
 
 
 def test_the_corpus_is_judge_only_and_a_run_without_a_judge_refuses(monkeypatch, capsys) -> None:
@@ -267,7 +261,7 @@ def test_the_corpus_is_judge_only_and_a_run_without_a_judge_refuses(monkeypatch,
     assert "refusing to run: ['conversational_recall']" in capsys.readouterr().err
 
 
-class _Judge:
+class _Judge(JudgeBindings):
     def __init__(self) -> None:
         self.graded: list[dict[str, Any]] = []
 

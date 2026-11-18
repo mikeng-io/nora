@@ -55,12 +55,27 @@ ROOT = Path(__file__).resolve().parents[2]
 #: draw-owned address `reaction_wire` binds per case, handed in so the
 #: composed adapter's REAL `SignalReactor` meets the controlled outage rather
 #: than a stub of itself. An address the world answers at, not part of her.
+#:
+#: `config`: WHICH CONFIGURATION WAS IN FORCE — the recorded `config.toml`
+#: at the case's instant, or the deployment's eval rebuild (`None`). Same
+#: class as `policy`/`identity`: the settings in force at a moment are part
+#: of the moment being measured, not of her. The previous form of this seam
+#: — mutating `nora.subject.obtain._TEMPLATE` around an `await` — was the
+#: same claim by the wrong owner: a module global another subject could
+#: observe mid-composition.
 _SEAMS = frozenset({
     "database_url", "workdir", "overrides", "identity", "policy", "now", "room",
     # `circle`/`signal_rpc_url` state what the OUTSIDE WORLD does (argued in
     # design/evaluation/subject.md): which controlled absence a case
     # presents and where the transport would reach — input, not collaborators.
     "circle", "signal_rpc_url",
+    # `environment` states WHICH RECORDED SERVICES the case's world answers
+    # through — the boundary her real adapters reach, bound per case the way
+    # `signal_rpc_url` is: input, not a collaborator.
+    "environment",
+    # `config` states which settings were in force at the case's instant
+    # (argued above): input, not a collaborator.
+    "config",
 })
 
 

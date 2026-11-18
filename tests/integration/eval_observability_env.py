@@ -120,3 +120,54 @@ async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill
         assert "6" in str(result)
 
 
+
+
+async def nested_or_reused(nested):
+    """Exercise real SDK invocations against a sequenced local protocol."""
+    requests = []
+    limits = factory.build_limits(turns=4, output_tokens=200, total_tokens=1000)
+    async def respond(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        index = len(requests)
+        if nested and index == 1:
+            message = {"role": "assistant", "content": "parent tool preamble", "tool_calls": [{
+                "id": "generated-nested", "type": "function", "function": {
+                    "name": "run_child", "arguments": "{}"}}]}
+            finish = "tool_calls"
+        else:
+            output = ("child answer" if nested and index == 2 else
+                      "tool raw answer" if nested and index == 3 else
+                      "parent answer" if nested else f"answer {index}")
+            message = {"role": "assistant", "content": output}
+            finish = "stop"
+        assert index <= (4 if nested else 2)
+        return httpx.Response(200, json={"id": "generated", "created": 0,
+            "object": "chat.completion", "model": "generated-model", "choices": [{
+                "index": 0, "finish_reason": finish, "message": message}],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
+        client = factory.create_client(base_url="https://generated.invalid/v1",
+                                       api_key="generated", http_client=transport)
+        model = factory.create_model_provider(model="generated-model", max_tokens=100,
+                                              temperature=0, client=client, tool_choice="auto")
+        model.update_config(stream=False)
+        def agent(tools):
+            return factory.create_browse_agent(model=model, system_prompt="Generated task",
+                                               tools=tools, trace_attributes={},
+                                               retry=factory.build_retry_policy(timeout_seconds=5))
+        child = agent([])
+        @tool
+        async def run_child() -> str:
+            """Run the generated child task."""
+            result = await factory.invoke(child, "child input", invocation_state={}, limits=limits)
+            async for _ in model.stream(
+                    messages=[{"role": "user", "content": [{"text": "raw input"}]}]):
+                pass
+            return str(result)
+        outer = agent([run_child] if nested else [])
+        for prompt in (["outer input"] if nested else ["first input", "second input"]):
+            await factory.invoke(outer, prompt, invocation_state={}, limits=limits)
+        await client.close()
+    return requests

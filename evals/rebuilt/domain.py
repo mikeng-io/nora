@@ -55,6 +55,7 @@ Expectation = Literal[
 Entry = Literal[
     "gate", "participation", "tag", "dreamer", "proactive_act", "standing",
     "profile_identity", "profile_coverage", "standing_unit", "public_summons",
+    "autonomous_journey",
 ]
 
 

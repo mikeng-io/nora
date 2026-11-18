@@ -58,6 +58,12 @@ def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_ro
             evidence.exit_code = 0
     data = rows(evidence)
     assert len(requests) == 2  # actual SDK formatting and tool execution ran
+    from scripts.cognition_loop.trajectory import terminal_response
+
+    terminal = terminal_response(data)
+    assert terminal["status"] == "observed", terminal
+    assert terminal["text"].strip() == "6"
+    assert terminal["attempt_id"] and terminal["invocation_id"]
     dispatched = [r for r in data if r["kind"] == "event" and r["name"] == "nora.model.request"]
     assert [json.loads(r["attributes"]["nora.model.request.body"]) for r in dispatched] == requests
     saved = [e for r in data if r["kind"] == "span_finished" for e in r["events"]
@@ -83,6 +89,27 @@ def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_ro
     assert stat.S_IMODE(evidence.path.stat().st_mode) == 0o700
     assert stat.S_IMODE((evidence.path / "events.jsonl").stat().st_mode) == 0o600
     assert "generated-private-auth-value" not in (evidence.path / "events.jsonl").read_text()
+
+
+def test_diagnostic_artifacts_stay_private_and_cannot_replace_files(evidence_root, tmp_path):
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(b"unchanged")
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with evidence.capture(trace.get_tracer_provider()):
+            evidence.retain("generated.json", b"generated input")
+            assert (evidence.path / "generated.json").read_bytes() == b"generated input"
+            assert stat.S_IMODE((evidence.path / "generated.json").stat().st_mode) == 0o600
+            with pytest.raises(FileExistsError):
+                evidence.retain("generated.json", b"replacement")
+            (evidence.path / "link.json").symlink_to(outside)
+            with pytest.raises(FileExistsError):
+                evidence.retain("link.json", b"replacement")
+            for name in ("../outside.json", str(outside), "", ".", ".."):
+                with pytest.raises(ValueError, match="filename"):
+                    evidence.retain(name, b"replacement")
+            assert outside.read_bytes() == b"unchanged"
+            assert (evidence.path / "generated.json").read_bytes() == b"generated input"
 
 
 def test_started_case_and_failure_survive_interrupt_and_lock_releases(evidence_root):
@@ -552,3 +579,50 @@ async def test_cancelled_model_pass_has_its_own_complete_lifecycle(
     assert len(attempts) == len(requests) + 1
 
 
+
+
+@pytest.mark.parametrize("nested", [True, False], ids=["nested", "reuse"])
+async def test_sdk_invocation_attribution_and_windows(evidence_root, nested):
+    from nora.subject.eval_evidence import validate_events
+    from scripts.cognition_loop.trajectory import terminal_response
+    from tests.integration.eval_observability_env import nested_or_reused
+
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with evidence.capture(trace.get_tracer_provider()):
+            requests = await nested_or_reused(nested)
+    events = rows(evidence)
+    assert validate_events(events)["status"] == "PASS", validate_events(events)
+    starts = [e for e in events if e["kind"] == "invocation_started"]
+    assert len(starts) == 2 and len({e["invocation_id"] for e in starts}) == 2
+    first, second = (e["invocation_id"] for e in starts)
+    assert starts[0]["parent_invocation_id"] is None
+    assert starts[1]["parent_invocation_id"] == (first if nested else None)
+    if nested:
+        assert len(requests) == 4
+        tools = [e for e in events if e["kind"] in ("tool_started", "tool_finished")]
+        assert [e["kind"] for e in tools] == ["tool_started", "tool_finished"]
+        assert all(e["invocation_id"] == first for e in tools)
+        assert tools[0]["attempt_id"] == tools[1]["attempt_id"]
+        first_call = next(e for e in events if e["kind"] == "call_started")
+        assert tools[0]["attempt_id"] == first_call["attempt_id"]
+        child_call = next(e for e in events if e["kind"] == "call_started"
+                          and e["invocation_id"] == second)
+        assert child_call["attempt_id"].startswith(second + ":")
+        raw = next(e for e in events if e["kind"] == "transport_response"
+                   and e["response"]["choices"][0]["message"].get("content") == "tool raw answer")
+        assert raw["invocation_id"] == first and raw["attempt_id"] == first_call["attempt_id"]
+        terminal = terminal_response(events)
+        assert terminal["status"] == "observed" and terminal["text"] == "parent answer"
+        assert terminal["invocation_id"] == first
+        assert terminal["attempt_id"] != first_call["attempt_id"]
+    else:
+        assert len(requests) == 2
+        windows = [events[starts[i]["order"] - 1:starts[i + 1]["order"] - 1] if i == 0
+                   else events[starts[i]["order"] - 1:] for i in range(2)]
+        for i, window in enumerate(windows):
+            terminal = terminal_response(window)
+            assert terminal["status"] == "observed" and terminal["text"] == f"answer {i + 1}"
+            assert terminal["invocation_id"] == (first, second)[i]
+            assert all(e["invocation_id"] == (first, second)[i] for e in window
+                       if e["kind"] in ("call_started", "call_finished", "transport_response"))

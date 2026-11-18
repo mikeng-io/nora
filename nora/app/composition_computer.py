@@ -1,4 +1,4 @@
-"""The computer area's composition: stores, queue, scoped runners and the
+"""The computer area's composition: stores, scoped runners and the
 `<computer>` context block, lifted whole out of `build_dependencies`.
 """
 
@@ -30,34 +30,30 @@ async def build_computer(
     *,
     allowlist: Any, background: Callable[[], Any], cfg: Any, clock: Any,
     compute_jobs: Any, computer_context: Callable[[], Any], engine: Any,
-    metrics: Any, op_clock: Any,
+    metrics: Any, op_clock: Any, owner: Any = None,
 ) -> ComputerWiring:
-    """stores → queue → scoped → context. The scoped runners win over the
-    queue's values where both name one. `background`/`computer_context` are
+    """stores → scoped → context. `background`/`computer_context` are
     thunks resolved at use time — `build_dependencies` owns the forward
-    declarations they close over."""
+    declarations they close over. `owner` is the startup's acquisition
+    register; `wire.scoped` re-registers as more of itself exists."""
     wire = importlib.import_module("nora.computer").wire
     stores = wire.stores(cfg=cfg, engine=engine, metrics=metrics)
-    queue = wire.queue()
     scoped = await wire.scoped(
         allowlist=allowlist,
         background=background,
-        browser_tabs=queue.browser_tabs,
         cfg=cfg,
         clock=clock,
         compute_jobs=compute_jobs,
         computer=stores.computer,
-        computer_admission=queue.computer_admission,
         computer_context=computer_context,
-        computer_dm_scope_for=queue.computer_dm_scope_for,
         computer_events=stores.computer_events,
         computer_metrics=stores.computer_metrics,
         computer_probe=stores.computer_probe,
-        computer_tasks=queue.computer_tasks,
         computer_token=stores.computer_token,
         engine=engine,
         metrics=metrics,
         op_clock=op_clock,
+        owner=owner,
     )
     context = wire.context(
         allowlist=allowlist,

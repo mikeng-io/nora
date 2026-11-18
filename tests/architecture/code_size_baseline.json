@@ -49,21 +49,21 @@
   "internal_docstrings": 7
  },
  "evals/__main__.py": {
-  "comment_blocks": 11,
-  "file_lines": 968,
+  "comment_blocks": 10,
+  "file_lines": 961,
   "functions": {
-   "_execute": 183,
-   "_main": 173
+   "_execute": 179,
+   "_main": 160
   },
   "internal_docstrings": 8
  },
  "evals/backbone.py": {
-  "comment_blocks": 44,
-  "file_lines": 2766,
+  "comment_blocks": 36,
+  "file_lines": 2645,
   "functions": {
-   "_drive_draw": 508
+   "_drive_draw": 449
   },
-  "internal_docstrings": 31
+  "internal_docstrings": 28
  },
  "evals/corpora_assess.py": {
   "comment_blocks": 1
@@ -90,7 +90,7 @@
   "internal_docstrings": 2
  },
  "evals/rebuilt/grading.py": {
-  "comment_blocks": 5
+  "comment_blocks": 4
  },
  "evals/rebuilt/judge.py": {
   "comment_blocks": 1,
@@ -129,17 +129,17 @@
   "internal_docstrings": 4
  },
  "evals/scenarios.py": {
-  "comment_blocks": 10,
+  "comment_blocks": 9,
   "internal_docstrings": 1
  },
  "evals/situation.py": {
   "comment_blocks": 1
  },
  "evals/subject_config.py": {
-  "comment_blocks": 7
+  "comment_blocks": 1
  },
  "nora/__main__.py": {
-  "comment_blocks": 19,
+  "comment_blocks": 17,
   "functions": {
    "App.run": 282
   },
@@ -302,7 +302,7 @@
   "internal_docstrings": 1
  },
  "nora/agent/structured.py": {
-  "comment_blocks": 3
+  "comment_blocks": 2
  },
  "nora/agent/subagent_desk.py": {
   "comment_blocks": 1,
@@ -400,7 +400,7 @@
  },
  "nora/app/cognition_grounding.py": {
   "comment_blocks": 5,
-  "file_lines": 904,
+  "file_lines": 909,
   "functions": {
    "build_grounder": 291,
    "build_grounder.ground": 248
@@ -433,10 +433,10 @@
   }
  },
  "nora/app/composition.py": {
-  "comment_blocks": 23,
-  "file_lines": 1470,
+  "comment_blocks": 22,
+  "file_lines": 1504,
   "functions": {
-   "build_dependencies": 975
+   "_compose_dependencies": 980
   },
   "internal_docstrings": 1
  },
@@ -1648,6 +1648,9 @@
   "comment_blocks": 8,
   "internal_docstrings": 3
  },
+ "nora/people/app/managed_authority.py": {
+  "internal_docstrings": 1
+ },
  "nora/persons.py": {
   "comment_blocks": 10,
   "functions": {
@@ -1803,7 +1806,7 @@
  "nora/platform/registry.py": {
   "comment_blocks": 4,
   "functions": {
-   "AdapterRegistry.from_config": 205
+   "AdapterRegistry.from_config": 237
   },
   "internal_docstrings": 1
  },
@@ -1901,8 +1904,8 @@
   "comment_blocks": 2
  },
  "nora/subject/obtain.py": {
-  "comment_blocks": 24,
-  "internal_docstrings": 4
+  "comment_blocks": 15,
+  "internal_docstrings": 1
  },
  "nora/subject/proactive.py": {
   "comment_blocks": 3
@@ -2593,6 +2596,18 @@
  "tests/integration/test_latency.py": {
   "comment_blocks": 2
  },
+ "tests/integration/test_managed_circle_cost.py": {
+  "functions": {
+   "test_current_reads_measure_real_requests_and_recheck_remote_lifecycle": 129
+  }
+ },
+ "tests/integration/test_managed_identity_journey.py": {
+  "comment_blocks": 1,
+  "file_lines": 824,
+  "functions": {
+   "_link_first_pair": 158
+  }
+ },
  "tests/integration/test_memory_dense_seed.py": {
   "internal_docstrings": 2
  },
@@ -2673,9 +2688,6 @@
  },
  "tests/integration/test_the_rebuilt_suite_runs.py": {
   "internal_docstrings": 1
- },
- "tests/integration/test_the_subject_is_the_deployed_graph.py": {
-  "comment_blocks": 1
  },
  "tests/integration/test_turn_budget_is_legible.py": {
   "comment_blocks": 1,
@@ -3044,7 +3056,7 @@
   "internal_docstrings": 1
  },
  "tests/unit/test_cognition_anchor_confirmation.py": {
-  "internal_docstrings": 2
+  "internal_docstrings": 1
  },
  "tests/unit/test_cognition_block_types_explain_every_field.py": {
   "internal_docstrings": 1
@@ -3188,11 +3200,11 @@
  },
  "tests/unit/test_eval_backbone.py": {
   "comment_blocks": 3,
-  "file_lines": 1365,
-  "internal_docstrings": 3
+  "file_lines": 1363,
+  "internal_docstrings": 2
  },
  "tests/unit/test_eval_full_restore.py": {
-  "file_lines": 1115,
+  "file_lines": 1109,
   "internal_docstrings": 1
  },
  "tests/unit/test_eval_host_lock.py": {
@@ -3275,6 +3287,12 @@
  "tests/unit/test_link_owners.py": {
   "comment_blocks": 1,
   "internal_docstrings": 1
+ },
+ "tests/unit/test_link_publication.py": {
+  "internal_docstrings": 1
+ },
+ "tests/unit/test_managed_authority.py": {
+  "file_lines": 899
  },
  "tests/unit/test_markdown.py": {
   "internal_docstrings": 2
@@ -3440,6 +3458,9 @@
   "comment_blocks": 1,
   "internal_docstrings": 2
  },
+ "tests/unit/test_room_management.py": {
+  "file_lines": 980
+ },
  "tests/unit/test_routine_read.py": {
   "internal_docstrings": 3
  },
@@ -3557,6 +3578,9 @@
   "internal_docstrings": 1
  },
  "tests/web/test_api.py": {
+  "internal_docstrings": 1
+ },
+ "tests/web/test_managed_ory_credentials.py": {
   "internal_docstrings": 1
  },
  "voice-lab/scripts/gen_negatives_minimax.py": {

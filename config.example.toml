@@ -355,10 +355,14 @@ chunk_max = 30
 [image_gen]
 enabled = false
 provider = "xai"
+# Private directory for rotating image OAuth credentials.
+state_dir = "/app/state"
 
 allow_reference_images = false
 
 [image_gen.xai]
+# OAuth issuer used for discovery and refresh.
+issuer_url = "https://auth.x.ai"
 model = "grok-imagine-image-2.0"
 quality_model = "grok-imagine-image-quality"
 refresh_token_env = "XAI_OAUTH_REFRESH_TOKEN"
@@ -368,6 +372,8 @@ keepalive = true
 refresh_interval_hours = 24.0
 
 [image_gen.openai_codex]
+# OAuth issuer used for refresh.
+issuer_url = "https://auth.openai.com"
 model = "gpt-image-2.6-flare"
 # responses_model is a legacy no-op; images go directly to the renderer.
 standard_quality = "medium"

@@ -62,6 +62,19 @@ class DashFreeOpenAIModel(OpenAIModel):
         record_eval_model_request(request)
         return request
 
+    def _resolve_client_args(self) -> dict[str, Any]:
+        from nora.domain.run_budget import active_run_budget
+
+        from .run_budget_transport import bounded_http_client
+
+        args = dict(super()._resolve_client_args())
+        bounded = bounded_http_client(args.get("http_client"))
+        if bounded is not None:
+            args["http_client"] = bounded
+        if active_run_budget.get() is not None:
+            args["max_retries"] = 0
+        return args
+
     def _get_client(self):
         from contextlib import asynccontextmanager
 

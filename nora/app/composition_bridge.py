@@ -25,7 +25,7 @@ async def runtime(
     fire_path: Any, ingest: Any, memory: Any, metrics: Any,
     observation_store: Any, onboarding: Any, participation_trigger: Any,
     persons: Any, policy: Any, registry: Any, slots: Any, stimulus_wiring: Any,
-    access: Any = None, room_command: Any = None,
+    access: Any = None, room_command: Any = None, owner: Any = None,
 ) -> RuntimeWiring:
 
     # ---- platform bridges (design/platform-bridges) ------------------------- Any platform
@@ -47,6 +47,10 @@ async def runtime(
             )
         bridge_store = SqlBridgeStore(engine)
         bridge_redis = aioredis.from_url(redis_url)
+        if owner is not None:
+            # Owned before the runtime pieces below can fail — the client
+            # exists from here on.
+            owner.own_bridge(redis=bridge_redis)
         bridge_locks = DbSpeakingLocks(bridge_store)
         if participation_trigger is not None:
             # The durable window close lives in the same work ledger as every other obligation:
@@ -108,6 +112,8 @@ async def runtime(
             runner=bridge_runner,
             inspector=queue_inspector,
         )
+        if owner is not None:
+            owner.own_bridge(redis=bridge_runtime.redis, stop=bridge_runtime.stop)
         # Zero-series for the counters the runtime increments — the REAL
         # work-kind and action-op tuples, so `increase()` over a series the
         # first event creates does not lose it.

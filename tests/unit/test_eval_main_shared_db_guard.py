@@ -122,7 +122,7 @@ def test_a_stable_run_captures_the_baseline_before_materialise_and_checks_it_las
 
     assert rc == 0
     assert order == [
-        "refuse", "sweep_private_blanks", "baseline", "materialise", "sweep", "run",
+        "refuse", "sweep_private_blanks", "baseline", "materialise", "run",
         "close", ("assert", True),
     ]
 
@@ -374,6 +374,12 @@ def test_context_experiment_requires_a_prefill_receipt_for_each_draw(monkeypatch
     report = SimpleNamespace(cases=[{"name": "generated#1"}, {"name": "generated#2"}])
     experiment = SimpleNamespace(cases=report.cases, run_evaluations=lambda **kwargs: report)
     monkeypatch.setattr(m, "experiment_for", lambda *a, **k: (experiment, None))
+    # This test's subject is the prefill receipt check; the accounting seam
+    # is declared, not satisfied by a manifest-shaped accident.
+    monkeypatch.setattr(m, "accounted", lambda *a, **k: (
+        {"status": "PASS"},
+        {"execution": {"status": "PASS"}, "validity": {"status": "PASS"},
+         "behavior": {"status": "UNMEASURED"}}))
     monkeypatch.setattr(m, "census", lambda *a: "synthetic census")
     monkeypatch.setattr(m, "_print_spend", lambda: None)
     monkeypatch.setattr(m, "_print_memory_overhead", lambda: None)
@@ -427,15 +433,12 @@ def test_main_resolves_the_memory_surface_from_the_generated_config(
     assert seen == [graph]
     out = capsys.readouterr().out
     assert header in out
-    # The graph arm's preconditions are read before any draw, and only there.
-    assert len(checked) == (1 if graph else 0)
-    assert ("checked" in out) is graph
+    assert checked == []  # External preflight belongs inside the case boundary.
+    assert "checked" not in out
 
 
-def test_a_graph_surface_run_refuses_before_any_draw(monkeypatch, capsys, tmp_path):
-    """An embedder that does not serve the configured file, or a source
-    without the model's vectors: rc 2, and no case runs lexical in its place."""
-    from nora.subject import GraphIndexRefusedError
+def test_graph_preflight_cannot_dispatch_outside_the_case(monkeypatch, tmp_path):
+    """The case boundary owns external calls, including embedding checks."""
 
     generated = tmp_path / "config.evaluation.toml"
     generated.write_text("[memory.index]\nread = false\n")
@@ -453,12 +456,11 @@ def test_a_graph_surface_run_refuses_before_any_draw(monkeypatch, capsys, tmp_pa
     monkeypatch.setattr(m, "close_private_blank_templates", _close)
 
     def _refuse(url: str, model: str) -> list[str]:
-        raise GraphIndexRefusedError("the eval source holds no vector of it")
+        raise AssertionError("unbound external preflight")
 
     monkeypatch.setattr(m, "graph_surface_lines", _refuse)
     ran: list[bool] = []
     monkeypatch.setattr(m, "_run_one", lambda *a, **k: ran.append(True) or True)
     _set_argv(monkeypatch, "tool_selection", "--memory-index", "--allow-long")
-    assert m.main() == 2
-    assert ran == []
-    assert "refusing to run: the eval source holds no vector" in capsys.readouterr().err
+    assert m.main() == 0
+    assert ran == [True]

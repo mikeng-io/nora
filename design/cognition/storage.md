@@ -10,7 +10,7 @@ rebuildable; it is never the truth.
 
 | holds | tables | lifecycle code enforces |
 |---|---|---|
-| items | one table per source shape (messages, media, presence, fetched pages, watch results, acts, tool outcomes) | append-only |
+| items | one table per source shape (messages, media, location fixes, fetched pages, watch results, acts, tool outcomes) | append-only |
 | aggregates | one table per aggregate family | recomputable: dropping and rebuilding gives the same rows |
 | entities | one table | admitted, merged, retired |
 | claims | one table | revisions append; a stale base is refused |

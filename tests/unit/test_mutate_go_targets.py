@@ -10,6 +10,7 @@ Counting those lines alone would report an uncompilable mutant as caught.
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 _SPEC = importlib.util.spec_from_file_location(
@@ -17,6 +18,7 @@ _SPEC = importlib.util.spec_from_file_location(
 )
 assert _SPEC is not None and _SPEC.loader is not None
 mutate = importlib.util.module_from_spec(_SPEC)
+sys.modules[_SPEC.name] = mutate  # @dataclass resolves cls.__module__ here
 _SPEC.loader.exec_module(mutate)
 
 _RAN = "=== RUN   TestA\n--- PASS: TestA (0.00s)\n=== RUN   TestB\n--- FAIL: TestB (0.00s)\n"

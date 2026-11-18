@@ -115,7 +115,8 @@ def repo(tmp_path: Path) -> Repo:
     r.git("remote", "add", "origin", str(origin))
     r.git("push", "-qu", "origin", "master")
 
-    for branch in ("chore/merged", "deployments", "dependabot/pip/x"):
+    # feat/stack-base equals master: a fresh stack base whose first layer is open.
+    for branch in ("chore/merged", "deployments", "dependabot/pip/x", "feat/stack-base"):
         r.git("branch", branch)
         r.git("push", "-qu", "origin", branch)
 
@@ -161,11 +162,11 @@ def repo(tmp_path: Path) -> Repo:
 
     open_prs = [
         {"headRefName": "feat/pr-head",
-         "headRefOid": r.head("feat/pr-head")},
+         "headRefOid": r.head("feat/pr-head"), "baseRefName": "feat/stack-base"},
         {"headRefName": "integ",
-         "headRefOid": r.head("origin/integ")},
+         "headRefOid": r.head("origin/integ"), "baseRefName": "master"},
         {"headRefName": "feat/restacked",
-         "headRefOid": r.head("feat/restacked")},
+         "headRefOid": r.head("feat/restacked"), "baseRefName": "master"},
     ]
     merged_prs = [
         {"number": 5, "headRefOid": r.head("feat/squashed")},
@@ -301,6 +302,14 @@ def test_open_pr_heads_are_kept(repo: Repo) -> None:
         assert repo.git("branch", "--list", name).stdout.strip()
 
 
+def test_an_open_pr_base_equal_to_master_is_kept(repo: Repo) -> None:
+    out = _gc(repo, "--apply")
+    assert "base of an open PR" in _line(out, "local branch", "feat/stack-base")
+    assert "base of an open PR" in _line(out, "remote branch", "origin/feat/stack-base")
+    assert repo.git("ls-remote", "origin", "refs/heads/feat/stack-base").stdout.strip()
+    assert repo.git("branch", "--list", "feat/stack-base").stdout.strip()
+
+
 def test_open_pr_head_wins_over_merged_head_custody(repo: Repo) -> None:
     """feat/restacked's tip is merged-PR head #7 AND an open head: kept by the guard."""
     out = _gc(repo, "--apply")
@@ -324,6 +333,23 @@ def test_gh_failure_makes_remote_branches_unknown_and_removes_nothing(repo: Repo
     assert all(ln.startswith("unknown") for ln in remote_lines)
     assert repo.git("ls-remote", "origin").stdout == remote_before
     assert repo.git("branch", "--list", "chore/merged").stdout.strip()
+    stale = str((repo.tmp / "wt" / "stale").resolve())
+    assert _line(out, "worktree", stale).startswith("unknown")
+    assert (repo.tmp / "wt" / "stale").exists()
+
+
+def test_a_full_page_of_open_prs_is_treated_as_unknown(repo: Repo) -> None:
+    rows = [{"headRefName": f"x/{i}", "headRefOid": "0" * 40, "baseRefName": "master"}
+            for i in range(1000)]
+    (repo.tmp / "bin" / "gh").write_text(
+        "#!/bin/sh\ncase \"$*\" in\n"
+        f"  *\"--state open\"*) printf '%s' '{json.dumps(rows)}' ;;\n"
+        "  *) printf '[]' ;;\nesac\n")
+    remote_before = repo.git("ls-remote", "origin").stdout
+    out = _gc(repo, "--apply")
+    assert out.returncode != 0
+    assert "may be truncated" in _line(out, "remote branch", "origin/chore/merged")
+    assert repo.git("ls-remote", "origin").stdout == remote_before
 
 
 def test_fetch_failure_makes_merge_verdicts_unknown(repo: Repo) -> None:
