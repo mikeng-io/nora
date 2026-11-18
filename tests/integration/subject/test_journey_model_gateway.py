@@ -31,43 +31,8 @@ from tests.integration.subject.test_model_gateway import _body, _budget, _comple
 from tests.unit.test_causal_protocol import _call, _content, _drive, _req
 
 
-def test_generated_subject_answers_every_production_declaration(tmp_path, evaluation_config):
-    cfg = build_config(
-        SubjectSpec(
-            database_url="sqlite://",
-            workdir=tmp_path,
-            config=evaluation_config,
-            overrides={"dreamer.model": "generated-dreamer"},
-        )
-    )
-    protocol = make_causal_protocol(cfg)
-
-    def request(purpose, fallback, user, *, system="Generated instruction", tools=(), raw=False):
-        model = cfg.endpoint(purpose, fallback)[2]
-        body = _req(
-            model,
-            [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            tools=tools,
-            stream=not raw,
-        )
-        if raw:
-            body["response_format"] = {"type": "json_object"}
-        return body
-
-    def background(name, user="", *, tools=()):
-        return request(
-            "dreamer",
-            cfg.dreamer_model(),
-            user,
-            tools=tools,
-            system=f'<dreamer_objective name="{name}">Generated</dreamer_objective>',
-        )
-
-    def tool_spec(name, arg, arg_type):
-        return name, {"type": "object", "required": [arg], "properties": {arg: {"type": arg_type}}}
-
-    profiles = tool_spec("profile_no_change", "why", "string")
-    cases = {
+def _foreground_declarations(cfg, request, tool_spec):
+    return {
         "nora/agent/reaction.py": [
             (
                 request(
@@ -152,6 +117,12 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
                 ("browse_done", {"answer": "No result in the generated browser.", "found": False}),
             ),
         ],
+    }
+
+
+def _language_declarations(cfg, request, background, tool_spec):
+    profiles = tool_spec("profile_no_change", "why", "string")
+    return {
         "nora/language/character.py": [
             (background(name), name, "Generated protocol retains the previous account.")
             for name in ("character-nora", "character-person", "character-unit")
@@ -216,6 +187,47 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
                 "Generated task completed.",
             ),
         ],
+    }
+
+
+def test_generated_subject_answers_every_production_declaration(tmp_path, evaluation_config):
+    cfg = build_config(
+        SubjectSpec(
+            database_url="sqlite://",
+            workdir=tmp_path,
+            config=evaluation_config,
+            overrides={"dreamer.model": "generated-dreamer"},
+        )
+    )
+    protocol = make_causal_protocol(cfg)
+
+    def request(purpose, fallback, user, *, system="Generated instruction", tools=(), raw=False):
+        model = cfg.endpoint(purpose, fallback)[2]
+        body = _req(
+            model,
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            tools=tools,
+            stream=not raw,
+        )
+        if raw:
+            body["response_format"] = {"type": "json_object"}
+        return body
+
+    def background(name, user="", *, tools=()):
+        return request(
+            "dreamer",
+            cfg.dreamer_model(),
+            user,
+            tools=tools,
+            system=f'<dreamer_objective name="{name}">Generated</dreamer_objective>',
+        )
+
+    def tool_spec(name, arg, arg_type):
+        return name, {"type": "object", "required": [arg], "properties": {arg: {"type": arg_type}}}
+
+    cases = {
+        **_foreground_declarations(cfg, request, tool_spec),
+        **_language_declarations(cfg, request, background, tool_spec),
     }
     # These three builders share the scripted turn, cognition and fold journey.
     scripted = {

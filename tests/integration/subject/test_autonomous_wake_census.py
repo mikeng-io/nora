@@ -223,7 +223,7 @@ def _census_record(sdk_evidence: Any) -> dict[str, Any]:
 
 async def test_census_exact_population_passes(clean_pg_url, tmp_path,
                                               monkeypatch, evaluation_config,
-                                              sdk_evidence):
+                                              sdk_evidence, capsys):
     """Positive control: the census records exactly the produced
     population and the retained report reconciles — ids, slots and
     receipts all agree, judges ran for both wakes."""
@@ -244,6 +244,13 @@ async def test_census_exact_population_passes(clean_pg_url, tmp_path,
     assert retained["status"] == "PASS"
     assert retained["coverage"]["status"] == "PASS", \
         retained["coverage"]["errors"]
+    prefix = "  journey accounting: "
+    lines = [line.removeprefix(prefix) for line in capsys.readouterr().out.splitlines()
+             if line.startswith(prefix)]
+    assert len(lines) == 1
+    assert json.loads(lines[0]) == {
+        "coverage": retained["coverage"], "outcome": retained["outcome"],
+    }
     assert retained["expected_cases"][0]["wakes"] == [1, 2]
     assert retained["run"]["wake_census"] == {
         "observed": [1, 2], "declared": 2}

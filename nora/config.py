@@ -2823,9 +2823,7 @@ class XaiImageGenConfig(BaseModel):
     `keepalive` / `refresh_interval_hours`: the daemon refreshes this login
     on a schedule whenever `[image_gen] enabled` and the token is set,
     whichever provider is selected (DEC-308, `nora.app.oauth_keepalive`).
-    The interval is bounded to 1-72 h: shorter re-asks a refused login
-    every few minutes, longer delays the staleness alert (twice the
-    interval) that flags a dead login.
+    The 1-72 h interval bounds retries and alert delay (twice the interval).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -2846,8 +2844,7 @@ _GptImageQuality = Literal["low", "medium", "high", "auto"]
 
 
 class OpenAICodexImageGenConfig(BaseModel):
-    """`[image_gen.openai_codex]`: gpt-image through the ChatGPT (Codex)
-    subscription lane (DEC-304).
+    """`[image_gen.openai_codex]`: gpt-image via a ChatGPT subscription (DEC-304).
 
     `model` is the image renderer called directly;
     `responses_model` is retained for old config files but unused by the

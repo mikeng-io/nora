@@ -27,6 +27,7 @@ from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from evals.accounting import describe_outcome
 from evals.measurement import PROTOCOL, Measurement, for_world
 from nora.subject.circle import create_sql_engine
 from nora.subject.effects import (
@@ -453,6 +454,7 @@ async def autonomous_journey(subject: Any, case: Case, *, now_ms: int) -> Outcom
         report["errors"].append({"step": "report_html", "message": repr(exc)})
         report["status"] = ERROR
         write_report(output, report)
+    describe_outcome(report["coverage"], report["outcome"], scope="journey")
     evidence.record("journey_report", status=report["status"], ref=output.name,
                     expectations=len(expectations),
                     wakes=len(wakes_report))

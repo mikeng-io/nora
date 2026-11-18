@@ -595,5 +595,3 @@ async def test_a_live_wake_that_never_settled_spends_no_judge_call(
         recorded_meta=_recorded_meta((1,), had_session=True))
     assert judged == [1]
     assert wake["status"] == "PASS"
-
-

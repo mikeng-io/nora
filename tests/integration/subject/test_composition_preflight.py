@@ -141,55 +141,9 @@ async def test_cold_composition_preserves_features_and_closes_owned_resources(
             urls, redis_process = set(env.urls.values()), env._process
             subject = await obtain(replace(spec, environment=env))
             deps = subject.deps
-            assert subject.cfg.credentials[cfg.computer.scoped.redis_url_env] == env.redis_url
-            expected_config = cfg.model_dump()
-            actual_config = subject.cfg.model_dump()
-            for path in (*apps, "store.database_url_env"):
-                left, right = expected_config, actual_config
-                parts = path.split(".")
-                for part in parts[:-1]:
-                    left, right = left[part], right[part]
-                left[parts[-1]] = right[parts[-1]]
-            assert actual_config == expected_config
-
-            assert set(deps.registry.adapters) == {"signal", "discord", "whatsapp", "instagram"}
-            assert deps.computer_lifecycle is not None
-            sessions = [getattr(adapter, "_delegate", adapter)._session
-                        for adapter in deps.registry.adapters.values()]
-            assert all(session is not None and not session.closed for session in sessions)
-            with pytest.raises(RuntimeError, match="second owner"):
-                SegmentRegistry(pending_dir=subject.cfg.store.data_dir / "state" / "computer")
-            assert isinstance(deps.blobs, RustfsBlobStore)
-            assert deps.assembler and deps.dreamer_runtime and deps.background._tasks
-            if playback is not None and deps.oauth_keepalive is not None:
-                for lane, _ in deps.oauth_keepalive._lanes:
-                    result = await lane.refresh(unless_refreshed_since=0.0)
-                    assert not isinstance(result, str), result
-                    filename = f"{lane.lane.replace('_', '-')}-oauth.json"
-                    state = Path(subject.cfg.image_gen.state_dir) / filename
-                    assert state.is_relative_to(spec.workdir)
-                    assert json.loads(state.read_text())["refresh_token"].startswith("generated-")
-                assert set(deps.oauth_keepalive.lanes) == {"xai", "openai_codex"}
-
-            assert {f"{name}:/v1/self" for name in deps.registry.adapters} <= set(received)
-            assert "rustfs:head_bucket" in received
-            assert "MODEL_DISPATCH" not in received
-            assert len(deps.blobs._s3._endpoint.http_session._manager.pools) == 1
-            async with deps.audit._engine.connect() as connection:
-                assert (await connection.execute(text("select 1"))).scalar() == 1
-            provider = TracerProvider()
-            provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter(
-                endpoint=env.urls["obs.tracing.endpoint"] + "/v1/traces")))
-
-            def emit():
-                tracer = provider.get_tracer("generated-preflight")
-                with tracer.start_as_current_span("composition"):
-                    pass
-                provider.shutdown()
-
-            await asyncio.to_thread(emit)
-            assert [span.name for payload in payloads for resource in payload.resource_spans
-                    for scope in resource.scope_spans for span in scope.spans] == ["composition"]
+            sessions = await assert_live_composition(
+                subject, cfg, apps, env, spec, playback, received, payloads,
+            )
             env.check()
             urls = set(env.urls.values())
             redis_process = env._process
@@ -217,6 +171,60 @@ async def test_cold_composition_preserves_features_and_closes_owned_resources(
                       "requests": received,
                       "model_dispatches": 0, "listeners_closed": len(urls),
                       "redis_stopped": True, "background_closed": True}))
+
+
+async def assert_live_composition(subject, cfg, apps, env, spec, playback, received, payloads):
+    deps = subject.deps
+    assert subject.cfg.credentials[cfg.computer.scoped.redis_url_env] == env.redis_url
+    expected_config = cfg.model_dump()
+    actual_config = subject.cfg.model_dump()
+    for path in (*apps, "store.database_url_env"):
+        left, right = expected_config, actual_config
+        parts = path.split(".")
+        for part in parts[:-1]:
+            left, right = left[part], right[part]
+        left[parts[-1]] = right[parts[-1]]
+    assert actual_config == expected_config
+
+    assert set(deps.registry.adapters) == {"signal", "discord", "whatsapp", "instagram"}
+    assert deps.computer_lifecycle is not None
+    sessions = [getattr(adapter, "_delegate", adapter)._session
+                for adapter in deps.registry.adapters.values()]
+    assert all(session is not None and not session.closed for session in sessions)
+    with pytest.raises(RuntimeError, match="second owner"):
+        SegmentRegistry(pending_dir=subject.cfg.store.data_dir / "state" / "computer")
+    assert isinstance(deps.blobs, RustfsBlobStore)
+    assert deps.assembler and deps.dreamer_runtime and deps.background._tasks
+    if playback is not None and deps.oauth_keepalive is not None:
+        for lane, _ in deps.oauth_keepalive._lanes:
+            result = await lane.refresh(unless_refreshed_since=0.0)
+            assert not isinstance(result, str), result
+            filename = f"{lane.lane.replace('_', '-')}-oauth.json"
+            state = Path(subject.cfg.image_gen.state_dir) / filename
+            assert state.is_relative_to(spec.workdir)
+            assert json.loads(state.read_text())["refresh_token"].startswith("generated-")
+        assert set(deps.oauth_keepalive.lanes) == {"xai", "openai_codex"}
+
+    assert {f"{name}:/v1/self" for name in deps.registry.adapters} <= set(received)
+    assert "rustfs:head_bucket" in received
+    assert "MODEL_DISPATCH" not in received
+    assert len(deps.blobs._s3._endpoint.http_session._manager.pools) == 1
+    async with deps.audit._engine.connect() as connection:
+        assert (await connection.execute(text("select 1"))).scalar() == 1
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter(
+        endpoint=env.urls["obs.tracing.endpoint"] + "/v1/traces")))
+
+    def emit():
+        tracer = provider.get_tracer("generated-preflight")
+        with tracer.start_as_current_span("composition"):
+            pass
+        provider.shutdown()
+
+    await asyncio.to_thread(emit)
+    assert [span.name for payload in payloads for resource in payload.resource_spans
+            for scope in resource.scope_spans for span in scope.spans] == ["composition"]
+    return sessions
 
 
 def assert_closed(subject, deps, sessions):

@@ -14,8 +14,9 @@ verdict counts, `UNMEASURED` as a production-behaviour claim).
 
 from __future__ import annotations
 
+import json
 from collections import Counter
-from typing import Any
+from typing import Any, Literal
 
 from evals.backbone import ERROR, FAIL, NORA_ERROR, PASS
 from evals.measurement import PROTOCOL, Measurement
@@ -229,11 +230,17 @@ def accepted(coverage: dict[str, Any], outcome: dict[str, Any]) -> bool:
             and outcome["validity"]["status"] == "PASS")
 
 
-def describe_outcome(coverage: dict[str, Any], outcome: dict[str, Any]) -> None:
-    """The axes and coverage errors as the run's own output."""
+def describe_outcome(
+    coverage: dict[str, Any], outcome: dict[str, Any], *,
+    scope: Literal["corpus", "journey"] = "corpus",
+) -> None:
+    """Print the measured accounting with its report scope."""
     from evals.terminal import safe_print
+    safe_print(f"  {scope} accounting: " + json.dumps({"coverage": coverage, "outcome": outcome}))
+    if scope == "journey":
+        return
     safe_print(
-        f"  outcome: execution={outcome['execution']['status']} "
+        f"  outcome: coverage={coverage['status']} execution={outcome['execution']['status']} "
         f"validity={outcome['validity']['status']} "
         f"behavior={outcome['behavior']['status']}")
     for error in coverage.get("errors") or []:
