@@ -7,7 +7,6 @@ import contextlib
 import json
 import os
 import re
-import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -59,10 +58,11 @@ SITE = """<!doctype html><title>Offer lookup</title>
 
 
 def _chrome() -> str | None:
-    candidates = [
-        os.environ.get("NORA_TEST_CHROME"), shutil.which("chromium"), shutil.which("google-chrome"),
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    ]
+    if override := os.environ.get("NORA_TEST_CHROME"):
+        if not Path(override).is_file():
+            pytest.fail(f"Configured Chromium binary does not exist: {override}")
+        return override
+    candidates = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
     roots = (Path.home() / ".cache/ms-playwright", Path.home() / "Library/Caches/ms-playwright")
     for root in roots:
         candidates.extend(str(path) for path in sorted(root.glob("chromium-*/*/chrome")))
@@ -77,18 +77,31 @@ async def _chromium(tmp_path):
             pytest.fail("Chromium is required for the browser journey")
         pytest.skip("Chromium is unavailable")
     profile = tmp_path / "chrome"
-    process = await asyncio.create_subprocess_exec(
-        binary, "--headless", "--no-sandbox", "--disable-background-networking",
-        "--no-proxy-server", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
-        "--remote-debugging-port=0", f"--user-data-dir={profile}", "about:blank",
-        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-    )
+    stderr_path = tmp_path / "chromium.stderr"
+    with stderr_path.open("wb") as stderr:
+        process = await asyncio.create_subprocess_exec(
+            binary, "--headless", "--no-sandbox", "--disable-background-networking",
+            "--no-proxy-server", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
+            "--remote-debugging-port=0", f"--user-data-dir={profile}", "about:blank",
+            stdout=asyncio.subprocess.DEVNULL, stderr=stderr,
+        )
     try:
         marker = profile / "DevToolsActivePort"
-        async with asyncio.timeout(12):
-            # Chromium signals readiness through this file in its isolated profile.
-            while not marker.exists() or len(marker.read_text().splitlines()) < 2:  # noqa: ASYNC110
-                await asyncio.sleep(0.03)
+        try:
+            async with asyncio.timeout(12):
+                # Chromium signals readiness through this file in its isolated profile.
+                while not marker.exists() or len(marker.read_text().splitlines()) < 2:
+                    if process.returncode is not None:
+                        pytest.fail(
+                            f"Chromium {binary} exited {process.returncode} before listening. "
+                            f"{stderr_path.read_text(errors='replace')[-4000:]}"
+                        )
+                    await asyncio.sleep(0.03)
+        except TimeoutError:
+            pytest.fail(
+                f"Chromium {binary} did not publish its DevTools address. "
+                f"{stderr_path.read_text(errors='replace')[-4000:]}"
+            )
         port, socket = marker.read_text().splitlines()[:2]
         yield f"http://127.0.0.1:{port}{socket}"
     finally:

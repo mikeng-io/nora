@@ -147,7 +147,9 @@ jobs:
       - name: Scoped web retrieval browser journey
         env:
           NORA_TEST_CHROME_REQUIRED: '1'
-        run: uv run python -m scripts.pytest_gate tests/integration/test_web_browse_journey.py
+        run: |
+          export NORA_TEST_CHROME="$(node -e 'process.stdout.write(require("./app/node_modules/playwright").chromium.executablePath())')"
+          uv run python -m scripts.pytest_gate tests/integration/test_web_browse_journey.py
       - name: Managed portal browser journey
         run: uv run python -m scripts.pytest_gate tests/integration/test_managed_portal_browser.py
       - name: Upload browser journey evidence
