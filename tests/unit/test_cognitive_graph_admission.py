@@ -394,7 +394,8 @@ def test_merge_is_an_evidenced_relation_and_preserves_both_revision_chains() -> 
         ("merged_into", ENTITY.id, SURVIVOR.id, "inferred"),
         ("cites", ENTITY.id, ITEM.id, "inferred"),
     )
-    assert isinstance(rev_source, Admitted) and rev_source.base == replace(ENTITY, state="merged")
+    assert isinstance(rev_source, Admitted) and rev_source.base is not None
+    assert (rev_source.base.id, rev_source.base.state) == (ENTITY.id, "merged")
     assert isinstance(rev_survivor, Admitted) and rev_survivor.base == SURVIVOR
     assert _one(replace(MERGE, citations=())) == Refusal("invalid_merge", "citations")
     assert _one(replace(MERGE, survivor=ENTITY.id)) == Refusal("invalid_merge", "survivor")

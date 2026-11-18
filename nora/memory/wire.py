@@ -1,8 +1,12 @@
 import functools
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from nora.agent.dream_screen import text_offence
+from nora.agent.egress import LeakGuard
 from nora.agent.memory_search import MemorySearch
 from nora.agent.room import Room
 from nora.app.cognition_grounding import place_release
@@ -20,9 +24,16 @@ from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.standing_ledger import SqlStandingLedger
+from nora.memory.adapters.admission_rows import SqlAdmissionRows
+from nora.memory.adapters.admission_store import SqlAdmissionStore
+from nora.memory.adapters.graph_store import SqlCognitiveGraph
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.session import session_verbs as _session_verbs
+from nora.memory.app.admission import AdmissionService
+from nora.memory.app.admission_identity import AdmissionIdentity
+from nora.persons import Persons
+from nora.policy import Policy
 
 """Compose this area's tool adapters from shared dependencies."""
 
@@ -284,3 +295,13 @@ def graph(
             ),
         )
     return GraphWiring(cognition_memory=cognition_memory)
+
+
+
+def admission(
+    engine: AsyncEngine, persons: Persons, policy: Policy, leak_guard: LeakGuard, *,
+    content_checks: bool, nora_accounts: Iterable[tuple[str, str]] = (),
+) -> AdmissionService:
+    identity = AdmissionIdentity(persons, policy, nora_accounts=nora_accounts)
+    store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), SqlCognitiveGraph(engine))
+    return AdmissionService(store, identity, leak_guard, content_checks=content_checks)

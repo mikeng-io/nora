@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Literal, cast, get_args
 
 from nora.domain.graph_registration import Exposure, InputScope, inherited_scope
-from nora.domain.lineage import Lineage
+from nora.domain.lineage import ROW, Lineage, unresolved
 from nora.memory.domain import graph
 from nora.memory.domain.admission_proposals import (
     AddEdge,
@@ -157,7 +157,15 @@ def admit_batch(
             facts[choice.row.id] = choice.row
             if choice.base is not None:
                 if choice.survivor is not None:
-                    facts[choice.base.id] = replace(choice.base, state="merged")
+                    facts[choice.base.id] = replace(
+                        choice.base,
+                        state="merged",
+                        origin_room=choice.row.origin_room,
+                        room_is_dm=choice.row.room_is_dm,
+                        exposure=choice.row.exposure,
+                        excluded_persons=choice.row.excluded_persons,
+                        lineage=choice.row.lineage,
+                    )
                 elif choice.base.kind != "entity":
                     facts[choice.base.id] = replace(choice.base, state="superseded")
             available.add(choice.row.id)
@@ -215,7 +223,8 @@ class _Admission:
             and not evidence
         ):
             raise _RefusalError("trigger_without_evidence", "citations")
-        self._reasoning(data.basis, data.reasoning, data.confidence, evidence)
+        if not isinstance(data, AddEdge):
+            self._reasoning(data.basis, data.reasoning, data.confidence, evidence)
         owner, owed_to = self._shape(data)
         state = self._state(proposal, kind)
         candidate = RowFacts(data.id, kind, data.basis, state, self.context.unit)
@@ -418,7 +427,7 @@ class _Admission:
                 raise _RefusalError("unresolved_room", "origin_room")
         restrictions = inherited_scope(
             (
-                InputScope(r.excluded_persons, cast(Exposure, r.exposure), r.lineage)
+                InputScope(r.excluded_persons, cast(Exposure, r.exposure), _lineage(r))
                 for r in inherited
             ),
             build_lineage=Lineage(),
@@ -534,7 +543,7 @@ class _Admission:
             exposure = ExposureOrder
             if exposure.index(source.exposure) < exposure.index(target.exposure) or (
                 not set(target.excluded_persons).issubset(source.excluded_persons)
-                or source.lineage.union(target.lineage) != source.lineage
+                or _lineage(source).union(_lineage(target)) != _lineage(source)
                 or (target.room_is_dm and source.origin_room != target.origin_room)
             ):
                 raise _RefusalError("scope_widening", "source")
@@ -545,3 +554,9 @@ class _Admission:
             raise _RefusalError("illegal_basis", "source")
         self._reasoning(link.basis, link.reasoning, link.confidence, evidence)
         return source, target
+
+
+def _lineage(row: RowFacts) -> Lineage:
+    if row.origin_room is not None and not row.lineage.sections:
+        return Lineage.of({ROW: (unresolved(row.origin_room),)})
+    return row.lineage

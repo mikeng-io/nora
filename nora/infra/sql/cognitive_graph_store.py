@@ -4,7 +4,7 @@ tombstone — each in a single transaction, so no half-write exists."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -136,6 +136,13 @@ _SUCCESSOR: dict[sa.Table, str | None] = {
 }
 
 
+class GraphWriteError(Exception):
+    """An admission transaction failed, possibly during commit."""
+
+    def __init__(self, *, commit_uncertain: bool) -> None:
+        self.commit_uncertain = commit_uncertain
+
+
 class SqlCognitiveGraph:
     """Writes only; the reads a subject makes are their own stores."""
 
@@ -145,51 +152,113 @@ class SqlCognitiveGraph:
     async def create(self, table: sa.Table, row: Mapping[str, Any]) -> None:
         """The registry row and the kind row in one transaction."""
         async with self._engine.begin() as conn:
-            await conn.execute(
-                sa.insert(REGISTRY).values(
-                    id=row["id"],
-                    kind=row["kind"],
-                    unit=row["unit"],
-                )
-            )
+            await self._insert(conn, table, row)
+
+    @staticmethod
+    async def _insert(
+        conn: AsyncConnection, table: sa.Table, row: Mapping[str, Any],
+    ) -> None:
+        await conn.execute(
+            sa.insert(REGISTRY).values(id=row["id"], kind=row["kind"], unit=row["unit"])
+        )
+        try:
             await conn.execute(sa.insert(table).values(dict(row)))
+        except sa.exc.IntegrityError as exc:
+            orig = getattr(exc, "orig", None)
+            driver = getattr(orig, "orig", None) or orig
+            name = (
+                getattr(driver, "constraint_name", None)
+                or getattr(getattr(driver, "diag", None), "constraint_name", "")
+            )
+            if row.get("replaces") is not None and name == f"uq_{table.name}_replaces":
+                raise StaleBaseError(str(row["replaces"])) from exc
+            raise
 
     async def revise(self, table: sa.Table, row: Mapping[str, Any]) -> None:
-        """A revision: the new row's `replaces` names its base, and the base
-        takes its kind's successor state, in one transaction. The `replaces`
-        unique constraint is the stale-base refusal: a base that already has
-        a successor cannot take a second child."""
+        """Append a revision and mark the replaced row in one transaction."""
         async with self._engine.begin() as conn:
+            await self._revise(conn, table, row)
+
+    async def _revise(
+        self, conn: AsyncConnection, table: sa.Table, row: Mapping[str, Any],
+    ) -> None:
+        await self._insert(conn, table, row)
+        successor = _SUCCESSOR[table]
+        if successor is not None:
             await conn.execute(
-                sa.insert(REGISTRY).values(
-                    id=row["id"],
-                    kind=row["kind"],
-                    unit=row["unit"],
-                )
+                sa.update(table)
+                .where(table.c.id == row["replaces"], table.c.unit == row["unit"])
+                .values(state=successor)
             )
-            try:
-                await conn.execute(sa.insert(table).values(dict(row)))
-            except sa.exc.IntegrityError as exc:
-                orig = getattr(exc, "orig", None)
-                driver = getattr(orig, "orig", None) or orig
-                name = (
-                    getattr(driver, "constraint_name", None)
-                    or getattr(getattr(driver, "diag", None), "constraint_name", "")
-                    or ""
-                )
-                if name == f"uq_{table.name}_replaces":
-                    raise StaleBaseError(str(row["replaces"])) from exc
-                raise
-            successor = _SUCCESSOR[table]
-            if successor is not None:
-                await conn.execute(
-                    sa.update(table)
-                    .where(
-                        table.c.id == row["replaces"],
-                        table.c.unit == row["unit"],
-                    )
-                    .values(state=successor)
-                )
+
+    async def write_admission(
+        self,
+        table: sa.Table,
+        row: Mapping[str, Any],
+        edges: Sequence[Mapping[str, Any]],
+        *,
+        base_state: str | None = None,
+        retire: bool = False,
+        merge: tuple[str, str] | None = None,
+    ) -> None:
+        """Write a model proposal and all its edges as one graph transaction."""
+        committing = False
+        try:
+            async with self._engine.begin() as conn:
+                if merge is not None:
+                    await self._merge(conn, row, merge)
+                if base_state is None:
+                    await self._insert(conn, table, row)
+                else:
+                    base = await self._admission_base(conn, table, row, base_state)
+                    if retire:
+                        row = dict(base) | dict(row)
+                    await self._revise(conn, table, row)
+                for edge in edges:
+                    await self._insert(conn, EDGE, edge)
+                committing = True
+        except sa.exc.SQLAlchemyError as exc:
+            raise GraphWriteError(commit_uncertain=committing) from exc
+
+    @staticmethod
+    async def _admission_base(
+        conn: AsyncConnection, table: sa.Table, row: Mapping[str, Any], state: str,
+    ) -> sa.RowMapping:
+        unit, base_id = row["unit"], row["replaces"]
+        current = (await conn.execute(
+            sa.select(table).where(table.c.unit == unit, table.c.id == base_id).with_for_update()
+        )).mappings().one_or_none()
+        if current is not None and current["state"] == state:
+            return current
+        successor = await conn.scalar(
+            sa.select(table.c.id).where(table.c.unit == unit, table.c.replaces == base_id)
+        )
+        if successor is not None:
+            raise StaleBaseError(str(base_id))
+        raise GraphWriteError(commit_uncertain=False)
+
+    @staticmethod
+    async def _merge(
+        conn: AsyncConnection, edge: Mapping[str, Any], endpoints: tuple[str, str],
+    ) -> None:
+        unit = edge["unit"]
+        locked = (await conn.execute(
+            sa.select(ENTITY.c.id, ENTITY.c.state, ENTITY.c.basis, ENTITY.c.pointer_kind)
+            .where(ENTITY.c.unit == unit, ENTITY.c.id.in_(endpoints))
+            .order_by(ENTITY.c.id).with_for_update()
+        )).all()
+        if len(locked) != 2 or any(
+            row.state != "admitted" or row.basis != "inferred" or row.pointer_kind is not None
+            for row in locked
+        ):
+            raise GraphWriteError(commit_uncertain=False)
+        await conn.execute(
+            sa.update(ENTITY).where(ENTITY.c.unit == unit, ENTITY.c.id == endpoints[0])
+            .values(
+                state="merged", exposure=edge["exposure"], lineage=edge["lineage"],
+                excluded_persons=edge["excluded_persons"], origin_room=edge["origin_room"],
+            )
+        )
 
     async def aggregate_planes(
         self,
