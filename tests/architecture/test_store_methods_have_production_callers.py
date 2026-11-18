@@ -167,14 +167,10 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     # `assess.py`'s `recent` needs no pin: `recent` is already ambiguous
     # (audit.py/decision_log.py/tag_traces.py/tool_call_log.py all define one),
     # so `_ambiguous` skips it before the pin table is ever consulted.
-    ("rollups.py", "rows"): _Pin(
-        "read_back_affordance",
-        "Every row of one unit rollup table in a build, surrogate ids and "
-        "system time stripped: what the step-2 determinism gate compares "
-        "between an incremental build and a rebuild "
-        "(tests/integration/test_rollup_builds.py). Its consumer at runtime is "
-        "`rollup_read` (design/cognition-loop/session.md), not built "
-        "in step 2a.",
+    ("reminders.py", "in_rooms"): _Pin(
+        "operator_script",
+        "The cognition replay reader in scripts/cognition_loop/state.py reads all "
+        "reminder states in the declared rooms to compare before and after a turn.",
     ),
     ("computer_events.py", "orphaned_starts"): _Pin(
         "read_back_affordance",
@@ -276,6 +272,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "set_display_name", "set_lifecycle", "set_membership",
         "set_scoped_name", "update_operation",
         "aclose", "append", "claim", "create", "delete", "fail",
+        # Replay and selected identity adapters also declare these store verbs.
+        "bind", "identity_ids", "latest_fix", "load", "rows", "since", "window",
         # Message targets and observation grounding have distinct by-id stores.
         "by_ids",
         # The historical observation facade withholds the SQL store's current heads.
@@ -633,7 +631,7 @@ def _scripts_call_sites() -> dict[str, list[_Site]]:
     `operator_script` pin's claim — "a real caller exists, just not where this
     file scans" — rather than leaving it unfalsifiable by the other tests."""
     calls: dict[str, list[_Site]] = defaultdict(list)
-    for path in sorted((ROOT / "scripts").glob("*.py")):
+    for path in sorted((ROOT / "scripts").rglob("*.py")):
         for node in ast.walk(_parse(path)):
             if (
                 isinstance(node, ast.Call)

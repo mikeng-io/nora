@@ -16,6 +16,7 @@ import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from types import UnionType
 from typing import Any, Union, get_args, get_origin
@@ -114,17 +115,21 @@ def model_endpoint(path: Path | Config, purpose: str, model: str = "") -> tuple[
     return url, key, name
 
 
-class _Unresolved:
+class _ConfigDefault(Enum):
     """A config path the schema cannot give a concrete default for."""
 
+    UNRESOLVED = "UNRESOLVED"
+
     def __repr__(self) -> str:
-        return "UNRESOLVED"
+        return self.value
+
+    __str__ = __repr__
 
 
 #: `config_default`'s answer for a path that is not a concrete schema leaf —
 #: a required field, a runtime-keyed container, a typo. `None` is a real
 #: nullable default; `UNRESOLVED` means there is no default to reconstruct.
-UNRESOLVED = _Unresolved()
+UNRESOLVED = _ConfigDefault.UNRESOLVED
 
 
 def config_default(key: str) -> object:

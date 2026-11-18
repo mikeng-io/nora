@@ -14,11 +14,6 @@ class _ResultMetrics:
     def __init__(self, reader: "ScopedCircles", metrics: Any) -> None:
         self._reader, self._metrics = reader, metrics
 
-    def inc(self, metric: str, value: float = 1.0, **labels: Any) -> None:
-        if metric == "nora_tool_calls_total" and self._reader._tool.get() == labels.get("tool"):
-            return
-        self._metrics.inc(metric, value=value, **labels)
-
     def __getattr__(self, name: str) -> Any:
         return getattr(self._metrics, name)
 
