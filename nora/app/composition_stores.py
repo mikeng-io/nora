@@ -472,7 +472,7 @@ async def managed_identity(
     keto = await services.backend.relations_on(
         scope=Scope(ScopeKind.WORKSPACE, "boot-probe")
     )
-    if not isinstance(keto, frozenset):
+    if isinstance(keto, frozenset):
         await session.close()
         raise StartupError(
             "managed identity: Keto read listener unreachable — refusing to "
