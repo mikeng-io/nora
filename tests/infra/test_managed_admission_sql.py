@@ -5,6 +5,7 @@ boundaries hold under independent readers: a person is never readable
 unheld, and complete-plus-released never lands half-visible."""
 
 import asyncio
+import time
 from types import MappingProxyType
 
 import pytest
@@ -301,7 +302,8 @@ async def _drop_trigger(engine, name):
 
 async def _blocked_on_advisory(engine, lock_key) -> None:
     """Wait until a session waits on an advisory lock — the writer's open transaction."""
-    for _ in range(200):
+    started = time.monotonic()
+    while time.monotonic() - started < 15:
         async with engine.connect() as conn:
             waiting = await conn.scalar(sa.text(
                 "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'"
@@ -310,7 +312,10 @@ async def _blocked_on_advisory(engine, lock_key) -> None:
                 "  WHERE datname = current_database())"), {"lock_key": lock_key})
         if waiting:
             return
-    raise AssertionError("the writer never reached the advisory lock")
+        await asyncio.sleep(0.02)
+    raise AssertionError(
+        "the writer never reached the advisory lock"
+        f" (key {lock_key}, waited {time.monotonic() - started:.1f}s)")
 
 
 async def test_an_independent_reader_never_sees_an_unheld_person(
