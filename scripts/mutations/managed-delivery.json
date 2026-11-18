@@ -180,5 +180,33 @@
         "old": "            if payload.side in self.approved:",
         "new": "            if False and payload.side in self.approved:",
         "target": "tests/unit/test_link_publication.py tests/unit/test_account_linking_state.py -k replay"
+    },
+    {
+        "name": "unlink binds the actor's person to the account's live owner",
+        "file": "nora/people/app/managed.py",
+        "old": "        if (bound is None or bound.person_id != payload.expected_person\n                or bound.person_id != op.actor.person_id):\n            return denied(\"binding-mismatch\")",
+        "new": "        if (bound is None or bound.person_id != payload.expected_person):\n            return denied(\"binding-mismatch\")",
+        "target": "tests/unit/test_link_publication.py -k registered_non_holder"
+    },
+    {
+        "name": "suspension writes the lifecycle hold it claims",
+        "file": "nora/people/app/managed.py",
+        "old": "            lambda: self._bindings.set_lifecycle(\n                person_id=person.person_id, lifecycle=to\n            ),",
+        "new": "            lambda: self._bindings.set_lifecycle(\n                person_id=person.person_id, lifecycle=person.lifecycle\n            ),",
+        "target": "tests/unit/test_link_publication.py -k suspending_the_survivor"
+    },
+    {
+        "name": "revoke_access drops each permit's relation rather than keeping it",
+        "file": "nora/people/app/managed_authority.py",
+        "old": "                if kind == \"grant_access\"\n                else self._backend.drop_relation(",
+        "new": "                if kind == \"grant_access\"\n                else self._backend.put_relation(",
+        "target": "tests/unit/test_link_publication.py -k revoking_the_survivors"
+    },
+    {
+        "name": "the whole registration ownership refuse block is the guard the identifier PK seconds",
+        "file": "nora/infra/sql/managed_registration.py",
+        "old": "    for ident, owner in owners.items():\n        if owner is None:\n            continue\n        if owner.person_id != person.person_id:\n            raise IdentifierConflictError(\n                f\"identifier {ident.platform}:{ident.kind} is owned \"\n                \"by another person\"\n            )\n        if (\n            owner.state == AccountState.BOUND.value\n            and str(owner.account_id) != account.account_id\n        ):\n            raise IdentifierConflictError(\n                f\"identifier {ident.platform}:{ident.kind} is held \"\n                \"by a different bound account\"\n            )",
+        "new": "    for _ident, owner in owners.items():\n        if owner is None:\n            continue",
+        "target": "tests/contract/test_binding_store_contract.py -k never_a_merge"
     }
 ]

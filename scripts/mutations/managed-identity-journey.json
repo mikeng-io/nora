@@ -1,16 +1,30 @@
 [
-  {
-    "name": "private challenge nonce authenticates the exact receiving holder",
-    "file": "nora/domain/account_linking.py",
-    "old": "or not hmac.compare_digest(_digest(proof.nonce), self.nonce_hashes[payload.side])):",
-    "new": "or False):",
-    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
-  },
-  {
-    "name": "SQL consolidation actually moves account ownership",
-    "file": "nora/infra/sql/managed_publication.py",
-    "old": "person_id=survivor,\n        revision=MANAGED_ACCOUNT.c.revision + 1,",
-    "new": "person_id=former,\n        revision=MANAGED_ACCOUNT.c.revision + 1,",
-    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
-  }
+    {
+        "name": "private challenge nonce authenticates the exact receiving holder",
+        "file": "nora/domain/account_linking.py",
+        "old": "or not hmac.compare_digest(_digest(proof.nonce), self.nonce_hashes[payload.side])):",
+        "new": "or False):",
+        "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+    },
+    {
+        "name": "SQL consolidation actually moves account ownership",
+        "file": "nora/infra/sql/managed_publication.py",
+        "old": "person_id=survivor,\n        revision=MANAGED_ACCOUNT.c.revision + 1,",
+        "new": "person_id=former,\n        revision=MANAGED_ACCOUNT.c.revision + 1,",
+        "target": "tests/contract/test_binding_store_contract.py -k consolidation_moves"
+    },
+    {
+        "name": "consolidation must complete for a link commit to publish",
+        "file": "nora/infra/sql/managed_publication.py",
+        "old": "        revision=MANAGED_PERSON.c.revision + 1,\n        updated_at=sa.func.now(),\n    ))\n    return complete()",
+        "new": "        revision=MANAGED_PERSON.c.revision + 1,\n        updated_at=sa.func.now(),\n    ))\n    return denied(\"consolidation-refused\")",
+        "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+    },
+    {
+        "name": "consolidation retires the loser's person row",
+        "file": "nora/infra/sql/managed_publication.py",
+        "old": "    await conn.execute(sa.delete(MANAGED_PERSON).where(\n        MANAGED_PERSON.c.person_id == former,\n    ))\n",
+        "new": "",
+        "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+    }
 ]
