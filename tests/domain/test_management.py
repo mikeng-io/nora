@@ -415,11 +415,13 @@ def test_suspend_identity_is_installation_only_and_reasoned():
              LifecycleAction(reason="holder request"),
              revisions=("identity", "authority"))
     assert op.payload.reason == "holder request"
-    with pytest.raises(OperationError):
-        _op("suspend_identity", OPERATOR,
-            Target(kind=TargetKind.PERSON, person_id="miles"),
-            LifecycleAction(reason="x"),
-            revisions=("identity", "authority"))
+    for kind in ("suspend_identity", "reinstate_identity"):
+        for actor in (OPERATOR, SERVICE, HOLDER):
+            with pytest.raises(OperationError):
+                _op(kind, actor,
+                    Target(kind=TargetKind.PERSON, person_id="miles"),
+                    LifecycleAction(reason="x"),
+                    revisions=("identity", "authority"))
     with pytest.raises(OperationError):
         LifecycleAction(reason=" ")
 

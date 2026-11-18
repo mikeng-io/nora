@@ -1,0 +1,79 @@
+[
+  {
+    "name": "operator self-promotion through delegation is refused",
+    "file": "nora/people/app/managed_authority.py",
+    "old": "        refuse = await self._actor_allowed(op, scope)\n        if refuse is not None:\n            return refuse\n        promotion = await self._self_promotion(op)\n        if promotion is not None:\n            return promotion",
+    "new": "        refuse = await self._actor_allowed(op, scope)\n        if refuse is not None:\n            return refuse",
+    "target": "tests/unit/test_managed_authority.py -k test_an_operator_cannot_delegate_to_their_own_identity"
+  },
+  {
+    "name": "an open room admits an unmapped sender under its flag",
+    "file": "nora/access.py",
+    "old": "            if await self._topology.is_open_room(scope):\n                return allowed()",
+    "new": "            if await self._topology.is_open_room(scope):\n                return check_denied(\"unmapped-sender\")",
+    "target": "tests/unit/test_managed_authority.py -k test_open_room_admission_grants_no_portal_principal_and_no_sibling_read"
+  },
+  {
+    "name": "an unreadable portal scope is unavailable, never an empty set",
+    "file": "nora/people/app/portal_access.py",
+    "old": "        except Exception as error:  # noqa: BLE001 — never substitute a file roster for missing authority\n            logging.getLogger(__name__).error(\"portal scope unavailable: %s\", type(error).__name__)\n            return check_unavailable(\"portal-scope-unavailable\")",
+    "new": "        except Exception as error:  # noqa: BLE001 — never substitute a file roster for missing authority\n            logging.getLogger(__name__).error(\"portal scope unavailable: %s\", type(error).__name__)\n            return PortalAccess(MappingProxyType({}), frozenset(), MappingProxyType({}), MappingProxyType({}))",
+    "target": "tests/unit/test_managed_authority.py -k test_open_room_admission_grants_no_portal_principal_and_no_sibling_read"
+  },
+  {
+    "name": "installation-only operations refuse in-band actors (domain)",
+    "file": "nora/domain/management.py",
+    "old": "        if self.actor.kind not in spec.actors:\n            raise OperationError(\n                f\"{self.kind!r} does not admit a {self.actor.kind.value} actor\"\n            )",
+    "new": "        if self.actor.kind in frozenset():\n            raise OperationError(\n                f\"{self.kind!r} does not admit a {self.actor.kind.value} actor\"\n            )",
+    "target": "tests/domain/test_management.py -k test_suspend_identity_is_installation_only_and_reasoned"
+  },
+  {
+    "name": "installation-only operations refuse in-band actors (service ingress)",
+    "file": "nora/domain/management.py",
+    "old": "        if self.actor.kind not in spec.actors:\n            raise OperationError(\n                f\"{self.kind!r} does not admit a {self.actor.kind.value} actor\"\n            )",
+    "new": "        if self.actor.kind in frozenset():\n            raise OperationError(\n                f\"{self.kind!r} does not admit a {self.actor.kind.value} actor\"\n            )",
+    "target": "tests/web/test_management_api.py -k test_a_service_credential_cannot_issue_installation_operations"
+  },
+  {
+    "name": "the session ingress cannot mint an installation actor",
+    "file": "nora/web/management_request.py",
+    "old": "            actor = Actor(ActorKind.OPERATOR, person_id=operator_person, scope=scope)",
+    "new": "            actor = Actor(ActorKind.INSTALLATION, person_id=operator_person)",
+    "target": "tests/web/test_management_operator.py -k test_a_session_cannot_mint_installation_authority"
+  },
+  {
+    "name": "a platform role marking cannot ride the roster member schema",
+    "file": "nora/web/management_roster_request.py",
+    "old": "class ObservedAccount(BaseModel):\n    model_config = ConfigDict(extra=\"forbid\", frozen=True, strict=True)",
+    "new": "class ObservedAccount(BaseModel):\n    model_config = ConfigDict(extra=\"ignore\", frozen=True, strict=True)",
+    "target": "tests/web/test_management_api.py -k test_a_roster_member_cannot_carry_a_platform_role_marking"
+  },
+  {
+    "name": "admin keys ride the Authorization header alone",
+    "file": "nora/infra/ory/http.py",
+    "old": "    if api_key:\n        headers[\"Authorization\"] = f\"Bearer {api_key}\"",
+    "new": "    if api_key:\n        headers[\"X-Api-Key\"] = api_key",
+    "target": "tests/web/test_managed_ory_credentials.py -k test_ory_admin_keys_ride_only_their_private_calls"
+  },
+  {
+    "name": "a transport detail never echoes request material (outcome)",
+    "file": "nora/infra/ory/http.py",
+    "old": "        return HttpResult(\n            HttpStatus.UNAVAILABLE, detail=f\"transport:{type(exc).__name__}\"\n        )",
+    "new": "        return HttpResult(\n            HttpStatus.UNAVAILABLE, detail=f\"transport:{type(exc).__name__} {headers}\"\n        )",
+    "target": "tests/web/test_managed_ory_credentials.py -k test_ory_admin_keys_never_reach_an_outcome"
+  },
+  {
+    "name": "a transport detail never echoes request material (reply body)",
+    "file": "nora/infra/ory/http.py",
+    "old": "        return HttpResult(\n            HttpStatus.UNAVAILABLE, detail=f\"transport:{type(exc).__name__}\"\n        )",
+    "new": "        return HttpResult(\n            HttpStatus.UNAVAILABLE, detail=f\"transport:{type(exc).__name__} {headers}\"\n        )",
+    "target": "tests/web/test_managed_ory_credentials.py -k test_ory_admin_keys_never_reach_a_reply_body"
+  },
+  {
+    "name": "a transport detail never echoes request material (tool result)",
+    "file": "nora/infra/ory/http.py",
+    "old": "        return HttpResult(\n            HttpStatus.UNAVAILABLE, detail=f\"transport:{type(exc).__name__}\"\n        )",
+    "new": "        return HttpResult(\n            HttpStatus.UNAVAILABLE, detail=f\"transport:{type(exc).__name__} {headers}\"\n        )",
+    "target": "tests/web/test_managed_ory_credentials.py -k test_ory_admin_keys_never_reach_a_tool_result"
+  }
+]

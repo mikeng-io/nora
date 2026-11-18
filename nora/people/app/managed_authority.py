@@ -170,6 +170,9 @@ class AuthorityService:
         refuse = await self._actor_allowed(op, scope)
         if refuse is not None:
             return refuse
+        promotion = await self._self_promotion(op)
+        if promotion is not None:
+            return promotion
         if op.kind == "set_membership":
             lifecycle = await self._bindings.person_lifecycle(
                 op.target.person_id or ""
@@ -343,6 +346,19 @@ class AuthorityService:
             ) if actor.account else None
             if account is None or account.person_id != actor.person_id:
                 return denied("holder-binding-absent")
+        return None
+
+    async def _self_promotion(self, op: Operation) -> Outcome | None:
+        """`None`, or the refusal of a `delegate` that would enlarge the
+        acting operator's own identity — aliases fold to the same person."""
+        if (op.kind != "delegate"
+                or op.actor.kind is not ActorKind.OPERATOR
+                or op.actor.person_id is None
+                or not isinstance(op.payload, Delegation)):
+            return None
+        if (await self._canonical(op.payload.delegatee)
+                == await self._canonical(op.actor.person_id)):
+            return denied("operator-self-promotion")
         return None
 
     async def _publish_containment(self, scope: Scope) -> Outcome:
