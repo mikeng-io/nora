@@ -534,3 +534,56 @@ async def test_social_batch_excludes_disallowed_items_and_source_revisions_but_k
     assert await BackgroundIdentity(case.access).social_batch(person, batch) == batch
     case.registry.identities[person]["traits"]["social"] = False
     assert await BackgroundIdentity(case.access).social_batch(person, batch) == [message]
+
+
+async def test_the_selected_population_carries_no_key_for_a_sibling_unit_member():
+    """A member only of a sibling unit is enumerated under their own unit
+    and denied everywhere this unit reads its members: no population key,
+    no `<room_members>` ref, no `members_of` row for this room."""
+    from nora.domain.culture import character_key
+    from nora.domain.managed import room_scope_id
+    from nora.domain.management import Scope, ScopeKind
+
+    case = await _background_identity_case()
+    person, peer, outsider = case.people
+    other_unit = Scope(ScopeKind.UNIT, "generated-profile-other")
+    other_room = Scope(ScopeKind.ROOM, room_scope_id("signal", "g3"))
+    # The outsider's membership is real — on the sibling unit's room only.
+    assert [m.person_id for m in await case.access.members_of(other_room)] == [outsider]
+    # This unit's population holds one key per own member — never theirs.
+    assert set(case.keys) == {
+        character_key(_M_UNIT.id, person), character_key(_M_UNIT.id, peer),
+        character_key(other_unit.id, outsider)}
+    # This room's member view — the one `<room_members>` renders — admits
+    # only this room's members.
+    assert [r.person_id for r in await case.access.room_refs("signal", "g1")] == [person, peer]
+
+
+async def test_collective_batch_refuses_held_social_for_a_sibling_unit_member():
+    """The collective-social gate is this unit's room membership: the
+    member only of the sibling unit's room is not a member here, so
+    their held social evidence never reaches the assembled batch — the
+    in-unit member's does."""
+    from nora.domain.managed import room_scope_id
+    from nora.domain.management import Scope, ScopeKind
+    from nora.domain.profile_inputs import PersonSourceRevision
+    from nora.language.background_identity import BackgroundIdentity
+
+    case = await _background_identity_case()
+    person, _, outsider = case.people
+    identity = BackgroundIdentity(case.access)
+    # The outsider's membership is real — in the sibling unit's room only.
+    other_room = Scope(ScopeKind.ROOM, room_scope_id("signal", "g3"))
+    assert [m.person_id for m in await case.access.members_of(other_room)] == [outsider]
+
+    def held(subject):
+        return PersonSourceRevision(
+            domain="social", source="generated-held-social", revision="one",
+            state="readable", recorded_at="2026-10-05T09:00:00+00:00",
+            subject=subject)
+
+    message = _background_message(person)
+    member_item, outsider_item = held(person), held(outsider)
+    out = await identity.collective_batch(
+        [("signal", "g1")], [message, member_item, outsider_item])
+    assert out == [message, member_item]

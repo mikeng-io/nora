@@ -323,6 +323,13 @@ jobs:
           tests/integration/test_managed_identity_restore.py
           tests/integration/test_managed_runtime_recovery.py
           tests/integration/test_managed_community_cost.py
+          tests/integration/test_managed_analytics.py
+          tests/integration/test_managed_circle_cost.py
+          tests/integration/test_managed_collective_identity.py
+          tests/integration/test_managed_ingest_authority.py
+          tests/integration/test_managed_lineage.py
+          tests/integration/test_managed_presence.py
+          tests/integration/test_managed_routes.py
           tests/integration/test_platform_observation_ingest.py
           tests/contract/test_binding_store_scoped_contract.py
           tests/infra/test_account_link_requests.py
