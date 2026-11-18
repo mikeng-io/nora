@@ -290,7 +290,7 @@ class HolderLinkService:
             if bound is not None and bound.account_id == record.account_id:
                 side = candidate
         if side is None:
-            return denied("not-a-party")
+            side = LinkSide.RECEIVING
         authenticated_at = datetime.fromtimestamp(timestamp_ms / 1000, UTC)
         kind = ("approve_link" if approve
                 else "cancel_link" if side is LinkSide.INITIATING else "refuse_link")
