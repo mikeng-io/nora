@@ -289,8 +289,8 @@
   {
     "name": "wake: the evaluator actually writes under a guard (a late close between read and write refuses the wake)",
     "file": "nora/app/wake.py",
-    "old": "                    wake=wake, recorded_at_ms=int(self._clock() * 1000), guard=guard,",
-    "new": "                    wake=wake, recorded_at_ms=int(self._clock() * 1000),",
+    "old": "                    wake=wake,\n                    recorded_at_ms=int(self._clock() * MILLISECONDS_PER_SECOND),\n                    guard=guard,\n",
+    "new": "                    wake=wake,\n                    recorded_at_ms=int(self._clock() * MILLISECONDS_PER_SECOND),\n",
     "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_late_close_between_the_read_and_the_write_refuses_the_new_wake"
   },
   {
