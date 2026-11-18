@@ -525,11 +525,7 @@ class DiscordBridge:
         return f"{guild_id}/{room}"
 
     async def _slash_admission(self, interaction: Any) -> bool:
-        """The tree-wide `interaction_check`: every standalone slash
-        command (`/music …`, `/discord …`) answers to the SAME projection
-        as capture and the forwarded tool surface — room admitted AND
-        requester holding the room's sender grant — not just the voice
-        guild allow-list (that still gates `connect()` itself)."""
+        """Slash commands require both capture scope and the room's sender grant."""
         guild_id = getattr(interaction, "guild_id", None)
         if guild_id is None:
             with contextlib.suppress(Exception):
@@ -544,11 +540,14 @@ class DiscordBridge:
             if channel is not None
             else f"{guild_id}/{channel_id}")
         user_id = str(getattr(getattr(interaction, "user", None), "id", "") or "")
-        if self._admit_room(conv_id) and self._admit_requester(conv_id, (user_id,)):
+        admitted = self._admit_room(conv_id)
+        if admitted and self._admit_requester(conv_id, (user_id,)):
             return True
         log.info("slash admission denied in guild %s", guild_id)
         with contextlib.suppress(Exception):
-            await self._command_acts.denied(interaction, m.room_not_admitted_line(), room=conv_id)
+            await self._command_acts.denied(
+                interaction, m.room_not_admitted_line(), room=conv_id, admitted=admitted,
+            )
         return False
 
     def _projection_music_channel(self, guild_id: str) -> str | None:

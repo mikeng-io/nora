@@ -93,7 +93,12 @@ async def _retire(conn: Any, table: str, i: int) -> None:
 
 
 async def _append(conn: Any, table: str, n: int) -> None:
-    await conn.execute(sa.insert(_table(table)).values(APPEND[table](n)))
+    row = APPEND[table](n)
+    if graph_id := row.get("graph_id"):
+        await conn.execute(sa.insert(_table("registry")).values(
+            id=graph_id, unit=row["unit"], kind="item",
+        ))
+    await conn.execute(sa.insert(_table(table)).values(row))
 
 
 async def _held(engine: Any) -> dict[str, list[str]]:

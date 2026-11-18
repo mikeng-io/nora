@@ -86,6 +86,6 @@ class ComputerTaskActs:
                     outcome = Outcome("failed")
                 else:
                     outcome = Outcome("uncertain")
-                await self._envelope.record_outcome(act, outcome)
+                await self._envelope.record_act_outcome(act, outcome)
         except Exception:
             log.exception("computer act outcome could not be recorded (job=%s)", job_id)
