@@ -337,13 +337,13 @@ class SqlCognitiveGraph:
         occurred_at: datetime | None,
         asserted_at: datetime,
         interval: tuple[datetime, datetime] | None = None,
+        identity_interval: tuple[datetime, datetime] | None = None,
         persons: Iterable[str] = (),
         room: str | None = None,
         minimum: Exposure = "external",
         build_lineage: Any = None,
         inputs: Iterable[RowData] = (),
         revisions: Mapping[str, Any] | None = None,
-        existing_id: str | None = None,
     ) -> dict[str, Any]:
         """Prepare aggregate planes and register their identity in the caller's transaction."""
         scope = inherited_scope(
@@ -360,7 +360,7 @@ class SqlCognitiveGraph:
         )
         graph_id = None
         if unit is not None:
-            graph_id = existing_id or aggregate_graph_id(table.name, key, interval)
+            graph_id = aggregate_graph_id(table.name, key, identity_interval or interval)
             stmt = pg_insert(REGISTRY).values(id=graph_id, unit=unit, kind="aggregate")
             await conn.execute(
                 stmt.on_conflict_do_update(
