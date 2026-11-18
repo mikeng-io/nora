@@ -48,8 +48,8 @@ _ALLOWED = frozenset({
     "log", "logger",
     # `nora/subject/obtain.py`'s UNRESOLVED is an immutable sentinel —
     # `_Unresolved` defines only `__repr__` and identity comparison is the
-    # contract. Nothing per-request accumulates in it; DEC-13's mutable
-    # state never arrives.
+    # contract. Nothing per-request accumulates in it; the mutable state
+    # this rule forbids never arrives.
     "UNRESOLVED",
 })
 
