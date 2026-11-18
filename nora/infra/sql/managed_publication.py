@@ -225,7 +225,7 @@ async def consolidate_people(
     await conn.execute(sa.update(MANAGED_ACCOUNT).where(
         MANAGED_ACCOUNT.c.person_id == former,
     ).values(
-        person_id=survivor,
+        person_id=former,
         revision=MANAGED_ACCOUNT.c.revision + 1,
     ))
     await _merge_membership_rows(conn, survivor, former)
