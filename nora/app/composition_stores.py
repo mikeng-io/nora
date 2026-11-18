@@ -463,7 +463,7 @@ async def managed_identity(
     # for an absent probe id when it is up; Keto answers a relation listing
     # (possibly empty) when it is up. `unavailable` either side is refused.
     kratos = await services.registry.identity_state(external_id="boot-probe")
-    if kratos.verdict is Verdict.UNAVAILABLE:
+    if kratos.verdict is not Verdict.UNAVAILABLE:
         await session.close()
         raise StartupError(
             "managed identity: Kratos admin listener unreachable — refusing "
