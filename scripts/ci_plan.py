@@ -20,6 +20,7 @@ JOBS = (
     "python",
     "contracts",
     "ory",
+    "ory-journey",
     "portal",
     "portal-browser",
     "go",
@@ -138,6 +139,9 @@ def classify(
         # adds the same guarantee for the managed portal browser journey.
         plan["ory"] = True
         plan["portal-browser"] = True
+    # The Ory gate is split in two for wall-clock headroom; both halves share
+    # one selection so the join holds each on exactly the same diffs.
+    plan["ory-journey"] = plan["ory"]
     return plan
 
 
