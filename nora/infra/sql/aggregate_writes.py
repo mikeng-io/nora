@@ -225,7 +225,7 @@ class AggregateWrites:
                     content_hash=content_hash(row),
                 )
 
-    def span_key(self, table: sa.Table, row: RowData) -> tuple[Any, ...]:
+    def _span_key(self, table: sa.Table, row: RowData) -> tuple[Any, ...]:
         return tuple(row[c] for c in _POSITIONS[table.name])
 
     async def presence_planes(
@@ -254,7 +254,7 @@ class AggregateWrites:
                 source.c.circle_id == row["circle_id"],
                 source.c.ts.between(row["started_ts"], row["ended_ts"]),
             )
-            semantic_key = (*self.span_key(table, row), unit)
+            semantic_key = (*self._span_key(table, row), unit)
         elif family == "presence_corridors":
             source = PRESENCE_TRIPS
             source_query = sa.select(source).where(
@@ -264,7 +264,7 @@ class AggregateWrites:
                 source.c.state == "live",
                 source.c.started_ts.between(row["first_seen_ts"], row["last_seen_ts"]),
             )
-            semantic_key = (*self.span_key(table, row), unit)
+            semantic_key = (*self._span_key(table, row), unit)
         elif family == "presence_derived_places":
             source = PRESENCE_STAYS
             source_query = sa.select(source).where(
@@ -275,7 +275,7 @@ class AggregateWrites:
                 source.c.circle_id == row["circle_id"],
                 source.c.started_ts.between(row["first_seen_ts"], row["last_seen_ts"]),
             )
-            semantic_key = (*self.span_key(table, row), unit)
+            semantic_key = (*self._span_key(table, row), unit)
         else:
             source = PRESENCE_STAYS
             source_query = sa.select(source).where(

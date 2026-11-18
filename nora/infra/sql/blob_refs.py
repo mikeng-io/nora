@@ -133,7 +133,7 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
         "the observation's own complete/covered/gaps/reason claim, "
         "never blob custody"
     ),
-    ("platform_object_state", "state"): (
+    ("platform_object_state", "source_state"): (
         "the fold's head over the same payloads — votes, fields, member "
         "and pin sets, artifact refs and their source metadata; the same "
         "custody labels, never a blob address"
@@ -213,7 +213,10 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
         (table, "lineage"): _LINEAGE
         for table in (
             "culture_revision", "event_revision", "events", "note", "note_revision",
-            "notebook_entry_revision",
+            "notebook_entry_revision", "fetched_pages", "message_delete", "message_edit",
+            "message_reaction", "messages", "platform_object_state", "platform_observation",
+            "presence_fixes", "presence_places", "social_item", "social_item_count",
+            "social_item_state", "social_poll", "source_health",
             "presence_corridors", "presence_derived_places", "presence_occupancy",
             "presence_place_rhythm", "presence_stays", "presence_trips",
             "rollup_colocation", "rollup_daybook", "rollup_outing", "rollup_response",
@@ -221,6 +224,15 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
             "standing_decision", "standing_decision_revision",
             "standing_commitment", "standing_commitment_revision",
             "standing_thread", "standing_thread_revision",
+        )
+    },
+    **{
+        (table, "build_lineage"): _LINEAGE
+        for table in (
+            "presence_corridors", "presence_derived_places", "presence_occupancy",
+            "presence_place_rhythm", "presence_stays", "presence_trips",
+            "rollup_colocation", "rollup_daybook", "rollup_outing", "rollup_response",
+            "rollup_tie",
         )
     },
 }

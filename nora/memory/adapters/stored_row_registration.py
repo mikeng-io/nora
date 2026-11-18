@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator, Sequence
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
@@ -29,16 +31,38 @@ def _key(table: sa.Table) -> tuple[str, ...]:
     )
 
 
-def _update(
-    table: sa.Table, keys: tuple[str, ...], rows: Sequence[Mapping[str, Any]],
-) -> Any:
-    stmt = sa.update(table).where(
-        *(table.c[name] == sa.bindparam(f"_source_{name}") for name in keys),
-    )
-    if table is PRESENCE_PLACES:
-        stmt = stmt.where(table.c.unit.is_(None))
-    columns = set(rows[0]) - {f"_source_{name}" for name in keys}
-    return stmt.values({name: sa.bindparam(name) for name in columns})
+async def _write_items(
+    conn: AsyncConnection, table: sa.Table, keys: tuple[str, ...],
+    rows: Sequence[RowData], copies: Sequence[RowData],
+) -> None:
+    records = sa.func.unnest(
+        sa.bindparam("graph_ids", type_=ARRAY(sa.Text)),
+        sa.bindparam("units", type_=ARRAY(sa.Text)),
+    ).table_valued("id", "unit").render_derived()
+    registry = pg_insert(REGISTRY).from_select(
+        ("id", "unit", "kind"), sa.select(records.c.id, records.c.unit, sa.literal("item")),
+    ).on_conflict_do_nothing(index_elements=["id", "unit"])
+    all_rows = (*rows, *copies)
+    # The registry's history must predate the source row that references it.
+    await conn.execute(registry, {
+        "graph_ids": [row["graph_id"] for row in all_rows],
+        "units": [row["unit"] for row in all_rows],
+    })
+
+    key_columns = {f"_source_{name}": table.c[name].type for name in keys}
+    plane_columns = {name: table.c[name].type for name in rows[0] if name not in key_columns}
+    payload = [
+        {name: value.isoformat() if isinstance(value, datetime) else value
+         for name, value in row.items()}
+        for row in rows
+    ]
+    records = sa.func.jsonb_to_recordset(sa.bindparam("items", type_=JSONB)).table_valued(
+        *(sa.column(name, type_) for name, type_ in (key_columns | plane_columns).items()),
+    ).render_derived(with_types=True)
+    update = sa.update(table).where(
+        *(table.c[name] == records.c[f"_source_{name}"] for name in keys),
+    ).values({name: records.c[name] for name in plane_columns})
+    await conn.execute(update, {"items": payload})
 
 
 async def _ids(conn: AsyncConnection, table: sa.Table, count: int) -> Iterator[Any]:
@@ -94,7 +118,7 @@ class SqlStoredRows:
         inputs = [(row, self._items.scope_for(name, row, parents)) for row in batch]
         count = sum(max(len(unit_info[0]) - 1, 0) for _, unit_info in inputs)
         ids = await _ids(conn, table, count)
-        registry, changes, copies = [], [], []
+        changes, copies = [], []
         unscoped = 0
         for row, (units, origin, persons) in inputs:
             if not units:
@@ -106,21 +130,17 @@ class SqlStoredRows:
                 values = self._items.values(
                     name, row, unit=unit, key=key, origin=origin, persons=persons,
                 )
-                registry.append({"id": values["graph_id"], "unit": unit, "kind": "item"})
                 if index == 0:
                     changes.append({**values, **{
                         f"_source_{name}": value for name, value in zip(keys, key, strict=True)
                     }})
                 else:
                     copies.append({**row, **values, "id": key[0]})
-        if registry:
-            await conn.execute(pg_insert(REGISTRY).on_conflict_do_nothing(
-                index_elements=["id", "unit"],
-            ), registry)
-            await conn.execute(_update(table, keys, changes), changes)
-        if copies:
-            await conn.execute(sa.insert(table), copies)
-        return len(registry), unscoped
+        if changes:
+            await _write_items(conn, table, keys, changes, copies)
+            if copies:
+                await conn.execute(sa.insert(table), copies)
+        return len(changes) + len(copies), unscoped
 
     async def _register_aggregates(
         self, conn: AsyncConnection, table: sa.Table, keys: tuple[str, ...], batch: Rows,

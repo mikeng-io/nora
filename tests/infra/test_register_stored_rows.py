@@ -191,11 +191,36 @@ async def test_interrupted_batch_rolls_back_and_rerun_finishes(engine):
     assert again["source_health"].registered == 0
 
 
-async def test_registers_200000_generated_probes_within_120_seconds(engine):
+async def test_registration_updates_each_probe_batch_in_one_statement(engine):
+    await _probes(engine, 5)
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("CREATE TABLE generated_updates (rows bigint)"))
+        await conn.execute(sa.text("""
+            CREATE FUNCTION generated_measure_batch() RETURNS trigger LANGUAGE plpgsql AS $$
+              BEGIN
+                INSERT INTO generated_updates SELECT count(*) FROM updated;
+                RETURN NULL;
+              END;
+            $$
+        """))
+        await conn.execute(sa.text("""
+            CREATE TRIGGER generated_batch AFTER UPDATE ON source_health
+            REFERENCING NEW TABLE AS updated
+            FOR EACH STATEMENT EXECUTE FUNCTION generated_measure_batch()
+        """))
+    command = RegisterStoredRows(SqlStoredRows(engine, _rollup_registration().scope), batch_size=2)
+    assert (await command.run())["source_health"].registered == 5
+    async with engine.connect() as conn:
+        updates = await conn.scalars(sa.text("SELECT rows FROM generated_updates ORDER BY rows"))
+        assert updates.all() == [1, 2, 2]
+
+
+async def test_registers_200000_generated_probes_within_120_seconds(engine, record_property):
     await _probes(engine, 200_000)
     start = monotonic()
     report = await RegisterStoredRows(SqlStoredRows(engine, _rollup_registration().scope)).run()
     elapsed = monotonic() - start
+    record_property("registration_seconds", f"{elapsed:.3f}")
     assert report["source_health"].registered == 200_000
     async with engine.connect() as conn:
         count = await conn.scalar(sa.select(sa.func.count()).select_from(SOURCE_HEALTH).where(

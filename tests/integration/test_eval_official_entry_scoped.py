@@ -119,13 +119,7 @@ def _scripted_respond(evidence_root: Path, requests: list[dict]):
     return respond
 
 
-def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
-                  *, break_evidence_write: bool = False,
-                  example_config_path: Path):
-    """One real `main()` run of the scoped-browse case against a generated
-    source. Returns `(rc, evidence_root, requests)`."""
-    _run_one_case.refusals = []
-    _run_one_case.fd_map = {}
+def _seed_eval_source(tmp_path, monkeypatch, pg_admin, pg_template) -> str:
     from nora.infra.sql.migrations_runner import run_migrations
     from tests.sandbox_fixtures import Knowledge, Message, seed_source
 
@@ -138,7 +132,6 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     source_url = (f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
                   f"@{pg_admin.host}:{pg_admin.port}/generated_eval")
     run_migrations(source_url)
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-key")
     import asyncio
     asyncio.run(seed_source(
         source_url, tmp_path / "seed",
@@ -154,11 +147,31 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
             "UPDATE row_history SET recorded_at = "
             "to_timestamp((image->>'ts')::bigint / 1000.0) "
             "WHERE table_name='messages'"))
+        c.execute(sa.text("""
+            UPDATE row_history AS registry
+            SET recorded_at = message.recorded_at
+            FROM row_history AS message
+            WHERE registry.table_name = 'registry' AND message.table_name = 'messages'
+              AND registry.row_key->>'id' = message.image->>'graph_id'
+              AND registry.row_key->>'unit' = message.image->>'unit'
+        """))
     # The private map a pseudonymised anchor resolves through — generated,
     # pointing the corpus pseudonym at the seeded real room.
     pmap = tmp_path / "pseudonyms.map"
     pmap.write_text(f"{PSEUDONYM_ID}==>{REAL_ID}\n")
     monkeypatch.setenv("NORA_EVAL_PSEUDONYM_MAP", str(pmap))
+    return source_url
+
+
+def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
+                  *, break_evidence_write: bool = False,
+                  example_config_path: Path):
+    """One real `main()` run of the scoped-browse case against a generated
+    source. Returns `(rc, evidence_root, requests)`."""
+    _run_one_case.refusals = []
+    _run_one_case.fd_map = {}
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-key")
+    source_url = _seed_eval_source(tmp_path, monkeypatch, pg_admin, pg_template)
 
     # --- a generated deployment config (never the deployment's own) ---
     deploy_dir = tmp_path / "deploy"

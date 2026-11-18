@@ -145,6 +145,21 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
+    ("cognitive_graph_store.py", "revise"): _Pin(
+        "deferred_consumer",
+        "Revises a graph kind row through the phase one store. Admission owns "
+        "the future producer of graph revisions.",
+    ),
+    ("cognitive_graph_store.py", "tombstone"): _Pin(
+        "deferred_consumer",
+        "The standalone graph tombstone entry point. Aggregate builders call "
+        "tombstone_in to retire rows in their existing build transaction.",
+    ),
+    ("observations.py", "rebuild_heads"): _Pin(
+        "read_back_affordance",
+        "Replays one scope's retained observations for the head equivalence "
+        "check. Production ingestion updates the heads in the write transaction.",
+    ),
     ("memory_graph.py", "requeue_failed"): _Pin(
         "deferred_consumer",
         "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
@@ -304,6 +319,10 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # `nora/instructions/reload.py`) — a `.current(...)` call cannot be
         # attributed.
         "current",
+        # Registration protocols share resolver names with the implementations.
+        "conversation", "conversations", "person_id", "platform", "rooms", "subject_id_for",
+        # Aggregate retirement and lesson retirement are separate operations.
+        "retire",
     }
 )
 
@@ -315,10 +334,10 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 # same glob the walk uses narrows both sides equally. A control derived from the
 # thing it controls is not a control.
 #
-# `engine.py`, `migrations_runner.py` and `schema.py` are the package's only
-# other files and define no public methods, so they are simply not here.
 _STORE_MODULES: frozenset[str] = frozenset(
     {
+        "aggregate_writes.py", "cognitive_graph_store.py", "item_registration.py",
+        "mobility_writes.py", "observation_heads.py", "social_item_writes.py",
         "assess.py", "audit.py", "bridge_store.py", "cognition_store.py",
         "comprehend.py", "lessons.py", "tension.py", "entries.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",

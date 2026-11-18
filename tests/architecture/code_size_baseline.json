@@ -1400,7 +1400,7 @@
  "nora/infra/sql/social_stream.py": {
   "comment_blocks": 1,
   "file_lines": 1008,
-  "internal_docstrings": 2
+  "internal_docstrings": 1
  },
  "nora/infra/sql/standing.py": {
   "comment_blocks": 7,
@@ -2595,9 +2595,6 @@
   "internal_docstrings": 1
  },
  "tests/integration/test_eval_official_entry_scoped.py": {
-  "functions": {
-   "_run_one_case": 151
-  },
   "internal_docstrings": 2
  },
  "tests/integration/test_eval_sandbox_index_reuse.py": {

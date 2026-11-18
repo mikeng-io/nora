@@ -29,12 +29,11 @@ from nora.infra.sql import snapshot_at
 from nora.infra.sql.history import APPEND_ONLY, CAPTURE_SETTING
 from nora.infra.sql.schema import METADATA, ROW_HISTORY
 
-#: The Record's history tables: messages and their edit/reaction/delete
-#: rows, plus platform observations. Everything else in HISTORY_TABLES is
-#: what her sessions or pipelines own.
+#: Record tables advanced from their history versions.
 RECORD_HISTORY_TABLES = (
     "messages", "message_edit", "message_reaction", "message_delete",
     "platform_observation", "platform_object_state",
+    "social_item", "social_item_state", "social_item_count", "social_poll",
 )
 
 #: The Record's append-only tables: the social stream's rows and blob
@@ -43,8 +42,7 @@ RECORD_HISTORY_TABLES = (
 RECORD_APPEND_TABLES = tuple(
     t for t in APPEND_ONLY
     if t in (
-        "social_item", "social_item_state", "social_item_count",
-        "social_perception", "social_poll", "blob_tombstone",
+        "social_perception", "blob_tombstone",
     )
 )
 
@@ -133,34 +131,58 @@ async def _replay_history(
     prev: datetime, at: datetime,
 ) -> int:
     versions = (await src.execute(sa.text(
-        'SELECT row_key, op, image FROM row_history WHERE table_name = :t '
-        'AND recorded_at > :prev AND recorded_at <= :at ORDER BY id'
+        'SELECT DISTINCT ON (row_key) op, image FROM row_history WHERE table_name = :t '
+        'AND recorded_at > :prev AND recorded_at <= :at '
+        'ORDER BY row_key, recorded_at DESC, id DESC'
     ), {"t": table, "prev": prev, "at": at})).mappings().all()
     if not versions:
         return 0
     columns = await snapshot_at._target_columns(dst, table)
-    updates = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c, _, _ in columns if c != "id")
-    upsert = sa.text(
-        snapshot_at._insert_sql(table, columns)
-        + f' ON CONFLICT (id) DO UPDATE SET {updates}'
-    )
-    delete = sa.text(f'DELETE FROM "{table}" WHERE id = :id')  # noqa: S608 — constants
+    images = [version["image"] for version in versions if version["op"] != "delete"]
+    deleted = [version["image"]["id"] for version in versions if version["op"] == "delete"]
+    relation = METADATA.tables[table]
     touched = 0
-    # One upsert may touch a row once: a later version replaces the earlier.
-    upserts: dict[Any, dict[str, Any]] = {}
-    for version in versions:
-        image = version["image"]
-        if version["op"] == "delete":
-            if upserts:
-                await dst.execute(upsert, {"rows": json.dumps([*upserts.values()], default=str)})
-                upserts = {}
-            await dst.execute(delete, {"id": image.get("id")})
-        else:
-            upserts[image.get("id")] = dict(image)
-        touched += 1
-    if upserts:
-        await dst.execute(upsert, {"rows": json.dumps([*upserts.values()], default=str)})
+    if deleted:
+        result = await dst.execute(sa.delete(relation).where(relation.c.id.in_(deleted)))
+        touched += result.rowcount
+    if images:
+        await _restore_registrations(src, dst, images, at)
+        values = [f'"{c}"' for c, _, _ in columns if c != "id"]
+        updates = ", ".join(f'{c} = EXCLUDED.{c}' for c in values)
+        current = ", ".join(f'"{table}".{c}' for c in values)
+        incoming = ", ".join(f'EXCLUDED.{c}' for c in values)
+        upsert = sa.text(
+            snapshot_at._insert_sql(table, columns)
+            + f' ON CONFLICT (id) DO UPDATE SET {updates}'
+            + f' WHERE ({current}) IS DISTINCT FROM ({incoming})'
+        )
+        result = await dst.execute(upsert, {"rows": json.dumps(images)})
+        touched += result.rowcount
     return touched
+
+
+async def _restore_registrations(
+    src: AsyncConnection, dst: AsyncConnection, images: list[dict[str, Any]], at: datetime,
+) -> None:
+    keys = {(row["graph_id"], row["unit"]) for row in images if row.get("graph_id")}
+    if not keys:
+        return
+    matches = await src.scalars(sa.select(ROW_HISTORY.c.image).where(
+        ROW_HISTORY.c.table_name == "registry",
+        ROW_HISTORY.c.row_key.in_([{"id": key, "unit": unit} for key, unit in sorted(keys)]),
+        ROW_HISTORY.c.recorded_at <= at,
+        sa.or_(ROW_HISTORY.c.superseded_at.is_(None), ROW_HISTORY.c.superseded_at > at),
+        ROW_HISTORY.c.op != "delete",
+    ))
+    rows = matches.all()
+    if len(rows) != len(keys):
+        raise ValueError("Record history is missing a graph registration at the replay cutoff")
+    columns = await snapshot_at._target_columns(dst, "registry")
+    await dst.execute(sa.text(
+        snapshot_at._insert_sql("registry", columns)
+        + " ON CONFLICT (id, unit) DO UPDATE SET state = EXCLUDED.state, "
+        "content_hash = EXCLUDED.content_hash, tombstoned_at = EXCLUDED.tombstoned_at"
+    ), {"rows": json.dumps(rows)})
 
 
 async def _history_window(
