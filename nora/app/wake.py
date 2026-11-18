@@ -34,6 +34,7 @@ from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
+from nora.app.tick_grid import aligned_ticks
 from nora.domain.ports import NewWakeOutcome, StimulusStore
 from nora.domain.stimuli import (
     NO_CAUSE,
@@ -52,7 +53,6 @@ from nora.domain.stimuli import (
     restart_detail,
     unit_in_flight,
 )
-from nora.domain.ticks import seconds_to_boundary
 
 log = logging.getLogger("nora.app.wake")
 
@@ -562,12 +562,7 @@ async def wake_loop(
     """The evaluator's clock: `tick` every `tick_seconds`, forever. A failing
     tick is logged and counted and never takes the loop down."""
     log.info("cognition wake evaluator started: tick every %gs", tick_seconds)
-    while True:
-        # Aligned (node 18): the next boundary of the cadence grid, never
-        # `tick_seconds` after the last pass ended — a pass's duration does
-        # not drift the phase, and a slow pass skips an opportunity rather
-        # than losing due work.
-        await asyncio.sleep(seconds_to_boundary(tick_seconds))
+    async for _ in aligned_ticks(tick_seconds):
         try:
             await evaluator.tick()
         except Exception:

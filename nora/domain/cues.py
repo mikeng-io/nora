@@ -39,7 +39,10 @@ from typing import Literal, get_args
 
 #: Every cue a stimulus can carry, in the order they are stored. The label
 #: vocabulary of `nora_stimulus_total{cue}` is this plus `none`, DERIVED here.
-Cue = Literal["datetime", "amount", "keep", "rsvp", "place_link", "surprise"]
+Cue = Literal[
+    "datetime", "amount", "keep", "rsvp", "place_link", "surprise",
+    "addresses_nora", "self_reference",
+]
 CUES: tuple[str, ...] = get_args(Cue)
 
 #: The cues that trip the `strong cue` trigger. `amount` and `surprise`
@@ -197,3 +200,22 @@ def is_rearming(cues: tuple[str, ...] | frozenset[str]) -> bool:
     """Whether any of `cues` trips the strong-cue trigger straight after a
     `strong_cue` wake (`REARMING_CUES`)."""
     return any(c in REARMING_CUES for c in cues)
+
+
+_FIRST_PERSON = re.compile(
+    r"(?:^|[.!;,\n]\s*)"
+    r"(?:I(?:\s+(?:am|have|had|was|will|would|can|could|do|did|feel|like|love|"
+    r"prefer|want|need|think|believe|live|work|play|go|went|use|take|accept|pick|"
+    r"confirm|agree|disagree|plan|intend|know|remember)\b|[\u2019'](?:m|ve|d|ll)\b)"
+    r"|(?:我|本人)(?:係|是|有|冇|沒有|唔|會|想|覺得|鍾意|喜歡|需要|住|去|揀|確認|同意))",
+    re.IGNORECASE,
+)
+
+
+def graph_item_cues(body: str | None, *, addressed: bool = False) -> tuple[str, ...]:
+    """Addressing and first-person statement cues for the graph item writer."""
+    cues: tuple[str, ...] = ("addresses_nora",) if addressed else ()
+    folded = unicodedata.normalize("NFKC", body or "").strip()
+    if folded and not folded.endswith("?") and _FIRST_PERSON.search(folded):
+        cues += ("self_reference",)
+    return cues

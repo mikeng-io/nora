@@ -94,6 +94,7 @@ from nora.app.composition_stores import (
 from nora.app.computer_sweeper import ComputerSessionSweeper
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.graph_batches import GraphBatchProducer
+from nora.app.graph_observe import GraphObserve, graph_observe
 from nora.app.lifecycle import StartupOwner
 from nora.app.memory_routing import (
     profile_scopes_of_person,
@@ -446,6 +447,7 @@ class Dependencies:
     # false`, the default. `__main__` hands it to the memory drain loop.
     memory_embed: MemoryEmbedWorker | None = None
     graph_batches: GraphBatchProducer | None = None
+    graph_observe: GraphObserve | None = None
     # The social stream's poller: `None` unless `[social.poll] enabled`.
     # `nora/__main__.py` starts it; the eval subject, which composes the same
     # graph, does not.
@@ -524,15 +526,18 @@ async def _compose_dependencies(
     _stores_backend = await identity_backend(
         allowlist=allowlist, cfg=cfg, metrics=metrics, persons=persons,
         owner=owner)
-    _stores_database = _stores_backend.database
-    engine = _stores_database.engine
+    engine = _stores_backend.database.engine
     _stores_managed = _stores_backend.managed
     access = _stores_backend.access
     persons_view = _stores_backend.persons_view
     if discord_control is not None:
         discord_control.attach_effects(memory_area.EffectRecorder(_memory_wire.act_envelope(engine)))
-    _stores_audit = build_audit(cfg=cfg, engine=engine, metrics=metrics)
-    audit = _stores_audit.audit
+    registry: AdapterRegistry
+    audit = build_audit(
+        cfg=cfg, engine=engine, metrics=metrics,
+        self_ids=lambda platform: registry.identity_for(platform).aliases
+        if platform in registry.identities else frozenset(),
+    ).audit
     owner.own_audit(audit)
     _location_stores = _location_wire.stores(engine=engine)
     mobility = _location_stores.mobility
@@ -658,8 +663,7 @@ async def _compose_dependencies(
         signal_consent=signal_link_consent(_stores_managed.services, link_delivery),
         access=access,
     )
-    account = _platforms_adapters.account
-    adapter = _platforms_adapters.adapter
+    account, adapter = _platforms_adapters.account, _platforms_adapters.adapter
     registry = _platforms_adapters.registry
     _stores_instructions = instructions(cfg=cfg, metrics=metrics)
     dreamer_instructions = _stores_instructions.dreamer_instructions
@@ -1450,6 +1454,7 @@ async def _compose_dependencies(
         social_poller=social_poller,
         social_perception=social_perception,
         story_expiry=story_expiry,
+        graph_observe=graph_observe(engine, op_clock, metrics),
         graph_batches=(
             GraphBatchProducer(engine, metrics=metrics) if cfg.memory.graph.enabled else None
         ),

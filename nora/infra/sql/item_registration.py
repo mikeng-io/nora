@@ -17,9 +17,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql.dml import Insert
 
+from nora.domain.cues import graph_item_cues
+from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.managed import room_scope_id
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.cognitive_graph_schema import REGISTRY
+from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.schema import MESSAGES
 from nora.infra.version import DEFAULT_MANIFEST_PATH
 
@@ -30,6 +33,9 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+_OWN_ITEMS = frozenset({
+    "nora_act", "nora_act_outcome", "nora_pass_output", "computer_events", "tool_call_log",
+})
 _PER_UNIT_SOURCES = frozenset({
     "presence_fixes", "social_item", "social_item_count",
     "social_item_state", "social_poll", "source_health",
@@ -279,10 +285,12 @@ class SqlItemRegistration:
         self, conn: AsyncConnection, table: sa.Table, stmt: Insert, *,
         unit: str | None, occurred_at: datetime | None,
         persons: Iterable[str | None] = (), room: str | None = None,
+        cues: tuple[str, ...] = (),
     ) -> Any:
         async with conn.begin_nested() as attempt:
             planes = await self.planes(
-                conn, table, unit=unit, occurred_at=occurred_at, persons=persons, room=room,
+                conn, table, unit=unit, occurred_at=occurred_at,
+                persons=persons, room=room, cues=cues,
             )
             inserted = (await conn.execute(stmt.values(**planes).returning(table.c.id))).scalar()
             if inserted is None:
@@ -294,9 +302,11 @@ class SqlItemRegistration:
         unit: str | None, occurred_at: datetime | None,
         persons: Iterable[str | None] = (), room: str | None = None,
         key: tuple[Any, ...] | None = None, asserted_at: datetime | None = None,
+        cues: tuple[str, ...] = (), own: bool = False, failed: bool = False,
     ) -> dict[str, Any]:
+        people = tuple(person for person in persons if person)
         values: dict[str, Any] = {
-            "unit": unit, "persons": sorted({person for person in persons if person}),
+            "unit": unit, "persons": sorted(set(people)),
             "origin_room": room, "occurred_at": occurred_at, "valid_from": occurred_at,
             "asserted_at": asserted_at if asserted_at is not None else sa.func.clock_timestamp(),
             **self._revisions.current(),
@@ -317,12 +327,22 @@ class SqlItemRegistration:
             id=graph_id, unit=unit, kind="item",
         ).on_conflict_do_nothing())
         values["graph_id"] = graph_id
+        if failed or (not own and table.name not in _OWN_ITEMS):
+            at = occurred_at or asserted_at
+            if at is None:
+                at = (await conn.execute(sa.select(sa.func.clock_timestamp()))).scalar_one()
+                values["asserted_at"] = at
+            await SqlGraphStimuli.append_in(conn, GraphStimulus(
+                unit, "failed_act" if failed else "strong_cue" if cues else "new_item",
+                graph_id, at, table.name, room, next(iter(people), None), cues,
+            ))
         return values
 
 
 async def touch_planes(
     registration: SqlItemRegistration | None, conn: AsyncConnection,
     table: sa.Table, message_id: int, message: NormalizedMessage, person_id: str | None,
+    *, cues: tuple[str, ...] = (), own: bool = False,
 ) -> dict[str, Any]:
     if registration is None:
         return {}
@@ -332,4 +352,19 @@ async def touch_planes(
     return await registration.planes(
         conn, table, unit=registration.scope.message_unit(message),
         room=origin_room, occurred_at=epoch_ms(message.timestamp), persons=(person_id,),
+        cues=cues, own=own,
     )
+
+
+async def message_graph_cues(
+    conn: AsyncConnection, message: NormalizedMessage, self_ids: frozenset[str],
+) -> tuple[str, ...]:
+    addressed = message.conversation_type == "dm" or bool(message.mentions & self_ids)
+    if not addressed and message.quote is not None:
+        addressed = bool(await conn.scalar(sa.select(sa.exists().where(
+            MESSAGES.c.platform == message.platform,
+            MESSAGES.c.conversation_id == message.conversation_id,
+            MESSAGES.c.ts == message.quote.quoted_ts,
+            MESSAGES.c.is_nora == 1,
+        ))))
+    return graph_item_cues(message.body, addressed=addressed)

@@ -35,6 +35,7 @@ from nora.analytics.rollup import FoldRun, MobilityRollup, RollupConfig
 from nora.analytics.units import UnitConfig, UnitRollups, UnitRun
 from nora.domain.mobility import Stay
 from nora.domain.ports import GeocodeCacheStore
+from nora.infra.sql.aggregate_crossings import SqlAggregateCrossings
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.rollups import SqlRollupStore
 
@@ -86,6 +87,7 @@ class RollupRunner:
         config: RollupConfig, unit_rollups: UnitRollups,
         subjects: Sequence[Subject], unit_config: UnitConfig,
         metrics: Any = None, geocode_cache: GeocodeCacheStore | None = None,
+        crossings: SqlAggregateCrossings | None = None,
     ) -> None:
         self._mobility = mobility.unbound()
         self._rollups = rollups
@@ -95,6 +97,7 @@ class RollupRunner:
         self._params = params_sha256(config, unit_config)
         self._metrics = metrics
         self._geocode_cache = geocode_cache
+        self._crossings = crossings
 
     @property
     def params(self) -> str:
@@ -130,6 +133,10 @@ class RollupRunner:
             logical_now={s: run.logical_now_ms for s, run in folds.items()},
             anomalous=anomalous, raise_stimuli=raise_stimuli,
         )
+        if raise_stimuli and self._crossings is not None:
+            await self._crossings.publish(
+                build_id, (stay for stays in anomalous.values() for stay in stays),
+            )
         if not failed:
             await self._rollups.advance_build(build_id=build_id, through_ms=through_ms)
         try:

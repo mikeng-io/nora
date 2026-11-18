@@ -128,7 +128,7 @@ class AuditWiring:
     audit: Any
 
 
-def build_audit(cfg: Any, engine: Any, metrics: Any)-> AuditWiring:
+def build_audit(cfg: Any, engine: Any, metrics: Any, *, self_ids: Any) -> AuditWiring:
 
     import nora.memory as memory
     from nora.agent.delivery_acts import DeliveryActs
@@ -137,6 +137,7 @@ def build_audit(cfg: Any, engine: Any, metrics: Any)-> AuditWiring:
     audit = SqlRecordStore(
         engine,
         max_per_conversation=cfg.store.max_per_conversation,
+        self_ids=self_ids,
         metrics=metrics,
         registration=registration,
         delivery_acts=(
