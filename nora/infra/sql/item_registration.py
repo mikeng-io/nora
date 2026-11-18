@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Iterable, Mapping, Set
+from collections.abc import Iterable, Mapping, Sequence, Set
 from dataclasses import fields, is_dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol
@@ -21,9 +21,7 @@ from nora.infra.sql.schema import MESSAGES
 from nora.infra.version import DEFAULT_MANIFEST_PATH
 
 if TYPE_CHECKING:
-    from nora.domain.models import NormalizedMessage
-    from nora.persons import Persons
-    from nora.policy import Policy
+    from nora.domain.models import NormalizedMessage, PersonRef
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _PER_UNIT_SOURCES = frozenset({
@@ -42,10 +40,50 @@ def item_graph_id(table: str, key: tuple[Any, ...], unit: str) -> str:
     return f"item:{hashlib.sha256(wire.encode()).hexdigest()}"
 
 
+class _Conversation(Protocol):
+    @property
+    def unit(self) -> str: ...
+
+    @property
+    def platform(self) -> str: ...
+
+    @property
+    def ids(self) -> Set[str]: ...
+
+    @property
+    def persons(self) -> Set[str] | None: ...
+
+
+class RegistrationPolicy(Protocol):
+    @property
+    def conversations(self) -> Sequence[_Conversation]: ...
+
+    def conversation(self, platform: str, conversation_id: str) -> _Conversation | None: ...
+
+    def rooms(self) -> Sequence[_Conversation]: ...
+
+
+class _Membership(Protocol):
+    @property
+    def circle_id(self) -> str | None: ...
+
+    @property
+    def person_id(self) -> str: ...
+
+
+class RegistrationPersons(Protocol):
+    @property
+    def life360(self) -> Sequence[_Membership]: ...
+
+    def resolve(self, platform: str, sender_id: str) -> PersonRef | None: ...
+
+    def subject_id_for(self, person_id: str) -> str: ...
+
+
 class RegistrationScope:
     """The current process's policy and identity snapshot at a source write."""
 
-    def __init__(self, policy: Policy, persons: Persons) -> None:
+    def __init__(self, policy: RegistrationPolicy, persons: RegistrationPersons) -> None:
         self._policy = policy
         self._persons = persons
 
@@ -74,6 +112,18 @@ class RegistrationScope:
                 self._persons.subject_id_for(member) == subject for member in c.persons or ()
             )
         }))
+
+    def circle_persons(self, circle: str, *, unit: str | None) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                {
+                    member.person_id
+                    for member in self._persons.life360
+                    if member.circle_id == circle
+                    and (unit in self.person_units(member.person_id) if unit is not None else True)
+                }
+            )
+        )
 
     def circle_units(self, circle: str) -> tuple[str, ...]:
         return tuple(sorted({
@@ -133,7 +183,9 @@ def _running_code() -> str | None:
 class RuntimeRevisions:
     """Content identifiers of the config and admitted policy/identity snapshots."""
 
-    def __init__(self, config: Mapping[str, Any], policy: Policy, persons: Persons) -> None:
+    def __init__(
+        self, config: Mapping[str, Any], policy: RegistrationPolicy, persons: RegistrationPersons
+    ) -> None:
         self._config = _revision(config)
         self._code = _running_code()
         self._policy = policy
@@ -163,6 +215,9 @@ class SqlItemRegistration:
     def __init__(self, scope: RegistrationScope, revisions: Revisions) -> None:
         self.scope = scope
         self._revisions = revisions
+
+    def revisions(self) -> Mapping[str, str | None]:
+        return self._revisions.current()
 
     async def insert_once(
         self, conn: AsyncConnection, table: sa.Table, stmt: Insert, *,

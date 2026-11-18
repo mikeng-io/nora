@@ -442,11 +442,11 @@ IDX_PRESENCE_MEMBER_TS = sa.Index(
 PRESENCE_PLACES = sa.Table(
     "presence_places",
     METADATA,
-    sa.Column("circle_id", sa.Text, primary_key=True),
-    sa.Column("place_id", sa.Text, primary_key=True),
-    sa.Column("name", sa.Text, nullable=False),
-    sa.Column("lat", sa.Float, nullable=False),
-    sa.Column("lng", sa.Float, nullable=False),
+    sa.Column("circle_id", sa.Text, nullable=False),
+    sa.Column("place_id", sa.Text, nullable=False),
+    sa.Column("name", sa.Text),
+    sa.Column("lat", sa.Float),
+    sa.Column("lng", sa.Float),
     sa.Column("radius_m", sa.Float),
     # Life360 wire address (address1/address2 joined) — falls back to null,
     # never fabricated.
@@ -5907,9 +5907,6 @@ PLATFORM_OBJECT_STATE = sa.Table(
               server_default=sa.func.now()),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now()),
-    sa.UniqueConstraint("platform", "account_key", "conversation_id",
-                        "thread", "source_kind", "object_ref",
-                        name="uq_platform_object_state_object"),
     sa.CheckConstraint("ordering IN ('ordered','arrival','gap')",
                        name="ck_platform_object_state_ordering"),
 )

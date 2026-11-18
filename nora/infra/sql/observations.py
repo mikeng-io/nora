@@ -42,7 +42,6 @@ from nora.domain.observations import (
     ObservationHead,
     SourceScope,
     StoredObservation,
-    fold_observation,
     fold_target_reactions,
     parse_handle,
     payload_from_dict,
@@ -53,7 +52,15 @@ from nora.domain.observations import (
 )
 
 from .audit import REACTION_STATES_MAX
+from .cognitive_graph_store import SqlCognitiveGraph
 from .item_registration import SqlItemRegistration, epoch_ms
+from .observation_heads import (
+    SqlObservationHeadWriter,
+    head_scope_where,
+    room_where,
+    row_to_head,
+    scope_columns,
+)
 from .schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
@@ -65,45 +72,12 @@ from .schema import (
 OBS = PLATFORM_OBSERVATION
 ST = PLATFORM_OBJECT_STATE
 
-#: Version of the folded source payload.
-PROJECTION_REV = 1
-
-
-def _scope_columns(scope: SourceScope) -> dict[str, Any]:
-    return {
-        "platform": scope.platform,
-        "account_key": scope.account_key,
-        "conversation_id": scope.conversation_id,
-        "thread": scope.thread,
-    }
-
-
-def _room_where(t: Any, scope: SourceScope) -> Any:
-    """`platform` + `conversation_id` + `thread` — the room's boundary, no
-    account. A read with an EMPTY `account_key` holds the room's boundary
-    (the unit the grounder reads for): `platform` and `conversation_id`
-    still name the room, so a scope cannot widen past it."""
-    return sa.and_(
-        t.c.platform == scope.platform,
-        t.c.conversation_id == scope.conversation_id,
-        t.c.thread == scope.thread,
-    )
-
-
 def _scope_where(scope: SourceScope) -> Any:
     if not scope.account_key:
-        return _room_where(OBS, scope)
+        return room_where(OBS, scope)
     t = OBS
     return sa.and_(
-        _room_where(t, scope), t.c.account_key == scope.account_key)
-
-
-def _st_scope_where(scope: SourceScope) -> Any:
-    if not scope.account_key:
-        return _room_where(ST, scope)
-    t = ST
-    return sa.and_(
-        _room_where(t, scope), t.c.account_key == scope.account_key)
+        room_where(t, scope), t.c.account_key == scope.account_key)
 
 
 def _row_to_stored(row: Any) -> StoredObservation:
@@ -140,30 +114,6 @@ def _row_to_stored(row: Any) -> StoredObservation:
         delivered_message_id=row.get("delivered_message_id"))
 
 
-def _head_to_row(head: ObservationHead) -> dict[str, Any]:
-    return {
-        "source_state": head.state, "applied": head.applied,
-        "head_observation_id": head.head_id or None,
-        "source_position": head.position,
-        "revision_scope": head.scope or None,
-        "observed_ms": head.observed_ms, "ordering": head.ordering,
-        "coverage": dict(head.coverage), "projection_rev": PROJECTION_REV,
-    }
-
-
-def _row_to_head(row: sa.RowMapping) -> ObservationHead:
-    return ObservationHead(
-        kind=row["source_kind"], object_ref=row["object_ref"],
-        state=dict(row["source_state"]), applied=int(row["applied"]),
-        head_id=int(row["head_observation_id"] or 0),
-        position=row["source_position"],
-        scope=row["revision_scope"] or "",
-        observed_ms=row["observed_ms"], ordering=row["ordering"],
-        coverage=dict(row["coverage"]),
-        account_key=row["account_key"] or "",
-        thread=row["thread"] or "")
-
-
 #: `message_reaction.created_at` as epoch microseconds — the insertion stamp
 #: `fold_target_reactions` orders legacy deltas by, computed where the
 #: rows are so a text column never reaches the fold as a string.
@@ -178,7 +128,7 @@ _OBS_AT = sa.cast(
 
 def _rx_union_stmt(
     scope: SourceScope, refs: frozenset[str], *,
-    through_id: int | None = None, per_object: int = REACTION_STATES_MAX,
+    unit: str | None, through_id: int | None = None, per_object: int = REACTION_STATES_MAX,
 ) -> Any:
     """One tagged row set for a union reaction read — the head surfaces'
     batched counterpart of `audit.reaction_states`.
@@ -195,8 +145,9 @@ def _rx_union_stmt(
     null_int = sa.cast(sa.null(), sa.BigInteger)
     null_text = sa.cast(sa.null(), sa.Text)
     null_json = sa.cast(sa.null(), pg.JSONB)
+    observed_scope = sa.and_(_scope_where(scope), OBS.c.unit.is_not_distinct_from(unit))
     obs_where = sa.and_(
-        _scope_where(scope), OBS.c.source_kind == "reaction",
+        observed_scope, OBS.c.source_kind == "reaction",
         OBS.c.object_ref.in_(tuple(refs)))
     if through_id is not None:
         obs_where = sa.and_(obs_where, OBS.c.id <= through_id)
@@ -221,17 +172,19 @@ def _rx_union_stmt(
         t_bounded.c.target_message_id.isnot(None)).distinct().cte("rx_mids")
     # Legacy recording stamps must fall before the as-of bound. This is
     # recording order, not a PostgreSQL commit timestamp.
-    mr_where = MESSAGE_REACTION.c.message_id.in_(
-        sa.select(mids.c.target_message_id))
+    mr_where = sa.and_(
+        MESSAGE_REACTION.c.message_id.in_(sa.select(mids.c.target_message_id)),
+        MESSAGE_REACTION.c.unit.is_not_distinct_from(unit),
+    )
     bound = None
     if through_id is not None:
         bound = sa.select(OBS.c.recorded_at).where(
-            _scope_where(scope), OBS.c.id == through_id).cte("rx_bound")
+            observed_scope, OBS.c.id == through_id).cte("rx_bound")
         mr_where = sa.and_(
             mr_where,
             sa.cast(MESSAGE_REACTION.c.created_at,
                     sa.DateTime(timezone=True))
-            <= sa.select(bound.c.recorded_at).scalar_subquery())  # type: ignore[assignment]
+            <= sa.select(bound.c.recorded_at).scalar_subquery())
     l_scope = sa.select(
         MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.id,
         MESSAGE_REACTION.c.sender_id, MESSAGE_REACTION.c.emoji,
@@ -384,6 +337,17 @@ class SqlObservationStore:
     ) -> None:
         self._engine = engine
         self._registration = registration
+        self._heads = SqlObservationHeadWriter(SqlCognitiveGraph(engine), registration)
+
+    def _room_unit(self, scope: SourceScope) -> str | None:
+        return self._registration.scope.room_unit(
+            scope.platform, scope.conversation_id,
+        ) if self._registration else None
+
+    def _head_scope(self, scope: SourceScope) -> Any:
+        return sa.and_(
+            head_scope_where(scope), ST.c.unit.is_not_distinct_from(self._room_unit(scope)),
+        )
 
     async def append(
         self, *, observation: Observation, event_id: str, source_digest: str,
@@ -392,11 +356,13 @@ class SqlObservationStore:
     ) -> int | None:
         obs = observation
         scope = obs.scope
+        unit = self._room_unit(scope)
         async with self._engine.begin() as conn:
+            await self._heads.begin_room_write(conn, scope, unit)
             stmt = pg_insert(OBS).values(
                 contract=OBSERVATION_CONTRACT, source_kind=obs.object_kind,
                 event_id=event_id, source_digest=source_digest,
-                **_scope_columns(scope),
+                **scope_columns(scope),
                 object_ref=obs.object_ref, operation=obs.operation,
                 target_key=target_key(obs.target, author_id=obs.target_author_id),
                 target_author_id=obs.target_author_id or None,
@@ -421,7 +387,7 @@ class SqlObservationStore:
             else:
                 row_id = await registration.insert_once(
                     conn, OBS, stmt,
-                    unit=registration.scope.room_unit(scope.platform, scope.conversation_id),
+                    unit=unit,
                     room=scope.conversation_id,
                     occurred_at=epoch_ms(obs.received_ms if obs.occurred_ms is None
                                          else obs.occurred_ms),
@@ -436,46 +402,32 @@ class SqlObservationStore:
                 id=int(row_id), event_id=event_id,
                 source_digest=source_digest, observation=obs,
                 target_message_id=target_message_id)
-            await self._apply_head(conn, stored)
+            await self._heads.apply(conn, stored, unit=unit)
             if tx_hook is not None:
                 awaited = tx_hook(conn, int(row_id))
                 if inspect.isawaitable(awaited):
                     await awaited
             return int(row_id)
 
-    async def _apply_head(
-        self, conn: AsyncConnection, stored: StoredObservation,
-    ) -> None:
-        obs = stored.observation
-        sel = (
-            sa.select(ST)
-            .where(_st_scope_where(obs.scope), ST.c.source_kind == obs.object_kind,
-                   ST.c.object_ref == obs.object_ref)
-            .with_for_update())
-        row = (await conn.execute(sel)).mappings().one_or_none()
-        if row is None:
-            # FIRST WRITER: two appends to one new object can both read an
-            # absent head (an absent row holds no lock). Claim the row with a
-            # conflict-safe insert of our fold; the loser re-reads the
-            # winner's row under FOR UPDATE and folds from THAT, so one
-            # object's appends serialize rather than violating the unique key
-            # or last-write-wins-ing a head.
-            first = fold_observation(None, stored)
-            ins = await conn.execute(
-                pg_insert(ST).values(
-                    **_scope_columns(obs.scope), source_kind=obs.object_kind,
-                    object_ref=obs.object_ref, **_head_to_row(first))
-                .on_conflict_do_nothing(
-                    constraint="uq_platform_object_state_object")
-                .returning(ST.c.id))
-            if ins.scalar_one_or_none() is not None:
-                return
-            row = (await conn.execute(sel)).mappings().one()
-        head = _row_to_head(row)
-        new_head = fold_observation(head, stored)
-        await conn.execute(
-            sa.update(PLATFORM_OBJECT_STATE).where(ST.c.id == row["id"]).values(
-                **_head_to_row(new_head), updated_at=sa.func.now()))
+    async def rebuild_heads(self, *, scope: SourceScope, through_id: int) -> None:
+        """Replace the room's heads with a replay of its retained observations."""
+        unit = self._room_unit(scope)
+        async with self._engine.begin() as conn:
+            await self._heads.begin_room_write(conn, scope, unit)
+            parents = (await conn.execute(sa.select(OBS).where(
+                _scope_where(scope), OBS.c.unit.is_not_distinct_from(unit),
+                OBS.c.id <= through_id, OBS.c.state == "live",
+            ).order_by(OBS.c.id))).mappings().all()
+            groups: dict[tuple[str, str, str], list[Any]] = {}
+            for row in parents:
+                key = (row["account_key"], row["source_kind"], row["object_ref"])
+                groups.setdefault(key, []).append(row)
+            for (_, kind, ref), evidence in groups.items():
+                observed = [_row_to_stored(row) for row in evidence]
+                head = rebuild_head(observed, kind=kind, object_ref=ref)
+                if head is not None:
+                    await self._heads.restore(conn, observed[-1], head, evidence)
+            await self._heads.retire_uncovered(conn, scope, unit, set(groups))
 
     async def _union_reactions(
         self, scope: SourceScope, heads: list[ObservationHead],
@@ -493,7 +445,7 @@ class SqlObservationStore:
             return heads
         async with self._engine.connect() as conn:
             rows = (await conn.execute(
-                _rx_union_stmt(scope, frozenset(refs)))).all()
+                _rx_union_stmt(scope, frozenset(refs), unit=self._room_unit(scope)))).all()
         typed, tmeta, legacy, lmeta, _ = _split_rx_rows(rows)
         return [
             _rx_fold(h, typed, tmeta, legacy, lmeta)
@@ -505,10 +457,12 @@ class SqlObservationStore:
     ) -> ObservationHead | None:
         async with self._engine.connect() as conn:
             row = (await conn.execute(
-                sa.select(ST).where(_st_scope_where(scope), ST.c.source_kind == kind,
-                                    ST.c.object_ref == object_ref))
-            ).mappings().one_or_none()
-        head = None if row is None else _row_to_head(row)
+                sa.select(ST).where(
+                    ST.c.state == "live", self._head_scope(scope),
+                    ST.c.source_kind == kind, ST.c.object_ref == object_ref,
+                )
+            )).mappings().one_or_none()
+        head = None if row is None else row_to_head(row)
         if head is not None and kind == "reaction":
             head = (await self._union_reactions(scope, [head]))[0]
         return head
@@ -517,7 +471,7 @@ class SqlObservationStore:
         self, *, scope: SourceScope, kind: str | None = None,
         limit: int = 100,
     ) -> list[ObservationHead]:
-        where = _st_scope_where(scope)
+        where = self._head_scope(scope)
         if kind is not None:
             where = sa.and_(where, ST.c.source_kind == kind)
         async with self._engine.connect() as conn:
@@ -526,11 +480,11 @@ class SqlObservationStore:
             # objects — relevance is recency, and a `limit + 1` caller can
             # honestly say how many older heads it did not read.
             rows = (await conn.execute(
-                sa.select(ST).where(where)
+                sa.select(ST).where(ST.c.state == 'live', where)
                 .order_by(ST.c.updated_at.desc(), ST.c.id)
                 .limit(max(limit, 0)))).mappings().all()
         return await self._union_reactions(
-            scope, [_row_to_head(r) for r in rows])
+            scope, [row_to_head(r) for r in rows])
 
     async def head_for_handle(
         self, *, scope: SourceScope, handle: str,
@@ -541,13 +495,19 @@ class SqlObservationStore:
         async with self._engine.connect() as conn:
             row = (await conn.execute(
                 sa.select(ST).where(
-                    _st_scope_where(scope), ST.c.source_kind == kind,
+                    ST.c.state == 'live', self._head_scope(scope), ST.c.source_kind == kind,
                     sa.literal(digest) == _HANDLE_DIGEST))
             ).mappings().one_or_none()
-        head = None if row is None else _row_to_head(row)
+        head = None if row is None else row_to_head(row)
         if head is not None and kind == "reaction":
             head = (await self._union_reactions(scope, [head]))[0]
         return head
+
+    def _observation_scope(self, scope: SourceScope) -> Any:
+        return sa.and_(
+            _scope_where(scope), OBS.c.unit.is_not_distinct_from(self._room_unit(scope)),
+            OBS.c.state == "live",
+        )
 
     async def history(
         self, *, scope: SourceScope, kind: str, object_ref: str,
@@ -556,7 +516,7 @@ class SqlObservationStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(
                 sa.select(OBS).where(
-                    _scope_where(scope), OBS.c.source_kind == kind,
+                    self._observation_scope(scope), OBS.c.source_kind == kind,
                     OBS.c.object_ref == object_ref, OBS.c.id > after_id)
                 .order_by(OBS.c.id).limit(max(limit, 0)))).mappings().all()
         return [_row_to_stored(r) for r in rows]
@@ -578,8 +538,8 @@ class SqlObservationStore:
         if kind == "reaction":
             async with self._engine.connect() as conn:
                 rows = (await conn.execute(_rx_union_stmt(
-                    scope, frozenset({object_ref}), through_id=through_id,
-                    per_object=max(limit, 0) + 1))).all()
+                    scope, frozenset({object_ref}), unit=self._room_unit(scope),
+                    through_id=through_id, per_object=max(limit, 0) + 1))).all()
             typed, tmeta, legacy, lmeta, bound = _split_rx_rows(rows)
             all_rows = sorted(
                 (r for v in typed.values() for r in v), key=lambda r: r.id)
@@ -613,7 +573,7 @@ class SqlObservationStore:
         async with self._engine.connect() as conn:
             kept_rows = (await conn.execute(
                 sa.select(OBS).where(
-                    _scope_where(scope), OBS.c.source_kind == kind,
+                    self._observation_scope(scope), OBS.c.source_kind == kind,
                     OBS.c.object_ref == object_ref, OBS.c.id <= through_id)
                 .order_by(OBS.c.id).limit(
                     max(limit, 0) + 1))).mappings().all()
@@ -628,7 +588,7 @@ class SqlObservationStore:
         before_ms: int | None = None,
     ) -> list[StoredObservation]:
         at = sa.func.coalesce(OBS.c.occurred_ms, OBS.c.received_ms)
-        where = [_scope_where(scope), at >= since_ms]
+        where = [self._observation_scope(scope), at >= since_ms]
         if before_ms is not None:
             where.append(at <= before_ms)
         async with self._engine.connect() as conn:
@@ -649,7 +609,7 @@ class SqlObservationStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(
                 sa.select(OBS).where(
-                    _scope_where(scope), OBS.c.id.in_(tuple(ids)))
+                    self._observation_scope(scope), OBS.c.id.in_(tuple(ids)))
                 .order_by(OBS.c.id).limit(max(limit, 0)))).mappings().all()
         return [_row_to_stored(r) for r in rows]
 
@@ -659,7 +619,7 @@ class SqlObservationStore:
         async with self._engine.begin() as conn:
             res = await conn.execute(
                 sa.update(PLATFORM_OBSERVATION).where(
-                    _scope_where(scope), OBS.c.target_key == target_key,
+                    self._observation_scope(scope), OBS.c.target_key == target_key,
                     OBS.c.target_message_id.is_(None))
                 .values(target_message_id=message_id))
             return int(res.rowcount or 0)
@@ -670,7 +630,7 @@ class SqlObservationStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(
                 sa.select(OBS).where(
-                    _scope_where(scope), OBS.c.target_key.isnot(None),
+                    self._observation_scope(scope), OBS.c.target_key.isnot(None),
                     OBS.c.target_message_id.is_(None))
                 .order_by(OBS.c.id).limit(max(limit, 0)))).mappings().all()
         return [_row_to_stored(r) for r in rows]

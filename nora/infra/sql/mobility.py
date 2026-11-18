@@ -24,8 +24,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from sqlalchemy.dialects.postgresql import distinct_on
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.mobility import (
     DerivedPlace,
@@ -45,19 +45,16 @@ from nora.domain.rollup import (
     NoRollupBuildError,
     PollEvent,
     StoredCorridor,
-    episode_key,
-    lineage_json,
-    presence_lineage,
     stay_from_json,
-    stay_to_json,
 )
-from nora.infra.sql import memory_index
+from nora.infra.sql.aggregate_writes import AggregateWrites
+from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
+from nora.infra.sql.item_registration import SqlItemRegistration
+from nora.infra.sql.mobility_writes import MobilityWrites
 from nora.infra.sql.schema import (
     PRESENCE_CORRIDORS,
     PRESENCE_DERIVED_PLACES,
     PRESENCE_FIXES,
-    PRESENCE_OCCUPANCY,
-    PRESENCE_PLACE_RHYTHM,
     PRESENCE_PLACES,
     PRESENCE_STAYS,
     PRESENCE_TRIPS,
@@ -140,30 +137,40 @@ def _after(recorded: Any, rank: int, row_id: Any, after: EventPosition) -> Any:
     return sa.or_(later, sa.and_(same, row_id > after.id))
 
 
-def _lineage(subject_id: str) -> list[list[str | None]]:
-    return lineage_json(presence_lineage(subject_id))
 
 
-class SqlMobilityStore:
+
+class SqlMobilityStore(MobilityWrites):
     def __init__(
-        self, engine: AsyncEngine, *, metrics: Any = None, build_id: int | None = None,
+        self,
+        engine: AsyncEngine,
+        *,
+        metrics: Any = None,
+        build_id: int | None = None,
+        registration: SqlItemRegistration | None = None,
     ) -> None:
-        """`metrics` is INJECTED, never imported — see `PresenceStore`'s
-        docstring: `nora.infra` sits below `nora.obs` in the import-linter
-        layers, so importing `nora.obs.metrics` here would break that
-        boundary. `None` means this store does not count. `build_id` binds
-        the instance to one build; None reads the current one."""
         self._engine = engine
         self._metrics = metrics
         self._build_id = build_id
+        reg = registration or engine.get_execution_options().get("item_registration")
+        self._aggregates = AggregateWrites(SqlCognitiveGraph(engine), reg)
 
     def scoped(self, build_id: int) -> SqlMobilityStore:
-        """The same store bound to one build, for the fold that writes it."""
-        return SqlMobilityStore(self._engine, metrics=self._metrics, build_id=build_id)
+        """Bind a writer to one build."""
+        return SqlMobilityStore(
+            self._engine,
+            metrics=self._metrics,
+            build_id=build_id,
+            registration=self._aggregates.registration,
+        )
 
     def unbound(self) -> SqlMobilityStore:
-        """The readers' view: every read resolves the current build."""
-        return SqlMobilityStore(self._engine, metrics=self._metrics)
+        """Resolve the current build on each read."""
+        return SqlMobilityStore(
+            self._engine,
+            metrics=self._metrics,
+            registration=self._aggregates.registration,
+        )
 
     @property
     def build_id(self) -> int | None:
@@ -171,7 +178,22 @@ class SqlMobilityStore:
 
     @staticmethod
     def _in_build(build: int, table: sa.Table) -> Any:
-        return table.c.build_id == build
+        scope = table.alias("scope_copy")
+        canonical = (
+            sa.select(sa.func.min(scope.c.unit))
+            .where(
+                scope.c.build_id == build,
+                scope.c.subject_id == table.c.subject_id,
+                scope.c.state == "live",
+            )
+            .correlate(table)
+            .scalar_subquery()
+        )
+        return sa.and_(
+            table.c.build_id == build,
+            table.c.state == "live",
+            table.c.unit.is_not_distinct_from(canonical),
+        )
 
     async def _read_build(self) -> int:
         """The build a read reads: the bound one, else the current one. With
@@ -186,13 +208,6 @@ class SqlMobilityStore:
         if build is None:
             raise NoRollupBuildError("no Rollup build is current yet")
         return int(build)
-
-    def _bound(self) -> int:
-        if self._build_id is None:
-            raise RuntimeError(
-                "a write needs a build: use SqlMobilityStore.scoped(build_id)"
-            )
-        return self._build_id
 
     # -- the readers the agent, the tools and the portal use -----------------
 
@@ -530,8 +545,11 @@ class SqlMobilityStore:
     async def tagged_places(self) -> list[TaggedPlace]:
         """Every Life360 saved place, EVERY circle — duplicate tags merge
         across circles, so the read cannot be circle-scoped."""
-        stmt = sa.select(PRESENCE_PLACES).order_by(
-            PRESENCE_PLACES.c.circle_id, PRESENCE_PLACES.c.place_id,
+        places = PRESENCE_PLACES.c
+        stmt = (
+            sa.select(PRESENCE_PLACES).ext(distinct_on(places.circle_id, places.place_id))
+            .where(places.state == "live")
+            .order_by(places.circle_id, places.place_id, places.updated_ms.desc())
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
@@ -684,314 +702,6 @@ class SqlMobilityStore:
             )
             for i in ids if (r := rows.get(i)) is not None
         ]
-
-    async def commit_fold(
-        self, *, subject_id: str, stays: list[Stay], trips: list[Trip],
-        state: FoldState,
-    ) -> None:
-        """The fold's output and where it now stands, in ONE transaction: a
-        run that dies before this commits nothing, and the next one folds the
-        same events again from the same state, so no row is written twice."""
-        build = self._bound()
-        lineage = _lineage(subject_id)
-        async with self._engine.begin() as conn:
-            if stays:
-                await conn.execute(sa.insert(PRESENCE_STAYS), [
-                    {
-                        "subject_id": s.subject_id, "person_id": s.person_id,
-                        "circle_id": s.circle_id, "started_ts": s.started_ts,
-                        "ended_ts": s.ended_ts, "lat": s.lat, "lng": s.lng,
-                        "radius_m": s.radius_m, "fix_count": s.fix_count,
-                        "address": s.address, "build_id": build, "build_lineage": lineage,
-                    }
-                    for s in stays
-                ])
-            if trips:
-                await conn.execute(sa.insert(PRESENCE_TRIPS), [
-                    {
-                        "subject_id": t.subject_id, "person_id": t.person_id,
-                        "circle_id": t.circle_id, "started_ts": t.started_ts,
-                        "ended_ts": t.ended_ts, "distance_m": t.distance_m,
-                        "avg_speed_kmh": t.avg_speed_kmh, "fix_count": t.fix_count,
-                        # `list(...)`: JSONB takes a JSON array, and a Python
-                        # tuple is not one.
-                        "sequence": list(t.corridor),
-                        "corridor_id": t.corridor_id,
-                        "build_id": build, "build_lineage": lineage,
-                    }
-                    for t in trips
-                ])
-            await self._save_state(conn, build=build, subject_id=subject_id, state=state)
-            # The memory index's nodes, when this is the current build (a
-            # rebuild's folds write a build still `building`, which has none).
-            for kind, spans in (("stay", stays), ("trip", trips)):
-                await memory_index.project_episodes(
-                    conn, build, kind,
-                    [episode_key(x.subject_id, x.started_ts, x.ended_ts) for x in spans],
-                    metrics=self._metrics,
-                )
-
-    async def _save_state(
-        self, conn: AsyncConnection, *, build: int, subject_id: str, state: FoldState,
-    ) -> None:
-        values = {
-            "pos_recorded_ms": state.position.recorded_ms,
-            "pos_rank": state.position.rank, "pos_id": state.position.id,
-            "logical_now_ms": state.logical_now_ms, "frontier_ts": state.frontier_ts,
-            "window_fix_ids": list(state.window_ids),
-            "tags_sha256": state.tags_sha256,
-            "open_stay": stay_to_json(state.open_stay),
-            "late_fixes": state.late_fixes,
-        }
-        stmt = pg_insert(ROLLUP_FOLD_STATE).values(
-            build_id=build, subject_id=subject_id, **values,
-        )
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[ROLLUP_FOLD_STATE.c.build_id, ROLLUP_FOLD_STATE.c.subject_id],
-            set_=values,
-        )
-        await conn.execute(stmt)
-
-    async def mark_derived(self, *, subject_id: str, tags_sha256: str) -> None:
-        async with self._engine.begin() as conn:
-            await conn.execute(
-                sa.update(ROLLUP_FOLD_STATE)
-                .where(
-                    ROLLUP_FOLD_STATE.c.build_id == self._bound(),
-                    ROLLUP_FOLD_STATE.c.subject_id == subject_id,
-                )
-                .values(tags_sha256=tags_sha256)
-            )
-
-    async def save_place(
-        self, *, subject_id: str, circle_id: str, place_id: int | None,
-        lat: float, lng: float, radius_m: float,
-        kind: str, confidence: float, label: str | None,
-        saved_place_id: str | None, first_seen_ts: int, last_seen_ts: int,
-    ) -> int:
-        """UPDATE in place when `place_id` is given — the id is what
-        `presence_stays.place_id`, `presence_occupancy` and
-        `presence_place_rhythm` key off, so it is never churned — else INSERT
-        into the bound build. `kind='unlabeled'` is a stored value, never a
-        deletion (DEC-190 rule 4): the place is still where the person goes."""
-        build = self._bound()
-        values = {
-            "lat": lat, "lng": lng, "radius_m": radius_m, "source_kind": kind,
-            "place_confidence": confidence, "label": label,
-            "saved_place_id": saved_place_id,
-            "first_seen_ts": first_seen_ts, "last_seen_ts": last_seen_ts,
-        }
-        async with self._engine.begin() as conn:
-            if place_id is not None:
-                await conn.execute(
-                    sa.update(PRESENCE_DERIVED_PLACES)
-                    .where(
-                        PRESENCE_DERIVED_PLACES.c.id == place_id,
-                        PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
-                        PRESENCE_DERIVED_PLACES.c.build_id == build,
-                    )
-                    .values(**values)
-                )
-                return place_id
-            result = await conn.execute(
-                sa.insert(PRESENCE_DERIVED_PLACES)
-                .values(
-                    subject_id=subject_id, circle_id=circle_id, build_id=build,
-                    build_lineage=_lineage(subject_id), **values,
-                )
-                .returning(PRESENCE_DERIVED_PLACES.c.id)
-            )
-            return int(result.scalar_one())
-
-    async def delete_places(self, *, subject_id: str, place_ids: list[int]) -> None:
-        """Drop places no stay resolves to any more, WITH their occupancy and
-        rhythm rows — a Tier 3 row keyed on a vanished place is a ghost no
-        consumer can resolve. The caller unlinks the stays first. Deleted
-        rows stay in `row_history` (the trigger), so the build as of an
-        earlier T still holds them."""
-        if not place_ids:
-            return
-        build = self._bound()
-        async with self._engine.begin() as conn:
-            for table in (PRESENCE_OCCUPANCY, PRESENCE_PLACE_RHYTHM):
-                await conn.execute(
-                    sa.delete(table).where(
-                        table.c.subject_id == subject_id,
-                        table.c.build_id == build,
-                        table.c.place_id.in_(place_ids),
-                    )
-                )
-            await conn.execute(
-                sa.delete(PRESENCE_DERIVED_PLACES).where(
-                    PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
-                    PRESENCE_DERIVED_PLACES.c.build_id == build,
-                    PRESENCE_DERIVED_PLACES.c.id.in_(place_ids),
-                )
-            )
-
-    async def relink_stays(
-        self, *, subject_id: str, links: dict[int, int | None],
-    ) -> None:
-        """Set each stay's `place_id` (keyed by `started_ts`) to EXACTLY the
-        given value, overwriting what is there. It is not fill-NULL-only: an
-        additive write would leave stays linked to rows that had moved away, and
-        a link must follow the place picture the reconcile computed, not
-        whichever writer got there first."""
-        if not links:
-            return
-        build = self._bound()
-        by_place: dict[int | None, list[int]] = {}
-        for started_ts, place_id in links.items():
-            by_place.setdefault(place_id, []).append(started_ts)
-        async with self._engine.begin() as conn:
-            for place_id, started in by_place.items():
-                await conn.execute(
-                    sa.update(PRESENCE_STAYS)
-                    .where(
-                        PRESENCE_STAYS.c.subject_id == subject_id,
-                        PRESENCE_STAYS.c.build_id == build,
-                        PRESENCE_STAYS.c.started_ts.in_(started),
-                    )
-                    .values(place_id=place_id)
-                )
-
-    async def replace_occupancy(
-        self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int,
-    ) -> None:
-        """Occupancy for one place, recomputed WHOLESALE from its linked
-        stays: a full replace is idempotent and follows the links.
-        `now_ms` is written as `updated_ts`, the Record time the bins are as
-        of."""
-        build = self._bound()
-        scope = (
-            PRESENCE_OCCUPANCY.c.subject_id == subject_id,
-            PRESENCE_OCCUPANCY.c.build_id == build,
-            PRESENCE_OCCUPANCY.c.place_id == place_id,
-        )
-        async with self._engine.begin() as conn:
-            stored = {
-                r.hour_of_week: (r.dwell_ms, r.updated_ts)
-                for r in (await conn.execute(
-                    sa.select(
-                        PRESENCE_OCCUPANCY.c.hour_of_week, PRESENCE_OCCUPANCY.c.dwell_ms,
-                        PRESENCE_OCCUPANCY.c.updated_ts,
-                    ).where(*scope)
-                )).all()
-            }
-            # DIFFED, so an unchanged place writes nothing (and no version in
-            # `row_history`): the reconcile rebuilds every kept place.
-            gone = sorted(set(stored) - set(bins))
-            if gone:
-                await conn.execute(
-                    sa.delete(PRESENCE_OCCUPANCY).where(
-                        *scope, PRESENCE_OCCUPANCY.c.hour_of_week.in_(gone),
-                    )
-                )
-            for how, dwell in sorted(bins.items()):
-                if how not in stored:
-                    await conn.execute(sa.insert(PRESENCE_OCCUPANCY).values(
-                        subject_id=subject_id, place_id=place_id, hour_of_week=how,
-                        dwell_ms=dwell, updated_ts=now_ms, build_id=build,
-                        build_lineage=_lineage(subject_id),
-                    ))
-                elif stored[how] != (dwell, now_ms):
-                    await conn.execute(
-                        sa.update(PRESENCE_OCCUPANCY)
-                        .where(*scope, PRESENCE_OCCUPANCY.c.hour_of_week == how)
-                        .values(dwell_ms=dwell, updated_ts=now_ms)
-                    )
-
-    async def upsert_rhythm(
-        self, *, subject_id: str, place_id: int, mean_arrival_minute: float,
-        mean_departure_minute: float, duration_median_ms: int,
-        duration_mad_ms: int, sample_count: int, now_ms: int,
-    ) -> None:
-        stmt = pg_insert(PRESENCE_PLACE_RHYTHM).values(
-            subject_id=subject_id, place_id=place_id,
-            mean_arrival_minute=mean_arrival_minute,
-            mean_departure_minute=mean_departure_minute,
-            duration_median_ms=duration_median_ms, duration_mad_ms=duration_mad_ms,
-            sample_count=sample_count, updated_ts=now_ms, build_id=self._bound(),
-            build_lineage=_lineage(subject_id),
-        )
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[PRESENCE_PLACE_RHYTHM.c.subject_id, PRESENCE_PLACE_RHYTHM.c.place_id],
-            set_={
-                "mean_arrival_minute": stmt.excluded.mean_arrival_minute,
-                "mean_departure_minute": stmt.excluded.mean_departure_minute,
-                "duration_median_ms": stmt.excluded.duration_median_ms,
-                "duration_mad_ms": stmt.excluded.duration_mad_ms,
-                "sample_count": stmt.excluded.sample_count,
-                "updated_ts": stmt.excluded.updated_ts,
-            },
-        )
-        async with self._engine.begin() as conn:
-            await conn.execute(stmt)
-
-    async def save_corridor(
-        self, *, subject_id: str, corridor_id: int | None,
-        sequence: tuple[str, ...], sample_count: int, first_seen_ts: int,
-        last_seen_ts: int,
-    ) -> int:
-        """UPDATE in place when `corridor_id` is given (the id trips link to),
-        else INSERT into the bound build. `first_seen_ts`/`last_seen_ts` are
-        the corridor's trips' starts, Record time."""
-        build = self._bound()
-        values = {
-            "sequence": list(sequence), "sample_count": sample_count,
-            "first_seen_ts": first_seen_ts, "last_seen_ts": last_seen_ts,
-        }
-        async with self._engine.begin() as conn:
-            if corridor_id is not None:
-                await conn.execute(
-                    sa.update(PRESENCE_CORRIDORS).where(
-                        PRESENCE_CORRIDORS.c.id == corridor_id,
-                        PRESENCE_CORRIDORS.c.build_id == build,
-                    ).values(**values)
-                )
-                return corridor_id
-            result = await conn.execute(
-                sa.insert(PRESENCE_CORRIDORS).values(
-                    subject_id=subject_id, build_id=build,
-                    build_lineage=_lineage(subject_id), **values,
-                ).returning(PRESENCE_CORRIDORS.c.id)
-            )
-            return int(result.scalar_one())
-
-    async def delete_corridors(self, *, subject_id: str, corridor_ids: list[int]) -> None:
-        if not corridor_ids:
-            return
-        async with self._engine.begin() as conn:
-            await conn.execute(
-                sa.delete(PRESENCE_CORRIDORS).where(
-                    PRESENCE_CORRIDORS.c.subject_id == subject_id,
-                    PRESENCE_CORRIDORS.c.build_id == self._bound(),
-                    PRESENCE_CORRIDORS.c.id.in_(corridor_ids),
-                )
-            )
-
-    async def relink_trips(
-        self, *, subject_id: str, links: dict[int, int | None],
-    ) -> None:
-        """Set each trip's `corridor_id` (keyed by `started_ts`) to exactly
-        the given value, the corridor twin of `relink_stays`."""
-        if not links:
-            return
-        build = self._bound()
-        by_corridor: dict[int | None, list[int]] = {}
-        for started_ts, corridor_id in links.items():
-            by_corridor.setdefault(corridor_id, []).append(started_ts)
-        async with self._engine.begin() as conn:
-            for corridor_id, started in by_corridor.items():
-                await conn.execute(
-                    sa.update(PRESENCE_TRIPS)
-                    .where(
-                        PRESENCE_TRIPS.c.subject_id == subject_id,
-                        PRESENCE_TRIPS.c.build_id == build,
-                        PRESENCE_TRIPS.c.started_ts.in_(started),
-                    )
-                    .values(corridor_id=corridor_id)
-                )
 
     async def _seed_fix_for_test(self, **kw: Any) -> None:
         """Contract-suite seeding ONLY (tests/contract/…) — this store does

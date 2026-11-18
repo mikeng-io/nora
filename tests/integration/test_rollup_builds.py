@@ -261,7 +261,7 @@ async def test_every_rollup_recomputes_identically_from_the_record(clean_pg_url)
     assert sum(t["replies_ba"] for t in ties) == 2 and sum(t["colocation_ms"] for t in ties) > 0
     books = await rollups.rows(table=ROLLUP_DAYBOOK, build_id=b)
     assert {d["local_date"] for d in books} == {"2026-09-21", "2026-09-22"}
-    assert all(["message", None, "signal:group-1"] in d["lineage"] for d in books)
+    assert all(["message", None, "signal:group-1"] in d["build_lineage"] for d in books)
     await engine.dispose()
 
 

@@ -419,7 +419,6 @@ ADD CONSTRAINT presence_derived_places_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_fixes_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_occupancy_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_place_rhythm_pkey PRIMARY KEY (subject_id, place_id);
-ADD CONSTRAINT presence_places_pkey PRIMARY KEY (circle_id, place_id);
 ADD CONSTRAINT presence_stays_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_trips_pkey PRIMARY KEY (id);
 ADD CONSTRAINT profile_dispute_pkey PRIMARY KEY (id);
@@ -490,7 +489,7 @@ ADD CONSTRAINT uq_messages_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_music_queue_guild_position UNIQUE (guild_id, "position");
 ADD CONSTRAINT uq_occupancy_bin UNIQUE (subject_id, place_id, hour_of_week);
 ADD CONSTRAINT uq_platform_object_state_graph_replaces UNIQUE (replaces);
-ADD CONSTRAINT uq_platform_object_state_object UNIQUE (platform, account_key, conversation_id, thread, source_kind, object_ref);
+ADD CONSTRAINT uq_platform_object_state_object UNIQUE NULLS NOT DISTINCT (platform, account_key, conversation_id, thread, source_kind, object_ref, unit);
 ADD CONSTRAINT uq_platform_observation_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_platform_observation_source UNIQUE (platform, account_key, source_digest);
 ADD CONSTRAINT uq_presence_corridors_graph_replaces UNIQUE (replaces);
@@ -499,6 +498,7 @@ ADD CONSTRAINT uq_presence_fixes_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_presence_occupancy_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_presence_place_rhythm_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_presence_places_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_presence_places_unit UNIQUE NULLS NOT DISTINCT (circle_id, place_id, unit);
 ADD CONSTRAINT uq_presence_stays_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_presence_trips_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_registry_id_unit_kind UNIQUE (id, unit, kind);
@@ -1045,7 +1045,8 @@ CONSTRAINT ck_fetched_pages_graph_exposure CHECK ((exposure = ANY (ARRAY['extern
 CONSTRAINT ck_fetched_pages_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_fetched_pages_graph_kind CHECK ((kind = 'item'::text)),
 CONSTRAINT ck_fetched_pages_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_fetched_pages_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_fetched_pages_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_fetched_pages_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((blob_key IS NOT NULL) AND (provenance IS NOT NULL))))
 CONSTRAINT ck_instagram_summons_mode CHECK ((mode = ANY (ARRAY['dry_run'::text, 'live'::text]))),
 CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'unresolved'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
 CONSTRAINT ck_intention_achieve_ending CHECK (((form <> 'achieve'::text) OR (ending IS NULL) OR (ending = ANY (ARRAY['achieved'::text, 'dropped'::text, 'leaked'::text, 'unknown'::text])))),
@@ -1143,7 +1144,8 @@ CONSTRAINT ck_platform_object_state_graph_inferred_detail CHECK (((basis = 'infe
 CONSTRAINT ck_platform_object_state_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_platform_object_state_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
 CONSTRAINT ck_platform_object_state_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
-CONSTRAINT ck_platform_object_state_ordering CHECK ((ordering = ANY (ARRAY['ordered'::text, 'arrival'::text, 'gap'::text])))
+CONSTRAINT ck_platform_object_state_ordering CHECK ((ordering = ANY (ARRAY['ordered'::text, 'arrival'::text, 'gap'::text]))),
+CONSTRAINT ck_platform_object_state_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((source_state IS NOT NULL) AND (coverage IS NOT NULL))))
 CONSTRAINT ck_platform_observation_actor CHECK ((actor_status = ANY (ARRAY['known'::text, 'anonymous'::text, 'not_supplied'::text, 'not_applicable'::text]))),
 CONSTRAINT ck_platform_observation_graph_basis CHECK ((basis = 'observed'::text)),
 CONSTRAINT ck_platform_observation_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
@@ -1154,63 +1156,72 @@ CONSTRAINT ck_platform_observation_graph_reasoning CHECK (((reasoning IS NULL) O
 CONSTRAINT ck_platform_observation_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_platform_observation_kind CHECK ((source_kind = ANY (ARRAY['reaction'::text, 'message_metadata'::text, 'poll'::text, 'room'::text, 'membership'::text, 'pin'::text, 'artifact'::text]))),
 CONSTRAINT ck_platform_observation_op CHECK ((operation = ANY (ARRAY['create'::text, 'revise'::text, 'withdraw'::text, 'add'::text, 'remove'::text, 'clear'::text, 'snapshot'::text]))),
-CONSTRAINT ck_platform_observation_timeq CHECK ((time_quality = ANY (ARRAY['upstream'::text, 'bridge_local'::text, 'unknown'::text])))
+CONSTRAINT ck_platform_observation_timeq CHECK ((time_quality = ANY (ARRAY['upstream'::text, 'bridge_local'::text, 'unknown'::text]))),
+CONSTRAINT ck_platform_observation_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((payload IS NOT NULL) AND (coverage IS NOT NULL))))
 CONSTRAINT ck_presence_corridors_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_presence_corridors_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_presence_corridors_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
 CONSTRAINT ck_presence_corridors_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_presence_corridors_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_presence_corridors_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_presence_corridors_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_corridors_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_presence_corridors_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((sequence IS NOT NULL) AND (sample_count IS NOT NULL))))
 CONSTRAINT ck_presence_derived_places_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_presence_derived_places_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_presence_derived_places_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
 CONSTRAINT ck_presence_derived_places_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_presence_derived_places_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_presence_derived_places_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_presence_derived_places_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_derived_places_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_presence_derived_places_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((lat IS NOT NULL) AND (lng IS NOT NULL) AND (radius_m IS NOT NULL) AND (place_confidence IS NOT NULL))))
 CONSTRAINT ck_presence_fixes_graph_basis CHECK ((basis = 'observed'::text)),
 CONSTRAINT ck_presence_fixes_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_presence_fixes_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
 CONSTRAINT ck_presence_fixes_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_presence_fixes_graph_kind CHECK ((kind = 'item'::text)),
 CONSTRAINT ck_presence_fixes_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_presence_fixes_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_fixes_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_presence_fixes_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((lat IS NOT NULL) AND (lng IS NOT NULL))))
 CONSTRAINT ck_presence_occupancy_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_presence_occupancy_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_presence_occupancy_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
 CONSTRAINT ck_presence_occupancy_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_presence_occupancy_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_presence_occupancy_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_presence_occupancy_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_occupancy_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_presence_occupancy_tombstone_content CHECK (((state = 'tombstoned'::text) OR (dwell_ms IS NOT NULL)))
 CONSTRAINT ck_presence_place_rhythm_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_presence_place_rhythm_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_presence_place_rhythm_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
 CONSTRAINT ck_presence_place_rhythm_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_presence_place_rhythm_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_presence_place_rhythm_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_presence_place_rhythm_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_place_rhythm_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_presence_place_rhythm_tombstone_content CHECK (((state = 'tombstoned'::text) OR (sample_count IS NOT NULL)))
 CONSTRAINT ck_presence_places_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_presence_places_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_presence_places_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
 CONSTRAINT ck_presence_places_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_presence_places_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_presence_places_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_presence_places_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_places_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_presence_places_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((name IS NOT NULL) AND (lat IS NOT NULL) AND (lng IS NOT NULL))))
 CONSTRAINT ck_presence_stays_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_presence_stays_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_presence_stays_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
 CONSTRAINT ck_presence_stays_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_presence_stays_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_presence_stays_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_presence_stays_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_stays_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_presence_stays_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((lat IS NOT NULL) AND (lng IS NOT NULL) AND (radius_m IS NOT NULL) AND (fix_count IS NOT NULL))))
 CONSTRAINT ck_presence_trips_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_presence_trips_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_presence_trips_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
 CONSTRAINT ck_presence_trips_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_presence_trips_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_presence_trips_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_presence_trips_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_trips_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_presence_trips_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((distance_m IS NOT NULL) AND (avg_speed_kmh IS NOT NULL) AND (fix_count IS NOT NULL))))
 CONSTRAINT ck_profile_dispute_claim CHECK (((length(btrim(claim)) > 0) AND (length(claim) <= 300))),
 CONSTRAINT ck_profile_dispute_has_a_key CHECK ((length(btrim(profile_key)) > 0)),
 CONSTRAINT ck_profile_dispute_has_a_unit CHECK ((length(btrim(unit)) > 0)),
@@ -1256,21 +1267,24 @@ CONSTRAINT ck_rollup_colocation_graph_exposure CHECK ((exposure = ANY (ARRAY['ex
 CONSTRAINT ck_rollup_colocation_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_rollup_colocation_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_rollup_colocation_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_rollup_colocation_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_rollup_colocation_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_rollup_colocation_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((lat IS NOT NULL) AND (lng IS NOT NULL) AND (radius_m IS NOT NULL) AND (at_home_of IS NOT NULL) AND (homes_unknown IS NOT NULL) AND (stay_count IS NOT NULL))))
 CONSTRAINT ck_rollup_daybook_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_rollup_daybook_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_rollup_daybook_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
 CONSTRAINT ck_rollup_daybook_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_rollup_daybook_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_rollup_daybook_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_rollup_daybook_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_rollup_daybook_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_rollup_daybook_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((stays IS NOT NULL) AND (stay_ms IS NOT NULL) AND (home_ms IS NOT NULL) AND (colocation_ms IS NOT NULL) AND (with_persons IS NOT NULL) AND (outings IS NOT NULL) AND (rooms IS NOT NULL) AND (messages IS NOT NULL) AND (reactions IS NOT NULL))))
 CONSTRAINT ck_rollup_outing_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_rollup_outing_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_rollup_outing_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
 CONSTRAINT ck_rollup_outing_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_rollup_outing_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_rollup_outing_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_rollup_outing_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_rollup_outing_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_rollup_outing_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((lat IS NOT NULL) AND (lng IS NOT NULL))))
 CONSTRAINT ck_rollup_response_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_rollup_response_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_rollup_response_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
@@ -1278,7 +1292,8 @@ CONSTRAINT ck_rollup_response_graph_inferred_detail CHECK (((basis = 'inferred':
 CONSTRAINT ck_rollup_response_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_rollup_response_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
 CONSTRAINT ck_rollup_response_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
-CONSTRAINT ck_rollup_response_outcome CHECK ((outcome = ANY (ARRAY['open'::text, 'responded'::text, 'silent'::text, 'unanswered'::text, 'unknown'::text])))
+CONSTRAINT ck_rollup_response_outcome CHECK ((outcome = ANY (ARRAY['open'::text, 'responded'::text, 'silent'::text, 'unanswered'::text, 'unknown'::text]))),
+CONSTRAINT ck_rollup_response_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((replies IS NOT NULL) AND (reactions IS NOT NULL) AND (edits IS NOT NULL) AND (follows IS NOT NULL) AND (responders IS NOT NULL) AND (named_persons IS NOT NULL) AND (outcome IS NOT NULL))))
 CONSTRAINT ck_rollup_tie_graph_basis CHECK ((basis = 'computed'::text)),
 CONSTRAINT ck_rollup_tie_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_rollup_tie_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
@@ -1286,7 +1301,8 @@ CONSTRAINT ck_rollup_tie_graph_inferred_detail CHECK (((basis = 'inferred'::text
 CONSTRAINT ck_rollup_tie_graph_kind CHECK ((kind = 'aggregate'::text)),
 CONSTRAINT ck_rollup_tie_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
 CONSTRAINT ck_rollup_tie_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
-CONSTRAINT ck_rollup_tie_pair_order CHECK ((person_a < person_b))
+CONSTRAINT ck_rollup_tie_pair_order CHECK ((person_a < person_b)),
+CONSTRAINT ck_rollup_tie_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((replies_ab IS NOT NULL) AND (replies_ba IS NOT NULL) AND (mentions_ab IS NOT NULL) AND (mentions_ba IS NOT NULL) AND (reactions_ab IS NOT NULL) AND (reactions_ba IS NOT NULL) AND (colocation_ms IS NOT NULL))))
 CONSTRAINT ck_self_tension_has_a_unit CHECK ((length(btrim(unit)) > 0)),
 CONSTRAINT ck_self_tension_names_its_writer CHECK ((length(btrim(established_by)) > 0)),
 CONSTRAINT ck_self_tension_quotes_the_law CHECK ((length(btrim(doctrine_text)) > 0)),
@@ -1339,7 +1355,8 @@ CONSTRAINT ck_source_health_graph_exposure CHECK ((exposure = ANY (ARRAY['extern
 CONSTRAINT ck_source_health_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_source_health_graph_kind CHECK ((kind = 'item'::text)),
 CONSTRAINT ck_source_health_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
-CONSTRAINT ck_source_health_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_source_health_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_source_health_tombstone_content CHECK (((state = 'tombstoned'::text) OR (detail IS NOT NULL)))
 CONSTRAINT ck_stimulus_due_tick CHECK ((NOT (due_tick IS DISTINCT FROM
 CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text, 'observation'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
@@ -1806,6 +1823,7 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extra
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction_attempt FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction_claim FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.extraction_queue FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.fetched_pages FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('conversation_id', 'url');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.geocode_cache FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('lat_rounded', 'lng_rounded');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.instagram_summons FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.intention FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id', 'unit');
@@ -1832,7 +1850,7 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.prese
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_fixes FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_occupancy FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_place_rhythm FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('subject_id', 'place_id');
-CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_places FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('circle_id', 'place_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_places FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('circle_id', 'place_id', 'unit');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_stays FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_trips FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.profile FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('key');
@@ -1845,6 +1863,11 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollu
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollup_outing FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollup_response FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.rollup_tie FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.social_item FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.social_item_count FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.social_item_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.social_poll FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.source_health FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.standing FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('platform', 'conversation_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.standing_commitment FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.standing_decision FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
@@ -2373,7 +2396,7 @@ asserted_by text,
 asserted_by text,
 at timestamp with time zone NOT NULL,
 at timestamptz := clock_timestamp();
-at_home_of text[] DEFAULT '{}'::text[] NOT NULL,
+at_home_of text[] DEFAULT '{}'::text[],
 at_ms bigint CONSTRAINT signal_at_ms_not_null NOT NULL,
 at_ms bigint NOT NULL,
 at_ms bigint NOT NULL,
@@ -2391,7 +2414,7 @@ attempts integer DEFAULT 1 NOT NULL,
 attribute text,
 attributes jsonb DEFAULT '{}'::jsonb CONSTRAINT entity_attributes_not_null NOT NULL,
 author_igid text NOT NULL,
-avg_speed_kmh double precision NOT NULL,
+avg_speed_kmh double precision,
 backend_job_id text NOT NULL,
 base_revision_id text,
 basis text DEFAULT 'computed'::text NOT NULL,
@@ -2425,7 +2448,7 @@ basis text NOT NULL,
 basis text NOT NULL,
 batched boolean DEFAULT false CONSTRAINT graph_arrival_batched_not_null NOT NULL
 battery double precision,
-blob_key text NOT NULL,
+blob_key text,
 blob_key text,
 body text NOT NULL,
 body text NOT NULL,
@@ -2510,8 +2533,8 @@ code_hash text NOT NULL,
 code_version text NOT NULL,
 col text;
 collab boolean DEFAULT false NOT NULL,
-colocation_ms bigint NOT NULL,
-colocation_ms bigint NOT NULL,
+colocation_ms bigint,
+colocation_ms bigint,
 comment_id text,
 comments bigint,
 completed_at timestamp with time zone,
@@ -2621,8 +2644,8 @@ conversation_type text NOT NULL,
 corpus text NOT NULL,
 corridor_id integer NOT NULL,
 corridor_id integer,
-coverage jsonb DEFAULT '{}'::jsonb NOT NULL,
-coverage jsonb NOT NULL,
+coverage jsonb DEFAULT '{}'::jsonb,
+coverage jsonb,
 created_at bigint NOT NULL
 created_at bigint NOT NULL,
 created_at bigint NOT NULL,
@@ -2684,7 +2707,7 @@ detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail text DEFAULT ''::text NOT NULL,
-detail text DEFAULT ''::text NOT NULL,
+detail text DEFAULT ''::text,
 disputed_at bigint,
 disputed_at bigint,
 disputed_by text NOT NULL,
@@ -2694,7 +2717,7 @@ disputed_reason text,
 disputed_reason text,
 disputed_tag_id text,
 disputed_tag_id text,
-distance_m double precision NOT NULL,
+distance_m double precision,
 distinct_speakers integer DEFAULT 0 NOT NULL,
 district text,
 district text,
@@ -2728,8 +2751,8 @@ duplicate_id uuid NOT NULL,
 duplicate_title text NOT NULL,
 duration_mad_ms bigint,
 duration_median_ms bigint,
-dwell_ms bigint DEFAULT 0 NOT NULL,
-edits integer NOT NULL,
+dwell_ms bigint DEFAULT 0,
+edits integer,
 eligible_count integer NOT NULL,
 embed_attempts integer DEFAULT 0 NOT NULL,
 embed_error text,
@@ -2880,11 +2903,11 @@ first_seen_at bigint NOT NULL,
 first_seen_at bigint,
 first_seen_ts bigint NOT NULL,
 first_seen_ts bigint NOT NULL,
-fix_count integer NOT NULL,
-fix_count integer NOT NULL,
+fix_count integer,
+fix_count integer,
 fold_count integer DEFAULT 0 NOT NULL,
 fold_count integer NOT NULL,
-follows integer DEFAULT 0 NOT NULL,
+follows integer DEFAULT 0,
 form text NOT NULL,
 from_stimulus_id bigint CONSTRAINT cognition_wake_from_signal_id_not_null NOT NULL,
 from_stimulus_id bigint NOT NULL,
@@ -2931,8 +2954,8 @@ hold_open text,
 hold_open text,
 holds_while jsonb,
 holds_while_form text,
-home_ms bigint NOT NULL,
-homes_unknown text[] DEFAULT '{}'::text[] NOT NULL,
+home_ms bigint,
+homes_unknown text[] DEFAULT '{}'::text[],
 hostname text DEFAULT ''::text NOT NULL,
 hostname text DEFAULT ''::text NOT NULL,
 hostname text DEFAULT ''::text NOT NULL,
@@ -3164,12 +3187,12 @@ last_title text DEFAULT ''::text NOT NULL,
 last_url text DEFAULT ''::text NOT NULL,
 last_wake_revision_id uuid,
 last_window_end_at bigint NOT NULL,
-lat double precision NOT NULL,
-lat double precision NOT NULL,
-lat double precision NOT NULL,
-lat double precision NOT NULL,
-lat double precision NOT NULL,
-lat double precision NOT NULL,
+lat double precision,
+lat double precision,
+lat double precision,
+lat double precision,
+lat double precision,
+lat double precision,
 lat_rounded double precision NOT NULL,
 late_fixes integer DEFAULT 0 NOT NULL,
 latency_ms integer,
@@ -3226,12 +3249,12 @@ lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
-lng double precision NOT NULL,
-lng double precision NOT NULL,
-lng double precision NOT NULL,
-lng double precision NOT NULL,
-lng double precision NOT NULL,
-lng double precision NOT NULL,
+lng double precision,
+lng double precision,
+lng double precision,
+lng double precision,
+lng double precision,
+lng double precision,
 lng_rounded double precision NOT NULL,
 loaded_at timestamp with time zone NOT NULL,
 loaded_at timestamp with time zone NOT NULL,
@@ -3258,8 +3281,8 @@ mention_at timestamp with time zone,
 mention_persons_json text,
 mention_persons_json text,
 mentioned text[] DEFAULT '{}'::text[] NOT NULL,
-mentions_ab integer NOT NULL,
-mentions_ba integer NOT NULL,
+mentions_ab integer,
+mentions_ba integer,
 mentions_json text,
 mentions_json text,
 merged_into text
@@ -3278,7 +3301,7 @@ message_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
 message_ids integer[] NOT NULL,
 message_ids integer[] NOT NULL,
 message_ids integer[] NOT NULL,
-messages integer NOT NULL,
+messages integer,
 messages jsonb NOT NULL,
 mode text NOT NULL,
 mode text NOT NULL,
@@ -3335,9 +3358,9 @@ model_calls integer NOT NULL,
 model_id text,
 model_route text,
 name text CONSTRAINT entity_name_not_null NOT NULL,
-name text NOT NULL,
 name text,
-named_persons text[] DEFAULT '{}'::text[] NOT NULL,
+name text,
+named_persons text[] DEFAULT '{}'::text[],
 narrative text NOT NULL,
 network text NOT NULL,
 network text NOT NULL,
@@ -3502,11 +3525,11 @@ outcome text NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
-outcome text NOT NULL,
+outcome text,
 outcome text,
 outcome text,
 outcome_reason text,
-outings integer NOT NULL,
+outings integer,
 output_ref jsonb DEFAULT '{}'::jsonb NOT NULL,
 output_tokens bigint,
 owed_since timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -3576,7 +3599,7 @@ payload jsonb NOT NULL,
 payload jsonb NOT NULL,
 payload jsonb NOT NULL,
 payload jsonb NOT NULL,
-payload jsonb NOT NULL,
+payload jsonb,
 payload jsonb,
 people text[] DEFAULT '{}'::text[] NOT NULL,
 people text[] DEFAULT '{}'::text[] NOT NULL,
@@ -3631,7 +3654,7 @@ persons text[] NOT NULL,
 persons text[] NOT NULL,
 phase text NOT NULL,
 place text,
-place_confidence double precision CONSTRAINT presence_derived_places_confidence_not_null NOT NULL,
+place_confidence double precision,
 place_id integer NOT NULL,
 place_id integer NOT NULL,
 place_id integer,
@@ -3695,7 +3718,7 @@ profile_key text NOT NULL,
 projected_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 projection_rev integer DEFAULT 1 NOT NULL,
 provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
-provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
+provenance jsonb DEFAULT '{}'::jsonb,
 provenance text NOT NULL,
 provider text NOT NULL,
 provider_model text,
@@ -3704,18 +3727,18 @@ queued_at timestamp with time zone DEFAULT now() CONSTRAINT graph_arrival_queued
 queued_at timestamp with time zone DEFAULT now() NOT NULL,
 queued_ms bigint NOT NULL,
 quoted_ts bigint,
-radius_m double precision NOT NULL,
-radius_m double precision NOT NULL,
-radius_m double precision NOT NULL,
+radius_m double precision,
+radius_m double precision,
+radius_m double precision,
 radius_m double precision,
 raw_json text,
 raw_json text,
 raw_json text,
 raw_json text,
-reactions integer NOT NULL,
-reactions integer NOT NULL,
-reactions_ab integer NOT NULL,
-reactions_ba integer NOT NULL,
+reactions integer,
+reactions integer,
+reactions_ab integer,
+reactions_ba integer,
 read_id uuid,
 read_id uuid,
 reading text NOT NULL,
@@ -3886,9 +3909,9 @@ replaces text,
 replaces text,
 replaces text,
 replaces text,
-replies integer NOT NULL,
-replies_ab integer NOT NULL,
-replies_ba integer NOT NULL,
+replies integer,
+replies_ab integer,
+replies_ba integer,
 reply_comment_id text,
 reply_text text,
 reposts bigint,
@@ -3901,7 +3924,7 @@ requester_person_id text,
 requirements jsonb DEFAULT '{}'::jsonb NOT NULL,
 resolved_at timestamp with time zone DEFAULT now() NOT NULL,
 responded_at timestamp with time zone NOT NULL,
-responders text[] DEFAULT '{}'::text[] NOT NULL,
+responders text[] DEFAULT '{}'::text[],
 response text NOT NULL,
 result jsonb DEFAULT '{}'::jsonb NOT NULL,
 result jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -4107,12 +4130,12 @@ revision_scope text,
 revisit_at bigint,
 role text CONSTRAINT relation_evidence_role_not_null NOT NULL,
 room text CONSTRAINT graph_arrival_room_not_null NOT NULL,
-rooms jsonb NOT NULL,
+rooms jsonb,
 row_key jsonb NOT NULL,
 row_key text NOT NULL,
 run_at_ms bigint NOT NULL,
-sample_count integer DEFAULT 0 NOT NULL,
-sample_count integer DEFAULT 0 NOT NULL,
+sample_count integer DEFAULT 0,
+sample_count integer DEFAULT 0,
 sample_count integer NOT NULL,
 saved_place_id text,
 saved_place_id text,
@@ -4151,7 +4174,7 @@ seq bigint NOT NULL,
 seq integer NOT NULL,
 seq integer NOT NULL,
 seq integer NOT NULL,
-sequence jsonb NOT NULL,
+sequence jsonb,
 sequence jsonb,
 series_anchor_at timestamp with time zone,
 series_id uuid,
@@ -4211,7 +4234,7 @@ source_position bigint,
 source_read_revision text
 source_revision text,
 source_revision text,
-source_state jsonb CONSTRAINT platform_object_state_state_not_null NOT NULL,
+source_state jsonb,
 source_state text CONSTRAINT social_item_state_state_not_null NOT NULL,
 source_url text,
 span text,
@@ -4301,9 +4324,9 @@ status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
 status text,
-stay_count integer NOT NULL,
-stay_ms bigint NOT NULL,
-stays jsonb NOT NULL,
+stay_count integer,
+stay_ms bigint,
+stays jsonb,
 stimulus_count integer CONSTRAINT cognition_wake_signal_count_not_null NOT NULL,
 stimulus_id bigint NOT NULL,
 stimulus_id bigint NOT NULL,
@@ -4673,7 +4696,7 @@ why text NOT NULL,
 window_end timestamp with time zone,
 window_fix_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
 wire_state text NOT NULL,
-with_persons text[] DEFAULT '{}'::text[] NOT NULL,
+with_persons text[] DEFAULT '{}'::text[],
 work_id text NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,

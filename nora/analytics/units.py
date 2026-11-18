@@ -184,8 +184,8 @@ class UnitRollups:
         raise_stimuli: bool,
     ) -> UnitRun:
         members = tuple(m for m in unit.members if m in self._people)
-        stays = await self._store.stay_spans(build_id=build_id, subjects=members)
-        homes = await self._store.homes(build_id=build_id, subjects=members)
+        stays = await self._store.stay_spans(build_id=build_id, subjects=members, unit=unit.unit)
+        homes = await self._store.homes(build_id=build_id, subjects=members, unit=unit.unit)
         messages, reactions, sends, evidence = await self._store.message_facts(
             unit=unit, mark=mark, subject_of=self._subject_of,
             follow_window_ms=int(self._cfg.follow_window_seconds * 1000),

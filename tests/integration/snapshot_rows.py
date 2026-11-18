@@ -24,12 +24,12 @@ def _hex(table: str, i: int) -> str:
 
 
 #: What every presence Rollup row carries (0071).
-_ROLLUP: dict[str, Any] = {"build_id": 1, "lineage": [["presence", "s", None]]}
+_ROLLUP: dict[str, Any] = {"build_id": 1, "build_lineage": [["presence", "s", None]]}
 
 
 def _UNIT_ROLLUP(i: int) -> dict[str, Any]:
     return {
-        "build_id": 1, "unit": "u", "lineage": [["presence", "a", None]],
+        "build_id": 1, "unit": "u", "build_lineage": [["presence", "a", None]],
         "valid_from_ms": MS0 + i, "valid_to_ms": MS0 + 1000 + i, "as_of_ms": MS0 + i,
     }
 
@@ -214,8 +214,32 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     },
     # Migration 0071: the Rollup's builds, fold states, presence rows and
     # unit rollups, and the collector's saved places.
+    "fetched_pages": lambda i: {
+        "conversation_id": "g1", "url": f"https://example.invalid/generated/{i}",
+        "blob_key": f"generated-page-{i}", "fetched_at": T0, "expires_at": T0 + timedelta(days=1),
+    },
+    "social_item": lambda i: {
+        "id": _uuid("si", i), "network": "instagram", "item_id": f"item{i}",
+        "person": "ken", "account": "10000001", "source_kind": "post", "taken_at": T0,
+        "seen_at": T0, "origin": "poll",
+    },
+    "social_item_count": lambda i: {
+        "id": _uuid("sc", i), "network": "instagram", "item_id": f"item{i}",
+        "likes": i, "comments": 1, "likes_hidden": False,
+    },
+    "social_item_state": lambda i: {
+        "id": _uuid("ss", i), "network": "instagram", "item_id": f"item{i}", "source_state": "gone",
+    },
+    "social_poll": lambda i: {
+        "id": _uuid("sp", i), "network": "instagram", "person": "ken", "stage": "probe",
+        "outcome": "unchanged",
+    },
+    "source_health": lambda i: {
+        "id": 7100 + i, "source": "presence", "scope": "c1", "event": "poll", "outcome": "ok",
+        "at_ms": MS0 + i,
+    },
     "presence_places": lambda i: {
-        "circle_id": "c", "place_id": f"pl{i}", "name": f"place {i}", "lat": 22.30,
+        "circle_id": "c", "place_id": f"pl{i}", "unit": None, "name": f"place {i}", "lat": 22.30,
         "lng": 114.20, "updated_ms": MS0 + i,
     },
     "presence_stays": lambda i: {
@@ -230,8 +254,8 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     },
     "presence_derived_places": lambda i: {
         "id": 6200 + i, "subject_id": "s", "circle_id": "c", "lat": 22.40, "lng": 114.40,
-        "radius_m": 100.0, "kind": "unlabeled", "confidence": 0.5, "first_seen_ts": MS0,
-        "last_seen_ts": MS0, **_ROLLUP,
+        "radius_m": 100.0, "source_kind": "unlabeled", "place_confidence": 0.5,
+        "first_seen_ts": MS0, "last_seen_ts": MS0, **_ROLLUP,
     },
     "presence_occupancy": lambda i: {
         "id": 6300 + i, "subject_id": "s", "place_id": 6200, "hour_of_week": i,
@@ -303,7 +327,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     # affects. `target_message_id` is SET NULL when its message is pruned,
     # and re-linked in place by the resolve pass.
     "platform_observation": lambda i: {
-        "id": 7000 + i, "contract": 1, "kind": "reaction",
+        "id": 7000 + i, "contract": 1, "source_kind": "reaction",
         "event_id": f"ev-{i}", "source_digest": f"digest-{i}",
         "platform": "signal", "account_key": "acct",
         "conversation_id": "g1", "object_ref": f"msg:s{i}:{MS0 + i}",
@@ -322,9 +346,9 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     # The fold's compare-and-swap head over the same object.
     "platform_object_state": lambda i: {
         "id": 7100 + i, "platform": "signal", "account_key": "acct",
-        "conversation_id": "g1", "kind": "reaction",
+        "conversation_id": "g1", "source_kind": "reaction",
         "object_ref": f"msg:s{i}:{MS0 + i}",
-        "state": {"standing": {"👍": [f"s{i}"]}, "counts": {},
+        "source_state": {"standing": {"👍": [f"s{i}"]}, "counts": {},
                   "reactors": [f"s{i}"], "snapshot": False},
         "applied": 1, "head_observation_id": 7000 + i,
         "observed_ms": MS0 + i, "ordering": "arrival",
@@ -382,6 +406,12 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "music_session": ("paused", lambda i: True),
     "geocode_cache": ("address", lambda i: f"renamed {i}"),
     "sticker_index": ("hits", lambda i: 7 + i),
+    "fetched_pages": ("blob_key", lambda i: f"generated-page-revision-{i}"),
+    "social_item": ("caption", lambda i: f"edited caption {i}"),
+    "social_item_count": ("likes", lambda i: i + 10),
+    "social_item_state": ("source_state", lambda i: "hidden"),
+    "social_poll": ("outcome", lambda i: "read_ok"),
+    "source_health": ("detail", lambda i: f"observed {i}"),
     "presence_places": ("name", lambda i: f"renamed place {i}"),
     "presence_stays": ("place_id", lambda i: 6200 + i),
     "presence_trips": ("corridor_id", lambda i: 6400 + i),
@@ -402,7 +432,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     # target re-linking (`resolve_targets`/`relink_arriving_targets`).
     "platform_observation": ("target_message_id", lambda i: 1000),
     # The fold's head re-folding (`_apply_head`'s UPDATE).
-    "platform_object_state": ("state", lambda i: {
+    "platform_object_state": ("source_state", lambda i: {
         "standing": {"👀": [f"s{i}"]}, "counts": {},
         "reactors": [f"s{i}"], "snapshot": False}),
 }
@@ -519,29 +549,11 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "body": f"## Kept\n- kept {n} [{n + 1}]", "citations": [str(n + 1)], "mode": "told",
         "state": "kept", "written_at": MS0 + n, "established_by": "test",
     },
-    # 0107_social_stream: an item, a probe of it, and a state it was given.
-    "social_item": lambda n: {
-        "id": _uuid("si", n), "network": "instagram", "item_id": f"item{n}",
-        "person": "ken", "account": "10000001", "kind": "post", "taken_at": T0,
-        "seen_at": T0, "origin": "poll",
-    },
-    "social_poll": lambda n: {
-        "id": _uuid("sp", n), "network": "instagram", "person": "ken", "stage": "probe",
-        "outcome": "unchanged",
-    },
-    "social_item_state": lambda n: {
-        "id": _uuid("ss", n), "network": "instagram", "item_id": f"item{n}", "state": "gone",
-    },
     # 0108_social_perception: one attempt to perceive an item's media.
     "social_perception": lambda n: {
         "id": _uuid("sv", n), "network": "instagram", "item_id": f"item{n}",
         "person": "ken", "units": ["friends"], "origin": "poll", "outcome": "ok",
         "calls": 1, "at": T0,
-    },
-    # 0119_social_item_count: an item's counts as one read carried them.
-    "social_item_count": lambda n: {
-        "id": _uuid("sc", n), "network": "instagram", "item_id": f"item{n}",
-        "likes": n, "comments": 1, "likes_hidden": False,
     },
     # 0109_blob_tombstone: a story frame's bytes deleted at their bound.
     "blob_tombstone": lambda n: {
@@ -581,10 +593,6 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "cognition_wake": lambda n: {
         "unit": "u", "mode": "live", "reason": "settled", "from_stimulus_id": 0,
         "through_stimulus_id": n, "stimulus_count": 1, "eligible_count": 1, "at_ms": MS0 + n,
-    },
-    "source_health": lambda n: {
-        "source": "presence", "scope": "c1", "event": "poll", "outcome": "ok",
-        "at_ms": MS0 + n,
     },
     # Migration 0074_event_revision: the chain `events` is a compare-and-swap cache
     # over, and RSVPs, append-only.

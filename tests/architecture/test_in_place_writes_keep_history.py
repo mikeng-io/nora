@@ -46,20 +46,27 @@ _RAW = re.compile(
     r'|\bINSERT\s+INTO\s+"?([a-z_]+)"?[^;]{0,400}?\bDO\s+UPDATE\b'
 )
 
-#: Sites whose table is a variable: path -> the tables the variable can be.
-#: `mobility.py`'s place deletion clears the Tier 3 tables in a loop, and
-#: `rollups.py` diffs each unit rollup table through one helper.
+#: Sites whose table is a variable and the tables each site writes.
 _VARIABLE_TARGETS: dict[str, frozenset[str]] = {
     "nora/infra/sql/standing_ledger.py": frozenset({
         "standing_decision", "standing_commitment", "standing_thread",
     }),
-    "nora/infra/sql/mobility.py": frozenset({"presence_occupancy", "presence_place_rhythm"}),
-    # The Cognitive Graph store writes the table its caller names.
-    "nora/memory/adapters/graph_store.py": frozenset({
-        "registry", "entity", "claim", "intention", "edge",
+    "nora/infra/sql/presence.py": frozenset({"presence_places"}),
+    "nora/infra/sql/aggregate_writes.py": frozenset({
+        "presence_stays", "presence_trips", "presence_derived_places", "presence_corridors",
+        "presence_occupancy", "presence_place_rhythm",
     }),
-    # The unit rollups' diffed write (`_diff_apply`), one table at a time.
-    "nora/infra/sql/rollups.py": frozenset({
+    "nora/infra/sql/cognitive_graph_store.py": frozenset({
+        "registry", "entity", "claim", "intention", "edge",
+        "messages", "message_edit", "message_reaction", "message_delete",
+        "presence_fixes", "fetched_pages", "social_item", "social_item_count",
+        "social_item_state", "social_poll", "platform_observation", "source_health",
+        "presence_stays", "presence_trips", "presence_derived_places", "presence_corridors",
+        "presence_occupancy", "presence_place_rhythm",
+        "rollup_colocation", "rollup_outing", "rollup_daybook", "rollup_tie",
+        "rollup_response", "presence_places", "platform_object_state",
+    }),
+    "nora/infra/sql/rollup_writes.py": frozenset({
         "rollup_colocation", "rollup_outing", "rollup_daybook", "rollup_tie",
         "rollup_response",
     }),

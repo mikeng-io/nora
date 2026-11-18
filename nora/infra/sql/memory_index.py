@@ -1437,7 +1437,7 @@ async def _episodes(
     of keys is `rollup_read`'s matching of a citation within its second."""
     table = ROLLUP_OUTING if kind == "outing" else _PRESENCE[kind]
     start = table.c.valid_from_ms if kind == "outing" else table.c.started_ts
-    where: list[Any] = [table.c.build_id == build]
+    where: list[Any] = [table.c.build_id == build, table.c.state == 'live']
     asked = None if keys is None else set(keys)
     if keys is not None:
         parsed = [p for k in keys if (p := _split_key(k)) is not None]

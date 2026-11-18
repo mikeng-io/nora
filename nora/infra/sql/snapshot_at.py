@@ -545,13 +545,17 @@ def _insert_sql(table: str, columns: list[tuple[str, str | None, bool]]) -> str:
         else:
             exprs.append(f'r."{name}"')
     guards = []
-    for fk in METADATA.tables[table].foreign_keys:
-        parent = fk.column.table.name
+    for constraint in METADATA.tables[table].foreign_key_constraints:
+        parent = constraint.referred_table.name
         if parent == table:
             continue
+        fields = constraint.elements
+        nulls = (" AND " if constraint.match == "FULL" else " OR ").join(
+            f'r."{fk.parent.name}" IS NULL' for fk in fields
+        )
+        match = " AND ".join(f'p."{fk.column.name}" = r."{fk.parent.name}"' for fk in fields)
         guards.append(
-            f'(r."{fk.parent.name}" IS NULL OR EXISTS (SELECT 1 FROM "{parent}" p '  # noqa: S608 — table and column names are module constants, never input
-            f'WHERE p."{fk.column.name}" = r."{fk.parent.name}"))'
+            f'(({nulls}) OR EXISTS (SELECT 1 FROM "{parent}" p WHERE {match}))'  # noqa: S608
         )
     where = f" WHERE {' AND '.join(guards)}" if guards else ""
     return (

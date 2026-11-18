@@ -72,6 +72,12 @@ async def _write(conn: Any, table: str, i: int) -> None:
         parents += [{"id": row[e], "unit": row["unit"], "kind": "entity"}
                     for e in ("src_id", "dst_id") if table == "edge"]
         await conn.execute(sa.insert(_table("registry")).values(parents))
+    if table.startswith("rollup_") and "unit" in row:
+        graph_id = f"generated:{table}:{i}"
+        await conn.execute(sa.insert(_table("registry")).values(
+            id=graph_id, unit=row["unit"], kind="aggregate",
+        ))
+        row["graph_id"] = graph_id
     await conn.execute(sa.insert(_table(table)).values(row))
 
 

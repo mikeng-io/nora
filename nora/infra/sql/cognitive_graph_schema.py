@@ -366,6 +366,7 @@ def _registration_planes(
         name=f"ck_{table}_graph_pair", postgresql_not_valid=True,
     )
 
+
 def _attach_registration_planes() -> None:
     for name, kind, basis, writer, exposure in _observed_tables():
         table = METADATA.tables[name]
@@ -383,3 +384,86 @@ sa.Index(
     METADATA.tables["social_item"].c.item_id, METADATA.tables["social_item"].c.unit,
     unique=True, postgresql_nulls_not_distinct=True,
 )
+
+
+METADATA.tables["presence_places"].append_constraint(
+    sa.UniqueConstraint(
+        "circle_id",
+        "place_id",
+        "unit",
+        name="uq_presence_places_unit",
+        postgresql_nulls_not_distinct=True,
+    )
+)
+
+
+METADATA.tables["platform_object_state"].append_constraint(
+    sa.UniqueConstraint(
+        "platform", "account_key", "conversation_id", "thread", "source_kind", "object_ref",
+        "unit", name="uq_platform_object_state_object", postgresql_nulls_not_distinct=True,
+    )
+)
+
+
+_TOMBSTONE_NULLABLE = {
+    "presence_places": ("name", "lat", "lng"),
+    "fetched_pages": ("blob_key", "provenance"),
+    "platform_object_state": ("source_state", "coverage"),
+    "platform_observation": ("payload", "coverage"),
+    "presence_corridors": ("sequence", "sample_count"),
+    "presence_derived_places": ("lat", "lng", "radius_m", "place_confidence"),
+    "presence_fixes": ("lat", "lng"),
+    "presence_occupancy": ("dwell_ms",),
+    "presence_place_rhythm": ("sample_count",),
+    "presence_stays": ("lat", "lng", "radius_m", "fix_count"),
+    "presence_trips": ("distance_m", "avg_speed_kmh", "fix_count"),
+    "rollup_colocation": ("lat", "lng", "radius_m", "at_home_of", "homes_unknown", "stay_count"),
+    "rollup_daybook": (
+        "stays",
+        "stay_ms",
+        "home_ms",
+        "colocation_ms",
+        "with_persons",
+        "outings",
+        "rooms",
+        "messages",
+        "reactions",
+    ),
+    "rollup_outing": ("lat", "lng"),
+    "rollup_response": (
+        "replies",
+        "reactions",
+        "edits",
+        "follows",
+        "responders",
+        "named_persons",
+        "outcome",
+    ),
+    "rollup_tie": (
+        "replies_ab",
+        "replies_ba",
+        "mentions_ab",
+        "mentions_ba",
+        "reactions_ab",
+        "reactions_ba",
+        "colocation_ms",
+    ),
+    "source_health": ("detail",),
+}
+
+
+def _live_content_check(columns: tuple[str, ...]) -> str:
+    expr = " AND ".join(f"{column} IS NOT NULL" for column in columns)
+    return f"state = 'tombstoned' OR ({expr})"
+
+
+for _table, _columns in _TOMBSTONE_NULLABLE.items():
+    _target = METADATA.tables[_table]
+    for _column in _columns:
+        _target.c[_column].nullable = True
+    _target.append_constraint(
+        sa.CheckConstraint(
+            _live_content_check(_columns),
+            name=f"ck_{_table}_tombstone_content",
+        )
+    )

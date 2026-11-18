@@ -23,6 +23,11 @@ from nora.config_reload import ReloadFiles
 from nora.domain.live import LiveMapping, LiveSequence
 from nora.infra.sql import create_sql_engine, run_migrations
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
+from nora.infra.sql.item_registration import (
+    RegistrationScope,
+    RuntimeRevisions,
+    SqlItemRegistration,
+)
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
 from nora.infra.sql.social_stream import readable_social_store
@@ -184,7 +189,10 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         raise AnalyticsStartupError(f"migration error: {exc}") from exc
 
     engine = create_sql_engine(database_url)
-    mobility = SqlMobilityStore(engine, metrics=metrics)
+    registration = SqlItemRegistration(
+        RegistrationScope(policy, persons), RuntimeRevisions(cfg.model_dump(), policy, persons),
+    )
+    mobility = SqlMobilityStore(engine, metrics=metrics, registration=registration)
     # Google-cache-only labelling: this process READS `geocode_cache` only —
     # it never calls a geocoder itself. REUSES `engine` for the same reason
     # `nora.app.composition` reuses its own (a second `create_sql_engine`
@@ -227,7 +235,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         health_max_poll_gap_seconds=analytics.health_max_poll_gap_seconds,
         tz_name=analytics.tz_name,
     )
-    rollups = SqlRollupStore(engine, metrics=metrics)
+    rollups = SqlRollupStore(engine, metrics=metrics, registration=registration)
     people = LiveMapping(lambda: {
         s.subject_id: PersonScope(
             subject=s.subject_id, circles=s.circle_ids,

@@ -97,7 +97,7 @@ class SqlRollupRead:
         if table is None:
             raise ValueError(f"not a Rollup kind rollup_read reads: {q.kind!r}")
         where = [
-            table.c.build_id == current_build_id(), table.c.unit == q.unit,
+            table.c.state == 'live', table.c.build_id == current_build_id(), table.c.unit == q.unit,
             table.c.valid_from_ms < q.end_ms, table.c.valid_to_ms >= q.start_ms,
         ]
         where.append(_involves(q, table))
@@ -115,7 +115,7 @@ class SqlRollupRead:
         if join is not None:
             stmt = stmt.select_from(join)
         return stmt.where(
-            table.c.build_id == current_build_id(),
+            table.c.state == 'live', table.c.build_id == current_build_id(),
             table.c.subject_id.in_(q.subjects),
             start < q.end_ms, end >= q.start_ms,
         ).order_by(start, table.c.id)

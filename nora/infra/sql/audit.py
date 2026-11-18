@@ -901,12 +901,15 @@ class SqlRecordStore:
             target_link = sa.exists().where(
                 PLATFORM_OBSERVATION.c.source_kind == "reaction",
                 PLATFORM_OBSERVATION.c.target_message_id == message_id,
+                PLATFORM_OBSERVATION.c.unit.is_not_distinct_from(PLATFORM_OBJECT_STATE.c.unit),
                 *(PLATFORM_OBSERVATION.c[name] == PLATFORM_OBJECT_STATE.c[name]
                   for name in ("platform", "account_key", "conversation_id",
                                "thread", "object_ref")))
+            at = sa.func.statement_timestamp()
             await conn.execute(sa.update(PLATFORM_OBJECT_STATE).where(
-                PLATFORM_OBJECT_STATE.c.source_kind == "reaction", target_link,
-            ).values(updated_at=sa.func.clock_timestamp()))
+                PLATFORM_OBJECT_STATE.c.source_kind == "reaction",
+                PLATFORM_OBJECT_STATE.c.state == "live", target_link,
+            ).values(updated_at=at, asserted_at=at))
             await memory_index.project(conn, "message", message_id, metrics=self._metrics)
         return row_id
 

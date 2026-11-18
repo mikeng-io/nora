@@ -258,7 +258,9 @@ class PresenceCollector:
             self._places_retry_ms[cid] = now_ms + int(backoff * 1000)
             return
         try:
-            await self._store.replace_places(circle_id=cid, places=list(read.places))
+            await self._store.replace_places(
+                circle_id=cid, places=list(read.places), partial=read.partial,
+            )
         except Exception:
             log.exception("places store failed for circle")
             return

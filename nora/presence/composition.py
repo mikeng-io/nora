@@ -26,6 +26,7 @@ from nora.config_reload import FileReload, LivePersons, RestartRequiredError
 from nora.domain.live import LiveSequence
 from nora.infra.life360 import Life360Client
 from nora.infra.sql import create_sql_engine, run_migrations
+from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.item_registration import (
     RegistrationScope,
     RuntimeRevisions,
@@ -169,6 +170,7 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         retention_days=presence.retention_days,
         metrics=metrics,
         registration=registration,
+        aggregate_graph=SqlCognitiveGraph(engine),
     )
     client = Life360Client(
         client_credential=credential,

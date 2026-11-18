@@ -22,11 +22,16 @@ by age, not by per-conversation depth.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.dialects.postgresql import distinct_on
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.presence import PresenceFix, SavedPlace, WireState
 from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms
@@ -53,6 +58,7 @@ class PresenceStore:
         retention_days: int = DEFAULT_RETENTION_DAYS,
         metrics: Any = None,
         registration: SqlItemRegistration | None = None,
+        aggregate_graph: Any = None,
     ) -> None:
         """`metrics` is INJECTED, never imported, for the reason
         `SqlRecordStore` documents: `nora.infra` sits below `nora.obs` in the
@@ -63,6 +69,7 @@ class PresenceStore:
         self._retention_days = retention_days
         self._metrics = metrics
         self._registration = registration
+        self._aggregate_graph = aggregate_graph
 
     async def record_fix(self, *, fix: PresenceFix) -> bool:
         """Insert `fix` iff its `ts` advances past the member's last stored `ts`.
@@ -156,48 +163,84 @@ class PresenceStore:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_fix(r) for r in rows]
 
-    async def replace_places(self, *, circle_id: str, places: list[SavedPlace]) -> None:
-        """Replace one circle's saved places wholesale.
-
-        Delete-then-insert in ONE transaction, not an upsert-and-reap: a circle
-        holds a handful of rarely-changing rows, so the simplest write that
-        cannot leave a deleted place behind wins. Called only by the collector's
-        places fetch — never on the fix write path."""
+    async def replace_places(
+        self, *, circle_id: str, places: list[SavedPlace], partial: bool = False,
+        inputs: Sequence[Mapping[str, Any]] = (),
+    ) -> None:
+        """Apply one circle's saved-place snapshot in each observing unit."""
+        scope = self._registration.scope if self._registration else None
+        units = scope.circle_units(circle_id) if scope else ()
+        by_id = {place.place_id: place for place in places}
         async with self._engine.begin() as conn:
-            await conn.execute(
-                sa.delete(PRESENCE_PLACES).where(
-                    PRESENCE_PLACES.c.circle_id == circle_id
-                )
+            for unit in units or (None,):
+                await self._write_place_heads(conn, circle_id, unit, by_id, partial, inputs)
+            if not partial:
+                table = PRESENCE_PLACES
+                prior_units = (
+                    await conn.scalars(sa.select(table.c.unit).where(
+                        table.c.circle_id == circle_id, table.c.state == "live",
+                    ).distinct())
+                ).all()
+                for unit in prior_units:
+                    if unit not in (units or (None,)):
+                        await self._write_place_heads(conn, circle_id, unit, {}, False, ())
+
+    async def _write_place_heads(
+        self, conn: AsyncConnection, circle_id: str, unit: str | None,
+        by_id: dict[str, SavedPlace], partial: bool, inputs: Sequence[Mapping[str, Any]],
+    ) -> None:
+        table = PRESENCE_PLACES
+        scope = (table.c.circle_id == circle_id, table.c.unit.is_not_distinct_from(unit))
+        if not partial:
+            gone = (await conn.execute(sa.select(table).where(
+                *scope, table.c.state == "live", table.c.place_id.not_in(by_id),
+            ).with_for_update())).mappings().all()
+            for prior in gone:
+                if prior["graph_id"] is not None and self._aggregate_graph is not None:
+                    payload = json.dumps(dict(prior), default=str, sort_keys=True)
+                    await self._aggregate_graph.tombstone_in(
+                        conn, table, row_id=prior["graph_id"], unit=unit,
+                        content_hash=hashlib.sha256(payload.encode()).hexdigest(),
+                    )
+                else:
+                    await conn.execute(sa.delete(table).where(
+                        *scope, table.c.place_id == prior["place_id"],
+                    ))
+        for place in by_id.values():
+            await self._write_place_head(conn, circle_id, unit, place, inputs)
+
+    async def _write_place_head(
+        self, conn: AsyncConnection, circle_id: str, unit: str | None, place: SavedPlace,
+        inputs: Sequence[Mapping[str, Any]],
+    ) -> None:
+        planes: dict[str, Any] = {}
+        registration = self._registration
+        if registration is not None and self._aggregate_graph is not None:
+            at = epoch_ms(place.updated_ms)
+            planes = await self._aggregate_graph.aggregate_planes(
+                conn, PRESENCE_PLACES, unit=unit, key=(circle_id, place.place_id, unit),
+                occurred_at=at, asserted_at=at, minimum="internal",
+                persons=registration.scope.circle_persons(circle_id, unit=unit),
+                inputs=(source for source in inputs if source.get("unit") == unit),
+                revisions=registration.revisions(),
             )
-            if places:
-                await conn.execute(
-                    sa.insert(PRESENCE_PLACES),
-                    [
-                        {
-                            # The kwarg, not `p.circle_id`: the delete above is
-                            # scoped to `circle_id`, so an insert keyed on a
-                            # row's own differing circle_id would write into a circle this
-                            # call did not clear. The only caller pins them equal;
-                            # this makes the isolation true by construction.
-                            "circle_id": circle_id,
-                            "place_id": p.place_id,
-                            "name": p.name,
-                            "lat": p.lat,
-                            "lng": p.lng,
-                            "radius_m": p.radius_m,
-                            "address": p.address,
-                            "updated_ms": p.updated_ms,
-                        }
-                        for p in places
-                    ],
-                )
+        values = {
+            "circle_id": circle_id, "place_id": place.place_id,
+            "name": place.name, "lat": place.lat, "lng": place.lng,
+            "radius_m": place.radius_m, "address": place.address,
+            "updated_ms": place.updated_ms, **planes,
+        }
+        await conn.execute(pg_insert(PRESENCE_PLACES).values(**values).on_conflict_do_update(
+            constraint="uq_presence_places_unit",
+            set_={k: v for k, v in values.items() if k not in {"circle_id", "place_id", "unit"}},
+        ))
 
     async def places_for(self, *, circle_id: str) -> list[SavedPlace]:
         """One circle's saved places, name-ordered for deterministic reads."""
         stmt = (
-            sa.select(PRESENCE_PLACES)
-            .where(PRESENCE_PLACES.c.circle_id == circle_id)
-            .order_by(PRESENCE_PLACES.c.name.asc(), PRESENCE_PLACES.c.place_id.asc())
+            sa.select(PRESENCE_PLACES).ext(distinct_on(PRESENCE_PLACES.c.place_id))
+            .where(PRESENCE_PLACES.c.circle_id == circle_id, PRESENCE_PLACES.c.state == "live")
+            .order_by(PRESENCE_PLACES.c.place_id, PRESENCE_PLACES.c.updated_ms.desc())
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
@@ -212,7 +255,7 @@ class PresenceStore:
                 address=r.address,
                 updated_ms=r.updated_ms,
             )
-            for r in rows
+            for r in sorted(rows, key=lambda row: (row.name, row.place_id))
         ]
 
     async def prune(self, *, now_ms: int) -> int:
