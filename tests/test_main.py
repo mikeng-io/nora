@@ -643,7 +643,7 @@ async def test_app_run_releases_what_a_previous_process_left_before_the_wake_loo
         order.append("wake_loop")
         return _never()
 
-    monkeypatch.setattr(main_module.wake, "wake_loop", _loop_spy)
+    monkeypatch.setattr(main_module.tick_grid, "wake_loop", _loop_spy)
     app = await build_app(env)
     assert app.deps.wake_evaluator is not None
 

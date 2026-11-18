@@ -34,7 +34,6 @@ from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from nora.app.tick_grid import aligned_ticks
 from nora.domain.ports import NewWakeOutcome, StimulusStore
 from nora.domain.stimuli import (
     NO_CAUSE,
@@ -53,6 +52,7 @@ from nora.domain.stimuli import (
     restart_detail,
     unit_in_flight,
 )
+from nora.domain.ticks import MILLISECONDS_PER_SECOND
 
 log = logging.getLogger("nora.app.wake")
 
@@ -159,13 +159,14 @@ class WakeEvaluator:
         self._metrics = metrics
         self._floors = tuple(floors)
         self._tz = tz
-        self._floor_grace_ms = int(floor_grace_seconds * 1000)
+        self._floor_grace_ms = int(floor_grace_seconds * MILLISECONDS_PER_SECOND)
         self._mode: WakeMode = mode
         self._timeout = store_timeout_seconds
         self._limit = pending_limit
         self._clock = clock
         self._settle_ms = int(
-            (2 * store_timeout_seconds if settle_seconds is None else settle_seconds) * 1000
+            (2 * store_timeout_seconds if settle_seconds is None else settle_seconds)
+            * MILLISECONDS_PER_SECOND
         )
         self._on_wake = on_wake
         self._session_units = session_units
@@ -189,7 +190,7 @@ class WakeEvaluator:
 
     async def tick(self) -> list[int]:
         """Evaluate every unit; return the ids of the wake rows written."""
-        now_ms = int(self._clock() * 1000)
+        now_ms = int(self._clock() * MILLISECONDS_PER_SECOND)
         cutoff_ms = now_ms - self._settle_ms
         units = sorted(set(self._units()))
         views: list[UnitView] = []
@@ -301,7 +302,7 @@ class WakeEvaluator:
             return 0
         released = 0
         for wake in orphans:
-            now_ms = int(self._clock() * 1000)
+            now_ms = int(self._clock() * MILLISECONDS_PER_SECOND)
             try:
                 recorded = await asyncio.wait_for(
                     self._store.record_outcome(
@@ -364,14 +365,14 @@ class WakeEvaluator:
     def _floor_stimuli(self, unit: str, now_ms: int) -> list[NewStimulus]:
         """The floors whose instant passed within the grace, today's and
         (just after midnight) yesterday's, as `time` stimuli."""
-        local_now = dt.datetime.fromtimestamp(now_ms / 1000, tz=self._tz)
+        local_now = dt.datetime.fromtimestamp(now_ms / MILLISECONDS_PER_SECOND, tz=self._tz)
         out: list[NewStimulus] = []
         for day in (local_now.date() - dt.timedelta(days=1), local_now.date()):
             for floor in self._floors:
                 instant = dt.datetime(
                     day.year, day.month, day.day, floor.hour, floor.minute, tzinfo=self._tz,
                 )
-                at_ms = int(instant.timestamp() * 1000)
+                at_ms = int(instant.timestamp() * MILLISECONDS_PER_SECOND)
                 if at_ms > now_ms or now_ms - at_ms > self._floor_grace_ms:
                     continue
                 out.append(NewStimulus(
@@ -423,7 +424,7 @@ class WakeEvaluator:
                 self._store.view(
                     unit=unit, mode=self._mode, now_ms=cutoff_ms, limit=self._limit,
                     stale_before_ms=(
-                        now_ms - int(self._policy.session_timeout_seconds * 1000)
+                        now_ms - int(self._policy.session_timeout_seconds * MILLISECONDS_PER_SECOND)
                         if tracked else None
                     ),
                 ),
@@ -486,7 +487,7 @@ class WakeEvaluator:
         never wake the unit: counting it would read a unit that is not stuck as
         backed up."""
         eligible = [s.pending_since_ms for s in view.pending if can_wake(s, view)]
-        age = (now_ms - min(eligible)) / 1000 if eligible else 0.0
+        age = (now_ms - min(eligible)) / MILLISECONDS_PER_SECOND if eligible else 0.0
         self._metrics.gauge("nora_stimulus_pending_age_seconds", max(0.0, age), unit=view.unit)
 
     async def record(
@@ -529,7 +530,9 @@ class WakeEvaluator:
         try:
             wake_id = await asyncio.wait_for(
                 self._store.record_wake(
-                    wake=wake, recorded_at_ms=int(self._clock() * 1000), guard=guard,
+                    wake=wake,
+                    recorded_at_ms=int(self._clock() * MILLISECONDS_PER_SECOND),
+                    guard=guard,
                 ),
                 timeout=self._timeout,
             )
@@ -554,17 +557,3 @@ class WakeEvaluator:
             verdict.eligible_count, verdict.through_stimulus_id, verdict.cut_cooldown,
         )
         return wake_id
-
-
-async def wake_loop(
-    evaluator: WakeEvaluator, metrics: Any, *, tick_seconds: float,
-) -> None:
-    """The evaluator's clock: `tick` every `tick_seconds`, forever. A failing
-    tick is logged and counted and never takes the loop down."""
-    log.info("cognition wake evaluator started: tick every %gs", tick_seconds)
-    async for _ in aligned_ticks(tick_seconds):
-        try:
-            await evaluator.tick()
-        except Exception:
-            log.exception("cognition wake tick failed")
-            metrics.inc("nora_errors_total", stage="cognition_wake")
