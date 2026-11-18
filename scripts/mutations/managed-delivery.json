@@ -206,7 +206,7 @@
         "name": "the whole registration ownership refuse block is the guard the identifier PK seconds",
         "file": "nora/infra/sql/managed_registration.py",
         "old": "    for ident, owner in owners.items():\n        if owner is None:\n            continue\n        if owner.person_id != person.person_id:\n            raise IdentifierConflictError(\n                f\"identifier {ident.platform}:{ident.kind} is owned \"\n                \"by another person\"\n            )\n        if (\n            owner.state == AccountState.BOUND.value\n            and str(owner.account_id) != account.account_id\n        ):\n            raise IdentifierConflictError(\n                f\"identifier {ident.platform}:{ident.kind} is held \"\n                \"by a different bound account\"\n            )",
-        "new": "    for ident, owner in owners.items():\n        if owner is None:\n            continue",
+        "new": "    for _ident, owner in owners.items():\n        if owner is None:\n            continue",
         "target": "tests/contract/test_binding_store_contract.py -k never_a_merge"
     }
 ]
