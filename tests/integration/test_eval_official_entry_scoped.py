@@ -21,6 +21,7 @@ leaving at all. Zero paid calls, zero shared-DB reads or writes.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -118,13 +119,9 @@ def _scripted_respond(evidence_root: Path, requests: list[dict]):
     return respond
 
 
-def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
-                  *, break_evidence_write: bool = False,
-                  example_config_path: Path):
-    """One real `main()` run of the scoped-browse case against a generated
-    source. Returns `(rc, evidence_root, requests)`."""
-    _run_one_case.refusals = []
-    _run_one_case.fd_map = {}
+def _configure_generated_deployment(tmp_path, monkeypatch, pg_admin, pg_template,
+                                    example_config_path: Path) -> tuple[Path, str]:
+    """Seed the source and point the eval entry at its generated deployment."""
     from nora.infra.sql.migrations_runner import run_migrations
     from tests.sandbox_fixtures import Knowledge, Message, seed_source
 
@@ -138,7 +135,6 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
                   f"@{pg_admin.host}:{pg_admin.port}/generated_eval")
     run_migrations(source_url)
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-key")
-    import asyncio
     asyncio.run(seed_source(
         source_url, tmp_path / "seed",
         Knowledge(transcript=(Message(body="hello room", at_ms=BEFORE_MS - 60_000),)),
@@ -187,6 +183,18 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     monkeypatch.setattr(cli, "_REPO_ROOT", checkout)
     monkeypatch.setattr(_obtain_mod, "_TEMPLATE", checkout / "config.evaluation.toml")
     monkeypatch.setenv("GEN_DB_URL", source_url)
+    return deploy_dir, source_url
+
+
+def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
+                  *, break_evidence_write: bool = False,
+                  example_config_path: Path):
+    """Run the official entry against the generated deployment."""
+    _run_one_case.refusals = []
+    _run_one_case.fd_map = {}
+    deploy_dir, source_url = _configure_generated_deployment(
+        tmp_path, monkeypatch, pg_admin, pg_template, example_config_path,
+    )
 
     # --- private evidence + the run's own lock, on the synthetic source ---
     evidence_root = tmp_path / "evidence"
