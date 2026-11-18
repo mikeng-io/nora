@@ -13,7 +13,7 @@ import re
 from collections.abc import Mapping
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from aiohttp import web
 from jsonschema import ValidationError, validate
@@ -129,7 +129,8 @@ class CausalProtocol:
         self.cfg = cfg
         self.objective_tag = re.compile(rf'<{re.escape(objective_tag)} name="([^"]+)"')
         self.background_answers = dict(background_answers)
-        self.requests, self.errors = [], []
+        self.requests: list[dict[str, Any]] = []
+        self.errors: list[tuple[str, str]] = []
         self.phase = 0
         self.note_id = None
         self.first_id = None
