@@ -31,7 +31,6 @@ from nora.testing.managed import (
 )
 from nora.web.management_api import register_management_routes
 from nora.web.management_auth import AuthenticationVerifier
-from nora.web.management_request import decode_management_request
 from nora.web.management_sessions import register_session_routes
 from tests.unit.test_management_authentication import ISSUER, claims, signed
 from tests.unit.test_management_authentication import PATH as EXCHANGE
