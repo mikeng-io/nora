@@ -97,19 +97,6 @@ def _check_ownership(
     for ident, owner in owners.items():
         if owner is None:
             continue
-        if owner.person_id != person.person_id:
-            raise IdentifierConflictError(
-                f"identifier {ident.platform}:{ident.kind} is owned "
-                "by another person"
-            )
-        if (
-            owner.state == AccountState.BOUND.value
-            and str(owner.account_id) != account.account_id
-        ):
-            raise IdentifierConflictError(
-                f"identifier {ident.platform}:{ident.kind} is held "
-                "by a different bound account"
-            )
 
 
 async def _rebind_revoked(
