@@ -35,10 +35,10 @@
     "target": "tests/web/test_management_api.py -k test_a_service_credential_cannot_issue_installation_operations"
   },
   {
-    "name": "installation-only operations refuse in-band actors (session ingress)",
-    "file": "nora/domain/management.py",
-    "old": "        if self.actor.kind not in spec.actors:\n            raise OperationError(\n                f\"{self.kind!r} does not admit a {self.actor.kind.value} actor\"\n            )",
-    "new": "        if self.actor.kind in frozenset():\n            raise OperationError(\n                f\"{self.kind!r} does not admit a {self.actor.kind.value} actor\"\n            )",
+    "name": "the session ingress cannot mint an installation actor",
+    "file": "nora/web/management_request.py",
+    "old": "            actor = Actor(ActorKind.OPERATOR, person_id=operator_person, scope=scope)",
+    "new": "            actor = Actor(ActorKind.INSTALLATION, person_id=operator_person)",
     "target": "tests/web/test_management_operator.py -k test_a_session_cannot_mint_installation_authority"
   },
   {
