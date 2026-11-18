@@ -178,7 +178,10 @@ def test_cites_legal() -> None:
     assert not graph.cites_legal(
         "computed", graph.Cited("claim", "inferred", "conditions"),
     )
-    assert not graph.cites_legal("committed", observed)
+    assert graph.cites_legal("committed", observed)
+    assert graph.cites_legal("committed", computed)
+    assert not graph.cites_legal("committed", claim)
+    assert not graph.cites_legal("committed", intention)
     assert not graph.cites_legal("observed", observed)
 
 
