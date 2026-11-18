@@ -334,9 +334,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # `RecordedServices.load` (nora/subject/recorded_services.py).
         "load",
         # `SqlRollupStore.rows` shares the name with `JourneyDriver.rows`
-        # (nora/subject/journey.py): `self.rows(...)` calls there cannot be
-        # attributed to the store, which is also why the `rollups.py::rows`
-        # pin row was retired — the name reads unchecked, never clean.
+        # (nora/subject/journey.py); `self.rows(...)` calls cannot be
+        # attributed, which is why its pin row was retired.
         "rows",
         # `SqlRecordStore.since` shares the name with `RunEvidence.since`
         # (nora/subject/eval_evidence.py).
