@@ -141,13 +141,13 @@ async def test_two_revisions_against_one_base_admit_exactly_one(store) -> None:
         async with engine.connect() as probe:
             for _ in range(100):
                 pids = (await probe.execute(sa.text(
-                    "SELECT pid FROM pg_stat_activity WHERE pid <> :me "
-                    "AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'"
-                ), {"me": held_pid})).scalars().all()
+                    "SELECT pid FROM pg_stat_activity "
+                    "WHERE :held = ANY(pg_blocking_pids(pid))"
+                ), {"held": held_pid})).scalars().all()
                 if pids:
                     break
                 await asyncio.sleep(0.05)
-        assert pids, "the second revision never waited on the first"
+        assert len(pids) == 1, "the second revision was never blocked by the first"
         assert not second.done()
         await tx.commit()
     with pytest.raises(StaleBaseError):
