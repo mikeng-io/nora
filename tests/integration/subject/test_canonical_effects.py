@@ -76,7 +76,8 @@ async def test_versions_survive_creation_retirement_withdrawal_and_deletion(clea
         async with engine.begin() as conn:
             await conn.execute(sa.insert(LEGACY_ENTITY).values(id="generated-ephemeral-entity",
                 unit="generated-unit", kind="place", name="Generated deleted venue"))
-            await conn.execute(sa.delete(LEGACY_ENTITY).where(LEGACY_ENTITY.c.id == "generated-ephemeral-entity"))
+            await conn.execute(sa.delete(LEGACY_ENTITY).where(
+                LEGACY_ENTITY.c.id == "generated-ephemeral-entity"))
         removed = await effects(engine, deletion)
         assert any(row["source"] == "row_history" and row["operation"] == "delete"
                    and row["row"]["image"]["id"] == "generated-ephemeral-entity"
