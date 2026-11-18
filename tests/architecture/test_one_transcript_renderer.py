@@ -105,6 +105,7 @@ _NOT_A_TRANSCRIPT = {
     # THE BROWSE TASK'S BRIEF, not a transcript — the objective and the start
     # page as `part` elements for the browse agent, like the sub-agent's.
     "nora/language/browse_render.py": "renders the browse task's brief, not a transcript",
+    "nora/language/web_browse_render.py": "renders web retrieval evidence and action choices",
     # THE HELD TOPIC INDEX — one element per held account, its own words, no message.
     "nora/language/topic_render.py": "renders the topic account index, not a transcript",
 }

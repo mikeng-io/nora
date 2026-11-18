@@ -919,8 +919,7 @@ async def _compose_dependencies(
     subagent_desk = _agent_desk.subagent_desk
     _agent_registry = build_registry(
         allowlist=allowlist, blobs=blobs,
-        browser=browser,
-        web_browser=_computer_browse.web_browser,
+        browser=browser, web_browser=_computer_browse.web_browser,
         browser_manager=browser_manager,
         cfg=cfg,
         clock=clock,

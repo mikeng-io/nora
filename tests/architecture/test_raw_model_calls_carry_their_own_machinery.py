@@ -112,6 +112,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     # call runs while the conversation's slot is held, and a truncated verdict
     # still parses as JSON into something shorter and wrong.
     "nora/app/raw_clients.py": ("timeout", "finish_reason", "usage"),
+    "nora/agent/web_browse.py": ("timeout", "finish_reason", "usage"),
     # NOT `usage`, and the reason is structural rather than an oversight:
     # `nora.infra` may not import `nora.obs` (the layered-architecture
     # contract, enforced by `lint-imports`), so a raw client in this layer

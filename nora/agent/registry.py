@@ -405,14 +405,8 @@ class ToolRegistry:
         self._ledger = ledger
         self._culture = culture
         self._social_items = social_items
-        # Tools no turn is offered in this process: `record_query` without its
-        # Record read (`[record_query] enabled = false`, the shipped default).
-        # Withheld from every surface and from the gate's digest, so an
-        # unconfigured tool costs no prompt and cannot be routed to.
-        # The computer tools likewise without a runtime (`[computer]
-        # enabled = false`, the shipped default): they could only answer
-        # `unavailable`, so offering them would spend prompt on a tool the
-        # model can route to and never use.
+        # Tools with missing dependencies are omitted from every surface
+        # and from the gate's digest, so a turn cannot route to them.
         self._withheld: frozenset[str] = (
             (frozenset() if record is not None else frozenset({"record_query"}))
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))

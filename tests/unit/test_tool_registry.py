@@ -359,8 +359,7 @@ def test_budgets_match_todays_table():
         # one session tool reads. One call answers «what were you doing»; a
         # second is a different status filter.
         "computer_session_list": 2,
-        "computer_browse": 2,
-        "web_browse": 2,
+        "computer_browse": 2, "web_browse": 2,
         # one capture of a task's own tab, one retry with a fresh look; one
         # stop of a queued or running task, a second to read the row back.
         "computer_capture": 2, "computer_cancel": 2,
