@@ -395,7 +395,7 @@ class SqlComprehendRecords:
                 metadata = {
                     "network": network,
                     "account": social["account"],
-                    "kind": social["kind"],
+                    "kind": social["source_kind"],
                     "taken_at": social["taken_at"],
                     "counts_at_read": dict(counts) if counts else None,
                 }

@@ -255,7 +255,7 @@ async def held_elsewhere(
         BLOB_TOMBSTONE.c.sha256 == k, BLOB_TOMBSTONE.c.deleted_at > i.c.recorded_at,
     )
     others = sa.exists().where(
-        i.c.media_ref.contains(k), ~sa.and_(i.c.kind == "story_frame", deleted_since),
+        i.c.media_ref.contains(k), ~sa.and_(i.c.source_kind == "story_frame", deleted_since),
     )
     gone = list(letting_go)
     if gone:

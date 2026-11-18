@@ -201,7 +201,7 @@ async def test_a_rollup_row_brings_its_own_lineage(engine):
     end_ms = start_ms + 7_200_000
     async with engine.begin() as conn:
         await conn.execute(sa.insert(ROLLUP_COLOCATION).values(
-            build_id=build, unit="u", lineage=[["presence", "p_ada", None],
+            build_id=build, unit="u", build_lineage=[["presence", "p_ada", None],
                                                ["presence", "p_ben", None]],
             valid_from_ms=start_ms, valid_to_ms=end_ms, as_of_ms=end_ms,
             persons=["p_ada", "p_ben"], lat=0.0, lng=0.0, radius_m=50.0, stay_count=2,
@@ -209,7 +209,7 @@ async def test_a_rollup_row_brings_its_own_lineage(engine):
         await conn.execute(sa.insert(PRESENCE_STAYS).values(
             subject_id="p_ada", person_id="p_ada", circle_id="c", started_ts=start_ms,
             ended_ts=end_ms, lat=0.0, lng=0.0, radius_m=50.0, fix_count=3,
-            build_id=build, lineage=[["presence", "p_ada", None]],
+            build_id=build, build_lineage=[["presence", "p_ada", None]],
         ))
     hk = timezone(timedelta(hours=8))
 
@@ -323,7 +323,7 @@ async def test_a_note_citing_a_rollup_row_takes_the_rows_lineage(engine):
         await conn.execute(sa.insert(PRESENCE_STAYS).values(
             subject_id="p_ada", person_id="p_ada", circle_id="c", started_ts=start_ms,
             ended_ts=end_ms, lat=0.0, lng=0.0, radius_m=50.0, fix_count=3,
-            build_id=build, lineage=[["presence", "p_ada", None]],
+            build_id=build, build_lineage=[["presence", "p_ada", None]],
         ))
     hk = timezone(timedelta(hours=8))
 

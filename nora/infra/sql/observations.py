@@ -111,7 +111,7 @@ def _row_to_stored(row: Any) -> StoredObservation:
     if contract != OBSERVATION_CONTRACT:
         raise ValueError(f"unsupported stored observation contract {contract}")
     obs = Observation(
-        object_kind=row["kind"],
+        object_kind=row["source_kind"],
         scope=SourceScope(
             platform=row["platform"], account_key=row["account_key"],
             conversation_id=row["conversation_id"],
@@ -120,7 +120,7 @@ def _row_to_stored(row: Any) -> StoredObservation:
         target=target_from_key(row["target_key"]),
         target_author_id=row["target_author_id"] or "",
         operation=row["operation"],
-        payload=payload_from_dict(row["kind"], dict(row["payload"])),
+        payload=payload_from_dict(row["source_kind"], dict(row["payload"])),
         subject_ref=row["subject_ref"] or "",
         actor_id=row["actor_id"] or "",
         actor_status=row["actor_status"],
@@ -142,7 +142,7 @@ def _row_to_stored(row: Any) -> StoredObservation:
 
 def _head_to_row(head: ObservationHead) -> dict[str, Any]:
     return {
-        "state": head.state, "applied": head.applied,
+        "source_state": head.state, "applied": head.applied,
         "head_observation_id": head.head_id or None,
         "source_position": head.position,
         "revision_scope": head.scope or None,
@@ -153,8 +153,8 @@ def _head_to_row(head: ObservationHead) -> dict[str, Any]:
 
 def _row_to_head(row: sa.RowMapping) -> ObservationHead:
     return ObservationHead(
-        kind=row["kind"], object_ref=row["object_ref"],
-        state=dict(row["state"]), applied=int(row["applied"]),
+        kind=row["source_kind"], object_ref=row["object_ref"],
+        state=dict(row["source_state"]), applied=int(row["applied"]),
         head_id=int(row["head_observation_id"] or 0),
         position=row["source_position"],
         scope=row["revision_scope"] or "",
@@ -196,7 +196,7 @@ def _rx_union_stmt(
     null_text = sa.cast(sa.null(), sa.Text)
     null_json = sa.cast(sa.null(), pg.JSONB)
     obs_where = sa.and_(
-        _scope_where(scope), OBS.c.kind == "reaction",
+        _scope_where(scope), OBS.c.source_kind == "reaction",
         OBS.c.object_ref.in_(tuple(refs)))
     if through_id is not None:
         obs_where = sa.and_(obs_where, OBS.c.id <= through_id)
@@ -374,7 +374,7 @@ _HANDLE_DIGEST = sa.func.substr(
             sa.func.concat(
                 sa.func.coalesce(ST.c.account_key, ""), sa.literal("|"),
                 sa.func.coalesce(ST.c.thread, ""), sa.literal("|"),
-                ST.c.kind, sa.literal(":"), ST.c.object_ref),
+                ST.c.source_kind, sa.literal(":"), ST.c.object_ref),
             "UTF8")), "hex"), 1, 12)
 
 
@@ -392,7 +392,7 @@ class SqlObservationStore:
         async with self._engine.begin() as conn:
             ins = await conn.execute(
                 pg_insert(OBS).values(
-                    contract=OBSERVATION_CONTRACT, kind=obs.object_kind,
+                    contract=OBSERVATION_CONTRACT, source_kind=obs.object_kind,
                     event_id=event_id, source_digest=source_digest,
                     **_scope_columns(scope),
                     object_ref=obs.object_ref, operation=obs.operation,
@@ -434,7 +434,7 @@ class SqlObservationStore:
         obs = stored.observation
         sel = (
             sa.select(ST)
-            .where(_st_scope_where(obs.scope), ST.c.kind == obs.object_kind,
+            .where(_st_scope_where(obs.scope), ST.c.source_kind == obs.object_kind,
                    ST.c.object_ref == obs.object_ref)
             .with_for_update())
         row = (await conn.execute(sel)).mappings().one_or_none()
@@ -448,7 +448,7 @@ class SqlObservationStore:
             first = fold_observation(None, stored)
             ins = await conn.execute(
                 pg_insert(ST).values(
-                    **_scope_columns(obs.scope), kind=obs.object_kind,
+                    **_scope_columns(obs.scope), source_kind=obs.object_kind,
                     object_ref=obs.object_ref, **_head_to_row(first))
                 .on_conflict_do_nothing(
                     constraint="uq_platform_object_state_object")
@@ -490,7 +490,7 @@ class SqlObservationStore:
     ) -> ObservationHead | None:
         async with self._engine.connect() as conn:
             row = (await conn.execute(
-                sa.select(ST).where(_st_scope_where(scope), ST.c.kind == kind,
+                sa.select(ST).where(_st_scope_where(scope), ST.c.source_kind == kind,
                                     ST.c.object_ref == object_ref))
             ).mappings().one_or_none()
         head = None if row is None else _row_to_head(row)
@@ -504,7 +504,7 @@ class SqlObservationStore:
     ) -> list[ObservationHead]:
         where = _st_scope_where(scope)
         if kind is not None:
-            where = sa.and_(where, ST.c.kind == kind)
+            where = sa.and_(where, ST.c.source_kind == kind)
         async with self._engine.connect() as conn:
             # MOST-RECENTLY-TOUCHED first (`updated_at` bumps on every
             # folded head write), so a bounded page is the scope's freshest
@@ -526,7 +526,7 @@ class SqlObservationStore:
         async with self._engine.connect() as conn:
             row = (await conn.execute(
                 sa.select(ST).where(
-                    _st_scope_where(scope), ST.c.kind == kind,
+                    _st_scope_where(scope), ST.c.source_kind == kind,
                     sa.literal(digest) == _HANDLE_DIGEST))
             ).mappings().one_or_none()
         head = None if row is None else _row_to_head(row)
@@ -541,7 +541,7 @@ class SqlObservationStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(
                 sa.select(OBS).where(
-                    _scope_where(scope), OBS.c.kind == kind,
+                    _scope_where(scope), OBS.c.source_kind == kind,
                     OBS.c.object_ref == object_ref, OBS.c.id > after_id)
                 .order_by(OBS.c.id).limit(max(limit, 0)))).mappings().all()
         return [_row_to_stored(r) for r in rows]
@@ -598,7 +598,7 @@ class SqlObservationStore:
         async with self._engine.connect() as conn:
             kept_rows = (await conn.execute(
                 sa.select(OBS).where(
-                    _scope_where(scope), OBS.c.kind == kind,
+                    _scope_where(scope), OBS.c.source_kind == kind,
                     OBS.c.object_ref == object_ref, OBS.c.id <= through_id)
                 .order_by(OBS.c.id).limit(
                     max(limit, 0) + 1))).mappings().all()

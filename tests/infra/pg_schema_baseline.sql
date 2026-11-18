@@ -214,6 +214,31 @@ ADD CONSTRAINT bridge_event_pkey PRIMARY KEY (id);
 ADD CONSTRAINT bridge_work_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.bridge_event(id);
 ADD CONSTRAINT bridge_work_pkey PRIMARY KEY (id);
 ADD CONSTRAINT browser_tasks_pkey PRIMARY KEY (id);
+ADD CONSTRAINT ck_fetched_pages_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_message_delete_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_message_edit_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_message_reaction_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_messages_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_platform_object_state_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_platform_observation_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_presence_corridors_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_presence_derived_places_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_presence_fixes_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_presence_occupancy_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_presence_place_rhythm_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_presence_places_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_presence_stays_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_presence_trips_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_rollup_colocation_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_rollup_daybook_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_rollup_outing_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_rollup_response_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_rollup_tie_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_social_item_count_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_social_item_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_social_item_state_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_social_poll_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_source_health_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
 ADD CONSTRAINT cognition_carry_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_self_wake_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_self_wake_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.cognition_session(id);
@@ -279,8 +304,58 @@ ADD CONSTRAINT fk_edge_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES pu
 ADD CONSTRAINT fk_edge_src FOREIGN KEY (src_id, unit) REFERENCES public.registry(id, unit);
 ADD CONSTRAINT fk_entity_registry FOREIGN KEY (id, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_entity_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_fetched_pages_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_fetched_pages_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_intention_registry FOREIGN KEY (id, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_intention_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_message_delete_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_message_delete_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_message_edit_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_message_edit_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_message_reaction_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_message_reaction_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_messages_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_messages_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_platform_object_state_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_platform_object_state_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_platform_observation_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_platform_observation_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_corridors_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_corridors_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_derived_places_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_derived_places_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_fixes_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_fixes_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_occupancy_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_occupancy_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_place_rhythm_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_place_rhythm_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_places_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_places_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_stays_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_stays_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_trips_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_presence_trips_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_rollup_colocation_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_rollup_colocation_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_rollup_daybook_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_rollup_daybook_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_rollup_outing_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_rollup_outing_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_rollup_response_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_rollup_response_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_rollup_tie_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_rollup_tie_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_social_item_count_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_social_item_count_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_social_item_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_social_item_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_social_item_state_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_social_item_state_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_social_poll_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_social_poll_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_source_health_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_source_health_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT graph_arrival_pkey PRIMARY KEY (unit, message_id, revision);
 ADD CONSTRAINT graph_refusal_pkey PRIMARY KEY (id);
@@ -405,13 +480,38 @@ ADD CONSTRAINT uq_extraction_arrival UNIQUE (platform, origin_room, source_key);
 ADD CONSTRAINT uq_extraction_attempt UNIQUE (extraction_id, attempt);
 ADD CONSTRAINT uq_extraction_claim UNIQUE (extraction_id, ordinal);
 ADD CONSTRAINT uq_extraction_queue_message UNIQUE (message_id);
+ADD CONSTRAINT uq_fetched_pages_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_intention_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_memory_node_kind_source UNIQUE (kind, source_id);
+ADD CONSTRAINT uq_message_delete_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_message_edit_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_message_reaction_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_messages_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_music_queue_guild_position UNIQUE (guild_id, "position");
 ADD CONSTRAINT uq_occupancy_bin UNIQUE (subject_id, place_id, hour_of_week);
-ADD CONSTRAINT uq_platform_object_state_object UNIQUE (platform, account_key, conversation_id, thread, kind, object_ref);
+ADD CONSTRAINT uq_platform_object_state_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_platform_object_state_object UNIQUE (platform, account_key, conversation_id, thread, source_kind, object_ref);
+ADD CONSTRAINT uq_platform_observation_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_platform_observation_source UNIQUE (platform, account_key, source_digest);
+ADD CONSTRAINT uq_presence_corridors_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_presence_derived_places_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_presence_fixes_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_presence_occupancy_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_presence_place_rhythm_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_presence_places_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_presence_stays_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_presence_trips_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_registry_id_unit_kind UNIQUE (id, unit, kind);
+ADD CONSTRAINT uq_rollup_colocation_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_rollup_daybook_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_rollup_outing_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_rollup_response_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_rollup_tie_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_social_item_count_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_social_item_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_social_item_state_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_social_poll_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_source_health_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_tag_trace_turn_id UNIQUE (turn_id);
 ADD CONSTRAINT version_announcements_pkey PRIMARY KEY (version, platform, conversation_id);
 ADD CONSTRAINT video_readings_pkey PRIMARY KEY (sha256, provider, model, chunk_seconds, chunk_max, reading_digest);
@@ -508,6 +608,9 @@ ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fetched_pages
+ALTER TABLE ONLY public.fetched_pages
+ALTER TABLE ONLY public.fetched_pages
+ALTER TABLE ONLY public.fetched_pages
 ALTER TABLE ONLY public.geocode_cache
 ALTER TABLE ONLY public.instagram_summons
 ALTER TABLE ONLY public.instagram_summons
@@ -542,10 +645,22 @@ ALTER TABLE ONLY public.memory_node
 ALTER TABLE ONLY public.memory_projection_queue
 ALTER TABLE ONLY public.message_delete
 ALTER TABLE ONLY public.message_delete
+ALTER TABLE ONLY public.message_delete
+ALTER TABLE ONLY public.message_delete
+ALTER TABLE ONLY public.message_delete
+ALTER TABLE ONLY public.message_edit
+ALTER TABLE ONLY public.message_edit
+ALTER TABLE ONLY public.message_edit
 ALTER TABLE ONLY public.message_edit
 ALTER TABLE ONLY public.message_edit
 ALTER TABLE ONLY public.message_reaction
 ALTER TABLE ONLY public.message_reaction
+ALTER TABLE ONLY public.message_reaction
+ALTER TABLE ONLY public.message_reaction
+ALTER TABLE ONLY public.message_reaction
+ALTER TABLE ONLY public.messages
+ALTER TABLE ONLY public.messages
+ALTER TABLE ONLY public.messages
 ALTER TABLE ONLY public.messages
 ALTER TABLE ONLY public.music_queue
 ALTER TABLE ONLY public.music_queue
@@ -571,19 +686,49 @@ ALTER TABLE ONLY public.otp_challenge
 ALTER TABLE ONLY public.participation_window_state
 ALTER TABLE ONLY public.platform_object_state
 ALTER TABLE ONLY public.platform_object_state
+ALTER TABLE ONLY public.platform_object_state
+ALTER TABLE ONLY public.platform_object_state
+ALTER TABLE ONLY public.platform_object_state
+ALTER TABLE ONLY public.platform_observation
+ALTER TABLE ONLY public.platform_observation
+ALTER TABLE ONLY public.platform_observation
 ALTER TABLE ONLY public.platform_observation
 ALTER TABLE ONLY public.platform_observation
 ALTER TABLE ONLY public.platform_observation
 ALTER TABLE ONLY public.platform_observation
 ALTER TABLE ONLY public.presence_corridor_speed
 ALTER TABLE ONLY public.presence_corridors
+ALTER TABLE ONLY public.presence_corridors
+ALTER TABLE ONLY public.presence_corridors
+ALTER TABLE ONLY public.presence_corridors
 ALTER TABLE ONLY public.presence_derived_places
+ALTER TABLE ONLY public.presence_derived_places
+ALTER TABLE ONLY public.presence_derived_places
+ALTER TABLE ONLY public.presence_derived_places
+ALTER TABLE ONLY public.presence_fixes
+ALTER TABLE ONLY public.presence_fixes
+ALTER TABLE ONLY public.presence_fixes
 ALTER TABLE ONLY public.presence_fixes
 ALTER TABLE ONLY public.presence_occupancy
 ALTER TABLE ONLY public.presence_occupancy
+ALTER TABLE ONLY public.presence_occupancy
+ALTER TABLE ONLY public.presence_occupancy
+ALTER TABLE ONLY public.presence_occupancy
+ALTER TABLE ONLY public.presence_place_rhythm
+ALTER TABLE ONLY public.presence_place_rhythm
+ALTER TABLE ONLY public.presence_place_rhythm
 ALTER TABLE ONLY public.presence_place_rhythm
 ALTER TABLE ONLY public.presence_places
+ALTER TABLE ONLY public.presence_places
+ALTER TABLE ONLY public.presence_places
+ALTER TABLE ONLY public.presence_places
 ALTER TABLE ONLY public.presence_stays
+ALTER TABLE ONLY public.presence_stays
+ALTER TABLE ONLY public.presence_stays
+ALTER TABLE ONLY public.presence_stays
+ALTER TABLE ONLY public.presence_trips
+ALTER TABLE ONLY public.presence_trips
+ALTER TABLE ONLY public.presence_trips
 ALTER TABLE ONLY public.presence_trips
 ALTER TABLE ONLY public.profile
 ALTER TABLE ONLY public.profile_dispute
@@ -596,10 +741,25 @@ ALTER TABLE ONLY public.rendered_claim
 ALTER TABLE ONLY public.revision_blob
 ALTER TABLE ONLY public.rollup_build
 ALTER TABLE ONLY public.rollup_colocation
+ALTER TABLE ONLY public.rollup_colocation
+ALTER TABLE ONLY public.rollup_colocation
+ALTER TABLE ONLY public.rollup_colocation
+ALTER TABLE ONLY public.rollup_daybook
+ALTER TABLE ONLY public.rollup_daybook
+ALTER TABLE ONLY public.rollup_daybook
 ALTER TABLE ONLY public.rollup_daybook
 ALTER TABLE ONLY public.rollup_fold_state
 ALTER TABLE ONLY public.rollup_outing
+ALTER TABLE ONLY public.rollup_outing
+ALTER TABLE ONLY public.rollup_outing
+ALTER TABLE ONLY public.rollup_outing
 ALTER TABLE ONLY public.rollup_response
+ALTER TABLE ONLY public.rollup_response
+ALTER TABLE ONLY public.rollup_response
+ALTER TABLE ONLY public.rollup_response
+ALTER TABLE ONLY public.rollup_tie
+ALTER TABLE ONLY public.rollup_tie
+ALTER TABLE ONLY public.rollup_tie
 ALTER TABLE ONLY public.rollup_tie
 ALTER TABLE ONLY public.room_exchange
 ALTER TABLE ONLY public.room_lexeme
@@ -607,10 +767,25 @@ ALTER TABLE ONLY public.room_portrait
 ALTER TABLE ONLY public.row_history
 ALTER TABLE ONLY public.self_tension
 ALTER TABLE ONLY public.social_item
+ALTER TABLE ONLY public.social_item
+ALTER TABLE ONLY public.social_item
+ALTER TABLE ONLY public.social_item
 ALTER TABLE ONLY public.social_item_count
+ALTER TABLE ONLY public.social_item_count
+ALTER TABLE ONLY public.social_item_count
+ALTER TABLE ONLY public.social_item_count
+ALTER TABLE ONLY public.social_item_state
+ALTER TABLE ONLY public.social_item_state
+ALTER TABLE ONLY public.social_item_state
 ALTER TABLE ONLY public.social_item_state
 ALTER TABLE ONLY public.social_perception
 ALTER TABLE ONLY public.social_poll
+ALTER TABLE ONLY public.social_poll
+ALTER TABLE ONLY public.social_poll
+ALTER TABLE ONLY public.social_poll
+ALTER TABLE ONLY public.source_health
+ALTER TABLE ONLY public.source_health
+ALTER TABLE ONLY public.source_health
 ALTER TABLE ONLY public.source_health
 ALTER TABLE ONLY public.standing
 ALTER TABLE ONLY public.standing_commitment
@@ -651,29 +826,54 @@ ALTER TABLE public.extraction ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTI
 ALTER TABLE public.extraction_attempt ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.extraction_claim ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.extraction_queue ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.fetched_pages
 ALTER TABLE public.language_observation ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.legacy_graph_refusal ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.memory_node ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.message_delete
 ALTER TABLE public.message_delete ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.message_edit
 ALTER TABLE public.message_edit ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.message_reaction
 ALTER TABLE public.message_reaction ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.messages
 ALTER TABLE public.messages ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.otp_attempt ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.platform_object_state
 ALTER TABLE public.platform_object_state ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.platform_observation
 ALTER TABLE public.platform_observation ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.presence_corridors
 ALTER TABLE public.presence_corridors ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.presence_derived_places
 ALTER TABLE public.presence_derived_places ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.presence_fixes
 ALTER TABLE public.presence_fixes ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.presence_occupancy
 ALTER TABLE public.presence_occupancy ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.presence_place_rhythm
+ALTER TABLE public.presence_places
+ALTER TABLE public.presence_stays
 ALTER TABLE public.presence_stays ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.presence_trips
 ALTER TABLE public.presence_trips ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.rollup_build ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.rollup_colocation
 ALTER TABLE public.rollup_colocation ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.rollup_daybook
 ALTER TABLE public.rollup_daybook ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.rollup_outing
 ALTER TABLE public.rollup_outing ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.rollup_response
 ALTER TABLE public.rollup_response ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.rollup_tie
 ALTER TABLE public.rollup_tie ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.row_history ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.social_item
+ALTER TABLE public.social_item_count
+ALTER TABLE public.social_item_state
+ALTER TABLE public.social_poll
+ALTER TABLE public.source_health
 ALTER TABLE public.source_health ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.stimulus ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.stimulus_claim ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -796,7 +996,7 @@ CONSTRAINT ck_computer_sessions_status CHECK ((status = ANY (ARRAY['expired'::te
 CONSTRAINT ck_computer_tasks_kind CHECK ((kind = ANY (ARRAY['browse'::text, 'capture'::text, 'maintenance'::text, 'native'::text, 'worker'::text]))),
 CONSTRAINT ck_computer_tasks_status CHECK ((status = ANY (ARRAY['cancelled'::text, 'done'::text, 'failed'::text, 'interrupted'::text, 'queued'::text, 'running'::text, 'unavailable'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
-CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
+CONSTRAINT ck_derived_places_kind CHECK ((source_kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text]))),
 CONSTRAINT ck_document_revision_media CHECK ((array_to_string(media, ','::text) ~ '^([0-9a-f]{64}(,[0-9a-f]{64})*)?$'::text)),
 CONSTRAINT ck_document_revision_positive CHECK ((revision >= 1)),
 CONSTRAINT ck_document_revision_sha256 CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text)),
@@ -839,6 +1039,13 @@ CONSTRAINT ck_events_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::tex
 CONSTRAINT ck_events_reasoning_is_a_mode CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'abduced'::text])))),
 CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['staged'::text, 'proposed'::text, 'confirmed'::text, 'happened'::text, 'cancelled'::text, 'lapsed'::text, 'evicted'::text])))
 CONSTRAINT ck_extraction_state CHECK ((state = ANY (ARRAY['pending'::text, 'done'::text, 'retired'::text, 'failed'::text])))
+CONSTRAINT ck_fetched_pages_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_fetched_pages_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_fetched_pages_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_fetched_pages_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_fetched_pages_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_fetched_pages_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_fetched_pages_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
 CONSTRAINT ck_instagram_summons_mode CHECK ((mode = ANY (ARRAY['dry_run'::text, 'live'::text]))),
 CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'unresolved'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
 CONSTRAINT ck_intention_achieve_ending CHECK (((form <> 'achieve'::text) OR (ending IS NULL) OR (ending = ANY (ARRAY['achieved'::text, 'dropped'::text, 'leaked'::text, 'unknown'::text])))),
@@ -893,19 +1100,117 @@ CONSTRAINT ck_memory_node_embed_input CHECK (((embed_input IS NULL) OR (embed_in
 CONSTRAINT ck_memory_node_has_a_scope CHECK (((kind = ANY (ARRAY['person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text])) OR (unit IS NOT NULL) OR (origin_room IS NOT NULL) OR (cardinality(persons) > 0))),
 CONSTRAINT ck_memory_node_kind CHECK ((kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'outing'::text, 'stay'::text, 'trip'::text, 'person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text, 'social'::text, 'social_media'::text, 'social_location'::text, 'profile_line'::text]))),
 CONSTRAINT ck_memory_node_state CHECK ((state = ANY (ARRAY['live'::text, 'retired'::text, 'superseded'::text])))
+CONSTRAINT ck_message_delete_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_message_delete_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_message_delete_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_message_delete_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_message_delete_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_message_delete_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_message_delete_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_message_edit_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_message_edit_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_message_edit_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_message_edit_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_message_edit_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_message_edit_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_message_edit_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_message_reaction_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_message_reaction_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_message_reaction_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_message_reaction_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_message_reaction_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_message_reaction_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_message_reaction_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
 CONSTRAINT ck_messages_delivery_status CHECK ((delivery_status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text, 'uncertain'::text]))),
+CONSTRAINT ck_messages_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_messages_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_messages_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_messages_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_messages_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_messages_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_messages_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
-CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
+CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168))),
 CONSTRAINT ck_otp_challenge_code_hash CHECK ((code_hash ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT ck_otp_challenge_expiry CHECK ((expires_at > issued_at)),
 CONSTRAINT ck_otp_challenge_platform CHECK ((platform = ANY (ARRAY['signal'::text, 'whatsapp'::text]))),
 CONSTRAINT ck_otp_challenge_purpose CHECK ((purpose = ANY (ARRAY['sign_in'::text, 'adopt'::text])))
+CONSTRAINT ck_platform_object_state_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_platform_object_state_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_platform_object_state_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_platform_object_state_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_platform_object_state_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_platform_object_state_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_platform_object_state_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_platform_object_state_ordering CHECK ((ordering = ANY (ARRAY['ordered'::text, 'arrival'::text, 'gap'::text])))
 CONSTRAINT ck_platform_observation_actor CHECK ((actor_status = ANY (ARRAY['known'::text, 'anonymous'::text, 'not_supplied'::text, 'not_applicable'::text]))),
-CONSTRAINT ck_platform_observation_kind CHECK ((kind = ANY (ARRAY['reaction'::text, 'message_metadata'::text, 'poll'::text, 'room'::text, 'membership'::text, 'pin'::text, 'artifact'::text]))),
+CONSTRAINT ck_platform_observation_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_platform_observation_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_platform_observation_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_platform_observation_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_platform_observation_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_platform_observation_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_platform_observation_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_platform_observation_kind CHECK ((source_kind = ANY (ARRAY['reaction'::text, 'message_metadata'::text, 'poll'::text, 'room'::text, 'membership'::text, 'pin'::text, 'artifact'::text]))),
 CONSTRAINT ck_platform_observation_op CHECK ((operation = ANY (ARRAY['create'::text, 'revise'::text, 'withdraw'::text, 'add'::text, 'remove'::text, 'clear'::text, 'snapshot'::text]))),
 CONSTRAINT ck_platform_observation_timeq CHECK ((time_quality = ANY (ARRAY['upstream'::text, 'bridge_local'::text, 'unknown'::text])))
+CONSTRAINT ck_presence_corridors_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_presence_corridors_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_presence_corridors_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_presence_corridors_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_presence_corridors_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_presence_corridors_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_presence_corridors_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_derived_places_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_presence_derived_places_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_presence_derived_places_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_presence_derived_places_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_presence_derived_places_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_presence_derived_places_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_presence_derived_places_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_fixes_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_presence_fixes_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_presence_fixes_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_presence_fixes_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_presence_fixes_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_presence_fixes_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_presence_fixes_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_occupancy_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_presence_occupancy_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_presence_occupancy_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_presence_occupancy_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_presence_occupancy_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_presence_occupancy_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_presence_occupancy_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_place_rhythm_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_presence_place_rhythm_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_presence_place_rhythm_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_presence_place_rhythm_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_presence_place_rhythm_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_presence_place_rhythm_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_presence_place_rhythm_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_places_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_presence_places_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_presence_places_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_presence_places_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_presence_places_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_presence_places_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_presence_places_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_stays_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_presence_stays_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_presence_stays_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_presence_stays_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_presence_stays_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_presence_stays_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_presence_stays_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_presence_trips_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_presence_trips_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_presence_trips_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_presence_trips_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_presence_trips_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_presence_trips_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_presence_trips_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
 CONSTRAINT ck_profile_dispute_claim CHECK (((length(btrim(claim)) > 0) AND (length(claim) <= 300))),
 CONSTRAINT ck_profile_dispute_has_a_key CHECK ((length(btrim(profile_key)) > 0)),
 CONSTRAINT ck_profile_dispute_has_a_unit CHECK ((length(btrim(unit)) > 0)),
@@ -945,26 +1250,96 @@ CONSTRAINT ck_reminders_recurrence_interval CHECK ((recurrence_interval >= 1)),
 CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::text, 'minutely'::text, 'hourly'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'yearly'::text]))),
 CONSTRAINT ck_reminders_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'cancelled'::text, 'failed'::text])))
 CONSTRAINT ck_rollup_build_status CHECK ((status = ANY (ARRAY['building'::text, 'current'::text, 'superseded'::text, 'abandoned'::text])))
+CONSTRAINT ck_rollup_colocation_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_rollup_colocation_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_rollup_colocation_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_rollup_colocation_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_rollup_colocation_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_rollup_colocation_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_rollup_colocation_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_rollup_daybook_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_rollup_daybook_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_rollup_daybook_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_rollup_daybook_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_rollup_daybook_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_rollup_daybook_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_rollup_daybook_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_rollup_outing_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_rollup_outing_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_rollup_outing_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_rollup_outing_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_rollup_outing_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_rollup_outing_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_rollup_outing_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
+CONSTRAINT ck_rollup_response_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_rollup_response_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_rollup_response_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_rollup_response_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_rollup_response_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_rollup_response_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_rollup_response_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_rollup_response_outcome CHECK ((outcome = ANY (ARRAY['open'::text, 'responded'::text, 'silent'::text, 'unanswered'::text, 'unknown'::text])))
+CONSTRAINT ck_rollup_tie_graph_basis CHECK ((basis = 'computed'::text)),
+CONSTRAINT ck_rollup_tie_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_rollup_tie_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_rollup_tie_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_rollup_tie_graph_kind CHECK ((kind = 'aggregate'::text)),
+CONSTRAINT ck_rollup_tie_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_rollup_tie_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_rollup_tie_pair_order CHECK ((person_a < person_b))
 CONSTRAINT ck_self_tension_has_a_unit CHECK ((length(btrim(unit)) > 0)),
 CONSTRAINT ck_self_tension_names_its_writer CHECK ((length(btrim(established_by)) > 0)),
 CONSTRAINT ck_self_tension_quotes_the_law CHECK ((length(btrim(doctrine_text)) > 0)),
 CONSTRAINT ck_self_tension_says_what_it_would CHECK ((length(btrim(would_have_said)) > 0)),
 CONSTRAINT ck_self_tension_source CHECK ((source = 'lesson'::text))
+CONSTRAINT ck_social_item_count_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_social_item_count_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_social_item_count_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_social_item_count_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_social_item_count_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_social_item_count_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_social_item_count_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_social_item_count_hidden CHECK (((likes IS NULL) OR (NOT likes_hidden)))
+CONSTRAINT ck_social_item_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_social_item_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_social_item_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_social_item_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_social_item_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_social_item_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_social_item_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_social_item_has_an_id CHECK ((length(btrim(item_id)) > 0)),
-CONSTRAINT ck_social_item_kind CHECK ((kind = ANY (ARRAY['story_frame'::text, 'post'::text, 'reel'::text, 'thread_post'::text]))),
+CONSTRAINT ck_social_item_kind CHECK ((source_kind = ANY (ARRAY['story_frame'::text, 'post'::text, 'reel'::text, 'thread_post'::text]))),
 CONSTRAINT ck_social_item_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
-CONSTRAINT ck_social_item_state_place CHECK (((place IS NULL) OR (state = 'place'::text))),
-CONSTRAINT ck_social_item_state_state CHECK ((state = ANY (ARRAY['gone'::text, 'hidden'::text, 'place'::text])))
-CONSTRAINT ck_social_item_story_frame_expires CHECK (((kind <> 'story_frame'::text) OR (expires_at IS NOT NULL)))
+CONSTRAINT ck_social_item_state_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_social_item_state_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_social_item_state_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_social_item_state_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_social_item_state_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_social_item_state_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_social_item_state_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_social_item_state_place CHECK (((place IS NULL) OR (source_state = 'place'::text))),
+CONSTRAINT ck_social_item_state_state CHECK ((source_state = ANY (ARRAY['gone'::text, 'hidden'::text, 'place'::text])))
+CONSTRAINT ck_social_item_story_frame_expires CHECK (((source_kind <> 'story_frame'::text) OR (expires_at IS NOT NULL)))
 CONSTRAINT ck_social_perception_calls CHECK ((calls >= 0)),
 CONSTRAINT ck_social_perception_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
 CONSTRAINT ck_social_perception_outcome CHECK ((outcome = ANY (ARRAY['ok'::text, 'nothing_found'::text, 'unavailable'::text, 'failed'::text, 'capped'::text])))
+CONSTRAINT ck_social_poll_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_social_poll_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_social_poll_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_social_poll_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_social_poll_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_social_poll_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_social_poll_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_social_poll_outcome CHECK ((outcome = ANY (ARRAY['unchanged'::text, 'story_due'::text, 'items_due'::text, 'partial'::text, 'count_fell'::text, 'read_ok'::text, 'halted'::text, 'backed_off'::text, 'error'::text, 'abandoned'::text, 'unavailable'::text]))),
 CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text, 'backfill'::text, 'relist'::text, 'recount'::text])))
-CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text])))
+CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text]))),
+CONSTRAINT ck_source_health_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_source_health_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_source_health_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_source_health_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_source_health_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_source_health_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_source_health_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
 CONSTRAINT ck_stimulus_due_tick CHECK ((NOT (due_tick IS DISTINCT FROM
 CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text, 'observation'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
@@ -1210,14 +1585,14 @@ CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note
 CREATE INDEX idx_note_standing ON public.note USING btree (unit) WHERE (retired_at IS NULL);
 CREATE INDEX idx_notebook_entry_unit ON public.notebook_entry USING btree (unit);
 CREATE INDEX idx_otp_challenge_person ON public.otp_challenge USING btree (person_id, purpose, issued_at);
-CREATE INDEX idx_platform_object_state_room ON public.platform_object_state USING btree (platform, account_key, conversation_id, kind);
-CREATE INDEX idx_platform_observation_object ON public.platform_observation USING btree (platform, account_key, conversation_id, kind, object_ref, id);
-CREATE INDEX idx_platform_observation_target ON public.platform_observation USING btree (kind, target_message_id);
+CREATE INDEX idx_platform_object_state_room ON public.platform_object_state USING btree (platform, account_key, conversation_id, source_kind);
+CREATE INDEX idx_platform_observation_object ON public.platform_observation USING btree (platform, account_key, conversation_id, source_kind, object_ref, id);
+CREATE INDEX idx_platform_observation_target ON public.platform_observation USING btree (source_kind, target_message_id);
 CREATE INDEX idx_platform_observation_unresolved ON public.platform_observation USING btree (platform, account_key, conversation_id, target_key) WHERE (target_message_id IS NULL);
 CREATE INDEX idx_presence_corridors_build_subject ON public.presence_corridors USING btree (build_id, subject_id);
 CREATE INDEX idx_presence_corridors_subject ON public.presence_corridors USING btree (subject_id);
 CREATE INDEX idx_presence_derived_places_build_subject ON public.presence_derived_places USING btree (build_id, subject_id);
-CREATE INDEX idx_presence_derived_places_subject_kind ON public.presence_derived_places USING btree (subject_id, kind);
+CREATE INDEX idx_presence_derived_places_subject_kind ON public.presence_derived_places USING btree (subject_id, source_kind);
 CREATE INDEX idx_presence_member_ts ON public.presence_fixes USING btree (circle_id, person_id, ts DESC);
 CREATE INDEX idx_presence_stays_build_subject ON public.presence_stays USING btree (build_id, subject_id, started_ts);
 CREATE INDEX idx_presence_stays_subject_ts ON public.presence_stays USING btree (subject_id, started_ts DESC);
@@ -1919,9 +2294,9 @@ actor_status text NOT NULL,
 adaptor_name text NOT NULL,
 added_at timestamp with time zone NOT NULL,
 added_by_person_id text NOT NULL,
-address text
-address text
 address text NOT NULL,
+address text,
+address text,
 address text,
 admission jsonb,
 admission_rev bigint,
@@ -1969,6 +2344,31 @@ asserted_at timestamp with time zone DEFAULT now() NOT NULL,
 asserted_at timestamp with time zone DEFAULT now() NOT NULL,
 asserted_at timestamp with time zone DEFAULT now() NOT NULL,
 asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
 asserted_by text,
 asserted_by text,
 at timestamp with time zone NOT NULL,
@@ -1994,6 +2394,31 @@ author_igid text NOT NULL,
 avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
 base_revision_id text,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
 basis text NOT NULL,
 basis text NOT NULL,
 basis text NOT NULL,
@@ -2030,6 +2455,17 @@ build_id bigint NOT NULL,
 build_id bigint NOT NULL,
 build_id bigint NOT NULL,
 build_id bigint NOT NULL,
+build_lineage jsonb CONSTRAINT presence_corridors_lineage_not_null NOT NULL,
+build_lineage jsonb CONSTRAINT presence_derived_places_lineage_not_null NOT NULL,
+build_lineage jsonb CONSTRAINT presence_occupancy_lineage_not_null NOT NULL,
+build_lineage jsonb CONSTRAINT presence_place_rhythm_lineage_not_null NOT NULL,
+build_lineage jsonb CONSTRAINT presence_stays_lineage_not_null NOT NULL,
+build_lineage jsonb CONSTRAINT presence_trips_lineage_not_null NOT NULL,
+build_lineage jsonb CONSTRAINT rollup_colocation_lineage_not_null NOT NULL,
+build_lineage jsonb CONSTRAINT rollup_daybook_lineage_not_null NOT NULL,
+build_lineage jsonb CONSTRAINT rollup_outing_lineage_not_null NOT NULL,
+build_lineage jsonb CONSTRAINT rollup_response_lineage_not_null NOT NULL,
+build_lineage jsonb CONSTRAINT rollup_tie_lineage_not_null NOT NULL,
 built_at text,
 built_at timestamp with time zone DEFAULT now() NOT NULL,
 built_at timestamp with time zone,
@@ -2060,7 +2496,7 @@ citations text[] NOT NULL,
 citations text[] NOT NULL,
 citations text[] NOT NULL,
 city text
-city text
+city text,
 claim text NOT NULL,
 closed_at bigint,
 closed_at bigint,
@@ -2081,7 +2517,31 @@ comments bigint,
 completed_at timestamp with time zone,
 completed_at timestamp with time zone,
 completed_at timestamp with time zone,
-confidence double precision NOT NULL,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
 confidence text,
 confidence text,
 confidence text,
@@ -2170,8 +2630,8 @@ created_at bigint NOT NULL,
 created_at bigint NOT NULL,
 created_at bigint NOT NULL,
 created_at bigint NOT NULL,
-created_at text DEFAULT (now())::text NOT NULL
-created_at text DEFAULT (now())::text NOT NULL
+created_at text DEFAULT (now())::text NOT NULL,
+created_at text DEFAULT (now())::text NOT NULL,
 created_at text DEFAULT (now())::text NOT NULL,
 created_at text DEFAULT (now())::text NOT NULL,
 created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -2327,12 +2787,62 @@ excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
 excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
 excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
 excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
 expired_at timestamp with time zone,
 expired_reason text,
 expires_at bigint
 expires_at timestamp with time zone NOT NULL,
 expires_at timestamp with time zone NOT NULL,
 expires_at timestamp with time zone,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
 exposure text NOT NULL,
 exposure text NOT NULL,
 exposure text NOT NULL,
@@ -2381,6 +2891,31 @@ from_stimulus_id bigint NOT NULL,
 frontier_ts bigint NOT NULL,
 generation integer DEFAULT 0 NOT NULL,
 git_sha text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
 grounded boolean NOT NULL,
 guild_id text NOT NULL,
 guild_id text NOT NULL,
@@ -2539,19 +3074,40 @@ item_id text NOT NULL,
 item_id text NOT NULL,
 item_id text NOT NULL,
 item_index integer NOT NULL,
-items_posted integer
+items_posted integer,
 key text NOT NULL,
 key text NOT NULL,
 kind text CONSTRAINT entity_kind_not_null NOT NULL,
 kind text CONSTRAINT entity_kind_not_null1 NOT NULL,
 kind text CONSTRAINT graph_refusal_kind_not_null NOT NULL,
 kind text CONSTRAINT signal_kind_not_null NOT NULL,
+kind text DEFAULT 'aggregate'::text CONSTRAINT platform_object_state_kind_not_null1 NOT NULL,
+kind text DEFAULT 'aggregate'::text CONSTRAINT presence_derived_places_kind_not_null1 NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'aggregate'::text NOT NULL,
+kind text DEFAULT 'item'::text CONSTRAINT platform_observation_kind_not_null1 NOT NULL,
+kind text DEFAULT 'item'::text CONSTRAINT social_item_kind_not_null1 NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
 kind text DEFAULT 'miss'::text NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
-kind text NOT NULL,
-kind text NOT NULL,
-kind text NOT NULL,
-kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
@@ -2635,6 +3191,17 @@ lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT presence_corridors_lineage_not_null1 NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT presence_derived_places_lineage_not_null1 NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT presence_occupancy_lineage_not_null1 NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT presence_place_rhythm_lineage_not_null1 NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT presence_stays_lineage_not_null1 NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT presence_trips_lineage_not_null1 NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT rollup_colocation_lineage_not_null1 NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT rollup_daybook_lineage_not_null1 NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT rollup_outing_lineage_not_null1 NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT rollup_response_lineage_not_null1 NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb CONSTRAINT rollup_tie_lineage_not_null1 NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -2645,17 +3212,20 @@ lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
-lineage jsonb NOT NULL,
-lineage jsonb NOT NULL,
-lineage jsonb NOT NULL,
-lineage jsonb NOT NULL,
-lineage jsonb NOT NULL,
-lineage jsonb NOT NULL,
-lineage jsonb NOT NULL,
-lineage jsonb NOT NULL,
-lineage jsonb NOT NULL,
-lineage jsonb NOT NULL,
-lineage jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lng double precision NOT NULL,
 lng double precision NOT NULL,
 lng double precision NOT NULL,
@@ -2685,7 +3255,7 @@ media_type text NOT NULL,
 media_type text NOT NULL,
 memo_id uuid NOT NULL,
 mention_at timestamp with time zone,
-mention_persons_json text
+mention_persons_json text,
 mention_persons_json text,
 mentioned text[] DEFAULT '{}'::text[] NOT NULL,
 mentions_ab integer NOT NULL,
@@ -2723,6 +3293,31 @@ model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
+model text,
 model text,
 model text,
 model text,
@@ -2782,6 +3377,56 @@ occasion text,
 occasion text,
 occasion text,
 occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
 occurred_at timestamp with time zone,
 occurred_at timestamp with time zone,
 occurred_at timestamp with time zone,
@@ -2800,7 +3445,7 @@ old_key jsonb := '{}'::jsonb;
 oldest_pending_ms bigint,
 op text NOT NULL,
 op text NOT NULL,
-open integer DEFAULT 0 NOT NULL
+open integer DEFAULT 0 NOT NULL,
 open integer DEFAULT 0 NOT NULL,
 open_stay jsonb,
 opened_at bigint NOT NULL,
@@ -2819,6 +3464,31 @@ origin text NOT NULL,
 origin_room text NOT NULL,
 origin_room text NOT NULL,
 origin_room text NOT NULL,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
 origin_room text,
 origin_room text,
 origin_room text,
@@ -2871,6 +3541,31 @@ pass text,
 pass text,
 pass text,
 pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
 path text NOT NULL,
 path text NOT NULL,
 path text NOT NULL,
@@ -2909,10 +3604,34 @@ persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] NOT NULL,
 persons text[] NOT NULL,
 phase text NOT NULL,
 place text,
+place_confidence double precision CONSTRAINT presence_derived_places_confidence_not_null NOT NULL,
 place_id integer NOT NULL,
 place_id integer NOT NULL,
 place_id integer,
@@ -2975,7 +3694,7 @@ profile_key text NOT NULL,
 profile_key text NOT NULL,
 projected_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 projection_rev integer DEFAULT 1 NOT NULL,
-provenance jsonb DEFAULT '{}'::jsonb NOT NULL
+provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
 provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
 provenance text NOT NULL,
 provider text NOT NULL,
@@ -3027,6 +3746,31 @@ reasoning text,
 reasoning text,
 reasoning text,
 reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
 reasoning_effort text NOT NULL,
 received_ms bigint NOT NULL,
 received_ms bigint NOT NULL,
@@ -3040,9 +3784,9 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
-recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
-recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
-recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -3117,6 +3861,31 @@ replaces text,
 replaces text,
 replaces text,
 replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
 replies integer NOT NULL,
 replies_ab integer NOT NULL,
 replies_ba integer NOT NULL,
@@ -3152,6 +3921,56 @@ rev_code text,
 rev_code text,
 rev_code text,
 rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
 rev_config text,
 rev_config text,
 rev_config text,
@@ -3160,6 +3979,56 @@ rev_identity text,
 rev_identity text,
 rev_identity text,
 rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
 rev_instruction text,
 rev_instruction text,
 rev_instruction text,
@@ -3168,6 +4037,56 @@ rev_policy text,
 rev_policy text,
 rev_policy text,
 rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
 rev_skill text,
 rev_skill text,
 rev_skill text,
@@ -3281,20 +4200,26 @@ source_ids integer[] NOT NULL,
 source_key text NOT NULL,
 source_key text NOT NULL,
 source_kind text CONSTRAINT memory_work_item_source_kind_not_null NOT NULL,
+source_kind text CONSTRAINT platform_object_state_kind_not_null NOT NULL,
+source_kind text CONSTRAINT platform_observation_kind_not_null NOT NULL,
+source_kind text CONSTRAINT presence_derived_places_kind_not_null NOT NULL,
 source_kind text CONSTRAINT relation_evidence_source_kind_not_null NOT NULL,
+source_kind text CONSTRAINT social_item_kind_not_null NOT NULL,
 source_medium text[] DEFAULT '{}'::text[] NOT NULL,
 source_position bigint,
 source_position bigint,
 source_read_revision text
 source_revision text,
 source_revision text,
+source_state jsonb CONSTRAINT platform_object_state_state_not_null NOT NULL,
+source_state text CONSTRAINT social_item_state_state_not_null NOT NULL,
 source_url text,
 span text,
 span_id text NOT NULL,
 spans jsonb NOT NULL,
 spans jsonb NOT NULL,
 spec jsonb NOT NULL,
-speed_kmh double precision
+speed_kmh double precision,
 src_id text CONSTRAINT relation_src_id_not_null NOT NULL,
 src_id text NOT NULL,
 src_id text NOT NULL,
@@ -3311,9 +4236,33 @@ started_at timestamp with time zone,
 started_at_ms bigint NOT NULL,
 started_ts bigint NOT NULL,
 started_ts bigint NOT NULL,
-state jsonb NOT NULL,
 state text CONSTRAINT entity_state_not_null1 NOT NULL,
 state text DEFAULT 'live'::text CONSTRAINT entity_state_not_null NOT NULL,
+state text DEFAULT 'live'::text CONSTRAINT platform_object_state_state_not_null1 NOT NULL,
+state text DEFAULT 'live'::text CONSTRAINT social_item_state_state_not_null1 NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
@@ -3324,7 +4273,6 @@ state text DEFAULT 'pending'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
 state text DEFAULT 'prepared'::text NOT NULL,
-state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
@@ -3462,6 +4410,31 @@ trace text,
 trace text,
 trace text,
 trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
 trace_id text NOT NULL,
 trace_id text,
 trace_id text,
@@ -3530,6 +4503,26 @@ unit text NOT NULL,
 unit text,
 unit text,
 unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
 unit_id text DEFAULT ''::text NOT NULL,
 units text[] DEFAULT '{}'::text[] NOT NULL,
 unprojected integer DEFAULT 0 NOT NULL,
@@ -3566,12 +4559,62 @@ valid_from timestamp with time zone,
 valid_from timestamp with time zone,
 valid_from timestamp with time zone,
 valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_to bigint,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
 valid_to timestamp with time zone,
 valid_to timestamp with time zone,
 valid_to timestamp with time zone,
@@ -3635,6 +4678,31 @@ work_id text NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 would_have_said text NOT NULL,
+writer text DEFAULT 'PresenceStore'::text NOT NULL,
+writer text DEFAULT 'PresenceStore'::text NOT NULL,
+writer text DEFAULT 'SqlFetchedPageStore'::text NOT NULL,
+writer text DEFAULT 'SqlMobilityStore'::text NOT NULL,
+writer text DEFAULT 'SqlMobilityStore'::text NOT NULL,
+writer text DEFAULT 'SqlMobilityStore'::text NOT NULL,
+writer text DEFAULT 'SqlMobilityStore'::text NOT NULL,
+writer text DEFAULT 'SqlMobilityStore'::text NOT NULL,
+writer text DEFAULT 'SqlMobilityStore'::text NOT NULL,
+writer text DEFAULT 'SqlObservationStore'::text NOT NULL,
+writer text DEFAULT 'SqlObservationStore'::text NOT NULL,
+writer text DEFAULT 'SqlRecordStore'::text NOT NULL,
+writer text DEFAULT 'SqlRecordStore'::text NOT NULL,
+writer text DEFAULT 'SqlRecordStore'::text NOT NULL,
+writer text DEFAULT 'SqlRecordStore'::text NOT NULL,
+writer text DEFAULT 'SqlRollupStore'::text NOT NULL,
+writer text DEFAULT 'SqlRollupStore'::text NOT NULL,
+writer text DEFAULT 'SqlRollupStore'::text NOT NULL,
+writer text DEFAULT 'SqlRollupStore'::text NOT NULL,
+writer text DEFAULT 'SqlRollupStore'::text NOT NULL,
+writer text DEFAULT 'SqlSocialStreamStore'::text NOT NULL,
+writer text DEFAULT 'SqlSocialStreamStore'::text NOT NULL,
+writer text DEFAULT 'SqlSocialStreamStore'::text NOT NULL,
+writer text DEFAULT 'SqlSocialStreamStore'::text NOT NULL,
+writer text DEFAULT 'SqlSourceHealthLog'::text NOT NULL,
 writer text NOT NULL,
 writer text NOT NULL,
 writer text NOT NULL,

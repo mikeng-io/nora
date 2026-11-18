@@ -70,7 +70,7 @@ EXPECTED_DESC_INDEXES = {
     # presence_stays (DEC-115): the alembic-check-blind
     # `(subject_id, started_ts DESC)` index.
     "idx_presence_stays_subject_ts": {"subject_id": False, "started_ts": True},
-    "idx_presence_derived_places_subject_kind": {"subject_id": False, "kind": False},
+    "idx_presence_derived_places_subject_kind": {"subject_id": False, "source_kind": False},
     # presence_trips: the alembic-check-blind `(subject_id, started_ts DESC)`
     # index.
     "idx_presence_trips_subject_started": {"subject_id": False, "started_ts": True},
@@ -175,9 +175,10 @@ def _as_postgres_renders_it(
     """
     savepoint = conn.begin_nested()
     try:
+        validation = " NOT VALID" if constraint.dialect_options["postgresql"]["not_valid"] else ""
         conn.exec_driver_sql(
             f'ALTER TABLE "{table}" ADD CONSTRAINT "{_PROBE_CONSTRAINT}" '
-            f"CHECK ({constraint.sqltext})"
+            f"CHECK ({constraint.sqltext}){validation}"
         )
         return conn.execute(sa.text(
             "SELECT pg_get_constraintdef(oid) FROM pg_constraint "

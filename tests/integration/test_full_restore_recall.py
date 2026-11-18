@@ -118,7 +118,7 @@ async def _seed(
 
         async def outing(unit: str, start: int) -> int:
             return int((await conn.execute(sa.text(
-                "INSERT INTO rollup_outing (build_id, unit, lineage, valid_from_ms, "
+                "INSERT INTO rollup_outing (build_id, unit, build_lineage, valid_from_ms, "
                 "valid_to_ms, as_of_ms, persons, lat, lng, place_label) VALUES "
                 "(:b, :u, '[]'::jsonb, :f, :t, :t, ARRAY['miles_novak', 'not_in_roster'], "
                 ":lat, 114.15, :p) RETURNING id"
@@ -316,7 +316,7 @@ async def _refusal_extras(conn: Any, seed: dict[str, Any]) -> dict[str, Any]:
         "VALUES ('t', 'old', 'superseded', :t) RETURNING id"
     ), {"t": until - DAY})).scalar_one()
     stale = int((await conn.execute(sa.text(
-        "INSERT INTO rollup_outing (build_id, unit, lineage, valid_from_ms, valid_to_ms, "
+        "INSERT INTO rollup_outing (build_id, unit, build_lineage, valid_from_ms, valid_to_ms, "
         "as_of_ms, persons, lat, lng, place_label) VALUES (:b, 'nora', '[]'::jsonb, :f, :t, "
         ":t, ARRAY['miles_novak'], 22.1, 114.1, 'somewhere') RETURNING id"
     ), {"b": old_build, "f": until - 3 * DAY, "t": until - 3 * DAY + 60 * MINUTE})).scalar_one())

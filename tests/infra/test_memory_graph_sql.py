@@ -344,7 +344,7 @@ async def test_rollup_projection_and_closed_episode_work_are_atomic(sql):
             "build_id": bid,
             "unit": unit,
             "persons": persons,
-            "lineage": [],
+            "build_lineage": [],
             "valid_from_ms": start,
             "valid_to_ms": start + 100,
             "as_of_ms": start + 100,
@@ -370,14 +370,14 @@ async def test_rollup_projection_and_closed_episode_work_are_atomic(sql):
                 radius_m=10,
                 fix_count=2,
                 address="Generated Place",
-                lineage=[],
+                build_lineage=[],
             )
         )
         await conn.execute(
             sa.insert(ROLLUP_RESPONSE).values(
                 build_id=bid,
                 unit=unit,
-                lineage=[],
+                build_lineage=[],
                 valid_from_ms=start,
                 valid_to_ms=start + 100,
                 as_of_ms=start + 100,

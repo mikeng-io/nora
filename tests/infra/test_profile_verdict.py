@@ -134,7 +134,7 @@ async def test_a_countable_observable_is_judged_by_code_never_the_model(env):
             ).returning(ROLLUP_BUILD.c.id))).scalar_one())
             if with_tie:
                 await conn.execute(sa.insert(ROLLUP_TIE).values(
-                    build_id=build, unit=UNIT, lineage=[], valid_from_ms=T0,
+                    build_id=build, unit=UNIT, build_lineage=[], valid_from_ms=T0,
                     valid_to_ms=T0 + 7 * DAY, as_of_ms=T0 + 7 * DAY,
                     person_a="ada", person_b="bo", iso_week="2026-W01",
                     replies_ab=1, replies_ba=0, mentions_ab=0, mentions_ba=0,
@@ -154,7 +154,7 @@ async def test_a_countable_observable_is_judged_by_code_never_the_model(env):
                       window_end=T0 + 30 * DAY)
     async with env.engine.begin() as conn:
         await conn.execute(sa.insert(ROLLUP_TIE).values(
-            build_id=build, unit=UNIT, lineage=[], valid_from_ms=T0,
+            build_id=build, unit=UNIT, build_lineage=[], valid_from_ms=T0,
             valid_to_ms=T0 + 7 * DAY, as_of_ms=T0 + 7 * DAY,
             person_a="ada", person_b="bo", iso_week="2026-W02",
             replies_ab=2, replies_ba=1, mentions_ab=0, mentions_ba=0,

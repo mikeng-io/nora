@@ -108,8 +108,8 @@ def _trip_from_row(r: Any) -> Trip:
 def _place_from_row(r: Any) -> DerivedPlace:
     return DerivedPlace(
         id=r.id, subject_id=r.subject_id, circle_id=r.circle_id,
-        lat=r.lat, lng=r.lng, radius_m=r.radius_m, kind=r.kind,
-        confidence=r.confidence, label=r.label,
+        lat=r.lat, lng=r.lng, radius_m=r.radius_m, kind=r.source_kind,
+        confidence=r.place_confidence, label=r.label,
         saved_place_id=r.saved_place_id,
         first_seen_ts=r.first_seen_ts, last_seen_ts=r.last_seen_ts,
     )
@@ -356,7 +356,7 @@ class SqlMobilityStore:
             sa.select(
                 PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts,
                 PRESENCE_STAYS.c.lat, PRESENCE_STAYS.c.lng,
-                PRESENCE_DERIVED_PLACES.c.kind.label("place_kind"),
+                PRESENCE_DERIVED_PLACES.c.source_kind.label("place_kind"),
                 PRESENCE_DERIVED_PLACES.c.label.label("place_label"),
                 PRESENCE_DERIVED_PLACES.c.saved_place_id.label("place_saved_id"),
             )
@@ -702,7 +702,7 @@ class SqlMobilityStore:
                         "circle_id": s.circle_id, "started_ts": s.started_ts,
                         "ended_ts": s.ended_ts, "lat": s.lat, "lng": s.lng,
                         "radius_m": s.radius_m, "fix_count": s.fix_count,
-                        "address": s.address, "build_id": build, "lineage": lineage,
+                        "address": s.address, "build_id": build, "build_lineage": lineage,
                     }
                     for s in stays
                 ])
@@ -717,7 +717,7 @@ class SqlMobilityStore:
                         # tuple is not one.
                         "sequence": list(t.corridor),
                         "corridor_id": t.corridor_id,
-                        "build_id": build, "lineage": lineage,
+                        "build_id": build, "build_lineage": lineage,
                     }
                     for t in trips
                 ])
@@ -776,8 +776,8 @@ class SqlMobilityStore:
         deletion (DEC-190 rule 4): the place is still where the person goes."""
         build = self._bound()
         values = {
-            "lat": lat, "lng": lng, "radius_m": radius_m, "kind": kind,
-            "confidence": confidence, "label": label,
+            "lat": lat, "lng": lng, "radius_m": radius_m, "source_kind": kind,
+            "place_confidence": confidence, "label": label,
             "saved_place_id": saved_place_id,
             "first_seen_ts": first_seen_ts, "last_seen_ts": last_seen_ts,
         }
@@ -797,7 +797,7 @@ class SqlMobilityStore:
                 sa.insert(PRESENCE_DERIVED_PLACES)
                 .values(
                     subject_id=subject_id, circle_id=circle_id, build_id=build,
-                    lineage=_lineage(subject_id), **values,
+                    build_lineage=_lineage(subject_id), **values,
                 )
                 .returning(PRESENCE_DERIVED_PLACES.c.id)
             )
@@ -892,7 +892,7 @@ class SqlMobilityStore:
                     await conn.execute(sa.insert(PRESENCE_OCCUPANCY).values(
                         subject_id=subject_id, place_id=place_id, hour_of_week=how,
                         dwell_ms=dwell, updated_ts=now_ms, build_id=build,
-                        lineage=_lineage(subject_id),
+                        build_lineage=_lineage(subject_id),
                     ))
                 elif stored[how] != (dwell, now_ms):
                     await conn.execute(
@@ -912,7 +912,7 @@ class SqlMobilityStore:
             mean_departure_minute=mean_departure_minute,
             duration_median_ms=duration_median_ms, duration_mad_ms=duration_mad_ms,
             sample_count=sample_count, updated_ts=now_ms, build_id=self._bound(),
-            lineage=_lineage(subject_id),
+            build_lineage=_lineage(subject_id),
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[PRESENCE_PLACE_RHYTHM.c.subject_id, PRESENCE_PLACE_RHYTHM.c.place_id],
@@ -953,7 +953,7 @@ class SqlMobilityStore:
             result = await conn.execute(
                 sa.insert(PRESENCE_CORRIDORS).values(
                     subject_id=subject_id, build_id=build,
-                    lineage=_lineage(subject_id), **values,
+                    build_lineage=_lineage(subject_id), **values,
                 ).returning(PRESENCE_CORRIDORS.c.id)
             )
             return int(result.scalar_one())

@@ -405,7 +405,7 @@ async def test_a_read_never_splits_a_microsecond(social, shape) -> None:
         async with engine.begin() as conn:
             await conn.execute(sa.insert(SOCIAL_ITEM).values(
                 network="instagram", item_id=str(1000 + n), person="ada", account="1",
-                kind="post", taken_at=T0, seen_at=T0, origin="poll", recorded_at=when,
+                source_kind="post", taken_at=T0, seen_at=T0, origin="poll", recorded_at=when,
             ))
     seen: list[str] = []
     cursor = 0

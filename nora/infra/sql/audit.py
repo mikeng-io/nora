@@ -202,7 +202,7 @@ async def reaction_states(
         return {}
     obs = PLATFORM_OBSERVATION
     in_targets: sa.ColumnElement[bool] = MESSAGE_REACTION.c.message_id.in_(message_ids)
-    in_obs = sa.and_(obs.c.kind == "reaction", obs.c.target_message_id.in_(message_ids))
+    in_obs = sa.and_(obs.c.source_kind == "reaction", obs.c.target_message_id.in_(message_ids))
     if before_ms is not None:
         in_targets = sa.and_(in_targets, MESSAGE_REACTION.c.ts <= before_ms)
         in_obs = sa.and_(
@@ -907,13 +907,13 @@ class SqlRecordStore:
             result = await conn.execute(stmt)
             row_id = int(result.scalar_one())
             target_link = sa.exists().where(
-                PLATFORM_OBSERVATION.c.kind == "reaction",
+                PLATFORM_OBSERVATION.c.source_kind == "reaction",
                 PLATFORM_OBSERVATION.c.target_message_id == message_id,
                 *(PLATFORM_OBSERVATION.c[name] == PLATFORM_OBJECT_STATE.c[name]
                   for name in ("platform", "account_key", "conversation_id",
                                "thread", "object_ref")))
             await conn.execute(sa.update(PLATFORM_OBJECT_STATE).where(
-                PLATFORM_OBJECT_STATE.c.kind == "reaction", target_link,
+                PLATFORM_OBJECT_STATE.c.source_kind == "reaction", target_link,
             ).values(updated_at=sa.func.clock_timestamp()))
             await memory_index.project(conn, "message", message_id, metrics=self._metrics)
         return row_id

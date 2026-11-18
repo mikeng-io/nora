@@ -76,7 +76,7 @@ class SqlRollupRead:
             return self._person_select(
                 q, PRESENCE_STAYS, PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts,
                 extra=(
-                    PRESENCE_DERIVED_PLACES.c.kind.label("place_kind"),
+                    PRESENCE_DERIVED_PLACES.c.source_kind.label("place_kind"),
                     PRESENCE_DERIVED_PLACES.c.label.label("place_label"),
                     PRESENCE_DERIVED_PLACES.c.saved_place_id.label("place_saved_id"),
                 ),
@@ -110,7 +110,7 @@ class SqlRollupRead:
     ) -> sa.Select[Any]:
         stmt = sa.select(
             table.c.subject_id, start.label("valid_from_ms"), end.label("valid_to_ms"),
-            table.c.lineage, *extra,
+            table.c.build_lineage, *extra,
         )
         if join is not None:
             stmt = stmt.select_from(join)
@@ -139,7 +139,7 @@ def _row(kind: str, r: Any) -> RollupReadRow:
     def make(subject: str, fields: dict[str, Any]) -> RollupReadRow:
         return RollupReadRow(
             kind=kind, subject=subject, valid_from_ms=int(r.valid_from_ms),
-            valid_to_ms=int(r.valid_to_ms), lineage=Lineage.from_json(r.lineage),
+            valid_to_ms=int(r.valid_to_ms), lineage=Lineage.from_json(r.build_lineage),
             fields=fields,
         )
 

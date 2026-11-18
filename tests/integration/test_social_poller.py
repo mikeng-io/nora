@@ -166,8 +166,10 @@ class World:
     async def states(self) -> list[tuple[str, str]]:
         s = SOCIAL_ITEM_STATE
         async with self.engine.connect() as conn:
-            rows = (await conn.execute(sa.select(s.c.item_id, s.c.state).order_by(s.c.id))).all()
-        return [(r.item_id, r.state) for r in rows]
+            rows = (await conn.execute(
+                sa.select(s.c.item_id, s.c.source_state).order_by(s.c.id)
+            )).all()
+        return [(r.item_id, r.source_state) for r in rows]
 
     def transitions(self, scope: str = "") -> list[str]:
         return [
@@ -1256,7 +1258,7 @@ async def places(world: World) -> list[tuple[str, str | None]]:
     s = SOCIAL_ITEM_STATE
     async with world.engine.connect() as conn:
         rows = (await conn.execute(
-            sa.select(s.c.item_id, s.c.place).where(s.c.state == "place")
+            sa.select(s.c.item_id, s.c.place).where(s.c.source_state == "place")
             .order_by(s.c.recorded_at, s.c.id),
         )).all()
     return [(r.item_id, r.place) for r in rows]

@@ -174,7 +174,7 @@ async def test_happened_place_mismatch_fails_when_place_disagrees_with_the_outin
             sa.select(ROLLUP_BUILD.c.id).order_by(ROLLUP_BUILD.c.id.desc()).limit(1)
         )).scalar_one()
         await conn.execute(sa.insert(ROLLUP_OUTING).values(
-            build_id=build_id, unit="u", lineage={}, valid_from_ms=0,
+            build_id=build_id, unit="u", build_lineage={}, valid_from_ms=0,
             valid_to_ms=9_999_999_999_999, as_of_ms=0,
             persons=["miles", "ann"], lat=1.0, lng=1.0,
             saved_place_id="place-seen", open=0,

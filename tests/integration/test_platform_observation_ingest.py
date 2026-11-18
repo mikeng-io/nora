@@ -222,7 +222,7 @@ async def test_observation_only_records_row_head_and_one_stimulus_then_acks(
     assert event["state"] == "done"
     obs_rows = await _obs_rows(store)
     assert len(obs_rows) == 1
-    assert obs_rows[0]["kind"] == "poll"
+    assert obs_rows[0]["source_kind"] == "poll"
     assert obs_rows[0]["object_ref"] == "poll-1"
     assert obs_rows[0]["event_id"] == env.event_id
     # The folded head and the replay marker committed WITH the row.
@@ -1201,7 +1201,7 @@ async def test_discord_thread_lifecycle_round_trips_the_room_scope(
     assert event["state"] == "done"
     rows = await _obs_rows(store)
     assert len(rows) == 1
-    assert rows[0]["kind"] == "room"
+    assert rows[0]["source_kind"] == "room"
     assert rows[0]["object_ref"] == f"thread:{THREAD_ID}"
     assert rows[0]["conversation_id"] == THREAD_PARENT
     assert rows[0]["thread"] == ""

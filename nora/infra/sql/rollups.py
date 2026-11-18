@@ -227,7 +227,7 @@ class SqlRollupStore:
                 PRESENCE_STAYS.c.subject_id, PRESENCE_STAYS.c.started_ts,
                 PRESENCE_STAYS.c.ended_ts, PRESENCE_STAYS.c.lat, PRESENCE_STAYS.c.lng,
                 PRESENCE_STAYS.c.radius_m, PRESENCE_STAYS.c.place_id,
-                PRESENCE_DERIVED_PLACES.c.kind, PRESENCE_DERIVED_PLACES.c.label,
+                PRESENCE_DERIVED_PLACES.c.source_kind, PRESENCE_DERIVED_PLACES.c.label,
                 PRESENCE_DERIVED_PLACES.c.saved_place_id,
             )
             .select_from(PRESENCE_STAYS.outerjoin(
@@ -251,7 +251,7 @@ class SqlRollupStore:
             StaySpan(
                 person_id=r.subject_id, started_ts=r.started_ts, ended_ts=r.ended_ts,
                 lat=r.lat, lng=r.lng, radius_m=r.radius_m, place_id=r.place_id,
-                place_kind=r.kind, place_label=r.label, saved_place_id=r.saved_place_id,
+                place_kind=r.source_kind, place_label=r.label, saved_place_id=r.saved_place_id,
             )
             for r in rows
         ]
@@ -272,7 +272,7 @@ class SqlRollupStore:
         ).where(
             PRESENCE_DERIVED_PLACES.c.build_id == build_id,
             PRESENCE_DERIVED_PLACES.c.subject_id.in_(list(subjects)),
-            PRESENCE_DERIVED_PLACES.c.kind == "home",
+            PRESENCE_DERIVED_PLACES.c.source_kind == "home",
         ).order_by(PRESENCE_DERIVED_PLACES.c.subject_id, PRESENCE_DERIVED_PLACES.c.id)
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
@@ -625,7 +625,7 @@ def _plain(value: Any) -> Any:
 
 def _common(row: Any) -> dict[str, Any]:
     return {
-        "unit": row.unit, "lineage": lineage_json(row.lineage),
+        "unit": row.unit, "build_lineage": lineage_json(row.lineage),
         "valid_from_ms": row.valid_from_ms, "valid_to_ms": row.valid_to_ms,
         "as_of_ms": row.as_of_ms,
     }

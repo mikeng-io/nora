@@ -318,10 +318,10 @@ async def test_a_withheld_social_item_is_skipped_but_projection_lag_still_fails(
         for item in ("generated-visible", "generated-hidden"):
             await conn.execute(sa.insert(SOCIAL_ITEM).values(
                 network="instagram", item_id=item, person="generated-person",
-                account="generated-account", kind="post", taken_at=at, seen_at=at,
+                account="generated-account", source_kind="post", taken_at=at, seen_at=at,
                 origin="poll", read_id=read))
         await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
-            network="instagram", item_id="generated-hidden", state="hidden"))
+            network="instagram", item_id="generated-hidden", source_state="hidden"))
 
     def work(source):
         return WorkItem("generated-social-work", source, UNIT, "generated-hash", WORK.as_of)

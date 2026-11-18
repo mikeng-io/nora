@@ -260,7 +260,7 @@ class SqlSocialStreamStore:
         i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE
         stated = sa.exists().where(
             s.c.network == i.c.network, s.c.item_id == i.c.item_id,
-            s.c.state.in_(HIDING_STATES),
+            s.c.source_state.in_(HIDING_STATES),
         )
         where: list[Any] = [~stated]
         if self._opted_out:
@@ -280,7 +280,7 @@ class SqlSocialStreamStore:
             pg_insert(SOCIAL_ITEM)
             .values(
                 network=item.network, item_id=item.item_id, person=person,
-                account=item.account, kind=item.kind, taken_at=item.taken_at,
+                account=item.account, source_kind=item.kind, taken_at=item.taken_at,
                 expires_at=item.expires_at, caption=item.caption, alt_text=item.alt_text,
                 location=location, tagged=list(tagged), mentioned=list(mentioned),
                 media_ref=media_ref, seen_at=seen_at, origin=origin, collab=item.collab,
@@ -324,7 +324,7 @@ class SqlSocialStreamStore:
         """Append that an item is gone or hidden."""
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
-                network=network, item_id=item_id, state=state, reason=reason,
+                network=network, item_id=item_id, source_state=state, reason=reason,
             ))
             await memory_index.project(
                 conn, "social", social_source_id(network, item_id), metrics=self._metrics,
@@ -336,7 +336,7 @@ class SqlSocialStreamStore:
         place and nothing else."""
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
-                network=network, item_id=item_id, state=PLACE_STATE, place=place,
+                network=network, item_id=item_id, source_state=PLACE_STATE, place=place,
             ))
             await memory_index.project(
                 conn, "social", social_source_id(network, item_id), metrics=self._metrics,
@@ -510,10 +510,10 @@ class SqlSocialStreamStore:
         """The item's current state, the latest row, or None when it has none."""
         s = SOCIAL_ITEM_STATE
         stmt = (
-            sa.select(s.c.state)
+            sa.select(s.c.source_state)
             .where(
                 s.c.network == network, s.c.item_id == item_id,
-                s.c.state.in_(HIDING_STATES),
+                s.c.source_state.in_(HIDING_STATES),
             )
             .order_by(s.c.recorded_at.desc(), s.c.id.desc())
             .limit(1)
@@ -539,10 +539,10 @@ class SqlSocialStreamStore:
         still show."""
         i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE
         gone = sa.exists().where(
-            s.c.network == i.c.network, s.c.item_id == i.c.item_id, s.c.state == "gone",
+            s.c.network == i.c.network, s.c.item_id == i.c.item_id, s.c.source_state == "gone",
         )
         stmt = sa.select(i.c.item_id).where(
-            i.c.network == network, i.c.person == person, i.c.kind == "story_frame",
+            i.c.network == network, i.c.person == person, i.c.source_kind == "story_frame",
             i.c.expires_at > now, ~gone,
         )
         async with self._engine.connect() as conn:
@@ -749,7 +749,7 @@ class SqlSocialStreamStore:
         )
         stmt = (
             sa.select(
-                i.c.network, i.c.item_id, i.c.person, i.c.kind, i.c.collab,
+                i.c.network, i.c.item_id, i.c.person, i.c.source_kind, i.c.collab,
                 i.c.taken_at, i.c.origin, i.c.media_ref, i.c.recorded_at,
                 failures.label("failures"),
             )
@@ -764,7 +764,7 @@ class SqlSocialStreamStore:
             )
         return [
             Unperceived(
-                network=r.network, item_id=r.item_id, person=r.person, kind=r.kind,
+                network=r.network, item_id=r.item_id, person=r.person, kind=r.source_kind,
                 collab=r.collab, taken_at=r.taken_at, origin=r.origin,
                 media=_media(r.media_ref), failures=int(r.failures),
                 expired=all(
@@ -861,13 +861,13 @@ class SqlSocialStreamStore:
                 ~sa.exists().where(
                     SOCIAL_ITEM_STATE.c.network == other.c.network,
                     SOCIAL_ITEM_STATE.c.item_id == other.c.item_id,
-                    SOCIAL_ITEM_STATE.c.state.in_(HIDING_STATES),
+                    SOCIAL_ITEM_STATE.c.source_state.in_(HIDING_STATES),
                 ),
             )
             where.append(~waiting)
         stmt = (
             sa.select(
-                i.c.read_id, i.c.network, i.c.person, i.c.item_id, i.c.kind, i.c.collab,
+                i.c.read_id, i.c.network, i.c.person, i.c.item_id, i.c.source_kind, i.c.collab,
                 i.c.taken_at, i.c.caption, i.c.media_ref, announced.label("announced"),
             )
             .where(*where)
@@ -878,7 +878,7 @@ class SqlSocialStreamStore:
         reads: dict[str, SettledRead] = {}
         for r in rows:
             item = ReadItem(
-                item_id=r.item_id, kind=r.kind, collab=r.collab, taken_at=r.taken_at,
+                item_id=r.item_id, kind=r.source_kind, collab=r.collab, taken_at=r.taken_at,
                 caption=r.caption, media=_media(r.media_ref),
             )
             got = reads.get(r.read_id)
@@ -907,7 +907,7 @@ class SqlSocialStreamStore:
         i = SOCIAL_ITEM
         stmt = (
             sa.select(
-                i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at, i.c.expires_at,
+                i.c.network, i.c.item_id, i.c.source_kind, i.c.collab, i.c.taken_at, i.c.expires_at,
                 # The place as the author has it now: a tag they changed shows
                 # the new place, one they removed shows none.
                 i.c.caption, current_place(i).label("location"), i.c.media_ref,
@@ -934,7 +934,7 @@ class SqlSocialStreamStore:
             counts = await _latest_counts(conn, [(r.network, r.item_id) for r in rows])
         return [
             RecordedItem(
-                network=r.network, kind=r.kind, collab=r.collab, taken_at=r.taken_at,
+                network=r.network, kind=r.source_kind, collab=r.collab, taken_at=r.taken_at,
                 expires_at=r.expires_at, caption=r.caption, location=r.location,
                 perception=tuple(
                     readings[sha] for sha in _media(r.media_ref) if readings.get(sha)
@@ -981,7 +981,7 @@ class SqlSocialStreamStore:
             return []
         i = SOCIAL_ITEM
         cols = (
-            i.c.id, i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at,
+            i.c.id, i.c.network, i.c.item_id, i.c.source_kind, i.c.collab, i.c.taken_at,
             i.c.origin, i.c.caption, i.c.media_ref, i.c.recorded_at,
         )
         mine = [*self._readable(), i.c.person.in_(list(persons))]
@@ -1016,7 +1016,7 @@ class SqlSocialStreamStore:
             } if shas else {}
         return [
             PersonSocialItem(
-                network=r.network, item_id=r.item_id, kind=r.kind, collab=r.collab,
+                network=r.network, item_id=r.item_id, kind=r.source_kind, collab=r.collab,
                 taken_at=r.taken_at, origin=r.origin, caption=r.caption,
                 readings=tuple(read.get(sha, Reading()) for sha in _media(r.media_ref)),
                 recorded_us=to_us(r.recorded_at),
@@ -1055,7 +1055,7 @@ class SqlSocialStreamStore:
                 perceived.label("perceived"),
             )
             .where(
-                i.c.kind == "story_frame", i.c.expires_at <= before,
+                i.c.source_kind == "story_frame", i.c.expires_at <= before,
                 i.c.media_ref.is_not(None), i.c.media_ref != "",
             )
             .order_by(i.c.expires_at, i.c.id)
