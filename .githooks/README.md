@@ -123,9 +123,12 @@ media GPS. Not built in this change.
 
 **Git LFS** is used for showreel media (`showreel/.gitattributes`). An LFS file
 reaches the scanner as pointer text, not binary content. `core.hooksPath=.githooks`
-replaces LFS's own `pre-push` hook, so media uploads need an explicit `git lfs push`.
-Generated standard LFS post-hooks can appear as untracked installation artifacts;
-the affected-test selector excludes only their exact regular-file templates,
+replaces LFS's own `pre-push` hook, so after its own checks pass this `pre-push`
+chains to `git lfs pre-push` with the same ref lines when `git-lfs` is on PATH;
+without git-lfs nothing changes and media uploads still need an explicit
+`git lfs push`. The standard LFS post-hooks that `git lfs install` writes into
+`.githooks/` only support file locking (unused here) and are gitignored; the
+affected-test selector still excludes only their exact regular-file templates,
 never modified/symlinked/tracked hooks or arbitrary executables.
 
 **Setup, once per machine.** The real values live in a denylist OUTSIDE the

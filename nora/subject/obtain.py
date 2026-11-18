@@ -396,6 +396,7 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # Each composed subject owns its journal lock, just like its database
     # and media. The deployment's computer state cannot be shared by draws.
     cfg = _with(cfg, "computer.state_dir", str(workdir / "state"))
+    cfg = _with(cfg, "image_gen.state_dir", str(workdir / "state"))
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a

@@ -237,6 +237,43 @@ async def test_each_open_gets_independent_consumption_state(
                     assert r.status == 200
 
 
+async def test_repeatable_reads_leave_ordered_writes_single_use():
+    health = {"method": "GET", "path": "/health", "repeatable": True,
+              "response": {"status": 200, "json": {"ok": True}}}
+    write = {"method": "POST", "path": "/update", "request_json": {"value": 7},
+             "response": {"status": 201}}
+    snapshot = RecordedServices({
+        "version": 1, "bindings": {"honcho.base_url": "recorded"},
+        "services": {"recorded": [health, write]},
+    })
+    with pytest.raises(EvidenceError, match="external_response_not_recorded"):
+        async with snapshot.open("sqlite://") as env, aiohttp.ClientSession() as client:
+            base = env.urls["honcho.base_url"]
+            for _ in range(2):
+                async with client.get(base + "/health") as response:
+                    assert response.status == 200
+                    assert await response.json() == {"ok": True}
+            async with client.post(base + "/update", json={"value": 7}) as response:
+                assert response.status == 201
+            async with client.get(base + "/health") as response:
+                assert response.status == 200
+                assert await response.json() == {"ok": True}
+            env.check()
+            async with client.post(base + "/update", json={"value": 7}) as response:
+                assert response.status == 500
+
+
+def test_a_write_cannot_be_declared_repeatable():
+    with pytest.raises(ValueError, match="bodyless GET"):
+        RecordedServices({
+            "version": 1, "bindings": {"honcho.base_url": "recorded"},
+            "services": {"recorded": [
+                {"method": "POST", "path": "/update", "repeatable": True,
+                 "response": {"status": 201}},
+            ]},
+        })
+
+
 def test_a_recording_cannot_claim_the_model_boundary():
     """Constructed directly or via the manifest, model dispatch bindings are
     refused: subject and judge aliases never become recorded playback."""
@@ -246,3 +283,164 @@ def test_a_recording_cannot_claim_the_model_boundary():
                                       "services": {"model": []}})
         with pytest.raises(ValueError, match="model dispatch"):
             JourneyServices(policy="[rooms]\nallow = []", external=recording)
+
+
+async def test_explicit_generated_bindings_survive_additional_recorded_services(
+    clean_pg_url, evaluation_config, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    manifest = {
+        "version": 1,
+        "corpora": {
+            "autonomous_journey": {
+                "outing": {
+                    "kind": "journey_world",
+                    "policy": default_policy(("signal", "g1")),
+                    "judges": ["alpha", "beta"],
+                    "generated_bindings": ["honcho.base_url", "platforms.signal.base_url"],
+                    "external": {
+                        "version": 1,
+                        "bindings": {"platforms.discord.base_url": "discord"},
+                        "services": {
+                            "discord": [
+                                {
+                                    "method": "GET",
+                                    "path": "/v1/self",
+                                    "response": {
+                                        "status": 200,
+                                        "json": {"primary": "generated-discord", "aliases": []},
+                                    },
+                                }
+                            ]
+                        },
+                    },
+                }
+            }
+        },
+    }
+    path = tmp_path / "services.json"
+    path.write_text(json.dumps(manifest))
+    plan = load_services(path).corpora["autonomous_journey"]["outing"]
+    with pytest.raises(EvidenceError, match="external_response_not_recorded"):
+        async with plan.open(clean_pg_url) as env:
+            assert "honcho.base_url" in env.urls
+            async with aiohttp.ClientSession() as client:
+                async with client.post(
+                    env.urls["honcho.base_url"] + "/v3/workspaces",
+                    json={"id": "generated-workspace"},
+                ) as response:
+                    assert (await response.json())["id"] == "generated-workspace"
+                async with client.get(
+                    env.urls["platforms.signal.base_url"] + "/v1/self"
+                ) as response:
+                    assert (await response.json())["primary"] == "generated-self"
+                async with client.get(
+                    env.urls["platforms.discord.base_url"] + "/v1/self"
+                ) as response:
+                    assert (await response.json())["primary"] == "generated-discord"
+                async with client.get(
+                    env.urls["platforms.discord.base_url"] + "/undeclared"
+                ) as response:
+                    assert response.status == 500
+            with pytest.raises(EvidenceError, match="external_response_not_recorded"):
+                env.check()
+
+
+@pytest.mark.parametrize("bindings", [
+    ("llm.base_url",), ("honcho.base_url", "honcho.base_url"),
+    ("platforms.discord.base_url",), ("platforms.signal.base_url",),
+])
+def test_generated_bindings_cannot_claim_models_unknown_services_or_recordings(bindings):
+    recording = RecordedServices({
+        "version": 1, "bindings": {"platforms.signal.base_url": "bridge"},
+        "services": {"bridge": []}})
+    with pytest.raises(ValueError, match="generated bindings"):
+        JourneyServices(policy=default_policy(("signal", "g1")),
+                        external=recording, generated_bindings=bindings)
+
+
+async def test_recorded_discovery_resolves_its_owned_token_endpoint(example_config):
+    recording = RecordedServices({
+        "version": 1,
+        "bindings": {"image_gen.xai.issuer_url": "issuer", "llm.base_url": "issuer"},
+        "services": {"issuer": [
+            {"method": "GET", "path": "/.well-known/openid-configuration",
+             "response": {"status": 200,
+                          "json": {"token_endpoint": "${service_origin}/oauth2/token"}}},
+            {"method": "POST", "path": "/oauth2/token",
+             "response": {"status": 200, "json": {"access_token": "generated-access"}}},
+        ]},
+    })
+    async with recording.open("sqlite://") as env:
+        cfg = env.bind_config(example_config)
+        async with aiohttp.ClientSession() as client:
+            async with client.get(cfg.image_gen.xai.issuer_url +
+                                  "/.well-known/openid-configuration") as response:
+                endpoint = (await response.json())["token_endpoint"]
+            assert endpoint == env.urls["image_gen.xai.issuer_url"] + "/oauth2/token"
+            async with client.post(endpoint) as response:
+                assert (await response.json())["access_token"] == "generated-access"  # noqa: S105
+
+
+@pytest.mark.parametrize("sink_fails", [False, True])
+async def test_journey_spans_export_after_isolation_without_opening_the_sink(
+    tmp_path, sink_fails,
+):
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from tempfile import TemporaryFile
+
+    from opentelemetry import trace
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+
+    from evals.backbone import _prefill_capture
+    from nora.agent.telemetry import evaluation_export
+    from nora.subject.environment import IsolatedServices
+    from nora.subject.eval_evidence import RunEvidence
+
+    payloads = []
+
+    class Collector(BaseHTTPRequestHandler):
+        def do_POST(self):
+            assert self.path == "/v1/traces"
+            payloads.append(ExportTraceServiceRequest.FromString(
+                self.rfile.read(int(self.headers["Content-Length"]))))
+            self.send_response(400 if sink_fails and len(payloads) > 1 else 200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 14318), Collector)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    _prefill_capture()
+    provider = trace.get_tracer_provider()
+    export = evaluation_export({"enabled": True, "exporter": "otlp_http",
+                                "endpoint": "http://127.0.0.1:14318/v1/traces"})
+    try:
+        with TemporaryFile() as lock:
+            evidence = RunEvidence(run_id="generated-isolated-export", metadata={},
+                                   lock_fd=lock.fileno(), private_root=tmp_path)
+            from contextlib import nullcontext
+
+            with (pytest.raises(EvidenceError, match="export unavailable")
+                  if sink_fails else nullcontext(), evidence.capture(provider, export=export)):
+                assert len(payloads) == 1, "the preflight must reach the real sink"
+                async with IsolatedServices(database_url="sqlite://", applications={}) as env:
+                    with provider.get_tracer(__name__).start_as_current_span("journey.stage"):
+                        pass
+                    assert not env.denied, "export attempted egress during isolated execution"
+                    assert len(payloads) == 1, "stage export must wait for guard teardown"
+                    assert not env.owns("http://127.0.0.1:14318/v1/traces")
+                    env.check()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    spans = [s for p in payloads for r in p.resource_spans
+             for scope in r.scope_spans for s in scope.spans]
+    root, = [s for s in spans if s.name == "eval.run"]
+    stage, = [s for s in spans if s.name == "journey.stage"]
+    assert stage.parent_span_id == root.span_id
+    assert stage.trace_id == root.trace_id

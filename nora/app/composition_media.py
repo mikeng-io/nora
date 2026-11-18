@@ -171,6 +171,7 @@ def _image_gen_wiring(
     xai_lane = (
         XaiOAuth(
             refresh_token=xai_token,
+            issuer=xai_cfg.issuer_url,
             state_file=state_dir / "xai-oauth.json",
             timeout_seconds=xai_cfg.timeout_seconds,
         )
@@ -182,6 +183,7 @@ def _image_gen_wiring(
     codex_lane = (
         OpenAICodexOAuth(
             bootstrap_refresh_token=codex_token,
+            issuer=codex_cfg.issuer_url,
             state_file=state_dir / "openai-codex-oauth.json",
         )
         if codex_token

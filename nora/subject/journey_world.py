@@ -21,10 +21,20 @@ import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from nora.instructions.dreamer import OBJECTIVE_TAG
+from nora.language.character import (
+    CHARACTER_NORA_ADAPTOR_NAME,
+    CHARACTER_PERSON_ADAPTOR_NAME,
+    CHARACTER_UNIT_ADAPTOR_NAME,
+)
+from nora.language.culture import CULTURE_ADAPTOR_NAME
+from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
+from nora.language.profile_collective import PROFILE_COLLECTIVE_ADAPTOR_NAMES
+from nora.language.profile_verdict import PROFILE_VERDICT_ADAPTOR_NAME
 from nora.platform.bridge.service import DurableActionService, action_http_status, action_response
 from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
@@ -35,6 +45,26 @@ from nora.subject.obtain import SubjectSpec, build_config
 from nora.subject.recorded_services import RecordedServices
 from nora.testing.causal_protocol import CausalProtocol, texts
 from nora.testing.signal_daemon import FakeSignalDaemon
+
+if TYPE_CHECKING:
+    from nora.config import Config
+
+
+def make_causal_protocol(cfg: Config) -> CausalProtocol:
+    """Bind finite answers to the production adaptor declarations."""
+    return CausalProtocol(
+        cfg,
+        objective_tag=OBJECTIVE_TAG,
+        background_answers={
+            CHARACTER_NORA_ADAPTOR_NAME: "session_close",
+            CHARACTER_PERSON_ADAPTOR_NAME: "session_close",
+            CHARACTER_UNIT_ADAPTOR_NAME: "session_close",
+            CULTURE_ADAPTOR_NAME: "culture",
+            PROFILE_PERSON_ADAPTOR_NAME: "profile",
+            **dict.fromkeys(PROFILE_COLLECTIVE_ADAPTOR_NAMES, "profile"),
+            PROFILE_VERDICT_ADAPTOR_NAME: "profile_verdict",
+        },
+    )
 
 
 def _record_request(protocol: CausalProtocol, body: dict) -> None:
@@ -291,7 +321,8 @@ class JourneyServices:
                  identity: str = "", overrides: dict[str, Any] | None = None,
                  judge_models: tuple[str, str] = ("generated-a", "generated-b"),
                  model_gateway: ModelGateway | None = None,
-                 external: RecordedServices | None = None) -> None:
+                 external: RecordedServices | None = None,
+                 generated_bindings: tuple[str, ...] = ()) -> None:
         self.policy, self.room, self.identity = policy, room, identity
         self._overrides = dict(overrides or {})
         self.judge_models = tuple(judge_models)
@@ -299,9 +330,9 @@ class JourneyServices:
         #: subject/judge responders are never installed and every model
         #: dispatch is admitted to it — or refused — by the environment.
         self.model_gateway = model_gateway
-        #: The case's declared external recording; when set, the generated
-        #: Honcho/bridge responders are never installed — each declared
-        #: binding serves its recorded responses and the rest refuses.
+        #: Recorded bindings replace generated services. Retaining either
+        #: generated world service beside recordings requires its explicit
+        #: declaration; every unrecorded request still refuses.
         if external is not None and any(
                 binding == "llm.base_url" or binding.startswith("providers.")
                 for binding in external.bindings):
@@ -309,6 +340,13 @@ class JourneyServices:
                 "an external recording cannot serve model dispatch; subject "
                 "and judge aliases stay under the finite world or the "
                 "declared gateway")
+        allowed = {"honcho.base_url", "platforms.signal.base_url"}
+        if (len(set(generated_bindings)) != len(generated_bindings)
+                or not set(generated_bindings) <= allowed
+                or (external is not None
+                    and set(generated_bindings) & external.bindings.keys())):
+            raise ValueError("generated bindings must name distinct, unrecorded world services")
+        self.generated_bindings = tuple(generated_bindings)
         self.external = external
         self.requests: list[dict] = []
         self.errors: list[tuple] = []
@@ -410,7 +448,11 @@ class JourneyServices:
             recorded = playback.applications(before=before)
             apps = {binding: recorded[name]
                     for binding, name in playback.bindings.items()}
-            if signal is None:
+            if "honcho.base_url" in self.generated_bindings:
+                apps["honcho.base_url"] = memory_service(self.feeds)
+            if "platforms.signal.base_url" in self.generated_bindings:
+                apps["platforms.signal.base_url"] = self._bridge_app()
+            if signal is None and "platforms.signal.base_url" not in self.generated_bindings:
                 # The case-owned action seam survives even when the
                 # recording binds no signal reads — writes only, never a
                 # generated identity or roster.
@@ -418,7 +460,7 @@ class JourneyServices:
                 self._action_routes(actions)
                 apps["platforms.signal.base_url"] = actions
         if self.model_gateway is None:
-            self.protocol = CausalProtocol(cfg)
+            self.protocol = make_causal_protocol(cfg)
             self.judge = GeneratedJudge()
             model = web.Application()
 

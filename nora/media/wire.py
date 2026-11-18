@@ -237,7 +237,7 @@ def images(cfg, metrics) -> ImagesWiring:
         cfg,
         metrics,
         cfg.credentials,
-        state_dir=Path("/app/state"),
+        state_dir=Path(cfg.image_gen.state_dir),
     )
     # Sender-generated link previews ([preview]). Keyless, so `enabled` is the whole gate.
     # Off is the shipped default and is not a degradation: a reply carrying a link goes out

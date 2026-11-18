@@ -28,9 +28,14 @@ from nora.subject.effects import effect_boundary, effect_scope, prepare_effect_r
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import read_events
 from nora.subject.journey import envelope, settled_event
-from nora.subject.journey_world import action_service, finite_boundary, memory_service
+from nora.subject.journey_world import (
+    action_service,
+    finite_boundary,
+    make_causal_protocol,
+    memory_service,
+)
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
-from nora.testing.causal_protocol import CORRECTION, INITIAL, TITLE, CausalProtocol
+from nora.testing.causal_protocol import CORRECTION, INITIAL, TITLE
 from nora.testing.signal_daemon import FakeSignalDaemon
 from tests.integration.subject.test_causal_runtime_journey import (
     runtime_evidence as runtime_evidence,
@@ -97,7 +102,7 @@ async def test_real_app_autonomous_cognition_fire_and_later_correction(
     spec = SubjectSpec(database_url=clean_pg_url, workdir=tmp_path / "subject",
                        policy=policy, overrides=overrides)
     cfg = build_config(spec)
-    protocol = CausalProtocol(cfg)
+    protocol = make_causal_protocol(cfg)
     feeds, requests, owners = [], [], {}
     apps = services(cfg, requests)
     apps["honcho.base_url"] = memory_service(feeds)

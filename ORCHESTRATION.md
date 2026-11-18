@@ -43,9 +43,8 @@ review_tiers:
 # Engineering orchestration
 
 How the agents that build Nora (not Nora's runtime) split, do and check work.
-The frontmatter defines the execution and review tiers; each tier adds to the
-ones before it. Tiers describe the work and its checking, never a provider,
-model, effort label or toolset.
+The frontmatter defines the execution and review tiers, each adding to the ones
+before it; a tier describes the work and its checking, never a model or toolset.
 
 ## The orchestrator
 
@@ -55,11 +54,9 @@ delegate, reconcile evidence, triage, land and report.
 
 - **Do small changes yourself**: documentation, agent-skill wording, comments,
   one- or two-line fixes and bounded edits across a few files.
-- **Delegate only for a reason**: a worker's capacity or capability outweighs
-  the briefing cost and lost context, or the operator asks. File count alone is
-  not a reason. Delegate through the session's own mechanism (a native
-  subagent, `delegate_task` or the host's equivalent); the brief and read-back
-  rules are the same.
+- **Delegate only for a reason**: a worker's capability outweighs the briefing
+  cost and lost context, or the operator asks; file count alone is not one. Any
+  delegation mechanism follows the same brief and read-back rules.
 - **Claude models are never a delegated builder or an independent reviewer.**
   A Claude orchestrator makes small changes directly and hands substantial
   implementation to a non-Claude builder.
@@ -69,20 +66,30 @@ delegate, reconcile evidence, triage, land and report.
 
 ## The lifecycle
 
-Stages apply as a change needs them; a small one passes several in one sitting.
+Engineering follows UACP's phases in order: **triage → propose → plan →
+execute → verify → resolve**. `nora-work` routes it; its
+[lifecycle reference](.agents/skills/nora-work/references/lifecycle.md) owns
+the routes, the transition table and the re-triage triggers.
 
-| stage | answers | owner | produces | exits when |
-|---|---|---|---|---|
-| **intake** | is this architecture or code, and where does it belong? | `nora-design` §1; `nora-decision` for issues | an issue, or a direct brief recorded in the PR | outcome, scope and non-goals are pinned to a revision |
-| **design** (architecture changes only) | what is the system? | `nora-design` | a bundle edit, before or with the code | the bundle change is reviewed per its tier |
-| **decide** | does this need a ruling on record? | `nora-decision` | a DEC row or ADR | numbered at merge |
-| **dispatch** | how is it cut, briefed and assigned? | `nora-dispatch` | units, briefs, acceptance in the issue or the PR-recorded brief | every acceptance statement is covered by a unit |
-| **build** | — | the builder, with `nora-land`, `nora-structure`, `nora-test`, `nora-tool`, `nora-runtime-skill` | commits on a branch | the brief's named checks ran once |
-| **verify** | does it do what it claims? | `nora-prove-fix`, `nora-eval`, the gate in `nora-land` | evidence | each obligation is met, unmet or unavailable, with evidence |
-| **review** | does it hold up to someone else? | `nora-review`, `REVIEW.md` | findings and a verdict | no BLOCKER, within two rounds |
-| **land** | — | `nora-land` | a merge commit | on master and read back |
-| **release and deploy** | — | `nora-release`, `nora-deploy`, `nora-readback` | a release; the live service | released; live state read back when acceptance requires it |
-| **close and learn** | is the outcome delivered, and did the process itself fail anywhere? | the orchestrator | the issue updated; the owning skill or root document edited | obligations reconciled; a process failure (an unreadable brief, a skipped rehearsal, a rule nobody loaded) fixed in its owner in the same arc |
+- **No self-attestation.** At each transition its route requires, a checker
+  other than the doer (the operator, the reviewer by rule, CI or the next
+  agent) records pass or block. A skill halts when that output is missing.
+- **Ask only for intent, authority or redesign.** The agent obtains reviewer and
+  CI checks itself; only an operator-held gate waits, never a "continue".
+- **Ceiling.** The gates are policy-level stops held by skills, not an
+  unskippable control; the reviewer and the operator's merge refuse when the
+  route's required artifact is missing.
+- An implementation request continues through delivery; a design-only request
+  stops at its design. Agreement grants no new spending or deployment.
+
+## Coordination and decisions
+
+The operator owns outcomes, scope amendments and exceptions. The orchestrator
+chooses units, workers, review tier and next steps within that authority;
+builders implement their slice; reviewers judge it without adding requirements.
+For a shared design, interface or migration, read the related active work and
+T3 threads before assigning writes (`nora-dispatch`); one writer owns a shared
+seam at a time, and one outcome owner integrates.
 
 ## Execution tier
 
@@ -92,10 +99,9 @@ critical capability even in a small diff.
 
 ## Review and validation are adaptive
 
-The orchestrator chooses review depth and checks from what the change can
-break, not from its type or size alone. Answer three questions: what changed,
-what could break, and what evidence shows it did not. Then spend the least that
-answers them.
+Review depth and checks follow what the change can break, not its type or size:
+what changed, what could break, and what evidence shows it did not; spend the
+least that answers them.
 
 | Change | Usual review |
 |---|---|
@@ -104,42 +110,34 @@ answers them.
 | Live behaviour on merge: defaults, prompts, doctrine, tool text, routing, model settings | full |
 | Disclosure, security, locks/concurrency, hot-table migrations, new model spending | full, with critical execution capability |
 
-The last row is the only fixed minimum. Everywhere else, move a step up or down
-on judgement and say why in the PR's Gate section. A missed first fix, a scope
-surprise or an unplanned gate repair is evidence to raise review a step. The
-operator can require or waive any check or review.
+The last row is the only fixed minimum; elsewhere move a step on judgement and
+say why in the PR's Gate section. A missed first fix, a scope surprise or an
+unplanned gate repair raises review a step. The operator can require any check.
 
-Tiers (frontmatter) are inspection depth on the same agreed slice, never
-severity or authority to add requirements; every tier applies the five Cs.
-Procedure: `.agents/skills/nora-review/SKILL.md`. A report shows acceptance
-coverage and unverified limits as well as findings; a tier name or APPROVE
-alone is not a report.
-
+Review tiers set inspection depth on the same agreed slice, never severity or
+new requirements; routes (`nora-work`) set which gates apply. A report shows
+acceptance coverage and limits as well as findings; APPROVE alone is not one.
 Validation follows the same judgement: run the focused checks that prove what
-changed; docs-only changes need a diff read and a check of the changed property,
-not a local gate. Required hosted checks and branch rules always apply. Never
-relabel an old exact-tree receipt as a run on a new tree; a moving master only
-needs checks on what the upstream change touches.
+changed. Required hosted checks always apply, and an old exact-tree receipt is
+never relabelled as a run on a new tree.
 
 ## Intent, evidence and completion
 
-- Pin the outcome, scope, non-goals and acceptance to the issue or the
-  operator's brief, recorded in the PR for direct work, before editing; the
-  design holds the invariants they link to. Never
-  create an issue or contract file only to repeat it.
-- Agreement to a concrete proposed fix means implement it. File only work
-  explicitly deferred from this slice, after checking for an existing home.
-- Judge each obligation met, unmet or unavailable against the real source or
-  runtime; missing evidence is unavailable, not missing implementation. Tests,
-  review, merge and deployment prove different things: require what acceptance
-  specifies.
-- An invalid plan returns to scoping; a defect returns to bounded repair.
-  Expanding scope needs an explicit amendment; a reviewer suggestion is not a
-  requirement. Never soften an obligation to get a pass.
-- Close the slice when every obligation is evidenced and no BLOCKER remains,
-  then stop. Record limitations without claiming them delivered; update the
-  issue's remaining scope; close an issue only for its whole outcome. Reopen a
-  settled result only on new evidence or a changed requirement.
+- GitHub Project owns roadmap; Linear owns execution. The **work brief**
+  (`nora-dispatch/references/brief.md`) is the issue description, or the PR
+  body on the light route. No separate plan, spec or PRD file is required.
+- Read the current brief, project Intent and actual blockers before launch,
+  intake and handoff, and record the revision read. Comments hold discussion
+  and precise evidence, never the only current acceptance.
+- After the operator approves a brief, its Done-when list is locked; expanding or
+  softening it needs his amendment, and a reviewer suggestion is not a
+  requirement. An invalid plan returns to propose; a defect returns to repair.
+- Each item is met, unmet or unavailable against the real source or runtime,
+  marked by the reviewer; missing evidence is unavailable, not missing
+  implementation. Tests, review, merge and deployment prove different things.
+- Close the outcome once every item is evidenced and no BLOCKER remains. A
+  worker's stop point is not completion; a new session inherits the outcome
+  and its holds.
 
 ## Choosing a worker
 
@@ -147,66 +145,53 @@ needs checks on what the upstream change touches.
   credential availability (never the values), permissions, quota and operator
   constraints. Choose the least-cost worker that meets the capability and
   evidence the task needs.
-- Catalogue presence proves neither competence nor authorisation; rely on prior
-  evidence or a bounded authorised probe. If either is missing, report Blocked
-  with the reason and the unblock step. Never guess.
-- Pass the advertised provider, model and options explicitly, including effort,
-  and read back what launched. Do not silently lower effort, translate
-  unsupported options or weaken requirements because of quota. A fallback meets
-  the same capability, evidence and independence bar. Changing model or options
-  is a new launch, linked to the previous report.
-- Escalate on observed failure or unresolved ambiguity; reread the input and
-  spec before spending another run.
+- Catalogue presence proves neither competence nor authorisation; without
+  prior evidence or an authorised probe, report Blocked with the unblock step.
+- Pass provider, model and options explicitly, including effort, and read back
+  what launched. Never silently lower effort or weaken requirements for quota;
+  a fallback meets the same bar, and a changed model is a new, linked launch.
+- On observed failure or ambiguity, reread the input and spec before another run.
 - Model exclusions: never MiniMax M3; M3.1-Flash only when the operator names it.
 
 **Reviewer independence.** A reviewer is a fresh session, neither the builder
-nor the brief-author, on a different model vendor from the builder. A different
-endpoint for the same vendor is not independence. An orchestrator that
-implements directly is the builder. If no independent reviewer is available,
-block or get the operator's waiver.
+nor the brief-author, whose vendor differs from every author's — an
+orchestrator that commits is one; a same-vendor endpoint is not independence.
+Default: GPT-6.1 Terra (Codex); an OpenAI author means Kimi K3.1 Pro
+(kimi-code/k3.1-pro). No qualifying reviewer available means Blocked, with why.
 
-**A brief** follows `nora-dispatch`: one bounded outcome a reviewer can read in
-one sitting, in complete sentences a fresh agent can follow, linking what the
-repo holds instead of pasting or abbreviating it. It names acceptance (in the
-issue or the PR-recorded brief, never only a temporary file), input revisions, allowed
-paths, non-goals, worktree/base/branch, skills, named checks and the stop
-point. Builders run the named checks once and stop at the handoff; the
-orchestrator owns acceptance. No extra handling, tests, reviewers or scope:
-report an adjacent concern instead.
-Review briefs include the claims, the diff command and **do not spawn
-sub-agents; do the work yourself**. In a T3 delegated worktree start with
-`git fetch origin && git switch -c <type>/<slug> origin/master`; never create a
-second worktree. Reviews check out the exact review head.
+**Execution briefs and handoffs** follow `nora-dispatch`: the worker owns its
+slice, the orchestrator integration and acceptance. Reviews spawn no agents; a
+prepared worktree keeps its base, never a second worktree or a restart on master.
 
 ## Bounded independent review
 
-Reviewers report every finding they can ground; NONE is valid. Each names a
-reachable path, the harm, the failed C and whether this diff caused it, and
-pre-existing findings are marked. The orchestrator triages them and carries at
-most six into the PR, most severe first.
+`REVIEW.md` owns review scope, finding quality and the return format;
+`nora-review` the steps. All grounded findings stay in the receipt; non-blocking
+ones go into one PR summary comment, at most six classes, and open no round.
 
 | Verdict | Consequence |
 |---|---|
-| BLOCKER: this diff causes reachable wrong output, data loss, disclosure, crash or a weakened gate | Fix and verify; only this verdict buys another round |
+| BLOCKER: the candidate materially fails agreed completion, or introduces reachable data loss, disclosure, crash or a weakened required gate | Fix and verify; non-blocking findings do not buy another round |
 | FIX-IF-CHEAP: a real in-diff defect with bounded harm | Fix if it takes minutes within the slice; otherwise record a limitation; no new round |
-| ISSUE: real but pre-existing or out of scope | Use the existing issue; file only actionable work with no home (`nora-decision`); never blocks |
+| ISSUE: real but pre-existing outside agreed completion, or out of scope | Use the existing Linear work item or GitHub defect report; file only actionable work with no home (`nora-decision`); never blocks |
 | DROP: hypothetical, contrived, style or unrelated | One-line disposition |
 
-- Severity follows reachable consequence, not recurrence, confidence or repair
-  effort. One remedy for several instances is one defect class: group siblings
-  on the first report, and do not buy rounds by finding new inputs for a known
-  class. A repair-induced finding names its predecessor and its distinct
-  failure.
-- Verify each finding at the cited line with the right check; production fixes
-  follow `nora-prove-fix`. A clean review does not replace the gate or a
-  required live read-back.
-- A round with no BLOCKER ends review. **At most two rounds**; round two checks
-  only `git diff <reviewed-sha>..HEAD`. A BLOCKER left after round two is fixed
-  and proved, then the orchestrator rereads the spec and reports; only the
-  operator authorises a third round.
-- Record review tier and triage in the PR's Gate section. Keep the source
-  finding when adjudicating it; never silently downgrade a blocker. Waiving an
-  applicable requirement is the operator's decision.
+- Severity measures consequence and is the reviewer's; the orchestrator
+  chooses the disposition and never re-grades it. Recurrence alone never makes
+  a blocker; a material failure needs its scenario and impact.
+- Verify each finding at the cited line with the right check (`nora-prove-fix`
+  for production fixes); a clean review never replaces the gate or read-back.
+- A round with no BLOCKER ends review once required evidence is in; waiting
+  for evidence is not a round. One re-check covers
+  `git diff <reviewed-sha>..HEAD`, unresolved findings and previously
+  unavailable required evidence. Rounds continue while each closes a blocker
+  class; one that closes none, or a repair-made class, goes to the operator.
+- A class is one remedy fixing all its instances: first report names the
+  structural remedy and every sibling instance in that round, then no new
+  input shapes. A repair-induced finding names its origin; same class unless
+  its remedy differs.
+- Record review tier and triage in the PR's Gate section; never silently
+  downgrade a blocker. Waiving a requirement is the operator's call.
 
 ## Artifact ownership
 
@@ -215,36 +200,51 @@ most six into the PR, most severe first.
 | This policy | Assignment, capability, review and ownership rules |
 | Design bundle | The high-level architecture and its rationale (`nora-design`); never a plan or a status report |
 | ADR | One decision, its alternatives and what it cost |
-| Issue | One bounded outcome: scope, non-goals, acceptance, dependencies |
-| Roadmap card | A capability outcome and its horizon; never an execution queue |
+| Linear issue | One work brief: intent, completion conditions and boundaries; native ownership/dependencies |
+| Linear project | Optional bounded delivery grouping; not a second roadmap |
+| GitHub Project roadmap item | Capability outcome, horizon and outcome-level progress; links Linear execution |
+| GitHub issue | Defect/problem or community request reports and their disposition; not execution tasks |
 | Run / review receipt | Actual provider, model, toolset, options, fit reason, run reference, input revision and evidence |
 
-- An issue links the design it builds and owns its scope and acceptance, never
-  a copy of the design; a Project card is a view of its issue. Assignees,
-  milestones, relationships and Development links stay native in GitHub; tiers
-  live with the issue's readiness and run brief; receipts live in the run
-  system, never as committed run files or a task database.
+- Use native ownership and dependencies and link evidence; never copy plans,
+  receipts or tracker state into parallel files. Roadmap outcomes, report
+  disposition and execution status are linked, never mirrored
+  ([roadmap conventions](docs/maintainers/conventions.md#roadmap)).
+- Session completion, PR merge and child closure are not whole-outcome
+  acceptance; a skill or MCP connection grants no unattended spending authority.
 
-Task states describe issue and run readiness, not Project fields:
-**Inbox** may be incomplete (blank tiers mean unclassified); **Ready** has a
-bounded outcome, resolvable acceptance, available dependencies and
-permissions, a priority and tiers; **Running** links a real launched run;
-**Review** links the run and inspectable evidence; **Blocked** links its issue
-and the reason and unblock step, never fabricated Ready metadata; **Done** has
-acceptance evidence for the whole slice, including merge or live read-back when
-specified. Cancelled or superseded work closes as not planned with its reason;
-partial work references its parent issue without closing it.
+Task states follow the Linear convention (`docs/maintainers/conventions.md`
+«Linear execution»); read the configured workflow names back rather than assuming them.
+
+Artifact lifecycle — one owner and one end event each; retirement is mechanical, not a judgement:
+
+| artifact | created when | ends when | ended by |
+|---|---|---|---|
+| Linear issue | an outcome is agreed | whole outcome evidenced | its owner |
+| integration branch | the whole outcome starts | PR to master merges | GitHub auto-delete |
+| handoff branch | a builder starts | its PR merges into its base | GitHub auto-delete |
+| worktree | the first write needs one | branch merged or deleted | orchestrator, via `make gc` |
+| review checkout | a read-only review needs one | its result is read | orchestrator, via `make gc` |
+| evidence | a check runs | never | PR comment or CI artifact, never only `/tmp` |
+| working log | a check runs | its run ends | `/tmp` |
+
+- Resolve settles each artifact (`nora-land/reference.md` «Resolve»): work
+  that will not merge is archived once with `make archive`, an annotated
+  `archive/<branch>` tag verified on origin, and `make gc APPLY=1` runs at
+  intake and after merge. Reviews use a detached checkout and never push.
+- A handoff PR's base is the integration branch or the previous handoff's
+  branch; on merge GitHub deletes the head and retargets the PRs stacked on it.
+  Repairs land on the open handoff's branch, or a new handoff off the current base.
 
 ## Interchange shape
 
-`.agents/orchestration.schema.json` (JSON Schema 2020-12) owns the status,
-priority and tier vocabularies and validates policy, task and run shapes; the
-`kind` field selects which. It checks shape only, not link resolution, worker
-competence, independence or acceptance: read those back. Task metadata is a small
-projection, not the GitHub API payload. Unknown properties are rejected except in
-run `options`. References are absolute URIs; use immutable revisions where content
-can change. `tests/architecture/test_orchestration_contract.py` validates this
-policy and the synthetic examples below, which resolve to no real evidence.
+The optional `.agents/orchestration.schema.json` interchange describes policy,
+task and run records for the consumers that use it; it governs no live Linear
+state and requires no record per stage. `kind` selects the shape, and it checks
+shape only: links, competence, independence and acceptance are read back.
+References are absolute URIs, with immutable revisions where content can change.
+`tests/architecture/test_orchestration_contract.py` validates this policy and
+the synthetic examples below, which resolve to no real evidence.
 
 ```yaml
 inbox:
@@ -252,7 +252,7 @@ inbox:
   status: Inbox
 ready: &ready
   kind: task
-  issue_ref: https://github.com/example/nora-synthetic/issues/1
+  issue_ref: https://linear.app/example/issue/SYN-1
   status: Ready
   priority: P2
   execution_tier: scoped
@@ -272,12 +272,12 @@ done:
   evidence_refs: [https://example.invalid/acceptance/accepted-head]
 blocked:
   kind: task
-  issue_ref: https://github.com/example/nora-synthetic/issues/1
+  issue_ref: https://linear.app/example/issue/SYN-1
   status: Blocked
   blocked_ref: https://example.invalid/tasks/1#reason-and-unblock
 resolved_run:
   kind: run
-  issue_ref: https://github.com/example/nora-synthetic/issues/1
+  issue_ref: https://linear.app/example/issue/SYN-1
   run_ref: https://example.invalid/runs/build
   input_revision: synthetic-commit-a
   selection:

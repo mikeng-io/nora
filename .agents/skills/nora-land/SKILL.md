@@ -6,24 +6,23 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 # nora-land
 
 Worktree → impact-based validation → PR → applicable review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
-Read logs/state after each step, not just its exit code; proceed unless blocked or missing an operator-only fact.
-The orchestrator, of any vendor, makes small changes itself and delegates
-substantial work only when the benefit outweighs context loss, or the operator
-asks; Claude is never a delegated builder or independent reviewer
-(`ORCHESTRATION.md`). Review depth follows what the change can break. Delegated builders run named checks, commit/push/open PR and
-stop; the parent owns final validation, review, merge and read-back.
-
+`ORCHESTRATION.md` owns assignment/review policy; `nora-dispatch` owns worker
+handoffs. Workers stop at their assigned boundary; the parent owns acceptance.
 ```bash
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
 LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 ```
 
-## 1. Start: intent, then a new worktree on a new branch
+## 1. Start: intent and the assigned checkout
 
-Read `ORCHESTRATION.md` «Intent, evidence and completion»: pin the brief/design's
-outcome, scope, obligations and stopping boundary; inspect existing code and carry that intent.
+Use `nora-work` to recover the outcome and choose the next action;
+`nora-dispatch` owns execution and handoff. This skill owns the source-control
+and validation steps below. Respect the assigned base and stopping boundary.
+If a delegated checkout is already prepared, verify it and skip worktree creation.
+For new independent work, create the worktree below; dependent work uses its
+assigned base instead of `origin/master`.
 An operator agreeing to the proposed fix means implement it, not create a
-planning issue and stop. Only explicitly deferred work needs an issue.
+planning ticket and stop. Deferred execution work belongs in Linear.
 
 ```bash
 git fetch origin
@@ -33,9 +32,11 @@ uv sync --extra evals        # only when selected Python checks need it
 git status -sb; git config core.hooksPath
 ```
 
-Check: `## <type>/<slug>...origin/master`, no ahead/behind; hooksPath ends `.githooks` (empty: `make hooks`).
+Check: branch/head matches the assigned base (fetched `origin/master` for new
+independent work); preserve existing changes. hooksPath ends `.githooks`
+(empty: `make hooks`).
 
-- Cut from fetched `origin/master`, never stale local `master`; inspect the final diff.
+- New independent work starts at fetched `origin/master`; inspect the final diff.
 - One committing agent per worktree; never edit the primary checkout.
 - Never hide a failed `cd`; stop rather than run in the wrong directory.
 
@@ -116,6 +117,9 @@ Breaking markers stop automatic writes; major requires owner dispatch at an exac
 
 ## 6. Merged tree, push, PR
 
+For dependent PRs use [stacked delivery](reference.md#stacked-delivery) instead
+of steps 6–9's standalone-master commands; return here for the final master PR.
+
 ```bash
 git fetch origin; git rev-list --count HEAD..origin/master    # 0: branch is the merged tree
 git merge origin/master -m "merge: origin/master into $SLUG, <what came in>"   # if needed: inspect upstream delta; validate affected interactions
@@ -147,11 +151,11 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 - Triage under the policy: bounded repair for defects, scoping for invalid intent;
   advice is not scope. Prove code fixes with `nora-prove-fix`, without unrelated repair.
 - Repair: validate the delta by impact, commit, push and refresh the PR. No BLOCKER ends
-  review; the policy owns the two-round limit.
+  review; the policy owns convergence.
 
 ## 8. Merge: a real merge commit, authored message
 
-Before merge/auto-merge, read checks and all PR findings on the latest head;
+Before merge/auto-merge, confirm the route's required artifacts (`nora-work/references/lifecycle.md` «Ceiling and backstop»), then read checks and all PR findings on the latest head;
 follow [scanner triage](reference.md#pre-merge-scanner-findings). Green CI alone is insufficient.
 
 ```bash
@@ -174,8 +178,8 @@ gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
 - Author the merge subject (`merge: <the arc> (#N)`) and body; GitHub's default
   subject does not follow this repository's convention.
 - `--merge` only, never `--squash` or `--rebase`.
-- Stacked PR: `gh pr edit <child> --base master` BEFORE merging its base with
-  `--delete-branch`, or the child is closed.
+- Do not retarget native stack members or delete their bases with standalone
+  branch-chain commands; use the stack procedure.
 ## 9. Read back
 
 ```bash
@@ -192,12 +196,7 @@ make heads > "$LOG/heads.txt" 2>&1; grep -c '(head)' "$LOG/heads.txt"    # must 
 make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must print 0
 ```
 
-Fix a process failure found on the way in its owning skill or root document now
-(`ORCHESTRATION.md` «The lifecycle»). Reconcile obligations with met/unmet/unavailable evidence; update design coverage and issue remaining scope, closing only a fully satisfied issue with a reason.
-For a linked outcome, follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap): reconcile remaining acceptance,
-update evidenced lifecycle/horizon and read back fields. A merged child is not an Achieved parent; routine work needs no card.
-Report completed/unmet obligations separately; keep required read-back, add no extra
-research/deployment, and stop when the completion rule holds.
-The next change starts in a new worktree; cleanup: `docs/maintainers/conventions.md`. Deploying: nora-deploy.
+Then resolve ([reference.md](reference.md#resolve)): settle the artifact (merged, or `make archive BRANCH=<b> REASON="..."`), run `make gc APPLY=1` and read back its totals, update the Linear brief with the reviewer's met/unmet/unavailable marks, and record a lesson line when the process, not the code, failed.
+Close only a fully satisfied outcome; GitHub defect reports keep their separate resolution. Report completed/unmet obligations and stop at the agreed boundary. Deploying: nora-deploy.
 
 Tool-specific workarounds and Claude commit footers: `nora-land/reference.md`.

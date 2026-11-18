@@ -1,6 +1,6 @@
 ---
 name: nora-decision
-description: Records Nora decisions, ADRs, issues and roadmap directions. Allocates DEC/R/ADR numbers from git history at merge time and checks duplicates. Load for filing, planning, citing or reversing them; nora-design owns design bundles, nora-land owns landing and nora-tool owns tool text.
+description: Records Nora decisions, ADRs, GitHub reports/roadmap and Linear execution work. Allocates DEC/R/ADR numbers from git history at merge time and checks duplicates. Load for filing, planning, citing or reversing them; nora-design owns design bundles, nora-land owns landing and nora-tool owns tool text.
 ---
 
 # Recording a decision
@@ -17,41 +17,51 @@ branch's worktree.
 |---|---|
 | a defect you can fix in this session | nothing new: fix it; the PR is the record |
 | a change to the system's design | the bundle, rewritten in place (`nora-design`) |
-| work, a plan, an open question or a roadmap item | an issue (or an edit to the open issue that owns it) |
+| executable work or a bounded investigation | a Linear work brief, reusing its existing home (`nora-dispatch`) |
+| capability direction or roadmap outcome | a GitHub Project roadmap item linking execution |
+| a repository defect/problem report | a GitHub issue; link any implementation work in Linear |
 | a decision that will look wrong to someone who does not know what it replaced | an ADR |
 | a landed rule and the test that enforces it | a decision-index row |
 
-## 1. Filing an issue
+## 1. Filing a defect report or work brief
 
-1. **Can you fix it now within the agreed slice?** Then fix it (`nora-land`,
-   `nora-prove-fix`). Operator agreement means continue; an issue is not
-   delivery. A residue too small to act on goes in the PR's limitations.
-2. **Look for a home first.**
-   ```bash
-   gh issue list --state all --search "<two or three words>" --limit 20
-   ```
-   Check: an open issue on the subject means you edit it and file nothing.
-3. **Select the form** in `.github/ISSUE_TEMPLATE/` («Issues» in the
-   conventions). For work a bundle designs, the body starts
-   `**Design:** design/<topic>/<file>.md`. Write the body to a file.
-4. **Scrub the draft.** Issues and PR bodies are outside the history scrub.
-   Describe what a room did; never quote a message or name a member; cite
-   `file:line`, row ids, metric names. Check: read the file once for quoted
-   chat, a member's name, a phone number or a platform id.
-5. **File and read back.**
+1. **Can you finish it within the agreed slice?** Then do it (`nora-land`,
+   `nora-prove-fix`); a small direct change uses its PR as the record. Creating
+   a ticket is not delivery. Tiny residues belong in PR limitations.
+2. **Look for a home first.** Search Linear for execution, GitHub Project for roadmap
+   outcomes, and GitHub Issues for reports. Keep one work identity; do not create a
+   GitHub Issue to make a Linear task eligible for execution.
+3. **Select the destination.** GitHub reports use `.github/ISSUE_TEMPLATE/`
+   and the form conventions. Linear execution follows the [execution convention](../../../docs/maintainers/conventions.md#linear-execution).
+   Use the work brief in `nora-dispatch` and native properties; no second spec/plan.
+4. **Scrub before writing.** No private conversations, identities, credentials
+   or production rows in either service. Link permitted source/evidence rather
+   than copying logs. Read the actual draft for private values.
+5. **Write and read back.** Confirm the intended workspace/team, work/report
+   identity, description and native relations. A missing connector is blocked;
+   do not silently fall back to a new GitHub execution issue. For GitHub reports:
    ```bash
    gh issue create --title "<form title>" --body-file <draft file>
    gh issue view <N> --json title,body,labels
    ```
-   Check: the form's shape label is set and the body matches the form.
+
+Update the current Linear description in place. Comments are discussion or
+precise evidence, not a growing queue. Never hide current completion conditions
+in an archive. A GitHub defect can link its Linear work without mirroring it.
+Existing work moves only after its successor, active owner and holds are read
+back; preserve history and use a cross-link instead of bulk-copying comments.
 
 ## Roadmap planning
 
 Follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap).
-Read the bundle and the code before calling work unbuilt. Reuse the outcome's
-issue or create one through step 1, add it to Universal Roadmap's Nora view as
-Level=Outcome, and set lifecycle/horizon with a reason. Read back membership and
-fields. Planning grants no implementation, spending or deployment authority.
+Read the design and current implementation before changing an outcome. Reuse
+its GitHub Project item; keep only capability intent, success signal, horizon
+and Linear execution links. New outcomes can use Project draft items without
+creating repository issues. Verify product/view routing before adding drafts.
+Update outcome progress only on evidence; Linear Done or merged children alone
+cannot mark it Achieved. Do not migrate the roadmap into Linear or create a
+parallel initiative. Read back changed fields and links. Planning grants no
+execution, spending or deployment authority.
 
 ## 2. Writing an ADR
 

@@ -16,7 +16,7 @@
   {
     "name": "honor explicit JSON response content type",
     "file": "nora/subject/recorded_services.py",
-    "old": "body=json.dumps(response[\"json\"]).encode(),",
+    "old": "body=json.dumps(response[\"json\"]).replace(\n                            \"${service_origin}\", str(request.url.origin())\n                        ).encode(),",
     "new": "text=json.dumps(response[\"json\"]), content_type=\"application/json\",",
     "target": "tests/integration/subject/test_recorded_services.py::test_json_sse_shared_and_planned_404"
   },

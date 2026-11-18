@@ -435,6 +435,27 @@ def test_a_denominator_error_fails_the_run_even_when_verdicts_pass(
     assert "validity=ERROR" in out
 
 
+def test_successful_cli_prints_all_retained_corpus_accounting(monkeypatch, capsys, tmp_path):
+    import evals.__main__ as cli
+
+    experiment = _experiment([Case(name="generated-draw", input="x")], [_Verdict()])
+    monkeypatch.setattr(cli, "experiment_for", lambda name, **kwargs: (experiment, _answered))
+    monkeypatch.setattr(cli, "census", lambda name, *, cohort=None: "1 case")
+    evidence = _evidence(tmp_path, _settled("generated-draw"))
+    monkeypatch.setattr("nora.subject.eval_evidence.current", lambda: evidence)
+
+    assert cli._run_one("generated-corpus", source_url="sqlite://", judge=None, sample=1)
+    stdout = capsys.readouterr().out
+    prefix = "  corpus accounting: "
+    lines = [line.removeprefix(prefix) for line in stdout.splitlines() if line.startswith(prefix)]
+    assert len(lines) == 1
+    retained = json.loads((evidence.path / "corpus-generated-corpus.json").read_text())
+    assert json.loads(lines[0]) == {
+        "coverage": retained["coverage"], "outcome": retained["outcome"],
+    }
+    assert "outcome: coverage=PASS execution=PASS validity=PASS behavior=UNMEASURED" in stdout
+
+
 def test_an_unestablished_axis_fails_the_run_even_when_verdicts_pass(
     monkeypatch, tmp_path,
 ):
