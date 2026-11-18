@@ -481,6 +481,26 @@ async def _link_first_pair(world, a1, a2, disc, tg, op):
     await world.exchange(OP, method="discord_oauth")
     assert await world.check(SIG_A1) == 200
 
+    # The assertion binds the exact request and the account's own method: a
+    # proof minted for another platform's method, another path or another
+    # body is refused at the verifier before it reaches sign-in.
+    body = b"{}"
+    assert (await client.post(
+        EXCHANGE, data=body,
+        headers=auth(claims(account=DISC, purpose="sign_in",
+                            method="telegram_oidc", path=EXCHANGE,
+                            body=body)))).status == 401
+    assert (await client.post(
+        EXCHANGE, data=b'{"forged":true}',
+        headers=auth(claims(account=DISC, purpose="sign_in",
+                            method="discord_oauth", path=EXCHANGE,
+                            body=body)))).status == 401
+    assert (await client.post(
+        EXCHANGE, data=body,
+        headers=auth(claims(account=DISC, purpose="sign_in",
+                            method="discord_oauth", path=CHECK,
+                            body=body)))).status == 401
+
     request_id = f"generated-link-{uuid4().hex[:8]}"
     body = json.dumps({"request_id": request_id, "receiving": ident_json(DISC),
                        "surviving_person": survivor}).encode()
