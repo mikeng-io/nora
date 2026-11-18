@@ -14,10 +14,13 @@ from nora.domain.managed import (
     AuthorityBlock,
     ManagedAccount,
     ManagedPerson,
+    OutcomeStatus,
     PersonLifecycle,
+    room_scope_id,
 )
-from nora.domain.management import Scope, ScopeKind
-from nora.people import AccountSessions
+from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
+from nora.domain.models import NormalizedMessage
+from nora.people import AccountSessions, RoomManagement, RoomRequest
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
     FakeAuthorityBackend,
@@ -284,3 +287,91 @@ async def test_a_session_cannot_mint_installation_authority(surface):
         "payload": {"reason": "generated-reason"},
         "observed_revisions": {"identity": "r-1", "authority": "r-1"}}
     assert (await send(surface, body)).status == 400
+
+
+async def test_in_room_and_web_app_share_one_typed_actor_and_scope(surface):
+    """One membership change through the in-room command and the Web App
+    session is handed to the shared gate as the same typed `Operation`:
+    `Actor(OPERATOR, <verified person>, <the room the caller is actually
+    in>)`. The gate's committed operations — recorded at
+    `AuthorityService._apply`, the call `HumanManagement.apply` reaches for
+    both entries — carry identical actor and scope, and the journaled
+    effects are identical. A different authenticated person commits under
+    ITS actor, so the capture is not a constant. Neither ingress can
+    supply actor, room or credential: the session's binding claim and the
+    message's verified provenance fill them."""
+    client, services, proof = surface
+    person = proof["binding"]["person_id"]  # generated-operator
+    room = Scope(ScopeKind.ROOM, room_scope_id("discord", "generated-conv"))
+    services.topology.rooms[room.id] = ("generated-unit", False)
+    await services.backend.put_relation(
+        scope=room, relation="admin", person_id=person)
+
+    # Record the exact `Operation` each real request hands the shared gate.
+    committed = []
+    apply = services.authority._apply
+    async def record(op):
+        committed.append(op)
+        return await apply(op)
+    services.authority._apply = record
+
+    # Web App ingress: the session's binding claim types the actor and
+    # the body's target types the scope — the request supplies neither.
+    body = {**operation(room), "operation_id": "generated-shared-web-op"}
+    web_response = await send(surface, body)
+
+    # In-room ingress: the verified message types the same actor/scope.
+    message = NormalizedMessage(
+        platform="discord", conversation_id="generated-conv",
+        conversation_type="group", sender_id=ACCOUNT.value,
+        sender_name=None, timestamp=1_700_000_000_000,
+        body="!!!member add @other-account", raw={},
+        mentions=frozenset({"other-account"}), quote=None,
+        message_id="generated-shared-msg", edit_of=None, touch=None)
+    management = RoomManagement(services)
+    request = management.parse(message)
+    assert request == RoomRequest(
+        kind="add", reference="other-account", reference_kind="mention")
+    outcome = await management.invoke(message, request)
+
+    # What the gate actually received from each entry — not a re-decode.
+    assert [op.actor for op in committed] == [
+        Actor(ActorKind.OPERATOR, person_id=person, scope=room)] * 2
+    web_op, room_op = committed
+    assert web_op.target.scope == room_op.target.scope == room
+    assert web_response.status == 200
+    assert outcome.status is OutcomeStatus.COMPLETE
+
+    web_record = await services.bindings.operation("generated-shared-web-op")
+    room_record = await services.bindings.operation(
+        "room:discord:generated-conv:generated-shared-msg")
+    assert web_record is not None and room_record is not None
+    assert web_record.kind == room_record.kind == "set_membership"
+    assert dict(web_record.snapshot) == dict(room_record.snapshot)
+
+    # Discriminating negative: the same body under a second bound person's
+    # session commits under ITS actor — a dropped or defaulted actor
+    # cannot produce a different captured person.
+    second = "generated-operator-2"
+    await services.bindings.register(
+        person=ManagedPerson(second, PersonLifecycle.ACTIVE),
+        account=ManagedAccount("binding-" + second, second, "discord",
+            frozenset({Identifier("discord", "user_id", "generated-account-2")}),
+            AccountState.BOUND))
+    await services.registry.ensure_identity(external_id=second, traits={})
+    await services.backend.put_relation(
+        scope=room, relation="admin", person_id=second)
+    login2 = claims(account={"platform": "discord", "kind": "user_id",
+                             "value": "generated-account-2"})
+    empty = b"{}"
+    exchange = await client.post(EXCHANGE, data=empty,
+        headers=headers(login2, empty, EXCHANGE))
+    assert exchange.status == 200
+    login2.update(purpose="session", binding=(await exchange.json())["binding"])
+    body2 = json.dumps(
+        {**operation(room), "operation_id": "generated-second-web-op"}).encode()
+    assert (await client.post(
+        PATH, data=body2, headers=headers(login2, body2))).status == 200
+    assert committed[2].actor == Actor(
+        ActorKind.OPERATOR, person_id=second, scope=room)
+    assert committed[2].actor != committed[0].actor

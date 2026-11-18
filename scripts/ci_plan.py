@@ -21,6 +21,7 @@ JOBS = (
     "contracts",
     "ory",
     "portal",
+    "portal-browser",
     "go",
     "site",
     "dependency-review",
@@ -133,8 +134,10 @@ def classify(
             return dict.fromkeys(JOBS, True)
     if pull_request:
         # NOR-1 acceptance: the managed-identity Ory gate runs on every PR
-        # head, so the join never sees the named item-1 job skipped.
+        # head, so the join never sees the named item-1 job skipped. Item 5
+        # adds the same guarantee for the managed portal browser journey.
         plan["ory"] = True
+        plan["portal-browser"] = True
     return plan
 
 

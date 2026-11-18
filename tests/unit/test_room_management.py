@@ -576,6 +576,142 @@ async def test_an_edited_or_touched_command_is_refused_before_any_effect():
         assert outcome.detail == "not-a-fresh-message"
 
 
+async def test_a_quoted_or_forged_instruction_reaches_the_invocation_and_writes_nothing():
+    """A command's words outside the verified fresh body mutate nothing.
+    Every carrier here names the SAME resolvable target the verified
+    operator's identical instruction applies (the control below): the
+    quote carries the full command as metadata, the edit carries it in a
+    not-fresh body, the forged carrier is a fresh body from a sender with
+    no standing. So the only thing between each carrier and a write is the
+    guard under test — a mutated guard lets the write THROUGH, and the
+    no-write assertions are what go red."""
+    bindings, backend, _, registry, services = _services()
+    await _operator(bindings, backend, registry)
+    await _person(bindings, registry, TARGET_PERSON, TARGET_ID)
+    await _person(bindings, registry, ALICE_PERSON, ALICE_ID)
+    management = RoomManagement(services)
+
+    # The positive control first: the verified operator's add writes the
+    # membership the forged carriers must then fail to move.
+    added = await management.invoke(
+        _message(
+            "!!!member add",
+            mentions=frozenset({TARGET_ID}),
+            message_id="m-setup",
+        ),
+        RoomRequest(kind="add"),
+    )
+    assert added.status is OutcomeStatus.COMPLETE
+    assert await _member_phone(bindings, TARGET_PERSON)
+
+    # Quoted: the identical instruction — resolvable target and all —
+    # rides in `quote`, never the body; nothing reads a quote as an
+    # instruction, so it is inert by construction.
+    quoted = _message(
+        "sounds good",
+        quote=Quote(
+            author_id=OP_ID, text=f"!!!member remove @{TARGET_ID}",
+            quoted_ts=3,
+        ),
+        message_id="m-quoted",
+    )
+    assert management.parse(quoted) is None
+    # Even driven at the model's tool entry, the quoting message carries
+    # no instruction — the request asks, it cannot mutate.
+    tool = await _tool(_tool_deps(management, quoted), action="remove")
+    assert tool["status"] in ("ambiguous", "nothing_found")
+
+    # Edited and forged: the same instruction with the same resolvable
+    # target the control applies — refused only because one is not a
+    # fresh message and the other's sender holds no standing.
+    outcomes = {}
+    for key, message in {
+        "m-edit": _message(
+            "!!!member remove",
+            mentions=frozenset({TARGET_ID}),
+            edit_of=EditTarget(sent_ts=5),
+            message_id="m-edit",
+        ),
+        "m-forged": _message(
+            "!!!member remove",
+            sender=ALICE_ID,
+            mentions=frozenset({TARGET_ID}),
+            message_id="m-forged",
+        ),
+    }.items():
+        outcomes[key] = await management.invoke(
+            message, RoomRequest(kind="remove")
+        )
+
+    # The clause assertion first: nothing wrote — the member survives and
+    # no journal row exists. A guard mutation lets the write through HERE.
+    assert await _member_phone(bindings, TARGET_PERSON)
+    for key in ("m-quoted", "m-edit", "m-forged"):
+        assert await bindings.operation(f"room:signal:conv-1:{key}") is None
+    assert outcomes["m-edit"].status is OutcomeStatus.DENIED
+    assert outcomes["m-edit"].detail == "not-a-fresh-message"
+    assert outcomes["m-forged"].status is OutcomeStatus.DENIED
+    assert outcomes["m-forged"].detail == "operator-not-authorized"
+
+    # Control: the identical words from the verified operator apply —
+    # the refusals above are authority, not a broken request.
+    control = await management.invoke(
+        _message(
+            "!!!member remove",
+            mentions=frozenset({TARGET_ID}),
+            message_id="m-real",
+        ),
+        RoomRequest(kind="remove"),
+    )
+    assert control.status is OutcomeStatus.COMPLETE
+    assert not await _member_phone(bindings, TARGET_PERSON)
+
+
+async def test_a_consequential_command_without_a_target_asks_instead_of_guessing():
+    """`!!!member remove` is a consequential write: with no resolvable
+    target the real entry (`parse` -> `invoke`) answers `Clarify` — the
+    `_person_target` no-single-target branch, whose contract is that a
+    consequential scope/target never gets guessed at — and writes
+    nothing: no journal row, the member stays. The same command naming
+    the target proceeds (control)."""
+    bindings, backend, _, registry, services = _services()
+    await _operator(bindings, backend, registry)
+    await _person(bindings, registry, TARGET_PERSON, TARGET_ID)
+    management = RoomManagement(services)
+
+    # The member the bare command must not move is added through the same
+    # verified entry — removal drops only the operation's own support.
+    added = await management.invoke(
+        _message(
+            "!!!member add",
+            mentions=frozenset({TARGET_ID}),
+            message_id="m-setup",
+        ),
+        RoomRequest(kind="add"),
+    )
+    assert added.status is OutcomeStatus.COMPLETE
+
+    message = _message("!!!member remove", message_id="m-bare")
+    request = management.parse(message)
+    assert request == RoomRequest(kind="remove")
+    result = await management.invoke(message, request)
+    assert isinstance(result, Clarify)
+    assert result.status == "nothing_found"
+
+    assert await _member_phone(bindings, TARGET_PERSON)
+    assert await bindings.operation("room:signal:conv-1:m-bare") is None
+
+    # Control: the same consequential command with the target named applies.
+    named = _message(
+        "!!!member remove",
+        mentions=frozenset({TARGET_ID}),
+        message_id="m-named",
+    )
+    control = await management.invoke(named, management.parse(named))
+    assert control.status is OutcomeStatus.COMPLETE
+    assert not await _member_phone(bindings, TARGET_PERSON)
+
+
 # -- scope and targets ----------------------------------------------------
 
 
@@ -695,6 +831,62 @@ async def test_file_mode_is_an_authoritative_denial_not_a_pretend_apply():
     )
     assert outcome.status is OutcomeStatus.DENIED
     assert outcome.detail == "file-mode"
+
+
+def _toml_pair(tmp_path: Path) -> tuple[Path, Path]:
+    return tmp_path / "identity.toml", tmp_path / "policy.toml"
+
+
+def _toml_bytes(tmp_path: Path) -> tuple[bytes, bytes]:
+    identity, policy_path = _toml_pair(tmp_path)
+    return identity.read_bytes(), policy_path.read_bytes()
+
+
+def _seed_toml(tmp_path: Path) -> tuple[bytes, bytes]:
+    identity, policy_path = _toml_pair(tmp_path)
+    identity.write_bytes(Path("identity.example.toml").read_bytes())
+    policy_path.write_bytes(Path("policy.example.toml").read_bytes())
+    return _toml_bytes(tmp_path)
+
+
+async def test_file_mode_never_writes_the_toml_files(tmp_path):
+    """The file deployment's real management entry answers every shape of
+    ask with the operator-maintained denial — and the TOML the file
+    backend was built from is byte-identical afterwards: management does
+    not exist as a file write, only as an operator edit."""
+    identity, policy_path = _toml_pair(tmp_path)
+    before = _seed_toml(tmp_path)
+    services = file_services(load_persons(identity), load_policy(policy_path))
+    management = RoomManagement(services)
+
+    for kind in ("register", "add", "remove"):
+        outcome = await management.invoke(
+            _message(
+                f"!!!member {kind}",
+                mentions=frozenset({TARGET_ID}),
+                message_id=f"m-file-{kind}",
+            ),
+            RoomRequest(kind=kind),
+        )
+        assert outcome.status is OutcomeStatus.DENIED
+        assert outcome.detail == "file-mode"
+        assert management.render(outcome) == (
+            "I can't do that here — this room isn't on managed identity"
+        )
+    tool = await _tool(
+        _tool_deps(
+            management,
+            _message("@nora remove them", mentions=frozenset({TARGET_ID})),
+        ),
+        action="remove",
+    )
+    assert tool["status"] == "refused"
+
+    assert _toml_bytes(tmp_path) == before
+    for kind in ("register", "add", "remove"):
+        assert await services.bindings.operation(
+            f"room:signal:conv-1:m-file-{kind}"
+        ) is None
 
 
 async def test_a_down_backend_is_unavailable_never_denied():

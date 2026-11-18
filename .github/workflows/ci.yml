@@ -112,6 +112,48 @@ jobs:
       - run: npm run check --prefix app
       - run: npm run build --prefix app
 
+  portal-browser:
+    needs: classify
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['portal-browser']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 90 || 15 }}
+    permissions:
+      contents: read
+      actions: read
+    env:
+      NORA_TEST_MAX_WORKERS: '4'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.13.4'
+          python-version: '3.12'
+          enable-cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+      - run: uv sync --frozen --extra evals
+      - run: npm ci --prefix app
+      - name: Install the pinned Chromium the portal driver launches
+        run: npm exec --prefix app -- playwright install --with-deps chromium
+      - name: Pull the pinned journey images
+        run: |
+          docker pull pgvector/pgvector:pg18
+          docker pull oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+          docker pull oryd/keto:v26.2.0@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2
+      - name: Managed portal browser journey
+        run: uv run python -m scripts.pytest_gate tests/integration/test_managed_portal_browser.py
+      - name: Upload browser journey evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: portal-browser-evidence
+          path: /tmp/nora-managed-intake/nor6-portal-browser
+          if-no-files-found: ignore
+
   go:
     needs: classify
     if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['go']) }}
@@ -457,7 +499,7 @@ jobs:
   checks:
     timeout-minutes: 1
     if: always()
-    needs: [classify, python, contracts, ory, portal, go, site, dependency-review, codeql-python, codeql-javascript, codeql-go, codeql-actions]
+    needs: [classify, python, contracts, ory, portal, portal-browser, go, site, dependency-review, codeql-python, codeql-javascript, codeql-go, codeql-actions]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
