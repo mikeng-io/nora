@@ -14,7 +14,8 @@ from nora.domain.presence import PresenceFix, WireState
 from nora.domain.social_stream import ItemCounts, SocialItem
 from nora.domain.tool_call_log import ToolCallLogEntry
 from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.cognitive_graph_schema import REGISTRY
+from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION, REGISTRY
+from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.fetched_pages import SqlFetchedPageStore
@@ -27,6 +28,7 @@ from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.memory.adapters.act_store import SqlActStore
+from nora.memory.adapters.watch_results import SqlWatchResults
 from nora.memory.app.act_scope import act_pass
 from nora.memory.app.acts import ActEnvelope
 from nora.memory.domain.acts import Act, ActAuthority, ActIdentity, Outcome
@@ -35,6 +37,7 @@ from nora.memory.domain.registration import AGGREGATE_FAMILIES, BACKFILL_ITEM_SO
 from nora.persons import Life360Membership, Persons
 from nora.policy import Conversation, Policy
 from tests.contract.test_computer_event_store_contract import _event
+from tests.infra.test_cognitive_graph_schema import PLANES
 
 
 @pytest.fixture
@@ -52,14 +55,11 @@ def test_every_item_and_aggregate_carries_the_planes(
     graph_schema: sa.Inspector, name: str,
 ) -> None:
     entity_fields = {field["name"]: field["type"] for field in graph_schema.get_columns("entity")}
-    for payload in ("name", "aliases", "pointer_kind", "pointer_ref"):
-        del entity_fields[payload]
-    entity_fields["graph_id"] = entity_fields.pop("id")
-
+    expected = {name: str(entity_fields[name]) for name in PLANES - {"id"}}
+    expected["graph_id"] = str(entity_fields["id"])
     actual = {field["name"]: field["type"] for field in graph_schema.get_columns(name)}
-    assert {field: str(actual[field]) for field in actual.keys() & entity_fields.keys()} == {
-        field: str(field_type) for field, field_type in entity_fields.items()
-    }
+    assert {field: str(actual[field]) for field in actual.keys() & expected.keys()} == expected
+    assert {"source_ref_kind", "source_ref_value"}.isdisjoint(actual)
 
     assert any(
         fk["constrained_columns"] == ["graph_id", "unit", "kind"]
@@ -83,7 +83,8 @@ _ROOM_SOURCES = frozenset({
     "fetched_pages", "platform_observation",
 })
 _FANOUT_SOURCES = tuple(source for source in BACKFILL_ITEM_SOURCES if source not in _ROOM_SOURCES)
-_FORWARD_SOURCES = tuple(source for source in ITEM_SOURCES if source not in BACKFILL_ITEM_SOURCES)
+_NON_PASS_SOURCES = (*BACKFILL_ITEM_SOURCES, "watch_result")
+_FORWARD_SOURCES = tuple(source for source in ITEM_SOURCES if source not in _NON_PASS_SOURCES)
 _PASS = PassContext(
     _UNIT, _ROOM, False, "called", "engagement", "test-pass", "test-trace", "test-model",
     rev_instruction="test-instruction", rev_skill="test-skill", **_REVISIONS,
@@ -194,6 +195,30 @@ class _Writer:
             else:
                 raise AssertionError(f"Missing writer fixture for {table}")
 
+    async def _watch_result(self) -> None:
+        graph = SqlCognitiveGraph(self.engine)
+        common = {"unit": _UNIT, "writer": "fixture", "exposure": "internal"}
+        await graph.create(ENTITY, {
+            **common, "id": "target", "kind": "entity", "basis": "computed",
+            "state": "admitted", "name": "fixture page",
+            "source_ref_kind": "page", "source_ref_value": "https://example.invalid/page",
+        })
+        await graph.create(INTENTION, {
+            **common, "id": "maintain", "kind": "intention", "basis": "committed",
+            "state": "open", "owner": "nora", "owed_to": "nora", "form": "maintain",
+            "holds_while_form": "predicate",
+            "holds_while": {"graph_id": "fixture", "path": ["state"], "equals": "open"},
+            "delivery_mode": "when_it_comes_up",
+        })
+        await graph.create(EDGE, {
+            **common, "id": "watch", "kind": "edge", "basis": "committed", "state": "live",
+            "type": "watches", "src_id": "maintain", "dst_id": "target",
+        })
+        store = SqlWatchResults(self.engine, self.registration, {"page"})
+        async with store.next(None) as attempt:
+            assert attempt is not None
+            await attempt.record("fixture-hash", _AT)
+
     async def write(self, table: str) -> None:
         if table == "messages" or table.startswith("message_"):
             await self._message_event(table)
@@ -225,13 +250,15 @@ class _Writer:
                 ),
                 event_id="test-observation", source_digest="test-digest",
             )
+        elif table == "watch_result":
+            await self._watch_result()
         elif table in _FORWARD_SOURCES:
             await self._executor_evidence(table)
         else:
             raise AssertionError(f"Missing writer fixture for {table}")
 
 
-@pytest.mark.parametrize("name", BACKFILL_ITEM_SOURCES)
+@pytest.mark.parametrize("name", _NON_PASS_SOURCES)
 async def test_item_writer_registers_with_its_planes(engine: AsyncEngine, name: str) -> None:
     before = datetime.now(UTC)
     await _Writer(engine, _registration()).write(name)
@@ -318,7 +345,7 @@ async def test_item_writer_rolls_back_after_registry_insert(
     async with engine.connect() as conn:
         count = (await conn.execute(sa.select(sa.func.count()).select_from(table))).scalar_one()
         registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
-    prerequisites = int(name in {
+    prerequisites = 3 if name == "watch_result" else int(name in {
         "message_edit", "message_reaction", "message_delete",
         "social_item_count", "social_item_state", "nora_act_outcome",
     })
@@ -334,8 +361,8 @@ async def test_item_insert_with_unit_and_no_registry_is_refused(
     table = METADATA.tables[name]
     async with engine.begin() as conn:
         row = dict((await conn.execute(sa.select(table))).mappings().one())
-        if name in _FORWARD_SOURCES:
-            if name == "nora_act_outcome":
+        if name in _FORWARD_SOURCES or name == "watch_result":
+            if name in {"nora_act_outcome", "watch_result"}:
                 row.pop("id")
             elif name in {"computer_events", "tool_call_log"}:
                 row["id"] = uuid4()

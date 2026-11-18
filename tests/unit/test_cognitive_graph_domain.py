@@ -1,9 +1,7 @@
 """The Cognitive Graph's closed vocabularies and pure rules (phase 1).
 
-The CHECK value sets in `nora/infra/sql/cognitive_graph_schema.py` and the
-`Literal`s in `nora/memory/domain/graph.py` are declared twice on purpose —
-the schema is the gate, the domain is the vocabulary code reasons over. The
-first tests here read both without a database and fail when they drift.
+The CHECK value sets in the SQL schema must match the domain's closed
+vocabularies. The first tests here compare both without a database.
 """
 
 from __future__ import annotations
@@ -13,6 +11,7 @@ from typing import get_args
 
 import sqlalchemy as sa
 
+from nora.domain.graph_registration import SourceKind
 from nora.infra.sql.cognitive_graph_schema import (
     CLAIM,
     EDGE,
@@ -40,6 +39,7 @@ CHECK_LITERALS: dict[str, object] = {
     "ck_intention_state": graph.IntentionState,
     "ck_edge_state": graph.EdgeState,
     "ck_entity_pointer_kind": graph.PointerKind,
+    "ck_entity_source_ref_kind": SourceKind,
     "ck_claim_part": graph.ClaimPart,
     "ck_intention_form": graph.IntentionForm,
     "ck_intention_done_when_form": graph.DoneWhenForm,
@@ -65,7 +65,7 @@ _LITERAL_SETS = {
         graph.AchieveEnding, graph.MaintainEnding, graph.DeliveryMode,
         graph.RegistryState, graph.EntityState, graph.ClaimState,
         graph.IntentionState, graph.EdgeState, graph.EdgeType,
-        graph.EdgeFamily,
+        graph.EdgeFamily, SourceKind,
     )
 }
 _IN = re.compile(r"\bIN\s*\(([^)]*)\)")

@@ -12,10 +12,12 @@ vocabulary change lands in both places or fails.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import get_args
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 
+from nora.domain.graph_registration import SourceKind
 from nora.infra.sql.graph_stimulus_schema import graph_stimulus_table
 from nora.infra.sql.schema import METADATA
 
@@ -149,7 +151,7 @@ ENTITY = sa.Table(
         "pointer_kind IS NULL OR basis = 'computed'", name="ck_entity_pointer_basis"
     ),
     sa.CheckConstraint(
-        "source_ref_kind IS NULL OR source_ref_kind IN ('page', 'account', 'place')",
+        f"source_ref_kind IS NULL OR source_ref_kind IN {get_args(SourceKind)!r}",
         name="ck_entity_source_ref_kind",
     ),
     sa.CheckConstraint(

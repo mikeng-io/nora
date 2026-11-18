@@ -6,11 +6,10 @@ from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import Literal, cast, get_args
 
-from nora.domain.graph_registration import Exposure, InputScope, inherited_scope
+from nora.domain.graph_registration import Exposure, InputScope, SourceKind, inherited_scope
 from nora.domain.lineage import ROW, Lineage, unresolved
 from nora.memory.domain import graph
 from nora.memory.domain.admission_proposals import (
-    SOURCE_KINDS,
     AddEdge,
     CreateClaim,
     CreateEntity,
@@ -581,7 +580,7 @@ def _source_reference(
     if not isinstance(data, CreateEntity) or data.source_ref is None:
         return None
     reference = data.source_ref
-    if reference.kind not in SOURCE_KINDS or not reference.value.strip():
+    if reference.kind not in get_args(SourceKind) or not reference.value.strip():
         raise _RefusalError("invalid_field", "source_ref")
     if reference.kind != "page":
         return reference

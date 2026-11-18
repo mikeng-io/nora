@@ -5,15 +5,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import ClassVar, Literal, get_args
+from typing import ClassVar, Literal
 
+from nora.domain.graph_registration import SourceKind
 from nora.domain.lineage import Lineage
 from nora.memory.domain.graph import Kind
 
 ExposureOrder = ("external", "internal", "operator")
 Occasion = Literal["called", "ambient", "proactive", "debrief", "wake", "review"]
-SourceKind = Literal["page", "account", "place"]
-SOURCE_KINDS = get_args(SourceKind)
 
 
 @dataclass(frozen=True, slots=True)

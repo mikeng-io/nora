@@ -14,6 +14,7 @@ from nora.agent.egress import LeakGuard
 from nora.app.graph_observe import graph_observe
 from nora.doctrine.loader import Doctrine
 from nora.domain.fetched_page import FetchedPage
+from nora.domain.graph_registration import SourceKind
 from nora.infra.search import TavilySearchProvider
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION, REGISTRY, WATCH_RESULT
@@ -37,7 +38,6 @@ from nora.memory.domain.admission_proposals import (
     Link,
     PassContext,
     Scope,
-    SourceKind,
     SourceReference,
 )
 from nora.memory.wire import admission
