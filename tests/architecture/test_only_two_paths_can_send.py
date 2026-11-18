@@ -56,6 +56,8 @@ BUILDER = "nora/engagement/stages/deliver.py"
 # The paths that may cause a send. THIS IS THE RULE.
 CALLERS = {
     "nora/engagement/pipeline.py",
+    # The typed command stage is the tag pipeline's authenticated command branch.
+    "nora/engagement/stages/command.py",
     "nora/app/fire.py",
     # DEC-212 amends R-1b: a public summons is a third sending path,
     # delivering only through the instagram-bridge's guarded comment write.
@@ -141,7 +143,7 @@ def test_only_the_tag_path_and_the_fire_path_can_send():
         "the tag path's"
     )
     assert _modules_where(sources, _is_deliver_build) == CALLERS, (
-        "the tag path, the fire path, the public summons, the one-time code "
+        "the tag path (including its command stage), fire path, summons, one-time code "
         "and the eval circle seed are the only callers; another caller of "
         "deliver.build is another way for Nora to speak unprompted"
     )

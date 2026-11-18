@@ -570,6 +570,7 @@ async def test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_
             order.append(self._name)
 
         aclose = close
+        cancel_all = close
 
     class _BridgeRuntime:
         def __init__(self) -> None:
@@ -580,22 +581,38 @@ async def test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_
 
     deps = SimpleNamespace(
         cognition_shutdown=_Stop(), subagent_backend=None,
+        background=_Closable("background"), discord_control=_Closable("directory"),
         computer_lifecycle=_Closable("computer"),
         bridge_runtime=_BridgeRuntime(),
         registry=SimpleNamespace(
             adapters={"signal": _Closable("adapter")}),
         client=_Closable("client"), model_clients=[], audit=_Closable("audit"),
+        managed_session=_Closable("managed_session"),
     )
     app = App(cfg=None, deps=deps)              # type: ignore[arg-type]
     await app.shutdown()
     assert order == [
-        "cognition", "bridge_stop", "bridge_redis", "adapter", "computer", "client", "audit",
+        "cognition", "background", "bridge_stop", "bridge_redis", "adapter",
+        "directory", "computer", "client", "managed_session", "audit",
     ]
     deps.cognition_shutdown = None              # sessions off: nothing to stop, nothing breaks
     deps.computer_lifecycle = None
+    deps.managed_session = None
     order.clear()
     await app.shutdown()
-    assert order == ["bridge_stop", "bridge_redis", "adapter", "client", "audit"]
+    assert order == ["background", "bridge_stop", "bridge_redis", "adapter",
+                     "directory", "client", "audit"]
+
+    async def failed_adapter() -> None:
+        order.append("adapter")
+        raise RuntimeError("generated close failure")
+
+    deps.registry.adapters["signal"].close = failed_adapter
+    order.clear()
+    with pytest.raises(RuntimeError, match="generated close failure"):
+        await app.shutdown()
+    assert order == ["background", "bridge_stop", "bridge_redis", "adapter",
+                     "directory", "client", "audit"]
 
 
 # ---- the eval seam: `tool_selection_cognition` runs through `probe` -----------

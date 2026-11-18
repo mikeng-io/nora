@@ -37,8 +37,8 @@
   {
     "name": "runtime Postgres does not own orphaned probe children",
     "file": "docker-compose.yml",
-    "old": "    image: pgvector/pgvector:pg18\n    init: true",
-    "new": "    image: pgvector/pgvector:pg18\n    init: false",
+    "old": "    image: pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782\n    init: true",
+    "new": "    image: pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782\n    init: false",
     "target": "tests/architecture/test_postgres_process_ownership.py::test_postgres_services_have_init"
   },
   {

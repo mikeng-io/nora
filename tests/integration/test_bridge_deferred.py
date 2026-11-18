@@ -30,6 +30,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from nora.access import IdentityAccess
 from nora.app.bridge_queue import DbSpeakingLocks, StreamReader, WorkRunner, stream_name
 from nora.app.participation import ParticipationTrigger
 from nora.domain.actions import ActionOwner
@@ -105,7 +106,9 @@ async def bridge(clean_pg_url, redis_client):
 def _runner(store, redis_client, harness, **kw) -> WorkRunner:
     pipeline = harness.handler._dispatcher._ingest
     kw.setdefault("allowlist", pipeline._allowlist)
-    kw.setdefault("persons", pipeline._persons)
+    persons = kw.pop("persons", None)
+    kw.setdefault("access", IdentityAccess.for_files(persons, pipeline._allowlist)
+                  if persons is not None else pipeline._access)
     kw.setdefault("slots", harness._engagement._slots)
     return WorkRunner(
         store=store, redis=redis_client,
@@ -304,9 +307,7 @@ async def test_room_revoked_after_enqueue_skips(
 
 async def test_person_unmapped_after_enqueue_skips_feed(
         bridge, redis_client, harness, tmp_path):
-    """The sender's person mapping was withdrawn between enqueue and effect:
-    the CURRENT persons no longer resolves the id — no feed under a stale
-    snapshot."""
+    """A deferred feed rechecks the sender's current selected binding."""
     store, _, _ = bridge
     await _enqueue_work(store, kind="memory_feed",
                         payload=_work_payload(5004, absorbed=True))
@@ -315,7 +316,8 @@ async def test_person_unmapped_after_enqueue_skips_feed(
     from nora.persons import load_persons
     runner = _runner(store, redis_client, harness,
                      memory_feed={"memory": harness.honcho},
-                     persons=load_persons(identity))
+                     access=IdentityAccess.for_files(
+                         load_persons(identity), harness.handler._dispatcher._ingest._allowlist))
     work = await store.claim_next(owner="w", lease_seconds=60)
     await runner._execute(work)
     row = await _finish_state(store, work.id)
@@ -326,9 +328,7 @@ async def test_person_unmapped_after_enqueue_skips_feed(
 
 async def test_memory_feed_false_is_uncertain_not_done(
         bridge, redis_client, harness):
-    """`memory.feed` returning False means the POST may have landed and the
-    response was lost — `failed_retained`, never `done`. The reviewed
-    defect marked it done."""
+    """An unconfirmed memory feed remains retained for reconciliation."""
     store, _, _ = bridge
     await _enqueue_work(store, kind="memory_feed",
                         payload=_work_payload(5005, absorbed=True))

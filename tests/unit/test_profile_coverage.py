@@ -136,7 +136,7 @@ class FakeGateway:
             id="invented-response",
             choices=[SimpleNamespace(message=SimpleNamespace(content=raw), finish_reason="stop")],
             usage=SimpleNamespace(
-                prompt_tokens=40, completion_tokens=20, prompt_tokens_details=None
+                prompt_tokens=40, completion_tokens=20, total_tokens=60, prompt_tokens_details=None
             ),
         )
 
@@ -156,10 +156,12 @@ def test_real_cli_roundtrip_calibrates_before_measurement(
     inp.write_text(json.dumps(doc))
     monkeypatch.setenv(coverage.ENV, str(inp))
     monkeypatch.setenv("NORA_EVAL_PROFILE_COVERAGE_RECEIPT", str(receipt))
-    gateway = FakeGateway(disagree=disagree)
-    monkeypatch.setattr(Judge, "_client", lambda _: gateway)
+    from tests.unit.profile_coverage_protocol import services_file
+
+    services = services_file(tmp_path, doc, disagree=disagree)
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
     monkeypatch.setattr("sys.argv", ["evals", "profile_coverage", "--judge", "--positions",
-                                    "--coverage-timeout", "15"])
+                                    "--coverage-timeout", "15", "--services", services])
     drain_spend()
     assert main() == expected
     terminal = capsys.readouterr().out
@@ -169,7 +171,7 @@ def test_real_cli_roundtrip_calibrates_before_measurement(
     saved = json.loads(receipt.read_text())
     assert saved["calibration"]["agreements"] == 20 - disagree
     assert saved["verdict"] == ("PASS" if expected == 0 else "ERROR")
-    assert len(gateway.prompts) == (
+    assert len(saved["batches"]) == (
         coverage.plan(doc)["planned_calls"]
         if expected == 0
         else coverage.plan(doc)["calibration_calls"]
@@ -198,7 +200,7 @@ async def test_broken_judge_never_reaches_measurement(tmp_path, monkeypatch, bro
     assert all(b["phase"] == "calibration" for b in saved["batches"])
 
 
-def test_frozen_scope_gold_and_evidence_refusals(tmp_path, monkeypatch):
+def test_frozen_scope_gold_and_evidence_refusals(tmp_path, monkeypatch, configured_main):
     doc = census_input()
     coverage.validate(doc)
     for mutate in (
@@ -257,9 +259,11 @@ def test_frozen_scope_gold_and_evidence_refusals(tmp_path, monkeypatch):
     inp.write_text(json.dumps(doc))
     monkeypatch.setenv(coverage.ENV, str(inp))
     monkeypatch.setattr(Judge, "_client", lambda _: pytest.fail("print-input called model"))
-    monkeypatch.setattr(
-        "sys.argv", ["evals", "profile_coverage", "--print-input", "frozen_coverage"]
-    )
+    from tests.unit.profile_coverage_protocol import services_file
+
+    services = services_file(tmp_path, doc, rendering=True)
+    monkeypatch.setattr("sys.argv", ["evals", "profile_coverage", "--print-input",
+                                     "frozen_coverage", "--services", services])
     assert main() == 0
 
 

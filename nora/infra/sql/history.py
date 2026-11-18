@@ -64,9 +64,21 @@ CAPTURE_SETTING = "nora.row_history"
 #: trigger's arguments). Includes `sticker_index` (an in-place cache) and
 #: `message_edit` (deleted by cascade when a message is pruned).
 HISTORY_TABLES: dict[str, tuple[str, ...]] = {
+    "managed_person": ("person_id",),
+    "managed_account": ("account_id",),
+    "managed_identifier": ("platform", "kind", "value"),
+    "managed_alias": ("former_person_id",),
+    "managed_membership": ("person_id", "scope_kind", "scope_id"),
+    "managed_membership_support": ("person_id", "scope_kind", "scope_id", "source"),
+    "managed_operation": ("operation_id",),
+    "managed_authority_block": ("person_id", "scope_kind", "scope_id"),
+    "managed_identity_hold": ("person_id", "operation_id"),
+    "managed_link_request": ("request_id",),
+    "managed_observation": ("service", "collection", "scope_kind", "scope_id"),
+    "managed_scoped_name": ("person_id", "scope_kind", "scope_id"),
     "legacy_graph_arrival": ("unit", "message_id", "revision"),
     # Legacy graph truth and retained work participate in the existing as-of
-    # history; 0155 renamed them legacy_* and created the Cognitive Graph's
+    # history; 0164 renamed them legacy_* and created the Cognitive Graph's
     # registry/entity/claim/intention/edge over the same identity history.
     "legacy_entity": ("id",),
     "legacy_relation": ("id",),
@@ -159,6 +171,8 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
 #: `tool_call_log.created_at` is `now()` at insert and is system time; the
 #: others gained `recorded_at` in `0068`.
 APPEND_ONLY: dict[str, str] = {
+    "managed_link_decision": "recorded_at",
+    "managed_link_delivery": "created_at",
     "legacy_graph_refusal": "created_at",
     "comprehend_web_page": "recorded_at",
     "comprehend_result": "recorded_at",

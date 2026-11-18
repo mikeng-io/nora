@@ -41,6 +41,8 @@ from nora.domain.blocks import (
 )
 from nora.domain.composed import compose_body, legacy_composed
 from nora.domain.culture import Episode, RoomMessage
+from nora.domain.managed import room_scope_id
+from nora.domain.management import Scope, ScopeKind
 from nora.domain.profile import (
     PROFILE_HKT,
     Account,
@@ -51,6 +53,7 @@ from nora.domain.profile import (
 )
 from nora.domain.profile_inputs import PersonSourceRevision
 from nora.domain.prompt import age, escape
+from nora.language.background_identity import BackgroundIdentity
 from nora.language.character import (
     CharacterRoom,
     _caption,
@@ -90,12 +93,9 @@ PROFILE_COLLECTIVE_ADAPTOR_NAMES = (
     PROFILE_NORA_ADAPTOR_NAME,
 )
 
-#: `inputs` holds six read sites (including the conditional Profile room read):
-#: the account's revision, its lines, the
-#: previous prose head, the rooms' cultures in one gather, cited rows in one
-#: read); `commit`'s one write is the parent's, counted in its own
-#: declaration.
-COLLECTIVE_STORE_CALLS_PER_TICK = 6
+#: Nine collaborator await sites include current identity scope and consent;
+#: Profile state, culture, transcript and inherited commit calls remain declared.
+COLLECTIVE_STORE_CALLS_PER_TICK = 9
 
 # ponytail: 60,000 rendered characters across ALL sources, three person-source
 # allowances shared by the collective (~50k tokens for mixed Cantonese/English),
@@ -161,6 +161,18 @@ class _CollectiveReads(_Reads, Protocol):
     async def episode_count(self, *, unit: str, after: int) -> int: ...
 
 
+def _source_block(
+    rows: Sequence[PersonSourceRevision], name_of: Callable[[str | None], str],
+) -> ContextBlock:
+    return ContextBlock(name="profile_source_revisions",
+        **_at("profile_source_revisions"),
+        body=compose_body(escape(json.dumps([{"source": r.source, "cite": r.citable,
+            "from": name_of(r.subject) if r.subject else "computed",
+            "as_of": r.as_of, "from_time": r.effective_from,
+            "to_time": r.effective_until, "properties": dict(r.properties)}
+            for r in rows], ensure_ascii=False))))
+
+
 class CollectiveEvidence:
     """The dream loop's count and read for a collective key: a room's
     messages past the watermark, a unit's rooms' new culture revisions
@@ -176,9 +188,11 @@ class CollectiveEvidence:
         render: bool = False,
         source_inputs: Any = None,
         members: Mapping[str, tuple[str, ...]] | None = None,
+        identity: BackgroundIdentity | None = None,
     ) -> None:
         self._source_inputs = source_inputs
         self._members = members if members is not None else {}
+        self._identity = identity or BackgroundIdentity(None)
         self._store = store
         self._keys = keys
         self._kind = kind
@@ -213,10 +227,14 @@ class CollectiveEvidence:
         extra: list[Any] = []
         if self._source_inputs is not None:
             ck = self._keys[key]
-            for person in self._members.get(key, ()):
+            rooms = [(r.platform, r.key) for r in ck.rooms]
+            members = await self._identity.members(rooms)
+            for person in self._members.get(key, ()) if members is None else members:
                 extra.extend(await self._source_inputs.rollup(key=key, unit=ck.unit,
                     rooms=[(r.platform, r.key) for r in ck.rooms], person=person, limit=limit))
-                extra.extend(await self._source_inputs.social(key=key, persons=(person,), limit=6))
+                ids = await self._identity.social_ids(person)
+                if ids:
+                    extra.extend(await self._source_inputs.social(key=key, persons=ids, limit=6))
         return [*batch, *extra], cursor
 
     async def _newest(self, *, key: str, after: int, limit: int) -> tuple[Sequence[Any], int]:
@@ -282,6 +300,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         media_join: Any = None,
         screen: Callable[[str], str | None] | None = None,
         coordinate_screen: Callable[[str], bool] | None = None,
+        identity: BackgroundIdentity | None = None,
     ) -> None:
         super().__init__(
             profile=profile,
@@ -305,6 +324,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         self._culture = culture
         self._reads = reads
         self._collective_keys = keys
+        self._collective_identity = identity or BackgroundIdentity(None)
         self._kind = kind
         self.name = self.objective = f"profile-{kind}"
         #: A room's session keeps Culture's read tools, scoped to its room;
@@ -317,6 +337,17 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
     def tool_room(self, key: str) -> str | None:
         return key if self._kind == "room" and key in self._collective_keys else None
 
+    async def _collective_names(
+        self, ck: CollectiveKey, people: Sequence[str | None],
+    ) -> Callable[[str | None], str]:
+        if not self._collective_identity.managed:
+            return self._name_of
+        scope = (Scope(ScopeKind.ROOM, room_scope_id(ck.rooms[0].platform, ck.rooms[0].key))
+                 if self._kind == "room" else Scope(ScopeKind.UNIT, ck.unit))
+        _, name_of = await self._collective_identity.names(
+            unit=ck.unit, subject=None, scope=scope, people=people)
+        return name_of
+
     async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
         """What the entity is, its held lines, the previous prose head until
         the account first settles, and the entity's own evidence. `""` when
@@ -324,6 +355,8 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         ck = self._collective_keys.get(key)
         if ck is None:
             return ""
+        rooms = [(r.platform, r.key) for r in ck.rooms]
+        batch = await self._collective_identity.collective_batch(rooms, batch)
         # The revision before the lines: a write landing between the two reads
         # makes this session's write a `conflict`, never a write on shifted handles.
         revision, settled_at = await self._profile.account_state(key=key)
@@ -385,6 +418,10 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         if self._media_join is not None:
             enriched = await self._media_join.enrich(tuple(m.row for m in messages), path="dreamer")
             messages = [replace(m, row=row) for m, row in zip(messages, enriched, strict=True)]
+        name_of = await self._collective_names(ck,
+            [*(m.row.person_id for m in messages + replies),
+             *(h.told_by for h in heads), *(r.subject for r in revisions)])
+        await self._collective_identity.require_collective_social(rooms, social)
         now = self._clock()
         handle_of = {i: h for h, i in handles_for(heads).items()}
         labels = {r.key: r.label for r in ck.rooms}
@@ -398,7 +435,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                     sorted(rows, key=lambda m: (m.row.ts, m.row.id)),
                     row_id=lambda m: m.row.id,
                     attrs=lambda m: (
-                        ("from", self._name_of(m.row.person_id)),
+                        ("from", name_of(m.row.person_id)),
                         ("room", labels.get(m.room) or "unnamed room"),
                         ("age", age(m.row.ts, now)),
                         ("source_at", datetime.fromtimestamp(
@@ -408,15 +445,6 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                 )),
             )
 
-        def source_block(rows: Sequence[PersonSourceRevision]) -> ContextBlock:
-            return ContextBlock(name="profile_source_revisions",
-                **_at("profile_source_revisions"),
-                body=legacy_composed(escape(json.dumps([{"source": r.source, "cite": r.citable,
-                    "from": self._name_of(r.subject) if r.subject else "computed",
-                    "as_of": r.as_of, "from_time": r.effective_from,
-                    "to_time": r.effective_until, "properties": dict(r.properties)}
-                    for r in rows], ensure_ascii=False))))
-
         # The person writer's whole-source selection, after the media join:
         # measure what is actually shown (including escaping and metadata).
         # Repeated roots/block wrappers are charged per source, conservatively.
@@ -424,7 +452,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         selected: list[PersonSourceRevision] = []
         used = 0
         for candidate in revisions:
-            blocks = [source_block([candidate]), message_block([
+            blocks = [_source_block([candidate], name_of), message_block([
                 joined[m.row.id] for m in candidate.roots if m.row.id in joined])]
             if candidate.social is not None:
                 _, item_block = _within_budget([x for x in shown if (
@@ -467,12 +495,12 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                 listed_rooms=allowed,
             ),
             revision=revision, heads=heads, batch_start=self.evidence.held(key),
-            tellers={self._name_of(s.person_id).casefold(): s.person_id
+            tellers={name_of(s.person_id).casefold(): s.person_id
                      for s in said.values() if s.person_id is not None},
         )
         identity_names = {s.person_id for s in said.values()}
         def identity_name(pid: str) -> str:
-            return self._name_of(pid) if pid in identity_names else "someone"
+            return name_of(pid) if pid in identity_names else "someone"
         parts: list[ContextBlock | None] = [
             ContextBlock(
                 name="about_entity",
@@ -493,7 +521,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                 body=legacy_composed(render_elements(
                     [h for h in heads if h.id in handle_of],
                     tag="line",
-                    attrs=lambda h, _i: _line_attrs(h, handle_of[h.id], now, self._name_of),
+                    attrs=lambda h, _i: _line_attrs(h, handle_of[h.id], now, name_of),
                     body=lambda h: (
                         identity_text(h, name_of=identity_name) or "legacy untyped: " + h.text
                     ),
@@ -530,7 +558,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                             [
                                 (e.send_id, "you", e.text),
                                 *(
-                                    (r.id, self._name_of(r.person_id), r.body or "")
+                                    (r.id, name_of(r.person_id), r.body or "")
                                     for r in e.replies
                                     if not r.is_nora
                                 ),
@@ -548,5 +576,5 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         if social_block is not None:
             parts.append(restamp(social_block, _ROW))
         if revisions:
-            parts.append(source_block(revisions))
+            parts.append(_source_block(revisions, name_of))
         return self._checked_input(key, assemble([p for p in parts if p is not None], sep="\n\n"))

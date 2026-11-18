@@ -1,0 +1,65 @@
+[
+  {
+    "name": "rejudge binds the declared judge routes",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "Judges(environment.bind_config(cfg), list(models), config)",
+    "new": "Judges(cfg, list(models), config)",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_captures_both_aliases_and_preserves_source[None]"
+  },
+  {
+    "name": "missing case recording refuses before configuration",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "    if recording is None:\n",
+    "new": "    if False:\n",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_refuses_before_configuration_and_dispatch[missing_recording]"
+  },
+  {
+    "name": "rejudge retains actual canonical model exchanges",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "evidence.capture(trace.get_tracer_provider()),",
+    "new": "__import__(\"contextlib\").nullcontext(),",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_captures_both_aliases_and_preserves_source[None]"
+  },
+  {
+    "name": "failed instrument still leaves the diagnostic report",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "        _write_report(output, report)\n",
+    "new": "        pass  # discard failed measurement report\n",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_failed_capture_keeps_the_new_report_and_frozen_judgments"
+  },
+  {
+    "name": "invalid recording cannot inherit original PASS",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "    report[\"status\"] = ERROR\n",
+    "new": "    pass  # retain inherited run status\n",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_captures_both_aliases_and_preserves_source[unused]"
+  },
+  {
+    "name": "source evidence receipt stays distinct",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "            report[\"rejudge_evidence\"] = {**receipt, \"path\": str(evidence.path)}",
+    "new": "            report[\"rejudge_evidence\"] = {**receipt, \"path\": str(evidence.path)}\n            report[\"evidence\"] = receipt",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_captures_both_aliases_and_preserves_source[None]"
+  },
+  {
+    "name": "existing dispatch budget prevents silent client retries",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "SimpleNamespace(stop_after_tokens=cutoff)",
+    "new": "SimpleNamespace(stop_after_tokens=None)",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_captures_both_aliases_and_preserves_source[route]"
+  },
+  {
+    "name": "HTML preserves the model behavior limitation",
+    "file": "scripts/cognition_loop/html.py",
+    "old": "            (\"model behavior\", measurement.get(\"behavior\")),",
+    "new": "            (\"model behavior\", None),",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_captures_both_aliases_and_preserves_source[None]"
+  },
+  {
+    "name": "rejudge cancellation propagates after private report retention",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "        if not isinstance(exc, Exception):\n            raise",
+    "new": "        if not isinstance(exc, Exception):\n            pass",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_cancellation_closes_owned_services_and_retains_error"
+  }
+]

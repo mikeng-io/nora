@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import importlib
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ from nora.policy import Policy
 async def _presence_preflight(
     allowlist: Policy, rosters: Mapping[str, RosterSource], persons: Persons,
     circles: Sequence[Circle], metrics: Metrics, self_ids: frozenset[str] = frozenset(),
+    access: Any = None,
 ) -> None:
     """The R-21/R-31 disclosure pre-flight: for every policy"""
     for conv in allowlist.rooms():
@@ -60,6 +62,7 @@ async def _presence_preflight(
                     conversation_id=conversation_id,
                     roster_source=roster_source,
                     persons=persons,
+                    access=access,
                     self_ids=self_ids,
                 ).members()
                 if candidate.available:
@@ -168,6 +171,36 @@ def channels(cfg: Any, reload_files: Any)-> ChannelsWiring:
     )
 
 
+def signal_link_consent(cfg: Any, services: Any) -> Any:
+    """The private link-consent dispatch for a direct signal-cli daemon —
+    `None` when linking cannot run (the `file` backend honestly refuses
+    managed mutations) or Signal isn't a direct daemon (bridge mode has
+    no daemon envelopes to read).
+
+    Returns a FACTORY, not the dispatcher itself: `AdapterRegistry` calls
+    it with the DERIVED daemon account so the parser's provenance check
+    binds the account signal-cli actually serves, never the configured
+    claim.
+    """
+    signal = cfg.platforms.signal
+    if (cfg.identity.backend != "managed" or not signal.enabled
+            or getattr(signal, "mode", "direct") != "direct"):
+        return None
+    from nora.platform.signal.consent import SignalLinkConsent, SignalLinkDelivery
+
+    holder = importlib.import_module("nora.people").wire.holder_links(services)
+    delivery = SignalLinkDelivery(signal.base_url)
+
+    def build(account: str) -> Any:
+        return SignalLinkConsent(
+            own_account=account,
+            decide=holder.decide_from_transport,
+            delivery=delivery,
+        ).dispatch
+
+    return build
+
+
 @dataclass(frozen=True)
 class AdaptersWiring:
     account: Any
@@ -178,7 +211,9 @@ class AdaptersWiring:
 async def adapters(
     cfg: Any, discord_box: Any, discord_token: Any, metrics: Any,
     music_manager: Any, persons: Any, resolve_music_channel: Any, speaker: Any,
-    summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any,
+    summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any, owner: Any = None,
+    signal_consent: Any = None,
+    access: Any = None,
 ) -> AdaptersWiring:
     try:
         registry = await AdapterRegistry.from_config(
@@ -192,11 +227,25 @@ async def adapters(
             resolve_music_channel=resolve_music_channel,
             instagram_summons=summons_inbox,
             bridge_token=cfg.credentials.get(cfg.bridges.token_env, ""),
-            # A 1:1 message goes only to somebody in identity.toml; the
-            # senders hold this set and refuse the rest.
+            owner=owner,
+            # A 1:1 message goes only to somebody the identity backend knows;
+            # the senders refuse the rest. `dm_gates` is the managed backend's
+            # live per-send version of this set, never a file snapshot.
             dm_recipients={
                 p: LiveSet(functools.partial(persons.direct_addresses, p)) for p in DIRECT_PLATFORMS
             },
+            # Private link consent, offered each raw envelope before the
+            # room parser would drop it — `None` unless the deployment can
+            # carry consent (see `signal_link_consent`).
+            signal_consent=signal_consent,
+            dm_gates=(
+                {
+                    p: functools.partial(access.dm_address_allowed, p)
+                    for p in DIRECT_PLATFORMS
+                }
+                if access is not None and not access.is_file_backend
+                else None
+            ),
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
@@ -311,7 +360,7 @@ class PresencePreflightWiring:
 def presence_preflight(
     allowlist: Any, background: Any, content_checks: Any, metrics: Any,
     persons: Any, presence_circles: Any, presence_store: Any, registry: Any,
-    rosters: Any,
+    rosters: Any, access: Any = None,
 ) -> PresencePreflightWiring:
     if presence_store is not None and content_checks:
         # The R-21/R-31 startup invariant (DEC-54(4)): alarm the day a policy conversation is no
@@ -324,6 +373,7 @@ def presence_preflight(
                 persons=persons,
                 circles=presence_circles,
                 metrics=metrics,
+                access=access,
                 # Without her aliases Nora HERSELF is the «1 unmapped account»: her own membership
                 # resolves to nobody in identity.toml, exactly the stranger-shape the warning exists
                 # for. The tag path's Room gets the same set (`EngagementPipeline._run_admitted`).…

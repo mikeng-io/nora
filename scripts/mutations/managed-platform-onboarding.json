@@ -1,0 +1,30 @@
+[
+  {
+    "name": "missing identifiers remain an explicit unavailable observation",
+    "file": "nora/people/app/roster_provisioning.py",
+    "old": "        if any(not group for group in groups):\n            return unavailable(\"unproven-account\")",
+    "new": "        if False:\n            return unavailable(\"unproven-account\")",
+    "target": "tests/unit/test_onboarding_sender_enrichment.py::test_an_unproven_account_is_unavailable_before_any_write"
+  },
+  {
+    "name": "bot labels do not exclude valid observed identities",
+    "file": "nora/people/app/roster_provisioning.py",
+    "old": "        groups = tuple(frozenset(member.identifiers) for member in roster)",
+    "new": "        groups = tuple(frozenset(member.identifiers) for member in roster\n                       if member.classification == \"person\")",
+    "target": "tests/web/test_roster_provisioning.py::test_private_roster_registers_without_requiring_account_nature[bot]"
+  },
+  {
+    "name": "an empty guild read is unavailable, never a mass departure",
+    "file": "nora/platform/discord/discovery.py",
+    "old": "        if not result.rows:\n            # A guild can never enumerate to zero members \u2014 the application\n            # itself is one. An empty answer is a broken read, not proof\n            # everyone left, so it cannot stand in as a complete roster.\n            return CollectionSnapshot(\n                available=False, detail=\"empty-roster\")",
+    "new": "        if False:\n            return CollectionSnapshot(\n                available=False, detail=\"empty-roster\")",
+    "target": "tests/unit/test_platform_onboarding.py::TestDiscoveryAdapters::test_discord_unavailable_and_empty_never_read_as_empty_roster"
+  },
+  {
+    "name": "an unavailable read cannot sync at all",
+    "file": "nora/people/app/onboarding.py",
+    "old": "            if not snapshot.available:\n                log.info(\n                    \"onboarding %s: roster unavailable (%s)\",\n                    rule.name, snapshot.detail or \"read failed\")\n                return None",
+    "new": "            if False:\n                return None",
+    "target": "tests/unit/test_unavailable_onboarding.py::test_an_unavailable_roster_cannot_publish_even_with_fresh_partial_data"
+  }
+]

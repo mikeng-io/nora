@@ -18,12 +18,14 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from nora.access import IdentityAccess
 from nora.app.compute_poller import ComputeJobPoller, recover
 from nora.app.fire import FAILED_POLICY
 from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.ports import JobResult, JobStatus
 from nora.engagement.slots import ConversationSlots
 from nora.obs.metrics import Metrics
+from nora.persons import Persons
 from nora.policy import Policy, load_policy, permissive_policy
 from nora.testing import FakeComputeBackend, FakeComputeJobStore
 
@@ -654,6 +656,9 @@ async def test_a_lost_job_is_not_spoken_after_restart_once_its_grant_is_gone():
     await _tell_about_lost_jobs(
         jobs=[job], speak=speak, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
         metrics=Metrics(), policy=_policy(persons='["someone-else"]'),
+        access=IdentityAccess.for_files(
+            persons=Persons(by_person={}, index={}),
+            policy=_policy(persons='["someone-else"]')),
     )
     assert spoken == []
 
@@ -672,5 +677,7 @@ async def test_a_lost_job_is_still_told_while_the_grant_stands():
     await _tell_about_lost_jobs(
         jobs=[job], speak=speak, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
         metrics=Metrics(), policy=_policy(),
+        access=IdentityAccess.for_files(
+            persons=Persons(by_person={}, index={}), policy=_policy()),
     )
     assert len(spoken) == 1

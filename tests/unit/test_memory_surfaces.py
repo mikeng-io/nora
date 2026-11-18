@@ -135,7 +135,7 @@ def _dream_source(registry: ToolRegistry, persons: Any) -> RegistryToolSource:
     )
 
 
-def _built(where: str, graph: bool, persons: Any) -> set[str]:
+async def _built(where: str, graph: bool, persons: Any) -> set[str]:
     """What `where` is handed, through that place's own builder."""
     registry = _registry(graph)
     if where in ("tag", "fire"):
@@ -169,7 +169,7 @@ def _built(where: str, graph: bool, persons: Any) -> set[str]:
             grant=culture_grant(),
         ))
     assert where == "subagent"
-    return _names(SubagentToolSource(
+    return _names(await SubagentToolSource(
         registry=registry, store=_NullStore(), persons=persons,
         honcho=FakeMemoryStore(), metrics=Metrics(),
         rosters={"signal": FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)})},
@@ -181,24 +181,24 @@ def _built(where: str, graph: bool, persons: Any) -> set[str]:
 
 
 @pytest.mark.parametrize("where", sorted(EXPECTED))
-def test_the_honcho_surface_is_origin_masters_with_no_memory_search(
+async def test_the_honcho_surface_is_origin_masters_with_no_memory_search(
     persons: Any, where: str,
 ) -> None:
     """`[memory.index]` off: the memory verbs each place held on origin/master,
     and never the graph's."""
-    offered = _built(where, False, persons) & MEMORY_VERBS
+    offered = await _built(where, False, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][False]
     assert not offered & GRAPH_MEMORY_TOOLS
 
 
 @pytest.mark.parametrize("where", sorted(EXPECTED))
-def test_the_graph_surface_offers_memory_search_and_no_honcho_memory_verb(
+async def test_the_graph_surface_offers_memory_search_and_no_honcho_memory_verb(
     persons: Any, where: str,
 ) -> None:
     """`[memory.index]` on: `memory_search`, and none of `ask_memory`,
     `search_memory`, `search_memory_workspace`, `who_said` or `about`: no
     Honcho tool at all (`remember` there is the Profile write, below)."""
-    offered = _built(where, True, persons) & MEMORY_VERBS
+    offered = await _built(where, True, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][True]
     assert not offered & HONCHO_MEMORY_TOOLS
     assert "about" not in offered

@@ -13,7 +13,11 @@ const CSP = [
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
-  "form-action 'self'",
+  // form-action governs a form's redirect TARGET too: the consent form's
+  // post is answered by a 303 to the provider's authorization endpoint, so
+  // the two consent providers are named — a soft navigation to the request
+  // page keeps the document policy, a per-page override would never apply.
+  "form-action 'self' https://discord.com https://oauth.telegram.org",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",

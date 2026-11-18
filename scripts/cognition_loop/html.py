@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from scripts.cognition_loop.trajectory import tool_outcome
+from nora.subject.effects import tool_outcome
+from nora.subject.request_evidence import subject_instructions
 
 HKT = ZoneInfo("Asia/Hong_Kong")
 
@@ -102,6 +103,8 @@ def _run(report: dict[str, Any], budget: dict[str, Any] | None) -> str:
             ("diff sha256", run.get("diff_sha256")),
             ("lockfile sha256", run.get("lockfile_sha256")),
             ("mode", run.get("mode")),
+            ("measurement", run.get("measurement")),
+            ("model behavior", run.get("behavior")),
             ("config sha256", run.get("config_sha256")),
             ("subject config sha256", run.get("subject_config_sha256")),
         ]),
@@ -123,13 +126,34 @@ def _run(report: dict[str, Any], budget: dict[str, Any] | None) -> str:
              (budget.get("spent_reason") or "none")),
         ]) if budget is not None else
         '<p class="not-recorded">not recorded — no budget was armed</p>',
-        "<h3>Evidence receipt</h3>",
+        "<h3>Source evidence receipt</h3>" if report.get("rejudged")
+        else "<h3>Evidence receipt</h3>",
         _kv([
             ("status", ev.get("status")),
             ("causes", ", ".join(ev.get("causes") or []) or None),
             ("events file", ev.get("ref")),
         ]),
+        "<h3>Expected coverage</h3>" + _block("coverage", report.get("coverage")),
+        # The same axes report.json carries — read, never re-derived.
+        "<h3>Outcomes</h3>" + _kv([
+            ("execution", (report.get("outcome") or {})
+             .get("execution", {}).get("status")),
+            ("measurement validity", (report.get("outcome") or {})
+             .get("validity", {}).get("status")),
+            ("behaviour", (report.get("outcome") or {})
+             .get("behavior", {}).get("status")),
+        ]) + _block("outcome detail", report.get("outcome")),
     ]
+    if report.get("rejudged"):
+        measurement = report["rejudged"]
+        parts.insert(1, "<h3>Rejudgement</h3>" + _kv([
+            ("case", measurement.get("case")), ("mode", measurement.get("mode")),
+            ("measurement", measurement.get("measurement")),
+            ("execution", measurement.get("execution")),
+            ("model behavior", measurement.get("behavior")),
+        ]))
+        parts.append(_block("Rejudge capture", report.get("rejudge_evidence")))
+        parts.append(_block("Rejudge budget", report.get("rejudge_run_budget")))
     errors = report.get("errors") or []
     if errors:
         parts.append("<h3>Run errors</h3>" + "".join(
@@ -206,16 +230,22 @@ def _arrived(wake: dict[str, Any]) -> str:
 def _read(wake: dict[str, Any]) -> str:
     trajectory = wake.get("trajectory") or {}
     blocks = trajectory.get("blocks") or {}
-    return ("<h4>b. What Nora read</h4>" + "".join(
-        _block(name, blocks.get(name))
-        for name in ("system", "instructions", "agenda", "items", "stimuli")))
+    return ("<h4>b. What Nora read</h4>" + _block(
+        "transmitted subject instructions", subject_instructions(trajectory))
+        + "".join(_block(name, blocks.get(name))
+                  for name in ("system", "instructions", "agenda", "items", "stimuli")))
 
 
 def _did(wake: dict[str, Any]) -> str:
     trajectory = wake.get("trajectory") or {}
     out = ["<h4>c. What Nora did</h4>"]
+    out.append("<h5>terminal model response</h5><pre>" + _json(
+        trajectory.get("final_response") or {
+            "status": "unavailable", "cause": "response_not_captured"}) + "</pre>")
+    out.append("<h5>lifecycle effects</h5>" + _block("effects", trajectory.get("effects") or {
+        "status": "unavailable", "cause": "lifecycle_not_captured"}))
     calls = trajectory.get("model_calls")
-    out.append("<h5>model exchanges</h5>")
+    out.append("<h5>model requests</h5>")
     if not calls:
         out.append('<p class="not-recorded">not recorded</p>')
     for i, call in enumerate(calls or []):
@@ -322,6 +352,7 @@ def _judgement(expectations: list[dict[str, Any]] | None) -> str:
         return "".join(out)
     for exp in expectations:
         expectation = exp.get("expectation")
+        label: Any
         if isinstance(expectation, dict):
             label = (f"{expectation.get('polarity')} — "
                      f"{expectation.get('kind')} — {expectation.get('text')}")
@@ -448,6 +479,36 @@ def _wake(case_index: int, index: int, wake: dict[str, Any],
     return "".join(parts)
 
 
+def _turn(case_index: int, index: int, turn: dict[str, Any],
+          frozen: dict[str, Any]) -> str:
+    anchor = f"case-{case_index}-turn-{index}"
+    status = turn.get("status") or "ERROR"
+    error = frozen.get("error") or {}
+    trajectory = turn.get("trajectory") or frozen.get("trajectory") or {}
+    outcome = (trajectory.get("turn_outcome") or {}).get("status") \
+        or turn.get("outcome") or "unobserved"
+    declared = (trajectory.get("declared_input")
+                or frozen.get("declared_input") or {})
+    parts = [
+        f'<section class="wake" id="{anchor}">'
+        f"<h3>turn {index} — "
+        f'<span class="status-{esc(status)}">{esc(status)}</span></h3>',
+        f'<p class="summary">Declared input: {esc(declared.get("text"))} — '
+        f"outcome {esc(outcome)}</p>",
+    ]
+    if error or turn.get("error"):
+        parts.append(_kv([
+            ("failed step", error.get("step") or turn.get("step")),
+            ("error", error.get("message") or turn.get("error")),
+        ]))
+    parts.append(_did({**turn, "trajectory": trajectory}))
+    parts.append(_changed(frozen.get("diff")))
+    parts.append(_judgement(
+        turn.get("expectations") or frozen.get("expectations")))
+    parts.append("</section>")
+    return "".join(parts)
+
+
 def _toc(report: dict[str, Any], orphans: list[Path]) -> str:
     items = []
     for ci, case in enumerate(report.get("cases") or []):
@@ -456,6 +517,11 @@ def _toc(report: dict[str, Any], orphans: list[Path]) -> str:
             f'<span class="status-{esc(w.get("status") or "ERROR")}">'
             f'{esc(w.get("status") or "ERROR")}</span></li>'
             for wi, w in enumerate(case.get("wakes") or []))
+        inner += "".join(
+            f'<li><a href="#case-{ci}-turn-{ti}">turn {ti}</a> — '
+            f'<span class="status-{esc(t.get("status") or "ERROR")}">'
+            f'{esc(t.get("status") or "ERROR")}</span></li>'
+            for ti, t in enumerate(case.get("turns") or []))
         items.append(
             f'<li><a href="#case-{ci}">{esc(case.get("case"))}</a> — '
             f'<span class="status-{esc(case.get("status"))}">'
@@ -530,13 +596,21 @@ def render(output: Path) -> Path:
     }
     orphans = sorted(
         p for p in output.glob("wake-*.json") if p.name not in expected)
+    expected_turns = {
+        f"turn-{ti}.json"
+        for case in report.get("cases") or []
+        for ti, _ in enumerate(case.get("turns") or [])
+    }
+    turn_orphans = sorted(
+        p for p in output.glob("turn-*.json")
+        if p.name not in expected_turns)
     parts = [
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
         "<title>cognition loop report</title>"
         f"<style>{_CSS}</style></head><body>",
         _run(report, budget),
         _availability(output),
-        _toc(report, orphans),
+        _toc(report, orphans + turn_orphans),
     ]
     for ci, case in enumerate(report.get("cases") or []):
         parts.append(
@@ -551,6 +625,21 @@ def render(output: Path) -> Path:
                 f"wake-{wi}-{wake.get('recorded_wake_id')}.json")
             frozen = _load(frozen_path)
             parts.append(_wake(ci, wi, wake, frozen))
+        for ti, turn in enumerate(case.get("turns") or []):
+            frozen = _load(output / f"turn-{ti}.json")
+            parts.append(_turn(ci, ti, turn, frozen))
+        parts.append("</section>")
+    if turn_orphans:
+        parts.append('<section class="case">'
+                     "<h2>frozen turns absent from report.json</h2>")
+        for i, path in enumerate(turn_orphans):
+            frozen = _load(path)
+            stem = path.name[:-len(".json")].split("-", 1)
+            index = int(stem[1]) if len(stem) > 1 and stem[1].isdigit() else -1
+            parts.append(
+                f'<div id="unlisted-turn-{i}">'
+                + _turn(-1, index, {}, frozen)
+                + "</div>")
         parts.append("</section>")
     if orphans:
         parts.append('<section class="case">'

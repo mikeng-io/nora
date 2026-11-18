@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from nora.agent.toolkit.results import _record
 from nora.domain.mobility_forecast import (
     forecast_window,
     time_forecast,
@@ -19,6 +18,8 @@ from nora.location.adapters.tools.routine import (
     _make__routine_span,
     _make__routine_today,
 )
+from nora.location.app.circles import reader_for
+from nora.location.app.circles import record_result as _record
 
 log = logging.getLogger("nora.tools")
 
@@ -118,7 +119,7 @@ def _make_routine_read(deps):
             metrics=deps.metrics,
             mobility=deps.mobility,
             persons=deps.persons,
-            presence_circles=deps.presence_circles,
+            presence_circles=await reader_for(deps).read(),
             _been_iso=_make__been_iso(deps),
             _been_tz_name=deps._been_tz_name,
             _movement_person=_make__movement_person(deps),

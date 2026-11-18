@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from "react";
-import type { QueryClient } from "@tanstack/react-query";
+import { dehydrate, type DehydrateOptions, type QueryClient } from "@tanstack/react-query";
 import type { Persister } from "@tanstack/react-query-persist-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,9 +32,10 @@ function mount(personId: string, sessionId = "session-a") {
   const tree = render(element.props);
   const cleanups = hooks.effects.splice(0).map((setup) => setup());
   const { client, persistOptions } = tree.props as {
-    client: QueryClient; persistOptions: { persister: Persister };
+    client: QueryClient; persistOptions: { persister: Persister; dehydrateOptions: DehydrateOptions };
   };
-  return { client, persister: persistOptions.persister, unmount: () => cleanups.forEach((f) => f?.()) };
+  return { client, dehydrateOptions: persistOptions.dehydrateOptions,
+    persister: persistOptions.persister, unmount: () => cleanups.forEach((f) => f?.()) };
 }
 
 beforeEach(() => {
@@ -140,4 +141,15 @@ describe("the portal query cache is per person", () => {
     expect(clear).toHaveBeenCalled();
     tab.unmount();
   });
+});
+
+it("never restores a consumed consent outcome from the persisted device cache", async () => {
+  const tab = mount("generated-person");
+  await tab.client.fetchQuery({ queryKey: ["ordinary-plan"], queryFn: async () => "kept plan" });
+  await tab.client.fetchQuery({ queryKey: ["link-consent-result"], meta: { persist: false },
+    queryFn: async () => ({ status: "ok", result: { action: "approve" } }) });
+  const saved = dehydrate(tab.client, tab.dehydrateOptions);
+  expect(saved.queries.map((query) => query.queryKey)).toEqual([["ordinary-plan"]]);
+  expect(saved.queries[0].state.data).toBe("kept plan");
+  tab.unmount();
 });

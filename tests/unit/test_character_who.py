@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from nora.access import IdentityAccess
 from nora.domain.culture import CultureRevision, character_key
 from nora.domain.models import NormalizedMessage, PersonRef, Quote, TranscriptRow
 from nora.engagement.character_who import fire_character_people, tag_character_people
@@ -19,6 +20,7 @@ from nora.language.culture_render import (
 )
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.policy import permissive_policy
 from nora.testing import InMemoryCultureStore
 
 NOW = datetime(2026, 10, 7, tzinfo=UTC)
@@ -29,6 +31,7 @@ PERSONS = Persons(
     by_person=REFS, index={("signal", v): p for p, v in IDS.items()},
 )
 ROSTER = tuple(REFS.values())  # ada bo cy di ed
+ACCESS = IdentityAccess.for_files(persons=PERSONS, policy=permissive_policy())
 
 
 def _row(sender: str, ts: int, *, is_nora: bool = False) -> TranscriptRow:
@@ -46,61 +49,61 @@ def _msg(sender: str, *, mentions=(), quote=None) -> NormalizedMessage:
     )
 
 
-def _who(msg, transcript=()) -> list[str]:
-    return [r.person_id for r in tag_character_people(
-        ROSTER, persons=PERSONS, message=msg,
+async def _who(msg, transcript=()) -> list[str]:
+    return [r.person_id for r in await tag_character_people(
+        ROSTER, access=ACCESS, message=msg,
         tagger=PERSONS.resolve("signal", msg.sender_id), transcript=transcript,
     )]
 
 
-def test_a_listed_person_who_neither_tagged_nor_was_named_nor_spoke_gets_no_account():
-    assert _who(_msg("ada"), [_row("bo", 1)]) == ["ada", "bo"]
+async def test_a_listed_person_who_neither_tagged_nor_was_named_nor_spoke_gets_no_account():
+    assert await _who(_msg("ada"), [_row("bo", 1)]) == ["ada", "bo"]
 
 
-def test_the_tagger_is_always_included_even_in_an_empty_window():
-    assert _who(_msg("cy")) == ["cy"]
+async def test_the_tagger_is_always_included_even_in_an_empty_window():
+    assert await _who(_msg("cy")) == ["cy"]
 
 
-def test_a_person_the_tag_message_mentions_is_included():
-    assert _who(_msg("ada", mentions=["di"])) == ["ada", "di"]
+async def test_a_person_the_tag_message_mentions_is_included():
+    assert await _who(_msg("ada", mentions=["di"])) == ["ada", "di"]
 
 
-def test_the_author_of_the_replied_to_message_is_included_from_the_window_row():
+async def test_the_author_of_the_replied_to_message_is_included_from_the_window_row():
     quote = Quote(author_id="", text="", quoted_ts=5)
-    assert _who(_msg("ada", quote=quote), [_row("ed", 5, is_nora=False)]) == ["ada", "ed"]
+    assert await _who(_msg("ada", quote=quote), [_row("ed", 5, is_nora=False)]) == ["ada", "ed"]
 
 
-def test_a_quote_whose_parent_left_the_window_still_names_its_author():
+async def test_a_quote_whose_parent_left_the_window_still_names_its_author():
     quote = Quote(author_id=IDS["bo"], text="", quoted_ts=5)
-    assert _who(_msg("ada", quote=quote)) == ["ada", "bo"]
+    assert await _who(_msg("ada", quote=quote)) == ["ada", "bo"]
 
 
-def test_roster_order_is_kept_not_the_order_they_were_found_in():
-    assert _who(_msg("ed", mentions=["ada"]), [_row("cy", 1)]) == ["ada", "cy", "ed"]
+async def test_roster_order_is_kept_not_the_order_they_were_found_in():
+    assert await _who(_msg("ed", mentions=["ada"]), [_row("cy", 1)]) == ["ada", "cy", "ed"]
 
 
-def test_an_unmapped_sender_and_noras_own_rows_add_nobody():
+async def test_an_unmapped_sender_and_noras_own_rows_add_nobody():
     rows = [_row("+19999999999", 1), _row("bo", 2, is_nora=True)]
-    assert _who(_msg("ada"), rows) == ["ada"]
+    assert await _who(_msg("ada"), rows) == ["ada"]
 
 
-def test_a_person_the_room_does_not_list_is_never_added():
+async def test_a_person_the_room_does_not_list_is_never_added():
     narrow = (REFS["ada"],)
-    got = tag_character_people(
-        narrow, persons=PERSONS, message=_msg("bo", mentions=["ada"]),
+    got = await tag_character_people(
+        narrow, access=ACCESS, message=_msg("bo", mentions=["ada"]),
         tagger=REFS["bo"], transcript=[_row("cy", 1)],
     )
     assert [r.person_id for r in got] == ["ada"]
 
 
-def test_a_fire_renders_its_window_speakers_and_its_own_person_only():
-    got = fire_character_people(
-        ROSTER, persons=PERSONS, platform="signal", person=REFS["di"],
+async def test_a_fire_renders_its_window_speakers_and_its_own_person_only():
+    got = await fire_character_people(
+        ROSTER, access=ACCESS, platform="signal", person=REFS["di"],
         transcript=[_row("bo", 1), _row("ada", 2, is_nora=True)],
     )
     assert [r.person_id for r in got] == ["bo", "di"]
-    quiet = fire_character_people(
-        ROSTER, persons=PERSONS, platform="signal", person=None, transcript=[],
+    quiet = await fire_character_people(
+        ROSTER, access=ACCESS, platform="signal", person=None, transcript=[],
     )
     assert quiet == ()
 
@@ -113,8 +116,8 @@ async def test_only_the_people_in_the_turn_are_read_from_the_store():
     msg = _msg("ada")
     got = await read_character(
         store, unit="friends",
-        members=tag_character_people(
-            ROSTER, persons=PERSONS, message=msg, tagger=REFS["ada"],
+        members=await tag_character_people(
+            ROSTER, access=ACCESS, message=msg, tagger=REFS["ada"],
             transcript=[_row("bo", 1)],
         ),
         stage="tag_character", platform="signal", metrics=Metrics(),
@@ -170,14 +173,14 @@ def test_the_whole_live_friends_roster_is_not_cut():
     assert "more characters" not in out and len(out) <= CHARACTER_BLOCK_MAX_CHARS
 
 
-def test_an_unmapped_tagger_does_not_fall_back_to_the_whole_roster():
-    got = tag_character_people(
-        ROSTER, persons=PERSONS, message=_msg("ada"), tagger=None, transcript=[],
+async def test_an_unmapped_tagger_does_not_fall_back_to_the_whole_roster():
+    got = await tag_character_people(
+        ROSTER, access=ACCESS, message=_msg("ada"), tagger=None, transcript=[],
     )
     assert got == ()
 
 
-def test_a_mention_added_by_an_edit_counts():
+async def test_a_mention_added_by_an_edit_counts():
     import json
     from dataclasses import replace
 
@@ -190,7 +193,7 @@ def test_a_mention_added_by_an_edit_counts():
     row = replace(_row("bo", 5), raw_json=env([]), edit=RowEdit(
         ts=6, raw_json=env([IDS["di"]]), was="x"))  # type: ignore[call-arg]
     quote = Quote(author_id="", text="", quoted_ts=5)
-    assert _who(_msg("ada", quote=quote), [row]) == ["ada", "bo", "di"]
+    assert await _who(_msg("ada", quote=quote), [row]) == ["ada", "bo", "di"]
 
 
 class _UnitPolicy:
@@ -218,7 +221,10 @@ async def test_the_tag_assembler_reads_only_the_people_in_the_turn():
     assembler._policy = _UnitPolicy()
     assembler._metrics = Metrics()
     assembler._persons = PERSONS
-    assembler._room_members = lambda msg: ROSTER  # type: ignore[method-assign]
+    assembler._access = ACCESS
+    async def _roster(msg):
+        return ROSTER
+    assembler._room_members = _roster  # type: ignore[method-assign]
     got = await assembler._character(_msg("ada"), REFS["ada"], [_row("bo", 1)])
     assert [n for n, _ in got] == ["Ada", "Bo"]
     assert store.reads == [character_key("friends", "ada"), character_key("friends", "bo")]
@@ -233,9 +239,12 @@ async def test_the_fire_path_reads_only_the_people_in_the_window():
     path._policy = _UnitPolicy()
     path._metrics = Metrics()
     path._persons = PERSONS
+    path._access = ACCESS
     path._standing_store_timeout_seconds = 5.0
     path._profile_reader = None  # pre-switch (45 §5): the character reads run
-    path._room_members = lambda occasion: ROSTER  # type: ignore[method-assign]
+    async def _roster(occasion):
+        return ROSTER
+    path._room_members = _roster  # type: ignore[method-assign]
     occasion = type("_Occ", (), {"platform": "signal", "conversation_id": "g"})()
     got = await path._read_character(occasion, None, [_row("cy", 1)])  # type: ignore[arg-type]
     assert [n for n, _ in got] == ["Cy"]

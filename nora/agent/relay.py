@@ -67,6 +67,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from ..domain.managed import Verdict
 from ..domain.models import PersonRef
 from ..domain.self_presence import KnownRoom, TransportState, platform_name
 from ..language.presence_render import state_phrase
@@ -95,6 +96,7 @@ class Relay:
         self,
         *,
         policy: Policy,
+        access: Any,
         speak: Any = None,
         slots: Any = None,
         occasion_for: Any = None,
@@ -104,6 +106,7 @@ class Relay:
     ) -> None:
         self._content_checks = content_checks
         self._policy = policy
+        self._access = access
         # `PresenceReader.state`: one network's transport, read now, bounded
         # by the reader's own timeout, and `unknown` (never `up`) when the
         # read raises. Required, no default: a relay that cannot ask whether
@@ -129,6 +132,29 @@ class Relay:
     def _refuse(self, outcome: str, note: str) -> dict:
         self._count(outcome)
         return {"status": "refused", "note": note}
+
+    async def _room_admission(
+        self, destination: Conversation, requester: PersonRef
+    ) -> dict | None:
+        """The selected backend's room gate: the refusal on a deny, `None` on an allow."""
+        verdict = await self._access.permitted(
+            platform=destination.platform,
+            conversation_id=destination.primary_id,
+            person_id=requester.person_id,
+        )
+        if verdict.allowed:
+            return None
+        if verdict.verdict is Verdict.UNAVAILABLE:
+            return {
+                "status": "unavailable",
+                "note": "I can't check whether you're in that room right now. "
+                        "Say it didn't go rather than guessing.",
+            }
+        return self._refuse(
+            "not_allowed_there",
+            "They're not in that room themselves, so I won't speak into it for "
+            "them. Say so plainly.",
+        )
 
     def _find(self, room: str, *, unit: str) -> tuple[Conversation, ...]:
         """Resolve only within this unit, using the room tools' shared resolver."""
@@ -216,16 +242,9 @@ class Relay:
                 "That's where we already are: just say it here instead of passing it on.",
             )
 
-        if not self._policy.is_allowed(
-            platform=destination.platform,
-            conversation_id=destination.primary_id,
-            person_id=requester.person_id,
-        ):
-            return self._refuse(
-                "not_allowed_there",
-                "They're not in that room themselves, so I won't speak into it for "
-                "them. Say so plainly.",
-            )
+        refused = await self._room_admission(destination, requester)
+        if refused is not None:
+            return refused
 
         # Attributed, always (module docstring). Built here rather than left to
         # the model so it cannot be talked out of it.

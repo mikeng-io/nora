@@ -42,10 +42,13 @@ from tests.infra.pg_baseline import PgBaseline
 
 pytest_plugins = ["scripts.pytest_gate"]
 
-# MUST track `docker-compose.yml`'s `db` image, and
-# `test_the_test_container_tracks_the_deployment` is what pins the two
-# together. A test container on a different major version than production
-# makes `tests/infra/test_schema_parity.py` — the gate every migration passes
+# The deployment's Postgres image, read from `deploy/postgres/image` — the one
+# place the digest-pinned reference is stated. `docker-compose.yml`'s `db`
+# service names the same literal and
+# `tests/architecture/test_postgres_image_is_pinned.py` is what proves they
+# agree; `test_the_test_container_tracks_the_deployment` still checks the
+# MAJOR. A test container on a different major version than production makes
+# `tests/infra/test_schema_parity.py` — the gate every migration passes
 # through — validate against a version other than the one it guards, and makes
 # `scripts/gen_pg_baseline.py` generate its oracle there too.
 #
@@ -57,7 +60,9 @@ pytest_plugins = ["scripts.pytest_gate"]
 # extension available here at all: `postgres:18-alpine` does not carry it, so
 # every migration touching a vector column would fail in CI while working in
 # production.
-PG_IMAGE = "pgvector/pgvector:pg18"
+PG_IMAGE = (
+    Path(__file__).resolve().parents[1] / "deploy/postgres/image"
+).read_text(encoding="utf-8").strip()
 
 # The runtime_context values the shipped doctrine is read with in tests. They
 # are module constants rather than inline literals because
@@ -473,9 +478,36 @@ def no_build_stamp():
 #: run always uses public stated inputs; the live eval CLI explicitly materialises
 #: the requested deployment separately.
 _STATED_DEPLOYMENT = """\
+identity_file = "identity.toml"
+policy_file = "policy.toml"
 [llm]
 model = "nora"
+base_url = "http://llm.generated:11434/v1"
 reasoning_effort = "none"
+timeout_seconds = 360
+temperature = 0.7
+max_tokens = 2000
+[llm.limits]
+turns = 20
+total_tokens = 1024000
+output_tokens = 12000
+[doctrine]
+dir = "nora/doctrine"
+language_hint = "yue-Hant-HK"
+reload = "mtime"
+strict = true
+[honcho]
+base_url = "http://honcho.generated:8000"
+workspace_id = "nora"
+[engagement]
+policy = "trigger_text"
+[engagement.trigger]
+enabled = false
+text = "nora"
+min_interval_seconds = 5
+[platforms.signal]
+account = "generated-signal-account"
+base_url = "http://signal-bridge.generated:18090"
 [dreamer]
 enabled = true
 model = "nora-dreamer"
@@ -492,6 +524,9 @@ enabled = true
 [notes]
 enabled = true
 [store]
+data_dir = "/generated/data"
+max_per_conversation = 100
+context_window = 50
 prune_enabled = false
 """
 

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from nora.access import IdentityAccess
 from nora.domain.models import NormalizedMessage
 from nora.ingest.stages import scope
 from nora.obs.metrics import Metrics
@@ -34,6 +35,10 @@ def policy(tmp_path):
 PERSONS = Persons(by_person={}, index={("whatsapp", "+852111"): "miles"})
 
 
+def _access(persons, policy):
+    return IdentityAccess.for_files(persons=persons, policy=policy)
+
+
 def _msg(conversation_id, platform="signal", conversation_type="group", sender="+852111"):
     return NormalizedMessage(
         platform, conversation_id, conversation_type, sender, "Miles", 1, "hi", {}
@@ -43,7 +48,7 @@ def _msg(conversation_id, platform="signal", conversation_type="group", sender="
 async def test_an_allowlisted_conversation_continues(policy):
     metrics = Metrics()
     admitted = await scope.run(
-        message=_msg(ALLOWED), policy=policy, persons=PERSONS, metrics=metrics,
+        message=_msg(ALLOWED), policy=policy, access=_access(PERSONS, policy), metrics=metrics,
     )
     assert admitted is True
     assert metrics.get("nora_denied_conversations_total", platform="signal") == 0
@@ -54,7 +59,7 @@ async def test_an_unlisted_conversation_is_refused_and_counted(policy):
     answerable without attaching a debugger (R-5)."""
     metrics = Metrics()
     admitted = await scope.run(
-        message=_msg("some-other"), policy=policy, persons=PERSONS, metrics=metrics,
+        message=_msg("some-other"), policy=policy, access=_access(PERSONS, policy), metrics=metrics,
     )
     assert admitted is False
     assert metrics.get("nora_denied_conversations_total", platform="signal") == 1
@@ -63,7 +68,8 @@ async def test_an_unlisted_conversation_is_refused_and_counted(policy):
 async def test_the_same_id_on_another_platform_is_a_different_room(policy):
     metrics = Metrics()
     refused = await scope.run(
-        message=_msg(ALLOWED, platform="telegram"), policy=policy, persons=PERSONS, metrics=metrics
+        message=_msg(ALLOWED, platform="telegram"), policy=policy,
+        access=_access(PERSONS, policy), metrics=metrics
     )
     assert refused is False
 
@@ -75,5 +81,6 @@ async def test_a_direct_message_from_somebody_not_in_identity_toml_is_never_reco
     metrics = Metrics()
     dm = _msg("85299999999@s.whatsapp.net", platform="whatsapp",
               conversation_type="dm", sender="+85299999999")
-    assert await scope.run(message=dm, policy=policy, persons=PERSONS, metrics=metrics) is False
+    assert await scope.run(
+        message=dm, policy=policy, access=_access(PERSONS, policy), metrics=metrics) is False
     assert metrics.get("nora_denied_conversations_total", platform="whatsapp") == 1

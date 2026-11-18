@@ -4,7 +4,7 @@ import logging
 from typing import Literal
 
 from nora.agent.catalog.groups import ROOM_ONLY_MEMORY_ADAPTORS
-from nora.agent.memory_search import MemorySearch, room_label
+from nora.agent.memory_search import MemorySearch, room_label, scope_for_async
 from nora.agent.room import RoomView
 from nora.agent.security import scan_identifiers
 from nora.agent.toolkit.results import (
@@ -92,11 +92,23 @@ def _make__memory_search_index(deps):
                     degraded=view.degraded,
                 ),
             )
-            listed = target.room.persons if target.room is not None else None
+            own_room = dream_adaptor in ROOM_ONLY_MEMORY_ADAPTORS
+            # Membership and preference come from the selected backend: under
+            # managed, `scope_for_async` reads live room membership and opt-outs;
+            # a backend that cannot answer raises and lands as `unavailable`.
+            scope = await scope_for_async(
+                target,
+                own_room=own_room,
+                social_off=persons.social_off_ids(
+                    target.room.persons or () if target.room is not None else ()
+                ),
+                access=room.access,
+            )
+            listed = scope.listed_here if scope is not None else None
             if ref is not None and (listed is None or ref.person_id not in listed):
-                # The live roster resolved them, but policy does not list them
-                # for this room (or the room is `*`, persons=None): the
-                # index's person filter would read false everywhere and answer
+                # The live roster resolved them, but they are not a member of
+                # this room: the index's person filter would read false
+                # everywhere and answer
                 _record_room(metrics, "memory_search", "unavailable", reason="unlisted")
                 return {**_MEMORY_UNLISTED, **asked}
             now = now_fn()
@@ -111,8 +123,8 @@ def _make__memory_search_index(deps):
                 kinds=kinds,
                 since_ms=since_ms,
                 until_ms=until_ms,
-                own_room=dream_adaptor in ROOM_ONLY_MEMORY_ADAPTORS,
-                social_off=persons.social_off_ids(listed or ()),
+                own_room=own_room,
+                social_off=scope.social_off if scope is not None else frozenset(),
                 cache=graph_reads,
                 content_checks=content_checks,
             )

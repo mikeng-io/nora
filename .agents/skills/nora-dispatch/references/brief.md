@@ -65,12 +65,12 @@ no BLOCKER.
 A first-round BLOCKER that this pre-flight would have caught is the author's
 miss. Its fix carries a lesson line (`nora-land/reference.md` «Resolve»).
 
-## Approval and lock
+## Review and lock
 
 On the standard and full routes, the plan (`plan.md`) is attached to the brief.
 The reviewer by rule then checks both together (`nora-review/references/brief-review.md`).
-After a round with no BLOCKER, Mike approves the Done-when list, and the
-approval is recorded in Boundaries. The plan needs no approval of his: brief
-review validates it, and a later plan change within the locked items needs none. From then on the Done-when list is locked: only Mike changes it.
+A round with no BLOCKER passes propose → plan and locks the Done-when list.
+Only Mike changes the locked list. Plan changes within the locked items
+proceed under `nora-work/references/lifecycle.md` «When Mike is asked».
 An author never revises its own brief past review; a disputed item goes to
 Mike.

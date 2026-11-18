@@ -350,3 +350,290 @@ async def test_a_quiet_session_has_one_completion_receipt_independent_of_reading
                 COMPREHEND_RESULT.c.part == "session_complete"))).scalars())
     assert payloads == [{"unit": "generated-unit",
                          "inputs": {"1": "digest-one", "2": "digest-two"}}]
+
+
+# ---- selected managed backend: SQL-only — `access` answers membership and
+# preference at read time; the fake's contract is the shared suite above.
+_MUNIT = "generated-managed-unit"
+_MROOM = "generated-managed-room"
+_MP = "generated-managed-person"
+_MF = "generated-managed-foreign"
+
+
+async def _managed_records(engine, *, social, members, unit=_MUNIT, room=_MROOM):
+    """`SqlComprehendRecords` on real SQL + the in-memory authority fakes."""
+    from nora.access import IdentityAccess
+    from nora.domain.identity import Identifier
+    from nora.domain.managed import (
+        AccountState,
+        ManagedAccount,
+        ManagedPerson,
+        OutcomeStatus,
+        PersonLifecycle,
+    )
+    from nora.domain.management import Scope, ScopeKind
+    from nora.people.app.managed_authority import AuthorityService
+    from nora.testing.managed import (
+        FakeAuthorityBackend,
+        FakeBindingStore,
+        FakeIdentityRegistry,
+        FakeTopologySource,
+    )
+
+    async def enrich(rows, **kw):
+        return tuple(rows)
+
+    bindings = FakeBindingStore()
+    backend = FakeAuthorityBackend()
+    topology = FakeTopologySource(
+        rooms={f"signal/{room}": (unit, False)},
+        units={unit: "generated-workspace"}, workspaces={"generated-workspace"})
+    registry = FakeIdentityRegistry()
+    for pid, traits in social.items():
+        assert (await bindings.register(
+            person=ManagedPerson(pid, PersonLifecycle.ACTIVE),
+            account=ManagedAccount(
+                str(uuid4()), pid, "signal",
+                frozenset({Identifier("signal", "uuid", f"{pid}-account")}),
+                AccountState.BOUND),
+            membership=None,
+        )).status is OutcomeStatus.COMPLETE
+        outcome, _ = await registry.ensure_identity(external_id=pid, traits=traits)
+        assert outcome.status is OutcomeStatus.COMPLETE
+    for pid in members:
+        assert (await bindings.set_membership(
+            person_id=pid, scope=Scope(ScopeKind.ROOM, f"signal/{room}"),
+            member=True, source="generated-source",
+        )).status is OutcomeStatus.COMPLETE
+    access = IdentityAccess(
+        bindings=bindings, authority=AuthorityService(bindings, backend, topology),
+        topology=topology, registry=registry)
+    records = SqlComprehendRecords(
+        engine, media_join=SimpleNamespace(enrich=enrich),
+        rooms_by_unit={unit: [("signal", room)]}, persons_by_unit={},
+        access=access)
+    return records, bindings, registry
+
+
+async def _insert_node(engine, *, kind, source_id, unit, persons=(), room="", text):
+    from nora.infra.sql.schema import MEMORY_NODE
+
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(MEMORY_NODE).values(
+            kind=kind, source_id=source_id, unit=unit, origin_room=room,
+            persons=list(persons), text=text))
+
+
+async def _insert_social(engine, *, network="instagram", item, person):
+    from nora.infra.sql.schema import SOCIAL_ITEM
+
+    at = datetime(2026, 1, 2, tzinfo=UTC)
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(SOCIAL_ITEM).values(
+            network=network, item_id=item, person=person,
+            account="generated-account", kind="post", taken_at=at, seen_at=at,
+            origin="poll"))
+
+
+def _mwork(source):
+    from nora.domain.memory_graph import WorkItem
+
+    return WorkItem("generated-managed-work", source, _MUNIT, "generated-hash", WORK.as_of)
+
+
+async def test_managed_social_read_checks_the_live_preference_at_read_time(store):
+    """An opt-out recorded AFTER the records store was built still withholds:
+    the preference is read for the source's own people on every load."""
+    _records, engine = store
+    if engine is None:
+        return
+    records, _bindings, registry = await _managed_records(
+        engine, social={_MP: {"display_name": _MP, "social": True}}, members=(_MP,))
+    await _insert_social(engine, item="generated-item", person=_MP)
+    await _insert_node(
+        engine, kind="social", source_id="instagram:generated-item",
+        unit=_MUNIT, persons=(_MP,), room="signal:generated-managed-room",
+        text="Generated caption")
+    item = await records.load(_mwork(("social", "instagram:generated-item")))
+    assert item.sources[0].text == "Generated caption"
+    assert item.sources[0].persons == (_MP,)
+    # The construction-time answer would still say enabled; the live read says
+    # opted out, and the withheld distinction is the existing ValueError.
+    registry.identities[_MP]["traits"]["social"] = False
+    with pytest.raises(ValueError, match="social consent withdrawn"):
+        await records.load(_mwork(("social", "instagram:generated-item")))
+
+
+async def test_managed_social_read_is_unavailable_when_the_trait_is_missing(store):
+    """A missing or malformed `social` trait is unavailable — never inferred
+    enabled, never a withheld-looking refusal either."""
+    _records, engine = store
+    if engine is None:
+        return
+    from nora.access import SocialPreferenceUnavailableError
+
+    for i, traits in enumerate(
+        ({"display_name": _MP}, {"display_name": _MP, "social": "yes"})
+    ):
+        item_id = f"generated-broken-{i}"
+        records, _bindings, registry = await _managed_records(
+            engine, social={_MP: traits}, members=(_MP,))
+        await _insert_social(engine, item=item_id, person=_MP)
+        await _insert_node(
+            engine, kind="social", source_id=f"instagram:{item_id}",
+            unit=_MUNIT, persons=(_MP,), room="signal:generated-managed-room",
+            text="Generated caption")
+        with pytest.raises(SocialPreferenceUnavailableError):
+            await records.load(_mwork(("social", f"instagram:{item_id}")))
+        # Positive control: the same source reads once the trait answers.
+        registry.identities[_MP]["traits"]["social"] = True
+        item = await records.load(_mwork(("social", f"instagram:{item_id}")))
+        assert item.sources[0].text == "Generated caption"
+
+
+async def test_managed_source_admission_uses_current_room_membership(store):
+    """A global person-scoped source admits through the unit's configured
+    rooms' CURRENT managed memberships — the file `persons` list wired as
+    `persons_by_unit` is never consulted, and a post-construction departure
+    closes it."""
+    _records, engine = store
+    if engine is None:
+        return
+    from nora.domain.managed import OutcomeStatus
+    from nora.domain.management import Scope, ScopeKind
+
+    records, bindings, _ = await _managed_records(
+        engine,
+        social={_MP: {"display_name": _MP, "social": True},
+                _MF: {"display_name": _MF, "social": True}},
+        members=(_MP,),
+        # `_MF` is a member of a room in ANOTHER unit — never of this one.
+    )
+    await _insert_node(
+        engine, kind="note", source_id="generated-note", unit=None,
+        persons=(_MP,), text="Generated note text")
+    item = await records.load(_mwork(("note", "generated-note")))
+    assert item.sources[0].text == "Generated note text"
+    assert item.sources[0].persons == (_MP,)
+    # A departure recorded after construction denies the next read.
+    assert (await bindings.set_membership(
+        person_id=_MP, scope=Scope(ScopeKind.ROOM, "signal/generated-managed-room"),
+        member=False, source="generated-source",
+    )).status is OutcomeStatus.COMPLETE
+    with pytest.raises(ValueError, match="unscoped source"):
+        await records.load(_mwork(("note", "generated-note")))
+
+
+async def test_managed_source_admission_denies_unit_and_guild_only_members(store):
+    """Membership of a room in a SIBLING unit is not membership here: a
+    globally person-scoped node naming only that person stays unscoped."""
+    _records, engine = store
+    if engine is None:
+        return
+    from nora.domain.managed import OutcomeStatus
+    from nora.domain.management import Scope, ScopeKind
+
+    records, bindings, _ = await _managed_records(
+        engine,
+        social={_MP: {"display_name": _MP, "social": True},
+                _MF: {"display_name": _MF, "social": True}},
+        members=(_MP,),
+    )
+    assert (await bindings.set_membership(
+        person_id=_MF, scope=Scope(ScopeKind.ROOM, "signal/generated-elsewhere"),
+        member=True, source="generated-source",
+    )).status is OutcomeStatus.COMPLETE
+    await _insert_node(
+        engine, kind="note", source_id="generated-sibling-note", unit=None,
+        persons=(_MF,), text="Generated sibling note")
+    with pytest.raises(ValueError, match="unscoped source"):
+        await records.load(_mwork(("note", "generated-sibling-note")))
+    # Positive control: the actual member's node reads.
+    await _insert_node(
+        engine, kind="note", source_id="generated-member-note", unit=None,
+        persons=(_MP,), text="Generated member note")
+    item = await records.load(_mwork(("note", "generated-member-note")))
+    assert item.sources[0].text == "Generated member note"
+
+
+async def test_managed_admission_folds_a_retired_alias_for_permission(store):
+    """A node recorded under a retired id admits when its canonical survivor
+    is a member — the historical reference itself is never rewritten."""
+    _records, engine = store
+    if engine is None:
+        return
+    from nora.domain.managed import OutcomeStatus
+
+    former = "generated-managed-former"
+    records, bindings, _ = await _managed_records(
+        engine,
+        social={_MP: {"display_name": _MP, "social": True},
+                former: {"display_name": former, "social": True}},
+        members=(_MP,),
+    )
+    assert (await bindings.consolidate(survivor=_MP, former=former)
+            ).status is OutcomeStatus.COMPLETE
+    await _insert_node(
+        engine, kind="note", source_id="generated-alias-note", unit=None,
+        persons=(former,), text="Generated aliased note")
+    item = await records.load(_mwork(("note", "generated-alias-note")))
+    assert item.sources[0].persons == (former,)
+    assert item.sources[0].text == "Generated aliased note"
+
+
+async def test_a_retired_opted_out_identity_still_withholds_social_sources(store):
+    """Consolidation folds the opt-out too: a social node recorded under the
+    retired id is withheld because the retired identity's `social = false`
+    still applies — the opt-out is the person's, not the id's."""
+    _records, engine = store
+    if engine is None:
+        return
+    from nora.domain.managed import OutcomeStatus
+
+    former = "generated-managed-former"
+    records, bindings, _ = await _managed_records(
+        engine,
+        social={_MP: {"display_name": _MP, "social": True},
+                former: {"display_name": former, "social": False},
+                _MF: {"display_name": _MF, "social": True}},
+        members=(_MP, _MF),
+    )
+    assert (await bindings.consolidate(survivor=_MP, former=former)
+            ).status is OutcomeStatus.COMPLETE
+    await _insert_social(engine, item="generated-former-item", person=former)
+    await _insert_node(
+        engine, kind="social", source_id="instagram:generated-former-item",
+        unit=_MUNIT, persons=(former,), room="signal:generated-managed-room",
+        text="Generated former caption")
+    with pytest.raises(ValueError, match="social consent withdrawn"):
+        await records.load(_mwork(("social", "instagram:generated-former-item")))
+    # Positive control: another member with no opted-out identity reads.
+    await _insert_social(engine, item="generated-live-item", person=_MF)
+    await _insert_node(
+        engine, kind="social", source_id="instagram:generated-live-item",
+        unit=_MUNIT, persons=(_MF,), room="signal:generated-managed-room",
+        text="Generated live caption")
+    item = await records.load(_mwork(("social", "instagram:generated-live-item")))
+    assert item.sources[0].text == "Generated live caption"
+
+
+async def test_managed_authority_outage_is_unavailable_and_recovers(store):
+    """A binding-store outage on the membership or preference read propagates
+    as a failure (the wake retries it) — never an allowed answer; recovery
+    restores the same positive read."""
+    _records, engine = store
+    if engine is None:
+        return
+    records, bindings, _ = await _managed_records(
+        engine, social={_MP: {"display_name": _MP, "social": True}}, members=(_MP,))
+    await _insert_node(
+        engine, kind="note", source_id="generated-outage-note", unit=None,
+        persons=(_MP,), text="Generated outage note")
+    positive = await records.load(_mwork(("note", "generated-outage-note")))
+    assert positive.sources[0].text == "Generated outage note"
+    bindings.down = True
+    with pytest.raises(RuntimeError):
+        await records.load(_mwork(("note", "generated-outage-note")))
+    bindings.down = False
+    recovered = await records.load(_mwork(("note", "generated-outage-note")))
+    assert recovered.sources[0].text == "Generated outage note"

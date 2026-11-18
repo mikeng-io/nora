@@ -1,1 +1,1 @@
-"""location use cases."""
+"""Location read use cases."""

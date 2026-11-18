@@ -9,56 +9,56 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 import os
 import signal
 import statistics
 import sys
-import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from evals import pseudonyms
+from evals.accounting import accepted, accounted, describe_outcome
 from evals.backbone import (
-    ERROR,
-    FAIL,
     NORA_ERROR,
     NORA_POSITION,
     NORA_SHOWN,
     NORA_WORKING_SET,
     PASS,
     RUN_ID,
-    UNSTABLE,
     Spec,
     _prefill_capture,
-    base_name,
     drain_draws,
     drain_spend,
     nora_task,
-    read,
-    sample_read,
+    retain_report,
 )
-from evals.cli import BUDGET_MINUTES, eval_parser
+from evals.cli import BUDGET_MINUTES, eval_parser, run_budget_for
 from evals.grading_contract import GradingContract
+from evals.journey_cohort import bound_selection
+from evals.measurement import PROTOCOL, Measurement
+from evals.reading import base_name, read, sample_read
 from evals.rebuilt.grading import DEFAULT_SAMPLES, Judge
 from evals.scenarios import (
     CORPUS_ENTRY,
     FULL_RESTORE_CORPORA,
+    JOURNEY_CORPORA,
     JUDGE_REQUIRED,
     JUDGED_CORPORA,
     census,
+    corpus_entry,
     experiment_for,
     load_corpus,
     selected_cases,
 )
+from evals.services import load_services
 from evals.subject_config import materialise
 from evals.terminal import safe_print as print
 from nora.subject import (
     EMBEDDER_FROM_HOST,
-    GraphIndexRefusedError,
+    UNRESOLVED,
     SharedDatabaseMutatedError,
     SourceRevisionMismatchError,
     assert_shared_databases_unchanged,
@@ -79,6 +79,7 @@ from nora.subject.eval_evidence import (
     fingerprint,
     revision,
 )
+from nora.subject.recorded_services import RecordedServices
 from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
 
 #: Coarse S-class grouping for `--class`. Approximate on purpose where a
@@ -190,10 +191,13 @@ def over_budget(est: Estimate, *, allow_long: bool) -> str | None:
 
 
 def _list_corpora() -> None:
-    for name in sorted(CORPUS_ENTRY):
-        judged = "judged" if name in JUDGED_CORPORA else "structural"
-        cls = CORPUS_CLASS.get(name, "?")
-        print(f"{name:24} entry={CORPUS_ENTRY[name]:14} {cls:3} {judged}")
+    for name in sorted([*CORPUS_ENTRY, *JOURNEY_CORPORA]):
+        judged = ("journey; --journey-cohort + --services worlds; --run-budget"
+                  " required; --measure behavioral else behavior UNMEASURED"
+                  if name in JOURNEY_CORPORA else
+                  "judged" if name in JUDGED_CORPORA else "structural")
+        print(f"{name:24} entry={corpus_entry(name):14} "
+              f"{CORPUS_CLASS.get(name, '?'):3} {judged}")
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -264,7 +268,7 @@ def _corpora_for(args: argparse.Namespace) -> list[str]:
     selected = set(args.corpus or [])
     for cls in args.cls or []:
         selected |= {name for name, c in CORPUS_CLASS.items() if c == cls}
-    unknown = selected - set(CORPUS_ENTRY)
+    unknown = selected - set(CORPUS_ENTRY) - JOURNEY_CORPORA
     if unknown:
         print(f"unknown corpus/class selection: {sorted(unknown)}", file=sys.stderr)
         raise SystemExit(2)
@@ -404,92 +408,85 @@ def _print_positions(report: Any) -> None:
 def _run_one(
     name: str, *, source_url: str, judge: Judge | None, sample: int,
     only: frozenset[str] | None = None, all_reasons: bool = False,
-    positions: bool = False,
-    context_receipts: list[dict] | None = None,
-    memory_index: bool = False,
-    subject_overrides: dict[str, Any] | None = None,
-    contract: GradingContract | None = None,
+    positions: bool = False, context_receipts: list[dict] | None = None,
+    memory_index: bool = False, subject_overrides: dict[str, Any] | None = None,
+    contract: GradingContract | None = None, services: dict[str, Any] | None = None,
+    cohort: Any = None, measurement: Measurement = PROTOCOL,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
         memory_index=memory_index, overrides=subject_overrides,
-        contract=contract,
+        contract=contract, services=services,
+        cohort=cohort, measurement=measurement,
     )
     report = experiment.run_evaluations(task=task)
+    coverage, outcome = accounted(report, experiment, measurement=measurement)
     from nora.subject.eval_evidence import current
 
     if evidence := current():
+        retained = retain_report(evidence, name, report, experiment=experiment,
+                                 coverage=coverage, measurement=measurement)
+        outcome = retained["outcome"]
         evidence.check()
-        evidence.record("corpus_report", corpus=name, report=report.model_dump())
+        evidence.record("corpus_report", **retained)
     context_complete = True
     if context_receipts is not None:
         missing = {c["name"] for c in report.cases} - {
-            r.get("case") for r in context_receipts
-        }
+            r.get("case") for r in context_receipts}
         if missing:
             print(f"context experiment ERROR: no measured prefill for {sorted(missing)}")
             context_complete = False
     scope = f" [{len(experiment.cases)} selected]" if only else ""
-    print(f"--- {name}: {census(name)}{scope} ---")
+    print(f"--- {name}: {census(name, cohort=cohort)}{scope} ---")
+    print(f"mode: {measurement.phrase}; model behavior: {outcome['behavior']['status']}")
+    describe_outcome(coverage, outcome)
     _print_spend()
     _print_memory_overhead()
     if positions:
         _print_positions(report)
     if sample > 1:
         readings = sample_read(report)
-        # THE SPLIT, not just the verdict. `UNSTABLE` says the draws
-        # disagreed and nothing more; 2 PASS / 1 FAIL and 1 PASS / 2 ERROR
-        # are different facts about the same word, and the second is a case
-        # that mostly did not RUN. Printed for every non-PASS verdict, so
-        # the next question ("how unstable, and was any draw an error?") does
-        # not cost another run of the corpus.
+        # Keep unresolved judgments distinct from failures and errored draws.
         reasons: dict[str, list[str]] = {}
         for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
             for out in outputs:
                 if all_reasons or getattr(out, "label", None) != PASS:
                     reasons.setdefault(base_name(case_row["name"]), []).append(
-                        f"{out.label}: {out.reason}"
-                    )
+                        f"{out.label}: {out.reason}")
         ok = True
         for case_name, r in sorted(readings.items()):
-            split = (
-                "" if r.verdict == PASS
-                else f"  [{r.passed} pass / {r.failed} fail / {r.errored} error]"
-            )
+            split = ("" if r.verdict == PASS else
+                     f"  [{r.passed} pass / {r.failed} fail / "
+                     f"{r.reviewed} review / {r.errored} error]")
             print(f"  {case_name:40} {r.verdict}{split}")
             # One line per DISTINCT reason: three draws failing the same way
             # is one fact, and printing it three times hides that it is.
             for reason in dict.fromkeys(reasons.get(case_name, ())):
                 print(f"      {reason}")
-            ok = ok and r.verdict not in (FAIL, ERROR, UNSTABLE)
-        return ok and context_complete
+            ok = ok and r.verdict == PASS
+        return ok and context_complete and accepted(coverage, outcome)
     reading = read(report)
-    print(f"  passed={reading.passed} failed={reading.failed} errored={reading.errored}")
-    if reading.failed or reading.errored:
+    print(f"  passed={reading.passed} failed={reading.failed} "
+          f"reviewed={reading.reviewed} errored={reading.errored}")
+    if not reading.accepted:
         for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
             for out in outputs:
                 if getattr(out, "label", None) != PASS:
                     print(f"  {case_row['name']:40} {out.label:6} {out.reason}")
-    return reading.failed == 0 and reading.errored == 0 and context_complete
+    return (reading.accepted
+            and context_complete and accepted(coverage, outcome))
 
 
-def _print_input(name: str, case_name: str, *, source_url: str) -> int:
-    """Render one case's model input and print it; no model is called.
+def _print_input(name: str, case_name: str, *, source_url: str,
+                 services: dict[str, RecordedServices] | None = None) -> int:
+    """Print the declared entry's rendered input under its case-owned services.
 
-    Before any model call, each arm's rendered input for one case is printed
-    and diffed: a suite that cannot see the change measures noise. Run it once
-    on each arm's checkout and `diff` the two outputs; the corpus header
-    (`evals/corpora/standing.yaml`) states the whole recipe.
-
-    The case runs the ONE path — sandbox, snapshot, frozen clock — with the
-    fold's model client swapped for a recorder, so what prints is exactly what
-    the deployed fold would have sent. It is always an ERROR as a verdict; the
-    exit code says only whether the input was rendered.
+    This rendering probe has no behavioral verdict and does not run a journey.
     """
-    if CORPUS_ENTRY[name] not in _PRINTS_INPUT:
+    if corpus_entry(name) not in _PRINTS_INPUT:
         print(
             f"--print-input is honoured by {sorted(_PRINTS_INPUT)} entry points; "
-            f"{name!r} enters at {CORPUS_ENTRY[name]!r}",
+            f"{name!r} enters at {corpus_entry(name)!r}",
             file=sys.stderr,
         )
         return 2
@@ -500,8 +497,8 @@ def _print_input(name: str, case_name: str, *, source_url: str) -> int:
     [case] = matches
     case = case.model_copy(update={"metadata": {**(case.metadata or {}), "print_input": True}})
     result = nora_task(Spec(
-        source_url=source_url, entry=CORPUS_ENTRY[name],
-        full_restore=name in FULL_RESTORE_CORPORA,
+        source_url=source_url, entry=corpus_entry(name),
+        full_restore=name in FULL_RESTORE_CORPORA, services=services,
     ))(case)
     state = {e.name: e.state for e in result.get("environment_state") or ()}
     shown = state.get(NORA_SHOWN) or ""
@@ -519,10 +516,12 @@ def memory_index_enabled(config_toml: str) -> bool:
 
 
 def embedder_model_of(config_toml: str) -> str:
-    """`[memory.index] embedder_model` in a config's text; absent is the
-    code default."""
+    """The stated `[memory.index] embedder_model`, else the code default."""
     stated = tomllib.loads(config_toml).get("memory", {}).get("index", {}).get("embedder_model")
-    return str(stated or config_default("memory.index.embedder_model"))
+    default = config_default("memory.index.embedder_model")
+    if stated is None and default is UNRESOLVED:
+        raise ValueError("the embedder model's schema default is unresolvable")
+    return str(stated if stated is not None else default)
 
 
 def graph_surface_lines(source_url: str, model_id: str) -> list[str]:
@@ -613,12 +612,21 @@ def _main(*, lock_fd: int = -1) -> int:
         print("no corpus selected — pass names, --class, --all, or --list", file=sys.stderr)
         return 2
     if (args.context_arm != "full" or args.context_report) and (
-        len(names) != 1 or CORPUS_ENTRY[names[0]] != "tag" or args.print_input
+        len(names) != 1 or corpus_entry(names[0]) != "tag" or args.print_input
     ):
         print("context experiment requires one tag corpus and no --print-input", file=sys.stderr)
         return 2
     if args.print_input and len(names) != 1:
         print("--print-input names a case OF ONE corpus", file=sys.stderr)
+        return 2
+    try:
+        args.service_inputs = load_services(args.services) if args.services else None
+        # THE JOURNEY SELECTION binds and refuses here, before anything
+        # composes or a model is called: cohort, per-case worlds, judges,
+        # budget, and the measurement claim agreeing with every world.
+        args.bound_cohort = bound_selection(args, names, only)
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
     needs_judge = sorted(set(names) & JUDGE_REQUIRED)
     if needs_judge and not args.judge and not args.print_input:
@@ -630,71 +638,46 @@ def _main(*, lock_fd: int = -1) -> int:
         )
         return 2
     if args.print_input:
-        return _execute(args, names, only)
+        from opentelemetry import trace
+
+        _prefill_capture()
+        evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
+            "mode": "rendering-probe", "behavior": "UNMEASURED", "corpora": names})
+        with evidence.capture(trace.get_tracer_provider()):
+            rc = _execute(args, names, only)
+            evidence.exit_code = rc
+            return rc
     from evals.grading_contract import contract_for
     args.bound_contract = contract_for(
-        args, entrypoint="eval", judges=(args.judge,) if args.judge else (),
+        args, entrypoint="eval",
+        judges=((args.judge,) if args.judge else ()) + (
+            args.bound_cohort.judges if args.bound_cohort else ()),
         selection={"corpora": names, "only": sorted(only or ()),
-                   "sample": args.sample, "judge_samples": args.judge_samples},
+                   "sample": args.sample, "judge_samples": args.judge_samples,
+                   **({"journey_cohort": args.bound_cohort.sha256,
+                       "measurement": args.bound_measurement.mode}
+                      if args.bound_cohort else {})},
     )
     from opentelemetry import trace
 
     from nora.subject.sandbox import EVAL_HOST_LOCK
-
-    _prefill_capture()  # establish the existing SDK provider before attaching durable capture
-    # The declared subject seam, validated and hashed BEFORE any case composes:
-    # a bad file refuses the run with nothing spent, and its exact content is
-    # what `run_started` carries.
+    _prefill_capture()
     subject_overrides: dict[str, Any] | None = None
     overrides_sha: str | None = None
     if args.subject_overrides is not None:
         try:
-            raw = args.subject_overrides.read_bytes()          # read ONCE
-            overrides_sha = hashlib.sha256(raw).hexdigest()    # hash THOSE bytes
-            parsed = json.loads(raw.decode())
-            if not isinstance(parsed, dict) or not all(
-                    isinstance(k, str) and k and not k.startswith(".")
-                    for k in parsed):
-                raise ValueError("--subject-overrides must be a JSON object of dotted keys")
-            subject_overrides = parsed
-            from nora.subject.obtain import validate_subject_overrides
-            validate_subject_overrides(subject_overrides)
+            from evals.subject_config import load_overrides
+
+            subject_overrides, overrides_sha = load_overrides(args.subject_overrides)
         except (OSError, ValueError, TypeError) as exc:
             print(f"refusing to run: {exc}", file=sys.stderr)
             return 2
-    # The hard dispatch bound: installed before the first case composes, so
-    # even composition's own model reads are counted.
-    budget = None
-    if args.run_budget is not None:
-        from nora.domain.run_budget import RunBudget
-        parts = args.run_budget.split(",")
-        if not 1 <= len(parts) <= 4:
-            print("refusing to run: --run-budget takes 1-4 fields",
-                  file=sys.stderr)
-            return 2
-        defaults: list[int | None] = [40, None, 40000, 30]
-        vals: list[int | None] = []
-        bad = False
-        for i, p in enumerate(parts):
-            p = p.strip()
-            if not p or p.lower() in ("none", "-"):
-                vals.append(defaults[i])
-                continue
-            try:
-                vals.append(int(p))
-            except ValueError:
-                bad = True
-        if bad or any(v is not None and v <= 0 for v in vals):
-            print("refusing to run: --run-budget fields must be positive "
-                  "integers (empty or `none` IN = measured, not capped)",
-                  file=sys.stderr)
-            return 2
-        vals += defaults[len(vals):]
-        budget = RunBudget(
-            max_requests=vals[0], max_input_tokens=vals[1],
-            max_output_tokens=vals[2],
-            deadline=time.monotonic() + vals[3] * 60,
-            output_reserve=4000)
+    # Bound dispatches, including model reads during composition.
+    try:
+        budget = run_budget_for(args.run_budget, input_bytes=args.run_input_bytes)
+    except ValueError as exc:
+        print(f"refusing to run: {exc}", file=sys.stderr)
+        return 2
     export = evaluation_export_for(Path(args.deployment_config))
     try:
         evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
@@ -703,6 +686,7 @@ def _main(*, lock_fd: int = -1) -> int:
             "sample": args.sample, "judge": args.judge, "judge_samples": args.judge_samples,
             "deployment_config_sha256": fingerprint(Path(args.deployment_config)),
             "lock_path": str(EVAL_HOST_LOCK), "lock_acquired": True,
+            "measurement": args.bound_measurement.mode,
             **({"subject_overrides_file": str(args.subject_overrides),
                 "subject_overrides_sha256": overrides_sha,
                 "subject_overrides": subject_overrides}
@@ -717,6 +701,8 @@ def _main(*, lock_fd: int = -1) -> int:
     try:
         with evidence.capture(trace.get_tracer_provider(), export=export):
             args.bound_contract.record()
+            if args.bound_cohort is not None:
+                args.bound_cohort.record(evidence)
             trace_id = trace.get_current_span().get_span_context().trace_id
             print(f"eval trace: {trace_id:032x}")
             rc = _execute(args, names, only, subject_overrides=subject_overrides)
@@ -746,16 +732,19 @@ def _coverage_execute(args: argparse.Namespace, names: list[str],
         doc = load_input(gold=not bool(args.print_input))
         print("coverage plan:", json.dumps(plan(doc), sort_keys=True))
         if args.print_input:
-            return _print_input(names[0], args.print_input, source_url="")
+            return _print_input(names[0], args.print_input, source_url="",
+                                services=(args.service_inputs.corpora.get(names[0])
+                                          if args.service_inputs else None))
         if not args.judge:
             raise ValueError("coverage requires --judge")
         contract = getattr(args, "bound_contract", None)
         judge = Judge(base_url=args.judge_base_url, model=args.judge,
-                      config_path=args.config, contract=contract,
+                      config_path=Path(args.config or args.deployment_config), contract=contract,
                       samples=1, timeout_seconds=args.coverage_timeout)
         ok = _run_one(names[0], source_url="", judge=judge, sample=1,
                       only=only, all_reasons=args.reasons, positions=args.positions,
-                      contract=contract)
+                      contract=contract, services=(args.service_inputs.corpora.get(names[0])
+                                          if args.service_inputs else None))
         return 0 if ok else 1
     except (ValueError, KeyError, OSError) as exc:
         print(f"coverage ERROR: {exc}", file=sys.stderr)
@@ -764,6 +753,11 @@ def _coverage_execute(args: argparse.Namespace, names: list[str],
 
 def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | None,
              *, subject_overrides: dict[str, Any] | None = None) -> int:
+    from nora.subject.eval_evidence import current
+
+    args.service_inputs = getattr(args, "service_inputs", None)
+    if args.service_inputs and (evidence := current()):
+        args.service_inputs.record(evidence)
     if "profile_coverage" in names:
         if contract := getattr(args, "bound_contract", None):
             contract.verify_cases({f"{n}:{c.name}": c for n in names
@@ -849,9 +843,8 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             if evidence := current():
                 evidence.record("subject_config", sha256=fingerprint(Path(generated)))
             print(f"subject config rebuilt from {args.deployment_config} -> {generated}")
-            # AFTER the rebuild: the sweep reads Honcho's address and the
-            # deployment's workspace off the config every subject composes.
-            print(f"run {RUN_ID}: every draw gets its own Honcho workspace")
+            measurement = getattr(args, "bound_measurement", None) or PROTOCOL
+            print(f"run {RUN_ID}: {measurement.phrase} with case-owned external services")
             # THE MEMORY SURFACE, RESOLVED, not assumed (DEC-316): the
             # generated config's own flag, or `--memory-index`. Cases are
             # selected for it and every subject is checked against it, so a
@@ -860,22 +853,24 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             # `materialise` has just written it; the per-case check
             # (`refuse_a_memory_surface_mismatch`) is the fail-closed backstop
             # should this ever read the wrong file.
-            written = Path(generated)
-            deployed = written.exists() and memory_index_enabled(
-                written.read_text(encoding="utf-8"))
+            deployed = Path(generated).exists() and memory_index_enabled(
+                Path(generated).read_text(encoding="utf-8"))
             graph = deployed or args.memory_index
             print(f"memory surface: {memory_surface_line(deployed, args.memory_index)}")
             print(pseudonyms.status())
-            _sweep_stale_workspaces()
 
             if args.print_input:
-                return _print_input(names[0], args.print_input, source_url=source_url)
+                return _print_input(names[0], args.print_input, source_url=source_url,
+                                    services=(args.service_inputs.corpora.get(names[0])
+                                          if args.service_inputs else None))
             # THE BUDGET, before any draw (and before the graph surface's
             # checks): the size of what this run would draw, and a refusal over
             # `BUDGET_MINUTES` unless the operator asked for it.
+            cohort = getattr(args, "bound_cohort", None)
             try:
                 est = estimate([
-                    (len(selected_cases(n, only=only, memory_index=graph)),
+                    (len(selected_cases(n, only=only, memory_index=graph,
+                                        cohort=cohort)),
                      bool(args.judge) and n in JUDGED_CORPORA)
                     for n in names
                 ], args.sample, args.judge_samples)
@@ -888,23 +883,10 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                 return 2
             if contract := getattr(args, "bound_contract", None):
                 contract.verify_cases({f"{n}:{c.name}": c for n in names
-                    for c in selected_cases(n, only=only, memory_index=graph)})
-            if graph:
-                try:
-                    for line in graph_surface_lines(
-                        source_url, embedder_model_of(written.read_text(encoding="utf-8")),
-                    ):
-                        print(line)
-                except GraphIndexRefusedError as exc:
-                    print(f"refusing to run: {exc}", file=sys.stderr)
-                    return 2
+                    for c in selected_cases(n, only=only, memory_index=graph,
+                                            cohort=cohort)})
 
-            judge = None if not args.judge else Judge(
-                base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,
-                config_path=args.config,
-                timeout_seconds=args.judge_timeout,
-                contract=getattr(args, "bound_contract", None),
-            )
+            judge = _eval_judge(args) if args.judge else None
 
             ok = True
             for name in names:
@@ -916,7 +898,10 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                         context_receipts=(receipts if args.context_arm != "full"
                                           or args.context_report else None),
                         contract=getattr(args, "bound_contract", None),
-                    ) and ok
+                        services=(args.service_inputs.corpora.get(name)
+                                  if args.service_inputs else None),
+                        cohort=getattr(args, "bound_cohort", None),
+                        measurement=measurement) and ok
                 # Successful Nora replies under fallback cannot pass the selector experiment.
                 ok = ok and not any("selector_error" in r for r in receipts)
             return 0 if ok else 1
@@ -945,6 +930,14 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                 raise
     finally:
         signal.signal(signal.SIGTERM, previous_sigterm)
+
+
+def _eval_judge(args: argparse.Namespace) -> Judge:
+    """The eval judge the corpus runs grade against (`rebuilt.grading.Judge`)."""
+    return Judge(
+        base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,
+        config_path=args.config, timeout_seconds=args.judge_timeout,
+        contract=getattr(args, "bound_contract", None))
 
 
 def _raise_on_sigterm(signum: int, frame: object) -> None:

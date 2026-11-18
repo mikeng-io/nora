@@ -30,7 +30,7 @@ an empty database named `bakeoff*`, which it marks), with the memory
 watchdog on:
 
     docker run -d --name bakeoff-pg --cpus 2 --memory 2g -e POSTGRES_DB=bakeoff \\
-        -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55439:5432 pgvector/pgvector:pg18
+        -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55439:5432 "$(cat deploy/postgres/image)"
     nice -n 10 uv run --with bm25s==0.3.13 python -m evals.retrieval_bakeoff.run \\
         --dsn postgresql+asyncpg://postgres@127.0.0.1:55439/bakeoff
 

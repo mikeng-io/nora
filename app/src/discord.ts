@@ -5,4 +5,4 @@ import Discord from "next-auth/providers/discord";
 // compared it against its placeholder and refused every sign-in
 // (nextauthjs/next-auth#13504). The value is Discord's own, from
 // https://discord.com/.well-known/oauth-authorization-server.
-export const discordProvider = Discord({ issuer: "https://discord.com" });
+export const discordProvider = Discord({ issuer: "https://discord.com", checks: ["pkce", "state"] });

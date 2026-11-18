@@ -22,11 +22,13 @@ from pathlib import Path
 
 import pytest
 
+from nora.access import IdentityAccess
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.standing import Standing
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
+from nora.policy import permissive_policy
 from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
@@ -117,7 +119,8 @@ async def test_seeded_notes_and_standing_render_in_the_assembled_prompt(
 
     try:
         dispatcher, _, background, _trigger = build_offline_pipeline(
-            cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
+            cfg, adapter=adapter, audit=audit, memory=memory,
+            access=IdentityAccess.for_files(persons, permissive_policy()),
             doctrine_store=doctrine_store, runner=runner, metrics=metrics,
             notes=notes_store, standing=standing_store,
         )

@@ -3,11 +3,72 @@
 import argparse
 import math
 import os
+import time
 from pathlib import Path
+from typing import Any
 
+from evals.measurement import MEASURES
 from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES
 
 BUDGET_MINUTES = 60
+
+
+def run_input_bytes(value: str) -> int:
+    """`--run-input-bytes`: a positive count of serialized wire bytes."""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "input byte bound must be an integer") from None
+    if n <= 0:
+        raise argparse.ArgumentTypeError(
+            "input byte bound must be positive")
+    return n
+
+
+def run_budget_for(value: str | None,
+                   input_bytes: int | None = None) -> Any | None:
+    """The parsed `--run-budget` bound, or None when the flag was not given.
+
+    `input_bytes` is the parsed `--run-input-bytes` cap on cumulative
+    serialized request bytes; it binds `RunBudget.max_input_bytes` and is
+    refused on its own — a byte bound with no installed budget would
+    silently gate nothing.
+    """
+    if value is None:
+        if input_bytes is not None:
+            raise ValueError("--run-input-bytes requires --run-budget")
+        return None
+    from nora.domain.run_budget import RunBudget
+
+    if input_bytes is not None and input_bytes <= 0:
+        raise ValueError("--run-input-bytes must be a positive integer")
+    parts = value.split(",")
+    if not 1 <= len(parts) <= 4:
+        raise ValueError("--run-budget takes 1-4 fields")
+    defaults: list[int | None] = [40, None, 40000, 30]
+    vals: list[int | None] = []
+    bad = False
+    for i, p in enumerate(parts):
+        p = p.strip()
+        if not p or p.lower() in ("none", "-"):
+            vals.append(defaults[i])
+            continue
+        try:
+            vals.append(int(p))
+        except ValueError:
+            bad = True
+    if bad or any(v is not None and v <= 0 for v in vals):
+        raise ValueError(
+            "--run-budget fields must be positive integers "
+            "(empty or `none` IN = measured, not capped)")
+    vals += defaults[len(vals):]
+    return RunBudget(
+        max_requests=vals[0], max_input_tokens=vals[1],
+        max_output_tokens=vals[2],
+        max_input_bytes=input_bytes,
+        deadline=time.monotonic() + vals[3] * 60,
+        output_reserve=4000)
 
 
 def judge_timeout(value: str) -> float:
@@ -25,6 +86,21 @@ def eval_parser() -> argparse.ArgumentParser:
                      help="run every corpus in this S-class (e.g. S7); repeatable")
     ap.add_argument("--all", action="store_true", help="run every corpus")
     ap.add_argument("--list", action="store_true", help="list corpora and exit")
+    ap.add_argument("--services", type=Path,
+                    help="private per-corpus/draw HTTP recordings for protocol rehearsal")
+    ap.add_argument(
+        "--journey-cohort", type=Path, metavar="FILE",
+        help="the declared private journey cohort: a versioned file of "
+             "version-2 live-clock cases and the two judge aliases, "
+             "required by the autonomous_journey corpus (selected by name; "
+             "never part of --all or --class). Its plans are finite "
+             "generated worlds declared per case in --services, and the "
+             "run requires an explicit --run-budget. Generated-world input "
+             "is protocol evidence only — behavior stays UNMEASURED")
+    ap.add_argument("--measure", choices=MEASURES, default="protocol",
+                    help="the bound claim: `protocol` rehearsal (behavior "
+                         "UNMEASURED, including declared gateway fixtures) or "
+                         "`behavioral` — journeys with a declared gateway")
     ap.add_argument(
         "--case", action="append", dest="cases", metavar="NAME",
         help="run only these cases of the named corpus; repeatable. A "
@@ -95,7 +171,7 @@ def eval_parser() -> argparse.ArgumentParser:
     ap.add_argument(
         "--sample", type=int, default=1,
         help=(
-            "draw each case this many times (evals.backbone.sampled/"
+            "draw each case this many times (evals.reading.sampled/"
             "sample_read) rather than once. One draw of a stochastic "
             "process is not a reading of it; the default of 1 is a cheap "
             "smoke run and says so"
@@ -153,3 +229,11 @@ def _run_args(ap: argparse.ArgumentParser) -> None:
              "pre-dispatch measure and refuses every call. `chat.completions` "
              "calls that would cross it raise RunBudgetError BEFORE leaving — "
              "budget exhaustion is ERROR, never PASS.")
+    ap.add_argument(
+        "--run-input-bytes", type=run_input_bytes, metavar="BYTES",
+        help="cumulative bound on serialized model-request bytes for the "
+             "run, measured on the FINAL wire bodies at transport admission "
+             "(RunBudget.max_input_bytes) — a size cap in bytes, never a "
+             "provider-token or spend estimate. Requires --run-budget: the "
+             "flag alone installs nothing and refuses rather than being "
+             "ignored.")

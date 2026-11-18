@@ -86,13 +86,21 @@ from nora.domain.standing import (
     WORKING_SET_CEILING_BYTES,
     WORKING_SET_CEILING_ITEMS,
 )
+from nora.infra.sql.metadata import METADATA as METADATA
+from nora.infra.sql.schema_managed import (
+    MANAGED_LINK_DECISION as MANAGED_LINK_DECISION,
+)
+from nora.infra.sql.schema_managed import (
+    MANAGED_LINK_DELIVERY as MANAGED_LINK_DELIVERY,
+)
+from nora.infra.sql.schema_managed import (
+    MANAGED_LINK_REQUEST as MANAGED_LINK_REQUEST,
+)
 
 #: Qwen3-VL-Embedding-2B's width, and the leading slice the HNSW index holds
 #: (migration 0106 spells both).
 EMBEDDING_DIMENSIONS = 2048
 EMBEDDING_INDEXED_DIMENSIONS = 256
-
-METADATA = sa.MetaData()
 
 
 def _recorded_at() -> sa.Column[Any]:
@@ -347,17 +355,13 @@ MESSAGE_DELETE = sa.Table(
     ),
 )
 
-IDX_MESSAGE_DELETE_MESSAGE = sa.Index(
-    "idx_message_delete_message", MESSAGE_DELETE.c.message_id,
-)
+IDX_MESSAGE_DELETE_MESSAGE = sa.Index("idx_message_delete_message", MESSAGE_DELETE.c.message_id)
 
 # Declared after the table so the expression index can reference its columns.
 # `idx_messages_conv_ts` is excluded from Alembic autogenerate by
 # `migrations/env.py::include_object` — see that hook's comment — and is authored
 # by hand in the squashed baseline.
-IDX_CONV_TS = sa.Index(
-    "idx_messages_conv_ts", MESSAGES.c.conversation_id, sa.text("ts DESC")
-)
+IDX_CONV_TS = sa.Index("idx_messages_conv_ts", MESSAGES.c.conversation_id, sa.text("ts DESC"))
 IDX_IS_NORA = sa.Index("idx_messages_is_nora", MESSAGES.c.is_nora)
 
 #: `record_query`'s lexical search (migration `0073_lineage`): GIN + trigram for
@@ -1108,9 +1112,7 @@ REMINDERS = sa.Table(
 # `idx_messages_conv_ts` and `idx_presence_member_ts` this one has nothing
 # autogenerate is blind to; it is still authored by hand in `0004_reminders`
 # because the CHECK constraint on the same table is.
-IDX_REMINDERS_DUE = sa.Index(
-    "idx_reminders_due", REMINDERS.c.state, REMINDERS.c.due_at
-)
+IDX_REMINDERS_DUE = sa.Index("idx_reminders_due", REMINDERS.c.state, REMINDERS.c.due_at)
 
 #: The due predicate's index (node 18): `state = 'pending' AND due_tick <=
 #: current_tick` is what the heartbeat's `due()` reads every tick, so the
@@ -1306,9 +1308,7 @@ COMPUTE_JOBS = sa.Table(
 
 # Declared after the table, house style. The poller's own `pending()` query
 # filters on `state` alone — matching `idx_reminders_due`'s own precedent.
-COMPUTE_JOBS_STATE_IDX = sa.Index(
-    "idx_compute_jobs_state", COMPUTE_JOBS.c.state,
-)
+COMPUTE_JOBS_STATE_IDX = sa.Index("idx_compute_jobs_state", COMPUTE_JOBS.c.state)
 
 
 # `tool_call_log` — one row per successful call to a `cacheable=True` tool,
@@ -4540,6 +4540,7 @@ OTP_CHALLENGE = sa.Table(
     sa.Column("person_id", sa.Text, nullable=False),
     sa.Column("purpose", sa.Text, nullable=False),
     sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("account_proof", pg.JSONB(none_as_null=True)),
     sa.Column("code_hash", sa.Text, nullable=False),
     sa.Column("issued_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
@@ -5450,7 +5451,7 @@ LEDGER_COMMITMENT_REVISION = _ledger_table(
 )
 LEDGER_THREAD_REVISION = _ledger_table("standing_thread_revision", "thread", history=True)
 
-# Legacy generic memory graph stores (design/unified-memory/graph.md), renamed legacy_* by 0155.
+# Legacy generic memory graph stores (design/unified-memory/graph.md), renamed legacy_* by 0164.
 LEGACY_ENTITY = sa.Table(
     "legacy_entity",
     METADATA,
@@ -5619,8 +5620,7 @@ COMPREHEND_RESULT = sa.Table(
     sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now()),
 )
-sa.Index("idx_comprehend_result_work", COMPREHEND_RESULT.c.work_id,
-         COMPREHEND_RESULT.c.input_hash)
+sa.Index("idx_comprehend_result_work", COMPREHEND_RESULT.c.work_id, COMPREHEND_RESULT.c.input_hash)
 
 NOTEBOOK_ENTRY = sa.Table(
     "notebook_entry",
@@ -5707,8 +5707,7 @@ BRIDGE_EVENT_ALIAS = sa.Table(
 sa.Index("idx_bridge_event_conv", BRIDGE_EVENT.c.platform,
          BRIDGE_EVENT.c.account_key, BRIDGE_EVENT.c.conversation_id,
          BRIDGE_EVENT.c.seq)
-sa.Index("idx_bridge_event_stream", BRIDGE_EVENT.c.stream, BRIDGE_EVENT.c.stream_id,
-         unique=True)
+sa.Index("idx_bridge_event_stream", BRIDGE_EVENT.c.stream, BRIDGE_EVENT.c.stream_id, unique=True)
 
 BRIDGE_WORK = sa.Table(
     "bridge_work", METADATA,

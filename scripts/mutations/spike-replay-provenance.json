@@ -16,14 +16,14 @@
   {
     "name": "dumped subject override preserves nested config types",
     "file": "nora/subject/obtain.py",
-    "old": "    if isinstance(value, dict):\n        value = TypeAdapter(type(obj).model_fields[head].annotation).validate_python(value)\n",
+    "old": "    if isinstance(value, dict) and not isinstance(obj, dict):\n        value = TypeAdapter(type(obj).model_fields[head].annotation).validate_python(value)\n",
     "new": "",
     "target": "tests/unit/test_subject_obtain.py::test_dumped_spike_overrides_remain_typed_and_sandboxed"
   },
   {
     "name": "host rewriting follows effective overrides",
     "file": "nora/subject/obtain.py",
-    "old": "    if not _resolves(_DOCKER_HOST):\n        cfg = _with(cfg, \"llm.base_url\", _from_host(cfg.llm.base_url))",
+    "old": "    if spec.environment is None and not _resolves(_DOCKER_HOST):\n        cfg = _with(cfg, \"llm.base_url\", _from_host(cfg.llm.base_url))",
     "new": "    if False:\n        cfg = _with(cfg, \"llm.base_url\", _from_host(cfg.llm.base_url))",
     "target": "tests/unit/test_subject_obtain.py::test_dumped_spike_overrides_remain_typed_and_sandboxed"
   },

@@ -1,8 +1,8 @@
 # Configuration and credential delivery
 
 `config.toml` carries deployment settings, `identity.toml` people, `policy.toml`
-trust, and private `secret.toml` credential values. Identity and policy reload every
-three seconds after validation. Config and secrets require controlled restart or
+trust, and private `secret.toml` credential values. In the file backend, identity
+and policy reload every three seconds after validation. Config and secrets require controlled restart or
 recreation. They are not hot reloaded. See the
 [contract amendment](adr/0033-private-secrets-and-model-endpoints.md) (DEC-325).
 
@@ -38,6 +38,54 @@ native environment projections. `.env` participates only in deployment paths tha
 load it; host precedence is process environment, then legacy `.env`, then secret.
 To retire `.env` overrides, remove the corresponding assignments under the deploy
 lock after backup and validation. Empty assignments remain overrides.
+
+## Managed identity and access
+
+`[identity] backend = "file"` is the default. Managed installations select
+`backend = "managed"`; person/account bindings and scoped access then use the
+managed services rather than file authority. Room destinations and topology
+retain their declared configuration. Backend selection is a restart boundary,
+not an identity-file hot reload. See the
+[identity contract](../design/managed-identity-access/identity.md).
+
+Configure private Kratos admin and Keto read/write URLs under
+`[identity.managed]`. They must be reachable from Nora's runtime, not just the
+operator's shell. The [pinned Ory artifacts](../deploy/ory/README.md) include a
+disposable local/CI stack; its development mode, loopback host ports and volume
+cleanup commands are for that environment. An installed managed service needs
+its own persistent stores and private listener access.
+
+The portal uses one configured authentication issuer, named by the deployment's
+`NORA_AUTHENTICATION_ISSUER` (default `portal`). For example, the private config
+can declare:
+
+```toml
+[identity.authentication.portal]
+key_env = "NORA_AUTHENTICATION_KEY"
+methods = { discord_oauth = "configured-discord-client-id", telegram_oidc = "configured-telegram-client-id" }
+```
+
+Store the referenced key in private `[credentials]`, with environment overrides
+on that reference name. Use a distinct signing key of at least 32 bytes, separate
+from `AUTH_SECRET`, OTP and provisioning credentials. Method values must match
+the actual gateway provider client IDs; only configure verified login methods.
+Signal/WhatsApp code methods use their configured OTP proof issuer and are
+login proof, never linking consent.
+
+The existing private Compose projection derives `NORA_IDENTITY_BACKEND` from
+config for the portal and projects only its selected issuer key to the native
+`NORA_AUTHENTICATION_KEY`. OTP custom aliases remain supported. An unconfigured
+portal issuer gets no other issuer's key; managed mode still refuses file
+fallback. Ory admin keys, provisioning tokens and model keys are not portal
+credentials. Optional `AUTH_TELEGRAM_ID` and `AUTH_TELEGRAM_SECRET` use the same
+private credential delivery. Recreate affected readers through the
+[validated-copy procedure](../.agents/skills/nora-deploy/SKILL.md#3-config-only-change)
+after changing these loaded-once settings; updating source does not update an
+installed helper or live process.
+
+Production authority handoff requires operator approval and a validated data
+handoff, in addition to configuration. Follow the
+[managed activation and recovery prerequisites](runbook.md#managed-identity-activation-and-recovery).
 
 ## Model endpoints
 
@@ -118,7 +166,8 @@ picker; neither setting enables or chooses the agent's reaction.
 | operational script credential reads | common resolver | host-local Python process | synthetic/offline input tests; never print resolved mappings |
 
 Existing Compose owns native image mappings; `scripts/secret_delivery.py` adds
-configured aliases only to Nora, presence and analytics. The installed Komodo
+configured aliases to Nora, presence and analytics, plus the app backend, selected
+authentication issuer/signing key and OTP bearer. The installed Komodo
 wrapper writes private `compose.env` and `compose.json` into `.secret-delivery/`
 beside itself (normally `/etc/komodo/nora-deploy/.secret-delivery/`). Its control
 directory must be writable and shared at the same path on the host and in

@@ -19,12 +19,13 @@ import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from . import config
 from .agent.telemetry import setup_agent_tracing
-from .app import adoption, cli, runtime, wake
+from .app import adoption, cli, lifecycle, runtime, wake
 from .app.composition import Dependencies, StartupError, build_dependencies
+from .app.management import mount_management
 from .app.revisions import RevisionRecorder
 from .config import ConfigError
 from .obs.errors import setup_errors
@@ -175,6 +176,7 @@ class App:
         # without.
         if deps.otp is not None:
             register_otp_routes(health_app, otp=deps.otp, api_token=deps.otp_api_token)
+        await mount_management(health_app, cfg=self.cfg, services=deps.managed_services)
         # The voice channel's text entry point: the wake service POSTs transcripts
         # here, and they enter through the dispatcher exactly like a typed Discord
         # message (same adapter callback, ingest and reactive path). `on_voice_event`
@@ -327,13 +329,10 @@ class App:
             # a tick reads it, so a restart never holds a unit for the rest of a
             # session timeout. Never raises (it counts and logs); a wake it could
             # not release expires on its own clock.
-            await deps.wake_evaluator.reclaim_orphans(
-                process_started_ms=int(started_at * 1000),
-            )
+            await deps.wake_evaluator.reclaim_orphans(process_started_ms=int(started_at * 1000))
             deps.background.spawn(wake.wake_loop(
                 deps.wake_evaluator, deps.metrics,
-                tick_seconds=deps.wake_tick_seconds,
-            ))
+                tick_seconds=deps.wake_tick_seconds))
         else:
             log.info("cognition loop disabled ([cognition] enabled = false)")
         # The OAuth keepalive (DEC-308): HERE and not in composition, because
@@ -378,8 +377,7 @@ class App:
         deps.background.spawn(runtime.debounce_sweep_loop(
             deps.debounce, deps.metrics,
             interval_seconds=DEBOUNCE_SWEEP_INTERVAL_SECONDS,
-            ttl_seconds=DEBOUNCE_SWEEP_TTL_SECONDS,
-        ))
+            ttl_seconds=DEBOUNCE_SWEEP_TTL_SECONDS))
         # The participation occasion's clock: `deps.participation_trigger` is
         # None unless `[participation] enabled` AND composition built a fire
         # path. The flag alone gates nothing, matching the dream clock's "the
@@ -388,8 +386,7 @@ class App:
             deps.background.spawn(runtime.participation_loop(
                 deps.participation_trigger, deps.metrics,
                 tick_seconds=PARTICIPATION_TICK_SECONDS,
-                sweep_ttl_seconds=PARTICIPATION_SWEEP_TTL_SECONDS,
-            ))
+                sweep_ttl_seconds=PARTICIPATION_SWEEP_TTL_SECONDS))
         # EVERY enabled adapter, not just Signal's: one that never had
         # `listen()` called would be present in `/health` yet deaf. Each
         # platform gets its own supervised task, so one wedged Gateway cannot
@@ -400,10 +397,14 @@ class App:
         # (inbound is the reader's), so there is no dual listener.
         if deps.bridge_runtime is not None:
             deps.background.spawn(deps.bridge_runtime.run())
-            # The periodic inspection loop is a second task, not an extra
-            # awaited coroutine inside run(): `run()` owns reader+runner
-            # lifetime; this ticks beside it and stops on the same _stop.
+            # Inspection ticks beside the reader and stops on the same _stop.
             deps.background.spawn(deps.bridge_runtime.inspect_forever())
+
+        if self.cfg.identity.backend == "managed":
+            deps.background.spawn(deps.managed_services.run_reconciliation(
+                interval_seconds=self.cfg.identity.onboarding.retry_seconds))
+        if deps.onboarding is not None:
+            deps.background.spawn(deps.onboarding.run())
 
         adapter_tasks = runtime.start_adapters(
             deps.background,
@@ -411,8 +412,7 @@ class App:
                 runtime.SupervisedAdapter(
                     platform=adapter.platform,
                     listen=functools.partial(
-                        adapter.listen, on_message=deps.dispatcher.on_message
-                    ),
+                        adapter.listen, **_listen_kwargs(deps, adapter)),
                 )
                 for adapter in deps.registry
             ],
@@ -480,40 +480,15 @@ class App:
         await recorder.watch()
 
     async def shutdown(self) -> None:
-        # The shadow Cognition sessions first: they hold the model client and
-        # the database this method closes below, and a session cancelled here
-        # records itself `cancelled` (its stimuli stay pending) instead of
-        # vanishing with its wake reading «in flight». The evaluator's loop was
-        # already cancelled by `run`; `CognitionShutdown` is idempotent.
-        if self.deps.cognition_shutdown is not None:
-            await self.deps.cognition_shutdown()
-        # Sub-agent jobs in flight: cancelled before the client and the database close. Their
-        # rows are failed by the next boot's recovery and the room is told.
-        if self.deps.subagent_backend is not None:
-            await self.deps.subagent_backend.shutdown()
-        if self._health_runner is not None:
-            await self._health_runner.cleanup()
-        # Bridge-mode collaborators: stop the runtime (readers + lanes +
-        # inspector loop share its _stop), then close its Redis client and
-        # every adapter's bridge control/session clients. `close()` is
-        # present on the bridge adapters and absent on direct-mode ones, so
-        # getattr-guarded rather than asserted.
-        if self.deps.bridge_runtime is not None:
-            self.deps.bridge_runtime.stop()
-            await self.deps.bridge_runtime.redis.aclose()
-        for adapter in self.deps.registry.adapters.values():
-            close = getattr(adapter, "close", None)
-            if close is not None:
-                await close()
-        # The scoped computer's own close: admission stops, shielded
-        # executors unwind, and the dedicated Redis client and journal
-        # lock release — BEFORE the SQL client and audit store close.
-        if self.deps.computer_lifecycle is not None:
-            await self.deps.computer_lifecycle.close()
-        await self.deps.client.close()
-        for client in self.deps.model_clients:
-            await client.close()
-        await self.deps.audit.aclose()
+        await lifecycle.close_dependencies(self.deps, health_runner=self._health_runner)
+
+
+def _listen_kwargs(deps: Dependencies, adapter: Any) -> dict[str, Any]:
+    """One adapter's `listen(**)` kwargs — bare `on_message` absent onboarding."""
+    on_message = deps.dispatcher.on_message
+    if deps.onboarding is None:
+        return {"on_message": on_message}
+    return deps.onboarding.listen_extras(adapter, on_message=on_message)
 
 
 def build_parser() -> argparse.ArgumentParser:

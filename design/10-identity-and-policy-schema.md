@@ -25,8 +25,12 @@ settled first.
 This document owns the operator-maintained file representation. The
 [managed identity and access bundle](managed-identity-access/README.md) owns the
 optional Ory-backed authority, cross-platform link consent and private management
-boundary. Both use one canonical person with many platform accounts; selecting
-managed mode does not turn room membership into a separate person identity.
+boundary. Both use the [canonical identity vocabulary](managed-identity-access/identity.md#one-identity-many-accounts):
+one identity with many platform accounts, independent of whether it is operated
+by a human or software. Existing file keys such as `persons` and `person_id`
+name this canonical association; their spelling does not require human
+classification. Selecting managed mode preserves those keys and historical
+references rather than assigning a second identity.
 
 ## 1. The problem, stated precisely
 
@@ -131,8 +135,9 @@ shape as the person problem.
 
 ## 3. `identity.toml`
 
-Hand-editable (D6), one section per person, ids typed by **kind** so matching
-can reason about them.
+Hand-editable (D6), one section per canonical identity. The `persons` table is
+the file representation of the shared identity model; ids are typed by
+identifier **kind**, not by human or machine nature.
 
 ```toml
 [persons.miles]

@@ -1,4 +1,4 @@
-"""The 0155 downgrade's data guard, against a real migrated database."""
+"""The 0164 downgrade's data guard, against a real migrated database."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from nora.infra.sql.migrations_runner import (
 
 
 @pytest.mark.fresh_database
-def test_0155_downgrade_refuses_while_the_graph_holds_data(clean_pg_url):
+def test_0164_downgrade_refuses_while_the_graph_holds_data(clean_pg_url):
     """A populated graph cannot downgrade: dropping the five tables would
     lose their rows, and the restored `entity` name would collide with
     new-graph row_history. The refusal covers rows still present and rows
@@ -31,13 +31,13 @@ def test_0155_downgrade_refuses_while_the_graph_holds_data(clean_pg_url):
             ))
         with pytest.raises(RuntimeError, match="still holds data"):
             command.downgrade(
-                alembic_config(clean_pg_url), "0154_event_revision_citations"
+                alembic_config(clean_pg_url), "0163_managed_history"
             )
         with engine.begin() as conn:
             conn.execute(sa.text("DELETE FROM registry"))
         with pytest.raises(RuntimeError, match="still holds data"):
             command.downgrade(
-                alembic_config(clean_pg_url), "0154_event_revision_citations"
+                alembic_config(clean_pg_url), "0163_managed_history"
             )
     finally:
         engine.dispose()
@@ -45,12 +45,12 @@ def test_0155_downgrade_refuses_while_the_graph_holds_data(clean_pg_url):
 
 
 @pytest.mark.fresh_database
-def test_0155_downgrade_round_trips_when_the_graph_is_empty(clean_pg_url):
+def test_0164_downgrade_round_trips_when_the_graph_is_empty(clean_pg_url):
     """An empty graph downgrades and upgrades cleanly: the five tables go,
     the legacy names come back, and the chain reaches head again."""
     run_migrations(clean_pg_url)
     command.downgrade(
-        alembic_config(clean_pg_url), "0154_event_revision_citations"
+        alembic_config(clean_pg_url), "0163_managed_history"
     )
     engine = sa.create_engine(sync_url_for(clean_pg_url))
     try:
