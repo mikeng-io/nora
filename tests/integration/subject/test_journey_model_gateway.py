@@ -21,8 +21,8 @@ from evals.services import load_services
 from nora.agent import factory
 from nora.agent.speech_format import render_input
 from nora.subject.eval_evidence import EvidenceError
+from nora.subject.journey_world import make_causal_protocol
 from nora.subject.obtain import SubjectSpec, build_config
-from nora.testing.causal_protocol import CausalProtocol
 from tests.architecture.test_every_model_call_is_a_declared_occasion import (
     _modules,
     declares_blocks,
@@ -40,7 +40,7 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
             overrides={"dreamer.model": "generated-dreamer"},
         )
     )
-    protocol = CausalProtocol(cfg)
+    protocol = make_causal_protocol(cfg)
 
     def request(purpose, fallback, user, *, system="Generated instruction", tools=(), raw=False):
         model = cfg.endpoint(purpose, fallback)[2]

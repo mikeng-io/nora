@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from nora.subject.journey_world import GeneratedJudge, JourneyServices
+from nora.subject.journey_world import GeneratedJudge, JourneyServices, make_causal_protocol
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.testing.causal_protocol import (
     ANSWER,
@@ -21,7 +21,6 @@ from nora.testing.causal_protocol import (
     INITIAL,
     QUESTION,
     TITLE,
-    CausalProtocol,
 )
 
 _POLICY = (
@@ -94,7 +93,7 @@ def cfg(tmp_path, evaluation_config):
 
 @pytest.fixture
 def protocol(cfg):
-    return CausalProtocol(cfg)
+    return make_causal_protocol(cfg)
 
 
 def _serve(protocol, body):
@@ -377,7 +376,7 @@ def test_the_judge_is_reached_by_declared_model_never_by_stream_flag(tmp_path, c
     """An unstreamed non-judge call — the gate, an unknown lane — belongs to
     the protocol's named errors; only the two eval aliases reach the judge."""
     plan = JourneyServices(policy="", judge_models=("generated-a", "generated-b"))
-    plan.protocol, plan.judge = CausalProtocol(cfg), GeneratedJudge()
+    plan.protocol, plan.judge = make_causal_protocol(cfg), GeneratedJudge()
     assert plan._destination({"model": "generated-a"}) == plan.judge.respond
     assert plan._destination({"model": "generated-b"}) == plan.judge.respond
     for model in (cfg.llm.model, cfg.dreamer.model, cfg.relevance_gate.model, "generated-unknown"):

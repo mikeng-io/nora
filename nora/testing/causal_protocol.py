@@ -10,22 +10,13 @@ applicable occasion is a recorded, named failure, never a silent answer.
 import html
 import json
 import re
+from collections.abc import Mapping
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from aiohttp import web
 from jsonschema import ValidationError, validate
-
-from nora.instructions.dreamer import OBJECTIVE_TAG
-from nora.language.character import (
-    CHARACTER_NORA_ADAPTOR_NAME,
-    CHARACTER_PERSON_ADAPTOR_NAME,
-    CHARACTER_UNIT_ADAPTOR_NAME,
-)
-from nora.language.culture import CULTURE_ADAPTOR_NAME
-from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
-from nora.language.profile_collective import PROFILE_COLLECTIVE_ADAPTOR_NAMES
-from nora.language.profile_verdict import PROFILE_VERDICT_ADAPTOR_NAME
 
 INITIAL = "記低：the generated venue and time remain undecided."
 CORRECTION = "記低：the generated venue is Cedar Hall; the generated time remains undecided."
@@ -39,19 +30,7 @@ ANSWER = "The selected generated venue is Cedar Hall."
 #: room fold (`{"standing": ...}` contract).
 _UNIT_SCOPE_MARKER = "Scope of this call: UNIT"
 
-#: Tagged objectives identify adaptor work; untagged cognition owns scenario progress.
-_OBJECTIVE_TAG = re.compile(rf'<{OBJECTIVE_TAG} name="([^"]+)"')
-
-#: These EntitySessions objectives close without inventing an entity name.
-#: Their unsettled watermark remains pending.
-_SESSION_CLOSE_OBJECTIVES = frozenset(
-    {
-        CHARACTER_PERSON_ADAPTOR_NAME,
-        CHARACTER_UNIT_ADAPTOR_NAME,
-        CHARACTER_NORA_ADAPTOR_NAME,
-    }
-)
-_PROFILE_OBJECTIVES = frozenset({PROFILE_PERSON_ADAPTOR_NAME, *PROFILE_COLLECTIVE_ADAPTOR_NAMES})
+BackgroundAnswer = Literal["session_close", "culture", "profile", "profile_verdict"]
 
 #: Total background calls the finite world answers. A workload bound, not a
 #: threshold production raised: past it the request is a named `exhausted`
@@ -144,8 +123,12 @@ def _user_text(request):
 
 
 class CausalProtocol:
-    def __init__(self, cfg):
+    def __init__(
+        self, cfg, *, objective_tag: str, background_answers: Mapping[str, BackgroundAnswer]
+    ):
         self.cfg = cfg
+        self.objective_tag = re.compile(rf'<{re.escape(objective_tag)} name="([^"]+)"')
+        self.background_answers = dict(background_answers)
         self.requests, self.errors = [], []
         self.phase = 0
         self.note_id = None
@@ -310,7 +293,8 @@ class CausalProtocol:
     def _background(self, request, objective):
         """Answer the declared adaptor objective; an unsettled close holds its watermark."""
         why = "Generated protocol retains the previous account."
-        if objective in _PROFILE_OBJECTIVES | {CULTURE_ADAPTOR_NAME, PROFILE_VERDICT_ADAPTOR_NAME}:
+        answer = self.background_answers.get(objective)
+        if answer in {"culture", "profile", "profile_verdict"}:
             messages = request["messages"]
             tool_results = [row.get("content") for row in messages if row.get("role") == "tool"]
             if tool_results:
@@ -318,9 +302,9 @@ class CausalProtocol:
                 return completion(request["model"], "Generated pass settled.", stream=True)[
                     "response"
                 ]
-            if objective == CULTURE_ADAPTOR_NAME:
+            if answer == "culture":
                 return self.tool(request, "character_no_change", {"entity": "room", "why": why})
-            if objective == PROFILE_VERDICT_ADAPTOR_NAME:
+            if answer == "profile_verdict":
                 docket = _user_text(request)
                 handles = re.findall(r'<guess id="(H\d+)"', docket)
                 assert handles
@@ -333,7 +317,7 @@ class CausalProtocol:
                 )
             if request.get("tools"):
                 return self.tool(request, "profile_no_change", {"why": why})
-        if objective in _SESSION_CLOSE_OBJECTIVES:
+        if answer == "session_close":
             return completion(request["model"], why, stream=True)["response"]
         raise UnmatchedError("unsupported_objective", objective)
 
@@ -426,7 +410,7 @@ class CausalProtocol:
         behind a canned answer."""
         model = body.get("model")
         if model == self.dream_model and body.get("stream") is True:
-            tagged = _OBJECTIVE_TAG.search(
+            tagged = self.objective_tag.search(
                 html.unescape("\n".join(texts(body.get("messages", []))))
             )
             if tagged is not None:

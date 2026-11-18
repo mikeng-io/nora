@@ -21,10 +21,20 @@ import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from nora.instructions.dreamer import OBJECTIVE_TAG
+from nora.language.character import (
+    CHARACTER_NORA_ADAPTOR_NAME,
+    CHARACTER_PERSON_ADAPTOR_NAME,
+    CHARACTER_UNIT_ADAPTOR_NAME,
+)
+from nora.language.culture import CULTURE_ADAPTOR_NAME
+from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
+from nora.language.profile_collective import PROFILE_COLLECTIVE_ADAPTOR_NAMES
+from nora.language.profile_verdict import PROFILE_VERDICT_ADAPTOR_NAME
 from nora.platform.bridge.service import DurableActionService, action_http_status, action_response
 from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
@@ -35,6 +45,26 @@ from nora.subject.obtain import SubjectSpec, build_config
 from nora.subject.recorded_services import RecordedServices
 from nora.testing.causal_protocol import CausalProtocol, texts
 from nora.testing.signal_daemon import FakeSignalDaemon
+
+if TYPE_CHECKING:
+    from nora.config import Config
+
+
+def make_causal_protocol(cfg: Config) -> CausalProtocol:
+    """Bind finite answers to the production adaptor declarations."""
+    return CausalProtocol(
+        cfg,
+        objective_tag=OBJECTIVE_TAG,
+        background_answers={
+            CHARACTER_NORA_ADAPTOR_NAME: "session_close",
+            CHARACTER_PERSON_ADAPTOR_NAME: "session_close",
+            CHARACTER_UNIT_ADAPTOR_NAME: "session_close",
+            CULTURE_ADAPTOR_NAME: "culture",
+            PROFILE_PERSON_ADAPTOR_NAME: "profile",
+            **dict.fromkeys(PROFILE_COLLECTIVE_ADAPTOR_NAMES, "profile"),
+            PROFILE_VERDICT_ADAPTOR_NAME: "profile_verdict",
+        },
+    )
 
 
 def _record_request(protocol: CausalProtocol, body: dict) -> None:
@@ -430,7 +460,7 @@ class JourneyServices:
                 self._action_routes(actions)
                 apps["platforms.signal.base_url"] = actions
         if self.model_gateway is None:
-            self.protocol = CausalProtocol(cfg)
+            self.protocol = make_causal_protocol(cfg)
             self.judge = GeneratedJudge()
             model = web.Application()
 
